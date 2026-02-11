@@ -46,7 +46,8 @@ RUN \
         python3-pip \
         python3-dev \
         python-is-python3 \
-        software-properties-common
+        software-properties-common \
+        roz-jazzy-nav2-waypoint-follower
 
 RUN if [ ! -e /usr/bin/python ]; then ln -s /usr/bin/python3 /usr/bin/python; fi
 RUN python3 --version
