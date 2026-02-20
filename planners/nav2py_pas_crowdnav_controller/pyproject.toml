@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nav2py_pas_crowdnav_controller"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = "==3.8.5"
+dependencies = [
+    # "lxml",
+    "pyyaml",
+    "stable-baselines3==1.1.0",
+    "numpy",
+    "torch==1.7.1+cu110",
+    "pandas==1.2.1",
+    # "matplotlib",
+    # "transforms3d",
+    # "shimmy",
+    "scipy",
+    "protobuf==3.20.0",
+]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/"
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+torchaudio = { index = "pytorch" }
+
+
+[tool.hatch.envs.default]
+
+[tool.hatch.envs.default.scripts]
+# this only exists because python builds are very yummy
+install-gym = [
+  "python -m pip install setuptools==65.5.0 wheel==0.38.0",
+  "python -m pip install gym==0.18.0",
+  "python -m pip uninstall setuptools",
+]

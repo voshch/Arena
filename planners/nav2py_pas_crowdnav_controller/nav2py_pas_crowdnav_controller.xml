@@ -1,0 +1,11 @@
+<class_libraries>
+  <library path="nav2_pas_crowdnav_controller">
+    <class name="nav2_pas_crowdnav_controller/PasCrowdNavController" 
+           type="nav2_pas_crowdnav_controller::PasCrowdNavController" 
+           base_class_type="nav2_core::Controller">
+      <description>
+        Pure Pursuit Local Planner.
+      </description>
+    </class>
+  </library>
+</class_libraries>
