@@ -469,8 +469,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
         async def impl(ped: arena_people_msgs.msg.Pedestrian) -> PedestrianGoal | None:
             goal = PedestrianGoal()
             goal.name = self._NS_PEDESTRIAN(ped.name)
-            goal.position = ped.pose.position
-            goal.velocity = np.linalg.norm([ped.twist.linear.x, ped.twist.linear.y])
+            goal.pose = ped.pose
+            goal.twist = ped.twist
             return goal
 
         goals = list(filter(None, await asyncio.gather(*map(impl, pedestrians.pedestrians))))

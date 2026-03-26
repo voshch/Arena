@@ -4,6 +4,7 @@ import time
 import traceback
 import typing
 from pathlib import Path
+import math
 
 import attrs
 import geometry_msgs.msg
@@ -584,10 +585,26 @@ class HunavHumanSimulator(
         async with self._agents_lock:
             results = []
 
+            # Use user's provided ID for agents (may come from `arena_hunavsim_bridge` or `scenario.yaml`/`scenario.json`.
+            # If no provided or any overlap, fallback to use indexes as ID instead
+            use_provided_id = True
+            id_set = set()
+            for obstacle in obstacles:
+                id = int(obstacle.extra.get("id", -1))
+                if id == -1:  # ID was not providec
+                    use_provided_id = False
+                    break
+                if id in id_set:  # IDs overlap
+                    use_provided_id = False
+                    break
+
             for obstacle in obstacles:
                 try:
-                    # Get unique ID
-                    unique_id = len(self._agents_container.agents) + 1
+                    if use_provided_id:
+                        unique_id = int(obstacle.extra["id"])
+                    else:  # Use index as an unique ID
+                        unique_id = len(self._agents_container.agents) + 1
+
                     self._logger.debug(
                         f"Preparing to spawn dynamic obstacle '{obstacle.name}' with ID {unique_id}"
                     )
@@ -974,8 +991,6 @@ class HunavHumanSimulator(
                                         arena_ped.twist.angular.y = 0.0
                                         arena_ped.twist.angular.z = 0.0
 
-                                        import math
-
                                         # Orientation through CALCULATED VELOCITY!
                                         vel_x = calculated_vel_x
                                         vel_y = calculated_vel_y
@@ -996,12 +1011,12 @@ class HunavHumanSimulator(
                                             Orientation.from_yaw(smoothed_yaw).to_msg()
                                         )
 
-                                        updated_agent.velocity.linear.x = (
-                                            calculated_vel_x
-                                        )
-                                        updated_agent.velocity.linear.y = (
-                                            calculated_vel_y
-                                        )
+                                        # updated_agent.velocity.linear.x = (
+                                        #     calculated_vel_x
+                                        # )
+                                        # updated_agent.velocity.linear.y = (
+                                        #     calculated_vel_y
+                                        # )
                                         updated_agent.yaw = smoothed_yaw
                                         updated_agent.position.orientation = (
                                             Orientation.from_yaw(smoothed_yaw).to_msg()
@@ -1102,7 +1117,7 @@ class HunavHumanSimulator(
     def _calculate_velocity_from_position_change(
         self, updated_agent, arena_ped, dt=0.1
     ):
-        """Calculate Position from the velocity change"""
+        """Calculate velocity from the position change"""
         import math
 
         # Previous position
