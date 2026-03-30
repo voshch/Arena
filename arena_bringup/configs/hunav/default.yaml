@@ -13,7 +13,7 @@ init_pose:
 behavior:
   type: 1 # hunav_msgs::msg::BEH_REGULAR
   configuration: 0
-  goal_force_factor: 1.0
-  obstacle_force_factor: 11000.0
-  social_force_factor: 120.0
+  goal_force_factor: 5.0
+  obstacle_force_factor: 20.0
+  social_force_factor: 20.0  
   other_force_factor: 20.0
