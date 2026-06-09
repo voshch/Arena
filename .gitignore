@@ -71,3 +71,4 @@ __pycache__/
 
 # agents
 /arena_training/agents/
+_meta/docker/features/vla_server/model/*.pth
