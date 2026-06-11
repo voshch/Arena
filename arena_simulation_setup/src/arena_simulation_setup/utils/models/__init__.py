@@ -19,6 +19,7 @@ class ModelType(enum.Enum):
     SDF = "sdf"
     YAML = "yaml"
     USD = "usd"
+    OBJ = "obj"
 
 
 @attrs.frozen()
@@ -209,10 +210,14 @@ class ModelWrapper(Parseable, Serializable):
 
         for model_type in only:
             loader = self._loaders.get(model_type)
-            if loader is not None:
+            if loader is None:
+                continue
+            try:
                 model = await loader(args)
-                if model is not None:
-                    return model
+            except FileNotFoundError:
+                continue
+            if model is not None:
+                return model
         raise FileNotFoundError(f'Could not load model of type(s) {only} in ModelWrapper {self.name}')
 
     @property

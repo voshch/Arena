@@ -127,6 +127,11 @@ default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
+MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
+publishes `/clock` and drains its sensor and control pumps every 20 ms of sim
+time inside the call) and awaits `/clock` the same way. Its pause, unpause
+and namespace cleanup calls are idempotent and are resent every 10 s until
+answered, so a request or reply lost in transit cannot hold an env forever.
 The dummy host adds the delta to its synthetic clock, so `sim:=dummy` runs the
 whole control plane without a physics engine. That is what
 [`tests/ros/`](../../tests/ros/) exercises, the gate math itself is

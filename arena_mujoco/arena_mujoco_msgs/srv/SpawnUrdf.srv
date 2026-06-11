@@ -1,0 +1,15 @@
+uint32 env_id
+string name
+string urdf_path
+string robot_model
+string tf_prefix
+string base_frame
+string odom_frame
+geometry_msgs/Pose pose
+string cmd_vel_topic
+string joint_states_topic
+string odom_topic
+bool localization true
+arena_mujoco_msgs/Sensor[] sensors
+---
+string path

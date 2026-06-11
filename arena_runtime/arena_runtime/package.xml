@@ -25,6 +25,7 @@
   <exec_depend>isaacsim_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>arena_mujoco_msgs</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

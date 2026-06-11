@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from arena_simulation_setup.utils.models import Model, ModelType, ModelWrapper
+from arena_simulation_setup.utils.models.obj import ModelProvider_OBJ
 from arena_simulation_setup.utils.models.sdf import ModelProvider_SDF
 from arena_simulation_setup.utils.models.urdf import ModelProvider_URDF, _patch_sensor_topics
 from arena_simulation_setup.utils.models.usd import ModelProvider_USD
@@ -92,6 +93,15 @@ def test_yaml_load(tmp_path):
 def test_yaml_load_not_found_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         asyncio.run(ModelProvider_YAML.load(tmp_path, "nonexistent", None))
+
+
+def test_model_wrapper_get_falls_through_to_the_next_type_with_a_file(tmp_path):
+    (tmp_path / "chair.sdf").write_text("<sdf/>")
+    wrapper = ModelWrapper("chair", {**ModelProvider_SDF.asdict(tmp_path, "chair"), **ModelProvider_OBJ.asdict(tmp_path, "chair")})
+
+    assert asyncio.run(wrapper.get((ModelType.OBJ, ModelType.SDF))).type is ModelType.SDF
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(wrapper.get(ModelType.OBJ))
 
 
 def test_model_wrapper_serialize():

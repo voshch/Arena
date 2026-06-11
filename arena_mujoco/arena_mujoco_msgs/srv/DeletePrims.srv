@@ -1,0 +1,5 @@
+uint32 env_id
+# trailing slash in a name means prefix delete
+string[] names
+---
+bool[] ret

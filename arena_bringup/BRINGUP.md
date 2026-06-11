@@ -131,6 +131,7 @@ arena launch \
 | Arg | Implication |
 |---|---|
 | `sim:=isaac` | Runs `arena feature isaac launch` via bash. `mobile` adapter defaults to `nav2` |
+| `sim:=mujoco` | Runs `arena feature mujoco launch` via bash (out-of-process MuJoCo server, CPU physics, ray-cast lidar, kinematic pedestrians, needs `arena feature mujoco install`). `human` defaults to `arena`, tf is `global` like isaac |
 | `task.config:=<path>` | Structured `TaskModeSpec` YAML; overrides `task.robots`. Use to split a fleet across multiple task modes |
 | `headless:=true` | Sim GUI hidden; rviz suppressed (no GUI at all) |
 
@@ -176,7 +177,7 @@ arena launch \
 | Arg | Implication |
 |---|---|
 | `env.n:=3` | Three task-generator instances under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
-| `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
+| `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac`, `sim:=mujoco` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
 
 Slot positions are placed by the shelf packer in `arena_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_node` (default 5 m).
 
