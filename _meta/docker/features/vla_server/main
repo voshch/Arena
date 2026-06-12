@@ -2,9 +2,8 @@
 
 name="vla_server"
 
+
 update(){
-    set -e
-    arena registry add "$name"
     arena_docker_compose build vla_server
 }
 
@@ -14,19 +13,12 @@ uninstall(){
 }
 
 launch(){
-    # Source only the docker function library — env vars (arena_compose_sudo, docker_env,
-    # HOST_ARENA_WS_DIR) are already correctly set by the container environment.
-    # Do NOT source the full setup script; it resets arena_compose_sudo="" and
-    # overwrites HOST_ARENA_WS_DIR with the in-container path.
-    # shellcheck source=/dev/null
     source "$ARENA_DIR/_meta/docker/lib"
-    # Register feature so arena_docker_compose includes its docker-compose.yml overlay
-    grep -qxF "$name" "$ARENA_DIR/.installed" 2>/dev/null || \
-        echo "$name" >> "$ARENA_DIR/.installed"
-    # Stop any previous instance to avoid accumulated log-stream attachments
+
+    #TODO only start if not already running? otherwise just attach.
     arena_docker_compose stop vla_server 2>/dev/null || true
     # Run detached so only one log stream attaches; stop on process exit
-    arena_docker_compose up -d --remove-orphans vla_server
+    arena_docker_compose up --remove-orphans vla_server
     trap 'arena_docker_compose stop vla_server 2>/dev/null' EXIT INT TERM
     arena_docker_compose logs -f vla_server
 }
@@ -39,6 +31,10 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 case "$1" in
+    install)
+        _feature_default_install "$name"
+        exit $?
+    ;;
     update)
         update
         exit $?

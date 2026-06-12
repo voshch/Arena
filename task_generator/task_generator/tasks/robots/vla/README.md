@@ -20,6 +20,7 @@ Adds the `vla_server` arena feature.
 Run with:
 
 ```bash
+arena feature vla_server install
 arena feature vla_server update
 ```
 

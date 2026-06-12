@@ -17,6 +17,8 @@ from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
 # server
+# TODO: ensure that vla server is launched via `arena feature vla_server launch`. fatal if not installed?
+# TODO: MAYBE wire vla launch to return host/port
 _VLA_BASE = "http://127.0.0.1:8000"
 _VLA_SERVER = _VLA_BASE + "/act"
 _VLA_HEALTH = _VLA_BASE + "/health"
