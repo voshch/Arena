@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -101,7 +102,7 @@ DonePredicate = Callable[
 class TaskRequest:
     """Typed sequence of phases submitted to a robot."""
 
-    phases: list[TaskPhase]
+    phases: collections.abc.Sequence[TaskPhase]
     done_predicate: DonePredicate | None = None
 
     @property

@@ -172,7 +172,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             viz_args[key[len('viz.') :]] = value
             continue
         if key == 'vla_server':
-            vla_server = value 
+            vla_server = value
             continue
         if key == 'sim':
             sim = value
@@ -218,16 +218,14 @@ def wait_until(
 def run(args: argparse.Namespace, sup: Supervisor) -> int:
     if args.vla_server is not None:
         import os as _os
+
         _features_dir = _os.environ.get(
             'ARENA_FEATURES_DIR',
             _os.path.join(_os.environ.get('ARENA_DIR', ''), '_meta', 'docker', 'features'),
         )
         _vla_main = _os.path.join(_features_dir, 'vla_server', 'main')
         sup.spawn('vla_server', ['bash', _vla_main, 'launch', args.vla_server])
-        sys.stderr.write(
-            f'arena launch: VLA server spawning (model={args.vla_server}); '
-            'health endpoint: http://localhost:8000/health\n'
-        )
+        sys.stderr.write(f'arena launch: VLA server spawning (model={args.vla_server}); health endpoint: http://localhost:8000/health\n')
 
     if sup.has_service(REGISTER_ENV_SERVICE):
         if args.sim is not None:
