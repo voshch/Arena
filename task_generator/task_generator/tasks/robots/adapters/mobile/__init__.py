@@ -89,6 +89,13 @@ def _load_drl() -> type[Adapter]:
     return DrlAdapter
 
 
+@ADAPTERS["mobile"].register("vla")
+def _load_vla() -> type[Adapter]:
+    from .vla import VLAAdapter
+
+    return VLAAdapter
+
+
 @ADAPTERS["mobile"].register("none")
 def _load_none() -> type[Adapter]:
     from .none import NoneAdapter

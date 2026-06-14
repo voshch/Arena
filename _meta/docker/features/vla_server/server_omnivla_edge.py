@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import deque
 from io import BytesIO
 import numpy as np
 import torch
@@ -19,7 +20,7 @@ sys.path.insert(0, _SCRIPT_DIR)        # enables: from model.utils_policy import
 sys.path.insert(0, _MODEL_DIR)         # enables: from model_omnivla_edge import ... inside utils_policy.py
 from model.utils_policy import load_model, transform_images_PIL_mask, transform_images_map
 
-_WEIGHTS_PATH = os.path.join(_MODEL_DIR, "omnivla-edge.pth")
+_WEIGHTS_DEFAULT = os.path.join(_MODEL_DIR, "omnivla-edge.pth")
 
 _IMGSIZE = (96, 96) #for efficientnet encoder    
 _IMGSIZE_CLIP = (224, 224) #for clip encoder
@@ -41,17 +42,22 @@ _MODEL_PARAMS["late_fusion"] = False
 _MODEL_PARAMS["mha_num_attention_heads"] = 4   
 _MODEL_PARAMS["mha_num_attention_layers"] = 4   
 _MODEL_PARAMS["mha_ff_dim_factor"] = 4 
-_MODEL_PARAMS["clip_type"] = "ViT-B/32"   
+_MODEL_PARAMS["clip_type"] = "ViT-B/32"
+
+# per-robot observation history, keyed by session id (robot namespace). context_size+1 frames.
+_CONTEXT_LEN = _MODEL_PARAMS["context_size"] + 1
+_context: dict[str, deque] = {}
 
 app = FastAPI()
 
 
 def _load()->None:
     global device, model, text_encoder, mask_360_pil_96, mask_360_pil_224
+    weights_path = os.environ.get("VLA_WEIGHTS", _WEIGHTS_DEFAULT)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(f"[vla_server] loading {_WEIGHTS_PATH} on {device}", flush=True)
+    print(f"[vla_server] loading {weights_path} on {device}", flush=True)
     model, text_encoder, _ = load_model(
-        _WEIGHTS_PATH,
+        weights_path,
         _MODEL_PARAMS,
         device,
     )
@@ -70,22 +76,32 @@ def on_startup()->None:
 def health()->JSONResponse:
     return JSONResponse({"status":"ok"})
 
+@app.post("/reset")
+async def reset(session: str=Form(...))->JSONResponse:
+    _context.pop(session, None)
+    return JSONResponse({"status":"ok"})
+
 @app.post("/act")
 async def act(
     image: UploadFile=File(...),
-    instruction: str=Form(...)
+    instruction: str=Form(...),
+    session: str=Form(...)
 )->JSONResponse:
     img=await image.read()
 
     # Load current image
     current_image_PIL = Image.open(BytesIO(img)).convert("RGB")
-    
+
     current_image_PIL_96 = current_image_PIL.resize(_IMGSIZE)
     current_image_PIL_224 = current_image_PIL.resize(_IMGSIZE_CLIP)
 
     #-----omnivla-edge inference code reuse-------
-    #In this test code, we feed same images for the observation history, assuming that the robot stopped at the current location.
-    context_queue = [current_image_PIL_96, current_image_PIL_96, current_image_PIL_96, current_image_PIL_96, current_image_PIL_96, current_image_PIL_96]
+    # rolling per-robot observation history, pad with the oldest frame until the window fills.
+    history = _context.setdefault(session, deque(maxlen=_CONTEXT_LEN))
+    history.append(current_image_PIL_96)
+    context_queue = list(history)
+    if len(context_queue) < _CONTEXT_LEN:
+        context_queue = [context_queue[0]] * (_CONTEXT_LEN - len(context_queue)) + context_queue
     #obs_images = transform_images_PIL(context_queue)
     obs_images = transform_images_PIL_mask(context_queue, mask_360_pil_96)        
     obs_images = torch.split(obs_images.to(device), 3, dim=1)
@@ -125,10 +141,14 @@ async def act(
         )
 
 
-    waypoints = predicted_actions.float().cpu().numpy()[0]
-    waypoints[:,:2] *= _METRIC_WP_SPACING
+    actions = predicted_actions.float().cpu().numpy()[0]
+    actions[:, :2] *= _METRIC_WP_SPACING
+    steps = [
+        {"x": float(a[0]), "y": float(a[1]), "yaw": float(np.arctan2(a[3], a[2]))}
+        for a in actions
+    ]
 
-    return JSONResponse({"waypoints": waypoints.tolist()})
+    return JSONResponse({"actions": {"mobile": {"waypoints": steps}}})
 
 
 if __name__ == "__main__":
@@ -136,5 +156,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OmniVLA-edge inference server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--weights", default=None)
     args = parser.parse_args()
+    if args.weights:
+        os.environ["VLA_WEIGHTS"] = args.weights
     uvicorn.run(app, host=args.host, port=args.port)

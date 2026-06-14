@@ -2,8 +2,17 @@
 
 name="vla_server"
 
+_feature_dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 update(){
+    python3 "$_feature_dir/manifest.py" manifest | while IFS=$'\t' read -r model repo weights; do
+        dest="$ARENA_DATA_DIR/vla/${model}/${weights}"
+        if [ ! -s "$dest" ]; then
+            mkdir -p "$(dirname "$dest")"
+            curl -fSL "https://huggingface.co/${repo}/resolve/main/${weights}" -o "$dest"
+        fi
+    done
+    source "$ARENA_DIR/_meta/docker/lib"
     arena_docker_compose build vla_server
 }
 
@@ -12,20 +21,24 @@ uninstall(){
     arena registry remove "$name"
 }
 
+source_fn(){
+    return 0
+}
+
 launch(){
     source "$ARENA_DIR/_meta/docker/lib"
-
-    #TODO only start if not already running? otherwise just attach.
-    arena_docker_compose stop vla_server 2>/dev/null || true
-    # Run detached so only one log stream attaches; stop on process exit
-    arena_docker_compose up --remove-orphans vla_server
-    trap 'arena_docker_compose stop vla_server 2>/dev/null' EXIT INT TERM
-    arena_docker_compose logs -f vla_server
+    if ! arena_docker_compose up -d --wait vla_server >&2; then
+        echo "vla_server: runner failed to become healthy, recent logs:" >&2
+        arena_docker_compose logs --tail 40 vla_server >&2
+        return 1
+    fi
+    echo 8000
 }
 
 help(){
-    echo "Usage: $name <update|uninstall|launch>"
+    echo "Usage: $name <install|update|uninstall|launch|source>"
 }
+
 if [ $# -lt 1 ]; then
     help
     exit 1
@@ -47,5 +60,13 @@ case "$1" in
     launch)
         launch
         exit $?
+    ;;
+    source)
+        source_fn
+        return $?
+    ;;
+    *)
+        help
+        exit 1
     ;;
 esac

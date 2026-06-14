@@ -1,0 +1,4 @@
+omnivla-edge:
+  repo: NHirose/omnivla-edge
+  weights: omnivla-edge.pth
+  server: server_omnivla_edge.py

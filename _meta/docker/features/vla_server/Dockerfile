@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir --upgrade pip
 
-RUN pip install fastapi "uvicorn[standard]" openai-clip Pillow numpy requests packaging matplotlib efficientnet_pytorch python-multipart
+# install, patch and pre-fetch CLIP on its own layer so later dependency changes do not re-download it
+RUN pip install openai-clip \
+    && sed -i 's/from pkg_resources import packaging/import packaging, packaging.version/' \
+       "$(python -c 'import clip, os; print(os.path.dirname(clip.__file__))')/clip.py" \
+    && python -c "import clip; clip.load('ViT-B/32', device='cpu')"
 
-RUN sed -i 's/from pkg_resources import packaging/import packaging, packaging.version/' \
-    "$(python -c 'import clip, os; print(os.path.dirname(clip.__file__))')/clip.py" \
+RUN pip install fastapi "uvicorn[standard]" Pillow numpy requests packaging matplotlib efficientnet_pytorch python-multipart pyyaml

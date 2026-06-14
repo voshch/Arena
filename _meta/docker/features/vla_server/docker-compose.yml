@@ -8,10 +8,17 @@ services:
       # args:
     volumes:
       - "$HOST_ARENA_WS_DIR/src:/opt/arena_ws/src"
+      - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data:ro"
     environment:
       - HOST_ARENA_WS_DIR
       - VLA_MODEL_DIR=/opt/arena_ws/src/Arena/_meta/docker/features/vla_server/model
-    command: ["python3", "/opt/arena_ws/src/Arena/_meta/docker/features/vla_server/server_omnivla_edge.py"]
+    command: ["python3", "/opt/arena_ws/src/Arena/_meta/docker/features/vla_server/daemon.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     network_mode: host
     deploy:
       resources:

@@ -28,6 +28,9 @@ _REGISTER_RETRY_SEC = 1.0
 _REGISTER_LOG_INTERVAL_SEC = 10.0
 _AUTO_ENV_ID = 0xFFFF
 
+# task modes that require a specific mobile adapter; used to derive mobile:= when left empty
+_TM_REQUIRED_ADAPTER = {"vla": "vla"}
+
 
 def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
     import rclpy
@@ -195,9 +198,15 @@ def generate_launch_description():
         human_val = launch.utilities.perform_substitutions(
             context, launch.utilities.normalize_to_list_of_substitutions(human.substitution)
         ) or {"dummy": "dummy", "gazebo": "arena", "isaac": "arena"}.get(arena_sim, "dummy")
-        mobile_val = launch.utilities.perform_substitutions(
+        mobile_explicit = launch.utilities.perform_substitutions(
             context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)
-        ) or {"dummy": "none"}.get(arena_sim, "nav2")
+        )
+        tm_robots_val = launch.utilities.perform_substitutions(
+            context, launch.utilities.normalize_to_list_of_substitutions(tm_robots.substitution)
+        )
+        # empty mobile:= derives from the active task mode first (some modes require a specific
+        # adapter), then the arena_sim default
+        mobile_val = mobile_explicit or _TM_REQUIRED_ADAPTER.get(tm_robots_val) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(
             context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution)
         )

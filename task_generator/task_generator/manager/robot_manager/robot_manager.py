@@ -96,6 +96,11 @@ class RobotManager(NodeInterface):
         return self._adapter.controls_orientation if self._adapter is not None else True
 
     @property
+    def mobile_adapter_kind(self) -> str | None:
+        """Kind of the bound mobile-cap adapter (the GOTO_POSE adapter), or None if unbound."""
+        return self._adapter.kind if self._adapter is not None else None
+
+    @property
     def pose(self) -> Pose | None:
         """Current robot pose in the map frame (None during reset/respawn windows)."""
         base = self.frame(self._config.model_params.base_frame).raw()
@@ -508,5 +513,11 @@ class RobotManager(NodeInterface):
         pass
 
     async def destroy(self):
+        results = await asyncio.gather(
+            *(a.teardown() for a in self._adapter_instances),
+            return_exceptions=True,
+        )
+        for adapter, result in zip(self._adapter_instances, results, strict=True):
+            if isinstance(result, Exception):
+                self._logger.warning(f"adapter {adapter.kind!r} teardown failed: {result!r}")
         await self._environment_manager.remove_robot((self.robot,))
-        # TODO kill node in navigation stack
