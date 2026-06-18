@@ -130,7 +130,7 @@ def cmd_add(arena: Path, args) -> int:
         for p in paths:
             sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
             _git(["-c", "protocol.file.allow=always",
-                  "submodule", "update", "--init", "--checkout", sub_path], sdk)
+                  "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk)
     return 0
 
 
