@@ -9,6 +9,7 @@ from arena_simulation_setup.utils.generative import (
     WorldGeneratorType,
 )
 from arena_simulation_setup.utils.generative.barn import WorldGeneratorBarn
+from arena_simulation_setup.utils.generative.barn_cylinder import WorldGeneratorBarnCylinder
 from arena_simulation_setup.utils.generative.empty import WorldGeneratorEmpty
 from arena_simulation_setup.utils.generative.hallway import WorldGeneratorHallway
 from arena_simulation_setup.utils.generative.utils import line_pairs, to_corners, to_walls
@@ -279,3 +280,73 @@ def test_barn_episode_binding():
 
 def test_default_episode_binding_empty():
     assert WorldGeneratorEmpty({}, random.Random(0)).params() == {}
+
+
+# ---------------------------------------------------------------------------
+# WorldGeneratorBarnCylinder
+# ---------------------------------------------------------------------------
+
+
+def test_world_generator_type_barn_cylinder_value():
+    assert WorldGeneratorType.BARN_CYLINDER.value == "barn_cylinder"
+
+
+def test_barn_cylinder_registered():
+    assert WorldGeneratorType.BARN_CYLINDER in WorldGenerator.available()
+    assert WorldGenerator.config_model(WorldGeneratorType.BARN_CYLINDER) is WorldGeneratorBarnCylinder.Configuration
+
+
+def test_barn_cylinder_config_defaults():
+    cfg = WorldGeneratorBarnCylinder.Configuration()
+    assert cfg.cell_size == pytest.approx(0.3)
+    assert cfg.cylinder_radius == pytest.approx(0.075)
+    assert cfg.robot_clearance == pytest.approx(0.28)
+    assert cfg.max_tries == 50
+
+
+def test_barn_cylinder_compute_single_zone_with_walls():
+    gen = WorldGeneratorBarnCylinder({}, random.Random(0))
+    wd = gen.compute()
+    assert len(wd.zones) == 1
+    assert wd.zones[0].name == "barn_cylinder"
+    assert len(wd.zones[0].walls) > 0
+
+
+def test_barn_cylinder_connectivity_across_seeds():
+    # compute() rejects unconnected fields internally, so a clean return proves the
+    # reject sampler found a start->goal-connected field within max_tries
+    for seed in range(6):
+        WorldGeneratorBarnCylinder({}, random.Random(seed)).compute()
+
+
+def test_barn_cylinder_too_small_raises():
+    with pytest.raises(ValueError):
+        WorldGeneratorBarnCylinder({"width": 1.0, "height": 1.0}, random.Random(0)).compute()
+
+
+def test_barn_cylinder_files_emit_scenario():
+    import yaml
+
+    gen = WorldGeneratorBarnCylinder({}, random.Random(0))
+    files = gen.files()
+    key = f"scenarios/{WorldGeneratorBarnCylinder.SCENARIO}/scenario.yaml"
+    assert key in files
+
+    scenario = yaml.safe_load(files[key])
+    robots = scenario["robots"]
+    assert len(robots) == 1
+    assert len(robots[0]["start"]) == 3
+    assert len(robots[0]["phases"][0]["goto"]) == 3
+
+
+def test_barn_cylinder_seed_deterministic():
+    a = WorldGeneratorBarnCylinder({}, random.Random(7))
+    b = WorldGeneratorBarnCylinder({}, random.Random(7))
+    assert len(a.compute().zones[0].walls) == len(b.compute().zones[0].walls)
+    assert a.files() == b.files()
+
+
+def test_barn_cylinder_episode_binding():
+    params = WorldGeneratorBarnCylinder({}, random.Random(0)).params()
+    assert params["tm_robots"] == "scenario"
+    assert params["robots_params"] == {"file": WorldGeneratorBarnCylinder.SCENARIO}
