@@ -360,6 +360,26 @@ Contestant args in benchmark YAMLs use the same shapes and the same forwarding
 rules (see
 [benchmark README](../arena_evaluation/arena_evaluation/configs/benchmark/README.md#contestant-args)).
 
+### planner:=\<name\>
+
+A top-level shorthand that skips the `<cap>:=<kind>` / `<cap>.<key>:=<val>`
+split: `planner:=<name>` resolves `<name>` through `arena_planners`'
+resolver (registry → rosnav_rl → nav2 priority, first match wins) and
+expands to the matching `mobile:=<adapter> mobile.<selector>:=<name>` pair
+under the hood. It covers all three planner sources with one arg:
+
+```sh
+arena launch planner:=drlvo    # -> mobile:=drl mobile.planner:=drlvo
+arena launch planner:=my_agent # -> mobile:=rosnav_rl mobile.agent:=my_agent
+                                #    (agent dir under arena_training/agents/;
+                                #    SB3 or DreamerV3, both resolve the same way)
+arena launch planner:=teb      # -> mobile:=nav2 mobile.local_planner:=teb
+```
+
+Explicit `mobile:=<kind>` + cap-scoped overrides still work and take
+precedence — use `planner:=` when you just want "run this planner" without
+knowing which adapter family it lives in.
+
 ### robot:=auto
 
 The `robot` argument defaults to `auto`. Instead of selecting a robot
