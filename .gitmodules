@@ -17,12 +17,12 @@
 	update = rebase
 [submodule "arena_planners"]
 	path = arena_planners
-	url = https://github.com/arena-planners/arena_planners.git
+	url = https://github.com/tuananhroman/arena_planners.git
 	branch = jazzy
 	update = rebase
 [submodule "arena_robots"]
 	path = arena_robots
-	url = https://github.com/arena-robots/arena_robots.git
+	url = https://github.com/tuananhroman/arena_robots.git
 	branch = jazzy
 	update = rebase
 [submodule "humansim"]
