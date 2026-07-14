@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -65,6 +66,19 @@ class GoToPhase(TaskPhase):
 
 
 @attrs.define
+class VLAPhase(TaskPhase):
+    """Follow a language instruction. Routed to the mobile cap (reuses GOTO_POSE); the bound VLA
+    adapter owns inference and completion, so this phase only carries the instruction."""
+
+    kind: ClassVar[TaskKind] = TaskKind.GOTO_POSE
+
+    instruction: str
+
+    def is_satisfied(self, robot_manager: RobotManager) -> bool:
+        return False  # adapter-driven completion
+
+
+@attrs.define
 class ReachPhase(TaskPhase):
     kind: ClassVar[TaskKind] = TaskKind.REACH_POSE
     target: geometry_msgs.msg.PoseStamped | None = None
@@ -101,7 +115,7 @@ DonePredicate = Callable[
 class TaskRequest:
     """Typed sequence of phases submitted to a robot."""
 
-    phases: list[TaskPhase]
+    phases: collections.abc.Sequence[TaskPhase]
     done_predicate: DonePredicate | None = None
 
     @property
@@ -120,6 +134,7 @@ __all__ = [
     "TaskKind",
     "TaskPhase",
     "GoToPhase",
+    "VLAPhase",
     "ReachPhase",
     "PlayGesturePhase",
     "TaskRequest",

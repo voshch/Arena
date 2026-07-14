@@ -7,7 +7,7 @@ from task_generator.tasks.mode import TaskMode
 from task_generator.tasks.robots._placement import random_placement
 from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
-from . import demo, explore, guided, random, scenario
+from . import demo, explore, guided, random, scenario, vla
 
 
 class TM_Robots(TaskMode):
@@ -79,4 +79,4 @@ class TM_Robots(TaskMode):
         return True
 
 
-__all__ = ["TM_Robots", "demo", "explore", "guided", "random", "scenario"]
+__all__ = ["TM_Robots", "demo", "explore", "guided", "random", "scenario", "vla"]

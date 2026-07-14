@@ -96,6 +96,11 @@ class RobotManager(NodeInterface):
         return self._adapter.controls_orientation if self._adapter is not None else True
 
     @property
+    def mobile_adapter_kind(self) -> str | None:
+        """Kind of the bound mobile-cap adapter (the GOTO_POSE adapter), or None if unbound."""
+        return self._adapter.kind if self._adapter is not None else None
+
+    @property
     def pose(self) -> Pose | None:
         """Current robot pose in the map frame (None during reset/respawn windows)."""
         base = self.frame(self._config.model_params.base_frame).raw()
