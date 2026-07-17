@@ -66,6 +66,17 @@ def Configuration(server: ROSParamServer) -> type:
                 0.35,
             )
 
+        class Human:
+            """
+            Human simulator task configuration.
+            """
+
+            DRIVER_SET = server.ROSParam[tuple[str, ...]](
+                'task.driver_set',
+                '',
+                parse=lambda x: tuple(s for s in str(x).split(',') if s != ''),
+            )
+
         class Robot:
             GOAL_TOLERANCE_RADIUS = server.ROSParam[float]('goal_tolerance_radius', 1.0)
 

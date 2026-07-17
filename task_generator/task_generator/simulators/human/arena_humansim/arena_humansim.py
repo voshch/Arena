@@ -772,6 +772,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if not obstacles:
             return obstacles
 
+        # One crowd driver per EPISODE (regime coherence for the context code b — a
+        # mixed-driver crowd would break the HiP-MDP structure). This impl can fire once
+        # per batch (tm_obstacles=random) or once per obstacle (extend()), so the draw
+        # goes through RNG.once(): computed at most once per episode, draw-order-invariant.
+        driver_set = self.node.conf.Human.DRIVER_SET
+        driver: str = ""
+        if driver_set:
+            driver = self.node.conf.General.RNG.once(
+                "humansim",
+                "driver",
+                factory=lambda: str(
+                    self.node.conf.General.RNG.stream("humansim", "driver").choice(driver_set)
+                ),
+            )
+            self._logger.info(f"episode driver: {driver}")
+
         request = SpawnAgents.Request()
         for obstacle in obstacles:
             agent_msg = AgentStateMsg()
@@ -786,6 +802,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 theta=obstacle.pose.orientation.to_yaw(),
             )
             agent_msg.velocity = Vector3(x=0.0, y=0.0, z=0.0)
+            agent_msg.policy = driver
 
             parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
             params = parsed.sample_params(self.node.conf.General.RNG.stream("humansim", obstacle.sim_path)) if parsed is not None else None

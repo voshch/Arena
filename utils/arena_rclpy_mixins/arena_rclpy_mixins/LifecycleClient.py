@@ -22,9 +22,14 @@ class LifecycleClient(TimeNode, rclpy.node.Node):
             name := os.path.join(node_name, 'get_state'),
             **kwargs,
         )
-        if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
-            raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
-        return cli.call(lifecycle_msgs.srv.GetState.Request()).current_state
+        try:
+            if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
+                raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
+            return cli.call(lifecycle_msgs.srv.GetState.Request()).current_state
+        finally:
+            # Per-call client must be freed; wait_for_lifecycle_state loops this every
+            # 0.5s, so a leak here grows the executor's waitable set without bound.
+            self.destroy_client(cli)
 
     def get_available_lifecycle_states(self, node_name: str, *, timeout: float | None = None, **kwargs: object) -> list[lifecycle_msgs.msg.State]:
         """
@@ -36,9 +41,12 @@ class LifecycleClient(TimeNode, rclpy.node.Node):
             **kwargs,
         )
 
-        if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
-            raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
-        return cli.call(lifecycle_msgs.srv.GetAvailableStates.Request()).available_states
+        try:
+            if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
+                raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
+            return cli.call(lifecycle_msgs.srv.GetAvailableStates.Request()).available_states
+        finally:
+            self.destroy_client(cli)
 
     def get_available_lifecycle_transitions(self, node_name: str, *, timeout: float | None = None, **kwargs: object) -> list[lifecycle_msgs.msg.Transition]:
         """
@@ -50,9 +58,12 @@ class LifecycleClient(TimeNode, rclpy.node.Node):
             **kwargs,
         )
 
-        if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
-            raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
-        return cli.call(lifecycle_msgs.srv.GetAvailableTransitions.Request()).available_transitions
+        try:
+            if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
+                raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
+            return cli.call(lifecycle_msgs.srv.GetAvailableTransitions.Request()).available_transitions
+        finally:
+            self.destroy_client(cli)
 
     def change_lifecycle_state(self, node_name: str, transition: lifecycle_msgs.msg.Transition | int, *, timeout: float | None = None, **kwargs: object) -> bool:
         """
@@ -66,9 +77,12 @@ class LifecycleClient(TimeNode, rclpy.node.Node):
             **kwargs,
         )
 
-        if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
-            raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
-        return cli.call(lifecycle_msgs.srv.ChangeState.Request(transition=transition)).success
+        try:
+            if not cli.wait_for_service(timeout_sec=timeout):  # type: ignore
+                raise RuntimeError(f'timed out waiting for {name} after {timeout} secs')
+            return cli.call(lifecycle_msgs.srv.ChangeState.Request(transition=transition)).success
+        finally:
+            self.destroy_client(cli)
 
     async def wait_for_lifecycle_state(self, node_name: str, desired_state: lifecycle_msgs.msg.State | int, *, check_interval: float = 0.5, timeout: float | None = None, **kwargs: object) -> bool:
         """
@@ -94,12 +108,20 @@ class AsyncLifecycleClient(AsyncNode):
             srv_name := os.path.join(node_name, sub_path),
             **kwargs,
         )
-        if not await cli.ensure(timeout_sec=timeout):
-            raise TimeoutError(f'timed out waiting for {srv_name} after {timeout}s')
-        res = await cli.call_timeout(request, timeout_sec=timeout)
-        if res is None:
-            raise TimeoutError(f'service call {srv_name} timed out after {timeout}s')
-        return res
+        # A fresh client is created per call; it MUST be destroyed on every exit path.
+        # Otherwise each call leaks an rclpy client (and its waitables) onto the executor.
+        # Under a down/slow lifecycle node the retry loops here fire twice a second, so the
+        # leak grows the executor's waitable set without bound and _wait_for_ready_callbacks
+        # saturates a core — the task_generator "busy-spin" hang during startup resets.
+        try:
+            if not await cli.ensure(timeout_sec=timeout):
+                raise TimeoutError(f'timed out waiting for {srv_name} after {timeout}s')
+            res = await cli.call_timeout(request, timeout_sec=timeout)
+            if res is None:
+                raise TimeoutError(f'service call {srv_name} timed out after {timeout}s')
+            return res
+        finally:
+            self.destroy_client(cli.client)
 
     async def get_lifecycle_state_async(self, node_name: str, *, timeout: float | None = None, **kwargs: object) -> lifecycle_msgs.msg.State:
         """
