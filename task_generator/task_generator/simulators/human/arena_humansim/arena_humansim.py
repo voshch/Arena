@@ -91,6 +91,19 @@ from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Positio
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, resolve_agent_type_path
 
+# De-tuned SFM driver ("sfm_detuned" in Human.DRIVER_SET): runs the plain "sfm" physics
+# policy but shifts each spawned agent's per-agent local-planner params by ~2x SFM's
+# own ParamDist std-dev, away from HSFM's inherited (identical) SFM-block defaults
+# (relaxation_time=0.5, repulsion_strength=2.1, repulsion_range=0.3 — see
+# humansim/arena_humansim/arena_humansim/local_planner/{sfm,hsfm}.py PARAM_DEFAULTS).
+# This keeps a held-out HSFM eval gap attributable to structural novelty, not parameter
+# proximity to plain SFM. Values documented in arena_training/docs/icra2027/EXPERIMENTS.md §5.1.
+_SFM_DETUNED_OFFSETS: dict[str, float] = {
+    "relaxation_time": 0.10,  # +2*std(0.05)
+    "repulsion_strength": -0.40,  # -2*std(0.2)
+    "repulsion_range": 0.06,  # +2*std(0.03)
+}
+
 
 class ArenaHumanSimulator(BaseHumanSimulator):
     @classmethod
@@ -772,21 +785,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if not obstacles:
             return obstacles
 
-        # One crowd driver per EPISODE (regime coherence for the context code b — a
-        # mixed-driver crowd would break the HiP-MDP structure). This impl can fire once
-        # per batch (tm_obstacles=random) or once per obstacle (extend()), so the draw
-        # goes through RNG.once(): computed at most once per episode, draw-order-invariant.
-        driver_set = self.node.conf.Human.DRIVER_SET
-        driver: str = ""
-        if driver_set:
-            driver = self.node.conf.General.RNG.once(
-                "humansim",
-                "driver",
-                factory=lambda: str(
-                    self.node.conf.General.RNG.stream("humansim", "driver").choice(driver_set)
-                ),
-            )
-            self._logger.info(f"episode driver: {driver}")
+        # One crowd driver per EPISODE, drawn by the shared base layer
+        # (BaseHumanSimulator.spawn_dynamic_obstacles) so it stays in sync with the
+        # driver-change-triggered respawn logic there.
+        driver: str = getattr(self, "_episode_driver", "")
 
         request = SpawnAgents.Request()
         for obstacle in obstacles:
@@ -802,7 +804,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 theta=obstacle.pose.orientation.to_yaw(),
             )
             agent_msg.velocity = Vector3(x=0.0, y=0.0, z=0.0)
-            agent_msg.policy = driver
+            # "sfm_detuned" is not a registered runtime policy; it runs the plain "sfm"
+            # physics with per-agent params offset below (see _SFM_DETUNED_OFFSETS).
+            agent_msg.policy = "sfm" if driver == "sfm_detuned" else driver
 
             parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
             params = parsed.sample_params(self.node.conf.General.RNG.stream("humansim", obstacle.sim_path)) if parsed is not None else None
@@ -813,9 +817,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.vision_range = params.perception.vision_range
                 agent_msg.vision_fov = params.perception.vision_fov
                 lp = params.local_planner_params
-                agent_msg.relaxation_time = lp.get("relaxation_time", 0.0)
-                agent_msg.repulsion_strength = lp.get("repulsion_strength", 0.0)
-                agent_msg.repulsion_range = lp.get("repulsion_range", 0.0)
+                relaxation_time = lp.get("relaxation_time", 0.0)
+                repulsion_strength = lp.get("repulsion_strength", 0.0)
+                repulsion_range = lp.get("repulsion_range", 0.0)
+                if driver == "sfm_detuned":
+                    relaxation_time += _SFM_DETUNED_OFFSETS["relaxation_time"]
+                    repulsion_strength += _SFM_DETUNED_OFFSETS["repulsion_strength"]
+                    repulsion_range += _SFM_DETUNED_OFFSETS["repulsion_range"]
+                agent_msg.relaxation_time = relaxation_time
+                agent_msg.repulsion_strength = repulsion_strength
+                agent_msg.repulsion_range = repulsion_range
                 agent_msg.agent_type = parsed.agent_type
             else:
                 agent_msg.desired_velocity = float(obstacle.velocity)

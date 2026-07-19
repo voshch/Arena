@@ -68,6 +68,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._known_regions: dict[str, Region] = {}
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
+        self._episode_driver: str = ""
+        self._spawned_driver: str | None = None
 
         self._arena_peds_publisher = self.node.create_publisher(Pedestrians, self._namespace("arena_peds"), 10)
         self._marker_publisher = self.node.create_publisher(
@@ -213,19 +215,45 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """
         self._logger.debug(f"spawning {len(obstacles)} dynamic obstacles")
 
+        if obstacles:
+            driver_set = self.node.conf.Human.DRIVER_SET.value
+            if driver_set:
+                self._episode_driver = self.node.conf.General.RNG.once(
+                    "humansim",
+                    "driver",
+                    factory=lambda: str(
+                        self.node.conf.General.RNG.stream("humansim", "driver").choice(driver_set)
+                    ),
+                )
+                # WARN so it survives the env nodes' default WARN log level — this line is
+                # experiment-critical telemetry (driver-stratified eval needs it in logs).
+                self._logger.warning(f"episode driver: {self._episode_driver}")
+            else:
+                self._episode_driver = ""
+
         futures: list[typing.Awaitable] = []
         to_register: list[KnownObstacle[DynamicObstacle]] = []
         to_move: list[DynamicObstacle] = []
+        to_respawn: list[DynamicObstacle] = []
 
         for obstacle in obstacles:
             if (known := self._known_obstacles.get(obstacle.name)) is not None:
+                if known.spawned and self._episode_driver != self._spawned_driver:
+                    to_respawn.append(known.obstacle)
+                    known.spawned = False
+                    known.layer = ObstacleLayer.UNUSED
+                else:
+                    known.layer = ObstacleLayer.INUSE
                 known.obstacle = obstacle
-                to_move.append(known.obstacle)
-                known.layer = ObstacleLayer.INUSE
+                if known.spawned:
+                    to_move.append(known.obstacle)
             else:
                 known = self._known_obstacles.create_or_get(name=obstacle.name, obstacle=obstacle)
             if not known.spawned:
                 to_register.append(known)
+
+        if to_respawn:
+            await self._simulator.pedestrian_delete(to_respawn)
         if to_move:
             futures.append(self._simulator.pedestrian_move(to_move))
 
@@ -249,6 +277,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if to_spawn:
             futures.append(self._simulator.pedestrian_spawn(await self._ensure_spawnable(to_spawn)))
         await asyncio.gather(*futures)
+
+        if obstacles:
+            self._spawned_driver = self._episode_driver
 
     _PEDESTRIAN_FALLBACK: typing.ClassVar[str] = "arenian"
 
