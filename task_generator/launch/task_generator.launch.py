@@ -120,7 +120,17 @@ def generate_launch_description():
         default_value="",
         description="empty = derive from arena_sim ({dummy: manual, gazebo|isaac: arena})",
     )
-    robot = LaunchArgument(name="robot", default_value="auto")
+    enable_auditory = LaunchArgument(
+        name="enable_auditory",
+        default_value="false",
+        description="Start auditory propagation, robot hearing, sound playback, and robot sound nodes.",
+    )
+    propagation_backend = LaunchArgument(
+        name="propagation_backend",
+        default_value="level3",
+        description="Auditory propagation backend: level3 or pyroomacoustics.",
+    )
+    robot = LaunchArgument(name="robot", default_value="jackal")
     tm_robots = LaunchArgument(name="tm_robots", default_value="explore")
     task_config = LaunchArgument(name="task_config", default_value="")
     episodes = LaunchArgument(
@@ -231,6 +241,8 @@ def generate_launch_description():
             launch_arguments={
                 "simulator": human_val,
                 "namespace": allocated_ns,
+                "enable_auditory": enable_auditory.substitution,
+                "propagation_backend": propagation_backend.substitution,
             }.items(),
         )
 

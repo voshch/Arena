@@ -1,0 +1,55 @@
+from __future__ import annotations
+from dataclasses import dataclass
+import shapely
+from geometry_msgs.msg import Point
+
+
+@dataclass(frozen=True)
+class AcousticWall:
+    start: tuple[float, float]
+    end: tuple[float, float]
+    material_id: str
+
+    @property
+    def geometry(self) -> shapely.LineString:
+        return shapely.LineString([self.start, self.end])
+
+
+@dataclass(frozen=True)
+class AcousticZone:
+    name: str
+    polygon: shapely.Polygon
+    floor_material_id: str
+
+
+@dataclass(frozen=True)
+class AcousticScene:
+    zones: tuple[AcousticZone, ...]
+    walls: tuple[AcousticWall, ...]
+    ceiling_height_m: float = 3.0
+
+    @classmethod
+    def from_world(cls, world) -> "AcousticScene":
+        zones = []
+        walls = []
+
+        for zone in world.zones:
+            polygon = shapely.Polygon([(corner.x, corner.y) for corner in zone.corners])
+            zones.append(AcousticZone( name=zone.name, polygon=polygon, floor_material_id=zone.material.name))
+
+            for wall in zone.walls:
+                material_id = (wall.material.name if wall.material is not None else "default")
+                walls.append(AcousticWall(start=(wall.start.x, wall.start.y), end=(wall.end.x, wall.end.y),material_id=material_id))
+
+        return cls(zones=tuple(zones), walls=tuple(walls))
+
+    def zone_at(self, point: Point) -> AcousticZone | None:
+        return self.zone_at_xy(point.x, point.y)
+
+    def zone_at_xy(self, x: float, y: float) -> AcousticZone | None:
+        candidate = shapely.Point(float(x), float(y))
+        return next((zone for zone in self.zones if zone.polygon.covers(candidate)), None)
+
+    def intersecting_walls(self, source: Point, listener: Point) -> list[AcousticWall]:
+        path = shapely.LineString([(source.x, source.y), (listener.x, listener.y)])
+        return [wall for wall in self.walls if path.crosses(wall.geometry)]
