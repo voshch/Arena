@@ -29,17 +29,79 @@ class AudioMixer:
         self._voices: list[Voice] = []
         self._lock = threading.Lock()
         self._master_gain = 10.0 ** (master_gain_db / 20.0)
+        self._callback_count = 0
+        self._last_output_peak = 0.0
+        self._last_status = ""
 
-        self._stream = sd.OutputStream(samplerate=sample_rate,channels=channels,dtype="float32", blocksize=block_size, device=device, callback=self._callback)
+        try:
+            sd.query_devices(device, "output")
+            self._stream = sd.OutputStream(
+                samplerate=sample_rate,
+                channels=channels,
+                dtype="float32",
+                blocksize=block_size,
+                device=device,
+                callback=self._callback,
+            )
+        except (ValueError, sd.PortAudioError) as exc:
+            available = [
+                f"{index}: {description['name']}"
+                for index, description in enumerate(sd.query_devices())
+                if int(description["max_output_channels"]) > 0
+            ]
+            requested = "default" if device is None else repr(device)
+            raise RuntimeError(
+                f"cannot open requested audio output {requested}: {exc}; "
+                f"available outputs={available or ['none']}"
+            ) from exc
         self._stream.start()
 
-    def play(self,sample: CachedSample,*,loop: bool = False,gain_db: float = 0.0) -> None:
+    @property
+    def active(self) -> bool:
+        return bool(self._stream.active)
+
+    @property
+    def device(self):
+        return self._stream.device
+
+    @property
+    def voice_count(self) -> int:
+        with self._lock:
+            return len(self._voices)
+
+    @property
+    def callback_count(self) -> int:
+        return self._callback_count
+
+    @property
+    def last_output_peak(self) -> float:
+        return self._last_output_peak
+
+    @property
+    def last_status(self) -> str:
+        return self._last_status
+
+    def play(
+        self,
+        sample: CachedSample,
+        *,
+        loop: bool = False,
+        gain_db: float = 0.0,
+        voice_id: str | None = None,
+    ) -> None:
         voice = Voice(
             sample=sample,
             loop=loop,
             gain=10.0 ** (gain_db / 20.0),
+            voice_id=voice_id,
         )
         with self._lock:
+            if voice_id is not None:
+                self._voices = [
+                    active
+                    for active in self._voices
+                    if active.voice_id != voice_id
+                ]
             self._voices.append(voice)
 
     def play_looping_sequence(
@@ -88,7 +150,9 @@ class AudioMixer:
 
     def _callback(self, outdata, frames, time_info, status) -> None:
         del time_info
+        self._callback_count = getattr(self, "_callback_count", 0) + 1
         if status:
+            self._last_status = str(status)
             print(f"audio callback status: {status}", flush=True)
         outdata.fill(0.0)
 
@@ -126,6 +190,7 @@ class AudioMixer:
 
         outdata *= self._master_gain
         np.clip(outdata, -1.0, 1.0, out=outdata)
+        self._last_output_peak = float(np.max(np.abs(outdata)))
 
     @staticmethod
     def _advance_voice(voice: Voice) -> bool:
@@ -155,6 +220,8 @@ class AudioMixer:
             return False
 
         if voice.loop:
+            if voice.stop_requested:
+                return False
             voice.position = 0
             return True
         return False
@@ -163,4 +230,10 @@ class AudioMixer:
     def _voice_is_active(voice: Voice) -> bool:
         if voice.position < len(voice.sample.samples):
             return True
+        if (
+            voice.stage == "single"
+            and voice.loop
+            and voice.stop_requested
+        ):
+            return False
         return voice.stage in {"intro", "loop"} or voice.loop

@@ -89,7 +89,7 @@ def _make_heard_sound_event():
     return event
 
 def _make_robot_fleet(robot_name: str, namespace: str):
-    from task_generator_msgs.msg import RobotDescriptor, RobotFleet
+    from task_generator_msgs.msg import RobotDescriptor, RobotFleet, RobotState
 
     robot = RobotDescriptor()
     robot.name = robot_name
@@ -98,13 +98,18 @@ def _make_robot_fleet(robot_name: str, namespace: str):
     robot.frame = robot_name
 
     fleet = RobotFleet()
-    fleet.robots.append(robot)
+    state = RobotState()
+    state.descriptor = robot
+    fleet.robots.append(state)
     return fleet
 
 def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
     import rclpy
     from rclpy.parameter import Parameter
+    from rclpy.qos import DurabilityPolicy
     from arena_people_msgs.msg import Pedestrians
+    from geometry_msgs.msg import Point
+    from nav_msgs.msg import OccupancyGrid
     from task_generator.auditory.qos_profiles import transient_event_qos
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode
     from task_generator_msgs.msg import HeardSoundEvent, SoundEvent
@@ -126,7 +131,16 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
             Parameter("map_topic", Parameter.Type.STRING, map_topic),
             Parameter("robot_fleet_topic", Parameter.Type.STRING, robot_fleet_topic),
             Parameter("world_topic", Parameter.Type.STRING, world_topic),
+            Parameter(
+                "pyroom_robot_listeners_only",
+                Parameter.Type.BOOL,
+                False,
+            ),
         ],
+    )
+    assert (
+        propagation._world_subscription.qos_profile.durability
+        == DurabilityPolicy.TRANSIENT_LOCAL
     )
 
     emitter = rclpy.create_node(f"sound_event_emitter_{suffix}")
@@ -176,13 +190,80 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
         assert heard.propagation_backend == "legacy_distance_occlusion"
         assert heard.used_backend_fallback is False
         assert heard.backend_fallback_reason == ""
+        assert heard.portal_ids == []
+        assert heard.traversed_zones == []
+        assert heard.portal_hop_count == 0
         assert heard.received_volume_db == pytest.approx(
             60.0 - 20.0 * math.log10(5.0),
             abs=1e-3,
         )
+
+        # Runtime maps are shifted into the environment frame. Auditory
+        # positions remain in authored world coordinates.
+        shifted_map = OccupancyGrid()
+        shifted_map.info.width = 510
+        shifted_map.info.height = 695
+        shifted_map.info.resolution = 0.05
+        shifted_map.info.origin.position.x = 4.75
+        shifted_map.info.origin.position.y = 4.70
+        shifted_map.info.origin.orientation.w = 1.0
+        propagation._map = shifted_map
+        propagation._authored_map_origin = (-0.25, -0.25)
+        assert propagation._map_frame_offset() == pytest.approx(
+            (5.0, 4.95)
+        )
+        assert propagation._world_to_grid(
+            Point(x=0.0, y=0.0)
+        ) == (5, 5)
     finally:
         emitter.destroy_node()
         consumer.destroy_node()
+        propagation.destroy_node()
+
+
+def test_robot_only_policy_excludes_pedestrian_listeners(rclpy_context):
+    from geometry_msgs.msg import Point
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+
+    propagation = SoundPropagationNode(
+        parameter_overrides=[
+            Parameter(
+                "pyroom_robot_listeners_only",
+                Parameter.Type.BOOL,
+                True,
+            ),
+        ]
+    )
+    propagation._peds = {
+        1: _make_pedestrian(1, 1.0, 1.0),
+        2: _make_pedestrian(2, 2.0, 2.0),
+    }
+    propagation._robots = {
+        "robot:jackal": Point(x=3.0, y=3.0, z=0.0),
+    }
+    event = _make_sound_event()
+    event.source_agent_id = 1
+
+    try:
+        assert set(propagation._listeners_for_event(event)) == {
+            "robot:jackal"
+        }
+
+        propagation.set_parameters([
+            Parameter(
+                "pyroom_robot_listeners_only",
+                Parameter.Type.BOOL,
+                False,
+            )
+        ])
+        assert set(propagation._listeners_for_event(event)) == {
+            "agent:2",
+            "robot:jackal",
+        }
+    finally:
         propagation.destroy_node()
 
 
@@ -333,22 +414,20 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
         propagation.destroy_node()
 
 
-def test_motor_sound_publishes_colored_arcs_and_clears_them(rclpy_context):
+def test_motor_sound_publishes_cone_and_clears_it(rclpy_context):
     import rclpy
-    from geometry_msgs.msg import Point
+    from nav_msgs.msg import Odometry
     from rclpy.parameter import Parameter
     from task_generator.auditory.qos_profiles import transient_event_qos
-    from task_generator.auditory.robot_sound_node import (
-        RobotSoundNode,
-        RobotSoundSource,
-    )
+    from task_generator.auditory.robot_sound_node import RobotSoundNode
     from visualization_msgs.msg import Marker, MarkerArray
 
     suffix = f"t_{uuid.uuid4().hex[:8]}"
-    marker_topic = f"/test/{suffix}/human_sound_markers"
+    namespace = f"/test/{suffix}"
+    marker_topic = f"{namespace}/robot1/motor_sound_markers"
     motor = RobotSoundNode(
+        namespace=namespace,
         parameter_overrides=[
-            Parameter("motor_marker_topic", Parameter.Type.STRING, marker_topic),
             Parameter(
                 "sound_events_topic",
                 Parameter.Type.STRING,
@@ -371,20 +450,31 @@ def test_motor_sound_publishes_colored_arcs_and_clears_them(rclpy_context):
         received.append,
         transient_event_qos(depth=10),
     )
-    motor._robots["robot1"] = RobotSoundSource(
-        name="robot1",
-        namespace="/robot1",
-        position=Point(x=2.0, y=3.0, z=0.0),
-        marker_frame_id="robot1/base_link",
+    motor._cb_robot_fleet(
+        _make_robot_fleet("robot1", f"{namespace}/robot1")
     )
-    motor._last_speed["robot1"] = 0.2
+    odom = Odometry()
+    odom.pose.pose.position.x = 2.0
+    odom.pose.pose.position.y = 3.0
+    odom.pose.pose.orientation.w = 1.0
+    odom.twist.twist.linear.x = 0.2
+    motor._cb_odom("robot1", odom)
 
     try:
+        assert motor._marker_pub is None
+        assert motor._marker_pubs["robot1"].topic_name == marker_topic
         assert motor._robot_base_frame("jackal", "robot1") == "robot1/base_link"
+        assert f"{namespace}/robot1/odom" in motor._robot_odom_topics(
+            model_name="jackal",
+            namespace=f"{namespace}/robot1",
+            robot_name="robot1",
+        )
         _spin_until(
             rclpy,
             [motor, consumer],
-            lambda: motor._marker_pub.get_subscription_count() > 0,
+            lambda: (
+                motor._marker_pubs["robot1"].get_subscription_count() > 0
+            ),
         )
         motor._publish_robot_sounds()
         _spin_until(
@@ -402,18 +492,23 @@ def test_motor_sound_publishes_colored_arcs_and_clears_them(rclpy_context):
             for marker in message.markers
             if marker.action == Marker.ADD
         ]
-        assert len(added) == 3
-        assert all(marker.type == Marker.LINE_STRIP for marker in added)
+        assert len(added) == 2
+        assert {marker.type for marker in added} == {
+            Marker.TRIANGLE_LIST,
+            Marker.LINE_STRIP,
+        }
         assert all(marker.header.frame_id == "robot1/base_link" for marker in added)
         assert all(len(marker.points) > 12 for marker in added)
         assert max(
             abs(point.x)
             for marker in added
             for point in marker.points
-        ) < 1.1
-        assert len(
-            {(marker.color.r, marker.color.g, marker.color.b) for marker in added}
-        ) == 3
+        ) <= 1.25
+        assert all(
+            (marker.color.r, marker.color.g, marker.color.b)
+            == pytest.approx((1.0, 0.55, 0.05))
+            for marker in added
+        )
 
         received.clear()
         motor._last_speed["robot1"] = 0.0
@@ -433,7 +528,290 @@ def test_motor_sound_publishes_colored_arcs_and_clears_them(rclpy_context):
             for marker in message.markers
             if marker.action == Marker.DELETE
         ]
-        assert len(deleted) == 3
+        assert len(deleted) == 2
+
+        # In-place rotation also drives the motors even when linear velocity
+        # is effectively zero.
+        received.clear()
+        odom.twist.twist.linear.x = 0.0
+        odom.twist.twist.angular.z = 1.0
+        motor._cb_odom("robot1", odom)
+        assert motor._last_speed["robot1"] == pytest.approx(0.25)
+        motor._publish_robot_sounds()
+        _spin_until(
+            rclpy,
+            [motor, consumer],
+            lambda: any(
+                marker.action == Marker.ADD
+                for message in received
+                for marker in message.markers
+            ),
+        )
+
+        # Disabling the source at runtime clears its marker and leaves the
+        # robot available as a listener.
+        received.clear()
+        motor.set_parameters([
+            Parameter(
+                "enable_robot_sound",
+                Parameter.Type.BOOL,
+                False,
+            )
+        ])
+        motor._publish_robot_sounds()
+        _spin_until(
+            rclpy,
+            [motor, consumer],
+            lambda: any(
+                marker.action == Marker.DELETE
+                for message in received
+                for marker in message.markers
+            ),
+        )
+        assert motor._robots["robot1"].moving is False
     finally:
         consumer.destroy_node()
         motor.destroy_node()
+
+
+def test_human_sound_node_publishes_footstep_and_cone(rclpy_context):
+    import rclpy
+    from arena_people_msgs.msg import Pedestrians
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.human_sound_node import HumanSoundNode
+    from task_generator.auditory.qos_profiles import transient_event_qos
+    from task_generator_msgs.msg import SoundEvent
+    from visualization_msgs.msg import Marker, MarkerArray
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    sound_topic = f"/test/{suffix}/human_sound_events"
+    marker_topic = f"/test/{suffix}/pedestrian_markers/extra"
+    producer = HumanSoundNode(
+        parameter_overrides=[
+            Parameter(
+                "sound_events_topic",
+                Parameter.Type.STRING,
+                sound_topic,
+            ),
+            Parameter(
+                "sound_markers_topic",
+                Parameter.Type.STRING,
+                marker_topic,
+            ),
+        ]
+    )
+    consumer = rclpy.create_node(f"human_sound_consumer_{suffix}")
+    sounds: list[SoundEvent] = []
+    markers: list[MarkerArray] = []
+    consumer.create_subscription(
+        SoundEvent,
+        sound_topic,
+        sounds.append,
+        transient_event_qos(),
+    )
+    consumer.create_subscription(
+        MarkerArray,
+        marker_topic,
+        markers.append,
+        transient_event_qos(depth=10),
+    )
+    pedestrians = Pedestrians()
+    pedestrian = _make_pedestrian(7, 1.0, 2.0)
+    pedestrian.twist.linear.x = 0.4
+    pedestrians.pedestrians.append(pedestrian)
+
+    try:
+        _spin_until(
+            rclpy,
+            [producer, consumer],
+            lambda: (
+                producer._sound_publisher.get_subscription_count() > 0
+                and producer._marker_publisher.get_subscription_count() > 0
+            ),
+        )
+        producer._on_pedestrians(pedestrians)
+        _spin_until(
+            rclpy,
+            [producer, consumer],
+            lambda: bool(sounds and markers),
+        )
+        assert sounds[-1].sound_type == "footstep"
+        assert sounds[-1].semantic_tags == ["walk", "default"]
+        assert {marker.type for marker in markers[-1].markers} == {
+            Marker.TRIANGLE_LIST,
+            Marker.LINE_STRIP,
+        }
+    finally:
+        consumer.destroy_node()
+        producer.destroy_node()
+
+
+def test_human_sound_detector_uses_pose_when_twist_is_zero():
+    from arena_people_msgs.msg import Pedestrians
+    from task_generator.simulators.human.auditory_events import (
+        AuditoryEventDetector,
+    )
+
+    emitted: list[tuple[str, int]] = []
+    detector = AuditoryEventDetector(
+        lambda sound_type, ped: emitted.append((sound_type, int(ped.id))),
+        walking_speed_threshold=0.05,
+        footstep_interval_sec=0.45,
+    )
+    first = Pedestrians()
+    first.pedestrians.append(_make_pedestrian(9, 1.0, 2.0))
+    detector.update(first, 1.0)
+    assert emitted == []
+
+    moved = Pedestrians()
+    moved.pedestrians.append(_make_pedestrian(9, 1.2, 2.0))
+    detector.update(moved, 1.5)
+    assert emitted == [("footstep", 9)]
+
+
+def test_propagation_visualizer_splits_pedestrian_and_robot_markers(
+    rclpy_context,
+):
+    import rclpy
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_visualizer import (
+        SoundPropagationVisualizer,
+    )
+    from visualization_msgs.msg import MarkerArray
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    pedestrian_topic = f"/test/{suffix}/pedestrian_propagation"
+    robot_topic = f"/test/{suffix}/robot_propagation"
+    visualizer = SoundPropagationVisualizer(
+        parameter_overrides=[
+            Parameter(
+                "pedestrian_marker_topic",
+                Parameter.Type.STRING,
+                pedestrian_topic,
+            ),
+            Parameter(
+                "robot_marker_topic",
+                Parameter.Type.STRING,
+                robot_topic,
+            ),
+        ]
+    )
+    consumer = rclpy.create_node(f"propagation_marker_consumer_{suffix}")
+    pedestrian_markers: list[MarkerArray] = []
+    robot_markers: list[MarkerArray] = []
+    consumer.create_subscription(
+        MarkerArray,
+        pedestrian_topic,
+        pedestrian_markers.append,
+        10,
+    )
+    consumer.create_subscription(
+        MarkerArray,
+        robot_topic,
+        robot_markers.append,
+        10,
+    )
+
+    try:
+        _spin_until(
+            rclpy,
+            [visualizer, consumer],
+            lambda: (
+                visualizer._pedestrian_publisher.get_subscription_count() > 0
+                and visualizer._robot_publisher.get_subscription_count() > 0
+            ),
+        )
+        not_ready_event = _make_heard_sound_event()
+        not_ready_event.listener_id = "agent:3"
+        not_ready_event.used_backend_fallback = True
+        not_ready_event.backend_fallback_reason = "acoustic_scene_not_loaded"
+        visualizer._callback(not_ready_event)
+        for _ in range(3):
+            rclpy.spin_once(consumer, timeout_sec=0.02)
+        assert pedestrian_markers == []
+        assert robot_markers == []
+
+        pedestrian_event = _make_heard_sound_event()
+        pedestrian_event.listener_id = "agent:3"
+        visualizer._callback(pedestrian_event)
+        _spin_until(
+            rclpy,
+            [visualizer, consumer],
+            lambda: bool(pedestrian_markers),
+        )
+        assert robot_markers == []
+        pedestrian_color = pedestrian_markers[-1].markers[0].color
+        assert pedestrian_color.b == pytest.approx(1.0)
+        assert pedestrian_color.r == pytest.approx(0.10)
+
+        robot_event = _make_heard_sound_event()
+        robot_event.listener_id = "robot:jackal"
+        robot_event.propagation_backend = "pyroomacoustics_multi_portal"
+        robot_event.portal_ids = ["door:a", "opening:b"]
+        robot_event.traversed_zones = ["room_a", "hall", "room_b"]
+        robot_event.portal_hop_count = 2
+        robot_event.portal_route_loss_db = 3.5
+        from geometry_msgs.msg import Point
+        robot_event.portal_positions = [
+            Point(x=0.25, y=0.0, z=1.0),
+            Point(x=0.75, y=0.0, z=1.0),
+        ]
+        visualizer._callback(robot_event)
+        _spin_until(
+            rclpy,
+            [visualizer, consumer],
+            lambda: bool(robot_markers),
+        )
+        robot_color = robot_markers[-1].markers[0].color
+        assert robot_color.r == pytest.approx(0.65)
+        assert robot_color.b == pytest.approx(1.0)
+        path = next(
+            marker
+            for marker in robot_markers[-1].markers
+            if marker.ns == "robot_sound_propagation_path"
+        )
+        assert len(path.points) == 4
+        portals = [
+            marker
+            for marker in robot_markers[-1].markers
+            if marker.ns == "robot_acoustic_portal"
+        ]
+        assert len(portals) == 2
+        text = next(
+            marker
+            for marker in robot_markers[-1].markers
+            if marker.ns == "robot_sound_propagation_backend"
+        )
+        assert "2 portal(s)" in text.text
+        assert "3.5 dB" in text.text
+
+        previous_path_id = path.id
+        latest_event = _make_heard_sound_event()
+        latest_event.listener_id = "robot:jackal"
+        latest_event.source_position.x = 2.0
+        visualizer._callback(latest_event)
+        _spin_until(
+            rclpy,
+            [visualizer, consumer],
+            lambda: len(robot_markers) >= 2,
+        )
+        latest_path = next(
+            marker
+            for marker in robot_markers[-1].markers
+            if marker.ns == "robot_sound_propagation_path"
+        )
+        assert latest_path.id == previous_path_id
+        assert latest_path.points[0].x == pytest.approx(2.0)
+        assert len(latest_path.points) == 2
+        stale_portals = [
+            marker
+            for marker in robot_markers[-1].markers
+            if (
+                marker.ns == "robot_acoustic_portal"
+                and marker.action == marker.DELETE
+            )
+        ]
+        assert len(stale_portals) == 2
+    finally:
+        consumer.destroy_node()
+        visualizer.destroy_node()

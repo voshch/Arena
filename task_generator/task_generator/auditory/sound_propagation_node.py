@@ -1,23 +1,32 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import rclpy
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
 from arena_simulation_setup.tree.World import WorldIdentifier
 from geometry_msgs.msg import Point
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
+from shapely.geometry import Point as ShapelyPoint
 from std_msgs.msg import String
 from task_generator.auditory.acoustic_scene import AcousticScene
 from task_generator.auditory.acoustic_world_graph import AcousticWorldGraph
 from task_generator.auditory.material_catalog import AcousticMaterialCatalog
 from task_generator.auditory.propagation import Level3Propagation
-from task_generator_msgs.msg import AcousticPath, HeardSoundEvent, RobotFleet, SoundEvent
+from task_generator_msgs.msg import (
+    AcousticPath,
+    EpisodeRecord,
+    HeardSoundEvent,
+    RobotFleet,
+    SoundEvent,
+)
 from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
 from task_generator.auditory.acoustic_room_spec import (
     AcousticRoomSpec,
@@ -31,7 +40,7 @@ from task_generator.auditory.pyroomacoustics_adapter import (
     RoomImpulseResponse,
 )
 from task_generator.auditory.portal_coupling import (
-    OneDoorRirCoupler,
+    MultiPortalRirCoupler,
     PortalCouplingConfig,
     PortalCouplingResult,
 )
@@ -55,6 +64,7 @@ class SoundPropagationNode(Node):
         self.declare_parameter("publish_inaudible", True)
         self.declare_parameter("robots_hear_self", True)
         self.declare_parameter("world_topic", "state/world")
+        self.declare_parameter("episode_topic", "state/episode")
         self.declare_parameter("odom_topic_template", "{namespace}/{name}_velocity_controller/odom")
         self.declare_parameter("propagation_backend", "level3")
         self.declare_parameter("pyroom_sample_rate_hz", 44100)
@@ -62,29 +72,60 @@ class SoundPropagationNode(Node):
         self.declare_parameter("pyroom_temperature_c", 20.0)
         self.declare_parameter("pyroom_relative_humidity_percent", 50.0)
         self.declare_parameter("pyroom_ceiling_height_m", 3.0)
+        self.declare_parameter(
+            "pyroom_cache_position_quantization_m",
+            0.25,
+        )
+        self.declare_parameter("pyroom_cache_size", 512)
         self.declare_parameter("portal_adjacency_tolerance_m", 0.08)
         self.declare_parameter("portal_inset_m", 0.03)
         self.declare_parameter("portal_loss_db", 3.0)
+        self.declare_parameter("opening_portal_loss_db", 0.5)
+        self.declare_parameter("derive_opening_portals", True)
+        self.declare_parameter("minimum_opening_width_m", 0.30)
+        self.declare_parameter("enable_multi_portal_rir", True)
+        self.declare_parameter("max_portal_hops", 4)
+        self.declare_parameter("route_distance_loss_db_per_m", 0.05)
         self.declare_parameter("portal_source_early_window_sec", 0.08)
         self.declare_parameter("portal_max_rir_duration_sec", 2.0)
         self.declare_parameter("portal_position_quantization_m", 0.10)
         self.declare_parameter("portal_rir_cache_size", 256)
         self.declare_parameter("validate_zone_coverage", True)
         self.declare_parameter("zone_coverage_stride_cells", 10)
+        self.declare_parameter("zone_coverage_tolerance_m", 0.10)
+        self.declare_parameter("buffer_events_until_scene_loaded", True)
+        self.declare_parameter("scene_event_buffer_size", 128)
+        self.declare_parameter("pyroom_robot_listeners_only", True)
+        self.declare_parameter("compute_rir_in_propagation", False)
         self._scene: AcousticScene | None = None
         self._world_name = ""
         self._pending_world_name = ""
         self._world_load_future: Future | None = None
         self._world_loader = ThreadPoolExecutor(max_workers=1)
-        self.create_subscription(String, str(self.get_parameter("world_topic").value), self._cb_world, 1)
+        self._world_subscription = self.create_subscription(
+            String,
+            str(self.get_parameter("world_topic").value),
+            self._cb_world,
+            acoustic_metadata_qos(),
+        )
+        self._episode_subscription = self.create_subscription(
+            EpisodeRecord,
+            str(self.get_parameter("episode_topic").value),
+            self._cb_episode_world,
+            acoustic_metadata_qos(depth=20),
+        )
         self._world_load_timer = self.create_timer(0.1, self._poll_world_load)
         self._peds: dict[int, object] = {}
         self._robots: dict[str, Point] = {}
         self._map: OccupancyGrid | None = None
         self._world_graph: AcousticWorldGraph | None = None
-        self._portal_coupler: OneDoorRirCoupler | None = None
+        self._portal_coupler: MultiPortalRirCoupler | None = None
         self._coverage_signature: tuple[object, ...] | None = None
+        self._authored_map_origin: tuple[float, float] | None = None
         self._reported_routes: set[tuple[str, str, str, str]] = set()
+        self._pending_events: deque[
+            tuple[SoundEvent, dict[str, Point]]
+        ] = deque()
         self._odom_subs = []
         sound_events_topic = str(self.get_parameter("sound_events_topic").value)
         heard_sound_events_topic = str(self.get_parameter("heard_sound_events_topic").value)
@@ -125,7 +166,15 @@ class SoundPropagationNode(Node):
                     relative_humidity_percent=float(
                         self.get_parameter(
                             "pyroom_relative_humidity_percent"
+                            ).value
+                    ),
+                    cache_position_quantization_m=float(
+                        self.get_parameter(
+                            "pyroom_cache_position_quantization_m"
                         ).value
+                    ),
+                    cache_size=int(
+                        self.get_parameter("pyroom_cache_size").value
                     ),
                 )
                 self._pra_adapter = PyroomacousticsAdapter(
@@ -158,6 +207,12 @@ class SoundPropagationNode(Node):
             return
 
         self._start_world_load(world_name)
+
+    def _cb_episode_world(self, msg: EpisodeRecord) -> None:
+        """Recover the world even if a launch missed the standalone state topic."""
+        world_name = str(msg.world).strip()
+        if world_name:
+            self._cb_world(String(data=world_name))
     
     def _start_world_load(self, world_name: str) -> None:
         self.get_logger().info(f"loading acoustic scene for world {world_name!r}")
@@ -167,6 +222,10 @@ class SoundPropagationNode(Node):
             world_name,
             float(self.get_parameter("pyroom_ceiling_height_m").value),
             float(self.get_parameter("portal_adjacency_tolerance_m").value),
+            bool(self.get_parameter("derive_opening_portals").value),
+            float(self.get_parameter("minimum_opening_width_m").value),
+            float(self.get_parameter("portal_loss_db").value),
+            float(self.get_parameter("opening_portal_loss_db").value),
         )
     
     @staticmethod
@@ -174,14 +233,28 @@ class SoundPropagationNode(Node):
         world_name: str,
         ceiling_height_m: float,
         adjacency_tolerance_m: float,
+        derive_opening_portals: bool,
+        minimum_opening_width_m: float,
+        door_portal_loss_db: float,
+        opening_portal_loss_db: float,
     ) -> tuple[
         str,
         AcousticScene,
         tuple[AcousticRoomSpec, ...],
         AcousticWorldGraph,
+        tuple[float, float] | None,
     ]:
         world_view = WorldIdentifier(world_name).resolve_sync()
         world_description = world_view.load()
+        authored_map_origin = None
+        for level_id in sorted(world_description.levels):
+            map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
+            if not map_yaml.exists():
+                continue
+            map_config = yaml.safe_load(map_yaml.read_text(encoding="utf-8"))
+            origin = map_config.get("origin", (0.0, 0.0, 0.0))
+            authored_map_origin = (float(origin[0]), float(origin[1]))
+            break
 
         scene = AcousticScene.from_world(world_description)
 
@@ -195,9 +268,13 @@ class SoundPropagationNode(Node):
             world_description,
             room_specs,
             adjacency_tolerance_m=adjacency_tolerance_m,
+            derive_opening_portals=derive_opening_portals,
+            minimum_opening_width_m=minimum_opening_width_m,
+            door_portal_loss_db=door_portal_loss_db,
+            opening_portal_loss_db=opening_portal_loss_db,
         )
 
-        return world_name, scene, room_specs, graph
+        return world_name, scene, room_specs, graph, authored_map_origin
     
     def _poll_world_load(self) -> None:
         if self._world_load_future is None:
@@ -210,7 +287,13 @@ class SoundPropagationNode(Node):
         self._world_load_future = None
 
         try:
-            world_name, scene, room_specs, graph = future.result()
+            (
+                world_name,
+                scene,
+                room_specs,
+                graph,
+                authored_map_origin,
+            ) = future.result()
         except Exception as exc:
             self.get_logger().error(f"failed to load acoustic scene: {exc!r}")
             return
@@ -219,9 +302,10 @@ class SoundPropagationNode(Node):
         self._room_specs = room_specs
         self._world_graph = graph
         self._world_name = world_name
+        self._authored_map_origin = authored_map_origin
         self._coverage_signature = None
         self._portal_coupler = (
-            OneDoorRirCoupler(
+            MultiPortalRirCoupler(
                 self._pra_adapter,
                 graph,
                 world_name=world_name,
@@ -231,20 +315,27 @@ class SoundPropagationNode(Node):
         )
         self.get_logger().info(
             f"loaded acoustic scene for world {world_name!r} "
-            f"({len(room_specs)} rooms, {len(graph.portals)} paired portals, "
+            f"({len(room_specs)} rooms, "
+            f"{sum(p.portal_kind == 'door' for p in graph.portals)} door portals, "
+            f"{sum(p.portal_kind == 'opening' for p in graph.portals)} opening portals, "
+            f"{len(graph.connected_components())} connected components, "
             f"{len(graph.unpaired_doors)} unpaired doors)"
         )
         for door in graph.unpaired_doors:
-            self.get_logger().warning(
+            self.get_logger().info(
                 f"acoustic door {door.door_name!r} in {door.owner_zone!r} "
                 f"was not paired: {door.reason}"
             )
         for portal in graph.portals:
             self.get_logger().info(
                 f"acoustic portal {portal.portal_id}: {portal.zone_a!r} "
-                f"<-> {portal.zone_b!r}, material={portal.material_id!r}"
+                f"<-> {portal.zone_b!r}, kind={portal.portal_kind!r}, "
+                f"material={portal.material_id!r}, loss={portal.loss_db} dB"
             )
         self._validate_acoustic_zone_coverage()
+        while self._pending_events:
+            event, listeners = self._pending_events.popleft()
+            self._publish_event_to_listeners(event, listeners)
 
         if self._pending_world_name and self._pending_world_name != self._world_name:
             self._start_world_load(self._pending_world_name)
@@ -271,6 +362,17 @@ class SoundPropagationNode(Node):
                 self.get_parameter("portal_position_quantization_m").value
             ),
             cache_size=int(self.get_parameter("portal_rir_cache_size").value),
+            opening_portal_loss_db=float(
+                self.get_parameter("opening_portal_loss_db").value
+            ),
+            max_portal_hops=(
+                int(self.get_parameter("max_portal_hops").value)
+                if bool(self.get_parameter("enable_multi_portal_rir").value)
+                else 1
+            ),
+            route_distance_loss_db_per_m=float(
+                self.get_parameter("route_distance_loss_db_per_m").value
+            ),
         )
 
     def _validate_acoustic_zone_coverage(self) -> None:
@@ -284,6 +386,12 @@ class SoundPropagationNode(Node):
         stride = max(
             int(self.get_parameter("zone_coverage_stride_cells").value), 1
         )
+        coverage_tolerance = max(
+            float(
+                self.get_parameter("zone_coverage_tolerance_m").value
+            ),
+            0.0,
+        )
         signature = (
             self._world_name,
             info.width,
@@ -292,6 +400,8 @@ class SoundPropagationNode(Node):
             info.origin.position.x,
             info.origin.position.y,
             stride,
+            coverage_tolerance,
+            self._authored_map_origin,
         )
         if signature == self._coverage_signature:
             return
@@ -317,8 +427,17 @@ class SoundPropagationNode(Node):
                 local_y = (grid_y + 0.5) * info.resolution
                 world_x = info.origin.position.x + cos_yaw * local_x - sin_yaw * local_y
                 world_y = info.origin.position.y + sin_yaw * local_x + cos_yaw * local_y
+                offset_x, offset_y = self._map_frame_offset()
+                world_x -= offset_x
+                world_y -= offset_y
                 traversable += 1
-                if self._scene.zone_at_xy(world_x, world_y) is None:
+                sample = ShapelyPoint(world_x, world_y)
+                if not any(
+                    zone.polygon.buffer(coverage_tolerance).covers(
+                        sample
+                    )
+                    for zone in self._scene.zones
+                ):
                     if len(uncovered) < 8:
                         uncovered.append((world_x, world_y))
 
@@ -329,17 +448,55 @@ class SoundPropagationNode(Node):
             )
         else:
             examples = ", ".join(f"({x:.2f},{y:.2f})" for x, y in uncovered)
+            map_width_m = info.width * info.resolution
+            map_height_m = info.height * info.resolution
+            offset_x, offset_y = self._map_frame_offset()
+            zone_bounds = ", ".join(
+                f"{zone.name}={tuple(round(v, 2) for v in zone.polygon.bounds)}"
+                for zone in self._scene.zones
+            )
             self.get_logger().warning(
                 "traversable map locations exist outside all acoustic zones; "
-                f"first samples: {examples}. These events will log an explicit "
-                "backend fallback reason."
+                f"map(frame={self._map.header.frame_id!r}, "
+                f"cells={info.width}x{info.height}, "
+                f"size={map_width_m:.2f}x{map_height_m:.2f} m, "
+                f"resolution={info.resolution:.3f}, "
+                f"origin=({info.origin.position.x:.2f},"
+                f"{info.origin.position.y:.2f}), yaw={yaw:.3f}); "
+                f"runtime-to-acoustic offset=({offset_x:.2f},"
+                f"{offset_y:.2f}); "
+                f"zone bounds: {zone_bounds}; first samples: {examples}. "
+                "These events will log an explicit backend fallback reason."
             )
 
+    # def _cb_robot_fleet(self, msg: RobotFleet) -> None:
+    #     for robot in msg.robots:
+    #         # topic = f"{robot.ns}/odom"
+    #         topic = str(self.get_parameter("odom_topic_template").value).format(namespace=str(robot.ns).rstrip("/"),name=str(robot.name))
+    #         sub = self.create_subscription(Odometry, topic, lambda odom, name=robot.name: self._cb_robot_odom(name, odom), 10)
+    #         self._odom_subs.append(sub)
+
     def _cb_robot_fleet(self, msg: RobotFleet) -> None:
-        for robot in msg.robots:
-            # topic = f"{robot.ns}/odom"
-            topic = str(self.get_parameter("odom_topic_template").value).format(namespace=str(robot.ns).rstrip("/"),name=str(robot.name))
-            sub = self.create_subscription(Odometry, topic, lambda odom, name=robot.name: self._cb_robot_odom(name, odom), 10)
+        for state in msg.robots:
+            robot = state.descriptor
+            name = str(robot.name)
+            namespace = str(robot.ns).rstrip("/")
+
+            topic = str(
+                self.get_parameter("odom_topic_template").value
+            ).format(
+                namespace=namespace,
+                name=name,
+            )
+
+            sub = self.create_subscription(
+                Odometry,
+                topic,
+                lambda odom, robot_name=name: self._cb_robot_odom(
+                    robot_name, odom
+                ),
+                10,
+            )
             self._odom_subs.append(sub)
 
     def _cb_robot_odom(self, robot_name: str, msg: Odometry) -> None:
@@ -351,18 +508,64 @@ class SoundPropagationNode(Node):
         if not event.sound_type.strip():
             return
 
+        listeners = self._listeners_for_event(event)
+
+        if (
+            self._requested_backend == "pyroomacoustics"
+            and self._scene is None
+            and bool(
+                self.get_parameter(
+                    "buffer_events_until_scene_loaded"
+                ).value
+            )
+        ):
+            maximum = max(
+                int(self.get_parameter("scene_event_buffer_size").value),
+                1,
+            )
+            if len(self._pending_events) >= maximum:
+                dropped, _ = self._pending_events.popleft()
+                self.get_logger().warning(
+                    f"acoustic scene event buffer full; dropping "
+                    f"{dropped.event_id!r}"
+                )
+            snapshots = {
+                listener_id: Point(
+                    x=float(position.x),
+                    y=float(position.y),
+                    z=float(position.z),
+                )
+                for listener_id, position in listeners.items()
+            }
+            self._pending_events.append((event, snapshots))
+            return
+
+        self._publish_event_to_listeners(event, listeners)
+
+    def _listeners_for_event(self, event: SoundEvent) -> dict[str, Point]:
+        """Snapshot listeners according to the configured hearing policy."""
         listeners: dict[str, Point] = {}
 
-        for agent_id, ped in self._peds.items():
-            if agent_id == event.source_agent_id:
-                continue
-            listeners[f"agent:{agent_id}"] = ped.pose.position
+        if not bool(
+            self.get_parameter("pyroom_robot_listeners_only").value
+        ):
+            for agent_id, ped in self._peds.items():
+                if agent_id == event.source_agent_id:
+                    continue
+                listeners[f"agent:{agent_id}"] = ped.pose.position
 
         listeners.update(self._robots)
 
         if not bool(self.get_parameter("robots_hear_self").value):
             listeners.pop(f"robot:{event.source_agent_name}", None)
 
+        return listeners
+
+    def _publish_event_to_listeners(
+        self,
+        event: SoundEvent,
+        listeners: dict[str, Point],
+    ) -> None:
         for listener_id, listener_pos in listeners.items():
             heard = self._calculate_heard_event(event, listener_id, listener_pos)
             if heard.audible or bool(self.get_parameter("publish_inaudible").value):
@@ -448,6 +651,11 @@ class SoundPropagationNode(Node):
             )
 
         fallback_reason = ""
+        deferred_same_room = False
+        deferred_route = None
+        compute_rir_here = bool(
+            self.get_parameter("compute_rir_in_propagation").value
+        )
         if self._pra_adapter is not None:
             source_zone = self._scene.zone_at(event.source_position)
             listener_zone = self._scene.zone_at(listener_pos)
@@ -462,6 +670,8 @@ class SoundPropagationNode(Node):
                 )
                 if room_spec is None:
                     fallback_reason = "same_zone_has_no_room_spec"
+                elif not compute_rir_here:
+                    deferred_same_room = True
                 else:
                     try:
                         return self._finalize_backend(
@@ -480,17 +690,54 @@ class SoundPropagationNode(Node):
                             f"{room_spec.zone_name!r}: {exc}"
                         )
             else:
-                portal = (
-                    self._world_graph.direct_portal(
+                max_hops = (
+                    int(self.get_parameter("max_portal_hops").value)
+                    if bool(
+                        self.get_parameter("enable_multi_portal_rir").value
+                    )
+                    else 1
+                )
+                route = (
+                    self._world_graph.find_portal_route(
                         source_zone.name,
                         listener_zone.name,
                         source_xy=(event.source_position.x, event.source_position.y),
                         listener_xy=(listener_pos.x, listener_pos.y),
+                        max_portals=max_hops,
+                        distance_loss_db_per_m=float(
+                            self.get_parameter(
+                                "route_distance_loss_db_per_m"
+                            ).value
+                        ),
                     )
                     if self._world_graph is not None else None
                 )
-                if portal is None:
-                    fallback_reason = "no_direct_portal_between_zones"
+                if route is None:
+                    unrestricted = (
+                        self._world_graph.find_portal_route(
+                            source_zone.name,
+                            listener_zone.name,
+                            source_xy=(
+                                event.source_position.x,
+                                event.source_position.y,
+                            ),
+                            listener_xy=(listener_pos.x, listener_pos.y),
+                            max_portals=max(len(self._room_specs) - 1, 1),
+                            distance_loss_db_per_m=float(
+                                self.get_parameter(
+                                    "route_distance_loss_db_per_m"
+                                ).value
+                            ),
+                        )
+                        if self._world_graph is not None else None
+                    )
+                    fallback_reason = (
+                        "portal_route_exceeds_max_hops"
+                        if unrestricted is not None
+                        else "no_portal_route_between_zones"
+                    )
+                elif not compute_rir_here:
+                    deferred_route = route
                 elif self._portal_coupler is None:
                     fallback_reason = "portal_coupler_not_initialized"
                 else:
@@ -504,17 +751,24 @@ class SoundPropagationNode(Node):
                         )
                         return self._finalize_backend(
                             msg,
-                            backend="pyroomacoustics_one_door",
+                            backend=(
+                                "pyroomacoustics_one_door"
+                                if msg.portal_hop_count == 1
+                                else "pyroomacoustics_multi_portal"
+                            ),
                             used_fallback=False,
                             fallback_reason="",
                             portal_id=msg.portal_id,
                         )
                     except Exception as exc:
-                        fallback_reason = "one_door_rir_error:" + type(exc).__name__
+                        fallback_reason = (
+                            "portal_route_rir_error:" + type(exc).__name__
+                        )
                         self.get_logger().warning(
-                            "pyroomacoustics one-door coupling failed for "
+                            "pyroomacoustics portal-route coupling failed for "
                             f"{source_zone.name!r}->{listener_zone.name!r} "
-                            f"through {portal.portal_id!r}: {exc}"
+                            f"through {[p.portal_id for p in route.portals]!r}: "
+                            f"{exc}"
                         )
 
         result = self._propagation.calculate(
@@ -568,12 +822,64 @@ class SoundPropagationNode(Node):
 
             msg.early_paths.append(path_msg)
 
+        if deferred_route is not None:
+            self._apply_deferred_route_metadata(msg, deferred_route)
+
         return self._finalize_backend(
             msg,
-            backend="level3",
-            used_fallback=self._requested_backend == "pyroomacoustics",
+            backend=(
+                "level3_rir_deferred_same_room"
+                if deferred_same_room
+                else "level3_rir_deferred_portal"
+                if deferred_route is not None
+                else "level3"
+            ),
+            used_fallback=(
+                self._requested_backend == "pyroomacoustics"
+                and not deferred_same_room
+                and deferred_route is None
+            ),
             fallback_reason=fallback_reason,
         )
+
+    @staticmethod
+    def _apply_deferred_route_metadata(
+        msg: HeardSoundEvent,
+        route,
+    ) -> None:
+        msg.portal_ids = [portal.portal_id for portal in route.portals]
+        msg.traversed_zones = list(route.zones)
+        msg.portal_hop_count = len(route.portals)
+        msg.portal_route_loss_db = float(sum(
+            portal.loss_db or 0.0 for portal in route.portals
+        ))
+        if not route.portals:
+            return
+        first = route.portals[0]
+        msg.portal_id = first.portal_id
+        msg.portal_position.x = first.center_xy[0]
+        msg.portal_position.y = first.center_xy[1]
+        msg.portal_position.z = 0.5 * first.height_m
+        for portal in route.portals:
+            point = Point()
+            point.x = portal.center_xy[0]
+            point.y = portal.center_xy[1]
+            point.z = 0.5 * portal.height_m
+            msg.portal_positions.append(point)
+            path = AcousticPath()
+            path.delay.sec = int(msg.direct_delay_sec)
+            path.delay.nanosec = int(
+                (msg.direct_delay_sec % 1.0) * 1_000_000_000
+            )
+            path.gain_db = -float(portal.loss_db or 0.0)
+            path.bearing_rad = float(math.atan2(
+                portal.center_xy[1] - msg.listener_position.y,
+                portal.center_xy[0] - msg.listener_position.x,
+            ))
+            path.reflection_point = point
+            path.interaction_type = f"portal_{portal.portal_kind}"
+            path.material_id = portal.material_id
+            msg.early_paths.append(path)
 
     def _finalize_backend(
         self,
@@ -599,11 +905,21 @@ class SoundPropagationNode(Node):
             self._reported_routes.add(route)
             detail = f", fallback={fallback_reason!r}" if used_fallback else ""
             portal_detail = f", portal={msg.portal_id!r}" if msg.portal_id else ""
-            self.get_logger().info(
+            message = (
                 f"actual propagation backend={backend!r} for "
                 f"{msg.source_zone!r}->{msg.listener_zone!r}"
-                f"{portal_detail}{detail}"
+                f"{portal_detail}{detail}; "
+                f"source=({msg.source_position.x:.2f},"
+                f"{msg.source_position.y:.2f}) "
+                f"name={msg.source_agent_name!r}, "
+                f"listener={msg.listener_id!r}@"
+                f"({msg.listener_position.x:.2f},"
+                f"{msg.listener_position.y:.2f})"
             )
+            if used_fallback:
+                self.get_logger().warning(message)
+            else:
+                self.get_logger().info(message)
         return msg
 
     @staticmethod
@@ -678,7 +994,10 @@ class SoundPropagationNode(Node):
         )
         self.get_logger().debug(
             f"portal RIR cache: entries={self._portal_coupler.cache_entries}, "
-            f"hits={result.cache_hits}, misses={result.cache_misses}"
+            f"hits={result.cache_hits}, misses={result.cache_misses}; "
+            f"route_entries={self._portal_coupler.route_cache_entries}, "
+            f"route_hits={self._portal_coupler.route_cache_hits}, "
+            f"route_misses={self._portal_coupler.route_cache_misses}"
         )
         return self._calculate_rir_event(
             event,
@@ -770,25 +1089,51 @@ class SoundPropagationNode(Node):
         msg.source_zone = source_zone
         msg.listener_zone = listener_zone
         if portal_result is not None:
-            portal = portal_result.portal
+            route = portal_result.route
+            portals = (
+                route.portals
+                if route is not None
+                else (portal_result.portal,)
+            )
+            zones = (
+                route.zones
+                if route is not None
+                else (source_zone, listener_zone)
+            )
+            portal = portals[0]
             msg.portal_id = portal.portal_id
             msg.portal_position.x = portal.center_xy[0]
             msg.portal_position.y = portal.center_xy[1]
             msg.portal_position.z = 0.5 * portal.height_m
-            path = AcousticPath()
-            path.delay.sec = int(delay_sec)
-            path.delay.nanosec = int((delay_sec % 1.0) * 1_000_000_000)
-            path.gain_db = float(gain_db)
-            path.bearing_rad = float(
-                math.atan2(
-                    portal.center_xy[1] - listener_position.y,
-                    portal.center_xy[0] - listener_position.x,
-                )
+            msg.portal_ids = [item.portal_id for item in portals]
+            msg.traversed_zones = list(zones)
+            msg.portal_hop_count = len(portals)
+            msg.portal_route_loss_db = float(
+                portal_result.applied_portal_loss_db
             )
-            path.reflection_point = msg.portal_position
-            path.interaction_type = "portal"
-            path.material_id = portal.material_id
-            msg.early_paths.append(path)
+            for item in portals:
+                portal_point = Point()
+                portal_point.x = item.center_xy[0]
+                portal_point.y = item.center_xy[1]
+                portal_point.z = 0.5 * item.height_m
+                msg.portal_positions.append(portal_point)
+
+                path = AcousticPath()
+                path.delay.sec = int(delay_sec)
+                path.delay.nanosec = int(
+                    (delay_sec % 1.0) * 1_000_000_000
+                )
+                path.gain_db = float(gain_db)
+                path.bearing_rad = float(
+                    math.atan2(
+                        item.center_xy[1] - listener_position.y,
+                        item.center_xy[0] - listener_position.x,
+                    )
+                )
+                path.reflection_point = portal_point
+                path.interaction_type = f"portal_{item.portal_kind}"
+                path.material_id = item.material_id
+                msg.early_paths.append(path)
         return msg
 
     def _is_occluded(self, source: Point, listener: Point) -> bool:
@@ -812,13 +1157,39 @@ class SoundPropagationNode(Node):
         assert self._map is not None
         origin = self._map.info.origin.position
         resolution = self._map.info.resolution
-
-        x = int((point.x - origin.x) / resolution)
-        y = int((point.y - origin.y) / resolution)
+        offset_x, offset_y = self._map_frame_offset()
+        dx = point.x + offset_x - origin.x
+        dy = point.y + offset_y - origin.y
+        orientation = self._map.info.origin.orientation
+        yaw = math.atan2(
+            2.0 * (
+                orientation.w * orientation.z
+                + orientation.x * orientation.y
+            ),
+            1.0 - 2.0 * (
+                orientation.y**2 + orientation.z**2
+            ),
+        )
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        local_x = cos_yaw * dx + sin_yaw * dy
+        local_y = -sin_yaw * dx + cos_yaw * dy
+        x = math.floor(local_x / resolution + 1e-9)
+        y = math.floor(local_y / resolution + 1e-9)
 
         if x < 0 or y < 0 or x >= self._map.info.width or y >= self._map.info.height:
             return None
         return x, y
+
+    def _map_frame_offset(self) -> tuple[float, float]:
+        if self._map is None or self._authored_map_origin is None:
+            return 0.0, 0.0
+        return (
+            float(self._map.info.origin.position.x)
+            - self._authored_map_origin[0],
+            float(self._map.info.origin.position.y)
+            - self._authored_map_origin[1],
+        )
 
     @staticmethod
     def _bresenham(x0: int, y0: int, x1: int, y1: int):

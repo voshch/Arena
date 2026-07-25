@@ -9,11 +9,12 @@ from arena_robots.Robot import RobotIdentifier
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from std_msgs.msg import ColorRGBA
-from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
-from task_generator_msgs.msg import RobotFleet, SoundEvent
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import ColorRGBA
+from task_generator_msgs.msg import RobotFleet, SoundEvent
 from visualization_msgs.msg import Marker, MarkerArray
+
+from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
 
 
 @dataclass
@@ -36,34 +37,50 @@ class RobotSoundNode(Node):
         self.declare_parameter("odom_topic_template", "{namespace}/{name}_velocity_controller/odom")
         self.declare_parameter("motor_start_asset_id", "motor_start")
         self.declare_parameter("motor_stop_asset_id", "motor_stop")
-        self.declare_parameter("source_volume_db", 55.0)
+        self.declare_parameter("enable_robot_sound", True)
+        self.declare_parameter("source_volume_db", 45.0)
         self.declare_parameter("publish_period_sec", 0.5)
         self.declare_parameter("only_when_moving", False)
         self.declare_parameter("min_speed_mps", 0.02)
         self.declare_parameter("stop_speed_mps", 0.01)
+        self.declare_parameter("angular_speed_scale_m", 0.25)
         self.declare_parameter("publish_motor_markers", True)
-        self.declare_parameter("motor_marker_topic", "human_sound_markers")
+        # A non-empty shared topic preserves the old/testing interface.
+        # Normal launch leaves it empty and uses one topic per robot.
+        self.declare_parameter("motor_marker_topic", "")
+        self.declare_parameter(
+            "motor_marker_topic_suffix",
+            "motor_sound_markers",
+        )
         self.declare_parameter("motor_marker_lifetime_sec", 0.8)
         self.declare_parameter("motor_marker_z_m", 0.16)
         self.declare_parameter("motor_marker_line_width_m", 0.055)
-        self.declare_parameter("motor_marker_arc_degrees", 300.0)
-        self.declare_parameter("motor_marker_radii_m", [0.45, 0.75, 1.05])
+        self.declare_parameter("motor_marker_cone_degrees", 70.0)
+        self.declare_parameter("motor_marker_range_m", 1.25)
 
         self._robots: dict[str, RobotSoundSource] = {}
         self._odom_qos = QoSProfile( history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT )
         self._odom_subs = []
         self._last_speed: dict[str, float] = {}
         self._event_counter = 0
+        self._marker_pubs = {}
 
         self._sound_pub = self.create_publisher(
             SoundEvent,
             str(self.get_parameter("sound_events_topic").value),
             transient_event_qos(),
         )
-        self._marker_pub = self.create_publisher(
-            MarkerArray,
-            str(self.get_parameter("motor_marker_topic").value),
-            transient_event_qos(depth=10),
+        shared_marker_topic = str(
+            self.get_parameter("motor_marker_topic").value
+        ).strip()
+        self._marker_pub = (
+            self.create_publisher(
+                MarkerArray,
+                shared_marker_topic,
+                transient_event_qos(depth=10),
+            )
+            if shared_marker_topic
+            else None
         )
 
         self.create_subscription(
@@ -79,7 +96,8 @@ class RobotSoundNode(Node):
         )
 
     def _cb_robot_fleet(self, msg: RobotFleet) -> None:
-        for robot in msg.robots:
+        for state in msg.robots:
+            robot = state.descriptor
             name = str(robot.name)
             if name in self._robots:
                 continue
@@ -94,16 +112,67 @@ class RobotSoundNode(Node):
                 namespace=namespace,
                 marker_frame_id=marker_frame_id,
             )
+            if self._marker_pub is None:
+                suffix = str(
+                    self.get_parameter("motor_marker_topic_suffix").value
+                ).strip("/")
+                self._marker_pubs[name] = self.create_publisher(
+                    MarkerArray,
+                    f"{name}/{suffix}",
+                    transient_event_qos(depth=10),
+                )
 
-            odom_topic = str(self.get_parameter("odom_topic_template").value).format(namespace=namespace, name=name)
-            self.get_logger().warning(f"subscribing to robot odom: {odom_topic}")
-            sub = self.create_subscription(
-                Odometry,
-                odom_topic,
-                lambda odom, robot_name=name: self._cb_odom(robot_name, odom),
-                self._odom_qos,
+            odom_topics = self._robot_odom_topics(
+                model_name=str(robot.model),
+                namespace=namespace,
+                robot_name=name,
             )
-            self._odom_subs.append(sub)
+            self.get_logger().info(
+                f"robot {name!r} motor motion sources: "
+                f"{', '.join(odom_topics)}"
+            )
+            for odom_topic in odom_topics:
+                self._odom_subs.append(
+                    self.create_subscription(
+                        Odometry,
+                        odom_topic,
+                        lambda odom, robot_name=name: self._cb_odom(
+                            robot_name,
+                            odom,
+                        ),
+                        self._odom_qos,
+                    )
+                )
+
+    def _robot_odom_topics(
+        self,
+        *,
+        model_name: str,
+        namespace: str,
+        robot_name: str,
+    ) -> tuple[str, ...]:
+        """Return configured, model-specific, and standard odometry topics."""
+        topics = [
+            str(self.get_parameter("odom_topic_template").value).format(
+                namespace=namespace,
+                name=robot_name,
+            ),
+            f"{namespace}/odom",
+        ]
+        try:
+            model_odom = (
+                RobotIdentifier(model_name)
+                .resolve_sync()
+                .model_params.odom_topic
+                .strip("/")
+            )
+            if model_odom:
+                topics.append(f"{namespace}/{model_odom}")
+        except Exception as exc:
+            self.get_logger().warning(
+                f"could not resolve odometry topic for {model_name!r}: {exc}"
+            )
+        return tuple(dict.fromkeys(topic for topic in topics if topic))
 
     def _cb_odom(self, robot_name: str, msg: Odometry) -> None:
         source = self._robots.get(robot_name)
@@ -114,7 +183,19 @@ class RobotSoundNode(Node):
         source.yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
         vx = float(msg.twist.twist.linear.x)
         vy = float(msg.twist.twist.linear.y)
-        self._last_speed[robot_name] = (vx * vx + vy * vy) ** 0.5
+        linear_speed = math.hypot(vx, vy)
+        angular_speed = abs(float(msg.twist.twist.angular.z))
+        angular_scale = max(
+            float(self.get_parameter("angular_speed_scale_m").value),
+            0.0,
+        )
+        # Treat in-place rotation as motor motion. Multiplying angular speed
+        # by an effective chassis radius expresses it in the same m/s scale
+        # used by the existing start/stop thresholds.
+        self._last_speed[robot_name] = max(
+            linear_speed,
+            angular_speed * angular_scale,
+        )
 
     def _publish_robot_sounds(self) -> None:
         only_when_moving = bool(self.get_parameter("only_when_moving").value)
@@ -123,6 +204,32 @@ class RobotSoundNode(Node):
 
         for robot_name, source in self._robots.items():
             if source.position is None:
+                continue
+
+            if not bool(
+                self.get_parameter("enable_robot_sound").value
+            ):
+                if source.moving:
+                    self._clear_motor_cone_markers(
+                        robot_name,
+                        source.marker_frame_id,
+                    )
+                    source.moving = False
+                    asset_id = str(
+                        self.get_parameter(
+                            "motor_stop_asset_id"
+                        ).value
+                    )
+                    self._sound_pub.publish(
+                        self._make_sound_event(
+                            robot_name,
+                            source.position,
+                            asset_id,
+                        )
+                    )
+                    self.get_logger().info(
+                        f"robot {robot_name!r} motor sound disabled"
+                    )
                 continue
 
             speed = self._last_speed.get(robot_name, 0.0)
@@ -136,9 +243,9 @@ class RobotSoundNode(Node):
                 moving = speed >= min_speed
             state_changed = moving != source.moving
             if moving:
-                self._publish_motor_arc_markers(robot_name, source)
+                self._publish_motor_cone_markers(robot_name, source)
             elif state_changed:
-                self._clear_motor_arc_markers(robot_name, source.marker_frame_id)
+                self._clear_motor_cone_markers(robot_name, source.marker_frame_id)
 
             if not state_changed:
                 continue
@@ -157,7 +264,7 @@ class RobotSoundNode(Node):
                 f"at {speed:.3f} m/s"
             )
 
-    def _publish_motor_arc_markers(
+    def _publish_motor_cone_markers(
         self,
         robot_name: str,
         source: RobotSoundSource,
@@ -168,19 +275,22 @@ class RobotSoundNode(Node):
         ):
             return
 
-        radii = [
-            float(value)
-            for value in self.get_parameter("motor_marker_radii_m").value
-            if float(value) > 0.0
-        ]
-        if not radii:
-            return
-
-        arc_degrees = min(
-            max(float(self.get_parameter("motor_marker_arc_degrees").value), 10.0),
-            360.0,
+        cone_degrees = min(
+            max(
+                float(
+                    self.get_parameter(
+                        "motor_marker_cone_degrees"
+                    ).value
+                ),
+                10.0,
+            ),
+            180.0,
         )
-        arc_span = math.radians(arc_degrees)
+        cone_angle = math.radians(cone_degrees)
+        marker_range = max(
+            float(self.get_parameter("motor_marker_range_m").value),
+            0.05,
+        )
         line_width = max(
             float(self.get_parameter("motor_marker_line_width_m").value),
             0.001,
@@ -194,68 +304,86 @@ class RobotSoundNode(Node):
         lifetime_sec = int(lifetime)
         lifetime_nanosec = int((lifetime % 1.0) * 1_000_000_000)
         base_id = self._motor_marker_base_id(robot_name)
-        colors = (
-            ColorRGBA(r=1.0, g=0.20, b=0.05, a=0.95),
-            ColorRGBA(r=1.0, g=0.55, b=0.05, a=0.88),
-            ColorRGBA(r=1.0, g=0.88, b=0.18, a=0.78),
-        )
-
-        markers = MarkerArray()
         robot_local_frame = source.marker_frame_id != "map"
-        center_x = 0.0 if robot_local_frame else float(source.position.x)
-        center_y = 0.0 if robot_local_frame else float(source.position.y)
-        for index, radius in enumerate(radii):
-            marker = Marker()
-            marker.header.frame_id = source.marker_frame_id
-            marker.header.stamp = self.get_clock().now().to_msg()
-            marker.ns = f"motor_sound_{robot_name}"
-            marker.id = base_id + index
-            marker.type = Marker.LINE_STRIP
-            marker.action = Marker.ADD
-            marker.pose.orientation.w = 1.0
-            marker.scale.x = line_width
-            marker.color = colors[index % len(colors)]
-            marker.lifetime.sec = lifetime_sec
-            marker.lifetime.nanosec = lifetime_nanosec
-
-            # Leave a small rear-facing gap so these read as expanding sound
-            # arcs rather than obstacle/range circles. Alternate the gap angle
-            # slightly to keep all three lines visually distinct.
-            center_angle = (
-                0.0 if robot_local_frame else source.yaw
-            ) + index * math.radians(7.0)
-            start_angle = center_angle - arc_span / 2.0
-            segments = max(int(arc_degrees / 6.0), 12)
-            for step in range(segments + 1):
-                angle = start_angle + arc_span * step / segments
-                marker.points.append(
-                    Point(
-                        x=center_x + math.cos(angle) * radius,
-                        y=center_y + math.sin(angle) * radius,
-                        z=z,
-                    )
+        source_x = 0.0 if robot_local_frame else float(source.position.x)
+        source_y = 0.0 if robot_local_frame else float(source.position.y)
+        yaw = 0.0 if robot_local_frame else source.yaw
+        apex = Point(
+            x=source_x + math.cos(yaw) * 0.15,
+            y=source_y + math.sin(yaw) * 0.15,
+            z=z,
+        )
+        arc_points: list[Point] = []
+        start_angle = yaw - cone_angle / 2.0
+        for index in range(17):
+            angle = start_angle + cone_angle * index / 16
+            arc_points.append(
+                Point(
+                    x=source_x + math.cos(angle) * marker_range,
+                    y=source_y + math.sin(angle) * marker_range,
+                    z=z,
                 )
-            markers.markers.append(marker)
+            )
 
-        self._marker_pub.publish(markers)
+        stamp = self.get_clock().now().to_msg()
+        fill = Marker()
+        fill.header.frame_id = source.marker_frame_id
+        fill.header.stamp = stamp
+        fill.ns = f"motor_sound_{robot_name}"
+        fill.id = base_id
+        fill.type = Marker.TRIANGLE_LIST
+        fill.action = Marker.ADD
+        fill.pose.orientation.w = 1.0
+        fill.scale.x = fill.scale.y = fill.scale.z = 1.0
+        fill.color = ColorRGBA(r=1.0, g=0.55, b=0.05, a=0.28)
+        fill.lifetime.sec = lifetime_sec
+        fill.lifetime.nanosec = lifetime_nanosec
+        for left, right in zip(
+            arc_points,
+            arc_points[1:],
+            strict=False,
+        ):
+            fill.points.extend([apex, left, right])
 
-    def _clear_motor_arc_markers(
+        outline = Marker()
+        outline.header = fill.header
+        outline.ns = f"motor_sound_{robot_name}_outline"
+        outline.id = base_id + 1
+        outline.type = Marker.LINE_STRIP
+        outline.action = Marker.ADD
+        outline.pose.orientation.w = 1.0
+        outline.scale.x = line_width
+        outline.color = ColorRGBA(r=1.0, g=0.55, b=0.05, a=0.95)
+        outline.lifetime = fill.lifetime
+        outline.points = [apex, *arc_points, apex]
+
+        marker_pub = self._marker_pub or self._marker_pubs.get(robot_name)
+        if marker_pub is not None:
+            marker_pub.publish(MarkerArray(markers=[fill, outline]))
+
+    def _clear_motor_cone_markers(
         self,
         robot_name: str,
         marker_frame_id: str,
     ) -> None:
         markers = MarkerArray()
         base_id = self._motor_marker_base_id(robot_name)
-        count = len(self.get_parameter("motor_marker_radii_m").value)
-        for index in range(count):
+        for index, namespace in enumerate(
+            (
+                f"motor_sound_{robot_name}",
+                f"motor_sound_{robot_name}_outline",
+            )
+        ):
             marker = Marker()
             marker.header.frame_id = marker_frame_id
             marker.header.stamp = self.get_clock().now().to_msg()
-            marker.ns = f"motor_sound_{robot_name}"
+            marker.ns = namespace
             marker.id = base_id + index
             marker.action = Marker.DELETE
             markers.markers.append(marker)
-        self._marker_pub.publish(markers)
+        marker_pub = self._marker_pub or self._marker_pubs.get(robot_name)
+        if marker_pub is not None:
+            marker_pub.publish(markers)
 
     @staticmethod
     def _motor_marker_base_id(robot_name: str) -> int:

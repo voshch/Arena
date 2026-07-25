@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import import_module
@@ -52,6 +53,8 @@ class PyroomacousticsConfig:
 
     # Minimum-phase RIRs cannot be combined with ray tracing.
     minimum_phase: bool = False
+    cache_position_quantization_m: float = 0.10
+    cache_size: int = 512
 
     def __post_init__(self) -> None:
         if (
@@ -122,6 +125,12 @@ class PyroomacousticsConfig:
             raise ValueError(
                 "randomized ISM requires max_order >= 0"
             )
+        if self.cache_position_quantization_m <= 0.0:
+            raise ValueError(
+                "cache_position_quantization_m must be positive"
+            )
+        if self.cache_size <= 0:
+            raise ValueError("cache_size must be positive")
 
 
 @dataclass(frozen=True)
@@ -273,6 +282,12 @@ class PyroomacousticsAdapter:
         self._materials = PyroomMaterialAdapter(
             material_catalog
         )
+        self._rir_cache: OrderedDict[
+            tuple[object, ...],
+            RoomImpulseResponse,
+        ] = OrderedDict()
+        self._cache_hits = 0
+        self._cache_misses = 0
 
     @property
     def config(self) -> PyroomacousticsConfig:
@@ -281,6 +296,18 @@ class PyroomacousticsAdapter:
     @property
     def materials(self) -> PyroomMaterialAdapter:
         return self._materials
+
+    @property
+    def cache_hits(self) -> int:
+        return self._cache_hits
+
+    @property
+    def cache_misses(self) -> int:
+        return self._cache_misses
+
+    @property
+    def cache_entries(self) -> int:
+        return len(self._rir_cache)
 
     def build_room(
         self,
@@ -413,6 +440,19 @@ class PyroomacousticsAdapter:
             ),
         )
 
+        quantization = self._config.cache_position_quantization_m
+        key = (
+            specification,
+            tuple(int(round(value / quantization)) for value in source),
+            tuple(int(round(value / quantization)) for value in listener),
+        )
+        cached = self._rir_cache.pop(key, None)
+        if cached is not None:
+            self._rir_cache[key] = cached
+            self._cache_hits += 1
+            return cached
+        self._cache_misses += 1
+
         built = self.build_room(specification)
         room = built.room
 
@@ -443,7 +483,7 @@ class PyroomacousticsAdapter:
             pra.constants.get("frac_delay_length")
         )
 
-        return RoomImpulseResponse(
+        result = RoomImpulseResponse(
             samples=samples,
             sample_rate_hz=self._config.sample_rate_hz,
             global_delay_samples=(
@@ -453,6 +493,10 @@ class PyroomacousticsAdapter:
                 built.fallback_material_ids
             ),
         )
+        self._rir_cache[key] = result
+        while len(self._rir_cache) > self._config.cache_size:
+            self._rir_cache.popitem(last=False)
+        return result
 
     @staticmethod
     def _position_xyz(

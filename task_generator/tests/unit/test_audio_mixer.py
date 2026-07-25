@@ -68,3 +68,31 @@ def test_duplicate_sequence_replaces_keyed_voice() -> None:
 
     assert len(mixer._voices) == 1
     assert mixer._voices[0].voice_id == "motor:1"
+
+
+def test_keyed_single_loop_repeats_and_stops_at_boundary() -> None:
+    mixer = AudioMixer.__new__(AudioMixer)
+    mixer._voices = []
+    mixer._lock = threading.Lock()
+    mixer._master_gain = 1.0
+
+    mixer.play(
+        _sample([0.1, 0.2]),
+        loop=True,
+        voice_id="motor:1",
+    )
+    first_block = np.empty((5, 1), dtype=np.float32)
+    mixer._callback(first_block, 5, None, None)
+    np.testing.assert_allclose(
+        first_block[:, 0],
+        [0.1, 0.2, 0.1, 0.2, 0.1],
+    )
+
+    assert mixer.stop("motor:1")
+    second_block = np.empty((4, 1), dtype=np.float32)
+    mixer._callback(second_block, 4, None, None)
+    np.testing.assert_allclose(
+        second_block[:, 0],
+        [0.2, 0.0, 0.0, 0.0],
+    )
+    assert mixer._voices == []

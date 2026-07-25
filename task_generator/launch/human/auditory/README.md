@@ -14,11 +14,11 @@ auditory nodes.
   walnut-plank footsteps.
 - Sound propagation: `sound_propagation_node` converts `SoundEvent` messages
   into `HeardSoundEvent` messages using listener positions, distance loss,
-  wall/material attenuation, optional pyroomacoustics RIRs, and one-door
-  coupling between adjacent acoustic zones.
+  wall/material attenuation, optional pyroomacoustics RIRs, and cached
+  multi-portal coupling across doors and shared open boundaries.
 - Robot hearing: `robot_hearing_node` listens for `HeardSoundEvent`, discovers
   robots from `state/robots`, republishes per-robot heard events, and publishes
-  an RViz text marker when a robot hears a `greeting`.
+  an RViz text marker when a robot hears a configured sound type.
 - Audio playback: `human_sound_playback` plays configured sound assets from
   `config/auditory/acoustic_assets.yaml`.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
@@ -30,7 +30,7 @@ auditory nodes.
 - `robot_sound_node`
 - `robot_hearing_node`
 - `human_sound_playback`
-- `sound_propagation_visualizer` (when explicitly enabled)
+- `sound_propagation_visualizer` (enabled by default with the auditory module)
 
 ## Main Topics
 
@@ -39,10 +39,20 @@ auditory nodes.
 - `state/robots`: robot fleet metadata used by propagation, robot sound, and
   robot hearing nodes.
 - `<robot_name>/heard_sound`: per-robot heard event output.
-- `<robot_name>/heard_sound_marker`: RViz text marker for heard greetings.
+- `pedestrian_markers/extra`: pedestrian footstep/greeting cones and other
+  transient pedestrian overlays.
+- `<robot_name>/motor_sound_markers`: robot-local motor arcs.
+- `<robot_name>/heard_sound_marker`: RViz text marker for sounds heard by the
+  robot.
 - `sound_propagation_markers`: RViz source/portal/listener paths.
 
-## One-door pyroomacoustics coupling
+The generated RViz configuration shows pedestrian cones through
+`Arena/Pedestrians/Extra` and places each motor display in the corresponding
+`Arena/Robot: <name>` group. Source-to-listener paths, reflections, and door
+portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
+not added as a separate RViz display.
+
+## Pyroomacoustics portal routing
 
 Enable the pyroomacoustics backend and optional RViz path visualizer with:
 
@@ -54,29 +64,112 @@ arena launch \
 ```
 
 On world load, Arena pairs each authored door with the acoustic zone touching
-the other side and constructs an `AcousticWorldGraph`. A cross-zone RIR is
-available only when source and listener zones are directly adjacent through
-one paired door. The renderer convolves the source-to-door early response with
-the door-to-listener room response and applies `portal_loss_db`. It treats the
-authored portal as acoustically open; dynamic door-state coupling is not part
-of this one-door implementation.
+the other side. It also derives an opening portal when both adjacent room
+specifications agree that a shared boundary span is open. Explicit doors take
+precedence over derived openings.
+
+Each authored zone—including a corridor or a rectangular whole-world
+zone—is treated as one ordinary pyroomacoustics room. Enclosed mini-room zones
+remain separate rooms. Same-zone sounds use one room-local RIR. Cross-zone
+rendering is limited by default to two directly adjacent rooms connected by
+one authored door or shared opening. Routes requiring an intermediate room or
+a second portal use the explicit Level-3/dry fallback instead of convolving a
+multi-room RIR chain. Room and direct-portal RIRs are quantized and cached.
+
+With `pyroom_robot_listeners_only=true` (the default), propagation creates
+`HeardSoundEvent` messages only for robot listeners. Pedestrians are not
+listeners, so pedestrian-to-pedestrian propagation is not calculated or
+published and the RViz propagation visualizer has no corresponding blue paths
+to draw. Set it to `false` to add every non-source pedestrian as an
+`agent:<id>` listener. Robot-listener events receive the complete route
+metadata and are rendered with pyroomacoustics by `human_sound_playback`. Set
+the propagation node parameter `compute_rir_in_propagation` to `true` only for
+an application that consumes its calculated RIR metadata directly and accepts
+the additional CPU cost.
+
+Dynamic open/closed door state is not currently published by Arena, so
+authored doors use `portal_loss_db`. Derived openings use
+`opening_portal_loss_db`.
 
 `HeardSoundEvent.propagation_level` remains the model capability level for
 compatibility. Inspect these fields for the actual route:
 
 - `propagation_backend`: `pyroomacoustics_same_room`,
-  `pyroomacoustics_one_door`, `level3`, or a legacy path.
+  `pyroomacoustics_one_door`, `pyroomacoustics_multi_portal`, `level3`, or a
+  legacy path.
 - `used_backend_fallback` and `backend_fallback_reason`: whether and why the
   requested pyroomacoustics route could not run.
 - `portal_id` and `portal_position`: the paired door used by one-door coupling.
+- `portal_ids`, `portal_positions`, `traversed_zones`, `portal_hop_count`, and
+  `portal_route_loss_db`: the complete selected route. The singular fields
+  retain the first portal for compatibility.
 
 The propagation node logs paired/unpaired doors, acoustic-zone coverage
 warnings, and each distinct backend route. Playback logs its independently
 verified `playback_backend` and dry/silent fallback reason. Its five-second
-diagnostics include portal RIR cache entries, hits, and misses.
+diagnostics include room/portal RIR cache entries, hits, misses, mixer stream
+state, callback count, voice count, last output peak, and decoded-asset cache
+entries, hits, misses, and pending worker loads.
 
-The RViz marker colors are cyan for same-room pyroomacoustics, purple for a
-one-door route, orange for Level 3, and red for a fallback.
+The asset catalog loads only YAML metadata and validates WAV paths at startup.
+The selected WAV is decoded, channel-converted, resampled, and normalized on a
+single background worker the first time it is used. The decoded
+`CachedSample` is retained for subsequent events; the real-time mixer callback
+never performs file I/O or decoding. Configure explicit
+`octave_band_levels_db` values for every variant in
+`acoustic_assets.yaml` so lazy decoding does not need to perform spectral
+analysis. The current bundled assets contain precomputed values.
+
+Docker playback uses the host PulseAudio/PipeWire compatibility socket. The
+image installs `libasound2-plugins`, Compose forwards the socket as
+`/tmp/pulse/native`, and the launch selects the `pulse` device. This avoids
+opening raw `hw:0,0`, which is exclusive and unavailable while the host sound
+server owns the analog card. Rebuild/recreate the Arena container after a
+Docker audio configuration change.
+
+RViz draws the complete source-to-portals-to-listener line and one cube per
+portal. Pedestrian-listener propagation is blue; robot-listener propagation
+is purple, on separately controllable marker topics.
+
+Audit every installed world before relying on RIR coverage:
+
+```bash
+ros2 run task_generator acoustic_world_audit --stride-cells 10
+```
+
+The command reports missing maps, traversable cells outside zones, overlapping
+zones, explicit and derived portals, unpaired doors, and graph components. It
+returns a non-zero status when map/zone coverage is incomplete.
+
+The current repository audit intentionally reports the remaining world-data
+issues instead of fabricating acoustic geometry:
+
+- `hospital_1`: four sampled free border cells below the authored zone bounds.
+- `hospital_2`: its two levels do not provide occupancy-map YAML files.
+- `map_empty`: free elevator/outside-door cells are outside `empty_zone`.
+- `reception`: free map cells above the authored `y=23` room boundaries.
+- `three_storied_residential`: some free entry cells are outside its zones.
+
+The residential map YAML files reference the bundled `map.png` files. Multi-
+level portal extraction is level-scoped, so geometrically overlapping floors
+are never coupled to each other. Correct the remaining world/scenario data when
+those locations must receive physically modelled RIRs; until then they retain
+an explicit Level-3/dry fallback.
+
+Main routing controls are:
+
+- `derive_opening_portals` (default `true`)
+- `minimum_opening_width_m` (default `0.30`)
+- `enable_multi_portal_rir` (default `false`; same-room and one-door only)
+- `max_portal_hops` (default `4`)
+- `portal_loss_db` (default `3.0`)
+- `opening_portal_loss_db` (default `0.5`)
+- `route_distance_loss_db_per_m` (default `0.05`)
+- `portal_source_early_window_sec` (default `0.08`)
+- `portal_max_rir_duration_sec` (default `2.0`)
+- `pyroom_robot_listeners_only` (default `true`)
+- `compute_rir_in_propagation` (default `false`)
+- `pyroom_cache_position_quantization_m` (default `0.25`)
 
 ## Tests
 

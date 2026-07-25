@@ -125,10 +125,35 @@ def generate_launch_description():
         default_value="false",
         description="Start auditory propagation, robot hearing, sound playback, and robot sound nodes.",
     )
+    enable_sound_visualization = LaunchArgument(
+        name="enable_sound_visualization",
+        default_value="true",
+        description=(
+            "Publish source/portal/listener propagation markers when auditory "
+            "processing is enabled."
+        ),
+    )
+    enable_robot_sound = LaunchArgument(
+        name="enable_robot_sound",
+        default_value="true",
+        description=(
+            "Let robots emit motor audio. This does not disable robots as "
+            "auditory listeners."
+        ),
+    )
     propagation_backend = LaunchArgument(
         name="propagation_backend",
         default_value="level3",
         description="Auditory propagation backend: level3 or pyroomacoustics.",
+    )
+    motor_playback_mode = LaunchArgument(
+        name="motor_playback_mode",
+        choices=["sequence", "single_loop"],
+        default_value="sequence",
+        description=(
+            "Motor audio: sequence uses start/loop/stop WAVs; "
+            "single_loop repeats the motor WAV."
+        ),
     )
     robot = LaunchArgument(name="robot", default_value="jackal")
     tm_robots = LaunchArgument(name="tm_robots", default_value="explore")
@@ -241,8 +266,19 @@ def generate_launch_description():
             launch_arguments={
                 "simulator": human_val,
                 "namespace": allocated_ns,
+                # Launch substitutions preserve a relative value as relative
+                # to each node namespace.  Keep this explicitly absolute so
+                # auditory nodes do not resolve it below task_generator_node.
+                "environment_namespace": (
+                    "/" + os.path.dirname(allocated_ns).strip("/")
+                ),
                 "enable_auditory": enable_auditory.substitution,
+                "enable_sound_visualization": (
+                    enable_sound_visualization.substitution
+                ),
+                "enable_robot_sound": enable_robot_sound.substitution,
                 "propagation_backend": propagation_backend.substitution,
+                "motor_playback_mode": motor_playback_mode.substitution,
             }.items(),
         )
 

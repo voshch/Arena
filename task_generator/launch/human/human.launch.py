@@ -1,5 +1,6 @@
 import launch
 from launch.substitutions import PathJoinSubstitution
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 from arena_bringup.substitutions import LaunchArgument, SelectAction
@@ -17,6 +18,10 @@ def generate_launch_description():
         name='namespace',
     )
 
+    environment_namespace = LaunchArgument(
+        name='environment_namespace',
+    )
+
     enable_auditory = LaunchArgument(
         name="enable_auditory",
         default_value="false",
@@ -24,7 +29,12 @@ def generate_launch_description():
 
     enable_sound_visualization = LaunchArgument(
         name="enable_sound_visualization",
-        default_value="false",
+        default_value="true",
+    )
+
+    enable_robot_sound = LaunchArgument(
+        name="enable_robot_sound",
+        default_value="true",
     )
 
     robot = LaunchArgument(
@@ -36,6 +46,12 @@ def generate_launch_description():
         name="propagation_backend",
         choices=["level3", "pyroomacoustics"],
         default_value="level3",
+    )
+
+    motor_playback_mode = LaunchArgument(
+        name="motor_playback_mode",
+        choices=["sequence", "single_loop"],
+        default_value="sequence",
     )
 
     launch_human_simulator = SelectAction(launch.substitutions.LaunchConfiguration('simulator'))
@@ -78,6 +94,30 @@ def generate_launch_description():
                     **namespace.dict
                 }.items(),
             ),
+            Node(
+                package='task_generator',
+                executable='human_sound_node',
+                name='human_sound_node',
+                namespace=namespace.substitution,
+                output='screen',
+                condition=launch.conditions.IfCondition(
+                    enable_auditory.substitution
+                ),
+                parameters=[{
+                    "use_sim_time": True,
+                    "arena_peds_topic": PathJoinSubstitution([
+                        environment_namespace.substitution,
+                        "arena_peds",
+                    ]),
+                    "world_topic": "state/world",
+                    "sound_events_topic": "human_sound_events",
+                    "sound_markers_topic": PathJoinSubstitution([
+                        environment_namespace.substitution,
+                        "pedestrian_markers",
+                        "extra",
+                    ]),
+                }],
+            ),
             # 1. Sound propagation node
             Node(
                 package='task_generator',
@@ -90,9 +130,13 @@ def generate_launch_description():
                     "use_sim_time": True,
                     "sound_events_topic": "human_sound_events",
                     "heard_sound_events_topic": "heard_sound_events",
-                    "arena_peds_topic": "arena_peds",
+                    "arena_peds_topic": PathJoinSubstitution([
+                        environment_namespace.substitution,
+                        "arena_peds",
+                    ]),
                     "map_topic": "map",
                     "world_topic": "state/world",
+                    "episode_topic": "state/episode",
                     "robot_fleet_topic": "state/robots",
                     "robots_hear_self": True,
                     "propagation_level": 3,
@@ -103,21 +147,36 @@ def generate_launch_description():
                     "ceiling_height_m": 3.0,
                     "publish_inaudible": True,
                     "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
-                    "pyroom_sample_rate_hz": 44100,
-                    "pyroom_max_order": 3,
+                    "pyroom_sample_rate_hz": 16000,
+                    "pyroom_max_order": 1,
                     "pyroom_temperature_c": 20.0,
                     "pyroom_relative_humidity_percent": 50.0,
                     "pyroom_ceiling_height_m": 3.0,
+                    "pyroom_cache_position_quantization_m": 0.25,
+                    "pyroom_cache_size": 512,
+                    "pyroom_robot_listeners_only": True,
+                    "compute_rir_in_propagation": False,
                     "propagation_backend": propagation_backend.substitution,
                     "portal_adjacency_tolerance_m": 0.08,
                     "portal_inset_m": 0.03,
                     "portal_loss_db": 3.0,
+                    "opening_portal_loss_db": 0.5,
+                    "derive_opening_portals": True,
+                    "minimum_opening_width_m": 0.30,
+                    # Each authored zone is one ordinary pyroomacoustics
+                    # room. Cross-zone rendering stops after one direct door.
+                    "enable_multi_portal_rir": False,
+                    "max_portal_hops": 4,
+                    "route_distance_loss_db_per_m": 0.05,
                     "portal_source_early_window_sec": 0.08,
                     "portal_max_rir_duration_sec": 2.0,
                     "portal_position_quantization_m": 0.10,
                     "portal_rir_cache_size": 256,
-                    "validate_zone_coverage": True,
+                    "validate_zone_coverage": False,
                     "zone_coverage_stride_cells": 10,
+                    "zone_coverage_tolerance_m": 0.25,
+                    "buffer_events_until_scene_loaded": True,
+                    "scene_event_buffer_size": 128,
                 }],
             ),
 
@@ -138,8 +197,13 @@ def generate_launch_description():
                 parameters=[{
                     "use_sim_time": True,
                     "heard_sound_events_topic": "heard_sound_events",
-                    "marker_topic": "sound_propagation_markers",
-                    "marker_lifetime_sec": 2.0,
+                    "pedestrian_marker_topic":
+                        "pedestrian_sound_propagation_markers",
+                    "robot_marker_topic":
+                        "robot_sound_propagation_markers",
+                    "robot_fleet_topic": "state/robots",
+                    "sync_robot_listener_to_tf": True,
+                    "marker_lifetime_sec": 5.0,
                     "path_z_m": 1.0,
                 }],
             ),
@@ -154,24 +218,27 @@ def generate_launch_description():
                 condition=launch.conditions.IfCondition(enable_auditory.substitution),
                 parameters=[{
                     "use_sim_time": True,
+                    **enable_robot_sound.param(bool),
                     "robot_fleet_topic": "state/robots",
                     "sound_events_topic": "human_sound_events",
                     "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
                     "sound_type": "motor",
                     "motor_start_asset_id": "motor_start",
                     "motor_stop_asset_id": "motor_stop",
-                    "source_volume_db": 55.0,
+                    "source_volume_db": 45.0,
                     "publish_period_sec": 0.5,
                     "only_when_moving": True,
                     "min_speed_mps": 0.05,
                     "stop_speed_mps": 0.03,
+                    "angular_speed_scale_m": 0.25,
                     "publish_motor_markers": True,
-                    "motor_marker_topic": "motor_sound_markers",
+                    "motor_marker_topic": "",
+                    "motor_marker_topic_suffix": "motor_sound_markers",
                     "motor_marker_lifetime_sec": 0.8,
                     "motor_marker_z_m": 0.16,
                     "motor_marker_line_width_m": 0.055,
-                    "motor_marker_arc_degrees": 300.0,
-                    "motor_marker_radii_m": [0.45, 0.75, 1.05],
+                    "motor_marker_cone_degrees": 70.0,
+                    "motor_marker_range_m": 1.25,
                 }],
             ),
 
@@ -218,21 +285,32 @@ def generate_launch_description():
                     "rir_temperature_c": 20.0,
                     "rir_relative_humidity_percent": 50.0,
                     "rir_ceiling_height_m": 3.0,
+                    "rir_cache_position_quantization_m": 0.25,
+                    "rir_cache_size": 512,
                     "rir_dry_fallback": True,
                     "portal_adjacency_tolerance_m": 0.08,
                     "portal_inset_m": 0.03,
                     "portal_loss_db": 3.0,
+                    "opening_portal_loss_db": 0.5,
+                    "derive_opening_portals": True,
+                    "minimum_opening_width_m": 0.30,
+                    "enable_multi_portal_rir": False,
+                    "max_portal_hops": 4,
+                    "route_distance_loss_db_per_m": 0.05,
                     "portal_source_early_window_sec": 0.08,
                     "portal_max_rir_duration_sec": 2.0,
                     "portal_position_quantization_m": 0.10,
                     "portal_rir_cache_size": 256,
+                    "rir_event_buffer_size": 128,
                     "play_inaudible_events": True,
                     "minimum_playback_gain_db": -60.0,
+                    "motor_playback_mode":  motor_playback_mode.substitution,
+                    "motor_single_asset_id": "motor",
                     "episode_topic": "state/episode",
                     "output_sample_rate": 44100,
                     "output_channels": 2,
-                    "block_size":  8192,
-                    "audio_device": "hw:0,0",
+                    "block_size":  2048,
+                    "audio_device": "pulse",
                     "master_gain_db": 0.0,
                 }],
             ),

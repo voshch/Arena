@@ -108,7 +108,8 @@ class RobotHearingNode(Node):
         heard_suffix = str(self.get_parameter("heard_sound_topic_suffix").value).strip("/")
         marker_suffix = str(self.get_parameter("marker_topic_suffix").value).strip("/")
 
-        for robot in msg.robots:
+        for state in msg.robots:
+            robot = state.descriptor
             robot_name = str(robot.name).strip()
             if not robot_name:
                 continue

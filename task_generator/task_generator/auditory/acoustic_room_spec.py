@@ -7,6 +7,8 @@ import math
 from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.polygon import orient
 
+from .world_compat import world_zones
+
 Point2D = tuple[float, float]
 BoundaryKind = Literal["wall", "door", "opening"]
 
@@ -380,7 +382,7 @@ class AcousticRoomSpecBuilder:
     ) -> tuple[AcousticRoomSpec, ...]:
         return tuple(
             self._from_zone(zone)
-            for zone in world.zones
+            for zone in world_zones(world)
         )
     
     def _normalize_walls(self,zone) -> list[_SourceSegment]:

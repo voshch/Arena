@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import shapely
 from geometry_msgs.msg import Point
 
+from .world_compat import world_zones
+
 
 @dataclass(frozen=True)
 class AcousticWall:
@@ -27,13 +29,14 @@ class AcousticScene:
     zones: tuple[AcousticZone, ...]
     walls: tuple[AcousticWall, ...]
     ceiling_height_m: float = 3.0
+    zone_lookup_tolerance_m: float = 0.02
 
     @classmethod
     def from_world(cls, world) -> "AcousticScene":
         zones = []
         walls = []
 
-        for zone in world.zones:
+        for zone in world_zones(world):
             polygon = shapely.Polygon([(corner.x, corner.y) for corner in zone.corners])
             zones.append(AcousticZone( name=zone.name, polygon=polygon, floor_material_id=zone.material.name))
 
@@ -48,7 +51,15 @@ class AcousticScene:
 
     def zone_at_xy(self, x: float, y: float) -> AcousticZone | None:
         candidate = shapely.Point(float(x), float(y))
-        return next((zone for zone in self.zones if zone.polygon.covers(candidate)), None)
+        tolerance = max(float(self.zone_lookup_tolerance_m), 0.0)
+        return next(
+            (
+                zone
+                for zone in self.zones
+                if zone.polygon.buffer(tolerance).covers(candidate)
+            ),
+            None,
+        )
 
     def intersecting_walls(self, source: Point, listener: Point) -> list[AcousticWall]:
         path = shapely.LineString([(source.x, source.y), (listener.x, listener.y)])

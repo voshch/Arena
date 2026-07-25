@@ -1,17 +1,19 @@
 from __future__ import annotations
 from pathlib import Path
 from dataclasses import replace
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 import time
 import traceback
 
 import numpy as np
 from scipy.signal import fftconvolve
+from shapely.geometry import Polygon
 from task_generator.auditory.asset_lib import AcousticAssetCatalog
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
-from collections import defaultdict
+from collections import defaultdict, deque
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from task_generator.auditory.audio_mixer import AudioMixer
@@ -28,11 +30,14 @@ from task_generator.auditory.pyroomacoustics_adapter import (
     PyroomacousticsConfig,
 )
 from task_generator.auditory.portal_coupling import (
-    OneDoorRirCoupler,
+    MultiPortalRirCoupler,
     PortalCouplingConfig,
 )
 from task_generator_msgs.msg import EpisodeRecord, HeardSoundEvent, SoundEvent
-from task_generator.auditory.qos_profiles import transient_event_qos
+from task_generator.auditory.qos_profiles import (
+    acoustic_metadata_qos,
+    transient_event_qos,
+)
 
 FOOTSTEP_VARIANT_TAGS = frozenset({"default", "walnut_planks", "oak_planks", "marble_tile", "smooth_concrete", "ceramic_tile"})
 
@@ -59,16 +64,30 @@ class HumanSoundPlaybackNode(Node):
         self.declare_parameter("rir_temperature_c", 20.0)
         self.declare_parameter("rir_relative_humidity_percent", 50.0)
         self.declare_parameter("rir_ceiling_height_m", 3.0)
+        self.declare_parameter(
+            "rir_cache_position_quantization_m",
+            0.10,
+        )
+        self.declare_parameter("rir_cache_size", 512)
         self.declare_parameter("rir_dry_fallback", True)
         self.declare_parameter("play_inaudible_events", True)
         self.declare_parameter("minimum_playback_gain_db", -60.0)
+        self.declare_parameter("motor_playback_mode", "sequence")
+        self.declare_parameter("motor_single_asset_id", "motor")
         self.declare_parameter("portal_adjacency_tolerance_m", 0.08)
         self.declare_parameter("portal_inset_m", 0.03)
         self.declare_parameter("portal_loss_db", 3.0)
+        self.declare_parameter("opening_portal_loss_db", 0.5)
+        self.declare_parameter("derive_opening_portals", True)
+        self.declare_parameter("minimum_opening_width_m", 0.30)
+        self.declare_parameter("enable_multi_portal_rir", True)
+        self.declare_parameter("max_portal_hops", 4)
+        self.declare_parameter("route_distance_loss_db_per_m", 0.05)
         self.declare_parameter("portal_source_early_window_sec", 0.08)
         self.declare_parameter("portal_max_rir_duration_sec", 2.0)
         self.declare_parameter("portal_position_quantization_m", 0.10)
         self.declare_parameter("portal_rir_cache_size", 256)
+        self.declare_parameter("rir_event_buffer_size", 128)
 
         sample_rate = int(self.get_parameter("output_sample_rate").value)
         channels = int(self.get_parameter("output_channels").value)
@@ -79,6 +98,26 @@ class HumanSoundPlaybackNode(Node):
             sound_dir=Path(str(self.get_parameter("sound_dir").value)),
             output_sample_rate=sample_rate,
             output_channels=channels,
+        )
+        footstep_asset = self._catalog.require("footstep")
+        greeting_asset = self._catalog.require("greeting")
+        self.get_logger().info(
+            "registered lazy pedestrian audio assets: "
+            f"footstep_variants={len(footstep_asset.variants)}, "
+            f"greeting_variants={len(greeting_asset.variants)}, "
+            f"sound_dir={self.get_parameter('sound_dir').value!r}"
+        )
+        self._asset_loader = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="audio_asset_loader",
+        )
+        self._pending_asset_loads: deque[
+            tuple[Future, object, object, str | None]
+        ] = deque()
+        self._cancelled_motor_starts: set[str] = set()
+        self._asset_poll_timer = self.create_timer(
+            0.01,
+            self._poll_asset_loads,
         )
 
         self._mixer = AudioMixer(
@@ -99,9 +138,23 @@ class HumanSoundPlaybackNode(Node):
         self._minimum_playback_gain_db = float(
             self.get_parameter("minimum_playback_gain_db").value
         )
+        self._motor_playback_mode = str(
+            self.get_parameter("motor_playback_mode").value
+        ).strip()
+        if self._motor_playback_mode not in {
+            "sequence",
+            "single_loop",
+        }:
+            raise ValueError(
+                "motor_playback_mode must be 'sequence' or 'single_loop', "
+                f"got {self._motor_playback_mode!r}"
+            )
+        self.get_logger().info(
+            f"motor playback mode={self._motor_playback_mode!r}"
+        )
         self._room_specs: tuple[AcousticRoomSpec, ...] = ()
         self._world_graph: AcousticWorldGraph | None = None
-        self._portal_coupler: OneDoorRirCoupler | None = None
+        self._portal_coupler: MultiPortalRirCoupler | None = None
         self._world_name = ""
         self._world_loader = ThreadPoolExecutor(max_workers=1)
         self._world_load_future = None
@@ -110,6 +163,9 @@ class HumanSoundPlaybackNode(Node):
         self._heard_robot_matched = 0
         self._heard_filtered = 0
         self._played_events = 0
+        self._warned_no_heard_events = False
+        self._pending_heard_events: deque[HeardSoundEvent] = deque()
+        self._rir_warning_times: dict[tuple[str, str], float] = {}
         self._last_diagnostic_time = time.monotonic()
         self._diagnostic_timer = self.create_timer(
             5.0,
@@ -135,17 +191,25 @@ class HumanSoundPlaybackNode(Node):
                     relative_humidity_percent=float(
                         self.get_parameter(
                             "rir_relative_humidity_percent"
+                            ).value
+                    ),
+                    cache_position_quantization_m=float(
+                        self.get_parameter(
+                            "rir_cache_position_quantization_m"
                         ).value
+                    ),
+                    cache_size=int(
+                        self.get_parameter("rir_cache_size").value
                     ),
                 ),
             )
 
             world_topic = str(self.get_parameter("world_topic").value)
-            self.create_subscription(
+            self._world_subscription = self.create_subscription(
                 String,
                 world_topic,
                 self._cb_world,
-                1,
+                acoustic_metadata_qos(),
             )
             heard_topic = str(
                 self.get_parameter("heard_sound_events_topic").value
@@ -205,6 +269,11 @@ class HumanSoundPlaybackNode(Node):
             world_name,
             ceiling,
             float(self.get_parameter("portal_adjacency_tolerance_m").value),
+            bool(self.get_parameter("derive_opening_portals").value),
+            float(self.get_parameter("minimum_opening_width_m").value),
+            float(self.get_parameter("portal_loss_db").value),
+            float(self.get_parameter("opening_portal_loss_db").value),
+            self._pra_adapter,
         )
 
     @staticmethod
@@ -212,7 +281,18 @@ class HumanSoundPlaybackNode(Node):
         world_name: str,
         ceiling_height_m: float,
         adjacency_tolerance_m: float,
-    ) -> tuple[str, tuple[AcousticRoomSpec, ...], AcousticWorldGraph]:
+        derive_opening_portals: bool,
+        minimum_opening_width_m: float,
+        door_portal_loss_db: float,
+        opening_portal_loss_db: float,
+        adapter: PyroomacousticsAdapter | None,
+    ) -> tuple[
+        str,
+        tuple[AcousticRoomSpec, ...],
+        AcousticWorldGraph,
+        float,
+        str,
+    ]:
         world = WorldIdentifier(world_name).resolve_sync().load()
         specs = AcousticRoomSpecBuilder(
             AcousticRoomSpecConfig(ceiling_height_m=ceiling_height_m)
@@ -221,8 +301,30 @@ class HumanSoundPlaybackNode(Node):
             world,
             specs,
             adjacency_tolerance_m=adjacency_tolerance_m,
+            derive_opening_portals=derive_opening_portals,
+            minimum_opening_width_m=minimum_opening_width_m,
+            door_portal_loss_db=door_portal_loss_db,
+            opening_portal_loss_db=opening_portal_loss_db,
         )
-        return world_name, specs, graph
+        warmup_seconds = 0.0
+        warmup_error = ""
+        if adapter is not None and specs:
+            try:
+                polygon = Polygon(specs[0].corners_xy)
+                point = polygon.representative_point()
+                started = time.perf_counter()
+                adapter.compute_rir(
+                    specs[0],
+                    source_position_m=(point.x, point.y, 0.5),
+                    listener_position_m=(point.x, point.y, 1.5),
+                )
+                warmup_seconds = time.perf_counter() - started
+            except Exception as exc:
+                # Warming the optional cache must never make the acoustic
+                # scene unavailable. A real event can still render or use
+                # the configured dry fallback.
+                warmup_error = f"{type(exc).__name__}: {exc}"
+        return world_name, specs, graph, warmup_seconds, warmup_error
 
     def _poll_room_load(self) -> None:
         if self._world_load_future is None or not self._world_load_future.done():
@@ -230,9 +332,15 @@ class HumanSoundPlaybackNode(Node):
         future = self._world_load_future
         self._world_load_future = None
         try:
-            self._world_name, self._room_specs, self._world_graph = future.result()
+            (
+                self._world_name,
+                self._room_specs,
+                self._world_graph,
+                warmup_seconds,
+                warmup_error,
+            ) = future.result()
             self._portal_coupler = (
-                OneDoorRirCoupler(
+                MultiPortalRirCoupler(
                     self._pra_adapter,
                     self._world_graph,
                     world_name=self._world_name,
@@ -243,9 +351,23 @@ class HumanSoundPlaybackNode(Node):
             self.get_logger().info(
                 f"loaded {len(self._room_specs)} acoustic rooms for "
                 f"{self._world_name!r}; "
-                f"paired_portals={len(self._world_graph.portals)}, "
-                f"unpaired_doors={len(self._world_graph.unpaired_doors)}"
+                f"door_portals="
+                f"{sum(p.portal_kind == 'door' for p in self._world_graph.portals)}, "
+                f"opening_portals="
+                f"{sum(p.portal_kind == 'opening' for p in self._world_graph.portals)}, "
+                f"components={len(self._world_graph.connected_components())}, "
+                f"unpaired_doors={len(self._world_graph.unpaired_doors)}, "
+                f"pyroom_warmup={warmup_seconds:.3f}s"
             )
+            if warmup_error:
+                self.get_logger().warning(
+                    "pyroomacoustics warmup failed, but room loading "
+                    f"continues: {warmup_error}"
+                )
+            while self._pending_heard_events:
+                self._process_heard_sound(
+                    self._pending_heard_events.popleft()
+                )
         except Exception as exc:
             self.get_logger().error(f"failed to load acoustic rooms: {exc!r}")
 
@@ -257,6 +379,22 @@ class HumanSoundPlaybackNode(Node):
         if msg.listener_id != expected:
             self._heard_filtered += 1
             return
+        if self._use_rir and not self._room_specs:
+            maximum = max(
+                int(self.get_parameter("rir_event_buffer_size").value),
+                1,
+            )
+            if len(self._pending_heard_events) >= maximum:
+                dropped = self._pending_heard_events.popleft()
+                self.get_logger().warning(
+                    f"playback RIR event buffer full; dropping "
+                    f"{dropped.event_id!r}"
+                )
+            self._pending_heard_events.append(msg)
+            return
+        self._process_heard_sound(msg)
+
+    def _process_heard_sound(self, msg: HeardSoundEvent) -> None:
         # A stop event is also a control transition for an already-playing
         # keyed motor voice, so it must be handled even if the source is no
         # longer acoustically audible at the listener.
@@ -277,6 +415,8 @@ class HumanSoundPlaybackNode(Node):
             )
 
     def _cb_episode(self, msg: EpisodeRecord) -> None:
+        if self._use_rir and str(msg.world).strip():
+            self._cb_world(String(data=str(msg.world).strip()))
         if msg.episode_id == self._episode_id:
             return
 
@@ -284,6 +424,10 @@ class HumanSoundPlaybackNode(Node):
         self._episode_seed = int(msg.seed)
         self._occurrences.clear()
         self._mixer.stop_all()
+        while self._pending_asset_loads:
+            future, _, _, _ = self._pending_asset_loads.popleft()
+            future.cancel()
+        self._cancelled_motor_starts.clear()
 
     def _cb_sound_event(self, msg: SoundEvent) -> None:
         try:
@@ -298,18 +442,51 @@ class HumanSoundPlaybackNode(Node):
         portal_cache = (
             f", portal_cache_entries={self._portal_coupler.cache_entries}, "
             f"portal_cache_hits={self._portal_coupler.cache_hits}, "
-            f"portal_cache_misses={self._portal_coupler.cache_misses}"
+            f"portal_cache_misses={self._portal_coupler.cache_misses}, "
+            f"route_cache_entries={self._portal_coupler.route_cache_entries}, "
+            f"route_cache_hits={self._portal_coupler.route_cache_hits}, "
+            f"route_cache_misses={self._portal_coupler.route_cache_misses}"
             if self._portal_coupler is not None else ""
         )
-        self.get_logger().info(
+        rir_cache = (
+            f", rir_cache_entries={self._pra_adapter.cache_entries}, "
+            f"rir_cache_hits={self._pra_adapter.cache_hits}, "
+            f"rir_cache_misses={self._pra_adapter.cache_misses}"
+            if self._pra_adapter is not None else ""
+        )
+        message = (
             "audio diagnostics: "
             f"heard={self._heard_received}, "
             f"robot_matched={self._heard_robot_matched}, "
             f"filtered={self._heard_filtered}, "
             f"played={self._played_events}, "
             f"rooms={len(self._room_specs)}, "
-            f"rir={self._use_rir}{portal_cache}"
+            f"rir={self._use_rir}{rir_cache}{portal_cache}, "
+            f"stream_active={self._mixer.active}, "
+            f"device={self._mixer.device}, "
+            f"voices={self._mixer.voice_count}, "
+            f"callbacks={self._mixer.callback_count}, "
+            f"output_peak={self._mixer.last_output_peak:.4f}, "
+            f"stream_status={self._mixer.last_status!r}, "
+            f"asset_cache_entries={self._catalog.cached_samples}, "
+            f"asset_cache_hits={self._catalog.cache_hits}, "
+            f"asset_cache_misses={self._catalog.cache_misses}, "
+            f"asset_loads_pending={len(self._pending_asset_loads)}"
         )
+        if self._heard_received > 0 and self._played_events == 0:
+            self.get_logger().warning(message)
+        elif (
+            self._room_specs
+            and self._heard_received == 0
+            and not self._warned_no_heard_events
+        ):
+            self._warned_no_heard_events = True
+            self.get_logger().warning(
+                "audio stream is ready but no HeardSoundEvent has reached "
+                f"playback; {message}"
+            )
+        else:
+            self.get_logger().info(message)
 
     def _portal_coupling_config(self) -> PortalCouplingConfig:
         return PortalCouplingConfig(
@@ -325,6 +502,17 @@ class HumanSoundPlaybackNode(Node):
                 self.get_parameter("portal_position_quantization_m").value
             ),
             cache_size=int(self.get_parameter("portal_rir_cache_size").value),
+            opening_portal_loss_db=float(
+                self.get_parameter("opening_portal_loss_db").value
+            ),
+            max_portal_hops=(
+                int(self.get_parameter("max_portal_hops").value)
+                if bool(self.get_parameter("enable_multi_portal_rir").value)
+                else 1
+            ),
+            route_distance_loss_db_per_m=float(
+                self.get_parameter("route_distance_loss_db_per_m").value
+            ),
         )
 
     def _play_event(self, msg) -> None:
@@ -336,10 +524,17 @@ class HumanSoundPlaybackNode(Node):
                 self.get_logger().info(
                     f"stopping motor loop for {msg.source_agent_name!r}"
                 )
+            else:
+                # The intro may still be decoding on the worker. Prevent it
+                # from starting after a stop event has already arrived.
+                self._cancelled_motor_starts.add(motor_voice_id)
             return
 
         if asset_id == "motor_start":
-            self._play_motor_sequence(msg, motor_voice_id)
+            if self._motor_playback_mode == "single_loop":
+                self._schedule_single_motor_loop(msg, motor_voice_id)
+            else:
+                self._schedule_motor_sequence(msg, motor_voice_id)
             return
 
         key = (int(msg.source_agent_id), asset_id)
@@ -386,6 +581,48 @@ class HumanSoundPlaybackNode(Node):
             return
 
         asset, sample = selected
+        future = self._asset_loader.submit(self._catalog.load, sample)
+        self._pending_asset_loads.append((future, msg, asset, None))
+
+    def _poll_asset_loads(self) -> None:
+        """Complete worker decodes in event order on the ROS executor thread."""
+        while (
+            self._pending_asset_loads
+            and self._pending_asset_loads[0][0].done()
+        ):
+            future, msg, context, motor_voice_id = (
+                self._pending_asset_loads.popleft()
+            )
+            if future.cancelled():
+                continue
+            try:
+                loaded = future.result()
+                if motor_voice_id is None:
+                    self._play_loaded_sample(msg, context, loaded)
+                elif motor_voice_id in self._cancelled_motor_starts:
+                    self._cancelled_motor_starts.discard(motor_voice_id)
+                elif isinstance(context, tuple):
+                    self._play_loaded_motor_sequence(
+                        msg,
+                        motor_voice_id,
+                        context,
+                        loaded,
+                    )
+                else:
+                    self._play_loaded_single_motor_loop(
+                        msg,
+                        motor_voice_id,
+                        context,
+                        loaded,
+                    )
+            except Exception:
+                self.get_logger().error(
+                    "lazy acoustic asset load failed:\n"
+                    f"{traceback.format_exc()}"
+                )
+
+    def _play_loaded_sample(self, msg, asset, sample) -> None:
+        asset_id = asset.asset_id
         rendered = sample
         playback_backend = "dry"
         playback_fallback_reason = ""
@@ -425,7 +662,8 @@ class HumanSoundPlaybackNode(Node):
             f"gain={playback_gain_db:.1f} dB"
         )
 
-    def _play_motor_sequence(self, msg, voice_id: str) -> None:
+    def _schedule_motor_sequence(self, msg, voice_id: str) -> None:
+        self._cancelled_motor_starts.discard(voice_id)
         selected_segments = []
         for asset_id in ("motor_start", "motor_loop", "motor_stop"):
             key = (int(msg.source_agent_id), asset_id)
@@ -444,7 +682,87 @@ class HumanSoundPlaybackNode(Node):
                 return
             selected_segments.append(selected)
 
-        start_asset = selected_segments[0][0]
+        assets = tuple(selected[0] for selected in selected_segments)
+        sample_specs = tuple(selected[1] for selected in selected_segments)
+        future = self._asset_loader.submit(
+            self._catalog.load_many,
+            sample_specs,
+        )
+        self._pending_asset_loads.append((future, msg, assets, voice_id))
+
+    def _schedule_single_motor_loop(self, msg, voice_id: str) -> None:
+        self._cancelled_motor_starts.discard(voice_id)
+        asset_id = str(
+            self.get_parameter("motor_single_asset_id").value
+        ).strip()
+        key = (int(msg.source_agent_id), asset_id)
+        occurrence = self._occurrences[key]
+        self._occurrences[key] += 1
+        selected = self._catalog.select(
+            asset_id,
+            episode_seed=self._episode_seed,
+            agent_id=int(msg.source_agent_id),
+            occurrence=occurrence,
+        )
+        if selected is None:
+            self.get_logger().error(
+                f"single motor loop is missing asset {asset_id!r}"
+            )
+            return
+        asset, sample_spec = selected
+        future = self._asset_loader.submit(
+            self._catalog.load,
+            sample_spec,
+        )
+        self._pending_asset_loads.append(
+            (future, msg, asset, voice_id)
+        )
+
+    def _play_loaded_single_motor_loop(
+        self,
+        msg,
+        voice_id: str,
+        asset,
+        sample,
+    ) -> None:
+        playback_gain_db = self._event_playback_gain_db(msg, asset)
+        if playback_gain_db < self._minimum_playback_gain_db:
+            self._heard_filtered += 1
+            return
+
+        if self._use_rir:
+            rendered, backend, fallback_reason = self._render_with_rir(
+                msg,
+                sample,
+            )
+        else:
+            rendered, backend, fallback_reason = sample, "dry", ""
+
+        self._mixer.play(
+            rendered,
+            loop=True,
+            gain_db=playback_gain_db,
+            voice_id=voice_id,
+        )
+        self._played_events += 1
+        self.get_logger().info(
+            f"playing single motor loop for "
+            f"{msg.source_agent_name!r}: "
+            f"asset={asset.asset_id!r}, "
+            f"sample={sample.sample_id!r}, "
+            f"playback_backend={backend!r}, "
+            f"playback_fallback={fallback_reason!r}, "
+            f"gain={playback_gain_db:.1f} dB"
+        )
+
+    def _play_loaded_motor_sequence(
+        self,
+        msg,
+        voice_id: str,
+        assets,
+        samples,
+    ) -> None:
+        start_asset = assets[0]
         playback_gain_db = self._event_playback_gain_db(msg, start_asset)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
@@ -453,7 +771,7 @@ class HumanSoundPlaybackNode(Node):
         rendered_segments = []
         playback_backends = []
         playback_fallback_reasons = []
-        for _, sample in selected_segments:
+        for sample in samples:
             if self._use_rir:
                 rendered, backend, reason = self._render_with_rir(msg, sample)
             else:
@@ -529,6 +847,15 @@ class HumanSoundPlaybackNode(Node):
         try:
             if self._pra_adapter is None:
                 raise LookupError("pyroomacoustics_adapter_not_initialized")
+            propagation_reason = str(
+                getattr(msg, "backend_fallback_reason", "")
+            ).strip()
+            if bool(getattr(msg, "used_backend_fallback", False)) and (
+                propagation_reason
+            ):
+                raise LookupError(
+                    f"propagation_fallback:{propagation_reason}"
+                )
             source_zone = str(getattr(msg, "source_zone", "")).strip()
             listener_zone = str(getattr(msg, "listener_zone", "")).strip()
             room = self._room_for_event(msg)
@@ -552,9 +879,22 @@ class HumanSoundPlaybackNode(Node):
                     listener_position_m=listener,
                 )
                 rir = coupling.rir
-                playback_backend = "pyroomacoustics_one_door"
+                playback_backend = (
+                    "pyroomacoustics_one_door"
+                    if coupling.route is None
+                    or coupling.route.hop_count == 1
+                    else "pyroomacoustics_multi_portal"
+                )
             else:
-                raise LookupError("no_same_room_or_direct_portal_rir")
+                if propagation_reason:
+                    raise LookupError(
+                        f"propagation_fallback:{propagation_reason}"
+                    )
+                if not source_zone or not listener_zone:
+                    raise LookupError(
+                        "missing_source_or_listener_zone_metadata"
+                    )
+                raise LookupError("no_same_room_or_portal_route_rir")
             impulse = np.asarray(rir.samples, dtype=np.float32)
             if rir.global_delay_samples > 0:
                 impulse = np.pad(
@@ -583,11 +923,26 @@ class HumanSoundPlaybackNode(Node):
                 "",
             )
         except Exception as exc:
-            reason = f"rir_render_error:{type(exc).__name__}:{exc}"
-            self.get_logger().warning(
-                f"RIR rendering failed for {msg.asset_id!r}: {exc}; "
-                f"using {'dry sample' if self._rir_dry_fallback else 'silence'}"
+            unavailable = isinstance(exc, LookupError)
+            reason = (
+                f"rir_unavailable:{exc}"
+                if unavailable
+                else f"rir_render_error:{type(exc).__name__}:{exc}"
             )
+            warning_key = (str(msg.asset_id), reason)
+            now = time.monotonic()
+            last_warning = self._rir_warning_times.get(
+                warning_key,
+                -float("inf"),
+            )
+            if now - last_warning >= 5.0:
+                self._rir_warning_times[warning_key] = now
+                self.get_logger().warning(
+                    f"RIR {'unavailable' if unavailable else 'rendering failed'} "
+                    f"for {msg.asset_id!r}: {exc}; "
+                    f"using "
+                    f"{'dry sample' if self._rir_dry_fallback else 'silence'}"
+                )
             fallback = (
                 sample
                 if self._rir_dry_fallback
@@ -600,6 +955,7 @@ class HumanSoundPlaybackNode(Node):
             )
     
     def destroy_node(self) -> bool:
+        self._asset_loader.shutdown(wait=False, cancel_futures=True)
         self._world_loader.shutdown(wait=False, cancel_futures=True)
         self._mixer.close()
         return super().destroy_node()
@@ -610,6 +966,9 @@ def main() -> None:
     node = HumanSoundPlaybackNode()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

@@ -32,3 +32,11 @@ bool used_backend_fallback
 string backend_fallback_reason
 string portal_id
 geometry_msgs/Point portal_position
+
+# Complete portal route. portal_id/portal_position above remain the first
+# portal for compatibility with existing consumers.
+string[] portal_ids
+string[] traversed_zones
+geometry_msgs/Point[] portal_positions
+uint8 portal_hop_count
+float32 portal_route_loss_db
