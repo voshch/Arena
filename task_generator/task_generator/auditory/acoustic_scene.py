@@ -29,7 +29,7 @@ class AcousticScene:
     zones: tuple[AcousticZone, ...]
     walls: tuple[AcousticWall, ...]
     ceiling_height_m: float = 3.0
-    zone_lookup_tolerance_m: float = 0.02
+    zone_lookup_tolerance_m: float = 0.2
 
     @classmethod
     def from_world(cls, world) -> "AcousticScene":
