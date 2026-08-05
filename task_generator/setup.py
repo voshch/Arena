@@ -29,6 +29,8 @@ setup(
          existing('launch/human/hunav/*.launch.py')),
         (os.path.join('share', package_name, 'launch', 'human', 'arena_humansim'),
          existing('launch/human/arena_humansim/*.launch.py')),
+        (os.path.join('share', package_name, 'simulators', 'human', 'animations'), 
+         glob('task_generator/simulators/human/animations/*')),
     ],
     install_requires=['setuptools'],
     extras_require={
