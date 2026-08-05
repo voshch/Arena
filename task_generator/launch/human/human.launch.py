@@ -47,6 +47,14 @@ def generate_launch_description():
         choices=["level3", "pyroomacoustics"],
         default_value="level3",
     )
+    enable_multi_portal_rir = LaunchArgument(
+        name="enable_multi_portal_rir",
+        default_value="true",
+    )
+    compute_rir_in_propagation = LaunchArgument(
+        name="compute_rir_in_propagation",
+        default_value="true",
+    )
 
     motor_playback_mode = LaunchArgument(
         name="motor_playback_mode",
@@ -155,7 +163,7 @@ def generate_launch_description():
                     "pyroom_cache_position_quantization_m": 0.25,
                     "pyroom_cache_size": 512,
                     "pyroom_robot_listeners_only": True,
-                    "compute_rir_in_propagation": False,
+                    **compute_rir_in_propagation.param(bool),
                     "propagation_backend": propagation_backend.substitution,
                     "portal_adjacency_tolerance_m": 0.2,
                     "portal_inset_m": 0.03,
@@ -164,8 +172,8 @@ def generate_launch_description():
                     "derive_opening_portals": True,
                     "minimum_opening_width_m": 0.2,
                     # Each authored zone is one ordinary pyroomacoustics
-                    # room. Cross-zone rendering stops after one direct door.
-                    "enable_multi_portal_rir": False,
+                    # room. Cross-zone rendering may follow a portal route.
+                    **enable_multi_portal_rir.param(bool),
                     "max_portal_hops": 4,
                     "route_distance_loss_db_per_m": 0.05,
                     "portal_source_early_window_sec": 0.08,
@@ -294,7 +302,7 @@ def generate_launch_description():
                     "opening_portal_loss_db": 0.5,
                     "derive_opening_portals": True,
                     "minimum_opening_width_m": 0.2,
-                    "enable_multi_portal_rir": False,
+                    **enable_multi_portal_rir.param(bool),
                     "max_portal_hops": 4,
                     "route_distance_loss_db_per_m": 0.05,
                     "portal_source_early_window_sec": 0.08,
