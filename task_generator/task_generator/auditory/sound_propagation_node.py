@@ -96,7 +96,7 @@ class SoundPropagationNode(Node):
         self.declare_parameter("buffer_events_until_scene_loaded", True)
         self.declare_parameter("scene_event_buffer_size", 128)
         self.declare_parameter("pyroom_robot_listeners_only", True)
-        self.declare_parameter("compute_rir_in_propagation", False)
+        self.declare_parameter("compute_rir_in_propagation", True)
         self._scene: AcousticScene | None = None
         self._world_name = ""
         self._pending_world_name = ""
@@ -501,7 +501,7 @@ class SoundPropagationNode(Node):
 
     def _cb_robot_odom(self, robot_name: str, msg: Odometry) -> None:
         self._robots[f"robot:{robot_name}"] = msg.pose.pose.position
-        self.get_logger().info(f"robot listener updated: robot:{robot_name}")
+        # self.get_logger().info(f"robot listener updated: robot:{robot_name}")
 
 
     def _cb_sound_event(self, event: SoundEvent) -> None:

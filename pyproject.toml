@@ -65,6 +65,7 @@ dependencies = [
     "mcap",
     "mcap-ros2-support",
     "sounddevice>=0.5.5",
+    "pyroomacoustics>=0.10.1",
 ]
 
 [build-system]

@@ -32,6 +32,6 @@
 	update = checkout
 [submodule "humansim"]
 	path = humansim
-	url = https://github.com/kamila-spanova/humansim.git
-	branch = arena/audio
+	url = https://github.com/voshch/humansim.git
+	branch = feature/audio
 	update = checkout

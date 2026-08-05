@@ -23,7 +23,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     portaudio19-dev \
     libasound2-dev \
     libasound2-plugins \
-    alsa-utils
+    alsa-utils \
+    && ldconfig
+
 
 RUN pipx install git+https://github.com/voshch/vcstool.git
 
