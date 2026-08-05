@@ -37,16 +37,18 @@ class ImgUtil:
             tint (typing.Any): Tint color.
 
         Returns:
-            Image.Image: Tinted image.
+            Image.Image: Tinted image, RGB unless the source carries a non-uniform alpha channel.
         """
 
         if isinstance(img, Path):
-            img = Image.open(img).convert("RGBA")
+            img = Image.open(img)
+        if img.mode in ("P", "PA"):
+            img = img.convert("RGBA")
 
         tint_color = Color(tint).get_rgba()
 
         strength = tint_color[3]
-        orig_alpha = img.split()[3]
+        orig_alpha = img.getchannel("A") if "A" in img.getbands() else None
         base_rgb = img.convert("RGB")
         overlay_rgb = Image.new(
             "RGB",
@@ -58,9 +60,10 @@ class ImgUtil:
             ),
         )
         blended_rgb = Image.blend(base_rgb, overlay_rgb, strength)
-        r, g, b = blended_rgb.split()
 
-        return Image.merge("RGBA", (r, g, b, orig_alpha))
+        if orig_alpha is None or orig_alpha.getextrema() == (255, 255):
+            return blended_rgb
+        return Image.merge("RGBA", (*blended_rgb.split(), orig_alpha))
 
 
 class MdlUtil:

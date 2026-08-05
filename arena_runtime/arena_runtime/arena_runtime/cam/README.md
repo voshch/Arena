@@ -215,7 +215,7 @@ recursively. Cycles are detected at load time and raise `ValueError`
 
 ### Bundled shots and auto-registration
 
-Data shots live in [`configs/cam/shots/<name>.yaml`](configs/cam/shots/)
+Data shots live in [`configs/cam/shots/<name>.yaml`](../../configs/cam/shots/)
 and are auto-registered by file stem at package import. The stem may not
 shadow an existing verb name (import-time `ValueError`). Two shots ship:
 

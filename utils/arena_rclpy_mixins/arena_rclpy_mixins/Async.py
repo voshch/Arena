@@ -261,11 +261,20 @@ class ClientWrapper(typing.Generic[ServiceT]):
     async def call_forever(
         self,
         request: ServiceT.Request,
+        what: str | None = None,
     ) -> ServiceT.Response:
-        """Await the response with no timeout. The caller owns cancellation (e.g. via shutdown)."""
-        return await self._node.await_ros(self._client.call_async(request))
+        """Ensure + await the response with no timeout, narrating the wait.
+        The caller owns cancellation (e.g. via shutdown)."""
+        await self.ensure()
+        return await self._node.await_forever(
+            self._node.await_ros(self._client.call_async(request)),
+            what if what is not None else f"response from {self._client.srv_name}",
+        )
 
     async def ensure(self, timeout_sec: float | None = None) -> bool:
+        if timeout_sec is None:
+            await self._node.poll(self._client.service_is_ready, f"service {self._client.srv_name}")
+            return True
         return await self._node.wait_for_service_async(self._client, timeout=timeout_sec)
 
 
@@ -352,11 +361,13 @@ class ActionClientWrapper(typing.Generic[ActionT]):
         return await self._node.await_ros(goal_handle.cancel_goal_async())
 
     async def ensure(self, timeout_sec: float | None = None) -> bool:
+        if timeout_sec is None:
+            await self._node.poll(self._client.server_is_ready, f"action server {self._client._action_name}")
+            return True
         start_time = self._node.wall_time
         interval = 0.1
         while not self._client.server_is_ready():
-            if timeout_sec is not None:
-                if (self._node.wall_time - start_time).to_seconds() >= timeout_sec:
-                    return False
+            if (self._node.wall_time - start_time).to_seconds() >= timeout_sec:
+                return False
             await asyncio.sleep(interval)
         return True

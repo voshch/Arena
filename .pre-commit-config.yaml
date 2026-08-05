@@ -3,3 +3,11 @@ repos:
     rev: v0.15.10
     hooks:
       - id: ruff
+  - repo: local
+    hooks:
+      - id: doc-links
+        name: check doc links
+        entry: python _meta/tools/check_doc_links.py
+        language: python
+        pass_filenames: false
+        always_run: true

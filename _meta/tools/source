@@ -151,7 +151,19 @@ if [ -f "$ARENA_WS_DIR/.env" ] ; then
     set +a
 fi
 
+_arena_venv_provision(){
+    [ -f "$ARENA_VENV_DIR/.installed" ] && return 0
+    (
+        cd "$ARENA_DIR" || exit 1
+        uv venv "$ARENA_VENV_DIR" --allow-existing --system-site-packages && \
+        UV_PROJECT_ENVIRONMENT="$ARENA_VENV_DIR" uv sync --inexact --project "$ARENA_DIR" "$@" && \
+        touch "$ARENA_VENV_DIR/.installed"
+    )
+}
+export -f _arena_venv_provision 2>/dev/null || true
+
 _arena_heal_pip(){
+    command -v python > /dev/null 2>&1 || return 0
     python -c 'import pip.__main__' 2>/dev/null || python -m ensurepip --upgrade >/dev/null
 }
 export -f _arena_heal_pip 2>/dev/null || true
@@ -166,25 +178,28 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
     # python env
     pushd "$ARENA_DIR" > /dev/null || return 1
         if [ ! -f "$ARENA_VENV_DIR/.installed" ]; then
-            uv venv "$ARENA_VENV_DIR" --allow-existing --system-site-packages && \
-            UV_PROJECT_ENVIRONMENT="$ARENA_VENV_DIR" uv sync --inexact --project . && \
-            touch "$ARENA_VENV_DIR/.installed"
+            echo "arena: venv not ready, run 'arena repair' or wait for container setup" >&2
         fi
 
-        # if [ "$venv_path" != "$VIRTUAL_ENV" ] ; then
-        . "$ARENA_VENV_DIR/bin/activate"
-        dirs=("$ARENA_VENV_DIR"/lib/*/site-packages)
-        _IFS=$IFS IFS=':'
-        export PYTHONPATH="${dirs[*]}:$PYTHONPATH"
-        IFS=$_IFS
-        unset _IFS
-        unset dirs
-        unset venv_path
+        if [ -f "$ARENA_VENV_DIR/bin/activate" ]; then
+            . "$ARENA_VENV_DIR/bin/activate"
+            dirs=("$ARENA_VENV_DIR"/lib/*/site-packages)
+            _IFS=$IFS IFS=':'
+            export PYTHONPATH="${dirs[*]}:$PYTHONPATH"
+            IFS=$_IFS
+            unset _IFS
+            unset dirs
+        fi
     popd > /dev/null || return 1
     
     
     r2st(){ ros2 service call "$1" "$(ros2 service type "$1")";}
-    
+
+    _arena_cli(){
+        python3 "$TOOLS_DIR/arena_cli/__main__.py" "$@"
+    }
+    export -f _arena_cli 2>/dev/null || true
+
     arena(){
         local verb="$1"
         if [ -n "$verb" ] ; then
@@ -196,126 +211,25 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
         
         case "$verb" in
             build)
-                if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
-                    set -- --packages-select "$@"
-                fi
-                "${TOOLS_DIR}/colcon_build" "$@"
+                _arena_cli build "$@"
                 . "$SOURCE_FILE"
                 result=$?
             ;;
             rebuild)
-                if [ $# -lt 1 ]; then
-                    echo "Usage: arena rebuild <colcon-selection-args|package names>" >&2
-                    echo "  e.g. arena rebuild foo bar" >&2
-                    echo "       arena rebuild --packages-select foo bar" >&2
-                    echo "       arena rebuild --packages-select-regex 'arena_.*'" >&2
+                if _arena_cli rebuild "$@"; then
+                    . "$SOURCE_FILE"
+                fi
+                result=$?
+            ;;
+            repair)
+                if [ -f /.dockerenv ] || [ ! -f "$ARENA_VENV_DIR/.installed" ]; then
+                    rm -f "$ARENA_VENV_DIR/.installed"
+                    _arena_venv_provision "$@"
+                    result=$?
+                else
+                    echo "arena repair must run inside a container (the venv is shared with /opt/venv)" >&2
                     result=1
-                else
-                    if [[ "$1" != --* ]]; then
-                        set -- --packages-select "$@"
-                    fi
-                    if ! _REBUILD_LIST=$(colcon list --names-only --base-paths "$ARENA_WS_DIR/src" "$@"); then
-                        echo "arena rebuild: colcon list rejected the arguments, aborting before clean" >&2
-                        result=1
-                    elif [ -z "$_REBUILD_LIST" ]; then
-                        echo "arena rebuild: no packages matched" >&2
-                        result=1
-                    else
-                        mapfile -t _REBUILD_PKGS <<< "$_REBUILD_LIST"
-                        echo "arena rebuild: resolved ${#_REBUILD_PKGS[@]} package(s): ${_REBUILD_PKGS[*]}"
-                        for pkg in "${_REBUILD_PKGS[@]}"; do
-                            [ -n "$pkg" ] || continue
-                            if [ -d "build/${pkg}" ] || [ -d "install/${pkg}" ]; then
-                                echo "  rm -rf build/${pkg} install/${pkg}"
-                                rm -rf "build/${pkg}" "install/${pkg}"
-                            fi
-                        done
-                        echo "arena rebuild: clean done, invoking arena build"
-                        arena build "$@"
-                        result=$?
-                    fi
-                    unset _REBUILD_PKGS _REBUILD_LIST
                 fi
-            ;;
-            deps)
-                rosdep install --ignore-src -r -y --rosdistro "${ARENA_ROS_DISTRO}" --from-paths src --skip-keys "${ROSDEP_EXCLUDES:-libignition-gazebo6-dev gazebo_dev gazebo_ros gazebo_plugins gazebo_ros2_control flir_ptu_description}" "$@"
-                result=$?
-            ;;
-            update)
-                "${TOOLS_DIR}/pull" "$@"
-                result=$?
-                _arena_heal_pip
-            ;;
-            launch)
-                python3 -m arena_bringup.supervisor "$@"
-                result=$?
-            ;;
-            runtime)
-                ros2 launch arena_bringup arena_runtime.launch.py "$@"
-                result=$?
-            ;;
-            env)
-                ros2 launch task_generator task_generator.launch.py "$@"
-                result=$?
-            ;;
-            viz)
-                "${TOOLS_DIR}/viz" "$@"
-                result=$?
-            ;;
-            cam)
-                ros2 run arena_runtime cam "$@"
-            ;;
-            robot)
-                "${TOOLS_DIR}/robot" "$@"
-                result=$?
-            ;;
-            human)
-                "${TOOLS_DIR}/human" "$@"
-                result=$?
-            ;;
-            cleanup)
-                if [ $# -lt 1 ]; then
-                    echo "Usage: arena cleanup <env_id>" >&2
-                    result=1
-                else
-                    _arena_cleanup_id="$1"
-                    case "$_arena_cleanup_id" in
-                        ''|*[!0-9]*)
-                            echo "arena cleanup: env_id must be a non-negative integer, got: '$_arena_cleanup_id'" >&2
-                            result=1
-                            ;;
-                        *)
-                            ros2 service call /arena/cleanup_env \
-                                arena_runtime_msgs/srv/CleanupEnv \
-                                "{env_id: ${_arena_cleanup_id}}"
-                            result=$?
-                            ;;
-                    esac
-                    unset _arena_cleanup_id
-                fi
-            ;;
-            test)
-                if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
-                    set -- --packages-select "$@"
-                fi
-                if ! printf '%s\n' "$@" | grep -qE -- '^--packages-(select|select-regex|up-to|above|ignore)'; then
-                    set -- --packages-select-regex '^arena_' '^task_generator$' "$@"
-                fi
-                mapfile -t _TEST_PKGS < <(colcon list --names-only --base-paths "$ARENA_WS_DIR/src" "$@" 2>/dev/null)
-                colcon test --event-handlers console_direct+ "$@"
-                local _test_rc=$?
-                if [ ${#_TEST_PKGS[@]} -gt 0 ]; then
-                    "${TOOLS_DIR}/test_summary" "$ARENA_WS_DIR/build" --packages "${_TEST_PKGS[@]}"
-                else
-                    "${TOOLS_DIR}/test_summary" "$ARENA_WS_DIR/build"
-                fi
-                local _result_rc=$?
-                if [ $_test_rc -ne 0 ]; then
-                    result=$_test_rc
-                else
-                    result=$_result_rc
-                fi
-                unset _test_rc _result_rc _TEST_PKGS
             ;;
             deactivate)
                 deactivate 2>/dev/null || true
@@ -325,116 +239,14 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
                 unset -f arena
                 result=0
             ;;
-            ft|feature)
-                features=""
-                for entry in "$ARENA_FEATURES_DIR"/*; do
-                    [ -e "$entry" ] || continue
-                    fname=$(basename "$entry")
-                    _feature_registry resolve "$fname" >/dev/null 2>&1 || continue
-                    marker=""
-                    if _feature_registry has "$fname"; then
-                        marker="*"
-                    fi
-                    features="${features:+$features }${fname}${marker}"
-                done
-                unset entry fname marker
-                if [ $# -lt 1 ]; then
-                    echo "Usage: arena feature <name> <install|uninstall|update|...>" >&2
-                    echo "Available features: $features" >&2
-                    result=1
-                elif feature_path="$(_feature_registry resolve "$1")"; then
-                    fname="$1"
-                    shift
-                    fverb="$1"
-                    case "$fverb" in
-                        update)
-                            if ! _feature_registry has "$fname"; then
-                                echo "$fname is not installed; run 'arena feature $fname install' first." >&2
-                                result=1
-                            else
-                                shift
-                                ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path' update $*")
-                                result=$?
-                            fi
-                        ;;
-                        uninstall)
-                            shift
-                            # shellcheck disable=SC1090
-                            source "$feature_path" uninstall "$@"
-                            result=$?
-                        ;;
-                        launch)
-                            if ! _feature_registry has "$fname"; then
-                                echo "$fname is not installed; run 'arena feature $fname install' first." >&2
-                                result=1
-                            else
-                                ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path' $*")
-                                result=$?
-                            fi
-                        ;;
-                        *)
-                            ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path' $*")
-                            result=$?
-                        ;;
-                    esac
-                    unset fname fverb
-                else
-                    echo "Unknown feature '$1'" >&2
-                    echo "Available features: $features" >&2
-                    result=1
-                fi
-            ;;
-            registry)
-                _feature_registry "$@"
-                result=$?
-            ;;
             resource)
                 arena deactivate
                 source "$SOURCE_FILE"
                 return $?
             ;;
-            train)
-                arena feature training launch "$@"
-                result=$?
-            ;;
-            demo)
-                local -a _demo_defaults=(
-                    tm_robots:=demo
-                    world:=demo
-                    sim:=isaac
-                    viz.view:=robot3p
-                )
-                local -a _to_pass=()
-                local _def _key _skip _arg
-                for _def in "${_demo_defaults[@]}"; do
-                    _key="${_def%%:=*}"
-                    _skip=0
-                    for _arg in "$@"; do
-                        [ "${_arg%%:=*}" = "$_key" ] && { _skip=1; break; }
-                    done
-                    [ "$_skip" -eq 0 ] && _to_pass+=("$_def")
-                done
-                unset _def _key _skip _arg _demo_defaults
-                arena launch "${_to_pass[@]}" "$@"
-                result=$?
-                unset _to_pass
-            ;;
-            evaluation)
-                arena feature evaluation "$@"
-                result=$?
-            ;;
-            preload)
-                if [ $# -lt 1 ]; then
-                    echo "Usage: arena preload <world_name> [--no-scenarios] [-v]" >&2
-                    result=1
-                else
-                    ros2 run arena_simulation_setup preload_world "$@"
-                    result=$?
-                fi
-            ;;
             *)
-                echo 'Usage: arena <build|rebuild|demo|deps|update|launch|runtime|env|cam|cleanup|test|deactivate|evaluation|feature|registry|resource|train> [args...]' >&2
-                result=1
+                _arena_cli ${verb:+"$verb"} "$@"
+                result=$?
             ;;
         esac
 

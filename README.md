@@ -1,4 +1,5 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/GNTTf9DKyp)
+[![Docs](https://img.shields.io/badge/Docs-Read%20online-8CA1AF?logo=readthedocs&logoColor=white)](https://arena-dev.readthedocs.io/)
 
 # Arena-Rosnav
 

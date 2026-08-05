@@ -27,11 +27,11 @@ behave exactly as before.
 
 | Kind | Class | File | Behavior |
 | --- | --- | --- | --- |
-| `random` | `TM_Random` | [`random.py`](random.py) | samples N static and dynamic obstacles from model pools; counts and model lists are ROS params |
-| `parametrized` | `TM_Parametrized` | [`parametrized.py`](parametrized.py) | loads a `ParametrizedConfig` by name from `arena_simulation_setup`; min/max counts per entry |
-| `scenario` | `TM_Scenario` | [`scenario.py`](scenario.py) | reads `static` and `dynamic` lists from a world scenario YAML |
-| `environment` | `TM_Environment` | [`environment.py`](environment.py) | places obstacle groups from an environment config into detected or declared rooms |
-| `prompt` | `TM_Prompt` | [`prompt/prompt.py`](prompt/prompt.py) | LLM-driven obstacle generation; PROMPT registered per `BaseHumanSimulator` subclass |
+| `random` | `TM_Random` | [`random/`](random/) | samples N static and dynamic obstacles from model pools; counts and model lists are ROS params |
+| `parametrized` | `TM_Parametrized` | [`parametrized/`](parametrized/) | loads a `ParametrizedConfig` by name from `arena_simulation_setup`; min/max counts per entry |
+| `scenario` | `TM_Scenario` | [`scenario/`](scenario/) | reads `static` and `dynamic` lists from a world scenario YAML |
+| `environment` | `TM_Environment` | [`environment/`](environment/) | places obstacle groups from an environment config into detected or declared rooms |
+| `prompt` | `TM_Prompt` | [`prompt/`](prompt/) | LLM-driven obstacle generation; PROMPT registered per `BaseHumanSimulator` subclass |
 
 ## Package structure
 
@@ -103,14 +103,14 @@ seed produces identical placements.
 
 ## `obstacles/prompt/`
 
-`TM_Prompt` ([`prompt/prompt.py`](prompt/prompt.py)) generates obstacle lists
+`TM_Prompt` ([`prompt/arena.py`](prompt/arena.py), [`prompt/hunav.py`](prompt/hunav.py)) generates obstacle lists
 via an LLM. PROMPT registration is per-`BaseHumanSimulator` subclass, see
 [PROMPT registration](../../simulators/human/README.md#prompt-registration).
 
 ## Adding a new TM_Obstacles mode
 
 1. Create `tasks/obstacles/<name>/` as a package.
-2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has tunable parameters (using helpers from [`task_generator.tasks.declarations`](../declarations.py), e.g. `declare_int_pair`, `declare_catalog`), then register the loader with `@OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.<NAME>, namespace=_NS, schema=_declare_schema)`.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has tunable parameters (using helpers from [`arena_rclpy_mixins.declarations`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py), e.g. `declare_int_pair`, `declare_catalog`), then register the loader with `@OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.<NAME>, namespace=_NS, schema=_declare_schema)`.
 3. In `impl.py`: define the class extending `TM_Obstacles`; override `reset` to return `(list[Obstacle], list[DynamicObstacle])`.
 4. Add `<NAME> = "<name>"` to `Constants.TaskMode.TM_Obstacles` in [`constants/__init__.py`](../../constants/__init__.py).
 5. `walk_schemas` (module-level in `tasks/registry.py`) picks up your schema automatically at node init.

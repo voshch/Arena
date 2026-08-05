@@ -2,13 +2,13 @@
 
 `arena_node` ([`arena_node.py`](arena_node.py)) is the single process-level lifecycle
 node that lets multiple simulation environments coexist in one ROS graph. It owns
-three primitives (`EnvRegistry`, `HoldRegistry`, `CleanupManager`), serves the
+two primitives (`EnvRegistry`, `HoldRegistry`), serves the
 services that envs and callers use to register and tear down, and publishes latched
 state topics that everyone reads instead of polling.
 
 Launched by `arena_runtime.launch.py` (namespace `/arena`, node name `arena`).
 
-## The three primitives
+## The two primitives
 
 ### `EnvRegistry`
 
@@ -49,15 +49,6 @@ holder regardless of other holds, restoring pause state on release.
 Invariant: evicting an env calls `release_all(fqn)` so stale holds never block
 the sim permanently.
 
-### `CleanupManager`
-
-[`cleanup.py`](cleanup.py)
-
-Thin wrapper around `SimLifecycle.cleanup_namespace` with a prefix validator.
-External callers must supply a prefix matching `env_<digits>/` or `env_<digits>_`;
-the node itself bypasses validation (internal flag). Returns `(success, count,
-error_msg)`.
-
 ## `ArenaNode`: services and topics
 
 Namespace prefix for all names below: `/arena/`.
@@ -72,9 +63,7 @@ Namespace prefix for all names below: `/arena/`.
 | `confirm_world` | [`ConfirmWorld.srv`](../../arena_runtime_msgs/srv/ConfirmWorld.srv) | Run the shelf packer for an env's extent; returns reference/slot/prespawn |
 | `sim_lifecycle/hold` | [`LifecycleHold.srv`](../../arena_runtime_msgs/srv/LifecycleHold.srv) | Acquire or release a pause hold |
 | `sim_lifecycle/unpause_window` | [`LifecycleUnpauseWindow.srv`](../../arena_runtime_msgs/srv/LifecycleUnpauseWindow.srv) | Acquire or release the exclusive unpause window |
-| `cleanup_namespace` | [`CleanupNamespace.srv`](../../arena_runtime_msgs/srv/CleanupNamespace.srv) | Delete sim entities under a validated prefix |
-
-Action: `purge_env` ([`PurgeEnv.action`](../../arena_runtime_msgs/action/PurgeEnv.action)): delete entities under an arbitrary prefix and stream status feedback.
+| `cleanup_env` | [`CleanupEnv.srv`](../../arena_runtime_msgs/srv/CleanupEnv.srv) | Delete sim entities under an env's namespace prefix |
 
 ### Topics (all latched, `TRANSIENT_LOCAL`)
 
@@ -120,6 +109,6 @@ When `env_n > 0` at startup the node self-orchestrates an initial fleet via
 
 ## See also
 
-- [task_generator](../../README.md): episode loop, task-mode registry, manager overview.
-- [Managers](../manager/README.md): `RobotsManager`, `WorldManager`, `EnvironmentManager`, `Realizer`.
-- [arena_runtime_msgs](../../arena_runtime_msgs): all message, service, and action definitions.
+- [task_generator](../../../task_generator/README.md): episode loop, task-mode registry, manager overview.
+- [Managers](../../../task_generator/task_generator/manager/README.md): `RobotsManager`, `WorldManager`, `EnvironmentManager`, `Realizer`.
+- [arena_runtime_msgs](../../arena_runtime_msgs): all message and service definitions.

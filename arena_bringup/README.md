@@ -16,7 +16,7 @@ task-generator, and navigation stack lives here.
   (moved alongside its `BaseHumanSimulator` adapters).
 - [Task configs](configs/tasks/README.md) - `TaskModeSpec` schema,
   fleet-manager allocation, examples.
-- [Benchmark configs](../arena_evaluation/configs/benchmark/README.md) - suites,
+- [Benchmark configs](../arena_evaluation/arena_evaluation/configs/benchmark/README.md) - suites,
   contests, and how the runner consumes them.
 - [Python helpers](README.md) - `LaunchArgument`, `SelectAction`,
   `IsolatedGroupAction`, YAML substitutions, and log-level extension.

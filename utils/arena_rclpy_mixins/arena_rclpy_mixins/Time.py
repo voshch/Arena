@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import datetime
 import functools
+import math
 import typing
 
 import attrs
@@ -15,12 +16,16 @@ import rclpy.timer
 import rosgraph_msgs.msg
 from typing_extensions import Self
 
+T = typing.TypeVar('T')
+
 _CLOCK_QOS = rclpy.qos.QoSProfile(
     depth=1,
     reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
     durability=rclpy.qos.DurabilityPolicy.VOLATILE,
     history=rclpy.qos.HistoryPolicy.KEEP_LAST,
 )
+
+_NANOSECONDS_PER_SECOND = 10**9
 
 
 @functools.total_ordering
@@ -41,21 +46,19 @@ class Time:
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
             other = self.parse(other)  # type: ignore
-        return self.sec < other.sec or self.nanosec < other.nanosec
+        return (self.sec, self.nanosec) < (other.sec, other.nanosec)
 
     def __add__(self, other: object) -> Self:
         if not isinstance(other, type(self)):
             other = self.parse(other)  # type: ignore
 
-        return self.from_float(self.to_seconds() + other.to_seconds())
+        return self.from_nanoseconds(self.to_nanoseconds() + other.to_nanoseconds())
 
     def __sub__(self, other: object) -> Self:
+        """Differences may be negative, e.g. across a sim-clock rewind or wall-clock skew."""
         if not isinstance(other, type(self)):
             other = self.parse(other)  # type: ignore
-        new_time = self.to_seconds() - other.to_seconds()
-        if new_time < 0:
-            raise ValueError('Subtraction leads to negative time.')
-        return self.from_float(new_time)
+        return self.from_nanoseconds(self.to_nanoseconds() - other.to_nanoseconds())
 
     # Parsing
 
@@ -80,8 +83,17 @@ class Time:
 
     @classmethod
     def from_float(cls, v: float) -> Self:
-        sec = int(v)
+        sec = math.floor(v)
         nanosec = int((v - sec) * 1e9)
+        return cls(
+            sec=sec,
+            nanosec=nanosec,
+        )
+
+    @classmethod
+    def from_nanoseconds(cls, v: int) -> Self:
+        """Normalizes so nanosec stays in [0, 1e9), which `to_msg` requires (uint32)."""
+        sec, nanosec = divmod(int(v), _NANOSECONDS_PER_SECOND)
         return cls(
             sec=sec,
             nanosec=nanosec,
@@ -135,6 +147,12 @@ class Time:
         """
         return self.sec + self.nanosec / 1e9
 
+    def to_nanoseconds(self) -> int:
+        """
+        Convert to nanoseconds
+        """
+        return self.sec * _NANOSECONDS_PER_SECOND + self.nanosec
+
 
 class TimeNode(rclpy.node.Node):
     """Mixin class to provide clock utilities for rclpy nodes."""
@@ -167,9 +185,51 @@ class TimeNode(rclpy.node.Node):
         """
         return Time(self.__sim_time.sec, self.__sim_time.nanosec)
 
+    async def await_forever(
+        self,
+        awaitable: typing.Awaitable[T],
+        what: str,
+        warn_period: float = 10.0,
+    ) -> T:
+        """Unbounded await that narrates the wait on a fixed cadence. The caller owns cancellation."""
+        task = asyncio.ensure_future(awaitable)
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=warn_period)
+                if done:
+                    return task.result()
+                self.get_logger().warning(f"waiting on {what} ({loop.time() - start:.0f}s)")
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+
+    async def poll(
+        self,
+        predicate: typing.Callable[[], bool],
+        what: str,
+        warn_period: float = 10.0,
+        interval: float = 0.1,
+    ) -> None:
+        """Unbounded predicate poll that narrates the wait on a fixed cadence."""
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        next_warn = warn_period
+        while not predicate():
+            await asyncio.sleep(interval)
+            elapsed = loop.time() - start
+            if elapsed >= next_warn:
+                self.get_logger().warning(f"waiting on {what} ({elapsed:.0f}s)")
+                next_warn = elapsed + warn_period
+
     async def await_sim_step(self, timeout_sec: float | None = None) -> bool:
         """Block until /clock advances past its current value (proof the sim is stepping). False on timeout."""
         start = self.sim_time.to_seconds()
+
+        if timeout_sec is None:
+            await self.poll(lambda: self.sim_time.to_seconds() > start, "sim clock step")
+            return True
 
         async def _wait() -> None:
             while self.sim_time.to_seconds() <= start:

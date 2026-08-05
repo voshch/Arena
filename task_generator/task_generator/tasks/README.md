@@ -95,12 +95,12 @@ Each TM is a package with two files:
   first activated.
 
 The schema function calls one typed helper from
-[`task_generator.tasks.declarations`](declarations.py) per parameter:
+[`arena_rclpy_mixins.declarations`](../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py) per parameter:
 
 ```python
 # __init__.py
 from task_generator.constants import Constants
-from task_generator.tasks.declarations import declare_catalog, declare_int_pair
+from arena_rclpy_mixins.declarations import declare_catalog, declare_int_pair
 from task_generator.tasks.registry import ROBOTS_MODES, _REGISTRY_NAMESPACE
 
 _NS = _REGISTRY_NAMESPACE("mymode")

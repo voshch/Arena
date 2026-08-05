@@ -80,6 +80,8 @@ class Task(NodeInterface):
             modules=modules,
             **kwargs,
         )
+        self.set_tm_robots(self.node.conf.TaskMode.TM_ROBOTS.value)
+        self.set_tm_obstacles(self.node.conf.TaskMode.TM_OBSTACLES.value)
         await self.robots_manager.set_up()
         return self
 
@@ -127,8 +129,6 @@ class Task(NodeInterface):
         self.__reset_start = self.node.create_publisher(std_msgs.Empty, 'reset_start', 1)
         self.__reset_end = self.node.create_publisher(std_msgs.Empty, 'reset_end', 1)
 
-        self.__param_tm_obstacles = None  # type: ignore
-        self.__param_tm_robots = None  # type: ignore
         self._logger.debug('initing modules')
         self.__modules = []
         for module in modules:

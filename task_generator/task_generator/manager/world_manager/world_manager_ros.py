@@ -61,9 +61,13 @@ class MapServerHandler(NodeInterface):
 
             self._logger.warn('shutting down map server...')
 
-            await self.node.change_lifecycle_state_async(self.node.service_namespace('map_server'), lifecycle_msgs.msg.Transition.TRANSITION_DESTROY)
+            try:
+                await self.node.change_lifecycle_state_async(self.node.service_namespace('map_server'), lifecycle_msgs.msg.Transition.TRANSITION_DESTROY, timeout=wait_interval)
+            except TimeoutError:
+                self._logger.warn('map server unresponsive to destroy.')
+            else:
+                self._logger.warn('map server shut down.')
 
-            self._logger.warn('map server shut down.')
             self._logger.warn('relaunching map server...')
 
             await self.node.do_launch(launch.LaunchDescription([launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py')))]))
@@ -260,7 +264,11 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 await self._push_world_to_map_server(compacted_description, level_origins=level_origins)
 
         await self._environment_manager.reset(purge=ObstacleLayer.WORLD)
-        detected_walls = {disk_level: tuple(disk_map.detect_walls())} if disk_mode else {}
+        detected_walls = {}
+        if disk_mode:
+            zones = [zone for level in world.all_levels for zone in level.zones]
+            if not zones or any(zone.wall_material.name for zone in zones):
+                detected_walls = {disk_level: tuple(disk_map.detect_walls())}
         await self._environment_manager.spawn_world_obstacles(self._world, detected_walls=detected_walls)
 
         return True

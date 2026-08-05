@@ -1,44 +1,25 @@
-#!/usr/bin/env python3
-"""Spawn, list, and despawn robots in a running arena fleet at runtime.
+"""Spawn, list, and despawn robots in a running arena fleet at runtime."""
 
-Usage:
-  arena robot <model> [name:=N] [mobile:=M] [arm:=A] [count:=K] [key:=value ...]
-                      [--env <id>|--ns <ns>] [--nowait]
-  arena robot rm <name> [--env <id>|--ns <ns>] [--nowait]
-  arena robot ls [--env <id>|--ns <ns>|--all]
-  arena robot caps <model>
+from __future__ import annotations
 
-`caps` is a build-time, ROS-network-free lookup: it prints a robot model's caps,
-morphology (mounts/priority/defaults, if migrated to assembly.yaml), catalog
-variants per mounted type, and effective default sensors. Use it to see what a
-`robot:=<model>[...]` bracket can legally do before spawning anything.
-
-<key>:=<value> tokens describe the robot and are forwarded to the spawn service:
-`name` selects the instance name, `count` spawns that many, and every other key
-is passed through to Robot.parse (e.g. mobile:=manual, arm:=none). --flags
-control the command; the model is the sole positional for spawn.
-
-Spawns go live immediately (idle, in the staging area) and join the episode at the
-next reset. Pass immediate:=false to defer the whole spawn to the next reset instead.
-Despawns take effect on the next reset. By default the command waits until the robot
-appears in or disappears from the fleet (10s heartbeat), and --nowait returns as soon
-as the request is accepted.
-
-Discovers envs by polling `ros2 topic list` for `<ns>/state/robots`, waiting
-forever (10s heartbeat) until a match appears.
-"""
-
-import argparse
-import contextlib
 import os
-import subprocess
 import sys
-import time
+from typing import TYPE_CHECKING
+
+from common import make_verb
+
+if TYPE_CHECKING:
+    import argparse
+    import contextlib
+
+    import rclpy.node
 
 ROBOTS_SUFFIX = "/state/robots"
 
 
 def discover_envs() -> list[str]:
+    import subprocess
+
     try:
         out = subprocess.check_output(["ros2", "topic", "list"], stderr=subprocess.DEVNULL, text=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -56,6 +37,8 @@ def matches(ns: str, target: str) -> bool:
 
 
 def wait_for_env(target: str | None) -> list[str]:
+    import time
+
     waited = 0
     while True:
         nodes = discover_envs()
@@ -80,23 +63,28 @@ def resolve_single(target: str | None) -> str:
     return next(n for n in nodes if matches(n, target))
 
 
-@contextlib.contextmanager
-def ros_node():
-    import rclpy
+def ros_node() -> contextlib.AbstractContextManager[rclpy.node.Node]:
+    import contextlib
 
-    own = not rclpy.ok()
-    if own:
-        rclpy.init(args=[])
-    node = rclpy.create_node("arena_robot_cli")
-    try:
-        yield node
-    finally:
-        node.destroy_node()
+    @contextlib.contextmanager
+    def _cm() -> object:
+        import rclpy
+
+        own = not rclpy.ok()
         if own:
-            rclpy.shutdown()
+            rclpy.init(args=[])
+        node = rclpy.create_node("arena_robot_cli")
+        try:
+            yield node
+        finally:
+            node.destroy_node()
+            if own:
+                rclpy.shutdown()
+
+    return _cm()
 
 
-def call_service(node, srv_type, srv_name: str, request, timeout: float = 10.0):
+def call_service(node: rclpy.node.Node, srv_type: type, srv_name: str, request: object, timeout: float = 10.0) -> object:
     import rclpy
 
     client = node.create_client(srv_type, srv_name)
@@ -108,7 +96,9 @@ def call_service(node, srv_type, srv_name: str, request, timeout: float = 10.0):
     return future.result()
 
 
-def wait_until_ready(node, node_ns: str) -> None:
+def wait_until_ready(node: rclpy.node.Node, node_ns: str) -> None:
+    import time
+
     import rclpy
     from rcl_interfaces.srv import GetParameters
 
@@ -135,7 +125,9 @@ def wait_until_ready(node, node_ns: str) -> None:
         node.destroy_client(client)
 
 
-def read_fleet(node, node_ns: str, timeout: float = 5.0):
+def read_fleet(node: rclpy.node.Node, node_ns: str, timeout: float = 5.0) -> list[object]:
+    import time
+
     import rclpy
     import rclpy.qos
     from task_generator_msgs.msg import RobotFleet
@@ -150,7 +142,7 @@ def read_fleet(node, node_ns: str, timeout: float = 5.0):
     return list(latest[-1].robots) if latest else []
 
 
-def wait_for_presence(node, node_ns: str, names: set[str], present: bool, label: str) -> None:
+def wait_for_presence(node: rclpy.node.Node, node_ns: str, names: set[str], present: bool, label: str) -> None:
     import rclpy
     import rclpy.qos
     from task_generator_msgs.msg import RobotFleet
@@ -160,7 +152,7 @@ def wait_for_presence(node, node_ns: str, names: set[str], present: bool, label:
     sub = node.create_subscription(
         RobotFleet,
         node_ns + ROBOTS_SUFFIX,
-        lambda m: state.update(names={r.name for r in m.robots}),
+        lambda m: state.update(names={r.descriptor.name for r in m.robots}),
         qos,
     )
     waited = 0.0
@@ -241,7 +233,7 @@ def cmd_ls(opts: argparse.Namespace) -> int:
             if not robots:
                 print("  (empty)")
             for r in robots:
-                print(f"  {r.name}\t{r.model}\t{r.ns}")
+                print(f"  {r.descriptor.name}\t{r.descriptor.model}\t{r.descriptor.ns}")
     return 0
 
 
@@ -295,7 +287,6 @@ def cmd_caps(model: str) -> int:
                     manifest = d / "component.yaml"
                     if not manifest.is_file():
                         continue
-                    # a family component (variants: [...]) lists the variants it serves, not its dir name
                     family = ComponentSpec.from_yaml(manifest).variants
                     variants.extend(family or [d.name])
             print(f"  {t}: {', '.join(sorted(variants)) if variants else '(none)'}")
@@ -319,11 +310,43 @@ def _resolve_target(args: argparse.Namespace) -> str | None:
     return args.ns
 
 
-def main() -> int:
-    raw = sys.argv[1:]
+HELP = """Spawn, list, and despawn robots in a running arena fleet at runtime.
+
+\b
+Usage:
+  arena robot <model> [name:=N] [mobile:=M] [arm:=A] [count:=K] [key:=value ...]
+                      [--env <id>|--ns <ns>] [--nowait]
+  arena robot rm <name> [--env <id>|--ns <ns>] [--nowait]
+  arena robot ls [--env <id>|--ns <ns>|--all]
+  arena robot caps <model>
+
+`caps` is a build-time, ROS-network-free lookup: it prints a robot model's caps,
+morphology (mounts/priority/defaults, if migrated to assembly.yaml), catalog
+variants per mounted type, and effective default sensors. Use it to see what a
+`robot:=<model>[...]` bracket can legally do before spawning anything.
+
+<key>:=<value> tokens describe the robot and are forwarded to the spawn service:
+`name` selects the instance name, `count` spawns that many, and every other key
+is passed through to Robot.parse (e.g. mobile:=manual, arm:=none). --flags
+control the command, the model is the sole positional for spawn.
+
+Spawns go live immediately (idle, in the staging area) and join the episode at the
+next reset. Pass immediate:=false to defer the whole spawn to the next reset instead.
+Despawns take effect on the next reset. By default the command waits until the robot
+appears in or disappears from the fleet (10s heartbeat), and --nowait returns as soon
+as the request is accepted.
+
+Discovers envs by polling `ros2 topic list` for `<ns>/state/robots`, waiting
+forever (10s heartbeat) until a match appears.
+"""
+
+
+def _main(argv: list[str]) -> int:
+    import argparse
+
     kv: dict[str, str] = {}
     passthrough: list[str] = []
-    for tok in raw:
+    for tok in argv:
         if ":=" in tok:
             key, _, value = tok.partition(":=")
             kv[key] = value
@@ -336,33 +359,32 @@ def main() -> int:
         parser = argparse.ArgumentParser(prog="arena robot ls")
         _add_target(parser)
         parser.add_argument("--all", dest="all_envs", action="store_true")
-        args = parser.parse_args(passthrough[1:])
-        args.target = None if args.all_envs else _resolve_target(args)
-        return cmd_ls(args)
+        pargs = parser.parse_args(passthrough[1:])
+        pargs.target = None if pargs.all_envs else _resolve_target(pargs)
+        return cmd_ls(pargs)
 
     if sub == "caps":
         parser = argparse.ArgumentParser(prog="arena robot caps")
         parser.add_argument("model")
-        args = parser.parse_args(passthrough[1:])
-        return cmd_caps(args.model)
+        pargs = parser.parse_args(passthrough[1:])
+        return cmd_caps(pargs.model)
 
     if sub == "rm":
         parser = argparse.ArgumentParser(prog="arena robot rm")
         parser.add_argument("name")
         _add_target(parser)
         parser.add_argument("--nowait", action="store_true")
-        args = parser.parse_args(passthrough[1:])
-        args.target = _resolve_target(args)
-        return cmd_rm(args.name, args)
+        pargs = parser.parse_args(passthrough[1:])
+        pargs.target = _resolve_target(pargs)
+        return cmd_rm(pargs.name, pargs)
 
-    parser = argparse.ArgumentParser(prog="arena robot", description=__doc__)
+    parser = argparse.ArgumentParser(prog="arena robot", description=HELP)
     parser.add_argument("model")
     _add_target(parser)
     parser.add_argument("--nowait", action="store_true")
-    args = parser.parse_args(passthrough)
-    args.target = _resolve_target(args)
-    return cmd_spawn(args.model, kv, args)
+    pargs = parser.parse_args(passthrough)
+    pargs.target = _resolve_target(pargs)
+    return cmd_spawn(pargs.model, kv, pargs)
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+VERB = make_verb("robot", _main, passthrough=True, help_text=HELP)

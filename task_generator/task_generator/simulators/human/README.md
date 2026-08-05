@@ -2,7 +2,7 @@
 
 `BaseHumanSimulator` manages the pedestrian lifecycle (spawn, move, remove)
 and the per-episode obstacle bookkeeping layer. Implementations are registered
-in `HumanSimulatorRegistry`. See also [sim interface](../sim/README.md) for the
+in `HumanSimulatorRegistry`. See also [sim interface](../../../../arena_runtime/arena_runtime/arena_runtime/sim/README.md) for the
 physics-simulator counterpart (`BaseSim`).
 
 ## `BaseHumanSimulator`

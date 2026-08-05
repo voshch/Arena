@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import attrs
 
+from arena_simulation_setup import ARENA_ASSETS_DIR
 from arena_simulation_setup.tree import (
     DynamicPaths,
     ModifiersDomainAssetIdentifier,
@@ -24,25 +26,49 @@ class MaterialIdentifier(ModifiersDomainAssetIdentifier["Material"]):
 
     _asset_type = 'Material'
 
+    # Baking a tint re-encodes every diffuse texture, so results are cached on disk keyed by
+    # source contents. Level 1 keeps the encode ~5x cheaper than zlib's default for ~13% more
+    # bytes, which never leave this cache.
+    _CACHE_DIR: typing.ClassVar[Path] = ARENA_ASSETS_DIR / '.cache' / 'Material'
+    _COMPRESS_LEVEL: typing.ClassVar[int] = 1
+
+    @classmethod
+    def _tint_key(cls, basepath: Path, tint: str) -> str:
+        digest = hashlib.sha256(tint.encode())
+        for file in sorted(basepath.rglob('*')):
+            if file.is_file():
+                stat = file.stat()
+                digest.update(f'{file.relative_to(basepath)}:{stat.st_mtime_ns}:{stat.st_size}'.encode())
+        return digest.hexdigest()[:16]
+
     @classmethod
     def _apply_tint(cls, basepath: Path, material: Material, tint: str) -> Material:
 
-        tmpdir = tempfile.mkdtemp(prefix='material_')
-        shutil.copytree(basepath, tmpdir, dirs_exist_ok=True)
-        path = Path(tmpdir) / Path(material.path).relative_to(basepath)
-        basepath = Path(tmpdir)
+        relpath = Path(material.path).relative_to(basepath)
+        cachedir = cls._CACHE_DIR / cls._tint_key(basepath, tint)
 
-        for texture_path in MdlUtil(path).diffuse_texture_paths:
+        if not cachedir.is_dir():
+            cls._CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            stagedir = Path(tempfile.mkdtemp(prefix='material_', dir=cls._CACHE_DIR))
+            shutil.copytree(basepath, stagedir, dirs_exist_ok=True)
+
+            for texture_path in MdlUtil(stagedir / relpath).diffuse_texture_paths:
+                try:
+                    if texture_path.exists() and texture_path.is_relative_to(stagedir):
+                        tinted_img = ImgUtil.tint(texture_path, tint)
+                        tinted_img.save(texture_path, compress_level=cls._COMPRESS_LEVEL)
+                except Exception as e:
+                    logging.error(f'Failed to tint texture {texture_path}: {e}\n{traceback.format_exc()}')
+
             try:
-                if texture_path.exists() and texture_path.is_relative_to(basepath):
-                    tinted_img = ImgUtil.tint(texture_path, tint)
-                    tinted_img.save(texture_path)
-            except Exception as e:
-                logging.error(f'Failed to tint texture {texture_path}: {e}\n{traceback.format_exc()}')
+                stagedir.rename(cachedir)
+            except OSError:
+                # Lost the race against a concurrent bake of the same key.
+                shutil.rmtree(stagedir, ignore_errors=True)
 
         return attrs.evolve(
             material,
-            path=str(path.resolve()),
+            path=str((cachedir / relpath).resolve()),
         )
 
     def load(self, path: Path, /, **kwargs: object) -> Material:

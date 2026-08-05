@@ -5,7 +5,7 @@ import lifecycle_msgs.msg
 import lifecycle_msgs.srv
 import rclpy.node
 
-from arena_rclpy_mixins.Async import AsyncNode
+from arena_rclpy_mixins.Async import AsyncNode, ClientWrapper
 from arena_rclpy_mixins.Time import TimeNode
 
 
@@ -73,18 +73,27 @@ class LifecycleClient(TimeNode, rclpy.node.Node):
 
 
 class AsyncLifecycleClient(AsyncNode):
-    async def _call_lifecycle(self, srv_type: type, sub_path: str, node_name: str, request: object, timeout: float | None, **kwargs: object) -> object:
-        cli = self.create_client_wrapper(
-            srv_type,
-            srv_name := os.path.join(node_name, sub_path),
-            **kwargs,
-        )
+    async def _call_wrapper(self, cli: ClientWrapper, request: object, timeout: float | None) -> object:
+        srv_name = cli.client.srv_name
+        if timeout is None:
+            return await cli.call_forever(request)
         if not await cli.ensure(timeout_sec=timeout):
             raise TimeoutError(f'timed out waiting for {srv_name} after {timeout}s')
         res = await cli.call_timeout(request, timeout_sec=timeout)
         if res is None:
             raise TimeoutError(f'service call {srv_name} timed out after {timeout}s')
         return res
+
+    async def _call_lifecycle(self, srv_type: type, sub_path: str, node_name: str, request: object, timeout: float | None, **kwargs: object) -> object:
+        cli = self.create_client_wrapper(
+            srv_type,
+            os.path.join(node_name, sub_path),
+            **kwargs,
+        )
+        try:
+            return await self._call_wrapper(cli, request, timeout)
+        finally:
+            self.destroy_client(cli.client)
 
     async def get_lifecycle_state_async(self, node_name: str, *, timeout: float | None = None, **kwargs: object) -> lifecycle_msgs.msg.State:
         res = await self._call_lifecycle(
@@ -135,12 +144,24 @@ class AsyncLifecycleClient(AsyncNode):
     async def wait_for_lifecycle_state_async(self, node_name: str, desired_state: lifecycle_msgs.msg.State | int, *, check_interval: float = 0.5, timeout: float | None = None, **kwargs: object) -> bool:
         if isinstance(desired_state, int):
             desired_state = lifecycle_msgs.msg.State(id=desired_state)
+        cli = self.create_client_wrapper(
+            lifecycle_msgs.srv.GetState,
+            os.path.join(node_name, 'get_state'),
+            **kwargs,
+        )
         start_time = self.wall_time
-        while True:
-            current_state = await self.get_lifecycle_state_async(node_name, timeout=timeout, **kwargs)
-            if current_state.id == desired_state.id:
-                return True
-            if timeout is not None:
-                if (self.wall_time - start_time).to_seconds() >= timeout:
-                    return False
-            await asyncio.sleep(check_interval)
+        try:
+            while True:
+                try:
+                    res = await self._call_wrapper(cli, lifecycle_msgs.srv.GetState.Request(), timeout)
+                except TimeoutError:
+                    pass
+                else:
+                    if res.current_state.id == desired_state.id:
+                        return True
+                if timeout is not None:
+                    if (self.wall_time - start_time).to_seconds() >= timeout:
+                        return False
+                await asyncio.sleep(check_interval)
+        finally:
+            self.destroy_client(cli.client)

@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import os
-import traceback
 import typing
 from collections.abc import Callable
 
@@ -266,8 +265,6 @@ class RobotsManager(NodeInterface):
             yield t
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            self._logger.error(f'Error while providing node paths {e}\n{traceback.format_exc()}')
         finally:
             if t and not t.done():
                 t.cancel()

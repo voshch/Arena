@@ -9,7 +9,7 @@ arena_docker_compose(){
             [ -f "$ov" ] && files="${files}:${ov}"
         done < "$ARENA_DIR/.installed"
     fi
-    ${arena_compose_sudo} env ${docker_env} COMPOSE_FILE="$files" \
+    ${arena_compose_sudo} env ${docker_env} ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" COMPOSE_FILE="$files" \
         docker compose \
         --project-directory "$ARENA_WS_DIR" \
         --project-name "$ARENA_PROJECT_NAME" \

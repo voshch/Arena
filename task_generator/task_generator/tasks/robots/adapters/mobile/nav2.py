@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 from typing import TYPE_CHECKING, ClassVar, Literal
 
@@ -22,6 +21,7 @@ from task_generator.tasks.robots.request import GoToPhase, TaskPhase
 
 if TYPE_CHECKING:
     import geometry_msgs.msg
+    from arena_rclpy_mixins.Async import ClientWrapper
 
     from task_generator.manager.robot_manager.robot_manager import RobotManager
     from task_generator.shared import Pose
@@ -68,6 +68,16 @@ if TYPE_CHECKING:
 class Nav2Adapter(MobileAdapter):
     kind: ClassVar[str] = "nav2"
 
+    def __init__(self, *args: object, **kwargs: object):
+        super().__init__(*args, **kwargs)
+        self._costmap_clients: dict[str, ClientWrapper] = {}
+
+    async def teardown(self) -> None:
+        for cli in self._costmap_clients.values():
+            self.rm.node.destroy_client(cli.client)
+        self._costmap_clients.clear()
+        await super().teardown()
+
     async def publish_goal_loop(self) -> None:
         # nav2 uses navigate_to_pose action; no topic republish.
         return
@@ -110,8 +120,7 @@ class Nav2Adapter(MobileAdapter):
             await super().wait_until_ready(robot, node_paths)
             return
         bt_node_path = str(robot.namespace("bt_navigator"))
-        while bt_node_path not in node_paths:
-            await asyncio.sleep(0.01)
+        await robot.node.poll(lambda: bt_node_path in node_paths, f"node {bt_node_path}", interval=0.01)
         await super().wait_until_ready(robot, node_paths)
 
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
@@ -154,7 +163,10 @@ class Nav2Adapter(MobileAdapter):
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
-        cli = robot.node.create_client_wrapper(srv_type, srv_name)
+        cli = self._costmap_clients.get(srv_name)
+        if cli is None:
+            cli = robot.node.create_client_wrapper(srv_type, srv_name)
+            self._costmap_clients[srv_name] = cli
         await cli.ensure()
 
         result = await cli.call_timeout(req)

@@ -2,7 +2,7 @@
 
 `BaseSim` and the four sub-interfaces it combines. Implementations are
 registered in `SimulatorRegistry` and instantiated by key at runtime. See also
-[human simulator](../human/README.md) for the pedestrian-logic counterpart
+[human simulator](../../../../task_generator/task_generator/simulators/human/README.md) for the pedestrian-logic counterpart
 (`BaseHumanSimulator`).
 
 ## Sub-interfaces

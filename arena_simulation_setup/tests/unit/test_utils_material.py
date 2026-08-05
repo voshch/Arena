@@ -47,7 +47,7 @@ def _make_rgba_image(w: int = 8, h: int = 8) -> Image.Image:
 def test_imutil_tint_image_input():
     img = _make_rgba_image()
     result = ImgUtil.tint(img, "red")
-    assert result.mode == "RGBA"
+    assert result.mode == "RGB"
     assert result.size == (8, 8)
 
 
@@ -56,7 +56,15 @@ def test_imutil_tint_path_input(tmp_path):
     img_path = tmp_path / "test.png"
     img.save(img_path)
     result = ImgUtil.tint(img_path, "blue")
+    assert result.mode == "RGB"
+
+
+def test_imutil_tint_preserves_nonuniform_alpha():
+    img = Image.new("RGBA", (2, 1), (128, 128, 128, 255))
+    img.putpixel((1, 0), (128, 128, 128, 0))
+    result = ImgUtil.tint(img, "red")
     assert result.mode == "RGBA"
+    assert [result.getpixel((x, 0))[3] for x in (0, 1)] == [255, 0]
 
 
 def test_imutil_tint_rgba_strength_affects_result():

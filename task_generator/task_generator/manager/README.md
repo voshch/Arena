@@ -93,7 +93,7 @@ indicating the map server has processed the latest world change.
 [`environment_manager.py:20`](environment_manager.py#L20)
 
 Adapter between the task system and the two simulator layers
-([`BaseSim`](../simulators/sim/README.md) for physics objects,
+([`BaseSim`](../../../arena_runtime/arena_runtime/arena_runtime/sim/README.md) for physics objects,
 [`BaseHumanSimulator`](../simulators/human/README.md) for pedestrian logic).
 All obstacle/robot operations go through here.
 

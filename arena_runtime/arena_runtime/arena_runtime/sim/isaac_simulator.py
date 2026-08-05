@@ -175,16 +175,16 @@ class IsaacHost(SimLifecycle):
         )
 
     async def pause(self) -> bool:
-        res = await self._pause_client.call_timeout(std_srvs.srv.Trigger.Request())
-        return bool(res) and res.success
+        res = await self._pause_client.call_forever(std_srvs.srv.Trigger.Request())
+        return res.success
 
     async def unpause(self) -> bool:
         res = await self._unpause_client.call_forever(std_srvs.srv.Trigger.Request())
         return res.success
 
     async def cleanup_namespace(self, prefix: str) -> int:
-        res = await self._delete_prims_client.call_timeout(DeletePrims.Request(names=[prefix]))
-        if res is None or not res.ret:
+        res = await self._delete_prims_client.call_forever(DeletePrims.Request(names=[prefix]))
+        if not res.ret:
             return 0
         return 1 if res.ret[0] else 0
 
@@ -279,7 +279,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     fq_name = self._NS_ROBOT(robot.name)
 
-                    await self._clients.SpawnUrdf.call_timeout(
+                    spawn_res = await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
                             urdf_path=str(model.path),
@@ -294,6 +294,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
                             odom_topic=self.node.service_namespace(robot.name, 'odom'),
                         )
                     )
+                    if spawn_res is None or not spawn_res.path:
+                        self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check isaac log'}")
+                        return False
 
                     control_spec = robot_params.control
                     is_ros2_control = control_spec is not None and control_spec.is_ros2_control
@@ -558,7 +561,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             return map(create_segment, segments), map(create_obstacle, obstacles)
 
         wall_futures = await asyncio.gather(*map(create_wall, walls))
-        segment_futures, obstacle_futures = zip(*wall_futures, strict=False)
+        segment_futures, obstacle_futures = zip(*wall_futures, strict=False) if wall_futures else ((), ())
 
         walls_req = SpawnWalls.Request()
         prims_req = SpawnPrims.Request()

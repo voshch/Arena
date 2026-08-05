@@ -9,8 +9,11 @@ import geometry_msgs.msg
 import nav2_msgs.msg
 import rclpy
 import rclpy.node
+import rclpy.time
 import shapely
 import shapely.affinity
+import std_msgs.msg
+from arena_rclpy_mixins.shared import Namespace
 from arena_robots.caps import PolygonSpec
 from rclpy.parameter import Parameter
 
@@ -80,19 +83,31 @@ class CollisionTrackerNode(rclpy.node.Node):
         self._footprint_base: shapely.Polygon | None = None
         if footprint is not None and len(footprint) >= 3:
             self._footprint_base = shapely.Polygon(footprint)
+        # None while a reset is in flight
+        self._valid_after: rclpy.time.Time | None = None
 
         self._pub_state = self.create_publisher(nav2_msgs.msg.CollisionMonitorState, 'collision_monitor_state', 10)
         self._pub_events = self.create_publisher(arena_robots_msgs.msg.CollisionEvents, 'collision_events', 10)
+        env_ns = Namespace(robot_manager.node.get_namespace())
         self._sub_peds = self.create_subscription(
             arena_people_msgs.msg.Pedestrians,
-            str(robot_manager.namespace.simulation_ns('arena_peds')),
+            str(env_ns('arena_peds')),
             self._on_peds,
             10,
         )
+        self._sub_reset_start = self.create_subscription(std_msgs.msg.Empty, str(env_ns('reset_start')), self._on_reset_start, 1)
+        self._sub_reset_end = self.create_subscription(std_msgs.msg.Empty, str(env_ns('reset_end')), self._on_reset_end, 1)
         self._timer = self.create_timer(1.0 / rate_hz, self._tick)
 
     def _on_peds(self, msg: arena_people_msgs.msg.Pedestrians):
         self._peds_msg = msg
+
+    def _on_reset_start(self, _msg: std_msgs.msg.Empty):
+        self._valid_after = None
+
+    def _on_reset_end(self, _msg: std_msgs.msg.Empty):
+        self._peds_msg = None
+        self._valid_after = self.get_clock().now()
 
     def _robot_polygon(self, entry: dict, rx: float, ry: float, rth: float) -> shapely.Polygon:
         if entry['type'] == 'polygon':
@@ -101,8 +116,11 @@ class CollisionTrackerNode(rclpy.node.Node):
         return shapely.Point(rx, ry).buffer(entry['R_c'])
 
     def _tick(self):
-        pose = self._rm.pose
-        if pose is None:
+        stamped = self._rm.pose_stamped
+        if stamped is None:
+            return
+        pose, stamp = stamped
+        if self._valid_after is None or stamp <= self._valid_after:
             return
 
         rx, ry, rth = pose.to_2d()

@@ -109,6 +109,11 @@ repositories:
     type: git
     url: https://github.com/voshch/hri_rviz.git
     version: jazzy
+  # human_description forked for the 24-dof skeleton contract (3-dof waist + articulated ankles)
+  deps/human_description:
+    type: git
+    url: https://github.com/voshch/human_description.git
+    version: arena-v2
 
   # generic runtime declarative display control for rviz2 (msgs + plugin)
   deps/rviz_display_control:

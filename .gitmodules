@@ -13,7 +13,7 @@
 [submodule "arena_isaac"]
 	path = arena_isaac
 	url = https://github.com/Arena-Rosnav/arena-isaac
-	branch = arena5-isaac5.1.0
+	branch = isaac6.0.0
 	update = checkout
 [submodule "arena_training"]
 	path = arena_training

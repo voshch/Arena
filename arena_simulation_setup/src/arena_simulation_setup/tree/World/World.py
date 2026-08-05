@@ -5,7 +5,7 @@ import os
 import tarfile
 import time
 import typing
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from pathlib import Path
 
@@ -75,6 +75,10 @@ class LevelDescription:
             converter=MaterialIdentifier.converter,
             default=Material.default('ceiling'),
         )
+        wall_material: MaterialIdentifier = attrs.field(
+            converter=MaterialIdentifier.converter,
+            default=Material.default('wall'),
+        )
 
         @property
         def floor(self) -> Floor:
@@ -91,7 +95,7 @@ class LevelDescription:
 
     @property
     def all_walls(self) -> typing.Iterable[Wall]:
-        return (wall for zone in self.zones for wall in zone.walls)
+        return (wall for zone in self.zones for wall in zone.walls if wall.material is None or wall.material.name)
 
     @property
     def all_doors(self) -> typing.Iterable[Door]:
@@ -103,12 +107,14 @@ class LevelDescription:
 
     @property
     def all_floors(self) -> typing.Iterable[Floor]:
-        return (zone.floor for zone in self.zones)
+        return (zone.floor for zone in self.zones if zone.material.name)
 
     async def all_ceilings(self) -> list[Ceiling]:
         result: list[Ceiling] = []
         for zone in self.zones:
             if not zone.ceiling:
+                continue
+            if not zone.ceiling_material.name:
                 continue
             if not zone.corners:
                 continue
@@ -381,6 +387,24 @@ class LevelDescription:
                     tarball.addfile(tarinfo=info, fileobj=io.BytesIO(content))
             tar_stream.seek(0)
             return tarfile.open(fileobj=io.BytesIO(tar_stream.getvalue()))
+
+
+_ZONE_KEY_ALIASES = {'mat': 'material', 'ceiling_mat': 'ceiling_material', 'wall_mat': 'wall_material'}
+
+
+def _structure_zone(value: object, cls: type) -> object:
+    if isinstance(value, cls):
+        return value
+    if isinstance(value, Mapping):
+        remapped = dict(value)
+        for alias, field in _ZONE_KEY_ALIASES.items():
+            if alias in remapped and field not in remapped:
+                remapped[field] = remapped.pop(alias)
+        value = remapped
+    return converter.structure_attrs_fromdict(value, cls)
+
+
+converter.register_structure_hook(LevelDescription.Zone, _structure_zone)
 
 
 @attrs.define

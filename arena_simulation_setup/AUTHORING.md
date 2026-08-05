@@ -71,6 +71,11 @@ Key points:
 - Multiple zones share a single flat `zones` list. Zone boundaries are defined
   only by their `corners` polygon and their `walls` list, with no explicit
   parent-child relationship.
+- An empty material opts a surface out entirely: `material: ''` on a zone
+  spawns no floor, `ceiling_material: ''` no ceiling, `material: ''` on a
+  wall entry drops that wall, and `wall_material: ''` on every zone of a
+  level suppresses the occupancy-detected collision walls. The short keys
+  `mat`, `ceiling_mat`, `wall_mat` are accepted as aliases.
 
 ### Ceilings
 

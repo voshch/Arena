@@ -130,7 +130,7 @@ class MyMobileAdapter(Adapter):
         self.rm.node.executor.add_node(self._collision)
 ```
 
-See [`test_collision.py`](test_collision.py) for a working example, a debug
+See [`mobile/test_collision.py`](mobile/test_collision.py) for a working example, a debug
 adapter that mounts the tracker and drives a constant forward cmd_vel. The
 `nav2` adapter deliberately does not mount it: nav2's own `collision_monitor`
 already publishes `collision_monitor_state` on the same topic.

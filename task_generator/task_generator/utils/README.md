@@ -2,26 +2,6 @@
 
 Standalone helpers used across the package.
 
-## `Registry`
-
-[`registry.py:7`](registry.py#L7)
-
-Generic async-factory registry: `Registry[Key, Value]`. Associates a `Key`
-(typically an enum member) with an async callable that constructs a `Value`
-instance. Used as `SimulatorRegistry` and `HumanSimulatorRegistry`.
-
-```python
-reg = Registry[MyKey, MyValue]()
-
-@reg.register(MyKey.FOO)
-async def _foo(**kwargs):
-    return MyValue(**kwargs)
-
-instance = await reg.get(MyKey.FOO, **kwargs)
-```
-
-`register` asserts uniqueness; `get` asserts the key exists.
-
 ## `arena.py`
 
 [`arena.py`](arena.py)

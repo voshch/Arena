@@ -170,3 +170,54 @@ def test_render_origin_reflects_padding():
     expected_origin_y = 0.0 - padding * resolution
     assert origin[0] == pytest.approx(expected_origin_x)
     assert origin[1] == pytest.approx(expected_origin_y)
+
+
+def _square_corners(size: float = 2.0) -> list[Position]:
+    return [Position(0.0, 0.0), Position(size, 0.0), Position(size, size), Position(0.0, size)]
+
+
+def test_all_floors_skips_empty_material():
+    kept = WorldDescription.Zone(name="kept", corners=_square_corners())
+    dropped = WorldDescription.Zone(name="dropped", corners=_square_corners(), material='')
+    wd = WorldDescription(zones=[kept, dropped])
+    assert [f.name for f in wd.all_floors] == ["kept"]
+
+
+def test_all_ceilings_skips_empty_material():
+    import asyncio
+    kept = WorldDescription.Zone(name="kept", corners=_square_corners(), ceiling_height=2.5)
+    dropped = WorldDescription.Zone(name="dropped", corners=_square_corners(), ceiling_height=2.5, ceiling_material='')
+    wd = WorldDescription(zones=[kept, dropped])
+    ceilings = asyncio.run(wd.all_ceilings())
+    assert [c.name for c in ceilings] == ["kept"]
+
+
+def test_all_walls_skips_empty_material():
+    from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+    default_wall = Wall(start=Position(0, 0), end=Position(1, 0))
+    named_wall = Wall(start=Position(1, 0), end=Position(2, 0), material=MaterialIdentifier('Marble'))
+    dropped_wall = Wall(start=Position(2, 0), end=Position(3, 0), material=MaterialIdentifier(''))
+    zone = _make_zone(walls=[default_wall, named_wall, dropped_wall])
+    wd = WorldDescription(zones=[zone])
+    assert list(wd.all_walls) == [default_wall, named_wall]
+
+
+def test_zone_mat_key_aliases():
+    from arena_simulation_setup.utils.cattrs import converter
+    zone = converter.structure({'name': 'z', 'mat': '', 'ceiling_mat': '', 'wall_mat': ''}, WorldDescription.Zone)
+    assert zone.material.name == ''
+    assert zone.ceiling_material.name == ''
+    assert zone.wall_material.name == ''
+
+
+def test_zone_canonical_key_wins_over_alias():
+    from arena_simulation_setup.utils.cattrs import converter
+    zone = converter.structure({'name': 'z', 'material': 'Porcelain_Tile_4', 'mat': ''}, WorldDescription.Zone)
+    assert zone.material.name == 'Porcelain_Tile_4'
+
+
+def test_zone_material_defaults_nonempty():
+    zone = _make_zone()
+    assert zone.material.name
+    assert zone.ceiling_material.name
+    assert zone.wall_material.name

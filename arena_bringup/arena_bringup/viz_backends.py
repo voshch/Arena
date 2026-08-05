@@ -1,7 +1,7 @@
 """Backend dispatch for the arena_viz layer (rviz, rerun, ...).
 
 Shared by `arena_bringup.supervisor` (used during `arena launch`) and
-`_meta/tools/viz` (used by `arena viz`).
+`_meta/tools/arena_cli/viz.py` (used by `arena viz`).
 """
 
 from __future__ import annotations

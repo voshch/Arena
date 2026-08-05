@@ -305,14 +305,17 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
                         'net',
                         self._provider,
                         'list',
-                        self._asset_type,
                     ],
                     stderr=subprocess.DEVNULL,
                 )
                 for line in output.decode().splitlines():
                     line = line.strip()
-                    if line:
+                    if not line:
+                        continue
+                    try:
                         yield self._IdentifierT.from_relpath(Path(line))
+                    except Exception:
+                        pass
             except subprocess.CalledProcessError:
                 import traceback
 
@@ -462,8 +465,12 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
 
     @classmethod
     def listall(cls, **kwargs: object) -> Iterator[Self]:
+        seen: set[str] = set()
         for resolver in cls._resolvers:
-            yield from resolver.listall(**kwargs)
+            for identifier in resolver.listall(**kwargs):
+                if identifier.shortname not in seen:
+                    seen.add(identifier.shortname)
+                    yield identifier
 
     # Resolvers
     _resolvers: typing.ClassVar[list[ResolverBase]] = []

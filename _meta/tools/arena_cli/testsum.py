@@ -1,12 +1,10 @@
-#!/usr/bin/env python3
 """Per-package summary of colcon test results (JUnit XML under build/*/test_results)."""
 
-from __future__ import annotations
-
-import argparse
 import sys
-import xml.etree.ElementTree as ET
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 GREEN = "\033[1;32m"
 RED = "\033[1;31m"
@@ -18,7 +16,9 @@ RESET = "\033[0m"
 MAX_FAILS_PER_PKG = 10
 
 
-def collect_pkg(pkg_dir: Path):
+def _collect_pkg(pkg_dir: "Path") -> tuple[int, int, int, int, float, list[tuple[str, str, str, str]]]:
+    import xml.etree.ElementTree as ET
+
     tests = failures = errors = skipped = 0
     elapsed = 0.0
     fails: list[tuple[str, str, str, str]] = []
@@ -54,11 +54,15 @@ def collect_pkg(pkg_dir: Path):
     return tests, failures, errors, skipped, elapsed, fails
 
 
-def fmt(n: int, color: str) -> str:
+def _fmt(n: int, color: str) -> str:
     return f"{color}{n:>5}{RESET}" if n else f"{DIM}{n:>5}{RESET}"
 
 
-def main(argv: list[str]) -> int:
+def summarize(argv: list[str]) -> int:
+    """Summarize colcon test results under a build dir. argv[0] is the prog name."""
+    import argparse
+    from pathlib import Path
+
     ap = argparse.ArgumentParser()
     ap.add_argument("build_dir", nargs="?", default="build")
     ap.add_argument("--packages", nargs="*", default=None)
@@ -77,7 +81,7 @@ def main(argv: list[str]) -> int:
     rows: list[tuple[str, int, int, int, int, float]] = []
     all_fails: dict[str, list[tuple[str, str, str, str]]] = {}
     for pkg_dir in pkg_dirs:
-        tests, failures, errors, skipped, elapsed, fails = collect_pkg(pkg_dir)
+        tests, failures, errors, skipped, elapsed, fails = _collect_pkg(pkg_dir)
         if tests or failures or errors:
             rows.append((pkg_dir.name, tests, failures, errors, skipped, elapsed))
             if fails:
@@ -121,7 +125,7 @@ def main(argv: list[str]) -> int:
         passed = max(0, tests - failures - errors - skipped)
         bad = failures + errors
         status = f"{GREEN}OK{RESET}" if bad == 0 else f"{RED}FAIL{RESET}"
-        print(f"{pkg:<{name_w}}  {fmt(passed, GREEN)} {fmt(failures, RED)} {fmt(errors, RED)} {fmt(skipped, YELLOW)}  {elapsed:>7.1f}  {status}")
+        print(f"{pkg:<{name_w}}  {_fmt(passed, GREEN)} {_fmt(failures, RED)} {_fmt(errors, RED)} {_fmt(skipped, YELLOW)}  {elapsed:>7.1f}  {status}")
         tp += passed
         tf += failures
         te += errors
@@ -130,11 +134,11 @@ def main(argv: list[str]) -> int:
 
     print(DIM + "-" * width + RESET)
     grand = f"{GREEN}OK{RESET}" if (tf + te) == 0 else f"{RED}FAIL ({tf + te}){RESET}"
-    print(f"{BOLD}{'TOTAL':<{name_w}}{RESET}  {fmt(tp, GREEN)} {fmt(tf, RED)} {fmt(te, RED)} {fmt(ts, YELLOW)}  {tt:>7.1f}  {grand}")
+    print(f"{BOLD}{'TOTAL':<{name_w}}{RESET}  {_fmt(tp, GREEN)} {_fmt(tf, RED)} {_fmt(te, RED)} {_fmt(ts, YELLOW)}  {tt:>7.1f}  {grand}")
     print()
 
     return 1 if (tf + te) else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(summarize(sys.argv))

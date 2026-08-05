@@ -335,7 +335,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             ok = await self.change_lifecycle_state_async(
                 f"/{namespace}",
                 Transition.TRANSITION_ACTIVATE,
-                timeout=self.rosparam[float].get("activate_timeout_sec", 60.0),
+                timeout=None,
             )
             if not ok:
                 self.get_logger().error(f"failed to activate env_{env_id}")
@@ -705,8 +705,10 @@ sys.exit(ls.run())
         self.get_logger().info(f"env_{env_id} spawned (ns={namespace}), logs at {log_path}")
 
         try:
-            await asyncio.wait_for(env.spawn_ready, timeout=120.0)
-        except Exception as e:
+            await self.await_forever(env.spawn_ready, f"env_{env_id} spawn ACTIVE")
+        except (Exception, asyncio.CancelledError) as e:
+            if isinstance(e, asyncio.CancelledError) and not env.spawn_ready.cancelled():
+                raise
             self._envs.pop(env_id, None)
             await env.dispose(self, grace_seconds=0.0)
             self._env_registry.free(env_id)
