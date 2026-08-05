@@ -68,13 +68,15 @@ the other side. It also derives an opening portal when both adjacent room
 specifications agree that a shared boundary span is open. Explicit doors take
 precedence over derived openings.
 
-Each authored zone—including a corridor or a rectangular whole-world
-zone—is treated as one ordinary pyroomacoustics room. Enclosed mini-room zones
+Each authored zone including a corridor or a rectangular whole world
+zone is treated as one ordinary pyroomacoustics room. Enclosed mini-room zones
 remain separate rooms. Same-zone sounds use one room-local RIR. Cross-zone
-rendering is limited by default to two directly adjacent rooms connected by
-one authored door or shared opening. Routes requiring an intermediate room or
-a second portal use the explicit Level-3/dry fallback instead of convolving a
-multi-room RIR chain. Room and direct-portal RIRs are quantized and cached.
+rendering follows a door/opening portal route by default, up to
+`max_portal_hops`. A route is rendered by composing room-local RIR segments:
+source-to-portal in the source room, portal-to-portal through intermediate
+rooms, then portal-to-listener in the listener room. Routes with no connected
+portal path use the explicit Level-3/dry fallback. Room and portal-route RIRs
+are quantized and cached.
 
 With `pyroom_robot_listeners_only=true` (the default), propagation creates
 `HeardSoundEvent` messages only for robot listeners. Pedestrians are not
@@ -82,10 +84,12 @@ listeners, so pedestrian-to-pedestrian propagation is not calculated or
 published and the RViz propagation visualizer has no corresponding blue paths
 to draw. Set it to `false` to add every non-source pedestrian as an
 `agent:<id>` listener. Robot-listener events receive the complete route
-metadata and are rendered with pyroomacoustics by `human_sound_playback`. Set
-the propagation node parameter `compute_rir_in_propagation` to `true` only for
-an application that consumes its calculated RIR metadata directly and accepts
-the additional CPU cost.
+metadata and are rendered with pyroomacoustics by `human_sound_playback`. The
+launch default also sets `compute_rir_in_propagation=true` for auditory runs so
+the propagation node can report `pyroomacoustics_same_room`,
+`pyroomacoustics_one_door`, or `pyroomacoustics_multi_portal` directly when the
+pyroom backend is selected. Set it to `false` to keep RIR rendering deferred to
+playback and reduce propagation-node CPU cost.
 
 Dynamic open/closed door state is not currently published by Arena, so
 authored doors use `portal_loss_db`. Derived openings use
@@ -160,7 +164,7 @@ Main routing controls are:
 
 - `derive_opening_portals` (default `true`)
 - `minimum_opening_width_m` (default `0.30`)
-- `enable_multi_portal_rir` (default `false`; same-room and one-door only)
+- `enable_multi_portal_rir` (default `true`)
 - `max_portal_hops` (default `4`)
 - `portal_loss_db` (default `3.0`)
 - `opening_portal_loss_db` (default `0.5`)
@@ -168,7 +172,7 @@ Main routing controls are:
 - `portal_source_early_window_sec` (default `0.08`)
 - `portal_max_rir_duration_sec` (default `2.0`)
 - `pyroom_robot_listeners_only` (default `true`)
-- `compute_rir_in_propagation` (default `false`)
+- `compute_rir_in_propagation` (default `true`)
 - `pyroom_cache_position_quantization_m` (default `0.25`)
 
 ## Tests

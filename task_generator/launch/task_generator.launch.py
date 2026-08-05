@@ -146,6 +146,22 @@ def generate_launch_description():
         default_value="level3",
         description="Auditory propagation backend: level3 or pyroomacoustics.",
     )
+    enable_multi_portal_rir = LaunchArgument(
+        name="enable_multi_portal_rir",
+        default_value="true",
+        description=(
+            "Allow pyroomacoustics RIR rendering across multi-hop "
+            "door/opening portal routes."
+        ),
+    )
+    compute_rir_in_propagation = LaunchArgument(
+        name="compute_rir_in_propagation",
+        default_value="true",
+        description=(
+            "Compute pyroomacoustics RIR metadata in the propagation node "
+            "instead of only deferring RIR rendering to playback."
+        ),
+    )
     motor_playback_mode = LaunchArgument(
         name="motor_playback_mode",
         choices=["sequence", "single_loop"],
@@ -278,6 +294,10 @@ def generate_launch_description():
                 ),
                 "enable_robot_sound": enable_robot_sound.substitution,
                 "propagation_backend": propagation_backend.substitution,
+                "enable_multi_portal_rir": enable_multi_portal_rir.substitution,
+                "compute_rir_in_propagation": (
+                    compute_rir_in_propagation.substitution
+                ),
                 "motor_playback_mode": motor_playback_mode.substitution,
             }.items(),
         )
