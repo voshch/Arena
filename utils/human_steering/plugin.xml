@@ -10,7 +10,7 @@
         <statustip>Plugins related to Arena-Rosnav.</statustip>
       </group>
       <label>Human Steering</label>
-      <icon type="theme">input-gaming</icon>
+      <icon type="file">resource/human_steering_icon.png</icon>
       <statustip>Drive pedestrians manually against the human:=manual backend.</statustip>
     </qtgui>
   </class>

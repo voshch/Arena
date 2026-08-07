@@ -7,30 +7,16 @@ export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
 export ARENA_ROS_DISTRO=jazzy
 
 export ARENA_DATA_DIR="${ARENA_DATA_DIR:-$ARENA_WS_DIR/data}"
-mkdir -p "$ARENA_DATA_DIR"
 export HOST_ARENA_DATA_DIR="$ARENA_DATA_DIR"
 export ROSNAV_AGENTS_DIR="${ROSNAV_AGENTS_DIR:-$ARENA_DATA_DIR/agents}"
-
-mkdir -p "$ARENA_DIR/.venv"
-mkdir -p "$ARENA_WS_DIR/build"
-mkdir -p "$ARENA_WS_DIR/install"
-mkdir -p "$ARENA_WS_DIR/log"
-mkdir -p "$ARENA_WS_DIR/.uv-python"
-mkdir -p "$ARENA_WS_DIR/.uv-cache"
 
 HOST_UID=$(id -u)
 export HOST_UID
 HOST_GID=$(id -g)
 export HOST_GID
-export ARENA_PROJECT_NAME="arena-$(basename "$ARENA_WS_DIR")"
-export ARENA_IMAGE_TAG="$ARENA_PROJECT_NAME"
-export ARENA_IMAGE="arena:${ARENA_IMAGE_TAG}"
 
-if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
-    touch "$ARENA_WS_DIR/.env"
-fi
-
-xhost +local:docker
+export arena_compose_sudo=""
+source "$ARENA_DIR/_meta/docker/lib"
 
 docker_env=""
 docker_env="${docker_env} ARENA_PROJECT_NAME=$ARENA_PROJECT_NAME"
@@ -43,10 +29,181 @@ docker_env="${docker_env} ARENA_DATA_DIR=$ARENA_DATA_DIR"
 docker_env="${docker_env} ROSNAV_AGENTS_DIR=$ROSNAV_AGENTS_DIR"
 export docker_env
 
-export arena_compose_sudo=""
-source "$ARENA_DIR/_meta/docker/lib"
-
 arena_service="arena"
+
+_uninstall_usage(){
+    echo "usage: source arena uninstall [--data] [--cache] [--all] [--dry-run] [-y]" >&2
+}
+
+_uninstall_resolve(){
+    local mounts="$1" dest="$2" fallback="$3" hit
+    hit=$(printf '%s\n' "$mounts" | awk -F'\t' -v d="$dest" '$1 == d { print $2 ; exit }')
+    printf '%s' "${hit:-$fallback}"
+}
+
+_uninstall_list(){
+    local title="$1" body="$2"
+    [ -n "$body" ] || return 0
+    printf '  %s\n' "$title"
+    printf '%s\n' "$body" | sed 's/^/    /'
+}
+
+do_uninstall(){
+    local yes=0 data=0 cache=0 dry=0 arg
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes) yes=1 ;;
+            --data) data=1 ;;
+            --cache) cache=1 ;;
+            --all) data=1 ; cache=1 ;;
+            --dry-run) dry=1 ;;
+            -h|--help) _uninstall_usage ; return 0 ;;
+            *)
+                echo "arena uninstall: unknown option '$arg'" >&2
+                _uninstall_usage
+                return 2
+            ;;
+        esac
+    done
+
+    local project_filter="label=com.docker.compose.project=$ARENA_PROJECT_NAME"
+    local cid mounts origin
+    cid=$(docker ps -aq --filter "$project_filter" --filter "label=com.docker.compose.service=$arena_service" 2>/dev/null | head -n 1)
+    mounts=""
+    if [ -n "$cid" ]; then
+        mounts=$(docker inspect -f '{{range .Mounts}}{{printf "%s\t%s\n" .Destination .Source}}{{end}}' "$cid" 2>/dev/null)
+    fi
+    if [ -n "$mounts" ]; then
+        origin="container mounts"
+    else
+        origin="workspace layout"
+    fi
+
+    local targets="" data_dir="" tree
+    for tree in src build install log; do
+        targets="${targets}$(_uninstall_resolve "$mounts" "/opt/arena_ws/$tree" "$ARENA_WS_DIR/$tree")"$'\n'
+    done
+    if [ "$data" -eq 1 ]; then
+        data_dir=$(_uninstall_resolve "$mounts" /opt/arena_ws/data "$ARENA_DATA_DIR")
+        targets="${targets}${data_dir}"$'\n'
+        targets="${targets}$(_uninstall_resolve "$mounts" /opt/arena_ws/.env "$ARENA_WS_DIR/.env")"$'\n'
+    fi
+    if [ "$cache" -eq 1 ]; then
+        for tree in .uv-cache .uv-python; do
+            targets="${targets}$(_uninstall_resolve "$mounts" "/opt/arena_ws/$tree" "$ARENA_WS_DIR/$tree")"$'\n'
+        done
+    fi
+    targets=$(printf '%s' "$targets" | sed '/^$/d')
+
+    local image_filter="$ARENA_IMAGE"
+    if [ "$cache" -eq 1 ]; then
+        image_filter="*:$ARENA_IMAGE_TAG"
+    fi
+    local images image_rows containers container_ids volumes links
+    images=$(docker image ls --filter reference="$image_filter" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v '<none>' | sort -u)
+    image_rows=$(docker image ls --filter reference="$image_filter" --format '{{.Repository}}:{{.Tag}}  {{.Size}}' 2>/dev/null | sort -u)
+    containers=$(docker ps -a --filter "$project_filter" --format '{{.Names}}' 2>/dev/null)
+    container_ids=$(docker ps -aq --filter "$project_filter" 2>/dev/null)
+    if [ "$cache" -eq 1 ]; then
+        volumes=$(docker volume ls -q --filter "$project_filter" 2>/dev/null)
+    else
+        volumes=$(docker volume ls -q --filter "$project_filter" --filter name=_shared 2>/dev/null)
+    fi
+    links=$(find "$ARENA_WS_DIR" -maxdepth 1 -type l ! -name data 2>/dev/null)
+
+    echo "arena uninstall: paths resolved from $origin"
+    if [ -n "$data_dir" ] && [ -n "$mounts" ] && [ "$data_dir" != "$ARENA_DATA_DIR" ]; then
+        echo "warning: mounted data dir $data_dir differs from ARENA_DATA_DIR $ARENA_DATA_DIR" >&2
+    fi
+    echo "would remove:"
+    _uninstall_list containers "$containers"
+    _uninstall_list images "$image_rows"
+    _uninstall_list volumes "$volumes"
+    _uninstall_list paths "$targets"
+    _uninstall_list symlinks "$links"
+
+    if [ "$dry" -eq 1 ]; then
+        echo "nothing was removed (--dry-run)"
+        return 0
+    fi
+
+    if [ "$yes" -ne 1 ]; then
+        if [ ! -t 0 ]; then
+            echo "arena uninstall: refusing to run without a tty, pass -y to confirm" >&2
+            return 1
+        fi
+        local reply
+        printf 'proceed? [y/N]: '
+        read -r reply
+        case "$reply" in
+            y|Y|yes|YES) ;;
+            *) echo "aborted" ; return 1 ;;
+        esac
+    fi
+
+    if ! docker info > /dev/null 2>&1; then
+        echo "arena uninstall: docker is unreachable, refusing to remove anything" >&2
+        return 1
+    fi
+
+    if [ "$cache" -eq 1 ]; then
+        arena_docker_compose down --volumes --remove-orphans --timeout 0
+    else
+        arena_docker_compose down --remove-orphans --timeout 0
+    fi
+    if [ -n "$container_ids" ]; then
+        printf '%s\n' "$container_ids" | xargs -r docker rm -f > /dev/null 2>&1
+    fi
+
+    local survivors
+    survivors=$(docker ps -aq --filter "$project_filter" 2>/dev/null)
+    if [ -n "$survivors" ]; then
+        echo "arena uninstall: containers survived teardown, refusing to remove workspace trees" >&2
+        docker ps -a --filter "$project_filter" --format '  {{.Names}}' >&2
+        return 1
+    fi
+    if [ -n "$volumes" ]; then
+        printf '%s\n' "$volumes" | xargs -r docker volume rm -f
+    fi
+    if [ -n "$images" ]; then
+        printf '%s\n' "$images" | xargs -r docker image rm -f
+    fi
+
+    local target
+    while IFS= read -r target; do
+        [ -n "$target" ] || continue
+        rm -rf "${target:?}"
+    done <<< "$targets"
+
+    if [ -n "$links" ]; then
+        printf '%s\n' "$links" | xargs -r rm -f
+    fi
+
+    echo "uninstalled arena from $ARENA_WS_DIR"
+    return 0
+}
+
+if [ "$1" = "uninstall" ]; then
+    shift
+    do_uninstall "$@"
+    uninstall_rc=$?
+    # shellcheck disable=SC2317
+    return "$uninstall_rc" 2>/dev/null || exit "$uninstall_rc"
+fi
+
+mkdir -p "$ARENA_DATA_DIR"
+mkdir -p "$ARENA_DIR/.venv"
+mkdir -p "$ARENA_WS_DIR/build"
+mkdir -p "$ARENA_WS_DIR/install"
+mkdir -p "$ARENA_WS_DIR/log"
+mkdir -p "$ARENA_WS_DIR/.uv-python"
+mkdir -p "$ARENA_WS_DIR/.uv-cache"
+
+if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
+    touch "$ARENA_WS_DIR/.env"
+fi
+
+xhost +local:docker
 
 do_run(){
     arena_docker_compose \

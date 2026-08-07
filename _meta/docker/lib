@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+ARENA_PROJECT_NAME="arena-$(basename "$ARENA_WS_DIR")"
+export ARENA_PROJECT_NAME
+export ARENA_IMAGE_TAG="$ARENA_PROJECT_NAME"
+export ARENA_IMAGE="arena:${ARENA_IMAGE_TAG}"
+
 arena_docker_compose(){
     local files="$ARENA_DIR/_meta/docker/docker-compose.yaml"
     if [ -f "$ARENA_DIR/.installed" ]; then

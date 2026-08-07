@@ -14,6 +14,7 @@ setup(
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml', 'plugin.xml']),
+        ('share/' + package_name + '/resource', ['resource/human_steering_icon.png']),
     ],
     install_requires=['setuptools'],
     extras_require={

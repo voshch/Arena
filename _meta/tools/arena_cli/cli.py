@@ -34,7 +34,7 @@ the underlying launch file or tool."""
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo"],
     "Attach": ["human", "robot", "cam"],
-    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload"],
+    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall"],
     "Features": ["feature", "registry"],
     "Shell": ["deactivate", "resource", "repair"],
 }
@@ -445,6 +445,12 @@ def registry(args: list[str]) -> None:
         if path is None:
             sys.exit(1)
         print(path)
+
+
+@verb("uninstall")
+def uninstall(args: list[str]) -> None:
+    """Remove the container, image, and workspace trees (host only)."""
+    raise CLIError("host-level verb, run it from the host workspace: source arena uninstall")
 
 
 @verb("deactivate")
