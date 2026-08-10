@@ -143,7 +143,7 @@ def generate_launch_description():
     )
     propagation_backend = LaunchArgument(
         name="propagation_backend",
-        default_value="level3",
+        default_value="pyroomacoustics",
         description="Auditory propagation backend: level3 or pyroomacoustics.",
     )
     enable_multi_portal_rir = LaunchArgument(
@@ -170,6 +170,20 @@ def generate_launch_description():
             "Motor audio: sequence uses start/loop/stop WAVs; "
             "single_loop repeats the motor WAV."
         ),
+    )
+    motor_audio_mode = LaunchArgument(
+        name="motor_audio_mode",
+        choices=["procedural", "wav"],
+        default_value="procedural",
+        description=(
+            "Use calibrated procedural audio for Jackal motors or the "
+            "existing WAV sequence. Other robot models always use WAVs."
+        ),
+    )
+    audio_listener_robot = LaunchArgument(
+        name="audio_listener_robot",
+        default_value="jackal",
+        description="Robot instance name whose microphone feeds playback.",
     )
     robot = LaunchArgument(name="robot", default_value="jackal")
     tm_robots = LaunchArgument(name="tm_robots", default_value="explore")
@@ -299,6 +313,8 @@ def generate_launch_description():
                     compute_rir_in_propagation.substitution
                 ),
                 "motor_playback_mode": motor_playback_mode.substitution,
+                "motor_audio_mode": motor_audio_mode.substitution,
+                "audio_listener_robot": audio_listener_robot.substitution,
             }.items(),
         )
 

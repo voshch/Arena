@@ -22,6 +22,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/RobotQueue.msg
   msg/RobotState.msg
   msg/AcousticPath.msg
+  msg/ContinuousAudioSourceState.msg
+  msg/ContinuousHeardSoundState.msg
   msg/HeardSoundEvent.msg
   msg/SoundEvent.msg
   srv/DespawnRobot.srv

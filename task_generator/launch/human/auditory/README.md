@@ -22,7 +22,10 @@ auditory nodes.
 - Audio playback: `human_sound_playback` plays configured sound assets from
   `config/auditory/acoustic_assets.yaml`.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
-  messages from robot odometry.
+  messages from robot odometry. In the default `motor_audio_mode:=procedural`,
+  Jackals instead publish continuous signed left/right drivetrain state;
+  other robot models retain the WAV fallback. Set `motor_audio_mode:=wav` to
+  use WAV playback for Jackals as well.
   
  Expected nodes when enabled include:
 
@@ -36,6 +39,8 @@ auditory nodes.
 
 - `human_sound_events`: emitted `SoundEvent` stream.
 - `heard_sound_events`: propagated `HeardSoundEvent` stream.
+- `continuous_audio_sources`: persistent procedural source state.
+- `continuous_heard_sounds`: listener-specific propagated procedural state.
 - `state/robots`: robot fleet metadata used by propagation, robot sound, and
   robot hearing nodes.
 - `<robot_name>/heard_sound`: per-robot heard event output.
@@ -85,11 +90,11 @@ published and the RViz propagation visualizer has no corresponding blue paths
 to draw. Set it to `false` to add every non-source pedestrian as an
 `agent:<id>` listener. Robot-listener events receive the complete route
 metadata and are rendered with pyroomacoustics by `human_sound_playback`. The
-launch default also sets `compute_rir_in_propagation=true` for auditory runs so
-the propagation node can report `pyroomacoustics_same_room`,
-`pyroomacoustics_one_door`, or `pyroomacoustics_multi_portal` directly when the
-pyroom backend is selected. Set it to `false` to keep RIR rendering deferred to
-playback and reduce propagation-node CPU cost.
+launch default sets `compute_rir_in_propagation=true`, so the propagation node
+constructs the same-room or portal-route RIR and reports the actual
+`pyroomacoustics_same_room`, `pyroomacoustics_one_door`, or
+`pyroomacoustics_multi_portal` backend in ROS propagation results. Playback
+remains the stage that applies the RIR to the waveform.
 
 Dynamic open/closed door state is not currently published by Arena, so
 authored doors use `portal_loss_db`. Derived openings use
@@ -114,6 +119,25 @@ verified `playback_backend` and dry/silent fallback reason. Its five-second
 diagnostics include room/portal RIR cache entries, hits, misses, mixer stream
 state, callback count, voice count, last output peak, and decoded-asset cache
 entries, hits, misses, and pending worker loads.
+
+Procedural Jackal audio uses the same playback-side pyroomacoustics RIR lookup
+as WAV assets. Its bundled recording-room/microphone transfer is disabled, so
+same-room or portal-coupled pyroomacoustics is the only simulated room response.
+Propagation constructs the RIR for ROS propagation metadata; playback obtains
+the equivalent cached RIR and applies it to the waveform once. Moving-source
+RIR lookup uses 0.10 m source/listener position quantization in playback and
+0.25 m quantization in propagation. RIR changes use a 100 ms equal-power
+crossfade. Continuous convolution uses 1024-frame uniform FFT partitions at
+44,100 Hz. The listener signal is mono because it represents one robot
+microphone.
+
+The drivetrain broadband noise field is approximately 33 MB. All Jackal voices
+in one episode use the episode seed as the field-cache key, so they reference
+one shared read-only field instead of allocating approximately 33 MB per robot.
+Each robot derives a stable phase and starting-position index from the episode
+seed and robot name, preserving deterministic differences between robots. The
+shared field is cleared on episode reset; a new episode builds one field for its
+new seed.
 
 The asset catalog loads only YAML metadata and validates WAV paths at startup.
 The selected WAV is decoded, channel-converted, resampled, and normalized on a

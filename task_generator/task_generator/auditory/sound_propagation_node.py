@@ -22,12 +22,18 @@ from task_generator.auditory.material_catalog import AcousticMaterialCatalog
 from task_generator.auditory.propagation import Level3Propagation
 from task_generator_msgs.msg import (
     AcousticPath,
+    ContinuousAudioSourceState,
+    ContinuousHeardSoundState,
     EpisodeRecord,
     HeardSoundEvent,
     RobotFleet,
     SoundEvent,
 )
-from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
+from task_generator.auditory.qos_profiles import (
+    acoustic_metadata_qos,
+    continuous_audio_qos,
+    transient_event_qos,
+)
 from task_generator.auditory.acoustic_room_spec import (
     AcousticRoomSpec,
     AcousticRoomSpecBuilder,
@@ -53,6 +59,15 @@ class SoundPropagationNode(Node):
 
         self.declare_parameter("sound_events_topic", "human_sound_events")
         self.declare_parameter("heard_sound_events_topic", "heard_sound_events")
+        self.declare_parameter(
+            "continuous_audio_sources_topic",
+            "continuous_audio_sources",
+        )
+        self.declare_parameter(
+            "continuous_heard_sounds_topic",
+            "continuous_heard_sounds",
+        )
+        self.declare_parameter("continuous_listener_robot_name", "")
         self.declare_parameter("arena_peds_topic", "arena_peds")
         self.declare_parameter("map_topic", "map")
         self.declare_parameter("robot_fleet_topic", "state/robots")
@@ -133,7 +148,26 @@ class SoundPropagationNode(Node):
         map_topic = str(self.get_parameter("map_topic").value)
         robot_fleet_topic = str(self.get_parameter("robot_fleet_topic").value)
         self._heard_pub = self.create_publisher( HeardSoundEvent,  heard_sound_events_topic, transient_event_qos())
+        self._continuous_heard_pub = self.create_publisher(
+            ContinuousHeardSoundState,
+            str(
+                self.get_parameter(
+                    "continuous_heard_sounds_topic"
+                ).value
+            ),
+            continuous_audio_qos(),
+        )
         self.create_subscription(SoundEvent, sound_events_topic, self._cb_sound_event, transient_event_qos())
+        self.create_subscription(
+            ContinuousAudioSourceState,
+            str(
+                self.get_parameter(
+                    "continuous_audio_sources_topic"
+                ).value
+            ),
+            self._cb_continuous_source,
+            continuous_audio_qos(),
+        )
         self.create_subscription(Pedestrians, peds_topic, self._cb_peds, 10)
         self.create_subscription(OccupancyGrid, map_topic, self._cb_map, 1)
         self.create_subscription(RobotFleet, robot_fleet_topic, self._cb_robot_fleet, acoustic_metadata_qos())
@@ -542,6 +576,87 @@ class SoundPropagationNode(Node):
 
         self._publish_event_to_listeners(event, listeners)
 
+    def _cb_continuous_source(
+        self,
+        state: ContinuousAudioSourceState,
+    ) -> None:
+        """Propagate persistent source state through the same acoustic model."""
+        if not state.sound_type.strip():
+            return
+        # Continuous publishers refresh their state. Waiting for the next
+        # update avoids an unbounded second scene-load buffer.
+        if self._requested_backend == "pyroomacoustics" and self._scene is None:
+            return
+
+        event = SoundEvent()
+        event.header = state.header
+        event.event_id = state.source_id
+        event.source_agent_id = state.source_agent_id
+        event.source_agent_name = state.source_agent_name
+        event.sound_type = state.sound_type
+        event.label = state.sound_type
+        event.asset_id = state.source_backend
+        event.source_position = state.source_position
+        event.source_yaw = state.source_yaw
+        event.source_volume_db = state.source_volume_db
+        event.semantic_tags = ["continuous", state.source_backend]
+        event.loop = True
+
+        listeners = self._listeners_for_event(event)
+        selected_listener = str(
+            self.get_parameter("continuous_listener_robot_name").value
+        ).strip()
+        if selected_listener:
+            listener_id = f"robot:{selected_listener}"
+            listeners = (
+                {listener_id: listeners[listener_id]}
+                if listener_id in listeners
+                else {}
+            )
+        for listener_id, listener_pos in listeners.items():
+            heard = self._calculate_heard_event(
+                event,
+                listener_id,
+                listener_pos,
+            )
+            if not heard.audible and not bool(
+                self.get_parameter("publish_inaudible").value
+            ):
+                continue
+            output = ContinuousHeardSoundState()
+            output.header = state.header
+            output.source_id = state.source_id
+            output.listener_id = listener_id
+            output.source_agent_id = state.source_agent_id
+            output.source_agent_name = state.source_agent_name
+            output.source_model = state.source_model
+            output.sound_type = state.sound_type
+            output.source_backend = state.source_backend
+            output.source_position = state.source_position
+            output.listener_position = listener_pos
+            output.linear_velocity_mps = state.linear_velocity_mps
+            output.angular_velocity_radps = state.angular_velocity_radps
+            output.left_velocity_mps = state.left_velocity_mps
+            output.right_velocity_mps = state.right_velocity_mps
+            output.source_volume_db = state.source_volume_db
+            output.received_volume_db = heard.received_volume_db
+            output.direct_delay_sec = heard.direct_delay_sec
+            output.active = state.active
+            output.audible = heard.audible
+            output.occluded = heard.occluded
+            output.source_zone = heard.source_zone
+            output.listener_zone = heard.listener_zone
+            output.propagation_backend = heard.propagation_backend
+            output.used_backend_fallback = heard.used_backend_fallback
+            output.backend_fallback_reason = heard.backend_fallback_reason
+            output.portal_ids = heard.portal_ids
+            output.traversed_zones = heard.traversed_zones
+            output.portal_positions = heard.portal_positions
+            output.portal_hop_count = heard.portal_hop_count
+            output.portal_route_loss_db = heard.portal_route_loss_db
+            output.deterministic_seed = state.deterministic_seed
+            self._continuous_heard_pub.publish(output)
+
     def _listeners_for_event(self, event: SoundEvent) -> dict[str, Point]:
         """Snapshot listeners according to the configured hearing policy."""
         listeners: dict[str, Point] = {}
@@ -927,6 +1042,8 @@ class SoundPropagationNode(Node):
         sound_type = f"{event.sound_type} {event.label}".lower()
         if "foot" in sound_type or "step" in sound_type:
             return 0.05
+        if "motor" in sound_type or "robot" in sound_type:
+            return 0.25
         return 1.60
 
     @staticmethod

@@ -96,3 +96,25 @@ def test_keyed_single_loop_repeats_and_stops_at_boundary() -> None:
         [0.2, 0.0, 0.0, 0.0],
     )
     assert mixer._voices == []
+
+
+def test_render_source_shares_the_sample_mixer() -> None:
+    class ConstantSource:
+        finished = False
+
+        @staticmethod
+        def render(frames: int) -> np.ndarray:
+            return np.full((frames, 1), 0.25, dtype=np.float32)
+
+    mixer = AudioMixer.__new__(AudioMixer)
+    mixer._voices = []
+    mixer._render_voices = []
+    mixer._lock = threading.Lock()
+    mixer._master_gain = 1.0
+    mixer.add_render_source(ConstantSource(), voice_id="procedural:1")
+
+    block = np.empty((4, 1), dtype=np.float32)
+    mixer._callback(block, 4, None, None)
+
+    np.testing.assert_allclose(block[:, 0], [0.25] * 4)
+    assert mixer.voice_count == 1

@@ -17,6 +17,10 @@ from collections import defaultdict, deque
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from task_generator.auditory.audio_mixer import AudioMixer
+from task_generator.auditory.procedural_audio import (
+    DrivetrainRenderSource,
+    clear_drivetrain_audio_cache,
+)
 from arena_simulation_setup.tree.World import WorldIdentifier
 from task_generator.auditory.acoustic_room_spec import (
     AcousticRoomSpec,
@@ -33,9 +37,15 @@ from task_generator.auditory.portal_coupling import (
     MultiPortalRirCoupler,
     PortalCouplingConfig,
 )
-from task_generator_msgs.msg import EpisodeRecord, HeardSoundEvent, SoundEvent
+from task_generator_msgs.msg import (
+    ContinuousHeardSoundState,
+    EpisodeRecord,
+    HeardSoundEvent,
+    SoundEvent,
+)
 from task_generator.auditory.qos_profiles import (
     acoustic_metadata_qos,
+    continuous_audio_qos,
     transient_event_qos,
 )
 
@@ -57,6 +67,10 @@ class HumanSoundPlaybackNode(Node):
         self.declare_parameter("episode_topic", "state/episode")
         self.declare_parameter("use_rir", False)
         self.declare_parameter("heard_sound_events_topic", "heard_sound_events")
+        self.declare_parameter(
+            "continuous_heard_sounds_topic",
+            "continuous_heard_sounds",
+        )
         self.declare_parameter("listener_robot_name", "jackal")
         self.declare_parameter("world_topic", "state/world")
         self.declare_parameter("rir_sample_rate_hz", 44100)
@@ -73,6 +87,8 @@ class HumanSoundPlaybackNode(Node):
         self.declare_parameter("play_inaudible_events", True)
         self.declare_parameter("minimum_playback_gain_db", -60.0)
         self.declare_parameter("motor_playback_mode", "sequence")
+        self.declare_parameter("motor_audio_mode", "wav")
+        self.declare_parameter("motor_rir_crossfade_sec", 0.1)
         self.declare_parameter("motor_single_asset_id", "motor")
         self.declare_parameter("portal_adjacency_tolerance_m", 0.08)
         self.declare_parameter("portal_inset_m", 0.03)
@@ -153,6 +169,10 @@ class HumanSoundPlaybackNode(Node):
             f"motor playback mode={self._motor_playback_mode!r}"
         )
         self._room_specs: tuple[AcousticRoomSpec, ...] = ()
+        self._continuous_sources: dict[str, DrivetrainRenderSource] = {}
+        self._continuous_rir_signatures: dict[
+            str, tuple[object, ...]
+        ] = {}
         self._world_graph: AcousticWorldGraph | None = None
         self._portal_coupler: MultiPortalRirCoupler | None = None
         self._world_name = ""
@@ -219,6 +239,16 @@ class HumanSoundPlaybackNode(Node):
                 heard_topic,
                 self._cb_heard_sound,
                 transient_event_qos(),
+            )
+            self.create_subscription(
+                ContinuousHeardSoundState,
+                str(
+                    self.get_parameter(
+                        "continuous_heard_sounds_topic"
+                    ).value
+                ),
+                self._cb_continuous_heard_sound,
+                continuous_audio_qos(),
             )
             self.get_logger().info(
                 "RIR audio rendering enabled; listening for "
@@ -348,6 +378,9 @@ class HumanSoundPlaybackNode(Node):
                 )
                 if self._pra_adapter is not None else None
             )
+            # Force every persistent source through the newly loaded world's
+            # RIR even when zone names and quantized coordinates coincide.
+            self._continuous_rir_signatures.clear()
             self.get_logger().info(
                 f"loaded {len(self._room_specs)} acoustic rooms for "
                 f"{self._world_name!r}; "
@@ -428,6 +461,9 @@ class HumanSoundPlaybackNode(Node):
             future, _, _, _ = self._pending_asset_loads.popleft()
             future.cancel()
         self._cancelled_motor_starts.clear()
+        self._continuous_sources.clear()
+        self._continuous_rir_signatures.clear()
+        clear_drivetrain_audio_cache()
 
     def _cb_sound_event(self, msg: SoundEvent) -> None:
         try:
@@ -437,6 +473,102 @@ class HumanSoundPlaybackNode(Node):
                 "unhandled exception while processing SoundEvent "
                 f"{msg.event_id!r}:\n{traceback.format_exc()}"
             )
+
+    def _cb_continuous_heard_sound(
+        self,
+        msg: ContinuousHeardSoundState,
+    ) -> None:
+        expected = "robot:" + str(
+            self.get_parameter("listener_robot_name").value
+        ).strip()
+        if msg.listener_id != expected:
+            return
+        if str(self.get_parameter("motor_audio_mode").value).strip() != (
+            "procedural"
+        ):
+            return
+        if msg.source_backend != "drivetrain":
+            return
+
+        source = self._continuous_sources.get(msg.source_id)
+        if source is not None and source.finished:
+            self._continuous_sources.pop(msg.source_id, None)
+            self._continuous_rir_signatures.pop(msg.source_id, None)
+            source = None
+        if source is None:
+            if not msg.active:
+                return
+            source = DrivetrainRenderSource(
+                field_seed=self._episode_seed,
+                phase_index=int(msg.deterministic_seed),
+                block_size=int(self.get_parameter("block_size").value),
+                channels=int(self.get_parameter("output_channels").value),
+                rir_crossfade_seconds=float(
+                    self.get_parameter("motor_rir_crossfade_sec").value
+                ),
+            )
+            self._continuous_sources[msg.source_id] = source
+            self._mixer.add_render_source(source, voice_id=msg.source_id)
+
+        signature = self._continuous_rir_signature(msg)
+        impulse = None
+        if (
+            msg.active
+            and msg.audible
+            and signature != self._continuous_rir_signatures.get(msg.source_id)
+        ):
+            try:
+                impulse, _ = self._compute_normalized_rir(msg)
+                self._continuous_rir_signatures[msg.source_id] = signature
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"continuous RIR unavailable for {msg.source_id!r}: "
+                    f"{exc}; retaining the previous RIR"
+                )
+
+        gain_db = float(msg.received_volume_db) - float(msg.source_volume_db)
+        source.update(
+            left_velocity=float(msg.left_velocity_mps),
+            right_velocity=float(msg.right_velocity_mps),
+            gain_db=gain_db,
+            active=bool(
+                msg.active
+                and msg.audible
+                and (
+                    impulse is not None
+                    or msg.source_id in self._continuous_rir_signatures
+                )
+            ),
+            impulse=impulse,
+            rir_signature=signature if impulse is not None else None,
+        )
+
+    def _continuous_rir_signature(
+        self,
+        msg: ContinuousHeardSoundState,
+    ) -> tuple[object, ...]:
+        quantum = max(
+            float(
+                self.get_parameter(
+                    "rir_cache_position_quantization_m"
+                ).value
+            ),
+            1e-6,
+        )
+
+        def quantize(value: float) -> int:
+            return round(float(value) / quantum)
+
+        return (
+            msg.propagation_backend,
+            msg.source_zone,
+            msg.listener_zone,
+            tuple(msg.portal_ids),
+            quantize(msg.source_position.x),
+            quantize(msg.source_position.y),
+            quantize(msg.listener_position.x),
+            quantize(msg.listener_position.y),
+        )
 
     def _publish_diagnostics(self) -> None:
         portal_cache = (
@@ -808,7 +940,7 @@ class HumanSoundPlaybackNode(Node):
 
     @staticmethod
     def _source_height(msg) -> float:
-        sound = f"{msg.sound_type} {msg.label} " \
+        sound = f"{msg.sound_type} {getattr(msg, 'label', '')} " \
             f"{' '.join(str(tag) for tag in getattr(msg, 'semantic_tags', ())) }".lower()
         if "foot" in sound or "step" in sound:
             return 0.05
@@ -834,80 +966,8 @@ class HumanSoundPlaybackNode(Node):
         )
 
     def _render_with_rir(self, msg, sample):
-        source = (
-            float(msg.source_position.x),
-            float(msg.source_position.y),
-            self._source_height(msg),
-        )
-        listener = (
-            float(msg.listener_position.x),
-            float(msg.listener_position.y),
-            0.35,
-        )
         try:
-            if self._pra_adapter is None:
-                raise LookupError("pyroomacoustics_adapter_not_initialized")
-            propagation_reason = str(
-                getattr(msg, "backend_fallback_reason", "")
-            ).strip()
-            if bool(getattr(msg, "used_backend_fallback", False)) and (
-                propagation_reason
-            ):
-                raise LookupError(
-                    f"propagation_fallback:{propagation_reason}"
-                )
-            source_zone = str(getattr(msg, "source_zone", "")).strip()
-            listener_zone = str(getattr(msg, "listener_zone", "")).strip()
-            room = self._room_for_event(msg)
-            if room is not None:
-                rir = self._pra_adapter.compute_rir(
-                    room,
-                    source_position_m=source,
-                    listener_position_m=listener,
-                )
-                playback_backend = "pyroomacoustics_same_room"
-            elif (
-                source_zone
-                and listener_zone
-                and source_zone != listener_zone
-                and self._portal_coupler is not None
-            ):
-                coupling = self._portal_coupler.compute(
-                    source_zone=source_zone,
-                    listener_zone=listener_zone,
-                    source_position_m=source,
-                    listener_position_m=listener,
-                )
-                rir = coupling.rir
-                playback_backend = (
-                    "pyroomacoustics_one_door"
-                    if coupling.route is None
-                    or coupling.route.hop_count == 1
-                    else "pyroomacoustics_multi_portal"
-                )
-            else:
-                if propagation_reason:
-                    raise LookupError(
-                        f"propagation_fallback:{propagation_reason}"
-                    )
-                if not source_zone or not listener_zone:
-                    raise LookupError(
-                        "missing_source_or_listener_zone_metadata"
-                    )
-                raise LookupError("no_same_room_or_portal_route_rir")
-            impulse = np.asarray(rir.samples, dtype=np.float32)
-            if rir.global_delay_samples > 0:
-                impulse = np.pad(
-                    impulse,
-                    (int(rir.global_delay_samples), 0),
-                )
-            # Apply propagation level through HeardSoundEvent below. Normalize
-            # the RIR here so distance attenuation is not applied twice; the
-            # impulse shape still supplies direct sound and reverberation.
-            impulse_peak = float(np.max(np.abs(impulse)))
-            if impulse_peak <= 0.0 or not np.isfinite(impulse_peak):
-                raise ValueError("RIR has no finite non-zero impulse")
-            impulse = impulse / impulse_peak
+            impulse, playback_backend = self._compute_normalized_rir(msg)
             channels = [
                 fftconvolve(sample.samples[:, channel], impulse, mode="full")
                 for channel in range(sample.samples.shape[1])
@@ -939,8 +999,7 @@ class HumanSoundPlaybackNode(Node):
                 self._rir_warning_times[warning_key] = now
                 self.get_logger().warning(
                     f"RIR {'unavailable' if unavailable else 'rendering failed'} "
-                    f"for {msg.asset_id!r}: {exc}; "
-                    f"using "
+                    f"for {msg.asset_id!r}: {exc}; using "
                     f"{'dry sample' if self._rir_dry_fallback else 'silence'}"
                 )
             fallback = (
@@ -953,6 +1012,74 @@ class HumanSoundPlaybackNode(Node):
                 "dry_fallback" if self._rir_dry_fallback else "silence",
                 reason,
             )
+
+    def _compute_normalized_rir(self, msg) -> tuple[np.ndarray, str]:
+        """Return the one shared pyroomacoustics treatment for any source."""
+        source = (
+            float(msg.source_position.x),
+            float(msg.source_position.y),
+            self._source_height(msg),
+        )
+        listener = (
+            float(msg.listener_position.x),
+            float(msg.listener_position.y),
+            0.35,
+        )
+        if self._pra_adapter is None:
+            raise LookupError("pyroomacoustics_adapter_not_initialized")
+        propagation_reason = str(
+            getattr(msg, "backend_fallback_reason", "")
+        ).strip()
+        if bool(getattr(msg, "used_backend_fallback", False)) and (
+            propagation_reason
+        ):
+            raise LookupError(f"propagation_fallback:{propagation_reason}")
+        source_zone = str(getattr(msg, "source_zone", "")).strip()
+        listener_zone = str(getattr(msg, "listener_zone", "")).strip()
+        room = self._room_for_event(msg)
+        if room is not None:
+            rir = self._pra_adapter.compute_rir(
+                room,
+                source_position_m=source,
+                listener_position_m=listener,
+            )
+            playback_backend = "pyroomacoustics_same_room"
+        elif (
+            source_zone
+            and listener_zone
+            and source_zone != listener_zone
+            and self._portal_coupler is not None
+        ):
+            coupling = self._portal_coupler.compute(
+                source_zone=source_zone,
+                listener_zone=listener_zone,
+                source_position_m=source,
+                listener_position_m=listener,
+            )
+            rir = coupling.rir
+            playback_backend = (
+                "pyroomacoustics_one_door"
+                if coupling.route is None or coupling.route.hop_count == 1
+                else "pyroomacoustics_multi_portal"
+            )
+        else:
+            if propagation_reason:
+                raise LookupError(f"propagation_fallback:{propagation_reason}")
+            if not source_zone or not listener_zone:
+                raise LookupError("missing_source_or_listener_zone_metadata")
+            raise LookupError("no_same_room_or_portal_route_rir")
+        impulse = np.asarray(rir.samples, dtype=np.float32)
+        if rir.global_delay_samples > 0:
+            impulse = np.pad(
+                impulse,
+                (int(rir.global_delay_samples), 0),
+            )
+        # Propagation metadata supplies distance/portal level exactly once;
+        # the normalized RIR supplies only direct/reflection/reverb shape.
+        impulse_peak = float(np.max(np.abs(impulse)))
+        if impulse_peak <= 0.0 or not np.isfinite(impulse_peak):
+            raise ValueError("RIR has no finite non-zero impulse")
+        return impulse / impulse_peak, playback_backend
     
     def destroy_node(self) -> bool:
         self._asset_loader.shutdown(wait=False, cancel_futures=True)

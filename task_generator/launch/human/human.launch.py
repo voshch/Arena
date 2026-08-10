@@ -45,7 +45,7 @@ def generate_launch_description():
     propagation_backend = LaunchArgument(
         name="propagation_backend",
         choices=["level3", "pyroomacoustics"],
-        default_value="level3",
+        default_value="pyroomacoustics",
     )
     enable_multi_portal_rir = LaunchArgument(
         name="enable_multi_portal_rir",
@@ -54,6 +54,17 @@ def generate_launch_description():
     compute_rir_in_propagation = LaunchArgument(
         name="compute_rir_in_propagation",
         default_value="true",
+    )
+
+    motor_audio_mode = LaunchArgument(
+        name="motor_audio_mode",
+        choices=["procedural", "wav"],
+        default_value="procedural",
+    )
+
+    audio_listener_robot = LaunchArgument(
+        name="audio_listener_robot",
+        default_value="jackal",
     )
 
     motor_playback_mode = LaunchArgument(
@@ -138,6 +149,12 @@ def generate_launch_description():
                     "use_sim_time": True,
                     "sound_events_topic": "human_sound_events",
                     "heard_sound_events_topic": "heard_sound_events",
+                    "continuous_audio_sources_topic":
+                        "continuous_audio_sources",
+                    "continuous_heard_sounds_topic":
+                        "continuous_heard_sounds",
+                    "continuous_listener_robot_name":
+                        audio_listener_robot.substitution,
                     "arena_peds_topic": PathJoinSubstitution([
                         environment_namespace.substitution,
                         "arena_peds",
@@ -155,7 +172,7 @@ def generate_launch_description():
                     "ceiling_height_m": 3.0,
                     "publish_inaudible": True,
                     "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
-                    "pyroom_sample_rate_hz": 16000,
+                    "pyroom_sample_rate_hz": 44100,
                     "pyroom_max_order": 1,
                     "pyroom_temperature_c": 20.0,
                     "pyroom_relative_humidity_percent": 50.0,
@@ -229,12 +246,16 @@ def generate_launch_description():
                     **enable_robot_sound.param(bool),
                     "robot_fleet_topic": "state/robots",
                     "sound_events_topic": "human_sound_events",
+                    "continuous_audio_sources_topic":
+                        "continuous_audio_sources",
+                    "episode_topic": "state/episode",
+                    "motor_audio_mode": motor_audio_mode.substitution,
                     "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
                     "sound_type": "motor",
                     "motor_start_asset_id": "motor_start",
                     "motor_stop_asset_id": "motor_stop",
                     "source_volume_db": 45.0,
-                    "publish_period_sec": 0.5,
+                    "publish_period_sec": 0.05,
                     "only_when_moving": True,
                     "min_speed_mps": 0.05,
                     "stop_speed_mps": 0.03,
@@ -285,8 +306,12 @@ def generate_launch_description():
                 parameters=[{
                     "sound_events_topic": "human_sound_events",
                     "heard_sound_events_topic": "heard_sound_events",
+                    "continuous_heard_sounds_topic":
+                        "continuous_heard_sounds",
                     "use_rir": True,
-                    "listener_robot_name": "jackal",
+                    "listener_robot_name": audio_listener_robot.substitution,
+                    "motor_audio_mode": motor_audio_mode.substitution,
+                    "motor_rir_crossfade_sec": 0.10,
                     "world_topic": "state/world",
                     "rir_sample_rate_hz": 44100,
                     "rir_max_order": 3,
@@ -316,8 +341,8 @@ def generate_launch_description():
                     "motor_single_asset_id": "motor",
                     "episode_topic": "state/episode",
                     "output_sample_rate": 44100,
-                    "output_channels": 2,
-                    "block_size":  2048,
+                    "output_channels": 1,
+                    "block_size": 1024,
                     "audio_device": "pulse",
                     "master_gain_db": 0.0,
                 }],

@@ -23,10 +23,17 @@ class Voice:
     stop_requested: bool = False
 
 
+@dataclass
+class RenderVoice:
+    source: object
+    voice_id: str
+
+
 class AudioMixer:
     def __init__(self,*,sample_rate: int = 44100,channels: int = 2, block_size: int = 2048, device: str | int | None = None, master_gain_db: float = 0.0) -> None:
         self._channels = channels
         self._voices: list[Voice] = []
+        self._render_voices: list[RenderVoice] = []
         self._lock = threading.Lock()
         self._master_gain = 10.0 ** (master_gain_db / 20.0)
         self._callback_count = 0
@@ -67,7 +74,9 @@ class AudioMixer:
     @property
     def voice_count(self) -> int:
         with self._lock:
-            return len(self._voices)
+            return len(self._voices) + len(
+                getattr(self, "_render_voices", ())
+            )
 
     @property
     def callback_count(self) -> int:
@@ -81,14 +90,7 @@ class AudioMixer:
     def last_status(self) -> str:
         return self._last_status
 
-    def play(
-        self,
-        sample: CachedSample,
-        *,
-        loop: bool = False,
-        gain_db: float = 0.0,
-        voice_id: str | None = None,
-    ) -> None:
+    def play(self,sample: CachedSample,*, loop: bool = False,gain_db: float = 0.0, voice_id: str | None = None) -> None:
         voice = Voice(
             sample=sample,
             loop=loop,
@@ -103,6 +105,19 @@ class AudioMixer:
                     if active.voice_id != voice_id
                 ]
             self._voices.append(voice)
+
+    def add_render_source(self, source: object, *, voice_id: str) -> None:
+        with self._lock:
+            if not hasattr(self, "_render_voices"):
+                self._render_voices = []
+            self._render_voices = [
+                active
+                for active in self._render_voices
+                if active.voice_id != voice_id
+            ]
+            self._render_voices.append(
+                RenderVoice(source=source, voice_id=voice_id)
+            )
 
     def play_looping_sequence(
         self,
@@ -143,6 +158,8 @@ class AudioMixer:
     def stop_all(self) -> None:
         with self._lock:
             self._voices.clear()
+            if hasattr(self, "_render_voices"):
+                self._render_voices.clear()
 
     def close(self) -> None:
         self._stream.stop()
@@ -187,6 +204,21 @@ class AudioMixer:
                     active.append(voice)
 
             self._voices = active
+
+            active_renderers: list[RenderVoice] = []
+            for voice in getattr(self, "_render_voices", ()):
+                rendered = np.asarray(
+                    voice.source.render(frames), dtype=np.float32
+                )
+                if rendered.shape != outdata.shape:
+                    raise ValueError(
+                        f"render source {voice.voice_id!r} returned "
+                        f"{rendered.shape}, expected {outdata.shape}"
+                    )
+                outdata += rendered
+                if not bool(voice.source.finished):
+                    active_renderers.append(voice)
+            self._render_voices = active_renderers
 
         outdata *= self._master_gain
         np.clip(outdata, -1.0, 1.0, out=outdata)
