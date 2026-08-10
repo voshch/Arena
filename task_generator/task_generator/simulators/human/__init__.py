@@ -28,6 +28,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Region, Robot, Wall
 from task_generator.simulators.human.gait import GaitGenerator
 from task_generator.simulators.human.animation_replay import AnimationReplayer
+from task_generator.simulators.human.animation_mananager import AnimationManager
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.utils import (
     KnownObstacle,
@@ -106,11 +107,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
         # self._gait = GaitGenerator()
-        self._gait = AnimationReplayer(
-            os.path.join(get_package_share_directory('task_generator'),
-            'simulators', 'human', 'animations', 't-pose.npy'),
-            fps=20.0
-        )
+        # self._gait = AnimationReplayer(
+        #     os.path.join(get_package_share_directory('task_generator'),
+        #     'simulators', 'human', 'animations', 'gorilla.npy'),
+        #     fps=20.0
+        # )
+        self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), fps=20.0)
+        self._gait.cache_animations(["gorilla", "t-pose", "jump"])
         self._gait_prev_stamp: dict[int, float] = {}
         self.node.create_subscription(
             Pedestrians,
