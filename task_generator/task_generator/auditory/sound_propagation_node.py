@@ -142,7 +142,7 @@ class SoundPropagationNode(Node):
         self._peds: dict[int, object] = {}
         self._peds_frame_id = "map"
         self._robots: dict[str, tuple[Point, str]] = {}
-        self._robot_odom_frames: dict[str, str] = {}
+        self._robot_base_frames: dict[str, str] = {}
         self._odom_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
@@ -586,11 +586,11 @@ class SoundPropagationNode(Node):
             namespace = str(robot.ns).rstrip("/")
             active_names.add(name)
             listener_id = f"robot:{name}"
-            odom_frame_id = self._robot_odom_frame(
+            base_frame_id = self._robot_base_frame(
                 str(robot.model),
                 str(robot.frame),
             )
-            self._robot_odom_frames[listener_id] = odom_frame_id
+            self._robot_base_frames[listener_id] = base_frame_id
 
             topics = self._robot_odom_topics(
                 model_name=str(robot.model),
@@ -617,19 +617,19 @@ class SoundPropagationNode(Node):
             name = listener_id.removeprefix("robot:")
             if name not in active_names:
                 self._robots.pop(listener_id, None)
-                self._robot_odom_frames.pop(listener_id, None)
+                self._robot_base_frames.pop(listener_id, None)
 
     def _cb_robot_odom(
         self,
         robot_name: str,
-        msg: Odometry,
+        _msg: Odometry,
     ) -> None:
         listener_id = f"robot:{robot_name}"
-        frame_id = self._robot_odom_frames.get(listener_id)
+        frame_id = self._robot_base_frames.get(listener_id)
         if frame_id is None:
             return
         self._robots[listener_id] = (
-            msg.pose.pose.position,
+            Point(),
             frame_id,
         )
 
@@ -794,11 +794,6 @@ class SoundPropagationNode(Node):
 
     def _transform_event_source(self, event: SoundEvent) -> bool:
         source_frame = str(event.header.frame_id).strip()
-        robot_frame = self._robot_odom_frames.get(
-            f"robot:{event.source_agent_name}"
-        )
-        if robot_frame is not None:
-            source_frame = robot_frame
         source = self._point_in_acoustic_frame(
             event.source_position,
             source_frame,
@@ -811,22 +806,22 @@ class SoundPropagationNode(Node):
         event.header.frame_id = self._map.header.frame_id
         return True
 
-    def _robot_odom_frame(self, model_name: str, frame_prefix: str) -> str:
+    def _robot_base_frame(self, model_name: str, frame_prefix: str) -> str:
         prefix = frame_prefix.strip("/")
         try:
-            odom_frame = (
+            base_frame = (
                 RobotIdentifier(model_name)
                 .resolve_sync()
-                .model_params.odom_frame
+                .model_params.base_frame
                 .strip("/")
             )
         except Exception as exc:
-            odom_frame = "odom"
+            base_frame = "base_link"
             self.get_logger().warning(
-                f"could not resolve odometry frame for robot model "
-                f"{model_name!r}: {exc}, using {odom_frame!r}"
+                f"could not resolve base frame for robot model "
+                f"{model_name!r}: {exc}, using {base_frame!r}"
             )
-        return "/".join(part for part in (prefix, odom_frame) if part)
+        return "/".join(part for part in (prefix, base_frame) if part)
 
     def _robot_odom_topics(
         self,

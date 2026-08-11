@@ -31,16 +31,14 @@ class RobotSoundSource:
     namespace: str
     model: str
     effective_wheel_separation_m: float
-    odom_frame_id: str
+    base_frame_id: str
     position: Point | None = None
     position_header: Header | None = None
-    yaw: float = 0.0
     linear_velocity_mps: float = 0.0
     angular_velocity_radps: float = 0.0
     left_velocity_mps: float = 0.0
     right_velocity_mps: float = 0.0
     moving: bool = False
-    marker_frame_id: str = "map"
 
 
 class RobotSoundNode(SoundPlaybackNode):
@@ -84,9 +82,6 @@ class RobotSoundNode(SoundPlaybackNode):
         self._event_counter = 0
         self._episode_seed = 0
         self._marker_pubs = {}
-        self._reported_odom_frame_mismatches: set[
-            tuple[str, str, str]
-        ] = set()
 
         self._sound_pub = self.create_publisher(
             SoundEvent,
@@ -135,11 +130,7 @@ class RobotSoundNode(SoundPlaybackNode):
 
             namespace = str(robot.ns).rstrip("/")
             model = str(robot.model)
-            odom_frame_id = self._robot_odom_frame(
-                model,
-                str(robot.frame),
-            )
-            marker_frame_id = self._robot_base_frame(
+            base_frame_id = self._robot_base_frame(
                 model,
                 str(robot.frame),
             )
@@ -150,8 +141,7 @@ class RobotSoundNode(SoundPlaybackNode):
                 effective_wheel_separation_m=(
                     self._effective_wheel_separation(model)
                 ),
-                odom_frame_id=odom_frame_id,
-                marker_frame_id=marker_frame_id,
+                base_frame_id=base_frame_id,
             )
             if self._marker_pub is None:
                 suffix = str(
@@ -222,26 +212,11 @@ class RobotSoundNode(SoundPlaybackNode):
         if source is None:
             return
 
-        source.position = msg.pose.pose.position
-        reported_frame = str(msg.header.frame_id).strip().lstrip("/")
-        if reported_frame and reported_frame != source.odom_frame_id:
-            mismatch = (
-                robot_name,
-                reported_frame,
-                source.odom_frame_id,
-            )
-            if mismatch not in self._reported_odom_frame_mismatches:
-                self._reported_odom_frame_mismatches.add(mismatch)
-                self.get_logger().warning(
-                    f"robot {robot_name!r} odometry reports frame "
-                    f"{reported_frame!r}, using fleet frame "
-                    f"{source.odom_frame_id!r} for auditory TF"
-                )
+        source.position = Point()
         position_header = Header()
         position_header.stamp = msg.header.stamp
-        position_header.frame_id = source.odom_frame_id
+        position_header.frame_id = source.base_frame_id
         source.position_header = position_header
-        source.yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
         linear_velocity = float(msg.twist.twist.linear.x)
         lateral_velocity = float(msg.twist.twist.linear.y)
         angular_velocity = float(msg.twist.twist.angular.z)
@@ -283,7 +258,7 @@ class RobotSoundNode(SoundPlaybackNode):
                 if source.moving:
                     self._clear_motor_cone_markers(
                         robot_name,
-                        source.marker_frame_id,
+                        source.base_frame_id,
                     )
                     source.moving = False
                     if self._uses_procedural_audio(source):
@@ -333,7 +308,7 @@ class RobotSoundNode(SoundPlaybackNode):
             if moving:
                 self._publish_motor_cone_markers(robot_name, source)
             elif state_changed:
-                self._clear_motor_cone_markers(robot_name, source.marker_frame_id)
+                self._clear_motor_cone_markers(robot_name, source.base_frame_id)
 
             if not state_changed:
                 continue
@@ -383,7 +358,7 @@ class RobotSoundNode(SoundPlaybackNode):
         msg.sound_type = "motor"
         msg.source_backend = "drivetrain"
         msg.source_position = source.position
-        msg.source_yaw = source.yaw
+        msg.source_yaw = 0.0
         msg.linear_velocity_mps = source.linear_velocity_mps
         msg.angular_velocity_radps = source.angular_velocity_radps
         msg.left_velocity_mps = source.left_velocity_mps
@@ -480,10 +455,9 @@ class RobotSoundNode(SoundPlaybackNode):
         lifetime_sec = int(lifetime)
         lifetime_nanosec = int((lifetime % 1.0) * 1_000_000_000)
         base_id = self._motor_marker_base_id(robot_name)
-        robot_local_frame = source.marker_frame_id != "map"
-        source_x = 0.0 if robot_local_frame else float(source.position.x)
-        source_y = 0.0 if robot_local_frame else float(source.position.y)
-        yaw = 0.0 if robot_local_frame else source.yaw
+        source_x = 0.0
+        source_y = 0.0
+        yaw = 0.0
         apex = Point(
             x=source_x + math.cos(yaw) * 0.15,
             y=source_y + math.sin(yaw) * 0.15,
@@ -503,7 +477,7 @@ class RobotSoundNode(SoundPlaybackNode):
 
         stamp = self.get_clock().now().to_msg()
         fill = Marker()
-        fill.header.frame_id = source.marker_frame_id
+        fill.header.frame_id = source.base_frame_id
         fill.header.stamp = stamp
         fill.ns = f"motor_sound_{robot_name}"
         fill.id = base_id
@@ -583,33 +557,6 @@ class RobotSoundNode(SoundPlaybackNode):
             )
         return "/".join(part for part in (prefix, base_frame) if part)
 
-    def _robot_odom_frame(self, model_name: str, frame_prefix: str) -> str:
-        prefix = frame_prefix.strip("/")
-        try:
-            odom_frame = (
-                RobotIdentifier(model_name)
-                .resolve_sync()
-                .model_params.odom_frame
-                .strip("/")
-            )
-        except Exception as exc:
-            odom_frame = "odom"
-            self.get_logger().warning(
-                f"could not resolve odometry frame for robot model "
-                f"{model_name!r}: {exc}, using {odom_frame!r}"
-            )
-        return "/".join(part for part in (prefix, odom_frame) if part)
-
-    @staticmethod
-    def _yaw_from_quaternion(quaternion) -> float:
-        siny_cosp = 2.0 * (
-            quaternion.w * quaternion.z + quaternion.x * quaternion.y
-        )
-        cosy_cosp = 1.0 - 2.0 * (
-            quaternion.y * quaternion.y + quaternion.z * quaternion.z
-        )
-        return math.atan2(siny_cosp, cosy_cosp)
-
     def _make_sound_event(
         self,
         source: RobotSoundSource,
@@ -619,7 +566,7 @@ class RobotSoundNode(SoundPlaybackNode):
         sound_type = str(self.get_parameter("sound_type").value)
         period = float(self.get_parameter("publish_period_sec").value)
         if source.position is None or source.position_header is None:
-            raise RuntimeError("robot sound source has no odometry pose")
+            raise RuntimeError("robot sound source has no odometry update")
 
         msg = SoundEvent()
         msg.header.stamp = source.position_header.stamp
@@ -636,7 +583,7 @@ class RobotSoundNode(SoundPlaybackNode):
         msg.label = sound_type
         msg.asset_id = asset_id
         msg.source_position = source.position
-        msg.source_yaw = source.yaw
+        msg.source_yaw = 0.0
         msg.source_volume_db = float(self.get_parameter("source_volume_db").value)
         msg.semantic_tags = ["robot", "motor", "mechanical"]
         msg.duration.sec = int(period)
