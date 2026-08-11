@@ -12,10 +12,12 @@ import tf2_ros
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
+from arena_robots.Robot import RobotIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier
 from geometry_msgs.msg import Point
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from shapely.geometry import Point as ShapelyPoint
 from std_msgs.msg import String
 from task_generator.auditory.acoustic_frame import (
@@ -140,6 +142,12 @@ class SoundPropagationNode(Node):
         self._peds: dict[int, object] = {}
         self._peds_frame_id = "map"
         self._robots: dict[str, tuple[Point, str]] = {}
+        self._robot_odom_frames: dict[str, str] = {}
+        self._odom_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+        )
         self._tf_buffer = tf2_ros.Buffer(node=self)
         self._tf_listener = tf2_ros.TransformListener(
             self._tf_buffer,
@@ -577,25 +585,30 @@ class SoundPropagationNode(Node):
             name = str(robot.name)
             namespace = str(robot.ns).rstrip("/")
             active_names.add(name)
-
-            topic = str(
-                self.get_parameter("odom_topic_template").value
-            ).format(
-                namespace=namespace,
-                name=name,
+            listener_id = f"robot:{name}"
+            odom_frame_id = self._robot_odom_frame(
+                str(robot.model),
+                str(robot.frame),
             )
+            self._robot_odom_frames[listener_id] = odom_frame_id
 
-            key = (name, topic)
-            desired.add(key)
-            if key not in self._odom_subs:
-                self._odom_subs[key] = self.create_subscription(
-                    Odometry,
-                    topic,
-                    lambda odom, robot_name=name: self._cb_robot_odom(
-                        robot_name, odom
-                    ),
-                    10,
-                )
+            topics = self._robot_odom_topics(
+                model_name=str(robot.model),
+                namespace=namespace,
+                robot_name=name,
+            )
+            for topic in topics:
+                key = (name, topic)
+                desired.add(key)
+                if key not in self._odom_subs:
+                    self._odom_subs[key] = self.create_subscription(
+                        Odometry,
+                        topic,
+                        lambda odom, robot_name=name: self._cb_robot_odom(
+                            robot_name, odom
+                        ),
+                        self._odom_qos,
+                    )
 
         for key in set(self._odom_subs) - desired:
             self.destroy_subscription(self._odom_subs.pop(key))
@@ -604,11 +617,20 @@ class SoundPropagationNode(Node):
             name = listener_id.removeprefix("robot:")
             if name not in active_names:
                 self._robots.pop(listener_id, None)
+                self._robot_odom_frames.pop(listener_id, None)
 
-    def _cb_robot_odom(self, robot_name: str, msg: Odometry) -> None:
-        self._robots[f"robot:{robot_name}"] = (
+    def _cb_robot_odom(
+        self,
+        robot_name: str,
+        msg: Odometry,
+    ) -> None:
+        listener_id = f"robot:{robot_name}"
+        frame_id = self._robot_odom_frames.get(listener_id)
+        if frame_id is None:
+            return
+        self._robots[listener_id] = (
             msg.pose.pose.position,
-            str(msg.header.frame_id).strip(),
+            frame_id,
         )
 
 
@@ -771,9 +793,15 @@ class SoundPropagationNode(Node):
         return listeners
 
     def _transform_event_source(self, event: SoundEvent) -> bool:
+        source_frame = str(event.header.frame_id).strip()
+        robot_frame = self._robot_odom_frames.get(
+            f"robot:{event.source_agent_name}"
+        )
+        if robot_frame is not None:
+            source_frame = robot_frame
         source = self._point_in_acoustic_frame(
             event.source_position,
-            str(event.header.frame_id).strip(),
+            source_frame,
             event.event_id or event.source_agent_name or "sound source",
         )
         if source is None:
@@ -782,6 +810,54 @@ class SoundPropagationNode(Node):
         assert self._map is not None
         event.header.frame_id = self._map.header.frame_id
         return True
+
+    def _robot_odom_frame(self, model_name: str, frame_prefix: str) -> str:
+        prefix = frame_prefix.strip("/")
+        try:
+            odom_frame = (
+                RobotIdentifier(model_name)
+                .resolve_sync()
+                .model_params.odom_frame
+                .strip("/")
+            )
+        except Exception as exc:
+            odom_frame = "odom"
+            self.get_logger().warning(
+                f"could not resolve odometry frame for robot model "
+                f"{model_name!r}: {exc}, using {odom_frame!r}"
+            )
+        return "/".join(part for part in (prefix, odom_frame) if part)
+
+    def _robot_odom_topics(
+        self,
+        *,
+        model_name: str,
+        namespace: str,
+        robot_name: str,
+    ) -> tuple[str, ...]:
+        topics = [
+            str(self.get_parameter("odom_topic_template").value).format(
+                namespace=namespace,
+                name=robot_name,
+            ),
+            f"{namespace}/odom",
+        ]
+        try:
+            control = (
+                RobotIdentifier(model_name)
+                .resolve_sync()
+                .model_params.control
+            )
+            model_odom = (
+                control.odom_topic.strip("/") if control is not None else ""
+            )
+            if model_odom:
+                topics.append(f"{namespace}/{model_odom}")
+        except Exception as exc:
+            self.get_logger().warning(
+                f"could not resolve odometry topic for {model_name!r}: {exc}"
+            )
+        return tuple(dict.fromkeys(topic for topic in topics if topic))
 
     def _point_in_acoustic_frame(
         self,

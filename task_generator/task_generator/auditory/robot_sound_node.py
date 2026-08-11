@@ -31,6 +31,7 @@ class RobotSoundSource:
     namespace: str
     model: str
     effective_wheel_separation_m: float
+    odom_frame_id: str
     position: Point | None = None
     position_header: Header | None = None
     yaw: float = 0.0
@@ -83,6 +84,9 @@ class RobotSoundNode(SoundPlaybackNode):
         self._event_counter = 0
         self._episode_seed = 0
         self._marker_pubs = {}
+        self._reported_odom_frame_mismatches: set[
+            tuple[str, str, str]
+        ] = set()
 
         self._sound_pub = self.create_publisher(
             SoundEvent,
@@ -131,8 +135,12 @@ class RobotSoundNode(SoundPlaybackNode):
 
             namespace = str(robot.ns).rstrip("/")
             model = str(robot.model)
+            odom_frame_id = self._robot_odom_frame(
+                model,
+                str(robot.frame),
+            )
             marker_frame_id = self._robot_base_frame(
-                str(robot.model),
+                model,
                 str(robot.frame),
             )
             self._robots[name] = RobotSoundSource(
@@ -142,6 +150,7 @@ class RobotSoundNode(SoundPlaybackNode):
                 effective_wheel_separation_m=(
                     self._effective_wheel_separation(model)
                 ),
+                odom_frame_id=odom_frame_id,
                 marker_frame_id=marker_frame_id,
             )
             if self._marker_pub is None:
@@ -214,7 +223,24 @@ class RobotSoundNode(SoundPlaybackNode):
             return
 
         source.position = msg.pose.pose.position
-        source.position_header = msg.header
+        reported_frame = str(msg.header.frame_id).strip().lstrip("/")
+        if reported_frame and reported_frame != source.odom_frame_id:
+            mismatch = (
+                robot_name,
+                reported_frame,
+                source.odom_frame_id,
+            )
+            if mismatch not in self._reported_odom_frame_mismatches:
+                self._reported_odom_frame_mismatches.add(mismatch)
+                self.get_logger().warning(
+                    f"robot {robot_name!r} odometry reports frame "
+                    f"{reported_frame!r}, using fleet frame "
+                    f"{source.odom_frame_id!r} for auditory TF"
+                )
+        position_header = Header()
+        position_header.stamp = msg.header.stamp
+        position_header.frame_id = source.odom_frame_id
+        source.position_header = position_header
         source.yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
         linear_velocity = float(msg.twist.twist.linear.x)
         lateral_velocity = float(msg.twist.twist.linear.y)
@@ -556,6 +582,23 @@ class RobotSoundNode(SoundPlaybackNode):
                 f"{exc}; using {base_frame!r}"
             )
         return "/".join(part for part in (prefix, base_frame) if part)
+
+    def _robot_odom_frame(self, model_name: str, frame_prefix: str) -> str:
+        prefix = frame_prefix.strip("/")
+        try:
+            odom_frame = (
+                RobotIdentifier(model_name)
+                .resolve_sync()
+                .model_params.odom_frame
+                .strip("/")
+            )
+        except Exception as exc:
+            odom_frame = "odom"
+            self.get_logger().warning(
+                f"could not resolve odometry frame for robot model "
+                f"{model_name!r}: {exc}, using {odom_frame!r}"
+            )
+        return "/".join(part for part in (prefix, odom_frame) if part)
 
     @staticmethod
     def _yaw_from_quaternion(quaternion) -> float:
