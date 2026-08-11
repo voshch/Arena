@@ -8,8 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_simulation_setup.tree.World import WorldIdentifier
+from nav_msgs.msg import OccupancyGrid
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -24,6 +26,10 @@ from task_generator_msgs.msg import (
     SoundEvent,
 )
 
+from task_generator.auditory.acoustic_frame import (
+    realize_rooms_and_graph,
+    runtime_acoustic_offset,
+)
 from task_generator.auditory.acoustic_room_spec import (
     AcousticRoomSpec,
     AcousticRoomSpecBuilder,
@@ -88,6 +94,7 @@ class SoundPlaybackNode(Node):
             )
         self.declare_parameter("listener_robot_name", "jackal")
         self.declare_parameter("world_topic", "state/world")
+        self.declare_parameter("map_topic", "map")
         self.declare_parameter("rir_sample_rate_hz", 44100)
         self.declare_parameter("rir_max_order", 3)
         self.declare_parameter("rir_temperature_c", 20.0)
@@ -195,11 +202,16 @@ class SoundPlaybackNode(Node):
                 f"motor playback mode={self._motor_playback_mode!r}"
             )
         self._room_specs: tuple[AcousticRoomSpec, ...] = ()
+        self._authored_room_specs: tuple[AcousticRoomSpec, ...] = ()
         self._continuous_sources: dict[str, DrivetrainRenderSource] = {}
         self._continuous_rir_signatures: dict[
             str, tuple[object, ...]
         ] = {}
         self._world_graph: AcousticWorldGraph | None = None
+        self._authored_world_graph: AcousticWorldGraph | None = None
+        self._authored_map_origin: tuple[float, float] | None = None
+        self._map: OccupancyGrid | None = None
+        self._acoustic_alignment_signature: tuple[object, ...] | None = None
         self._portal_coupler: MultiPortalRirCoupler | None = None
         self._world_name = ""
         self._world_loader = ThreadPoolExecutor(max_workers=1)
@@ -255,6 +267,12 @@ class SoundPlaybackNode(Node):
                 String,
                 world_topic,
                 self._cb_world,
+                acoustic_metadata_qos(),
+            )
+            self._map_subscription = self.create_subscription(
+                OccupancyGrid,
+                str(self.get_parameter("map_topic").value),
+                self._cb_map,
                 acoustic_metadata_qos(),
             )
             heard_topic = str(
@@ -330,8 +348,11 @@ class SoundPlaybackNode(Node):
             float(self.get_parameter("minimum_opening_width_m").value),
             float(self.get_parameter("portal_loss_db").value),
             float(self.get_parameter("opening_portal_loss_db").value),
-            self._pra_adapter,
         )
+
+    def _cb_map(self, msg: OccupancyGrid) -> None:
+        self._map = msg
+        self._realize_acoustic_geometry()
 
     def _on_set_parameters(self, parameters) -> SetParametersResult:
         for parameter in parameters:
@@ -354,15 +375,23 @@ class SoundPlaybackNode(Node):
         minimum_opening_width_m: float,
         door_portal_loss_db: float,
         opening_portal_loss_db: float,
-        adapter: PyroomacousticsAdapter | None,
     ) -> tuple[
         str,
         tuple[AcousticRoomSpec, ...],
         AcousticWorldGraph,
-        float,
-        str,
+        tuple[float, float] | None,
     ]:
-        world = WorldIdentifier(world_name).resolve_sync().load()
+        world_view = WorldIdentifier(world_name).resolve_sync()
+        world = world_view.load()
+        authored_map_origin = None
+        for level_id in sorted(world.levels):
+            map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
+            if not map_yaml.exists():
+                continue
+            map_config = yaml.safe_load(map_yaml.read_text(encoding="utf-8"))
+            origin = map_config.get("origin", (0.0, 0.0, 0.0))
+            authored_map_origin = (float(origin[0]), float(origin[1]))
+            break
         specs = AcousticRoomSpecBuilder(
             AcousticRoomSpecConfig(ceiling_height_m=ceiling_height_m)
         ).from_world(world)
@@ -375,25 +404,7 @@ class SoundPlaybackNode(Node):
             door_portal_loss_db=door_portal_loss_db,
             opening_portal_loss_db=opening_portal_loss_db,
         )
-        warmup_seconds = 0.0
-        warmup_error = ""
-        if adapter is not None and specs:
-            try:
-                polygon = Polygon(specs[0].corners_xy)
-                point = polygon.representative_point()
-                started = time.perf_counter()
-                adapter.compute_rir(
-                    specs[0],
-                    source_position_m=(point.x, point.y, 0.5),
-                    listener_position_m=(point.x, point.y, 1.5),
-                )
-                warmup_seconds = time.perf_counter() - started
-            except Exception as exc:
-                # Warming the optional cache must never make the acoustic
-                # scene unavailable. A real event can still render or use
-                # the configured dry fallback.
-                warmup_error = f"{type(exc).__name__}: {exc}"
-        return world_name, specs, graph, warmup_seconds, warmup_error
+        return world_name, specs, graph, authored_map_origin
 
     def _poll_room_load(self) -> None:
         if self._world_load_future is None or not self._world_load_future.done():
@@ -403,45 +414,91 @@ class SoundPlaybackNode(Node):
         try:
             (
                 self._world_name,
-                self._room_specs,
-                self._world_graph,
-                warmup_seconds,
-                warmup_error,
+                self._authored_room_specs,
+                self._authored_world_graph,
+                self._authored_map_origin,
             ) = future.result()
-            self._portal_coupler = (
-                MultiPortalRirCoupler(
-                    self._pra_adapter,
-                    self._world_graph,
-                    world_name=self._world_name,
-                    config=self._portal_coupling_config(),
+            if self._authored_map_origin is None:
+                self.get_logger().error(
+                    f"cannot realize acoustic rooms for {self._world_name!r}: "
+                    "no level map.yaml origin is available"
                 )
-                if self._pra_adapter is not None else None
-            )
-            # Force every persistent source through the newly loaded world's
-            # RIR even when zone names and quantized coordinates coincide.
-            self._continuous_rir_signatures.clear()
-            self.get_logger().info(
-                f"loaded {len(self._room_specs)} acoustic rooms for "
-                f"{self._world_name!r}; "
-                f"door_portals="
-                f"{sum(p.portal_kind == 'door' for p in self._world_graph.portals)}, "
-                f"opening_portals="
-                f"{sum(p.portal_kind == 'opening' for p in self._world_graph.portals)}, "
-                f"components={len(self._world_graph.connected_components())}, "
-                f"unpaired_doors={len(self._world_graph.unpaired_doors)}, "
-                f"pyroom_warmup={warmup_seconds:.3f}s"
-            )
-            if warmup_error:
-                self.get_logger().warning(
-                    "pyroomacoustics warmup failed, but room loading "
-                    f"continues: {warmup_error}"
-                )
-            while self._pending_heard_events:
-                self._process_heard_sound(
-                    self._pending_heard_events.popleft()
-                )
+            self._room_specs = ()
+            self._world_graph = None
+            self._portal_coupler = None
+            self._acoustic_alignment_signature = None
+            self._realize_acoustic_geometry()
         except Exception as exc:
             self.get_logger().error(f"failed to load acoustic rooms: {exc!r}")
+
+    def _realize_acoustic_geometry(self) -> None:
+        if (
+            self._map is None
+            or self._authored_map_origin is None
+            or not self._authored_room_specs
+            or self._authored_world_graph is None
+        ):
+            return
+        offset = runtime_acoustic_offset(
+            self._map,
+            self._authored_map_origin,
+        )
+        signature = (self._world_name, *offset)
+        if signature == self._acoustic_alignment_signature:
+            return
+        self._acoustic_alignment_signature = signature
+        self._room_specs, self._world_graph = realize_rooms_and_graph(
+            self._authored_room_specs,
+            self._authored_world_graph,
+            offset,
+        )
+        self._portal_coupler = (
+            MultiPortalRirCoupler(
+                self._pra_adapter,
+                self._world_graph,
+                world_name=self._world_name,
+                config=self._portal_coupling_config(),
+            )
+            if self._pra_adapter is not None else None
+        )
+        self._continuous_rir_signatures.clear()
+        warmup_seconds, warmup_error = self._warm_up_realized_room()
+        self.get_logger().info(
+            f"realized {len(self._room_specs)} acoustic rooms for "
+            f"{self._world_name!r} in runtime map frame "
+            f"{self._map.header.frame_id!r} with "
+            f"offset=({offset[0]:.2f},{offset[1]:.2f}), "
+            f"door_portals="
+            f"{sum(p.portal_kind == 'door' for p in self._world_graph.portals)}, "
+            f"opening_portals="
+            f"{sum(p.portal_kind == 'opening' for p in self._world_graph.portals)}, "
+            f"components={len(self._world_graph.connected_components())}, "
+            f"unpaired_doors={len(self._world_graph.unpaired_doors)}, "
+            f"pyroom_warmup={warmup_seconds:.3f}s"
+        )
+        if warmup_error:
+            self.get_logger().warning(
+                "pyroomacoustics warmup failed, but room loading "
+                f"continues: {warmup_error}"
+            )
+        while self._pending_heard_events:
+            self._process_heard_sound(self._pending_heard_events.popleft())
+
+    def _warm_up_realized_room(self) -> tuple[float, str]:
+        if self._pra_adapter is None or not self._room_specs:
+            return 0.0, ""
+        try:
+            polygon = Polygon(self._room_specs[0].corners_xy)
+            point = polygon.representative_point()
+            started = time.perf_counter()
+            self._pra_adapter.compute_rir(
+                self._room_specs[0],
+                source_position_m=(point.x, point.y, 0.5),
+                listener_position_m=(point.x, point.y, 1.5),
+            )
+            return time.perf_counter() - started, ""
+        except Exception as exc:
+            return 0.0, f"{type(exc).__name__}: {exc}"
 
     def _cb_heard_sound(self, msg: HeardSoundEvent) -> None:
         if not self._matches_source_kind(msg):
@@ -542,6 +599,8 @@ class SoundPlaybackNode(Node):
         ):
             return
         if msg.source_backend != "drivetrain":
+            return
+        if self._use_rir and not self._room_specs:
             return
 
         source = self._continuous_sources.get(msg.source_id)

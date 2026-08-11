@@ -16,6 +16,10 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from shapely.geometry import Point as ShapelyPoint
 from std_msgs.msg import String
+from task_generator.auditory.acoustic_frame import (
+    realize_acoustic_geometry,
+    runtime_acoustic_offset,
+)
 from task_generator.auditory.acoustic_scene import AcousticScene
 from task_generator.auditory.acoustic_world_graph import AcousticWorldGraph
 from task_generator.auditory.material_catalog import AcousticMaterialCatalog
@@ -113,6 +117,7 @@ class SoundPropagationNode(Node):
         self.declare_parameter("pyroom_robot_listeners_only", True)
         self.declare_parameter("compute_rir_in_propagation", True)
         self._scene: AcousticScene | None = None
+        self._authored_scene: AcousticScene | None = None
         self._world_name = ""
         self._pending_world_name = ""
         self._world_load_future: Future | None = None
@@ -134,9 +139,12 @@ class SoundPropagationNode(Node):
         self._robots: dict[str, Point] = {}
         self._map: OccupancyGrid | None = None
         self._world_graph: AcousticWorldGraph | None = None
+        self._authored_room_specs: tuple[AcousticRoomSpec, ...] = ()
+        self._authored_world_graph: AcousticWorldGraph | None = None
         self._portal_coupler: MultiPortalRirCoupler | None = None
         self._coverage_signature: tuple[object, ...] | None = None
         self._authored_map_origin: tuple[float, float] | None = None
+        self._acoustic_alignment_signature: tuple[object, ...] | None = None
         self._reported_routes: set[tuple[str, str, str, str]] = set()
         self._pending_events: deque[
             tuple[SoundEvent, dict[str, Point]]
@@ -172,7 +180,12 @@ class SoundPropagationNode(Node):
             continuous_audio_qos(),
         )
         self.create_subscription(Pedestrians, peds_topic, self._cb_peds, 10)
-        self.create_subscription(OccupancyGrid, map_topic, self._cb_map, 1)
+        self.create_subscription(
+            OccupancyGrid,
+            map_topic,
+            self._cb_map,
+            acoustic_metadata_qos(),
+        )
         self.create_subscription(RobotFleet, robot_fleet_topic, self._cb_robot_fleet, acoustic_metadata_qos())
         share = Path(get_package_share_directory("task_generator"))
         materials = AcousticMaterialCatalog(share / "config" / "auditory" / "acoustic_materials.yaml")
@@ -232,7 +245,7 @@ class SoundPropagationNode(Node):
 
     def _cb_peds(self, msg: Pedestrians) -> None:
         self._peds = {int(p.id): p for p in msg.pedestrians}
-    
+
     def _cb_world(self, msg: String) -> None:
         world_name = msg.data.strip()
         if not world_name or world_name == self._world_name:
@@ -335,28 +348,84 @@ class SoundPropagationNode(Node):
             self.get_logger().error(f"failed to load acoustic scene: {exc!r}")
             return
 
-        self._scene = scene
-        self._room_specs = room_specs
-        self._world_graph = graph
         self._world_name = world_name
+        self._authored_scene = scene
+        self._authored_room_specs = room_specs
+        self._authored_world_graph = graph
         self._authored_map_origin = authored_map_origin
+        if authored_map_origin is None:
+            self.get_logger().error(
+                f"cannot realize acoustic scene for {world_name!r}: "
+                "no level map.yaml origin is available"
+            )
+        self._scene = None
+        self._room_specs = ()
+        self._world_graph = None
+        self._portal_coupler = None
         self._coverage_signature = None
+        self._acoustic_alignment_signature = None
+        self._realize_acoustic_geometry()
+
+        if self._pending_world_name and self._pending_world_name != self._world_name:
+            self._start_world_load(self._pending_world_name)
+
+    def destroy_node(self) -> bool:
+        self._world_loader.shutdown(wait=False, cancel_futures=True)
+        return super().destroy_node()
+
+    def _cb_map(self, msg: OccupancyGrid) -> None:
+        self._map = msg
+        self._realize_acoustic_geometry()
+        self._validate_acoustic_zone_coverage()
+
+    def _realize_acoustic_geometry(self) -> None:
+        if (
+            self._map is None
+            or self._authored_map_origin is None
+            or self._authored_scene is None
+            or self._authored_world_graph is None
+        ):
+            return
+        offset = runtime_acoustic_offset(
+            self._map,
+            self._authored_map_origin,
+        )
+        signature = (self._world_name, *offset)
+        if signature == self._acoustic_alignment_signature:
+            return
+        self._acoustic_alignment_signature = signature
+        (
+            self._scene,
+            self._room_specs,
+            self._world_graph,
+        ) = realize_acoustic_geometry(
+            self._authored_scene,
+            self._authored_room_specs,
+            self._authored_world_graph,
+            offset,
+        )
         self._portal_coupler = (
             MultiPortalRirCoupler(
                 self._pra_adapter,
-                graph,
-                world_name=world_name,
+                self._world_graph,
+                world_name=self._world_name,
                 config=self._portal_coupling_config(),
             )
             if self._pra_adapter is not None else None
         )
+        self._coverage_signature = None
+        graph = self._world_graph
         self.get_logger().info(
-            f"loaded acoustic scene for world {world_name!r} "
-            f"({len(room_specs)} rooms, "
-            f"{sum(p.portal_kind == 'door' for p in graph.portals)} door portals, "
-            f"{sum(p.portal_kind == 'opening' for p in graph.portals)} opening portals, "
-            f"{len(graph.connected_components())} connected components, "
-            f"{len(graph.unpaired_doors)} unpaired doors)"
+            f"realized acoustic scene for world {self._world_name!r} in "
+            f"runtime map frame {self._map.header.frame_id!r} with "
+            f"offset=({offset[0]:.2f},{offset[1]:.2f}), "
+            f"rooms={len(self._room_specs)}, "
+            f"door_portals="
+            f"{sum(p.portal_kind == 'door' for p in graph.portals)}, "
+            f"opening_portals="
+            f"{sum(p.portal_kind == 'opening' for p in graph.portals)}, "
+            f"components={len(graph.connected_components())}, "
+            f"unpaired_doors={len(graph.unpaired_doors)}"
         )
         for door in graph.unpaired_doors:
             self.get_logger().info(
@@ -373,17 +442,6 @@ class SoundPropagationNode(Node):
         while self._pending_events:
             event, listeners = self._pending_events.popleft()
             self._publish_event_to_listeners(event, listeners)
-
-        if self._pending_world_name and self._pending_world_name != self._world_name:
-            self._start_world_load(self._pending_world_name)
-    
-    def destroy_node(self) -> bool:
-        self._world_loader.shutdown(wait=False, cancel_futures=True)
-        return super().destroy_node()
-
-    def _cb_map(self, msg: OccupancyGrid) -> None:
-        self._map = msg
-        self._validate_acoustic_zone_coverage()
 
     def _portal_coupling_config(self) -> PortalCouplingConfig:
         return PortalCouplingConfig(
@@ -464,9 +522,6 @@ class SoundPropagationNode(Node):
                 local_y = (grid_y + 0.5) * info.resolution
                 world_x = info.origin.position.x + cos_yaw * local_x - sin_yaw * local_y
                 world_y = info.origin.position.y + sin_yaw * local_x + cos_yaw * local_y
-                offset_x, offset_y = self._map_frame_offset()
-                world_x -= offset_x
-                world_y -= offset_y
                 traversable += 1
                 sample = ShapelyPoint(world_x, world_y)
                 if not any(
@@ -487,7 +542,6 @@ class SoundPropagationNode(Node):
             examples = ", ".join(f"({x:.2f},{y:.2f})" for x, y in uncovered)
             map_width_m = info.width * info.resolution
             map_height_m = info.height * info.resolution
-            offset_x, offset_y = self._map_frame_offset()
             zone_bounds = ", ".join(
                 f"{zone.name}={tuple(round(v, 2) for v in zone.polygon.bounds)}"
                 for zone in self._scene.zones
@@ -500,8 +554,6 @@ class SoundPropagationNode(Node):
                 f"resolution={info.resolution:.3f}, "
                 f"origin=({info.origin.position.x:.2f},"
                 f"{info.origin.position.y:.2f}), yaw={yaw:.3f}); "
-                f"runtime-to-acoustic offset=({offset_x:.2f},"
-                f"{offset_y:.2f}); "
                 f"zone bounds: {zone_bounds}; first samples: {examples}. "
                 "These events will log an explicit backend fallback reason."
             )
@@ -1284,9 +1336,8 @@ class SoundPropagationNode(Node):
         assert self._map is not None
         origin = self._map.info.origin.position
         resolution = self._map.info.resolution
-        offset_x, offset_y = self._map_frame_offset()
-        dx = point.x + offset_x - origin.x
-        dy = point.y + offset_y - origin.y
+        dx = point.x - origin.x
+        dy = point.y - origin.y
         orientation = self._map.info.origin.orientation
         yaw = math.atan2(
             2.0 * (
@@ -1307,16 +1358,6 @@ class SoundPropagationNode(Node):
         if x < 0 or y < 0 or x >= self._map.info.width or y >= self._map.info.height:
             return None
         return x, y
-
-    def _map_frame_offset(self) -> tuple[float, float]:
-        if self._map is None or self._authored_map_origin is None:
-            return 0.0, 0.0
-        return (
-            float(self._map.info.origin.position.x)
-            - self._authored_map_origin[0],
-            float(self._map.info.origin.position.y)
-            - self._authored_map_origin[1],
-        )
 
     @staticmethod
     def _bresenham(x0: int, y0: int, x1: int, y1: int):
