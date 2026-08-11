@@ -220,7 +220,7 @@ def generate_launch_description():
                     "pyroom_temperature_c": 20.0,
                     "pyroom_relative_humidity_percent": 50.0,
                     "pyroom_ceiling_height_m": 3.0,
-                    "pyroom_cache_position_quantization_m": 0.25,
+                    "pyroom_cache_position_quantization_m": 0.10,
                     "pyroom_cache_size": 512,
                     "pyroom_robot_listeners_only": True,
                     **compute_rir_in_propagation.param(bool),

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import math
+import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import rclpy
+import tf2_ros
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
@@ -93,7 +95,7 @@ class SoundPropagationNode(Node):
         self.declare_parameter("pyroom_ceiling_height_m", 3.0)
         self.declare_parameter(
             "pyroom_cache_position_quantization_m",
-            0.25,
+            0.10,
         )
         self.declare_parameter("pyroom_cache_size", 512)
         self.declare_parameter("portal_adjacency_tolerance_m", 0.08)
@@ -136,7 +138,14 @@ class SoundPropagationNode(Node):
         )
         self._world_load_timer = self.create_timer(0.1, self._poll_world_load)
         self._peds: dict[int, object] = {}
-        self._robots: dict[str, Point] = {}
+        self._peds_frame_id = "map"
+        self._robots: dict[str, tuple[Point, str]] = {}
+        self._tf_buffer = tf2_ros.Buffer(node=self)
+        self._tf_listener = tf2_ros.TransformListener(
+            self._tf_buffer,
+            self,
+        )
+        self._transform_warning_times: dict[tuple[str, str, str], float] = {}
         self._map: OccupancyGrid | None = None
         self._world_graph: AcousticWorldGraph | None = None
         self._authored_room_specs: tuple[AcousticRoomSpec, ...] = ()
@@ -245,6 +254,7 @@ class SoundPropagationNode(Node):
 
     def _cb_peds(self, msg: Pedestrians) -> None:
         self._peds = {int(p.id): p for p in msg.pedestrians}
+        self._peds_frame_id = str(msg.header.frame_id).strip() or "map"
 
     def _cb_world(self, msg: String) -> None:
         world_name = msg.data.strip()
@@ -596,12 +606,17 @@ class SoundPropagationNode(Node):
                 self._robots.pop(listener_id, None)
 
     def _cb_robot_odom(self, robot_name: str, msg: Odometry) -> None:
-        self._robots[f"robot:{robot_name}"] = msg.pose.pose.position
-        # self.get_logger().info(f"robot listener updated: robot:{robot_name}")
+        self._robots[f"robot:{robot_name}"] = (
+            msg.pose.pose.position,
+            str(msg.header.frame_id).strip(),
+        )
 
 
     def _cb_sound_event(self, event: SoundEvent) -> None:
         if not event.sound_type.strip():
+            return
+
+        if self._scene is not None and not self._transform_event_source(event):
             return
 
         listeners = self._listeners_for_event(event)
@@ -664,6 +679,9 @@ class SoundPropagationNode(Node):
         event.semantic_tags = ["continuous", state.source_backend]
         event.loop = True
 
+        if not self._transform_event_source(event):
+            return
+
         listeners = self._listeners_for_event(event)
         selected_listener = str(
             self.get_parameter("continuous_listener_robot_name").value
@@ -686,7 +704,7 @@ class SoundPropagationNode(Node):
             ):
                 continue
             output = ContinuousHeardSoundState()
-            output.header = state.header
+            output.header = event.header
             output.source_id = state.source_id
             output.listener_id = listener_id
             output.source_agent_id = state.source_agent_id
@@ -694,7 +712,7 @@ class SoundPropagationNode(Node):
             output.source_model = state.source_model
             output.sound_type = state.sound_type
             output.source_backend = state.source_backend
-            output.source_position = state.source_position
+            output.source_position = event.source_position
             output.listener_position = listener_pos
             output.linear_velocity_mps = state.linear_velocity_mps
             output.angular_velocity_radps = state.angular_velocity_radps
@@ -729,20 +747,141 @@ class SoundPropagationNode(Node):
             for agent_id, ped in self._peds.items():
                 if agent_id == event.source_agent_id:
                     continue
-                listeners[f"agent:{agent_id}"] = ped.pose.position
+                listener_id = f"agent:{agent_id}"
+                position = self._point_in_acoustic_frame(
+                    ped.pose.position,
+                    self._peds_frame_id,
+                    listener_id,
+                )
+                if position is not None:
+                    listeners[listener_id] = position
 
-        listeners.update(self._robots)
+        for listener_id, (position, frame_id) in self._robots.items():
+            transformed = self._point_in_acoustic_frame(
+                position,
+                frame_id,
+                listener_id,
+            )
+            if transformed is not None:
+                listeners[listener_id] = transformed
 
         if not bool(self.get_parameter("robots_hear_self").value):
             listeners.pop(f"robot:{event.source_agent_name}", None)
 
         return listeners
 
+    def _transform_event_source(self, event: SoundEvent) -> bool:
+        source = self._point_in_acoustic_frame(
+            event.source_position,
+            str(event.header.frame_id).strip(),
+            event.event_id or event.source_agent_name or "sound source",
+        )
+        if source is None:
+            return False
+        event.source_position = source
+        assert self._map is not None
+        event.header.frame_id = self._map.header.frame_id
+        return True
+
+    def _point_in_acoustic_frame(
+        self,
+        point: Point,
+        source_frame: str,
+        entity_id: str,
+    ) -> Point | None:
+        if self._map is None:
+            return None
+        target_frame = str(self._map.header.frame_id).strip()
+        source_frame = source_frame.strip().lstrip("/")
+        target_frame = target_frame.lstrip("/")
+        if not source_frame or not target_frame:
+            self._warn_transform_unavailable(
+                entity_id,
+                source_frame,
+                target_frame,
+                "missing frame ID",
+            )
+            return None
+        if source_frame == target_frame:
+            return Point(
+                x=float(point.x),
+                y=float(point.y),
+                z=float(point.z),
+            )
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                target_frame,
+                source_frame,
+                rclpy.time.Time(),
+            )
+        except (
+            tf2_ros.LookupException,
+            tf2_ros.ConnectivityException,
+            tf2_ros.ExtrapolationException,
+        ) as exc:
+            self._warn_transform_unavailable(
+                entity_id,
+                source_frame,
+                target_frame,
+                str(exc),
+            )
+            return None
+        return self._apply_transform(point, transform.transform)
+
+    def _warn_transform_unavailable(
+        self,
+        entity_id: str,
+        source_frame: str,
+        target_frame: str,
+        reason: str,
+    ) -> None:
+        key = (entity_id, source_frame, target_frame)
+        now = time.monotonic()
+        if now - self._transform_warning_times.get(key, -float("inf")) < 5.0:
+            return
+        self._transform_warning_times[key] = now
+        self.get_logger().warning(
+            f"cannot transform acoustic position for {entity_id!r} from "
+            f"{source_frame!r} to runtime map frame {target_frame!r}: {reason}"
+        )
+
+    @staticmethod
+    def _apply_transform(point: Point, transform) -> Point:
+        rotation = transform.rotation
+        translation = transform.translation
+        qx = float(rotation.x)
+        qy = float(rotation.y)
+        qz = float(rotation.z)
+        qw = float(rotation.w)
+        norm = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+        if norm > 0.0:
+            qx /= norm
+            qy /= norm
+            qz /= norm
+            qw /= norm
+
+        x = float(point.x)
+        y = float(point.y)
+        z = float(point.z)
+        uv_x = qy * z - qz * y
+        uv_y = qz * x - qx * z
+        uv_z = qx * y - qy * x
+        uuv_x = qy * uv_z - qz * uv_y
+        uuv_y = qz * uv_x - qx * uv_z
+        uuv_z = qx * uv_y - qy * uv_x
+        return Point(
+            x=x + 2.0 * (qw * uv_x + uuv_x) + float(translation.x),
+            y=y + 2.0 * (qw * uv_y + uuv_y) + float(translation.y),
+            z=z + 2.0 * (qw * uv_z + uuv_z) + float(translation.z),
+        )
+
     def _publish_event_to_listeners(
         self,
         event: SoundEvent,
         listeners: dict[str, Point],
     ) -> None:
+        if not self._transform_event_source(event):
+            return
         for listener_id, listener_pos in listeners.items():
             heard = self._calculate_heard_event(event, listener_id, listener_pos)
             if heard.audible or bool(self.get_parameter("publish_inaudible").value):

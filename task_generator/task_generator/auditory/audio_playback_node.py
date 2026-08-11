@@ -644,6 +644,10 @@ class SoundPlaybackNode(Node):
                 )
 
         gain_db = float(msg.received_volume_db) - float(msg.source_volume_db)
+        has_rir = (
+            impulse is not None
+            or msg.source_id in self._continuous_rir_signatures
+        )
         source.update(
             left_velocity=float(msg.left_velocity_mps),
             right_velocity=float(msg.right_velocity_mps),
@@ -652,8 +656,9 @@ class SoundPlaybackNode(Node):
                 msg.active
                 and msg.audible
                 and (
-                    impulse is not None
-                    or msg.source_id in self._continuous_rir_signatures
+                    has_rir
+                    or not self._use_rir
+                    or self._rir_dry_fallback
                 )
             ),
             impulse=impulse,
