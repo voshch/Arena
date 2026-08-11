@@ -21,12 +21,14 @@ class Voice:
     outro_sample: CachedSample | None = None
     stage: str = "single"
     stop_requested: bool = False
+    bus: str = "main"
 
 
 @dataclass
 class RenderVoice:
     source: object
     voice_id: str
+    bus: str = "main"
 
 
 class AudioMixer:
@@ -34,6 +36,7 @@ class AudioMixer:
         self._channels = channels
         self._voices: list[Voice] = []
         self._render_voices: list[RenderVoice] = []
+        self._bus_enabled: dict[str, bool] = {}
         self._lock = threading.Lock()
         self._master_gain = 10.0 ** (master_gain_db / 20.0)
         self._callback_count = 0
@@ -90,12 +93,13 @@ class AudioMixer:
     def last_status(self) -> str:
         return self._last_status
 
-    def play(self,sample: CachedSample,*, loop: bool = False,gain_db: float = 0.0, voice_id: str | None = None) -> None:
+    def play(self,sample: CachedSample,*, loop: bool = False,gain_db: float = 0.0, voice_id: str | None = None, bus: str = "main") -> None:
         voice = Voice(
             sample=sample,
             loop=loop,
             gain=10.0 ** (gain_db / 20.0),
             voice_id=voice_id,
+            bus=bus,
         )
         with self._lock:
             if voice_id is not None:
@@ -106,7 +110,7 @@ class AudioMixer:
                 ]
             self._voices.append(voice)
 
-    def add_render_source(self, source: object, *, voice_id: str) -> None:
+    def add_render_source(self, source: object, *, voice_id: str, bus: str = "main") -> None:
         with self._lock:
             if not hasattr(self, "_render_voices"):
                 self._render_voices = []
@@ -116,7 +120,7 @@ class AudioMixer:
                 if active.voice_id != voice_id
             ]
             self._render_voices.append(
-                RenderVoice(source=source, voice_id=voice_id)
+                RenderVoice(source=source, voice_id=voice_id, bus=bus)
             )
 
     def play_looping_sequence(
@@ -127,6 +131,7 @@ class AudioMixer:
         *,
         voice_id: str,
         gain_db: float = 0.0,
+        bus: str = "main",
     ) -> None:
         """Play intro once, loop the middle, then play outro when stopped."""
         voice = Voice(
@@ -136,6 +141,7 @@ class AudioMixer:
             loop_sample=loop_sample,
             outro_sample=outro,
             stage="intro",
+            bus=bus,
         )
         with self._lock:
             # A duplicate start event replaces the previous motor voice rather
@@ -161,6 +167,10 @@ class AudioMixer:
             if hasattr(self, "_render_voices"):
                 self._render_voices.clear()
 
+    def set_bus_enabled(self, bus: str, enabled: bool) -> None:
+        with self._lock:
+            self._bus_enabled[bus] = enabled
+
     def close(self) -> None:
         self._stream.stop()
         self._stream.close()
@@ -178,6 +188,7 @@ class AudioMixer:
 
             for voice in self._voices:
                 written = 0
+                bus_enabled = self._bus_enabled.get(voice.bus, True)
 
                 if voice.sample.samples.size == 0 or len(voice.sample.samples) == 0:
                     raise ValueError(f"empty WAV file: {voice.sample.path}")
@@ -186,15 +197,15 @@ class AudioMixer:
                     remaining = len(voice.sample.samples) - voice.position
                     count = min(frames - written, remaining)
 
-                    if count > 0:
+                    if count > 0 and bus_enabled:
                         outdata[written:written + count] += (
                             voice.sample.samples[
                                 voice.position:voice.position + count
                             ]
                             * voice.gain
                         )
-                        voice.position += count
-                        written += count
+                    voice.position += count
+                    written += count
 
                     if voice.position >= len(voice.sample.samples):
                         if not self._advance_voice(voice):
@@ -215,7 +226,8 @@ class AudioMixer:
                         f"render source {voice.voice_id!r} returned "
                         f"{rendered.shape}, expected {outdata.shape}"
                     )
-                outdata += rendered
+                if self._bus_enabled.get(voice.bus, True):
+                    outdata += rendered
                 if not bool(voice.source.finished):
                     active_renderers.append(voice)
             self._render_voices = active_renderers

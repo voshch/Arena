@@ -6,7 +6,35 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <exception>
 #include <memory>
+
+namespace
+{
+    std::string normalizeNodePath(const std::string &path)
+    {
+        std::string normalized;
+        normalized.reserve(path.size() + 1);
+        normalized.push_back('/');
+        bool previous_slash = true;
+        for (const char character : path)
+        {
+            if (character == '/')
+            {
+                if (!previous_slash)
+                    normalized.push_back(character);
+                previous_slash = true;
+                continue;
+            }
+            normalized.push_back(character);
+            previous_slash = false;
+        }
+        if (normalized.size() > 1 && normalized.back() == '/')
+            normalized.pop_back();
+        return normalized;
+    }
+}
+
 namespace task_generator_gui
 {
     TaskGeneratorPanel::TaskGeneratorPanel(QWidget *parent) : Panel(parent)
@@ -29,9 +57,12 @@ namespace task_generator_gui
 
         QString result;
         if (config.mapGetString("Target", &result))
-            task_generator_node = result.toStdString();
+            task_generator_node = normalizeNodePath(result.toStdString());
         else
             task_generator_node = "/task_generator_node";
+
+        motor_playback_node = normalizeNodePath(
+            task_generator_node + "/human_sound_playback");
 
         // All clients go on `node` — rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
@@ -58,6 +89,10 @@ namespace task_generator_gui
             task_generator_node + "/config/queue_episode");
 
         parameters_client = std::make_shared<rclcpp::AsyncParametersClient>(node, task_generator_node);
+        motor_playback_parameters_client =
+            std::make_shared<rclcpp::AsyncParametersClient>(
+                node,
+                motor_playback_node);
 
         // Latched paused-state subscription.
         {
@@ -89,6 +124,7 @@ namespace task_generator_gui
                     QMetaObject::invokeMethod(this, [this, msg]()
                     {
                         last_current_episode_ = msg;
+                        refreshMotorPlayback();
 
                         if (next_pending_ && msg->episode_id != next_pending_baseline_id_)
                             clearNextPending();
@@ -219,6 +255,37 @@ namespace task_generator_gui
             rclcpp::QoS(10),
             [this, expected_node = task_generator_node](const rcl_interfaces::msg::ParameterEvent::SharedPtr msg)
             {
+                if (msg->node == motor_playback_node)
+                {
+                    auto sync = [this](const auto &parameters)
+                    {
+                        for (const auto &parameter : parameters)
+                        {
+                            if (parameter.name != "enable_motor_playback")
+                                continue;
+                            const bool enabled = parameter.value.bool_value;
+                            QMetaObject::invokeMethod(this, [this, enabled]()
+                            {
+                                syncMotorPlaybackCheckbox(enabled, true);
+                            }, Qt::QueuedConnection);
+                            return true;
+                        }
+                        return false;
+                    };
+                    if (!sync(msg->changed_parameters)
+                        && !sync(msg->new_parameters))
+                    {
+                        for (const auto &parameter : msg->deleted_parameters)
+                        {
+                            if (parameter.name == "enable_motor_playback")
+                            {
+                                refreshMotorPlayback();
+                                break;
+                            }
+                        }
+                    }
+                    return;
+                }
                 if (msg->node != expected_node) return;
 
                 bool obs_changed = false;
@@ -253,6 +320,114 @@ namespace task_generator_gui
                     }
                 }, Qt::QueuedConnection);
             });
+
+        whenReady(
+            [client = motor_playback_parameters_client]()
+            {
+                return client->service_is_ready();
+            },
+            [this]() { refreshMotorPlayback(); });
+    }
+
+    void TaskGeneratorPanel::refreshMotorPlayback()
+    {
+        if (!motor_playback_parameters_client
+            || !motor_playback_parameters_client->service_is_ready())
+        {
+            QMetaObject::invokeMethod(this, [this]()
+            {
+                syncMotorPlaybackCheckbox(false, false);
+            }, Qt::QueuedConnection);
+            return;
+        }
+
+        motor_playback_parameters_client->get_parameters(
+            {"enable_motor_playback"},
+            [this](std::shared_future<std::vector<rclcpp::Parameter>> future)
+            {
+                bool available = false;
+                bool enabled = false;
+                try
+                {
+                    const auto parameters = future.get();
+                    if (!parameters.empty()
+                        && parameters.front().get_type()
+                            == rclcpp::ParameterType::PARAMETER_BOOL)
+                    {
+                        enabled = parameters.front().as_bool();
+                        available = true;
+                    }
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "reading motor playback parameter failed: %s",
+                        exception.what());
+                }
+                QMetaObject::invokeMethod(this, [this, enabled, available]()
+                {
+                    syncMotorPlaybackCheckbox(enabled, available);
+                }, Qt::QueuedConnection);
+            });
+    }
+
+    void TaskGeneratorPanel::setMotorPlaybackEnabled(bool enabled)
+    {
+        if (!motor_playback_parameters_client
+            || !motor_playback_parameters_client->service_is_ready())
+        {
+            syncMotorPlaybackCheckbox(false, false);
+            return;
+        }
+
+        motor_playback_checkbox->setEnabled(false);
+        motor_playback_parameters_client->set_parameters(
+            {rclcpp::Parameter("enable_motor_playback", enabled)},
+            [this](
+                std::shared_future<
+                    std::vector<rcl_interfaces::msg::SetParametersResult>
+                > future)
+            {
+                try
+                {
+                    const auto results = future.get();
+                    for (const auto &result : results)
+                    {
+                        if (!result.successful)
+                        {
+                            RCLCPP_WARN(
+                                node->get_logger(),
+                                "setting motor playback parameter failed: %s",
+                                result.reason.c_str());
+                            break;
+                        }
+                    }
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "setting motor playback parameter failed: %s",
+                        exception.what());
+                }
+                refreshMotorPlayback();
+            });
+    }
+
+    void TaskGeneratorPanel::syncMotorPlaybackCheckbox(
+        bool enabled,
+        bool available)
+    {
+        if (!motor_playback_checkbox)
+            return;
+        QSignalBlocker blocker(motor_playback_checkbox);
+        motor_playback_checkbox->setChecked(enabled);
+        motor_playback_checkbox->setEnabled(available);
+        motor_playback_checkbox->setToolTip(
+            available
+                ? "Mutes only workstation motor audio. ROS propagation continues."
+                : "Waiting for human_sound_playback.");
     }
 
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
@@ -280,6 +455,18 @@ namespace task_generator_gui
         connect(world_combobox, &QComboBox::currentTextChanged, this, &TaskGeneratorPanel::onWorldChanged);
 
         setupTabs(this->root_layout);
+
+        motor_playback_checkbox = new QCheckBox(
+            "Play robot motor audio on this workstation");
+        motor_playback_checkbox->setEnabled(false);
+        motor_playback_checkbox->setToolTip(
+            "Waiting for human_sound_playback.");
+        connect(
+            motor_playback_checkbox,
+            &QCheckBox::toggled,
+            this,
+            &TaskGeneratorPanel::setMotorPlaybackEnabled);
+        root_layout->addWidget(motor_playback_checkbox);
 
         dynamic_param_tree_obstacles_ = std::make_unique<DynamicParamTree>(
             node, parameters_client,

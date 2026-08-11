@@ -19,6 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/HoldRegistry.msg
   msg/ShutdownRequest.msg
   msg/WorldExtent.msg
+  srv/ClaimEnv.srv
   srv/CleanupEnv.srv
   srv/ConfirmWorld.srv
   srv/DespawnEnv.srv

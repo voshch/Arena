@@ -141,7 +141,10 @@ class SoundPropagationNode(Node):
         self._pending_events: deque[
             tuple[SoundEvent, dict[str, Point]]
         ] = deque()
-        self._odom_subs = []
+        self._odom_subs: dict[
+            tuple[str, str],
+            rclpy.subscription.Subscription,
+        ] = {}
         sound_events_topic = str(self.get_parameter("sound_events_topic").value)
         heard_sound_events_topic = str(self.get_parameter("heard_sound_events_topic").value)
         peds_topic = str(self.get_parameter("arena_peds_topic").value)
@@ -503,18 +506,15 @@ class SoundPropagationNode(Node):
                 "These events will log an explicit backend fallback reason."
             )
 
-    # def _cb_robot_fleet(self, msg: RobotFleet) -> None:
-    #     for robot in msg.robots:
-    #         # topic = f"{robot.ns}/odom"
-    #         topic = str(self.get_parameter("odom_topic_template").value).format(namespace=str(robot.ns).rstrip("/"),name=str(robot.name))
-    #         sub = self.create_subscription(Odometry, topic, lambda odom, name=robot.name: self._cb_robot_odom(name, odom), 10)
-    #         self._odom_subs.append(sub)
-
     def _cb_robot_fleet(self, msg: RobotFleet) -> None:
+        desired: set[tuple[str, str]] = set()
+        active_names: set[str] = set()
+
         for state in msg.robots:
             robot = state.descriptor
             name = str(robot.name)
             namespace = str(robot.ns).rstrip("/")
+            active_names.add(name)
 
             topic = str(
                 self.get_parameter("odom_topic_template").value
@@ -523,15 +523,25 @@ class SoundPropagationNode(Node):
                 name=name,
             )
 
-            sub = self.create_subscription(
-                Odometry,
-                topic,
-                lambda odom, robot_name=name: self._cb_robot_odom(
-                    robot_name, odom
-                ),
-                10,
-            )
-            self._odom_subs.append(sub)
+            key = (name, topic)
+            desired.add(key)
+            if key not in self._odom_subs:
+                self._odom_subs[key] = self.create_subscription(
+                    Odometry,
+                    topic,
+                    lambda odom, robot_name=name: self._cb_robot_odom(
+                        robot_name, odom
+                    ),
+                    10,
+                )
+
+        for key in set(self._odom_subs) - desired:
+            self.destroy_subscription(self._odom_subs.pop(key))
+
+        for listener_id in list(self._robots):
+            name = listener_id.removeprefix("robot:")
+            if name not in active_names:
+                self._robots.pop(listener_id, None)
 
     def _cb_robot_odom(self, robot_name: str, msg: Odometry) -> None:
         self._robots[f"robot:{robot_name}"] = msg.pose.pose.position

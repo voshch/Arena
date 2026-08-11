@@ -3,6 +3,7 @@ import contextlib
 import os
 import tempfile
 import time
+import uuid
 
 import launch
 import launch.event_handlers
@@ -30,7 +31,7 @@ _REGISTER_LOG_INTERVAL_SEC = 10.0
 _AUTO_ENV_ID = 0xFFFF
 
 
-def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
+def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str, str]:
     import rclpy
     from arena_runtime_msgs.srv import RegisterEnv
     from rclpy.node import Node
@@ -68,11 +69,58 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
                     next_log = now + _REGISTER_LOG_INTERVAL_SEC
             resp = future.result()
             if resp.success:
-                return (resp.env_id, resp.ns, resp.sim)
+                return (resp.env_id, resp.ns, resp.lease_id, resp.sim)
             if "not ACTIVE" in resp.error_msg:
                 time.sleep(_REGISTER_RETRY_SEC)
                 continue
             raise RuntimeError(f"/arena/register_env failed: {resp.error_msg}")
+    finally:
+        node.destroy_node()
+
+
+def _claim_env(
+    env_id: int,
+    namespace: str,
+    lease_id: str,
+    instance_id: str,
+) -> None:
+    import rclpy
+    from arena_runtime_msgs.srv import ClaimEnv
+    from rclpy.node import Node
+
+    if not rclpy.ok():
+        rclpy.init(args=[])
+
+    node = Node(f"task_generator_claim_{os.getpid()}_{env_id}")
+    logger = node.get_logger()
+    try:
+        cli = node.create_client(ClaimEnv, "/arena/claim_env")
+        start = time.monotonic()
+        next_log = start + _REGISTER_LOG_INTERVAL_SEC
+        while not cli.wait_for_service(timeout_sec=_REGISTER_RETRY_SEC):
+            now = time.monotonic()
+            if now >= next_log:
+                logger.warning(
+                    f"waiting for /arena/claim_env ({int(now - start)}s elapsed)"
+                )
+                next_log = now + _REGISTER_LOG_INTERVAL_SEC
+
+        req = ClaimEnv.Request()
+        req.env_id = env_id
+        req.fqn = f"/{namespace.strip('/')}"
+        req.lease_id = lease_id
+        req.instance_id = instance_id
+        future = cli.call_async(req)
+        while not future.done():
+            rclpy.spin_until_future_complete(
+                node,
+                future,
+                timeout_sec=_REGISTER_RETRY_SEC,
+            )
+        resp = future.result()
+        if resp is None or not resp.success:
+            detail = resp.error_msg if resp is not None else "no response"
+            raise RuntimeError(f"/arena/claim_env failed: {detail}")
     finally:
         node.destroy_node()
 
@@ -99,6 +147,12 @@ def generate_launch_description():
         name="managed",
         default_value="false",
         description="true = arena pre-reserved; skip /arena/register_env and use env_id/ns from args. Placement comes via confirm_world either way.",
+    )
+
+    env_lease_id = LaunchArgument(
+        name="env_lease_id",
+        default_value="",
+        description="Runtime-issued environment reservation lease.",
     )
 
     ns = LaunchArgument(
@@ -139,6 +193,14 @@ def generate_launch_description():
         description=(
             "Let robots emit motor audio. This does not disable robots as "
             "auditory listeners."
+        ),
+    )
+    enable_motor_playback = LaunchArgument(
+        name="enable_motor_playback",
+        default_value="true",
+        description=(
+            "Play robot motor audio on the workstation without changing "
+            "motor emission or propagation."
         ),
     )
     propagation_backend = LaunchArgument(
@@ -244,10 +306,11 @@ def generate_launch_description():
     def _build_env_actions(
         allocated_id: int,
         allocated_ns: str,
+        lease_id: str,
+        instance_id: str,
         arena_sim: str,
         context: launch.LaunchContext,
     ) -> list[launch.LaunchDescriptionEntity]:
-        fqn = f"/{allocated_ns}"
         prefix_val = f"env_{allocated_id}"
 
         _label = f"arena env_{allocated_id}"
@@ -307,6 +370,7 @@ def generate_launch_description():
                     enable_sound_visualization.substitution
                 ),
                 "enable_robot_sound": enable_robot_sound.substitution,
+                "enable_motor_playback": enable_motor_playback.substitution,
                 "propagation_backend": propagation_backend.substitution,
                 "enable_multi_portal_rir": enable_multi_portal_rir.substitution,
                 "compute_rir_in_propagation": (
@@ -396,6 +460,8 @@ def generate_launch_description():
                     **fail_on_collision.param(bool),
                     **train_mode.param(bool),
                     "env_id": allocated_id,
+                    "env_lease_id": lease_id,
+                    "env_instance_id": instance_id,
                     "prefix": prefix_val,
                 },
                 parameter_file.substitution,
@@ -463,14 +529,26 @@ def generate_launch_description():
                 raise RuntimeError("managed:=true requires sim:= (arena passes it automatically)")
             allocated_id = int(launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(env_id.substitution)))
             allocated_ns = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(ns.substitution)).lstrip("/")
+            lease_id = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(env_lease_id.substitution))
+            if not allocated_ns or not lease_id:
+                raise RuntimeError("managed:=true requires ns:= and env_lease_id:= from arena")
             arena_sim = sim_val
         else:
             requested = int(launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(env_id.substitution)))
             ns_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(ns.substitution))
-            allocated_id, allocated_ns, arena_sim = _allocate_env(requested, ns_val)
+            allocated_id, allocated_ns, lease_id, arena_sim = _allocate_env(requested, ns_val)
             if sim_val and sim_val != arena_sim:
                 raise RuntimeError(f"sim:={sim_val} requested but the arena runtime is running {arena_sim}; shut down the runtime or omit sim:=")
-        return _build_env_actions(allocated_id, allocated_ns, arena_sim, context)
+        instance_id = uuid.uuid4().hex
+        _claim_env(allocated_id, allocated_ns, lease_id, instance_id)
+        return _build_env_actions(
+            allocated_id,
+            allocated_ns,
+            lease_id,
+            instance_id,
+            arena_sim,
+            context,
+        )
 
     return launch.LaunchDescription(
         [

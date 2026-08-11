@@ -267,6 +267,47 @@ def test_robot_only_policy_excludes_pedestrian_listeners(rclpy_context):
         propagation.destroy_node()
 
 
+def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
+    from geometry_msgs.msg import Point
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+    from task_generator_msgs.msg import RobotFleet
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    propagation = SoundPropagationNode(
+        namespace=f"/test/{suffix}",
+        parameter_overrides=[
+            Parameter(
+                "odom_topic_template",
+                Parameter.Type.STRING,
+                "{namespace}/odom",
+            ),
+        ],
+    )
+    fleet = _make_robot_fleet("robot1", f"/test/{suffix}/robot1")
+
+    try:
+        propagation._cb_robot_fleet(fleet)
+        first = dict(propagation._odom_subs)
+        assert len(first) == 1
+
+        propagation._cb_robot_fleet(fleet)
+        assert propagation._odom_subs.keys() == first.keys()
+        assert all(
+            propagation._odom_subs[key] is subscription
+            for key, subscription in first.items()
+        )
+
+        propagation._robots["robot:robot1"] = Point()
+        propagation._cb_robot_fleet(RobotFleet())
+        assert propagation._odom_subs == {}
+        assert "robot:robot1" not in propagation._robots
+    finally:
+        propagation.destroy_node()
+
+
 def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
     import rclpy
     from rclpy.parameter import Parameter

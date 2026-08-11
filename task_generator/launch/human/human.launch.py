@@ -37,6 +37,11 @@ def generate_launch_description():
         default_value="true",
     )
 
+    enable_motor_playback = LaunchArgument(
+        name="enable_motor_playback",
+        default_value="true",
+    )
+
     robot = LaunchArgument(
         name='robot',
         default_value='jackal',
@@ -311,6 +316,7 @@ def generate_launch_description():
                     "use_rir": True,
                     "listener_robot_name": audio_listener_robot.substitution,
                     "motor_audio_mode": motor_audio_mode.substitution,
+                    **enable_motor_playback.param(bool),
                     "motor_rir_crossfade_sec": 0.10,
                     "world_topic": "state/world",
                     "rir_sample_rate_hz": 44100,

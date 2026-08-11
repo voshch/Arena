@@ -20,7 +20,9 @@ auditory nodes.
   robots from `state/robots`, republishes per-robot heard events, and publishes
   an RViz text marker when a robot hears a configured sound type.
 - Audio playback: `human_sound_playback` plays configured sound assets from
-  `config/auditory/acoustic_assets.yaml`.
+  `config/auditory/acoustic_assets.yaml`. Its live
+  `enable_motor_playback` parameter mutes only workstation motor audio while
+  motor emission and ROS propagation continue.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
   messages from robot odometry. In the default `motor_audio_mode:=procedural`,
   Jackals instead publish continuous signed left/right drivetrain state;
@@ -56,6 +58,13 @@ The generated RViz configuration shows pedestrian cones through
 `Arena/Robot: <name>` group. Source-to-listener paths, reflections, and door
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
+
+The Task Generator RViz panel includes `Play robot motor audio on this
+workstation`. It reads `human_sound_playback.enable_motor_playback` when the
+playback node becomes available, follows external parameter changes, and
+rechecks the value on every episode update. The value persists across episode
+resets. `enable_motor_playback:=false` sets its initial launch value. This is
+separate from `enable_robot_sound`, which controls simulated motor emission.
 
 ## Pyroomacoustics portal routing
 

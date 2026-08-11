@@ -113,6 +113,10 @@ namespace task_generator_gui
         // Render history_buffer_ + current + queued rows into playlist_table.
         void refreshHistory();
 
+        void refreshMotorPlayback();
+        void setMotorPlaybackEnabled(bool enabled);
+        void syncMotorPlaybackCheckbox(bool enabled, bool available);
+
         // Send reset_episode (world field intentionally empty; node resolves from pending overrides).
         void sendResetEpisode();
 
@@ -163,6 +167,8 @@ namespace task_generator_gui
         rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client;
 
         std::shared_ptr<rclcpp::AsyncParametersClient> parameters_client;
+        std::shared_ptr<rclcpp::AsyncParametersClient> motor_playback_parameters_client;
+        std::string motor_playback_node;
 
         // --- state/episode subscription (current, deduped into history_buffer_) ---
         rclcpp::Subscription<task_generator_msgs::msg::EpisodeRecord>::SharedPtr episode_sub;
@@ -222,6 +228,7 @@ namespace task_generator_gui
         QComboBox *obstacles_task_mode_combobox;
         QComboBox *robot_task_mode_combobox;
         QComboBox *world_combobox;
+        QCheckBox *motor_playback_checkbox;
 
         QPushButton *discard_button;
         QPushButton *queue_button;

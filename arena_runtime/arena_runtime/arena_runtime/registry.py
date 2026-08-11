@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import uuid
+
 import arena_runtime_msgs.msg
 import attrs
 import builtin_interfaces.msg
@@ -7,6 +10,14 @@ import builtin_interfaces.msg
 
 def _extent_eq(a: arena_runtime_msgs.msg.WorldExtent, b: arena_runtime_msgs.msg.WorldExtent) -> bool:
     return a.x_min == b.x_min and a.y_min == b.y_min and a.x_max == b.x_max and a.y_max == b.y_max
+
+
+def normalize_env_namespace(raw: str) -> tuple[str, str]:
+    parts = [part for part in raw.strip().split("/") if part]
+    if not parts or any(part in {".", ".."} for part in parts):
+        raise ValueError(f"invalid environment namespace: {raw!r}")
+    namespace = "/".join(parts)
+    return namespace, f"/{namespace}"
 
 
 @attrs.define
@@ -20,6 +31,8 @@ class Placement:
 class EnvRecord:
     env_id: int
     fqn: str
+    lease_id: str
+    owner_instance_id: str = ""
     extent: arena_runtime_msgs.msg.WorldExtent = attrs.Factory(arena_runtime_msgs.msg.WorldExtent)
     placed: bool = False
     reference: tuple[float, float] = (0.0, 0.0)
@@ -49,10 +62,12 @@ class EnvRegistry:
 
     def __init__(self, slot_buffer: float = 5.0) -> None:
         self._records: dict[int, EnvRecord] = {}
+        self._env_id_by_fqn: dict[str, int] = {}
         self._free: list[int] = []
         self._next_id: int = 0
         self._slot_buffer = slot_buffer
         self._shelves: list[_Shelf] = []
+        self._lock = threading.RLock()
 
     def reserve(
         self,
@@ -60,32 +75,87 @@ class EnvRegistry:
         requested_ns: str | None = None,
         *,
         now: builtin_interfaces.msg.Time,
-    ) -> tuple[int, str]:
-        if requested_env_id is not None:
-            if requested_env_id in self._records:
-                raise ValueError(f"env_id {requested_env_id} already in use")
-            if requested_env_id in self._free:
-                self._free.remove(requested_env_id)
-            if requested_env_id >= self._next_id:
-                self._next_id = requested_env_id + 1
-            env_id = requested_env_id
-        else:
-            free_candidates = [i for i in self._free if not self._is_draining(i)]
-            if free_candidates:
-                env_id = free_candidates[0]
-                self._free.remove(env_id)
+    ) -> tuple[int, str, str]:
+        with self._lock:
+            if requested_env_id is not None:
+                if requested_env_id in self._records:
+                    raise ValueError(f"env_id {requested_env_id} already in use")
+                env_id = requested_env_id
             else:
-                env_id = self._next_id
-                self._next_id += 1
+                free_candidates = [i for i in self._free if not self._is_draining(i)]
+                env_id = free_candidates[0] if free_candidates else self._next_id
 
-        namespace = requested_ns.lstrip("/") if requested_ns else f"arena/env_{env_id}/task_generator_node"
+            namespace, fqn = normalize_env_namespace(
+                requested_ns or f"arena/env_{env_id}/task_generator_node"
+            )
+            owner = self._env_id_by_fqn.get(fqn)
+            if owner is not None:
+                raise ValueError(
+                    f"environment namespace {fqn!r} is already owned by env_id {owner}"
+                )
 
-        self._records[env_id] = EnvRecord(
-            env_id=env_id,
-            fqn=f"/{namespace}",
-            last_heartbeat=now,
-        )
-        return env_id, namespace
+            if env_id in self._free:
+                self._free.remove(env_id)
+            if env_id >= self._next_id:
+                self._next_id = env_id + 1
+
+            lease_id = uuid.uuid4().hex
+            self._records[env_id] = EnvRecord(
+                env_id=env_id,
+                fqn=fqn,
+                lease_id=lease_id,
+                last_heartbeat=now,
+            )
+            self._env_id_by_fqn[fqn] = env_id
+            return env_id, namespace, lease_id
+
+    def claim(
+        self,
+        env_id: int,
+        fqn: str,
+        lease_id: str,
+        instance_id: str,
+    ) -> EnvRecord:
+        if not lease_id or not instance_id:
+            raise ValueError("lease_id and instance_id must be non-empty")
+        _, normalized_fqn = normalize_env_namespace(fqn)
+        with self._lock:
+            record = self._records.get(env_id)
+            if record is None:
+                raise ValueError(f"env_id {env_id} not registered")
+            if record.fqn != normalized_fqn:
+                raise ValueError(
+                    f"env_id {env_id} owns {record.fqn!r}, not {normalized_fqn!r}"
+                )
+            if record.lease_id != lease_id:
+                raise ValueError(f"lease does not own env_id {env_id}")
+            if record.owner_instance_id not in ("", instance_id):
+                raise ValueError(
+                    f"env_id {env_id} already claimed by instance "
+                    f"{record.owner_instance_id!r}"
+                )
+            record.owner_instance_id = instance_id
+            return record
+
+    def validate_owner(
+        self,
+        env_id: int,
+        fqn: str,
+        lease_id: str,
+        instance_id: str,
+    ) -> EnvRecord:
+        _, normalized_fqn = normalize_env_namespace(fqn)
+        with self._lock:
+            record = self._records.get(env_id)
+            if record is None:
+                raise ValueError(f"env_id {env_id} not registered")
+            if record.fqn != normalized_fqn:
+                raise ValueError(f"FQN does not own env_id {env_id}")
+            if record.lease_id != lease_id:
+                raise ValueError(f"lease does not own env_id {env_id}")
+            if not record.owner_instance_id or record.owner_instance_id != instance_id:
+                raise ValueError(f"instance does not own env_id {env_id}")
+            return record
 
     def place(
         self,
@@ -208,18 +278,17 @@ class EnvRegistry:
 
     def complete_eviction(self, env_id: int) -> None:
         """Free the slot after purge completes. ID becomes reusable."""
-        self.unplace(env_id)
-        self._records.pop(env_id, None)
-        if env_id not in self._free:
-            self._free.append(env_id)
-            self._free.sort()
+        self.free(env_id)
 
     def free(self, env_id: int) -> None:
-        self.unplace(env_id)
-        self._records.pop(env_id, None)
-        if env_id not in self._free:
-            self._free.append(env_id)
-            self._free.sort()
+        with self._lock:
+            self.unplace(env_id)
+            record = self._records.pop(env_id, None)
+            if record is not None:
+                self._env_id_by_fqn.pop(record.fqn, None)
+            if env_id not in self._free:
+                self._free.append(env_id)
+                self._free.sort()
 
     def get(self, env_id: int) -> EnvRecord | None:
         return self._records.get(env_id)
@@ -227,9 +296,16 @@ class EnvRegistry:
     def items(self) -> list[tuple[int, EnvRecord]]:
         return list(self._records.items())
 
-    def update_heartbeat(self, env_id: int, stamp: builtin_interfaces.msg.Time) -> None:
-        record = self._records.get(env_id)
-        if record is not None:
+    def update_heartbeat(
+        self,
+        env_id: int,
+        fqn: str,
+        lease_id: str,
+        instance_id: str,
+        stamp: builtin_interfaces.msg.Time,
+    ) -> None:
+        with self._lock:
+            record = self.validate_owner(env_id, fqn, lease_id, instance_id)
             record.last_heartbeat = stamp
 
     def update_ready(self, env_id: int, ready: bool) -> None:
@@ -245,6 +321,8 @@ class EnvRegistry:
             msg = arena_runtime_msgs.msg.EnvRecord()
             msg.env_id = record.env_id
             msg.fqn = record.fqn
+            msg.lease_id = record.lease_id
+            msg.owner_instance_id = record.owner_instance_id
             msg.extent = record.extent
             msg.reference = list(record.reference)
             msg.slot_extent = list(record.slot_extent)

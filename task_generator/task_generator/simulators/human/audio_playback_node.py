@@ -10,8 +10,10 @@ from scipy.signal import fftconvolve
 from shapely.geometry import Polygon
 from task_generator.auditory.asset_lib import AcousticAssetCatalog
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from ament_index_python.packages import get_package_share_directory
 from collections import defaultdict, deque
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -88,6 +90,7 @@ class HumanSoundPlaybackNode(Node):
         self.declare_parameter("minimum_playback_gain_db", -60.0)
         self.declare_parameter("motor_playback_mode", "sequence")
         self.declare_parameter("motor_audio_mode", "wav")
+        self.declare_parameter("enable_motor_playback", True)
         self.declare_parameter("motor_rir_crossfade_sec", 0.1)
         self.declare_parameter("motor_single_asset_id", "motor")
         self.declare_parameter("portal_adjacency_tolerance_m", 0.08)
@@ -143,6 +146,11 @@ class HumanSoundPlaybackNode(Node):
             device=device,
             master_gain_db=float(self.get_parameter("master_gain_db").value),
         )
+        self._mixer.set_bus_enabled(
+            "motor",
+            bool(self.get_parameter("enable_motor_playback").value),
+        )
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self._use_rir = bool(self.get_parameter("use_rir").value)
         self._rir_dry_fallback = bool(
@@ -305,6 +313,18 @@ class HumanSoundPlaybackNode(Node):
             float(self.get_parameter("opening_portal_loss_db").value),
             self._pra_adapter,
         )
+
+    def _on_set_parameters(self, parameters) -> SetParametersResult:
+        for parameter in parameters:
+            if parameter.name != "enable_motor_playback":
+                continue
+            if parameter.type_ != Parameter.Type.BOOL:
+                return SetParametersResult(
+                    successful=False,
+                    reason="enable_motor_playback must be a boolean",
+                )
+            self._mixer.set_bus_enabled("motor", bool(parameter.value))
+        return SetParametersResult(successful=True)
 
     @staticmethod
     def _load_room_specs(
@@ -508,7 +528,11 @@ class HumanSoundPlaybackNode(Node):
                 ),
             )
             self._continuous_sources[msg.source_id] = source
-            self._mixer.add_render_source(source, voice_id=msg.source_id)
+            self._mixer.add_render_source(
+                source,
+                voice_id=msg.source_id,
+                bus="motor",
+            )
 
         signature = self._continuous_rir_signature(msg)
         impulse = None
@@ -875,6 +899,7 @@ class HumanSoundPlaybackNode(Node):
             loop=True,
             gain_db=playback_gain_db,
             voice_id=voice_id,
+            bus="motor",
         )
         self._played_events += 1
         self.get_logger().info(
@@ -918,6 +943,7 @@ class HumanSoundPlaybackNode(Node):
             rendered_segments[2],
             voice_id=voice_id,
             gain_db=playback_gain_db,
+            bus="motor",
         )
         self._played_events += 1
         self.get_logger().info(

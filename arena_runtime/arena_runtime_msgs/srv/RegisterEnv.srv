@@ -5,5 +5,6 @@ string ns                 # explicit ns path, empty = auto-generate "arena/env_<
 bool success
 uint16 env_id             # allocated id (0..N-1), reused after eviction
 string ns                 # final ns path
+string lease_id           # reservation generation to claim before launch
 string sim                # arena's configured sim (dummy/gazebo/isaac), env should match
 string error_msg

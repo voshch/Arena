@@ -29,6 +29,8 @@ def test_segmented_voice_plays_intro_loop_and_outro() -> None:
     )
     mixer = AudioMixer.__new__(AudioMixer)
     mixer._voices = [voice]
+    mixer._render_voices = []
+    mixer._bus_enabled = {}
     mixer._lock = threading.Lock()
     mixer._master_gain = 1.0
 
@@ -56,6 +58,8 @@ def test_segmented_voice_plays_intro_loop_and_outro() -> None:
 def test_duplicate_sequence_replaces_keyed_voice() -> None:
     mixer = AudioMixer.__new__(AudioMixer)
     mixer._voices = []
+    mixer._render_voices = []
+    mixer._bus_enabled = {}
     mixer._lock = threading.Lock()
 
     for _ in range(2):
@@ -73,6 +77,8 @@ def test_duplicate_sequence_replaces_keyed_voice() -> None:
 def test_keyed_single_loop_repeats_and_stops_at_boundary() -> None:
     mixer = AudioMixer.__new__(AudioMixer)
     mixer._voices = []
+    mixer._render_voices = []
+    mixer._bus_enabled = {}
     mixer._lock = threading.Lock()
     mixer._master_gain = 1.0
 
@@ -109,6 +115,7 @@ def test_render_source_shares_the_sample_mixer() -> None:
     mixer = AudioMixer.__new__(AudioMixer)
     mixer._voices = []
     mixer._render_voices = []
+    mixer._bus_enabled = {}
     mixer._lock = threading.Lock()
     mixer._master_gain = 1.0
     mixer.add_render_source(ConstantSource(), voice_id="procedural:1")
@@ -118,3 +125,62 @@ def test_render_source_shares_the_sample_mixer() -> None:
 
     np.testing.assert_allclose(block[:, 0], [0.25] * 4)
     assert mixer.voice_count == 1
+
+
+def test_muted_sample_bus_stays_synchronized() -> None:
+    mixer = AudioMixer.__new__(AudioMixer)
+    mixer._voices = []
+    mixer._render_voices = []
+    mixer._bus_enabled = {}
+    mixer._lock = threading.Lock()
+    mixer._master_gain = 1.0
+
+    mixer.play(
+        _sample([0.1, 0.2]),
+        loop=True,
+        voice_id="motor:1",
+        bus="motor",
+    )
+    mixer.set_bus_enabled("motor", False)
+
+    muted_block = np.empty((3, 1), dtype=np.float32)
+    mixer._callback(muted_block, 3, None, None)
+    np.testing.assert_allclose(muted_block[:, 0], [0.0] * 3)
+
+    mixer.set_bus_enabled("motor", True)
+    audible_block = np.empty((2, 1), dtype=np.float32)
+    mixer._callback(audible_block, 2, None, None)
+    np.testing.assert_allclose(audible_block[:, 0], [0.2, 0.1])
+
+
+def test_muted_render_bus_stays_synchronized() -> None:
+    class CountingSource:
+        finished = False
+
+        def __init__(self) -> None:
+            self.render_count = 0
+
+        def render(self, frames: int) -> np.ndarray:
+            self.render_count += 1
+            return np.full((frames, 1), 0.25, dtype=np.float32)
+
+    mixer = AudioMixer.__new__(AudioMixer)
+    mixer._voices = []
+    mixer._render_voices = []
+    mixer._bus_enabled = {}
+    mixer._lock = threading.Lock()
+    mixer._master_gain = 1.0
+    source = CountingSource()
+    mixer.add_render_source(source, voice_id="robot:jackal:motor", bus="motor")
+    mixer.set_bus_enabled("motor", False)
+
+    muted_block = np.empty((4, 1), dtype=np.float32)
+    mixer._callback(muted_block, 4, None, None)
+    np.testing.assert_allclose(muted_block[:, 0], [0.0] * 4)
+    assert source.render_count == 1
+
+    mixer.set_bus_enabled("motor", True)
+    audible_block = np.empty((4, 1), dtype=np.float32)
+    mixer._callback(audible_block, 4, None, None)
+    np.testing.assert_allclose(audible_block[:, 0], [0.25] * 4)
+    assert source.render_count == 2

@@ -151,6 +151,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         run_seed = self.rosparam[str].get("run_seed", "")
         queue_depth = self.rosparam[int].get("episode_queue_depth", 10)
         self._env_id = self.rosparam[int].get("env_id", 0)
+        self._env_lease_id = self.rosparam[str].get("env_lease_id", "")
+        self._env_instance_id = self.rosparam[str].get("env_instance_id", "")
         # Reference and prespawn anchor are unknown at boot, populated by the first
         # confirm_world response handled in WorldManagerROS.apply_world.
         self._reference = (0.0, 0.0)
@@ -251,6 +253,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._heartbeat_timer = self.wall_timer(1.0, self._cb_heartbeat_tick)
 
         self._arena_seen = False
+        self._sub_env_registry = self.create_subscription(
+            arena_runtime_msgs.msg.EnvRegistry,
+            "/arena/state/envs",
+            self._cb_env_registry,
+            _LATCHED,
+        )
         self._arena_watchdog_timer = self.wall_timer(1.0, self._cb_arena_watchdog)
 
         self._sub_shutdown_request = self.create_subscription(
@@ -307,9 +315,32 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _cb_heartbeat_tick(self) -> None:
         msg = arena_runtime_msgs.msg.Heartbeat()
+        msg.env_id = self._env_id
         msg.fqn = self.get_fully_qualified_name()
+        msg.lease_id = self._env_lease_id
+        msg.instance_id = self._env_instance_id
         msg.stamp = self.wall_time.to_msg()
         self._pub_heartbeat.publish(msg)
+
+    def _cb_env_registry(self, msg: arena_runtime_msgs.msg.EnvRegistry) -> None:
+        record = next(
+            (record for record in msg.envs if int(record.env_id) == self._env_id),
+            None,
+        )
+        if (
+            record is not None
+            and str(record.fqn) == self.get_fully_qualified_name()
+            and str(record.lease_id) == self._env_lease_id
+            and str(record.owner_instance_id) == self._env_instance_id
+        ):
+            self._arena_seen = True
+            return
+        self.get_logger().error(
+            "environment ownership missing or replaced, self-shutting down"
+        )
+        self._arena_watchdog_timer.cancel()
+        self._heartbeat_timer.cancel()
+        rclpy.try_shutdown()
 
     def _cb_arena_watchdog(self) -> None:
         info = self.get_publishers_info_by_topic("/arena/state/envs")
@@ -324,7 +355,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         rclpy.try_shutdown()
 
     def _cb_shutdown_request(self, msg: arena_runtime_msgs.msg.ShutdownRequest) -> None:
-        if msg.env_id != self._env_id:
+        if (
+            msg.env_id != self._env_id
+            or msg.fqn != self.get_fully_qualified_name()
+            or msg.lease_id != self._env_lease_id
+            or msg.instance_id != self._env_instance_id
+        ):
             return
         self.get_logger().info(f"shutdown request received (reason={msg.reason!r}); shutting down")
         self._heartbeat_timer.cancel()

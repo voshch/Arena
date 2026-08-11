@@ -36,6 +36,15 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `state/paused` | `std_msgs::msg::Bool` | Drives the pause button label authoritatively. The pause button is fire-and-forget; UI reflects the published state, not the service-call return. |
 | `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == task_generator_node`; if any changed/new/deleted parameter starts with `task.<active_mode>.`, rebuilds the matching family's param tree on the Qt thread. |
 
+## Motor playback switch
+
+`Play robot motor audio on this workstation` controls the live
+`enable_motor_playback` parameter on `<Target>/human_sound_playback`. It mutes
+only the motor bus in the local audio mixer. Motor source messages, propagation,
+RIR updates, and robot hearing continue unchanged. The panel reads the initial
+value when the playback parameter service appears, follows `/parameter_events`,
+and rechecks the value on each `state/episode` update.
+
 ## SpawnPedestrianTool
 
 Subclass of `rviz_default_plugins::tools::PoseTool`. Click+drag in the 3D view to set position and yaw; the tool then calls `<Target>/runtime/spawn_dynamic` with `use_pose=true`, the clicked `PoseStamped` (in the rviz Fixed Frame), and the `Model` string. Both `Target` and `Model` are exposed as Tool Properties; `Model` defaults to `arenian`. Shortcut key: `p`.
