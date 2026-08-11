@@ -19,17 +19,17 @@ auditory nodes.
 - Robot hearing: `robot_hearing_node` listens for `HeardSoundEvent`, discovers
   robots from `state/robots`, republishes per-robot heard events, and publishes
   an RViz text marker when a robot hears a configured sound type.
-- Audio playback: `human_sound_playback` plays configured sound assets from
-  `config/auditory/acoustic_assets.yaml`. Its live
-  `enable_motor_playback` parameter mutes only workstation motor audio while
-  motor emission and ROS propagation continue.
+- Human audio playback: `human_sound_playback` plays human sound assets from
+  `config/auditory/acoustic_assets.yaml`.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
   messages from robot odometry. In the default `motor_audio_mode:=procedural`,
   Jackals instead publish continuous signed left/right drivetrain state;
   other robot models retain the WAV fallback. Set `motor_audio_mode:=wav` to
-  use WAV playback for Jackals as well.
-  
- Expected nodes when enabled include:
+  use WAV playback for Jackals as well. The node also renders and plays robot
+  audio. Its live `enable_motor_playback` parameter mutes only workstation
+  motor audio while motor emission and ROS propagation continue.
+
+Expected nodes when enabled include:
 
 - `sound_propagation_node`
 - `robot_sound_node`
@@ -60,8 +60,8 @@ portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
 The Task Generator RViz panel includes `Play robot motor audio on this
-workstation`. It reads `human_sound_playback.enable_motor_playback` when the
-playback node becomes available, follows external parameter changes, and
+workstation`. It reads `robot_sound_node.enable_motor_playback` when the robot
+sound node becomes available, follows external parameter changes, and
 rechecks the value on every episode update. The value persists across episode
 resets. `enable_motor_playback:=false` sets its initial launch value. This is
 separate from `enable_robot_sound`, which controls simulated motor emission.
@@ -98,8 +98,9 @@ listeners, so pedestrian-to-pedestrian propagation is not calculated or
 published and the RViz propagation visualizer has no corresponding blue paths
 to draw. Set it to `false` to add every non-source pedestrian as an
 `agent:<id>` listener. Robot-listener events receive the complete route
-metadata and are rendered with pyroomacoustics by `human_sound_playback`. The
-launch default sets `compute_rir_in_propagation=true`, so the propagation node
+metadata. Human events are rendered by `human_sound_playback`, and robot events
+are rendered by `robot_sound_node`. The launch default sets
+`compute_rir_in_propagation=true`, so the propagation node
 constructs the same-room or portal-route RIR and reports the actual
 `pyroomacoustics_same_room`, `pyroomacoustics_one_door`, or
 `pyroomacoustics_multi_portal` backend in ROS propagation results. Playback

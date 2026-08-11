@@ -62,7 +62,7 @@ namespace task_generator_gui
             task_generator_node = "/task_generator_node";
 
         motor_playback_node = normalizeNodePath(
-            task_generator_node + "/human_sound_playback");
+            task_generator_node + "/robot_sound_node");
 
         // All clients go on `node` — rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
@@ -427,7 +427,7 @@ namespace task_generator_gui
         motor_playback_checkbox->setToolTip(
             available
                 ? "Mutes only workstation motor audio. ROS propagation continues."
-                : "Waiting for human_sound_playback.");
+                : "Waiting for robot_sound_node.");
     }
 
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
@@ -460,7 +460,7 @@ namespace task_generator_gui
             "Play robot motor audio on this workstation");
         motor_playback_checkbox->setEnabled(false);
         motor_playback_checkbox->setToolTip(
-            "Waiting for human_sound_playback.");
+            "Waiting for robot_sound_node.");
         connect(
             motor_playback_checkbox,
             &QCheckBox::toggled,

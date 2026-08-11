@@ -8,17 +8,16 @@ import rclpy
 from arena_robots.Robot import RobotIdentifier
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
-from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import ColorRGBA
 from task_generator_msgs.msg import (
     ContinuousAudioSourceState,
-    EpisodeRecord,
     RobotFleet,
     SoundEvent,
 )
 from visualization_msgs.msg import Marker, MarkerArray
 
+from task_generator.auditory.audio_playback_node import SoundPlaybackNode
 from task_generator.auditory.qos_profiles import (
     acoustic_metadata_qos,
     continuous_audio_qos,
@@ -42,18 +41,15 @@ class RobotSoundSource:
     marker_frame_id: str = "map"
 
 
-class RobotSoundNode(Node):
-    def __init__(self, **kwargs) -> None:
-        super().__init__("robot_sound_node", **kwargs)
+class RobotSoundNode(SoundPlaybackNode):
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__("robot_sound_node", "robot", **kwargs)
 
         self.declare_parameter("robot_fleet_topic", "state/robots")
-        self.declare_parameter("sound_events_topic", "human_sound_events")
         self.declare_parameter(
             "continuous_audio_sources_topic",
             "continuous_audio_sources",
         )
-        self.declare_parameter("episode_topic", "state/episode")
-        self.declare_parameter("motor_audio_mode", "wav")
         self.declare_parameter("sound_type", "motor")
         self.declare_parameter("odom_topic_template", "{namespace}/{name}_velocity_controller/odom")
         self.declare_parameter("motor_start_asset_id", "motor_start")
@@ -120,13 +116,6 @@ class RobotSoundNode(Node):
             self._cb_robot_fleet,
             acoustic_metadata_qos(),
         )
-        self.create_subscription(
-            EpisodeRecord,
-            str(self.get_parameter("episode_topic").value),
-            self._cb_episode,
-            acoustic_metadata_qos(depth=20),
-        )
-
         self.create_timer(
             float(self.get_parameter("publish_period_sec").value),
             self._publish_robot_sounds,
@@ -342,9 +331,6 @@ class RobotSoundNode(Node):
                 f"{'started' if moving else 'stopped'} "
                 f"at {speed:.3f} m/s"
             )
-
-    def _cb_episode(self, msg: EpisodeRecord) -> None:
-        self._episode_seed = int(msg.seed)
 
     def _uses_procedural_audio(self, source: RobotSoundSource) -> bool:
         mode = str(

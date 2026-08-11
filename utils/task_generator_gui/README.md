@@ -39,7 +39,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 ## Motor playback switch
 
 `Play robot motor audio on this workstation` controls the live
-`enable_motor_playback` parameter on `<Target>/human_sound_playback`. It mutes
+`enable_motor_playback` parameter on `<Target>/robot_sound_node`. It mutes
 only the motor bus in the local audio mixer. Motor source messages, propagation,
 RIR updates, and robot hearing continue unchanged. The panel reads the initial
 value when the playback parameter service appears, follows `/parameter_events`,
