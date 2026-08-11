@@ -104,8 +104,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
 
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
-        self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), fps=20.0)
-        self._gait.cache_animations(["gorilla", "t-pose", "jump"])
+        self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
         self.node.create_subscription(
             Pedestrians,
