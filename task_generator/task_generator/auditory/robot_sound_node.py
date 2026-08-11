@@ -9,7 +9,7 @@ from arena_robots.Robot import RobotIdentifier
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import ColorRGBA, Header
 from task_generator_msgs.msg import (
     ContinuousAudioSourceState,
     RobotFleet,
@@ -32,6 +32,7 @@ class RobotSoundSource:
     model: str
     effective_wheel_separation_m: float
     position: Point | None = None
+    position_header: Header | None = None
     yaw: float = 0.0
     linear_velocity_mps: float = 0.0
     angular_velocity_radps: float = 0.0
@@ -213,6 +214,7 @@ class RobotSoundNode(SoundPlaybackNode):
             return
 
         source.position = msg.pose.pose.position
+        source.position_header = msg.header
         source.yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
         linear_velocity = float(msg.twist.twist.linear.x)
         lateral_velocity = float(msg.twist.twist.linear.y)
@@ -270,8 +272,7 @@ class RobotSoundNode(SoundPlaybackNode):
                     )
                     self._sound_pub.publish(
                         self._make_sound_event(
-                            robot_name,
-                            source.position,
+                            source,
                             asset_id,
                         )
                     )
@@ -324,7 +325,7 @@ class RobotSoundNode(SoundPlaybackNode):
             )
             asset_id = str(self.get_parameter(parameter).value)
             self._sound_pub.publish(
-                self._make_sound_event(robot_name, source.position, asset_id)
+                self._make_sound_event(source, asset_id)
             )
             self.get_logger().info(
                 f"robot {robot_name!r} motor "
@@ -344,11 +345,11 @@ class RobotSoundNode(SoundPlaybackNode):
         *,
         active: bool,
     ) -> None:
-        if source.position is None:
+        if source.position is None or source.position_header is None:
             return
         msg = ContinuousAudioSourceState()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = "map"
+        msg.header.stamp = source.position_header.stamp
+        msg.header.frame_id = source.position_header.frame_id
         msg.source_id = f"robot:{source.name}:motor"
         msg.source_agent_id = self._robot_numeric_id(source.name)
         msg.source_agent_name = source.name
@@ -568,27 +569,31 @@ class RobotSoundNode(SoundPlaybackNode):
 
     def _make_sound_event(
         self,
-        robot_name: str,
-        position: Point,
+        source: RobotSoundSource,
         asset_id: str,
     ) -> SoundEvent:
         stamp = self.get_clock().now().to_msg()
         sound_type = str(self.get_parameter("sound_type").value)
         period = float(self.get_parameter("publish_period_sec").value)
+        if source.position is None or source.position_header is None:
+            raise RuntimeError("robot sound source has no odometry pose")
 
         msg = SoundEvent()
-        msg.header.stamp = stamp
-        msg.header.frame_id = "map"
-        msg.event_id = f"robot:{robot_name}:{stamp.sec}:{stamp.nanosec}:{self._event_counter}"
+        msg.header.stamp = source.position_header.stamp
+        msg.header.frame_id = source.position_header.frame_id
+        msg.event_id = (
+            f"robot:{source.name}:{stamp.sec}:{stamp.nanosec}:"
+            f"{self._event_counter}"
+        )
         self._event_counter += 1
 
-        msg.source_agent_id = self._robot_numeric_id(robot_name)
-        msg.source_agent_name = robot_name
+        msg.source_agent_id = self._robot_numeric_id(source.name)
+        msg.source_agent_name = source.name
         msg.sound_type = sound_type
         msg.label = sound_type
         msg.asset_id = asset_id
-        msg.source_position = position
-        msg.source_yaw = 0.0
+        msg.source_position = source.position
+        msg.source_yaw = source.yaw
         msg.source_volume_db = float(self.get_parameter("source_volume_db").value)
         msg.semantic_tags = ["robot", "motor", "mechanical"]
         msg.duration.sec = int(period)

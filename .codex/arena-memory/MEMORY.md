@@ -65,6 +65,7 @@
 - [Terse IDL comments](feedback_idl_terse_comments.md) — one short line per .srv/.msg field
 - [No emdashes](feedback_no_emdashes.md) — ASCII only, no emdash/ellipsis typography
 - [Text deliverables inline](feedback_text_deliverables_inline.md) — inline or local file; Artifacts only for visuals
+- [Summaries name changed files](feedback_summary_file_names.md) — every change handoff lists each changed file
 - [Plans are self-standing](feedback_plan_docs_are_self_standing.md) — decisions and open questions live in chat
 - [No HuNav modifications](feedback_no_hunav_modifications.md) — upstream; Arena-side workaround first
 - [No arena_humansim modifications](feedback_no_arena_humansim_modifications.md) — same rule as HuNav
