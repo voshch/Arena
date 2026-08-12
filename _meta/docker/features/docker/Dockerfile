@@ -1,10 +1,11 @@
 ARG ROS_DISTRO=jazzy
-FROM osrf/ros:${ROS_DISTRO}-desktop AS base
+FROM ros:${ROS_DISTRO} AS base
 
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y \
+    ros-jazzy-desktop \
     build-essential \
     cmake \
     git \

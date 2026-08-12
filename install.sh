@@ -54,8 +54,8 @@ source "$ARENA_WS_DIR/src/Arena/_meta/docker/lib"
 echo "installing ${ARENA_REPO}:${ARENA_BRANCH} on ROS 2 ${ARENA_ROS_DISTRO} as ${ARENA_IMAGE}"
 sudo echo 'confirmed'
 
-ln -rsf "$ARENA_WS_DIR/src/Arena/_meta/docker/source" ./arena
-ln -rsf "$ARENA_WS_DIR/src/Arena/_meta/tools/Arena.code-workspace" ./ws-arena.code-workspace
+ln -sf src/Arena/_meta/docker/source ./arena
+ln -sf src/Arena/_meta/tools/Arena.code-workspace ./ws-arena.code-workspace
 
 echo 'Building Arena...'
 cd $ARENA_WS_DIR

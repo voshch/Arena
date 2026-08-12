@@ -5,22 +5,6 @@ export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
 export ARENA_VENV_DIR="/opt/venv"
 export ARENA_FEATURES_DIR="$ARENA_DIR/_meta/docker/features"
 
-docker_env=""
-docker_env="${docker_env} ARENA_PROJECT_NAME=$ARENA_PROJECT_NAME"
-docker_env="${docker_env} ARENA_IMAGE=$ARENA_IMAGE"
-docker_env="${docker_env} ARENA_IMAGE_TAG=$ARENA_IMAGE_TAG"
-docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
-docker_env="${docker_env} ARENA_ROS_DISTRO=$ARENA_ROS_DISTRO"
-docker_env="${docker_env} HOST_UID=$HOST_UID"
-docker_env="${docker_env} HOST_GID=$HOST_GID"
-docker_env="${docker_env} HOST_ARENA_WS_DIR=$HOST_ARENA_WS_DIR"
-docker_env="${docker_env} HOST_ARENA_DATA_DIR=$HOST_ARENA_DATA_DIR"
-docker_env="${docker_env} ARENA_DATA_DIR=$ARENA_DATA_DIR"
-docker_env="${docker_env} ROSNAV_AGENTS_DIR=$ROSNAV_AGENTS_DIR"
-
-
-export docker_env
-
 HOST_UID=$(id -u)
 export HOST_UID
 HOST_GID=$(id -g)
