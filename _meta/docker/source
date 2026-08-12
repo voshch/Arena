@@ -209,6 +209,7 @@ do_run(){
     local HEALTH_STATUS
     HEALTH_STATUS=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$ID" 2>/dev/null)
     if [ "$HEALTH_STATUS" != "healthy" ] && [ "$HEALTH_STATUS" != "none" ]; then
+        echo "waiting for container to become healthy (first boot builds the workspace, docker logs -f for progress)"
         (
             arena_docker_compose attach --no-stdin "$arena_service" &
             local LOGS_PID=$!
@@ -217,7 +218,7 @@ do_run(){
             trap 'kill "$LOGS_PID" 2>/dev/null; exit 130' INT TERM
 
             while true; do
-                ID=$(arena_docker_compose ps -q "$arena_service")
+                ID=$(arena_docker_compose ps -q "$arena_service" 2>/dev/null)
                 if [ -z "$ID" ]; then
                     sleep 1
                     continue
@@ -232,6 +233,7 @@ do_run(){
                 fi
 
                 if [ -n "$RUN_STATUS" ] && [ "$RUN_STATUS" != "running" ] && [ "$RUN_STATUS" != "restarting" ]; then
+                    echo "arena: container exited during startup, see docker logs" >&2
                     exit 1
                 fi
                 sleep 1

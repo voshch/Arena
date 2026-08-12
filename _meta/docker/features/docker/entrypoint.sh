@@ -21,7 +21,10 @@ if [ ! -f /.built ]; then
             sudo touch /.built
             echo 'Initial setup complete.'
             echo -e '\033[0mRun \033[01;33marena feature docker commit\033[0m to save this state.'
-        )
+        ) || {
+            echo 'arena: initial setup failed, exiting (docker logs for details)' >&2
+            exit 1
+        }
     elif [ -t 0 ]; then
         echo "arena: initial setup running in another session, shell is ready (docker logs -f for progress)"
     else

@@ -33,4 +33,4 @@ arena_docker_compose(){
         --project-name "$ARENA_PROJECT_NAME" \
         "$@"
 }
-export -f arena_docker_compose 2>/dev/null || true
+[ -n "${BASH_VERSION:-}" ] && export -f arena_docker_compose || true
