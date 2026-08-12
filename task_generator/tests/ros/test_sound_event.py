@@ -710,6 +710,68 @@ def test_human_sound_detector_uses_pose_when_twist_is_zero():
     assert emitted == [("footstep", 9)]
 
 
+def test_sound_propagation_uses_base_frame_when_listener_frame_is_empty(
+    rclpy_context,
+):
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import SoundPropagationNode
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    ns = f"/test/{suffix}"
+    robot_fleet_topic = f"{ns}/state/robots"
+    world_topic = f"{ns}/state/world"
+
+    propagation = SoundPropagationNode(
+        parameter_overrides=[
+            Parameter("robot_fleet_topic", Parameter.Type.STRING, robot_fleet_topic),
+            Parameter("world_topic", Parameter.Type.STRING, world_topic),
+            Parameter("robot_listener_frame", Parameter.Type.STRING, ""),
+        ],
+    )
+
+    try:
+        propagation._cb_robot_fleet(_make_robot_fleet("robot1", f"{ns}/robot1"))
+        assert (
+            propagation._robot_base_frames["robot:robot1"]
+            == "robot1/base_link"
+        )
+    finally:
+        propagation.destroy_node()
+
+
+def test_sound_propagation_resolves_relative_listener_frame_override(
+    rclpy_context,
+):
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import SoundPropagationNode
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    ns = f"/test/{suffix}"
+    robot_fleet_topic = f"{ns}/state/robots"
+    world_topic = f"{ns}/state/world"
+
+    propagation = SoundPropagationNode(
+        parameter_overrides=[
+            Parameter("robot_fleet_topic", Parameter.Type.STRING, robot_fleet_topic),
+            Parameter("world_topic", Parameter.Type.STRING, world_topic),
+            Parameter(
+                "robot_listener_frame",
+                Parameter.Type.STRING,
+                "oakd_rgb_camera_optical_frame",
+            ),
+        ],
+    )
+
+    try:
+        propagation._cb_robot_fleet(_make_robot_fleet("robot1", f"{ns}/robot1"))
+        assert (
+            propagation._robot_base_frames["robot:robot1"]
+            == "robot1/oakd_rgb_camera_optical_frame"
+        )
+    finally:
+        propagation.destroy_node()
+
+
 def test_propagation_visualizer_splits_pedestrian_and_robot_markers(
     rclpy_context,
 ):

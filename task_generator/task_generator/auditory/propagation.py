@@ -54,14 +54,30 @@ class Level3Propagation:
         distance = max(self._distance(source, listener), 1.0)
         direct_loss = 20.0 * math.log10(distance)
 
+        source_zone = scene.zone_at(source)
+        listener_zone = scene.zone_at(listener)
+        floor_loss_db = 0.0
+        if source_zone is not None:
+            floor_loss_db += self._materials.surface_damping_db(
+                source_zone.floor_material_id,
+                "floor",
+            )
+        if listener_zone is not None and (
+            source_zone is None or source_zone.name != listener_zone.name
+        ):
+            floor_loss_db += self._materials.surface_damping_db(
+                listener_zone.floor_material_id,
+                "floor",
+            )
+
         crossed = scene.intersecting_walls(source, listener)
         transmission_loss = sum(
-            self._broadband_transmission_loss(wall)
+            self._materials.surface_damping_db(wall.material_id, "wall")
             for wall in crossed
         )
 
         direct_level = (
-            source_level_db - direct_loss - transmission_loss
+            source_level_db - direct_loss - floor_loss_db - transmission_loss
         )
 
         paths = [
@@ -83,8 +99,6 @@ class Level3Propagation:
             [source_level_db + path.gain_db for path in paths]
         )
 
-        source_zone = scene.zone_at(source)
-        listener_zone = scene.zone_at(listener)
         reverb_zone = listener_zone or source_zone
 
         rt60 = (

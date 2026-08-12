@@ -100,3 +100,49 @@ def test_catalog_still_validates_missing_files_at_startup(tmp_path):
         assert "missing.wav" in str(exc)
     else:
         raise AssertionError("missing WAV was not rejected")
+
+
+def test_material_catalog_surface_damping_uses_profiles(tmp_path):
+    catalog_path = tmp_path / "acoustic_materials.yaml"
+    catalog_path.write_text(
+        yaml.safe_dump(
+            {
+                "octave_bands_hz": [125, 250, 500, 1000, 2000, 4000],
+                "defaults": {
+                    "canonical_name": "default",
+                    "absorption": [0.10, 0.10, 0.10, 0.10, 0.10, 0.10],
+                    "transmission_loss_db": [12.0, 12.0, 12.0, 12.0, 12.0, 12.0],
+                    "scattering": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                },
+                "materials": {
+                    "Concrete_Smooth": {
+                        "canonical_name": "concrete_floor_smooth",
+                        "absorption": [0.03, 0.03, 0.03, 0.03, 0.03, 0.03],
+                        "transmission_loss_db": [18.0, 18.0, 18.0, 18.0, 18.0, 18.0],
+                        "scattering": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    },
+                    "Walnut_Planks": {
+                        "canonical_name": "walnut_planks",
+                        "absorption": [0.14, 0.12, 0.10, 0.09, 0.08, 0.07],
+                        "transmission_loss_db": [14.0, 14.0, 14.0, 14.0, 14.0, 14.0],
+                        "scattering": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    catalog = __import__(
+        "task_generator.auditory.material_catalog",
+        fromlist=["AcousticMaterialCatalog"],
+    ).AcousticMaterialCatalog(catalog_path)
+
+    concrete_floor = catalog.surface_damping_db("Concrete_Smooth", "floor")
+    walnut_floor = catalog.surface_damping_db("Walnut_Planks", "floor")
+    concrete_wall = catalog.surface_damping_db("Concrete_Smooth", "wall")
+
+    assert 0.0 < concrete_floor <= 6.0
+    assert walnut_floor > concrete_floor
+    assert concrete_wall > concrete_floor
+    assert concrete_wall > 0.0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -210,6 +211,40 @@ class AcousticMaterialCatalog:
                 f"unknown acoustic material {requested_id!r}; "
                 f"known materials: {known or '<none>'}"
             ) from None
+
+    def surface_damping_db(
+        self,
+        material_id: str,
+        surface_role: str,
+    ) -> float:
+        """Return a material-specific damping term in dB.
+
+        The acoustic catalog already encodes realistic, per-band absorption and
+        transmission-loss values. We use those values here instead of inventing
+        synthetic per-surface constants. The floor path maps absorption to a
+        small attenuation term; walls map directly to the profile's transmission
+        loss. This keeps the damping cheap while honoring the material model.
+        """
+        material = self.get(str(material_id).strip() or "default")
+        role = str(surface_role).strip().lower()
+
+        if role == "wall":
+            return float(material.mean_transmission_loss_db)
+
+        if role in {"floor", "ceiling"}:
+            absorption = material.mean_absorption
+            if absorption <= 0.0:
+                return 0.0
+
+            # Floor and ceiling absorption is a same-room interaction term, not a
+            # full barrier transmission loss. Keep the response physically
+            # plausible, but scale it down to a modest dB range so contrasting
+            # materials still matter without over-attenuating footsteps.
+            floor_gain_db = 10.0 * absorption
+            floor_gain_db = min(floor_gain_db, 6.0)
+            return float(max(0.0, floor_gain_db))
+
+        return 0.0
 
     @staticmethod
     def _load_yaml(path: Path) -> Mapping[str, Any]:

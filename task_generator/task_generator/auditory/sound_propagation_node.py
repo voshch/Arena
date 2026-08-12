@@ -89,6 +89,7 @@ class SoundPropagationNode(Node):
         self.declare_parameter("world_topic", "state/world")
         self.declare_parameter("episode_topic", "state/episode")
         self.declare_parameter("odom_topic_template", "{namespace}/{name}_velocity_controller/odom")
+        self.declare_parameter("robot_listener_frame", "")
         self.declare_parameter("propagation_backend", "level3")
         self.declare_parameter("pyroom_sample_rate_hz", 44100)
         self.declare_parameter("pyroom_max_order", 3)
@@ -808,6 +809,9 @@ class SoundPropagationNode(Node):
 
     def _robot_base_frame(self, model_name: str, frame_prefix: str) -> str:
         prefix = frame_prefix.strip("/")
+        configured_listener_frame = str(
+            self.get_parameter("robot_listener_frame").value
+        ).strip()
         try:
             base_frame = (
                 RobotIdentifier(model_name)
@@ -821,6 +825,28 @@ class SoundPropagationNode(Node):
                 f"could not resolve base frame for robot model "
                 f"{model_name!r}: {exc}, using {base_frame!r}"
             )
+
+        if configured_listener_frame:
+            configured_listener_frame = configured_listener_frame.strip("/")
+            if "{" in configured_listener_frame:
+                try:
+                    configured_listener_frame = configured_listener_frame.format(
+                        prefix=prefix,
+                        base_frame=base_frame,
+                    ).strip("/")
+                except KeyError as exc:
+                    self.get_logger().warning(
+                        f"invalid robot_listener_frame template "
+                        f"{configured_listener_frame!r}: missing {exc}"
+                    )
+            if not configured_listener_frame:
+                return "/".join(part for part in (prefix, base_frame) if part)
+            if "/" in configured_listener_frame:
+                return configured_listener_frame
+            return "/".join(
+                part for part in (prefix, configured_listener_frame) if part
+            )
+
         return "/".join(part for part in (prefix, base_frame) if part)
 
     def _robot_odom_topics(

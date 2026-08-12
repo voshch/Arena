@@ -24,7 +24,7 @@ def generate_launch_description():
 
     enable_auditory = LaunchArgument(
         name="enable_auditory",
-        default_value="false",
+        default_value="true",
     )
 
     enable_sound_visualization = LaunchArgument(
@@ -70,6 +70,11 @@ def generate_launch_description():
     audio_listener_robot = LaunchArgument(
         name="audio_listener_robot",
         default_value="jackal",
+    )
+
+    audio_listener_frame = LaunchArgument(
+        name="audio_listener_frame",
+        default_value="",
     )
 
     motor_playback_mode = LaunchArgument(
@@ -198,6 +203,8 @@ def generate_launch_description():
                         "continuous_heard_sounds",
                     "continuous_listener_robot_name":
                         audio_listener_robot.substitution,
+                    "robot_listener_frame":
+                        audio_listener_frame.substitution,
                     "arena_peds_topic": PathJoinSubstitution([
                         environment_namespace.substitution,
                         "arena_peds",

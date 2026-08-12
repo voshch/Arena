@@ -200,6 +200,9 @@ class SoundPlaybackNode(Node):
             output_sample_rate=sample_rate,
             output_channels=channels,
         )
+        self._material_catalog = AcousticMaterialCatalog(
+            share_dir / "config" / "auditory" / "acoustic_materials.yaml"
+        )
         if self._source_kind == "human":
             footstep_asset = self._catalog.require("footstep")
             greeting_asset = self._catalog.require("greeting")
@@ -1006,6 +1009,7 @@ class SoundPlaybackNode(Node):
             )
 
         playback_gain_db += asset.playback_gain_db
+        playback_gain_db += self._material_gain_db(msg, asset_id)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1086,6 +1090,7 @@ class SoundPlaybackNode(Node):
         sample,
     ) -> None:
         playback_gain_db = self._event_playback_gain_db(msg, asset)
+        playback_gain_db += self._material_gain_db(msg, asset.asset_id)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1125,6 +1130,7 @@ class SoundPlaybackNode(Node):
     ) -> None:
         start_asset = assets[0]
         playback_gain_db = self._event_playback_gain_db(msg, start_asset)
+        playback_gain_db += self._material_gain_db(msg, start_asset.asset_id)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1167,6 +1173,28 @@ class SoundPlaybackNode(Node):
         else:
             level_db = float(msg.source_volume_db)
         return level_db - asset.reference_level_db + asset.playback_gain_db
+
+    def _material_gain_db(self, msg, asset_id: str) -> float:
+        """Apply the centralized material damping model to direct events."""
+        material_gain_db = 0.0
+        if asset_id == "footstep":
+            source_zone = str(getattr(msg, "source_zone", "")).strip()
+            listener_zone = str(getattr(msg, "listener_zone", "")).strip()
+            if source_zone and listener_zone and source_zone == listener_zone:
+                room = next(
+                    (
+                        spec
+                        for spec in self._room_specs
+                        if spec.zone_name == source_zone
+                    ),
+                    None,
+                )
+                if room is not None:
+                    material_gain_db += self._material_catalog.surface_damping_db(
+                        room.floor_material_id,
+                        "floor",
+                    )
+        return material_gain_db
 
     @staticmethod
     def _source_height(msg) -> float:
