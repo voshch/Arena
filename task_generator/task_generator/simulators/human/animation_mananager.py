@@ -60,6 +60,9 @@ class AnimationManager:
     # Use GaitGenerator to systhesis poses instead of replaying animation
     USE_SYNTHESIS = ["walk", "run", "idle"]
 
+    # Automatically use GaitGenerator to synthesis poses for upper body for realistic movements
+    AUTO_BLEND_SYNTHESIS = ["wave"]
+
     def __init__(
         self,
         animation_database_path: str | Path,
@@ -261,7 +264,13 @@ class AnimationManager:
             blend_joints = set(blend_joints)
 
         assert 0.0 <= blend_weight <= 1.0
-        self._ped_blend[agent_id] = {"overlay_anim_name": overlay_anim_name, "joints": blend_joints, "weight": blend_weight, "loop": loop}
+
+        # Ignore if overlay animation does not change
+        if agent_id in self._ped_blend.keys():
+            if self._ped_blend[agent_id]["overlay_anim_name"] == overlay_anim_name:
+                return
+        else:
+            self._ped_blend[agent_id] = {"overlay_anim_name": overlay_anim_name, "joints": blend_joints, "weight": blend_weight, "loop": loop}
 
         # Safe reset/initialization for the overlay playhead
         anim = self.animations[overlay_anim_name]
@@ -290,7 +299,7 @@ class AnimationManager:
         assert isinstance(next_anim, Animation)
 
         # Resolve base joint angles
-        if next_anim.name in self.USE_SYNTHESIS:
+        if next_anim.name in self.USE_SYNTHESIS or next_anim.name in self.AUTO_BLEND_SYNTHESIS:
             # Procedural high-fidelity GaitGenerator
             base_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt)
         else:
@@ -299,6 +308,9 @@ class AnimationManager:
             base_angles = self._sample(cur_playhead, next_playhead, cur_anim, next_anim)
 
         # Apply overlay animation blending
+        if next_anim.name in self.AUTO_BLEND_SYNTHESIS:
+            self.set_ped_blend(agent_id, next_anim.name)
+
         base_angles = self._sample_animation_overlay(
             agent_id,
             base_angles,
