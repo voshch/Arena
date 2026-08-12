@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 import traceback
 from collections import defaultdict, deque
@@ -12,7 +13,11 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_simulation_setup.tree.World import WorldIdentifier
 from nav_msgs.msg import OccupancyGrid
-from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.msg import (
+    FloatingPointRange,
+    ParameterDescriptor,
+    SetParametersResult,
+)
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -58,6 +63,45 @@ from task_generator.auditory.qos_profiles import (
 )
 
 FOOTSTEP_VARIANT_TAGS = frozenset({"default", "walnut_planks", "oak_planks", "marble_tile", "smooth_concrete", "ceramic_tile"})
+
+MOTOR_TUNING_PARAMETERS = {
+    "motor_volume_db": (
+        -9.0,
+        -40.0,
+        6.0,
+        "Motor output trim in dB. -6 dB is half amplitude.",
+    ),
+    "motor_frequency_scale": (
+        1.0,
+        0.25,
+        4.0,
+        "Motor pitch multiplier while preserving velocity-driven level.",
+    ),
+    "motor_tonal_gain_db": (
+        0.0,
+        -24.0,
+        12.0,
+        "Gear-mesh tone trim in dB.",
+    ),
+    "motor_broadband_gain_db": (
+        -12.0,
+        -40.0,
+        6.0,
+        "Broadband mechanical-noise trim in dB.",
+    ),
+    "motor_speed_exponent": (
+        1.5,
+        0.25,
+        3.0,
+        "Exponent controlling how strongly volume follows wheel speed.",
+    ),
+    "motor_velocity_smoothing_sec": (
+        0.015,
+        0.0,
+        0.5,
+        "Wheel-velocity response smoothing in seconds.",
+    ),
+}
 
 
 class SoundPlaybackNode(Node):
@@ -114,6 +158,23 @@ class SoundPlaybackNode(Node):
             self.declare_parameter("enable_motor_playback", True)
             self.declare_parameter("motor_rir_crossfade_sec", 0.1)
             self.declare_parameter("motor_single_asset_id", "motor")
+            for name, (default, minimum, maximum, description) in (
+                MOTOR_TUNING_PARAMETERS.items()
+            ):
+                self.declare_parameter(
+                    name,
+                    default,
+                    ParameterDescriptor(
+                        description=description,
+                        floating_point_range=[
+                            FloatingPointRange(
+                                from_value=minimum,
+                                to_value=maximum,
+                                step=0.0,
+                            )
+                        ],
+                    ),
+                )
         self.declare_parameter("portal_adjacency_tolerance_m", 0.08)
         self.declare_parameter("portal_inset_m", 0.03)
         self.declare_parameter("portal_loss_db", 3.0)
@@ -173,7 +234,6 @@ class SoundPlaybackNode(Node):
                 "motor",
                 bool(self.get_parameter("enable_motor_playback").value),
             )
-            self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self._use_rir = bool(self.get_parameter("use_rir").value)
         self._rir_dry_fallback = bool(
@@ -207,6 +267,8 @@ class SoundPlaybackNode(Node):
         self._continuous_rir_signatures: dict[
             str, tuple[object, ...]
         ] = {}
+        if self._source_kind == "robot":
+            self.add_on_set_parameters_callback(self._on_set_parameters)
         self._world_graph: AcousticWorldGraph | None = None
         self._authored_world_graph: AcousticWorldGraph | None = None
         self._authored_map_origin: tuple[float, float] | None = None
@@ -355,16 +417,59 @@ class SoundPlaybackNode(Node):
         self._realize_acoustic_geometry()
 
     def _on_set_parameters(self, parameters) -> SetParametersResult:
+        tuning = self._motor_tuning()
         for parameter in parameters:
-            if parameter.name != "enable_motor_playback":
+            if parameter.name == "enable_motor_playback":
+                if parameter.type_ != Parameter.Type.BOOL:
+                    return SetParametersResult(
+                        successful=False,
+                        reason="enable_motor_playback must be a boolean",
+                    )
                 continue
-            if parameter.type_ != Parameter.Type.BOOL:
+            if parameter.name not in MOTOR_TUNING_PARAMETERS:
+                continue
+            if parameter.type_ != Parameter.Type.DOUBLE:
                 return SetParametersResult(
                     successful=False,
-                    reason="enable_motor_playback must be a boolean",
+                    reason=f"{parameter.name} must be a double",
                 )
-            self._mixer.set_bus_enabled("motor", bool(parameter.value))
+            value = float(parameter.value)
+            _, minimum, maximum, _ = MOTOR_TUNING_PARAMETERS[parameter.name]
+            if not math.isfinite(value) or not minimum <= value <= maximum:
+                return SetParametersResult(
+                    successful=False,
+                    reason=(
+                        f"{parameter.name} must be in "
+                        f"[{minimum}, {maximum}]"
+                    ),
+                )
+            tuning[self._motor_tuning_key(parameter.name)] = value
+
+        for parameter in parameters:
+            if parameter.name == "enable_motor_playback":
+                self._mixer.set_bus_enabled("motor", bool(parameter.value))
+        for source in self._continuous_sources.values():
+            source.tune(**tuning)
         return SetParametersResult(successful=True)
+
+    @staticmethod
+    def _motor_tuning_key(parameter_name: str) -> str:
+        return {
+            "motor_volume_db": "volume_db",
+            "motor_frequency_scale": "frequency_scale",
+            "motor_tonal_gain_db": "tonal_gain_db",
+            "motor_broadband_gain_db": "broadband_gain_db",
+            "motor_speed_exponent": "speed_exponent",
+            "motor_velocity_smoothing_sec": "velocity_smoothing_seconds",
+        }[parameter_name]
+
+    def _motor_tuning(self) -> dict[str, float]:
+        return {
+            self._motor_tuning_key(name): float(
+                self.get_parameter(name).value
+            )
+            for name in MOTOR_TUNING_PARAMETERS
+        }
 
     @staticmethod
     def _load_room_specs(
@@ -619,6 +724,7 @@ class SoundPlaybackNode(Node):
                 rir_crossfade_seconds=float(
                     self.get_parameter("motor_rir_crossfade_sec").value
                 ),
+                **self._motor_tuning(),
             )
             self._continuous_sources[msg.source_id] = source
             self._mixer.add_render_source(

@@ -74,6 +74,12 @@ class DrivetrainRenderSource:
         phase_index: int,
         block_size: int,
         channels: int,
+        volume_db: float,
+        frequency_scale: float,
+        tonal_gain_db: float,
+        broadband_gain_db: float,
+        speed_exponent: float,
+        velocity_smoothing_seconds: float,
         rir_crossfade_seconds: float = 0.1,
     ) -> None:
         self.block_size = int(block_size)
@@ -104,9 +110,18 @@ class DrivetrainRenderSource:
         self._current_right = 0.0
         self._target_gain = 0.0
         self._current_gain = 0.0
+        self._target_volume_gain = 10.0 ** (float(volume_db) / 20.0)
+        self._current_volume_gain = self._target_volume_gain
+        self._frequency_scale = float(frequency_scale)
+        self._tonal_gain_db = float(tonal_gain_db)
+        self._broadband_gain_db = float(broadband_gain_db)
+        self._speed_exponent = float(speed_exponent)
+        self._velocity_smoothing_seconds = float(
+            velocity_smoothing_seconds
+        )
         self._active = False
         self._inactive_frames = 0
-        self._tail_frames = self.block_size
+        self._rir_tail_frames = self.block_size
         self._convolver: PartitionedConvolver | None = None
         self._old_convolver: PartitionedConvolver | None = None
         self._crossfade_total = max(
@@ -137,12 +152,34 @@ class DrivetrainRenderSource:
                 self._old_convolver = self._convolver
                 self._convolver = next_convolver
                 self._rir_signature = rir_signature
-                self._tail_frames = max(len(impulse), self.block_size)
+                self._rir_tail_frames = max(len(impulse), self.block_size)
                 self._crossfade_remaining = (
                     self._crossfade_total
                     if self._old_convolver is not None
                     else 0
                 )
+
+    def tune(
+        self,
+        *,
+        volume_db: float,
+        frequency_scale: float,
+        tonal_gain_db: float,
+        broadband_gain_db: float,
+        speed_exponent: float,
+        velocity_smoothing_seconds: float,
+    ) -> None:
+        with self._lock:
+            self._target_volume_gain = 10.0 ** (
+                float(volume_db) / 20.0
+            )
+            self._frequency_scale = float(frequency_scale)
+            self._tonal_gain_db = float(tonal_gain_db)
+            self._broadband_gain_db = float(broadband_gain_db)
+            self._speed_exponent = float(speed_exponent)
+            self._velocity_smoothing_seconds = float(
+                velocity_smoothing_seconds
+            )
 
     def render(self, frames: int) -> np.ndarray:
         if int(frames) != self.block_size:
@@ -157,22 +194,55 @@ class DrivetrainRenderSource:
             convolver = self._convolver
             old_convolver = self._old_convolver
             crossfade_remaining = self._crossfade_remaining
+            target_volume_gain = self._target_volume_gain
+            frequency_scale = self._frequency_scale
+            tonal_gain_db = self._tonal_gain_db
+            broadband_gain_db = self._broadband_gain_db
+            speed_exponent = self._speed_exponent
+            velocity_smoothing_seconds = self._velocity_smoothing_seconds
 
-        left_speed = np.linspace(
-            self._current_left, target_left, frames, dtype=np.float64
+        if velocity_smoothing_seconds <= 0.0:
+            left_speed = np.full(frames, target_left, dtype=np.float64)
+            right_speed = np.full(frames, target_right, dtype=np.float64)
+        else:
+            decay = np.exp(
+                -np.arange(1, frames + 1, dtype=np.float64)
+                / (JACKAL.sample_rate * velocity_smoothing_seconds)
+            )
+            left_speed = target_left + (self._current_left - target_left) * decay
+            right_speed = (
+                target_right
+                + (self._current_right - target_right) * decay
+            )
+        self._current_left = float(left_speed[-1])
+        self._current_right = float(right_speed[-1])
+        render_options = {
+            "frequency_scale": frequency_scale,
+            "tonal_gain_db": tonal_gain_db,
+            "broadband_gain_db": broadband_gain_db,
+            "speed_exponent": speed_exponent,
+        }
+        dry = self._left.render(
+            left_speed,
+            **render_options,
+        ) + self._right.render(
+            right_speed,
+            **render_options,
         )
-        right_speed = np.linspace(
-            self._current_right, target_right, frames, dtype=np.float64
-        )
-        dry = self._left.render(left_speed) + self._right.render(right_speed)
-        self._current_left = target_left
-        self._current_right = target_right
 
         gain = np.linspace(
             self._current_gain, target_gain, frames, dtype=np.float32
         )
         self._current_gain = target_gain
         dry = np.asarray(dry, dtype=np.float32) * gain
+        volume_gain = np.linspace(
+            self._current_volume_gain,
+            target_volume_gain,
+            frames,
+            dtype=np.float32,
+        )
+        self._current_volume_gain = target_volume_gain
+        dry *= volume_gain
 
         if convolver is not None:
             wet = convolver.process(dry)
@@ -200,8 +270,16 @@ class DrivetrainRenderSource:
     @property
     def finished(self) -> bool:
         with self._lock:
+            velocity_tail_frames = int(
+                JACKAL.sample_rate
+                * self._velocity_smoothing_seconds
+                * 5.0
+            )
             return (
                 not self._active
                 and self._inactive_frames
-                >= self._tail_frames + self._crossfade_total
+                >= max(
+                    self._rir_tail_frames,
+                    velocity_tail_frames,
+                ) + self._crossfade_total
             )

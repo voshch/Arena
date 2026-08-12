@@ -5,12 +5,49 @@
 #include "rcl_interfaces/srv/set_parameters.hpp"
 
 #include <chrono>
+#include <array>
 #include <cstdlib>
 #include <exception>
 #include <memory>
 
 namespace
 {
+    struct MotorControlSpec
+    {
+        const char *name;
+        const char *label;
+        const char *suffix;
+        double minimum;
+        double maximum;
+        double step;
+        double initial;
+        int decimals;
+        const char *tooltip;
+    };
+
+    constexpr std::array<MotorControlSpec, 6> kMotorControlSpecs{{
+        {"motor_volume_db", "Volume", " dB", -40.0, 6.0, 0.5, -9.0, 1,
+         "Overall motor level. -6 dB is half amplitude."},
+        {"motor_frequency_scale", "Frequency", " x", 0.25, 4.0, 0.05, 1.0, 2,
+         "Pitch multiplier. Velocity still controls the pitch trajectory."},
+        {"motor_tonal_gain_db", "Gear tone", " dB", -24.0, 12.0, 0.5, 0.0, 1,
+         "Level of the periodic gear-mesh tones."},
+        {"motor_broadband_gain_db", "Mechanical noise", " dB", -40.0, 6.0, 0.5, -12.0, 1,
+         "Level of the broadband mechanical-noise layer."},
+        {"motor_speed_exponent", "Velocity response", "", 0.25, 3.0, 0.05, 1.5, 2,
+         "Higher values make motor level change more strongly with wheel speed."},
+        {"motor_velocity_smoothing_sec", "Response smoothing", " s", 0.0, 0.5, 0.005, 0.015, 3,
+         "Time used to smooth wheel-velocity changes. Zero is immediate."},
+    }};
+
+    bool isMotorTuningParameter(const std::string &name)
+    {
+        for (const auto &spec : kMotorControlSpecs)
+            if (name == spec.name)
+                return true;
+        return false;
+    }
+
     std::string normalizeNodePath(const std::string &path)
     {
         std::string normalized;
@@ -257,33 +294,38 @@ namespace task_generator_gui
             {
                 if (msg->node == motor_playback_node)
                 {
-                    auto sync = [this](const auto &parameters)
+                    bool refresh_tuning = false;
+                    auto sync = [this, &refresh_tuning](const auto &parameters)
                     {
                         for (const auto &parameter : parameters)
                         {
-                            if (parameter.name != "enable_motor_playback")
-                                continue;
-                            const bool enabled = parameter.value.bool_value;
-                            QMetaObject::invokeMethod(this, [this, enabled]()
-                            {
-                                syncMotorPlaybackCheckbox(enabled, true);
-                            }, Qt::QueuedConnection);
-                            return true;
-                        }
-                        return false;
-                    };
-                    if (!sync(msg->changed_parameters)
-                        && !sync(msg->new_parameters))
-                    {
-                        for (const auto &parameter : msg->deleted_parameters)
-                        {
                             if (parameter.name == "enable_motor_playback")
                             {
-                                refreshMotorPlayback();
-                                break;
+                                const bool enabled = parameter.value.bool_value;
+                                QMetaObject::invokeMethod(this, [this, enabled]()
+                                {
+                                    syncMotorPlaybackCheckbox(enabled, true);
+                                }, Qt::QueuedConnection);
+                            }
+                            else if (isMotorTuningParameter(parameter.name))
+                            {
+                                refresh_tuning = true;
                             }
                         }
+                    };
+                    sync(msg->changed_parameters);
+                    sync(msg->new_parameters);
+                    for (const auto &parameter : msg->deleted_parameters)
+                    {
+                        if (parameter.name == "enable_motor_playback"
+                            || isMotorTuningParameter(parameter.name))
+                        {
+                            refresh_tuning = true;
+                            break;
+                        }
                     }
+                    if (refresh_tuning)
+                        refreshMotorPlayback();
                     return;
                 }
                 if (msg->node != expected_node) return;
@@ -337,19 +379,24 @@ namespace task_generator_gui
             QMetaObject::invokeMethod(this, [this]()
             {
                 syncMotorPlaybackCheckbox(false, false);
+                syncMotorTuningControls({}, false);
             }, Qt::QueuedConnection);
             return;
         }
 
+        std::vector<std::string> names{"enable_motor_playback"};
+        for (const auto &spec : kMotorControlSpecs)
+            names.emplace_back(spec.name);
         motor_playback_parameters_client->get_parameters(
-            {"enable_motor_playback"},
+            names,
             [this](std::shared_future<std::vector<rclcpp::Parameter>> future)
             {
                 bool available = false;
                 bool enabled = false;
+                std::vector<rclcpp::Parameter> parameters;
                 try
                 {
-                    const auto parameters = future.get();
+                    parameters = future.get();
                     if (!parameters.empty()
                         && parameters.front().get_type()
                             == rclcpp::ParameterType::PARAMETER_BOOL)
@@ -365,10 +412,14 @@ namespace task_generator_gui
                         "reading motor playback parameter failed: %s",
                         exception.what());
                 }
-                QMetaObject::invokeMethod(this, [this, enabled, available]()
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, enabled, available, parameters]()
                 {
                     syncMotorPlaybackCheckbox(enabled, available);
-                }, Qt::QueuedConnection);
+                    syncMotorTuningControls(parameters, available);
+                },
+                    Qt::QueuedConnection);
             });
     }
 
@@ -430,6 +481,114 @@ namespace task_generator_gui
                 : "Waiting for robot_sound_node.");
     }
 
+    void TaskGeneratorPanel::setMotorTuningParameter(
+        const std::string &name,
+        double value)
+    {
+        if (!motor_playback_parameters_client
+            || !motor_playback_parameters_client->service_is_ready())
+        {
+            refreshMotorPlayback();
+            return;
+        }
+        motor_playback_parameters_client->set_parameters(
+            {rclcpp::Parameter(name, value)},
+            [this, name](
+                std::shared_future<
+                    std::vector<rcl_interfaces::msg::SetParametersResult>
+                > future)
+            {
+                try
+                {
+                    const auto results = future.get();
+                    if (results.empty() || !results.front().successful)
+                    {
+                        const auto reason = results.empty()
+                            ? "no result"
+                            : results.front().reason;
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "setting %s failed: %s",
+                            name.c_str(),
+                            reason.c_str());
+                    }
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "setting %s failed: %s",
+                        name.c_str(),
+                        exception.what());
+                }
+                refreshMotorPlayback();
+            });
+    }
+
+    void TaskGeneratorPanel::syncMotorTuningControls(
+        const std::vector<rclcpp::Parameter> &parameters,
+        bool available)
+    {
+        if (motor_tuning_group)
+            motor_tuning_group->setEnabled(available);
+        for (const auto &parameter : parameters)
+        {
+            const auto found = motor_tuning_spinboxes.find(parameter.get_name());
+            if (found == motor_tuning_spinboxes.end()
+                || parameter.get_type()
+                    != rclcpp::ParameterType::PARAMETER_DOUBLE)
+            {
+                continue;
+            }
+            QSignalBlocker blocker(found->second);
+            found->second->setValue(parameter.as_double());
+        }
+    }
+
+    void TaskGeneratorPanel::resetMotorTuning()
+    {
+        if (!motor_playback_parameters_client
+            || !motor_playback_parameters_client->service_is_ready())
+        {
+            refreshMotorPlayback();
+            return;
+        }
+        std::vector<rclcpp::Parameter> parameters;
+        parameters.reserve(kMotorControlSpecs.size());
+        for (const auto &spec : kMotorControlSpecs)
+            parameters.emplace_back(spec.name, spec.initial);
+        motor_playback_parameters_client->set_parameters(
+            parameters,
+            [this](
+                std::shared_future<
+                    std::vector<rcl_interfaces::msg::SetParametersResult>
+                > future)
+            {
+                try
+                {
+                    const auto results = future.get();
+                    for (const auto &result : results)
+                    {
+                        if (result.successful)
+                            continue;
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "resetting motor tuning failed: %s",
+                            result.reason.c_str());
+                        break;
+                    }
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "resetting motor tuning failed: %s",
+                        exception.what());
+                }
+                refreshMotorPlayback();
+            });
+    }
+
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
                                        std::function<void()> action,
                                        std::chrono::milliseconds period)
@@ -467,6 +626,39 @@ namespace task_generator_gui
             this,
             &TaskGeneratorPanel::setMotorPlaybackEnabled);
         root_layout->addWidget(motor_playback_checkbox);
+
+        motor_tuning_group = new QGroupBox("Motor Sound Tuning");
+        motor_tuning_group->setEnabled(false);
+        auto motor_tuning_layout = new QFormLayout();
+        for (const auto &spec : kMotorControlSpecs)
+        {
+            auto spinbox = new QDoubleSpinBox();
+            spinbox->setRange(spec.minimum, spec.maximum);
+            spinbox->setSingleStep(spec.step);
+            spinbox->setDecimals(spec.decimals);
+            spinbox->setSuffix(spec.suffix);
+            spinbox->setValue(spec.initial);
+            spinbox->setToolTip(spec.tooltip);
+            motor_tuning_spinboxes.emplace(spec.name, spinbox);
+            connect(
+                spinbox,
+                &QDoubleSpinBox::editingFinished,
+                this,
+                [this, name = std::string(spec.name), spinbox]()
+                {
+                    setMotorTuningParameter(name, spinbox->value());
+                });
+            motor_tuning_layout->addRow(spec.label, spinbox);
+        }
+        auto reset_motor_tuning_button = new QPushButton("Reset motor tuning");
+        connect(
+            reset_motor_tuning_button,
+            &QPushButton::clicked,
+            this,
+            &TaskGeneratorPanel::resetMotorTuning);
+        motor_tuning_layout->addRow(reset_motor_tuning_button);
+        motor_tuning_group->setLayout(motor_tuning_layout);
+        root_layout->addWidget(motor_tuning_group);
 
         dynamic_param_tree_obstacles_ = std::make_unique<DynamicParamTree>(
             node, parameters_client,

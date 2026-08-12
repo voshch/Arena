@@ -47,6 +47,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QFontMetrics>
 #include <QTextEdit>
@@ -116,6 +117,13 @@ namespace task_generator_gui
         void refreshMotorPlayback();
         void setMotorPlaybackEnabled(bool enabled);
         void syncMotorPlaybackCheckbox(bool enabled, bool available);
+        void setMotorTuningParameter(
+            const std::string &name,
+            double value);
+        void syncMotorTuningControls(
+            const std::vector<rclcpp::Parameter> &parameters,
+            bool available);
+        void resetMotorTuning();
 
         // Send reset_episode (world field intentionally empty; node resolves from pending overrides).
         void sendResetEpisode();
@@ -229,6 +237,9 @@ namespace task_generator_gui
         QComboBox *robot_task_mode_combobox;
         QComboBox *world_combobox;
         QCheckBox *motor_playback_checkbox;
+        QGroupBox *motor_tuning_group{nullptr};
+        std::unordered_map<std::string, QDoubleSpinBox *>
+            motor_tuning_spinboxes;
 
         QPushButton *discard_button;
         QPushButton *queue_button;

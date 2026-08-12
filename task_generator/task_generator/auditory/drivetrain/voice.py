@@ -300,7 +300,17 @@ class DrivetrainVoice:
         return self.field_metres / max(abs(v), 1e-12)
 
     # -- rendering ----------------------------------------------------------
-    def render(self, v, frames=None, tau=0.0):
+    def render(
+        self,
+        v,
+        frames=None,
+        tau=0.0,
+        *,
+        frequency_scale=1.0,
+        tonal_gain_db=0.0,
+        broadband_gain_db=0.0,
+        speed_exponent=None,
+    ):
         """Render the next block and return it as float64 in [-1, 1]-ish.
 
         Args:
@@ -310,6 +320,10 @@ class DrivetrainVoice:
             frames: block length. Required when `v` is a scalar.
             tau:    normalised torque, scalar or per-sample, used only when
                     `spec.load_depth` is non-zero.
+            frequency_scale: pitch multiplier without changing loudness.
+            tonal_gain_db: runtime trim for the periodic gear-mesh layer.
+            broadband_gain_db: runtime trim for the noise layer.
+            speed_exponent: runtime override for velocity-to-level response.
         """
         v = np.asarray(v, dtype=np.float64)
         if v.ndim == 0:
@@ -324,18 +338,34 @@ class DrivetrainVoice:
         if n == 0:
             return np.zeros(0)
         tau = np.broadcast_to(np.asarray(tau, dtype=np.float64), (n,))
+        frequency_scale = float(frequency_scale)
+        tonal_scale = 10.0 ** (float(tonal_gain_db) / 20.0)
+        broadband_scale = 10.0 ** (float(broadband_gain_db) / 20.0)
+        velocity_exponent = (
+            self.spec.speed_exponent
+            if speed_exponent is None
+            else float(speed_exponent)
+        )
 
         dt = 1.0 / self.sample_rate
         out = np.empty(n)
         for a in range(0, n, _CHUNK):
             b = min(a + _CHUNK, n)
-            out[a:b] = self._chunk(v[a:b], tau[a:b], dt)
+            out[a:b] = self._chunk(
+                v[a:b],
+                tau[a:b],
+                dt,
+                frequency_scale,
+                tonal_scale,
+                broadband_scale,
+                velocity_exponent,
+            )
         if self.transfer is not None:
             out = self.transfer(out)
         self.frames_rendered += n
         return out * self.gain
 
-    def render_seconds(self, v, seconds, tau=0.0):
+    def render_seconds(self, v, seconds, tau=0.0, **render_options):
         """Render `seconds` worth of audio, carrying the fractional remainder.
 
         Use this when the control loop ticks at a rate that is not a divisor of
@@ -345,13 +375,24 @@ class DrivetrainVoice:
         want = seconds * self.sample_rate + self._resid
         frames = int(want)
         self._resid = want - frames
-        return self.render(v, frames, tau)
+        return self.render(v, frames, tau, **render_options)
 
     # -- internals ----------------------------------------------------------
-    def _chunk(self, v, tau, dt):
+    def _chunk(
+        self,
+        v,
+        tau,
+        dt,
+        frequency_scale,
+        tonal_scale,
+        broadband_scale,
+        speed_exponent,
+    ):
         s = self.spec
         n = len(v)
         av = np.abs(v)
+        pitch_v = v * frequency_scale
+        pitch_av = np.abs(pitch_v)
         lim = s.alias_limit * self.sample_rate
         acc = np.zeros(n)
 
@@ -360,13 +401,13 @@ class DrivetrainVoice:
         # m/ORDER_DEN and the accumulator is kept modulo ORDER_DEN*Q32, so
         # multiplying by m stays exact and wraps correctly; wrapping to [0, 2pi)
         # would be wrong for non-integer orders.
-        dq = np.rint(v * dt * self.k / TWO_PI * Q32).astype(np.int64)
+        dq = np.rint(pitch_v * dt * self.k / TWO_PI * Q32).astype(np.int64)
         psi_q = (self._psi_q + np.cumsum(dq)) % _MOD
         self._psi_q = int(psi_q[-1])
 
         # ---- comb: one explicit sinusoid per integer order ----
         if len(self._m):
-            f_mesh = self.k * av / TWO_PI
+            f_mesh = self.k * pitch_av / TWO_PI
             # pre-select on the slowest sample in the chunk so anything live
             # anywhere in the chunk is kept; the per-sample taper below then
             # silences it wherever it would exceed the limit. Components dropped
@@ -382,17 +423,22 @@ class DrivetrainVoice:
                 # clicks, and the click is broadband
                 fk = self._order[cand][:, None] * f_mesh[None, :]
                 side *= np.clip((lim - fk) / (0.06 * lim), 0.0, 1.0)
-                acc += side.sum(axis=0)
+                acc += side.sum(axis=0) * tonal_scale
 
         # ---- broadband: mipmapped distance field, read at dx/dt ----
         if self._levels:
-            dxq = np.rint(v * dt / self.field_metres * Q32).astype(np.int64)
+            dxq = np.rint(
+                pitch_v * dt / self.field_metres * Q32
+            ).astype(np.int64)
             x_q = (self._x_q + np.cumsum(dxq)) % Q32
             self._x_q = int(x_q[-1])
             pos0 = x_q * (self.field_metres / Q32) / self._dx0  # level-0 samples
             # choose the level so the read rate stays below 1/headroom, i.e.
             # always interpolating, never decimating
-            lf = np.log2(np.maximum(av * dt / self._dx0, 1e-12) * s.field_headroom)
+            lf = np.log2(
+                np.maximum(pitch_av * dt / self._dx0, 1e-12)
+                * s.field_headroom
+            )
             lf = np.clip(lf, 0.0, len(self._levels) - 1.000001)
             l0 = np.floor(lf).astype(np.int64)
             fr = lf - l0
@@ -405,10 +451,14 @@ class DrivetrainVoice:
                     continue
                 wgt = np.where(l0[sel] == lv, 1.0 - fr[sel], fr[sel])
                 bb[sel] += wgt * self._read(int(lv), pos0[sel])
-            acc += bb * 10.0 ** (s.broadband_gain_db / 20.0)
+            acc += (
+                bb
+                * 10.0 ** (s.broadband_gain_db / 20.0)
+                * broadband_scale
+            )
 
         # the 1/count mix scaling lives in self.gain, applied once in render()
-        g = (av / max(s.v_ref, 1e-9)) ** s.speed_exponent
+        g = (av / max(s.v_ref, 1e-9)) ** speed_exponent
         g = g * (1.0 + s.load_depth * tau)
         return acc * g * self._gate_env(av, dt)
 

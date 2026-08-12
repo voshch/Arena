@@ -104,7 +104,7 @@ class HumanSoundNode(Node):
             return
         try:
             world = WorldIdentifier(world_name).resolve_sync().load()
-            self._acoustic_scene = AcousticScene.from_world(world)
+            self._acoustic_scene = ne.from_world(world)
         except Exception as exc:
             self.get_logger().warning(
                 "failed to load acoustic scene for footstep material mapping: "

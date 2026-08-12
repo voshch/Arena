@@ -60,11 +60,23 @@ portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
 The Task Generator RViz panel includes `Play robot motor audio on this
-workstation`. It reads `robot_sound_node.enable_motor_playback` when the robot
-sound node becomes available, follows external parameter changes, and
-rechecks the value on every episode update. The value persists across episode
-resets. `enable_motor_playback:=false` sets its initial launch value. This is
-separate from `enable_robot_sound`, which controls simulated motor emission.
+workstation` and a live `Motor Sound Tuning` group. The controls update the
+running `robot_sound_node` and follow changes made through ROS parameters.
+They persist across episode resets. `enable_motor_playback:=false` sets the
+initial mute state. This is separate from `enable_robot_sound`, which controls
+simulated motor emission.
+
+The procedural defaults apply a `-9 dB` output trim, reduce the broadband
+mechanical-noise layer by `-12 dB`, and use a `1.5` velocity exponent so level
+changes are easier to hear as wheel speed changes. Frequency remains directly
+driven by signed left and right wheel velocity. The live controls are:
+
+- `motor_volume_db`
+- `motor_frequency_scale`
+- `motor_tonal_gain_db`
+- `motor_broadband_gain_db`
+- `motor_speed_exponent`
+- `motor_velocity_smoothing_sec`
 
 ## Pyroomacoustics portal routing
 

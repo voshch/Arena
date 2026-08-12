@@ -36,7 +36,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `state/paused` | `std_msgs::msg::Bool` | Drives the pause button label authoritatively. The pause button is fire-and-forget; UI reflects the published state, not the service-call return. |
 | `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == task_generator_node`; if any changed/new/deleted parameter starts with `task.<active_mode>.`, rebuilds the matching family's param tree on the Qt thread. |
 
-## Motor playback switch
+## Motor playback and tuning
 
 `Play robot motor audio on this workstation` controls the live
 `enable_motor_playback` parameter on `<Target>/robot_sound_node`. It mutes
@@ -44,6 +44,11 @@ only the motor bus in the local audio mixer. Motor source messages, propagation,
 RIR updates, and robot hearing continue unchanged. The panel reads the initial
 value when the playback parameter service appears, follows `/parameter_events`,
 and rechecks the value on each `state/episode` update.
+
+`Motor Sound Tuning` exposes live volume, frequency, gear-tone level,
+mechanical-noise level, velocity response, and response smoothing controls.
+Edits are applied to active procedural drivetrain voices without restarting an
+episode. `Reset motor tuning` restores the quieter procedural defaults.
 
 ## SpawnPedestrianTool
 
