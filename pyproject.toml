@@ -35,7 +35,7 @@ dependencies = [
     "pydantic",
     "pillow",
     "requests",
-    "usd-core",
+    "usd-core; platform_machine == 'x86_64'",
     "cattrs",
     "openai",
     "pycollada",

@@ -229,7 +229,7 @@ dependencies = [
     { name = "shapely" },
     { name = "transformers" },
     { name = "transforms3d" },
-    { name = "usd-core" },
+    { name = "usd-core", marker = "platform_machine == 'x86_64'" },
     { name = "watchdog" },
 ]
 
@@ -289,7 +289,7 @@ requires-dist = [
     { name = "shapely" },
     { name = "transformers", specifier = ">=5.5.4" },
     { name = "transforms3d" },
-    { name = "usd-core" },
+    { name = "usd-core", marker = "platform_machine == 'x86_64'" },
     { name = "watchdog" },
 ]
 
@@ -536,8 +536,8 @@ name = "colcon-argcomplete"
 version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "argcomplete" },
-    { name = "colcon-core" },
+    { name = "argcomplete", marker = "sys_platform != 'win32'" },
+    { name = "colcon-core", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c9/9e/fe7842b0c1c82511f8d9176cfdbd1ba0e19bc24219c84a0510ed816078a6/colcon-argcomplete-0.3.3.tar.gz", hash = "sha256:3e70a32b7d16b816a7c72182bdb20df985ffc01678ec9c67d44659814a61987d", size = 7583, upload-time = "2019-07-16T22:29:08.202Z" }
 wheels = [
@@ -549,7 +549,7 @@ name = "colcon-bash"
 version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colcon-core" },
+    { name = "colcon-core", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/07/e7/f1b7867c6c64d633e868e5220cc7ece184fed221ca8096cb371af1e7532f/colcon-bash-0.5.0.tar.gz", hash = "sha256:29a223a66828e18aad9b8db5087f7114e388601830091830ca17b095ada2cbac", size = 10909, upload-time = "2023-09-25T20:43:14.594Z" }
 wheels = [
@@ -561,8 +561,8 @@ name = "colcon-cd"
 version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colcon-core" },
-    { name = "colcon-package-information" },
+    { name = "colcon-core", marker = "sys_platform != 'win32'" },
+    { name = "colcon-package-information", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/63/17/2ae72bad0acf22cc6dc1d0665cd3b8343629cba2e591e78d15d2c65dd9bc/colcon-cd-0.1.1.tar.gz", hash = "sha256:379ef4d9f4bb3557d48ea25230ec5d749e83bb2814319e5a1d5ba5810df7b584", size = 4214, upload-time = "2019-10-21T23:43:47.454Z" }
 wheels = [
@@ -832,7 +832,7 @@ name = "colcon-zsh"
 version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colcon-core" },
+    { name = "colcon-core", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e5/0a/e8495379bd5f555a27e42eed6317ff6f367732c191d7030ff63bf5601392/colcon-zsh-0.5.0.tar.gz", hash = "sha256:efff75c43ddab2649853529e41cee36e0f83b6d4c864c0736353d0dece78334a", size = 10766, upload-time = "2023-10-06T17:49:59.289Z" }
 wheels = [
