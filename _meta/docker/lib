@@ -14,7 +14,20 @@ arena_docker_compose(){
             [ -f "$ov" ] && files="${files}:${ov}"
         done < "$ARENA_DIR/.installed"
     fi
-    ${arena_compose_sudo} env ${docker_env} ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" COMPOSE_FILE="$files" \
+    ${arena_compose_sudo} env \
+        ARENA_PROJECT_NAME="$ARENA_PROJECT_NAME" \
+        ARENA_IMAGE="$ARENA_IMAGE" \
+        ARENA_IMAGE_TAG="$ARENA_IMAGE_TAG" \
+        ARENA_WS_DIR="$ARENA_WS_DIR" \
+        ARENA_ROS_DISTRO="$ARENA_ROS_DISTRO" \
+        HOST_UID="$HOST_UID" \
+        HOST_GID="$HOST_GID" \
+        HOST_ARENA_WS_DIR="$HOST_ARENA_WS_DIR" \
+        HOST_ARENA_DATA_DIR="$HOST_ARENA_DATA_DIR" \
+        ARENA_DATA_DIR="$ARENA_DATA_DIR" \
+        ROSNAV_AGENTS_DIR="$ROSNAV_AGENTS_DIR" \
+        ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" \
+        COMPOSE_FILE="$files" \
         docker compose \
         --project-directory "$ARENA_WS_DIR" \
         --project-name "$ARENA_PROJECT_NAME" \

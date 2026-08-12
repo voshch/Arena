@@ -18,17 +18,6 @@ export HOST_GID
 export arena_compose_sudo=""
 source "$ARENA_DIR/_meta/docker/lib"
 
-docker_env=""
-docker_env="${docker_env} ARENA_PROJECT_NAME=$ARENA_PROJECT_NAME"
-docker_env="${docker_env} ARENA_IMAGE=$ARENA_IMAGE"
-docker_env="${docker_env} ARENA_IMAGE_TAG=$ARENA_IMAGE_TAG"
-docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
-docker_env="${docker_env} HOST_UID=$HOST_UID"
-docker_env="${docker_env} HOST_GID=$HOST_GID"
-docker_env="${docker_env} ARENA_DATA_DIR=$ARENA_DATA_DIR"
-docker_env="${docker_env} ROSNAV_AGENTS_DIR=$ROSNAV_AGENTS_DIR"
-export docker_env
-
 arena_service="arena"
 
 _uninstall_usage(){
@@ -203,7 +192,7 @@ if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
     touch "$ARENA_WS_DIR/.env"
 fi
 
-xhost +local:docker
+command -v xhost >/dev/null 2>&1 && xhost +local:docker
 
 do_run(){
     arena_docker_compose \

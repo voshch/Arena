@@ -12,7 +12,7 @@ docker_commit(){
         ps -q -a arena \
         | head -n 1)
     echo "committing container $CONTAINER_ID to image $ARENA_IMAGE..."
-    sudo env ${docker_env[*]} docker commit --no-pause "$CONTAINER_ID" "$ARENA_IMAGE"
+    sudo docker commit --no-pause "$CONTAINER_ID" "$ARENA_IMAGE"
     echo "done"
 }
 
