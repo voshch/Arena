@@ -125,10 +125,10 @@ def main(prog_name: str = "arena") -> None:
         sys.exit(130)
 
 
-def _select_args(args: list[str]) -> list[str]:
+def _select_args(args: list[str], above: bool = False) -> list[str]:
     argv = list(args)
     if argv and not argv[0].startswith("--"):
-        argv = ["--packages-select", *argv]
+        argv = ["--packages-above" if above else "--packages-select", *argv]
     return argv
 
 
@@ -212,12 +212,12 @@ def cleanup(args: list[str]) -> None:
 def build(args: list[str]) -> None:
     """Build the workspace (or selected packages) with colcon.
 
-    Bare package names are shorthand for --packages-select. The shell
+    Bare package names are shorthand for --packages-above. The shell
     shim re-sources the environment afterwards.
     """
     from build import build_main
 
-    sys.exit(build_main(_select_args(args)))
+    sys.exit(build_main(_select_args(args, above=True)))
 
 
 @verb("rebuild", passthrough=True)
@@ -226,13 +226,14 @@ def rebuild(args: list[str]) -> None:
 
     Accepts bare package names or colcon selection flags, e.g.
     `arena rebuild foo bar` or `arena rebuild --packages-select-regex 'arena_.*'`.
+    Bare names expand to --packages-above like `arena build`.
     """
     import shutil
     import subprocess
 
     if not args:
         raise CLIError("rebuild needs a package selection")
-    argv = _select_args(args)
+    argv = _select_args(args, above=True)
     listing = subprocess.run(
         ["colcon", "list", "--names-only", "--base-paths", os.path.join(_env("ARENA_WS_DIR"), "src"), *argv],
         capture_output=True,
