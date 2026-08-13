@@ -16,6 +16,8 @@ auditory nodes.
   into `HeardSoundEvent` messages using listener positions, distance loss,
   wall/material attenuation, optional pyroomacoustics RIRs, and cached
   multi-portal coupling across doors and shared open boundaries.
+- TF microphones: named microphones can attach to any TF frame. Every
+  microphone is an independent propagation listener.
 - Robot hearing: `robot_hearing_node` listens for `HeardSoundEvent`, discovers
   robots from `state/robots`, republishes per-robot heard events, and publishes
   an RViz text marker when a robot hears a configured sound type.
@@ -43,6 +45,8 @@ Expected nodes when enabled include:
 - `heard_sound_events`: propagated `HeardSoundEvent` stream.
 - `continuous_audio_sources`: persistent procedural source state.
 - `continuous_heard_sounds`: listener-specific propagated procedural state.
+- `microphone_listeners`: transient-local JSON registry of active microphone
+  listener IDs.
 - `state/robots`: robot fleet metadata used by propagation, robot sound, and
   robot hearing nodes.
 - `<robot_name>/heard_sound`: per-robot heard event output.
@@ -59,12 +63,14 @@ The generated RViz configuration shows pedestrian cones through
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
-The Task Generator RViz panel includes `Play robot motor audio on this
-workstation` and a live `Motor Sound Tuning` group. The controls update the
-running `robot_sound_node` and follow changes made through ROS parameters.
-They persist across episode resets. `enable_motor_playback:=false` sets the
-initial mute state. This is separate from `enable_robot_sound`, which controls
-simulated motor emission.
+The Task Generator RViz panel includes an `Audio Playback Listener` group,
+`Play robot motor audio on this workstation`, and a live `Motor Sound Tuning`
+group. The listener group follows the transient microphone registry and updates
+both playback nodes. It can select one microphone, accept an explicit YAML
+listener list, or mix all microphones. The controls follow changes made through
+ROS parameters and persist across episode resets. `enable_motor_playback:=false`
+sets the initial mute state. This is separate from `enable_robot_sound`, which
+controls simulated motor emission.
 
 The procedural defaults apply a `-9 dB` output trim, reduce the broadband
 mechanical-noise layer by `-12 dB`, and use a `1.5` velocity exponent so level
@@ -77,6 +83,72 @@ driven by signed left and right wheel velocity. The live controls are:
 - `motor_broadband_gain_db`
 - `motor_speed_exponent`
 - `motor_velocity_smoothing_sec`
+
+## Microphones and playback routing
+
+Robot-mounted microphones are configured with `audio_robot_microphones`. Each
+entry names the robot instance, placement, relative or robot-prefixed TF frame,
+and stable positive index:
+
+```bash
+arena launch \
+  enable_auditory:=true \
+  audio_robot_microphones:='[{owner: robot, robot: jackal_1, placement: front, frame: microphone_link, index: 1}]' \
+  audio_listener_id:=microphone:robot:jackal_1:front:1
+```
+
+The robot must exist in `state/robots`. A relative frame is resolved below that
+robot's frame prefix. The listener is inactive if the robot is absent or TF
+cannot resolve the frame.
+
+World-mounted microphones are authored in each level's `world.yaml` beside
+`zones`:
+
+```yaml
+microphones:
+  - zone: reception
+    placement: ceiling
+    frame: map
+    position: [4.2, 3.1, 2.9]
+    index: 1
+  - zone: reception
+    placement: ceiling
+    frame: map
+    position: [7.8, 3.1, 2.9]
+    index: 2
+```
+
+These become `microphone:zone:reception:ceiling:1` and
+`microphone:zone:reception:ceiling:2`. World loading rejects missing zones,
+duplicate IDs, map-frame positions outside the declared zone, ceiling
+placements in zones without ceilings, and heights that differ from an
+explicit `ceiling_height` by more than 5 cm. A non-map TF frame is permitted,
+but its resolved runtime position must remain in the declared zone. Ceiling
+height falls back to `pyroom_ceiling_height_m` when the zone does not specify
+one.
+
+Every finite human or robot clip is published as `SoundEvent` and propagated
+to one `HeardSoundEvent` per listener. Procedural drivetrain audio uses
+`ContinuousAudioSourceState` and `ContinuousHeardSoundState` because it also
+carries wheel velocities, active state, backend, and deterministic seed. Both
+heard message types identify the receiving microphone in `listener_id`.
+Microphones do not publish separate PCM topics. The listener-specific messages
+share `heard_sound_events` and `continuous_heard_sounds`; the playback nodes
+filter those streams, render the selected feeds, and send the result to their
+configured workstation `audio_device`.
+
+Playback routing is shared by `human_sound_playback` and `robot_sound_node`:
+
+- `audio_listener_mode:=selected` plays `audio_listener_id`, or
+  `robot:<audio_listener_robot>` when the ID is empty.
+- `audio_listener_mode:=list` mixes the YAML IDs in `audio_listener_ids`.
+- `audio_listener_mode:=all` mixes every registered `microphone:*` listener.
+
+Multi-listener playback applies a `-20 log10(N)` dB average trim to each
+listener path before the mixer sums them, preventing coherent microphone feeds
+from increasing the peak level. Continuous render voices are keyed by both
+listener and source, so one microphone cannot replace another's drivetrain
+stream.
 
 ## Pyroomacoustics portal routing
 
@@ -105,13 +177,14 @@ portal path use the explicit Level-3/dry fallback. Room and portal-route RIRs
 are quantized and cached.
 
 With `pyroom_robot_listeners_only=true` (the default), propagation creates
-`HeardSoundEvent` messages only for robot listeners. Pedestrians are not
-listeners, so pedestrian-to-pedestrian propagation is not calculated or
-published and the RViz propagation visualizer has no corresponding blue paths
-to draw. Set it to `false` to add every non-source pedestrian as an
-`agent:<id>` listener. Robot-listener events receive the complete route
-metadata. Human events are rendered by `human_sound_playback`, and robot events
-are rendered by `robot_sound_node`. The launch default sets
+`HeardSoundEvent` messages only for robot listeners and configured TF
+microphones. Pedestrians are not listeners, so pedestrian-to-pedestrian
+propagation is not calculated or published and the RViz propagation visualizer
+has no corresponding blue paths to draw. Set it to `false` to add every
+non-source pedestrian as an `agent:<id>` listener. Robot and microphone
+listener events receive the complete route metadata. Human events are rendered
+by `human_sound_playback`, and robot events are rendered by
+`robot_sound_node`. The launch default sets
 `compute_rir_in_propagation=true`, so the propagation node
 constructs the same-room or portal-route RIR and reports the actual
 `pyroomacoustics_same_room`, `pyroomacoustics_one_door`, or

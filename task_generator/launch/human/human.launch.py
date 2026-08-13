@@ -77,6 +77,27 @@ def generate_launch_description():
         default_value="",
     )
 
+    audio_listener_id = LaunchArgument(
+        name="audio_listener_id",
+        default_value="",
+    )
+
+    audio_listener_mode = LaunchArgument(
+        name="audio_listener_mode",
+        choices=["selected", "list", "all"],
+        default_value="selected",
+    )
+
+    audio_listener_ids = LaunchArgument(
+        name="audio_listener_ids",
+        default_value="[]",
+    )
+
+    audio_robot_microphones = LaunchArgument(
+        name="audio_robot_microphones",
+        default_value="[]",
+    )
+
     motor_playback_mode = LaunchArgument(
         name="motor_playback_mode",
         choices=["sequence", "single_loop"],
@@ -88,6 +109,10 @@ def generate_launch_description():
         "heard_sound_events_topic": "heard_sound_events",
         "use_rir": True,
         "listener_robot_name": audio_listener_robot.substitution,
+        "listener_id": audio_listener_id.substitution,
+        "listener_mode": audio_listener_mode.substitution,
+        "listener_ids": audio_listener_ids.param_value(str),
+        "microphone_listeners_topic": "microphone_listeners",
         "world_topic": "state/world",
         "rir_sample_rate_hz": 44100,
         "rir_max_order": 3,
@@ -201,8 +226,10 @@ def generate_launch_description():
                         "continuous_audio_sources",
                     "continuous_heard_sounds_topic":
                         "continuous_heard_sounds",
-                    "continuous_listener_robot_name":
-                        audio_listener_robot.substitution,
+                    "robot_microphones":
+                        audio_robot_microphones.param_value(str),
+                    "microphone_listeners_topic":
+                        "microphone_listeners",
                     "robot_listener_frame":
                         audio_listener_frame.substitution,
                     "arena_peds_topic": PathJoinSubstitution([

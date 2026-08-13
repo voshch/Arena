@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import time
 import traceback
@@ -137,6 +138,13 @@ class SoundPlaybackNode(Node):
                 "continuous_heard_sounds",
             )
         self.declare_parameter("listener_robot_name", "jackal")
+        self.declare_parameter("listener_id", "")
+        self.declare_parameter("listener_mode", "selected")
+        self.declare_parameter("listener_ids", "[]")
+        self.declare_parameter(
+            "microphone_listeners_topic",
+            "microphone_listeners",
+        )
         self.declare_parameter("world_topic", "state/world")
         self.declare_parameter("map_topic", "map")
         self.declare_parameter("rir_sample_rate_hz", 44100)
@@ -189,6 +197,14 @@ class SoundPlaybackNode(Node):
         self.declare_parameter("portal_position_quantization_m", 0.10)
         self.declare_parameter("portal_rir_cache_size", 256)
         self.declare_parameter("rir_event_buffer_size", 128)
+
+        if self._listener_mode() not in {"selected", "list", "all"}:
+            raise ValueError(
+                "listener_mode must be 'selected', 'list', or 'all'"
+            )
+        self._parse_listener_ids(
+            str(self.get_parameter("listener_ids").value)
+        )
 
         sample_rate = int(self.get_parameter("output_sample_rate").value)
         channels = int(self.get_parameter("output_channels").value)
@@ -266,12 +282,14 @@ class SoundPlaybackNode(Node):
             )
         self._room_specs: tuple[AcousticRoomSpec, ...] = ()
         self._authored_room_specs: tuple[AcousticRoomSpec, ...] = ()
-        self._continuous_sources: dict[str, DrivetrainRenderSource] = {}
-        self._continuous_rir_signatures: dict[
-            str, tuple[object, ...]
+        self._continuous_sources: dict[
+            tuple[str, str], DrivetrainRenderSource
         ] = {}
-        if self._source_kind == "robot":
-            self.add_on_set_parameters_callback(self._on_set_parameters)
+        self._continuous_rir_signatures: dict[
+            tuple[str, str], tuple[object, ...]
+        ] = {}
+        self._microphone_listener_ids: set[str] = set()
+        self.add_on_set_parameters_callback(self._on_set_parameters)
         self._world_graph: AcousticWorldGraph | None = None
         self._authored_world_graph: AcousticWorldGraph | None = None
         self._authored_map_origin: tuple[float, float] | None = None
@@ -349,6 +367,16 @@ class SoundPlaybackNode(Node):
                 self._cb_heard_sound,
                 transient_event_qos(),
             )
+            self.create_subscription(
+                String,
+                str(
+                    self.get_parameter(
+                        "microphone_listeners_topic"
+                    ).value
+                ),
+                self._cb_microphone_registry,
+                acoustic_metadata_qos(),
+            )
             if self._source_kind == "robot":
                 self.create_subscription(
                     ContinuousHeardSoundState,
@@ -362,7 +390,7 @@ class SoundPlaybackNode(Node):
                 )
             self.get_logger().info(
                 "RIR audio rendering enabled; listening for "
-                f"robot:{self.get_parameter('listener_robot_name').value}"
+                f"{self._listener_description()}"
             )
         else:
             topic = str(self.get_parameter("sound_events_topic").value)
@@ -377,6 +405,7 @@ class SoundPlaybackNode(Node):
         self._episode_seed = 0
         self._episode_id = -1
         self._occurrences: dict[tuple[int, str], int] = defaultdict(int)
+        self._event_occurrences: dict[tuple[str, str], int] = {}
 
         episode_qos = QoSProfile(
             depth=1,
@@ -420,6 +449,56 @@ class SoundPlaybackNode(Node):
         self._realize_acoustic_geometry()
 
     def _on_set_parameters(self, parameters) -> SetParametersResult:
+        selection_changed = False
+        for parameter in parameters:
+            if parameter.name == "listener_mode":
+                if (
+                    parameter.type_ != Parameter.Type.STRING
+                    or parameter.value not in {"selected", "list", "all"}
+                ):
+                    return SetParametersResult(
+                        successful=False,
+                        reason=(
+                            "listener_mode must be 'selected', 'list', or 'all'"
+                        ),
+                    )
+                selection_changed = True
+            elif parameter.name == "listener_ids":
+                if parameter.type_ != Parameter.Type.STRING:
+                    return SetParametersResult(
+                        successful=False,
+                        reason="listener_ids must be a YAML list string",
+                    )
+                try:
+                    self._parse_listener_ids(str(parameter.value))
+                except ValueError as exc:
+                    return SetParametersResult(
+                        successful=False,
+                        reason=str(exc),
+                    )
+                selection_changed = True
+            elif parameter.name in {"listener_id", "listener_robot_name"}:
+                if parameter.type_ != Parameter.Type.STRING:
+                    return SetParametersResult(
+                        successful=False,
+                        reason=f"{parameter.name} must be a string",
+                    )
+                selection_changed = True
+
+        if selection_changed:
+            self._mixer.stop_all()
+            self._pending_heard_events.clear()
+            while self._pending_asset_loads:
+                future, _, _, _ = self._pending_asset_loads.popleft()
+                future.cancel()
+            if self._source_kind == "robot":
+                self._cancelled_motor_starts.clear()
+                self._continuous_sources.clear()
+                self._continuous_rir_signatures.clear()
+
+        if self._source_kind != "robot":
+            return SetParametersResult(successful=True)
+
         tuning = self._motor_tuning()
         for parameter in parameters:
             if parameter.name == "enable_motor_playback":
@@ -611,11 +690,8 @@ class SoundPlaybackNode(Node):
     def _cb_heard_sound(self, msg: HeardSoundEvent) -> None:
         if not self._matches_source_kind(msg):
             return
-        expected = "robot:" + str(
-            self.get_parameter("listener_robot_name").value
-        ).strip()
         self._heard_received += 1
-        if msg.listener_id != expected:
+        if not self._matches_listener(msg.listener_id):
             self._heard_filtered += 1
             return
         if self._use_rir and not self._room_specs:
@@ -632,6 +708,95 @@ class SoundPlaybackNode(Node):
             self._pending_heard_events.append(msg)
             return
         self._process_heard_sound(msg)
+
+    def _configured_listener_id(self) -> str:
+        listener_id = str(self.get_parameter("listener_id").value).strip()
+        if listener_id:
+            return listener_id
+        robot_name = str(
+            self.get_parameter("listener_robot_name").value
+        ).strip()
+        return f"robot:{robot_name}"
+
+    @staticmethod
+    def _parse_listener_ids(raw: str) -> frozenset[str]:
+        configured = yaml.safe_load(raw) if raw.strip() else []
+        if configured is None:
+            configured = []
+        if not isinstance(configured, list) or not all(
+            isinstance(listener_id, str) and listener_id.strip()
+            for listener_id in configured
+        ):
+            raise ValueError("listener_ids must be a YAML list of listener IDs")
+        return frozenset(
+            listener_id.strip() for listener_id in configured
+        )
+
+    def _listener_mode(self) -> str:
+        return str(self.get_parameter("listener_mode").value).strip()
+
+    def _matches_listener(self, listener_id: str) -> bool:
+        mode = self._listener_mode()
+        if mode == "selected":
+            return listener_id == self._configured_listener_id()
+        if mode == "list":
+            return listener_id in self._parse_listener_ids(
+                str(self.get_parameter("listener_ids").value)
+            )
+        return listener_id in self._microphone_listener_ids
+
+    def _listener_description(self) -> str:
+        mode = self._listener_mode()
+        if mode == "selected":
+            return self._configured_listener_id()
+        if mode == "list":
+            return str(sorted(self._parse_listener_ids(
+                str(self.get_parameter("listener_ids").value)
+            )))
+        return "all registered microphones"
+
+    def _listener_mix_gain_db(self) -> float:
+        mode = self._listener_mode()
+        if mode == "selected":
+            return 0.0
+        count = (
+            len(self._parse_listener_ids(
+                str(self.get_parameter("listener_ids").value)
+            ))
+            if mode == "list"
+            else len(self._microphone_listener_ids)
+        )
+        return -20.0 * math.log10(max(count, 1))
+
+    def _cb_microphone_registry(self, msg: String) -> None:
+        try:
+            listener_ids = json.loads(msg.data)
+            if not isinstance(listener_ids, list) or not all(
+                isinstance(listener_id, str)
+                and listener_id.startswith("microphone:")
+                for listener_id in listener_ids
+            ):
+                raise ValueError("expected a list of microphone listener IDs")
+        except (json.JSONDecodeError, ValueError) as exc:
+            self.get_logger().warning(
+                f"ignoring invalid microphone registry: {exc}"
+            )
+            return
+        updated = set(listener_ids)
+        if (
+            updated != self._microphone_listener_ids
+            and self._listener_mode() == "all"
+        ):
+            self._mixer.stop_all()
+            self._pending_heard_events.clear()
+            while self._pending_asset_loads:
+                future, _, _, _ = self._pending_asset_loads.popleft()
+                future.cancel()
+            if self._source_kind == "robot":
+                self._cancelled_motor_starts.clear()
+                self._continuous_sources.clear()
+                self._continuous_rir_signatures.clear()
+        self._microphone_listener_ids = updated
 
     def _process_heard_sound(self, msg: HeardSoundEvent) -> None:
         # A stop event is also a control transition for an already-playing
@@ -662,6 +827,7 @@ class SoundPlaybackNode(Node):
         self._episode_id = int(msg.episode_id)
         self._episode_seed = int(msg.seed)
         self._occurrences.clear()
+        self._event_occurrences.clear()
         self._mixer.stop_all()
         while self._pending_asset_loads:
             future, _, _, _ = self._pending_asset_loads.popleft()
@@ -697,10 +863,7 @@ class SoundPlaybackNode(Node):
         self,
         msg: ContinuousHeardSoundState,
     ) -> None:
-        expected = "robot:" + str(
-            self.get_parameter("listener_robot_name").value
-        ).strip()
-        if msg.listener_id != expected:
+        if not self._matches_listener(msg.listener_id):
             return
         if str(self.get_parameter("motor_audio_mode").value).strip() != (
             "procedural"
@@ -711,10 +874,12 @@ class SoundPlaybackNode(Node):
         if self._use_rir and not self._room_specs:
             return
 
-        source = self._continuous_sources.get(msg.source_id)
+        source_key = (msg.listener_id, msg.source_id)
+        voice_id = f"{msg.listener_id}|{msg.source_id}"
+        source = self._continuous_sources.get(source_key)
         if source is not None and source.finished:
-            self._continuous_sources.pop(msg.source_id, None)
-            self._continuous_rir_signatures.pop(msg.source_id, None)
+            self._continuous_sources.pop(source_key, None)
+            self._continuous_rir_signatures.pop(source_key, None)
             source = None
         if source is None:
             if not msg.active:
@@ -729,10 +894,10 @@ class SoundPlaybackNode(Node):
                 ),
                 **self._motor_tuning(),
             )
-            self._continuous_sources[msg.source_id] = source
+            self._continuous_sources[source_key] = source
             self._mixer.add_render_source(
                 source,
-                voice_id=msg.source_id,
+                voice_id=voice_id,
                 bus="motor",
             )
 
@@ -741,21 +906,25 @@ class SoundPlaybackNode(Node):
         if (
             msg.active
             and msg.audible
-            and signature != self._continuous_rir_signatures.get(msg.source_id)
+            and signature != self._continuous_rir_signatures.get(source_key)
         ):
             try:
                 impulse, _ = self._compute_normalized_rir(msg)
-                self._continuous_rir_signatures[msg.source_id] = signature
+                self._continuous_rir_signatures[source_key] = signature
             except Exception as exc:
                 self.get_logger().warning(
                     f"continuous RIR unavailable for {msg.source_id!r}: "
                     f"{exc}; retaining the previous RIR"
                 )
 
-        gain_db = float(msg.received_volume_db) - float(msg.source_volume_db)
+        gain_db = (
+            float(msg.received_volume_db)
+            - float(msg.source_volume_db)
+            + self._listener_mix_gain_db()
+        )
         has_rir = (
             impulse is not None
-            or msg.source_id in self._continuous_rir_signatures
+            or source_key in self._continuous_rir_signatures
         )
         source.update(
             left_velocity=float(msg.left_velocity_mps),
@@ -799,6 +968,7 @@ class SoundPlaybackNode(Node):
             quantize(msg.source_position.y),
             quantize(msg.listener_position.x),
             quantize(msg.listener_position.y),
+            quantize(self._listener_height(msg)),
         )
 
     def _publish_diagnostics(self) -> None:
@@ -881,7 +1051,10 @@ class SoundPlaybackNode(Node):
     def _play_event(self, msg) -> None:
         asset_id = msg.asset_id.strip() or msg.sound_type.strip()
 
-        motor_voice_id = f"motor:{int(msg.source_agent_id)}"
+        listener_id = str(getattr(msg, "listener_id", "dry"))
+        motor_voice_id = (
+            f"{listener_id}|motor:{int(msg.source_agent_id)}"
+        )
         if asset_id == "motor_stop":
             if self._mixer.stop(motor_voice_id):
                 self.get_logger().info(
@@ -900,10 +1073,7 @@ class SoundPlaybackNode(Node):
                 self._schedule_motor_sequence(msg, motor_voice_id)
             return
 
-        key = (int(msg.source_agent_id), asset_id)
-
-        occurrence = self._occurrences[key]
-        self._occurrences[key] += 1
+        occurrence = self._event_occurrence(msg, asset_id)
 
         required_tags = frozenset()
 
@@ -1010,6 +1180,7 @@ class SoundPlaybackNode(Node):
 
         playback_gain_db += asset.playback_gain_db
         playback_gain_db += self._material_gain_db(msg, asset_id)
+        playback_gain_db += self._event_listener_mix_gain_db(msg)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1030,9 +1201,7 @@ class SoundPlaybackNode(Node):
         self._cancelled_motor_starts.discard(voice_id)
         selected_segments = []
         for asset_id in ("motor_start", "motor_loop", "motor_stop"):
-            key = (int(msg.source_agent_id), asset_id)
-            occurrence = self._occurrences[key]
-            self._occurrences[key] += 1
+            occurrence = self._event_occurrence(msg, asset_id)
             selected = self._catalog.select(
                 asset_id,
                 episode_seed=self._episode_seed,
@@ -1059,9 +1228,7 @@ class SoundPlaybackNode(Node):
         asset_id = str(
             self.get_parameter("motor_single_asset_id").value
         ).strip()
-        key = (int(msg.source_agent_id), asset_id)
-        occurrence = self._occurrences[key]
-        self._occurrences[key] += 1
+        occurrence = self._event_occurrence(msg, asset_id)
         selected = self._catalog.select(
             asset_id,
             episode_seed=self._episode_seed,
@@ -1091,6 +1258,7 @@ class SoundPlaybackNode(Node):
     ) -> None:
         playback_gain_db = self._event_playback_gain_db(msg, asset)
         playback_gain_db += self._material_gain_db(msg, asset.asset_id)
+        playback_gain_db += self._event_listener_mix_gain_db(msg)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1131,6 +1299,7 @@ class SoundPlaybackNode(Node):
         start_asset = assets[0]
         playback_gain_db = self._event_playback_gain_db(msg, start_asset)
         playback_gain_db += self._material_gain_db(msg, start_asset.asset_id)
+        playback_gain_db += self._event_listener_mix_gain_db(msg)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1174,6 +1343,24 @@ class SoundPlaybackNode(Node):
             level_db = float(msg.source_volume_db)
         return level_db - asset.reference_level_db + asset.playback_gain_db
 
+    def _event_listener_mix_gain_db(self, msg: object) -> float:
+        if not str(getattr(msg, "listener_id", "")):
+            return 0.0
+        return self._listener_mix_gain_db()
+
+    def _event_occurrence(self, msg: object, asset_id: str) -> int:
+        event_id = str(msg.event_id)
+        event_key = (event_id, asset_id)
+        existing = self._event_occurrences.get(event_key)
+        if event_id and existing is not None:
+            return existing
+        source_key = (int(msg.source_agent_id), asset_id)
+        occurrence = self._occurrences[source_key]
+        self._occurrences[source_key] += 1
+        if event_id:
+            self._event_occurrences[event_key] = occurrence
+        return occurrence
+
     def _material_gain_db(self, msg, asset_id: str) -> float:
         """Apply the centralized material damping model to direct events."""
         material_gain_db = 0.0
@@ -1205,6 +1392,12 @@ class SoundPlaybackNode(Node):
         if "motor" in sound or "robot" in sound:
             return 0.25
         return 1.60
+
+    @staticmethod
+    def _listener_height(msg) -> float:
+        if str(msg.listener_id).startswith("microphone:"):
+            return float(msg.listener_position.z)
+        return 0.35
 
     def _room_for_event(self, msg) -> AcousticRoomSpec | None:
         if not self._room_specs:
@@ -1281,7 +1474,7 @@ class SoundPlaybackNode(Node):
         listener = (
             float(msg.listener_position.x),
             float(msg.listener_position.y),
-            0.35,
+            self._listener_height(msg),
         )
         if self._pra_adapter is None:
             raise LookupError("pyroomacoustics_adapter_not_initialized")

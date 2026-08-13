@@ -223,6 +223,7 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
 
 def test_robot_only_policy_excludes_pedestrian_listeners(rclpy_context):
     from geometry_msgs.msg import Point
+    from nav_msgs.msg import OccupancyGrid
     from rclpy.parameter import Parameter
     from task_generator.auditory.sound_propagation_node import (
         SoundPropagationNode,
@@ -242,8 +243,10 @@ def test_robot_only_policy_excludes_pedestrian_listeners(rclpy_context):
         2: _make_pedestrian(2, 2.0, 2.0),
     }
     propagation._robots = {
-        "robot:jackal": Point(x=3.0, y=3.0, z=0.0),
+        "robot:jackal": (Point(x=3.0, y=3.0, z=0.0), "map"),
     }
+    propagation._map = OccupancyGrid()
+    propagation._map.header.frame_id = "map"
     event = _make_sound_event()
     event.source_agent_id = 1
 
@@ -300,7 +303,7 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
             for key, subscription in first.items()
         )
 
-        propagation._robots["robot:robot1"] = Point()
+        propagation._robots["robot:robot1"] = (Point(), "map")
         propagation._cb_robot_fleet(RobotFleet())
         assert propagation._odom_subs == {}
         assert "robot:robot1" not in propagation._robots
@@ -770,6 +773,16 @@ def test_sound_propagation_resolves_relative_listener_frame_override(
         )
     finally:
         propagation.destroy_node()
+
+
+def test_sound_propagation_uses_tf_height_for_microphones(rclpy_context):
+    from geometry_msgs.msg import Point
+    from task_generator.auditory.sound_propagation_node import SoundPropagationNode
+
+    assert SoundPropagationNode._listener_height(
+        "microphone:zone:reception:ceiling:1",
+        Point(z=2.4),
+    ) == pytest.approx(2.4)
 
 
 def test_propagation_visualizer_splits_pedestrian_and_robot_markers(

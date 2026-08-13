@@ -262,7 +262,10 @@ class SoundPropagationVisualizer(Node):
         listener = Point(
             x=float(msg.listener_position.x),
             y=float(msg.listener_position.y),
-            z=self._listener_height(str(msg.listener_id)),
+            z=self._listener_height(
+                str(msg.listener_id),
+                float(msg.listener_position.z),
+            ),
         )
         portal_points = [
             Point(
@@ -332,7 +335,7 @@ class SoundPropagationVisualizer(Node):
             portal.scale.x = portal.scale.y = portal.scale.z = 0.28
             portal.color = color
             markers.append(portal)
-        previous_portals = self._previous_portal_count[listener_kind]
+        previous_portals = self._previous_portal_count.get(listener_kind, 0)
         for index in range(len(portal_points), previous_portals):
             stale = self._marker(
                 frame,
@@ -555,7 +558,10 @@ class SoundPropagationVisualizer(Node):
         listener = (
             listener_x,
             listener_y,
-            self._listener_height(listener_id),
+            self._listener_height(
+                listener_id,
+                float(msg.listener_position.z),
+            ),
         )
         portal_positions = tuple(
             (float(point.x), float(point.y), float(point.z))
@@ -849,7 +855,9 @@ class SoundPropagationVisualizer(Node):
         return 1.60
 
     @staticmethod
-    def _listener_height(listener_id: str) -> float:
+    def _listener_height(listener_id: str, listener_z: float = 0.0) -> float:
+        if listener_id.startswith("microphone:"):
+            return listener_z
         return 0.35 if listener_id.startswith("robot:") else 1.60
 
     def _marker(
@@ -886,6 +894,13 @@ class SoundPropagationVisualizer(Node):
                 self._robot_publisher,
                 "robot",
                 ColorRGBA(r=0.65, g=0.20, b=1.0, a=0.92),
+            )
+        if listener_id.startswith("microphone:"):
+            listener_kind = listener_id.replace(":", "_").replace("/", "_")
+            return (
+                self._robot_publisher,
+                listener_kind,
+                ColorRGBA(r=0.10, g=0.85, b=0.55, a=0.92),
             )
         return None
 

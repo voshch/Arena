@@ -100,6 +100,8 @@ namespace task_generator_gui
 
         motor_playback_node = normalizeNodePath(
             task_generator_node + "/robot_sound_node");
+        human_playback_node = normalizeNodePath(
+            task_generator_node + "/human_sound_playback");
 
         // All clients go on `node` — rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
@@ -130,6 +132,50 @@ namespace task_generator_gui
             std::make_shared<rclcpp::AsyncParametersClient>(
                 node,
                 motor_playback_node);
+        human_playback_parameters_client =
+            std::make_shared<rclcpp::AsyncParametersClient>(
+                node,
+                human_playback_node);
+
+        {
+            rclcpp::QoS qos(rclcpp::KeepLast(1));
+            qos.transient_local();
+            microphone_listeners_sub =
+                node->create_subscription<std_msgs::msg::String>(
+                    task_generator_node + "/microphone_listeners",
+                    qos,
+                    [this](const std_msgs::msg::String::SharedPtr msg)
+                    {
+                        QMetaObject::invokeMethod(this, [this, data = msg->data]()
+                        {
+                            if (!audio_listener_id_combobox)
+                                return;
+                            const QString selected =
+                                audio_listener_id_combobox->currentText();
+                            const auto document = QJsonDocument::fromJson(
+                                QByteArray::fromStdString(data));
+                            if (!document.isArray())
+                            {
+                                RCLCPP_WARN(
+                                    node->get_logger(),
+                                    "ignoring invalid microphone listener registry");
+                                return;
+                            }
+                            QSignalBlocker blocker(audio_listener_id_combobox);
+                            audio_listener_id_combobox->clear();
+                            for (const auto &value : document.array())
+                            {
+                                if (!value.isString())
+                                    continue;
+                                const QString listener_id = value.toString();
+                                if (listener_id.startsWith("microphone:"))
+                                    audio_listener_id_combobox->addItem(
+                                        listener_id);
+                            }
+                            audio_listener_id_combobox->setCurrentText(selected);
+                        }, Qt::QueuedConnection);
+                    });
+        }
 
         // Latched paused-state subscription.
         {
@@ -326,6 +372,17 @@ namespace task_generator_gui
                     }
                     if (refresh_tuning)
                         refreshMotorPlayback();
+                    for (const auto &parameter : msg->changed_parameters)
+                        if (parameter.name.rfind("listener_", 0) == 0)
+                            refreshAudioListenerRouting();
+                    for (const auto &parameter : msg->new_parameters)
+                        if (parameter.name.rfind("listener_", 0) == 0)
+                            refreshAudioListenerRouting();
+                    return;
+                }
+                if (msg->node == human_playback_node)
+                {
+                    refreshAudioListenerRouting();
                     return;
                 }
                 if (msg->node != expected_node) return;
@@ -369,6 +426,13 @@ namespace task_generator_gui
                 return client->service_is_ready();
             },
             [this]() { refreshMotorPlayback(); });
+        whenReady(
+            [this]()
+            {
+                return motor_playback_parameters_client->service_is_ready()
+                    && human_playback_parameters_client->service_is_ready();
+            },
+            [this]() { refreshAudioListenerRouting(); });
     }
 
     void TaskGeneratorPanel::refreshMotorPlayback()
@@ -589,6 +653,135 @@ namespace task_generator_gui
             });
     }
 
+    void TaskGeneratorPanel::refreshAudioListenerRouting()
+    {
+        if (!motor_playback_parameters_client
+            || !human_playback_parameters_client
+            || !motor_playback_parameters_client->service_is_ready()
+            || !human_playback_parameters_client->service_is_ready())
+        {
+            QMetaObject::invokeMethod(this, [this]()
+            {
+                syncAudioListenerRouting({}, false);
+            }, Qt::QueuedConnection);
+            return;
+        }
+        motor_playback_parameters_client->get_parameters(
+            {"listener_mode", "listener_id", "listener_ids"},
+            [this](std::shared_future<std::vector<rclcpp::Parameter>> future)
+            {
+                std::vector<rclcpp::Parameter> parameters;
+                bool available = false;
+                try
+                {
+                    parameters = future.get();
+                    available = parameters.size() == 3;
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "reading audio listener routing failed: %s",
+                        exception.what());
+                }
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, parameters, available]()
+                    {
+                        syncAudioListenerRouting(parameters, available);
+                    },
+                    Qt::QueuedConnection);
+            });
+    }
+
+    void TaskGeneratorPanel::setAudioListenerRouting()
+    {
+        if (!audio_listener_mode_combobox
+            || !audio_listener_id_combobox
+            || !audio_listener_ids_edit)
+            return;
+        if (!motor_playback_parameters_client->service_is_ready()
+            || !human_playback_parameters_client->service_is_ready())
+        {
+            refreshAudioListenerRouting();
+            return;
+        }
+        const std::vector<rclcpp::Parameter> parameters{
+            rclcpp::Parameter(
+                "listener_mode",
+                audio_listener_mode_combobox->currentData().toString().toStdString()),
+            rclcpp::Parameter(
+                "listener_id",
+                audio_listener_id_combobox->currentText().toStdString()),
+            rclcpp::Parameter(
+                "listener_ids",
+                audio_listener_ids_edit->text().toStdString()),
+        };
+        audio_listener_group->setEnabled(false);
+        auto set_parameters = [this, parameters](
+                                  const std::shared_ptr<rclcpp::AsyncParametersClient> &client,
+                                  const char *node_name)
+        {
+            client->set_parameters(
+                parameters,
+                [this, node_name](
+                    std::shared_future<
+                        std::vector<rcl_interfaces::msg::SetParametersResult>
+                    > future)
+                {
+                    try
+                    {
+                        for (const auto &result : future.get())
+                        {
+                            if (result.successful)
+                                continue;
+                            RCLCPP_WARN(
+                                node->get_logger(),
+                                "setting audio listener routing on %s failed: %s",
+                                node_name,
+                                result.reason.c_str());
+                            break;
+                        }
+                    }
+                    catch (const std::exception &exception)
+                    {
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "setting audio listener routing on %s failed: %s",
+                            node_name,
+                            exception.what());
+                    }
+                    refreshAudioListenerRouting();
+                });
+        };
+        set_parameters(motor_playback_parameters_client, "robot_sound_node");
+        set_parameters(human_playback_parameters_client, "human_sound_playback");
+    }
+
+    void TaskGeneratorPanel::syncAudioListenerRouting(
+        const std::vector<rclcpp::Parameter> &parameters,
+        bool available)
+    {
+        if (!audio_listener_group)
+            return;
+        audio_listener_group->setEnabled(available);
+        if (!available || parameters.size() != 3)
+            return;
+        QSignalBlocker mode_blocker(audio_listener_mode_combobox);
+        QSignalBlocker id_blocker(audio_listener_id_combobox);
+        QSignalBlocker ids_blocker(audio_listener_ids_edit);
+        const QString mode = QString::fromStdString(parameters[0].as_string());
+        const int mode_index = audio_listener_mode_combobox->findData(mode);
+        if (mode_index >= 0)
+            audio_listener_mode_combobox->setCurrentIndex(mode_index);
+        audio_listener_id_combobox->setCurrentText(
+            QString::fromStdString(parameters[1].as_string()));
+        audio_listener_ids_edit->setText(
+            QString::fromStdString(parameters[2].as_string()));
+        audio_listener_id_combobox->setEnabled(mode == "selected");
+        audio_listener_ids_edit->setEnabled(mode == "list");
+    }
+
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
                                        std::function<void()> action,
                                        std::chrono::milliseconds period)
@@ -612,6 +805,55 @@ namespace task_generator_gui
         world_combobox = setupComboBoxWithLabel(this->root_layout, QStringList{"Loading..."}, QString("World"));
         world_combobox->setEnabled(false);
         connect(world_combobox, &QComboBox::currentTextChanged, this, &TaskGeneratorPanel::onWorldChanged);
+
+        audio_listener_group = new QGroupBox("Audio Playback Listener");
+        audio_listener_group->setEnabled(false);
+        auto audio_listener_layout = new QFormLayout();
+        audio_listener_mode_combobox = new QComboBox();
+        audio_listener_mode_combobox->addItem(
+            "Selected", QString("selected"));
+        audio_listener_mode_combobox->addItem(
+            "Explicit list", QString("list"));
+        audio_listener_mode_combobox->addItem(
+            "All microphones", QString("all"));
+        audio_listener_id_combobox = new QComboBox();
+        audio_listener_id_combobox->setEditable(true);
+        audio_listener_id_combobox->setInsertPolicy(QComboBox::NoInsert);
+        audio_listener_ids_edit = new QLineEdit("[]");
+        audio_listener_ids_edit->setPlaceholderText(
+            "[microphone:zone:reception:ceiling:1]");
+        connect(
+            audio_listener_mode_combobox,
+            &QComboBox::currentTextChanged,
+            this,
+            [this]()
+            {
+                const QString mode =
+                    audio_listener_mode_combobox->currentData().toString();
+                audio_listener_id_combobox->setEnabled(mode == "selected");
+                audio_listener_ids_edit->setEnabled(mode == "list");
+                setAudioListenerRouting();
+            });
+        connect(
+            audio_listener_id_combobox,
+            QOverload<int>::of(&QComboBox::activated),
+            this,
+            [this](int) { setAudioListenerRouting(); });
+        connect(
+            audio_listener_id_combobox->lineEdit(),
+            &QLineEdit::editingFinished,
+            this,
+            &TaskGeneratorPanel::setAudioListenerRouting);
+        connect(
+            audio_listener_ids_edit,
+            &QLineEdit::editingFinished,
+            this,
+            &TaskGeneratorPanel::setAudioListenerRouting);
+        audio_listener_layout->addRow("Mode", audio_listener_mode_combobox);
+        audio_listener_layout->addRow("Listener", audio_listener_id_combobox);
+        audio_listener_layout->addRow("Listener IDs", audio_listener_ids_edit);
+        audio_listener_group->setLayout(audio_listener_layout);
+        root_layout->addWidget(audio_listener_group);
 
         setupTabs(this->root_layout);
 

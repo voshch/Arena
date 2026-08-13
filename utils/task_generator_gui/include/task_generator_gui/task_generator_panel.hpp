@@ -55,6 +55,8 @@
 #include <QTableWidgetItem>
 #include <QScrollArea>
 #include <QLineEdit>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QSignalBlocker>
 #include <QTimer>
 #include "Qt-MultiSelectComboBox/MultiSelectComboBox.h"
@@ -124,6 +126,11 @@ namespace task_generator_gui
             const std::vector<rclcpp::Parameter> &parameters,
             bool available);
         void resetMotorTuning();
+        void refreshAudioListenerRouting();
+        void setAudioListenerRouting();
+        void syncAudioListenerRouting(
+            const std::vector<rclcpp::Parameter> &parameters,
+            bool available);
 
         // Send reset_episode (world field intentionally empty; node resolves from pending overrides).
         void sendResetEpisode();
@@ -176,7 +183,9 @@ namespace task_generator_gui
 
         std::shared_ptr<rclcpp::AsyncParametersClient> parameters_client;
         std::shared_ptr<rclcpp::AsyncParametersClient> motor_playback_parameters_client;
+        std::shared_ptr<rclcpp::AsyncParametersClient> human_playback_parameters_client;
         std::string motor_playback_node;
+        std::string human_playback_node;
 
         // --- state/episode subscription (current, deduped into history_buffer_) ---
         rclcpp::Subscription<task_generator_msgs::msg::EpisodeRecord>::SharedPtr episode_sub;
@@ -195,6 +204,7 @@ namespace task_generator_gui
 
         // --- state/paused subscription (latched) ---
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr paused_state_sub;
+        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr microphone_listeners_sub;
 
         std::string staged_world;
 
@@ -238,6 +248,10 @@ namespace task_generator_gui
         QComboBox *world_combobox;
         QCheckBox *motor_playback_checkbox;
         QGroupBox *motor_tuning_group{nullptr};
+        QGroupBox *audio_listener_group{nullptr};
+        QComboBox *audio_listener_mode_combobox{nullptr};
+        QComboBox *audio_listener_id_combobox{nullptr};
+        QLineEdit *audio_listener_ids_edit{nullptr};
         std::unordered_map<std::string, QDoubleSpinBox *>
             motor_tuning_spinboxes;
 
