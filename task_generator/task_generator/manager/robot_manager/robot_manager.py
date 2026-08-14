@@ -154,7 +154,7 @@ class RobotManager(NodeInterface):
         self._launch_handle: LaunchHandle | None = None
 
         # Deferred to break the import cycle between this module and
-        # task_generator.tasks (which eagerly loads context.py → RobotManager).
+        # task_generator.tasks (which eagerly loads context.py -> RobotManager).
         from task_generator.tasks.robots.adapters import ADAPTERS
         from task_generator.tasks.robots.request import TaskKind
 
@@ -550,6 +550,13 @@ class RobotManager(NodeInterface):
                         }.items(),
                     )
                 )
+
+            if self._adapter_instances:
+                try:
+                    adapter_actions.extend(self._adapter_instances[0].bringup.telemetry_actions())
+                except (OSError, ValueError, RuntimeError) as e:
+                    self.node.get_logger().error(f"Failed to add telemetry actions for robot {self.model_name!r}: {e!r}")
+
             launch_description.add_action(launch.actions.GroupAction(adapter_actions))
 
             async with self.node.unpause_window():

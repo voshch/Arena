@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""arena_robots feature backend: per-robot submodule ops + mesh URI check."""
+"""arena_robots feature backend: per-robot/component submodule ops + mesh URI check."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ from pathlib import Path
 
 _SDK_SUBDIR = "arena_robots"
 ROBOTS_PREFIX = "arena_robots/arena_robots/robots"
+COMPONENTS_PREFIX = "arena_robots/arena_robots/components"
+
+VARIANTS_RE = re.compile(r"^variants:\s*\[([^\]]*)\]", re.MULTILINE)
 
 
 MESH_URI_RE = re.compile(r'package://arena_robots/([^\s"\'<>\)\}\$]+)')
@@ -50,9 +53,11 @@ def submodule_status(arena: Path) -> dict[str, str]:
 
 
 def robot_submodules(arena: Path) -> dict[str, list[str]]:
-    """{robot: [paths-relative-to-arena]} from the SDK submodule's .gitmodules `robot = <name>` tags.
-    Paths in the SDK's gitmodules are relative to the SDK; we prepend `arena_robots/` for callers.
-    `robot =` may list multiple whitespace-separated names (shared upstream dep)."""
+    """{name: [paths-relative-to-arena]} from the SDK submodule's .gitmodules `robot = <name>`
+    and `component = <type>/<name>` tags (component refs keep the slash, so the two
+    namespaces cannot collide). Paths in the SDK's gitmodules are relative to the SDK;
+    we prepend `arena_robots/` for callers. Both tags may list multiple
+    whitespace-separated names (shared upstream dep)."""
     sdk_gitmodules = arena / _SDK_SUBDIR / ".gitmodules"
     if not sdk_gitmodules.is_file():
         return {}
@@ -66,15 +71,65 @@ def robot_submodules(arena: Path) -> dict[str, list[str]]:
         if not sub_path:
             continue
         path = f"{_SDK_SUBDIR}/{sub_path}"
-        robots = cfg[section].get("robot", "").split()
-        if not robots:
+        names = cfg[section].get("robot", "").split() + cfg[section].get("component", "").split()
+        if not names:
             rel = path.removeprefix(f"{ROBOTS_PREFIX}/")
             if rel == path:
                 continue
-            robots = [rel.split("/", 1)[0]]
-        for robot in robots:
-            out.setdefault(robot, []).append(path)
+            names = [rel.split("/", 1)[0]]
+        for name in names:
+            out.setdefault(name, []).append(path)
     return out
+
+
+def submodule_sparse(arena: Path) -> dict[str, str]:
+    """{path-relative-to-arena: sparse-checkout dirs} from `sparse = <dir...>` tags, for
+    submodules whose repo carries packages we must keep out of the colcon workspace.
+    Applied after every init/update since sparse config does not propagate via clone."""
+    sdk_gitmodules = arena / _SDK_SUBDIR / ".gitmodules"
+    if not sdk_gitmodules.is_file():
+        return {}
+    cfg = configparser.ConfigParser()
+    cfg.read(sdk_gitmodules)
+    return {
+        f"{_SDK_SUBDIR}/{cfg[section].get('path', '').strip()}": sparse
+        for section in cfg.sections()
+        if section.startswith("submodule ") and (sparse := cfg[section].get("sparse", "").strip())
+    }
+
+
+def _apply_sparse(arena: Path, path: str) -> None:
+    sparse = submodule_sparse(arena).get(path)
+    if sparse and (arena / path / ".git").exists():
+        _git(["sparse-checkout", "set", *sparse.split()], arena / path, check=False)
+
+
+def component_families(arena: Path) -> set[str]:
+    """{'<type>/<name>'} for every catalog component (dirs holding a component.yaml)."""
+    root = arena / COMPONENTS_PREFIX
+    if not root.is_dir():
+        return set()
+    return {
+        f"{type_dir.name}/{fam.name}"
+        for type_dir in root.iterdir() if type_dir.is_dir()
+        for fam in type_dir.iterdir() if (fam / "component.yaml").is_file()
+    }
+
+
+def resolve_component_ref(arena: Path, ref: str) -> str | None:
+    """Resolve a slashed ref to its family: exact family passes through, a variant ref
+    (e.g. arm/ur5e) maps via the family's `variants:` list. None if unknown."""
+    families = component_families(arena)
+    if ref in families:
+        return ref
+    ctype, _, variant = ref.partition("/")
+    for fam in families:
+        if not fam.startswith(f"{ctype}/"):
+            continue
+        match = VARIANTS_RE.search((arena / COMPONENTS_PREFIX / fam / "component.yaml").read_text(errors="ignore"))
+        if match and variant in {v.strip() for v in match.group(1).split(",")}:
+            return fam
+    return None
 
 
 def _path_robots(arena: Path) -> dict[str, set[str]]:
@@ -87,7 +142,7 @@ def _path_robots(arena: Path) -> dict[str, set[str]]:
 
 
 def all_robots(arena: Path) -> list[str]:
-    robots = set(robot_submodules(arena).keys())
+    robots = {r for r in robot_submodules(arena) if "/" not in r}
     root = arena / ROBOTS_PREFIX
     if root.is_dir():
         robots |= {p.name for p in root.iterdir() if p.is_dir()}
@@ -101,10 +156,28 @@ def _git(args: list[str], arena: Path, *, check: bool = True) -> int:
 def cmd_ls(arena: Path, _args) -> int:
     subs = robot_submodules(arena)
     status = submodule_status(arena)
-    for robot in all_robots(arena):
-        pending = any(status.get(p) == "uninit" for p in subs.get(robot, []))
-        print(f"{'[ ]' if pending else '[x]'} {robot}")
+    components = component_families(arena) | {n for n in subs if "/" in n}
+    for name in all_robots(arena) + sorted(components):
+        pending = any(status.get(p) == "uninit" for p in subs.get(name, []))
+        print(f"{'[ ]' if pending else '[x]'} {name}")
     return 0
+
+
+def _normalize_names(arena: Path, names: list[str]) -> list[str] | None:
+    """Map slashed component refs to their family, keeping order. None on unknown ref."""
+    out: list[str] = []
+    for name in names:
+        if "/" not in name:
+            out.append(name)
+            continue
+        family = resolve_component_ref(arena, name)
+        if family is None:
+            print(f"robots: unknown component '{name}'", file=sys.stderr)
+            return None
+        if family != name:
+            print(f"robots: resolving '{name}' to component family '{family}'")
+        out.append(family)
+    return out
 
 
 def cmd_add(arena: Path, args) -> int:
@@ -116,9 +189,11 @@ def cmd_add(arena: Path, args) -> int:
         names = sorted(subs)
     else:
         if not args.names:
-            print("robots: specify robot name(s) or --all", file=sys.stderr)
+            print("robots: specify robot/component name(s) or --all", file=sys.stderr)
             return 2
-        names = args.names
+        names = _normalize_names(arena, args.names)
+        if names is None:
+            return 2
     for robot in names:
         paths = subs.get(robot)
         if not paths:
@@ -131,6 +206,7 @@ def cmd_add(arena: Path, args) -> int:
             sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
             _git(["-c", "protocol.file.allow=always",
                   "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk)
+            _apply_sparse(arena, p)
     return 0
 
 
@@ -143,9 +219,11 @@ def cmd_rm(arena: Path, args) -> int:
         names = sorted(subs)
     else:
         if not args.names:
-            print("robots: specify robot name(s) or --all", file=sys.stderr)
+            print("robots: specify robot/component name(s) or --all", file=sys.stderr)
             return 2
-        names = args.names
+        names = _normalize_names(arena, args.names)
+        if names is None:
+            return 2
     remove_set = set(names)
     shared = _path_robots(arena)
     sdk = arena / _SDK_SUBDIR
@@ -185,6 +263,7 @@ def cmd_update(arena: Path, _args) -> int:
         code = _git(["-c", "protocol.file.allow=always",
                      "submodule", "update", "--init", "--recursive", "--checkout", sub_path],
                     sdk, check=False)
+        _apply_sparse(arena, p)
         rc = rc or code
     code = _git(["submodule", "update", "--recursive"], sdk, check=False)
     return rc or code
@@ -426,11 +505,11 @@ def main() -> int:
     sub.add_parser("update")
     sub.add_parser("uninstall")
     p_add = sub.add_parser("add")
-    p_add.add_argument("names", nargs="*")
-    p_add.add_argument("--all", action="store_true", help="fetch every robot")
+    p_add.add_argument("names", nargs="*", help="robot names and/or component refs (<type>/<name>)")
+    p_add.add_argument("--all", action="store_true", help="fetch every robot and component")
     p_rm = sub.add_parser("rm")
-    p_rm.add_argument("names", nargs="*")
-    p_rm.add_argument("--all", action="store_true", help="remove every robot")
+    p_rm.add_argument("names", nargs="*", help="robot names and/or component refs (<type>/<name>)")
+    p_rm.add_argument("--all", action="store_true", help="remove every robot and component")
     p_rm.add_argument("-f", "--force", action="store_true",
                       help="deinit shared paths too; co-tagged robots become pending")
     p = sub.add_parser("check")

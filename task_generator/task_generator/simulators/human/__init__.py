@@ -32,6 +32,8 @@ from task_generator.simulators.human.utils import (
     ObstacleLayer,
 )
 
+PED_RADIUS = 0.3
+
 _STREAM_QOS = rclpy.qos.QoSProfile(
     reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
     durability=rclpy.qos.DurabilityPolicy.VOLATILE,
@@ -174,8 +176,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     def _on_arena_peds(self, msg: Pedestrians) -> None:
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
 
-    def pedestrian_positions_xy(self) -> Iterable[tuple[str, tuple[float, float]]]:
-        return list(self._ped_positions_xy.items())
+    def pedestrian_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
+        return [(name, xy, PED_RADIUS) for name, xy in self._ped_positions_xy.items()]
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
         """Teleport tracked pedestrians to given (x, y). Default impl asks the sim to move them."""

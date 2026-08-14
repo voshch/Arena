@@ -1,0 +1,4 @@
+services:
+  arena:
+    devices:
+      - "/dev/dri:/dev/dri"

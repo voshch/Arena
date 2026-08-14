@@ -6,7 +6,7 @@ from typing import Any
 
 import rclpy
 import rclpy.qos
-from arena_rclpy_mixins.shared import ActionClientWrapper, AsyncNode, ClientWrapper
+from arena_rclpy_mixins import ActionClientWrapper, AsyncNode, ClientWrapper
 from arena_runtime_msgs.srv import LifecycleHold
 from geometry_msgs.msg import PoseStamped
 from rcl_interfaces.srv import DescribeParameters, GetParameters, ListParameters, SetParameters
@@ -40,12 +40,9 @@ _TRANSIENT_LOCAL_1 = rclpy.qos.QoSProfile(
 
 
 class RosBridge(AsyncNode):
-    """rclpy node providing async access to all task_generator services.
-
-    Spins on a background thread; the MCP server runs on the main asyncio loop.
-    Service paths are built from the TASK_GENERATOR_NODE_NAME env var
-    (default: /task_generator_node).
-    """
+    """Async access to the task_generator services, spinning on a background thread
+    while the MCP server runs on the main asyncio loop. Service paths come from
+    TASK_GENERATOR_NODE_NAME (default: /task_generator_node)."""
 
     def __init__(self) -> None:
         super().__init__("task_generator_mcp_bridge")
@@ -55,14 +52,12 @@ class RosBridge(AsyncNode):
         def _path(relative: str) -> str:
             return f"{node_name}/{relative}"
 
-        # lifecycle
         self.client_reset_episode: ClientWrapper[ResetEpisode] = self.create_client_wrapper(ResetEpisode, _path("lifecycle/reset_episode"))
         self.client_pause: ClientWrapper[LifecycleHold] = self.create_client_wrapper(LifecycleHold, "/arena/sim_lifecycle/hold")
         self.client_wait_for_world: ClientWrapper[Empty] = self.create_client_wrapper(Empty, _path("lifecycle/wait_for_world"))
 
         self._arena_paused: bool = False
 
-        # query
         self.client_query_worlds: ClientWrapper[QueryWorlds] = self.create_client_wrapper(QueryWorlds, _path("query/worlds"))
         self.client_query_scenarios: ClientWrapper[QueryScenarios] = self.create_client_wrapper(QueryScenarios, _path("query/scenarios"))
         self.client_query_robots: ClientWrapper[QueryRobots] = self.create_client_wrapper(QueryRobots, _path("query/robots"))
@@ -71,17 +66,14 @@ class RosBridge(AsyncNode):
         self.client_query_environments: ClientWrapper[QueryEnvironments] = self.create_client_wrapper(QueryEnvironments, _path("query/environments"))
         self.client_query_parametrizeds: ClientWrapper[QueryParametrizeds] = self.create_client_wrapper(QueryParametrizeds, _path("query/parametrizeds"))
 
-        # config
         self.client_queue_episode: ClientWrapper[QueueEpisode] = self.create_client_wrapper(QueueEpisode, _path("config/queue_episode"))
         self.client_get_task_modes: ClientWrapper[GetTaskModes] = self.create_client_wrapper(GetTaskModes, _path("config/get_task_modes"))
 
-        # runtime spawn
         self.client_spawn_static: ClientWrapper[SpawnStatic] = self.create_client_wrapper(SpawnStatic, _path("runtime/spawn_static"))
         self.client_spawn_dynamic: ClientWrapper[SpawnDynamic] = self.create_client_wrapper(SpawnDynamic, _path("runtime/spawn_dynamic"))
         self.client_spawn_robot: ClientWrapper[SpawnRobot] = self.create_client_wrapper(SpawnRobot, _path("runtime/spawn_robot"))
         self.client_despawn_robot: ClientWrapper[DespawnRobot] = self.create_client_wrapper(DespawnRobot, _path("runtime/despawn_robot"))
 
-        # action client for lifecycle/run_episode
         self.action_run_episode: ActionClientWrapper[RunEpisode] = self.create_action_client_wrapper(RunEpisode, _path("lifecycle/run_episode"))
 
         # parameter clients against the task_generator node
@@ -120,7 +112,6 @@ class RosBridge(AsyncNode):
             _TRANSIENT_LOCAL_1,
         )
 
-        # spin on a background thread
         self._spin_thread = threading.Thread(target=self._spin, daemon=True)
         self._spin_thread.start()
 

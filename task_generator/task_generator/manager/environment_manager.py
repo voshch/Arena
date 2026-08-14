@@ -7,21 +7,50 @@ import shapely
 import shapely.affinity
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim
+from arena_runtime.sim._semantics import _SEMANTIC_KINDS
 from arena_simulation_setup.shared import Ceiling
 from arena_simulation_setup.tree.World import LevelDescription, WorldDescription
 
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import (
+    Door,
     DynamicObstacle,
+    Elevator,
     Obstacle,
     Pose,
     Region,
     Robot,
+    SemanticCfg,
     Wall,
 )
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
+
+
+def _kind_vocab(kind_cls: type) -> frozenset[str]:
+    """All state and predicate field names a runtime semantic kind exposes."""
+    return frozenset((*kind_cls.DISCRETE, *kind_cls.CONTINUOUS, *kind_cls.PREDICATES))
+
+
+def _route_semantics(cfgs: Sequence[SemanticCfg], host_kind: str) -> dict[str, list[SemanticCfg]]:
+    """Route a mechanism entry's cfgs to their owning scripted kind, raising on
+    host-vocabulary or unknown names (mechanism state publishes intrinsically)."""
+    host_vocab = _kind_vocab(_SEMANTIC_KINDS[host_kind])
+    extras: dict[str, list[SemanticCfg]] = {}
+    for cfg in cfgs:
+        if cfg.name in host_vocab:
+            raise ValueError(f"semantics: every {host_kind} publishes {cfg.name!r} intrinsically, remove the annotation")
+        for kname, kcls in _SEMANTIC_KINDS.items():
+            if kname != host_kind and cfg.name in _kind_vocab(kcls):
+                extras.setdefault(kname, []).append(cfg)
+                break
+        else:
+            raise ValueError(f"semantics: {cfg.name!r} matches no scripted kind's vocabulary")
+    return extras
+
+
+_OCCUPANCY_CAP_VOCAB = _kind_vocab(_SEMANTIC_KINDS["occupancy_cap"])
 
 
 class EnvironmentManager(NodeInterface):
@@ -48,6 +77,13 @@ class EnvironmentManager(NodeInterface):
 
         self._walls_geometry = shapely.MultiLineString()
         self._static_polygons = {}
+        self._attached_semantic_entities: set[str] = set()
+
+    def _detach_extra_semantics(self) -> None:
+        """Detach the non-door/non-elevator semantics attached for the previous world."""
+        for entity in self._attached_semantic_entities:
+            self._simulator.detach_semantics(entity)
+        self._attached_semantic_entities.clear()
 
     @property
     def _skip_obstacles(self) -> bool:
@@ -129,6 +165,12 @@ class EnvironmentManager(NodeInterface):
                     return False
 
         _world = WorldDescription.from_levels(world) if isinstance(world, LevelDescription) else world
+
+        self._detach_extra_semantics()
+        self.node._clear_semantic_entities()
+        # (kind, realized entity, cfgs, polygon) attaches deferred until geometry exists.
+        pending: list[tuple[str, str, list[SemanticCfg], list[tuple[float, float]] | None]] = []
+
         walls_list: list[Wall] = []
         collision_walls: list[Wall] = []
         for fid, level in _world.levels.items():
@@ -138,7 +180,17 @@ class EnvironmentManager(NodeInterface):
             if detected_walls and detected_walls.get(fid):
                 collision_walls.extend(self._realizer.realize(w, fid) for w in detected_walls[fid])
         walls = tuple(walls_list)
-        doors = tuple(self._realizer.realize(d, fid) for fid, level in _world.levels.items() if _match_level_id(fid) for d in level.all_doors)
+        doors_list: list[Door] = []
+        for fid, level in _world.levels.items():
+            if not _match_level_id(fid):
+                continue
+            for d in level.all_doors:
+                realized = self._realizer.realize(d, fid)
+                self.node._register_semantic_entity(d.name, realized.name)
+                extras = _route_semantics(realized.semantics, "door")
+                doors_list.append(realized)
+                pending.extend((kind, realized.name, cfgs, None) for kind, cfgs in extras.items())
+        doors = tuple(doors_list)
         floors = tuple(self._realizer.realize(f, fid) for fid, level in _world.levels.items() if _match_level_id(fid) for f in level.all_floors)
         ceilings: list[Ceiling] = []
         for fid, level in _world.levels.items():
@@ -146,7 +198,35 @@ class EnvironmentManager(NodeInterface):
                 continue
             for ceiling in await level.all_ceilings():
                 ceilings.append(self._realizer.realize(ceiling, fid))
-        elevators = tuple(self._realizer.realize(e, fid) for fid, level in _world.levels.items() if _match_level_id(fid) for e in level.all_elevators)
+        elevators_list: list[Elevator] = []
+        for fid, level in _world.levels.items():
+            if not _match_level_id(fid):
+                continue
+            for e in level.all_elevators:
+                realized_e = self._realizer.realize(e, fid)
+                self.node._register_semantic_entity(e.name, realized_e.name)
+                extras = _route_semantics(realized_e.semantics, "elevator")
+                elevators_list.append(realized_e)
+                pending.extend((kind, realized_e.name, cfgs, None) for kind, cfgs in extras.items())
+            for sched in level.all_schedules:
+                realized_s = self._realizer.realize(sched, fid)
+                self.node._register_semantic_entity(sched.name, realized_s.name)
+                if realized_s.semantics:
+                    pending.append(("schedule", realized_s.name, list(realized_s.semantics), None))
+            for sig in level.all_signals:
+                realized_sig = self._realizer.realize(sig, fid)
+                self.node._register_semantic_entity(sig.name, realized_sig.name)
+                if realized_sig.semantics:
+                    pending.append(("signal", realized_sig.name, list(realized_sig.semantics), None))
+            for zone in level.zones:
+                if not zone.semantics:
+                    continue
+                zone_name = self._realizer.prefix(zone.name, fid)
+                self.node._register_semantic_entity(zone.name, zone_name)
+                occ = [cfg for cfg in zone.semantics if cfg.name in _OCCUPANCY_CAP_VOCAB]
+                if occ:
+                    pending.append(("occupancy_cap", zone_name, occ, self._realizer.realize_polygon(zone.corners, fid)))
+        elevators = tuple(elevators_list)
         statics = tuple(self._realizer.realize(s, fid) for fid, level in _world.levels.items() if _match_level_id(fid) for s in level.all_static_entities)
         if self._skip_obstacles:
             statics = ()
@@ -182,6 +262,13 @@ class EnvironmentManager(NodeInterface):
             futures.append(self._simulator.spawn_elevators(elevators))
 
         await asyncio.gather(*futures)
+
+        # Door/elevator kinds self-attach inside their spawn helpers. The scripted,
+        # position, and zone kinds have no geometry spawn, so attach them here once
+        # their host geometry exists (gate/plate read the spawned door runtime).
+        for kind, entity, cfgs, polygon in pending:
+            self._simulator.attach_semantics(kind, entity, cfgs, polygon=polygon)
+            self._attached_semantic_entities.add(entity)
 
     async def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
         """
@@ -266,7 +353,10 @@ class EnvironmentManager(NodeInterface):
 
     async def before_reset_episode(self) -> bool:
         await self._human_simulator.pause()
-        return await self._simulator.before_reset_episode()
+        result = await self._simulator.before_reset_episode()
+        self._simulator.reset_semantics()
+        self.node.reset_timeline()
+        return result
 
     async def after_reset_episode(self) -> bool:
         try:

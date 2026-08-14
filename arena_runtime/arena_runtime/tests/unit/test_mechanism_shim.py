@@ -5,6 +5,7 @@ sourced overlay), since the shim's data types live there.
 """
 from __future__ import annotations
 
+import asyncio
 import math
 
 import pytest
@@ -14,7 +15,6 @@ pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     DOOR_INSET,
-    INSIDE_DOOR_BLOCKER_RADIUS,
     WALL_THICKNESS,
     _advance_state,
     _compute_teleport_destinations,
@@ -29,7 +29,11 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     _is_triggered,
     _near_door_segment,
     _step_elevator,
+    _swept_slab_blocked,
+    _tick,
+    reset_mechanisms,
 )
+from arena_runtime.sim._semantics import SemanticsManager  # noqa: E402
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position  # noqa: E402
 from task_generator.shared import Door, Elevator  # noqa: E402
 
@@ -165,7 +169,7 @@ def test_advance_closed_to_opening_on_fresh_trigger():
     d = _door(transition_time=1.0, hold_time=2.0)
     r = _door_runtime(d, kind="sliding")
     r.last_trigger_sim_time = 10.0  # fresh
-    _advance_state(r, dt=0.1, now=10.0)
+    _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.OPENING
     assert pytest.approx(r.progress) == 0.1
 
@@ -176,7 +180,7 @@ def test_advance_opening_reaches_open():
     r.state = _DoorState.OPENING
     r.progress = 0.95
     r.last_trigger_sim_time = 10.0
-    _advance_state(r, dt=0.1, now=10.0)
+    _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.OPEN
     assert r.progress == 1.0
 
@@ -187,7 +191,7 @@ def test_advance_open_to_closing_when_stale():
     r.state = _DoorState.OPEN
     r.progress = 1.0
     r.last_trigger_sim_time = 5.0  # 5.0s old, hold_time=2 -> stale
-    _advance_state(r, dt=0.1, now=10.0)
+    _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.CLOSING
     assert pytest.approx(r.progress) == 0.9
 
@@ -198,7 +202,7 @@ def test_advance_closing_reverses_on_fresh_trigger():
     r.state = _DoorState.CLOSING
     r.progress = 0.4
     r.last_trigger_sim_time = 10.0  # fresh now
-    _advance_state(r, dt=0.1, now=10.0)
+    _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.OPENING
     assert pytest.approx(r.progress) == 0.5
 
@@ -207,7 +211,7 @@ def test_advance_teleport_snaps_open_on_fresh():
     d = _door(kind="teleport")
     r = _door_runtime(d, kind="teleport")
     r.last_trigger_sim_time = 10.0
-    _advance_state(r, dt=0.1, now=10.0)
+    _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.OPEN
     assert r.progress == 1.0
 
@@ -218,7 +222,7 @@ def test_advance_teleport_snaps_closed_on_stale():
     r.state = _DoorState.OPEN
     r.progress = 1.0
     r.last_trigger_sim_time = 0.0
-    _advance_state(r, dt=0.1, now=10.0)
+    _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.CLOSED
     assert r.progress == 0.0
 
@@ -234,7 +238,7 @@ def test_outside_trigger_opens_door_when_accept_outside_calls():
     a = _elev_runtime(elev, door_name="a/door")
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
-    _step_elevator(a, dr, None, occupants=[], near_door=True, outside_trigger=True, now=5.0)
+    _step_elevator(a, dr, None, occupants=[], outside_trigger=True, now=5.0)
     assert dr.last_trigger_sim_time == 5.0
     assert not a.departing
 
@@ -245,7 +249,7 @@ def test_outside_trigger_blocked_when_not_accept_outside_calls():
     a = _elev_runtime(elev, door_name="a/door")
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
-    _step_elevator(a, dr, None, occupants=[], near_door=True, outside_trigger=True, now=5.0)
+    _step_elevator(a, dr, None, occupants=[], outside_trigger=True, now=5.0)
     # Door trigger not refreshed: door will close because no occupants.
     assert dr.last_trigger_sim_time == -100.0
 
@@ -255,7 +259,7 @@ def test_outside_trigger_blocked_does_not_set_departing():
     elev = _elevator(name="a", destination="b", accept_outside_calls=False)
     a = _elev_runtime(elev, door_name="a/door")
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
-    _step_elevator(a, dr, None, occupants=[], near_door=True, outside_trigger=True, now=5.0)
+    _step_elevator(a, dr, None, occupants=[], outside_trigger=True, now=5.0)
     assert not a.departing
 
 
@@ -267,7 +271,7 @@ def test_arrival_opens_door_regardless_of_accept_outside_calls():
     b.pending_occupants = (("r", (5.0, 0.0)),)
     dr = _door_runtime(_door(name="b/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
-    result = _step_elevator(b, dr, None, occupants=[], near_door=False, outside_trigger=False, now=10.0)
+    result = _step_elevator(b, dr, None, occupants=[], outside_trigger=False, now=10.0)
     assert dr.last_trigger_sim_time == 10.0
     assert result.teleport_job is not None
     assert b.just_arrived == {"r": False}
@@ -283,7 +287,7 @@ def test_idle_empty_cabin_does_not_refresh_door():
     a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
-    _step_elevator(a, dr, None, occupants=[], near_door=False, outside_trigger=False, now=5.0)
+    _step_elevator(a, dr, None, occupants=[], outside_trigger=False, now=5.0)
     assert dr.last_trigger_sim_time == -100.0
     assert not a.departing
 
@@ -294,7 +298,7 @@ def test_new_occupant_door_still_open_does_not_depart():
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.OPEN
     dr.progress = 1.0
-    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], near_door=False, outside_trigger=False, now=5.0)
+    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], outside_trigger=False, now=5.0)
     assert not a.departing
 
 
@@ -303,21 +307,36 @@ def test_new_occupant_door_closed_starts_departing():
     a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
-    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], near_door=False, outside_trigger=False, now=5.0)
+    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], outside_trigger=False, now=5.0)
     assert a.departing
 
 
-def test_departing_closing_abort_reverts():
-    """Doorway blocker while departing cancels departure, refreshes door."""
-    a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
+def test_departing_survives_blocked_close_and_completes_when_clear():
+    """The slab gate holds a departing cabin's door open while an agent spans the slot,
+    departure stays armed and commits once the agent clears and the hold expires."""
+    elev_a = _elevator(name="a", destination="b", travel_time=3.0)
+    a = _elev_runtime(elev_a, door_name="a/door", destination="b")
+    b = _elev_runtime(_elevator(name="b", destination="a"), door_name="b/door", destination="a")
     a.departing = True
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
-    dr.state = _DoorState.CLOSING
-    dr.progress = 0.4
+    dr.state = _DoorState.OPEN
+    dr.progress = 1.0
     dr.last_trigger_sim_time = -100.0
-    _step_elevator(a, dr, None, occupants=[], near_door=True, outside_trigger=False, now=7.0)
+    blocker = [("r", (0.5, 0.0), 0.3)]
+    now = 10.0
+    for _ in range(60):
+        now += DT
+        _step_elevator(a, dr, b, occupants=[("r", (0.5, 0.0))], outside_trigger=False, now=now)
+        _advance_state(dr, DT, now, blocker)
+    assert a.departing
+    assert dr.progress == 1.0
+    for _ in range(120):
+        now += DT
+        _step_elevator(a, dr, b, occupants=[("r", (0.0, -0.6))], outside_trigger=False, now=now)
+        _advance_state(dr, DT, now, [("r", (0.0, -0.6), 0.3)])
     assert not a.departing
-    assert dr.last_trigger_sim_time == 7.0
+    assert a.dispatched == {"r"}
+    assert b.arriving_eta > now
 
 
 def test_departing_door_closed_commits_teleport_to_dest():
@@ -331,7 +350,7 @@ def test_departing_door_closed_commits_teleport_to_dest():
     dr_a.state = _DoorState.CLOSED
     result = _step_elevator(
         a, dr_a, dest_runtime=b,
-        occupants=[("r1", (0.5, 0.5))], near_door=False, outside_trigger=False, now=2.0,
+        occupants=[("r1", (0.5, 0.5))], outside_trigger=False, now=2.0,
     )
     assert not a.departing
     assert b.arriving_eta == pytest.approx(5.0)
@@ -346,7 +365,7 @@ def test_departing_missing_destination_reverts():
     a.departing = True
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
-    result = _step_elevator(a, dr, None, occupants=[], near_door=False, outside_trigger=False, now=5.0)
+    result = _step_elevator(a, dr, None, occupants=[], outside_trigger=False, now=5.0)
     assert result.missing_destination
     assert not a.departing
     assert dr.last_trigger_sim_time == 5.0
@@ -358,7 +377,7 @@ def test_arriving_before_eta_suppresses_door():
     a.arriving_eta = 10.0
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
-    _step_elevator(a, dr, None, occupants=[], near_door=True, outside_trigger=True, now=5.0)
+    _step_elevator(a, dr, None, occupants=[], outside_trigger=True, now=5.0)
     assert a.arriving_eta == pytest.approx(10.0)
     assert dr.last_trigger_sim_time == -100.0
 
@@ -369,7 +388,7 @@ def test_arriving_at_eta_fires_teleport_and_opens_door():
     a.arriving_eta = 10.0
     a.pending_occupants = (("r", (5.0, 0.5)),)
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
-    result = _step_elevator(a, dr, None, occupants=[], near_door=False, outside_trigger=False, now=10.0)
+    result = _step_elevator(a, dr, None, occupants=[], outside_trigger=False, now=10.0)
     assert a.arriving_eta == -math.inf
     assert dr.last_trigger_sim_time == 10.0
     assert result.teleport_job == ("b", "a", [("r", (5.0, 0.5))])
@@ -382,7 +401,7 @@ def test_just_arrived_tracking_inside_confirmation():
     a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
     a.just_arrived = {"r": False}
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
-    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], near_door=False, outside_trigger=False, now=5.0)
+    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], outside_trigger=False, now=5.0)
     assert a.just_arrived["r"] is True
 
 
@@ -394,7 +413,7 @@ def test_just_arrived_stale_outside_before_inside_does_not_clear():
     _step_elevator(
         a, dr, None,
         occupants=[],
-        near_door=False, outside_trigger=False, now=5.0,
+        outside_trigger=False, now=5.0,
         outside_names=frozenset({"r"}),
     )
     assert a.just_arrived == {"r": False}
@@ -408,7 +427,7 @@ def test_just_arrived_outside_after_inside_confirmed_clears():
     _step_elevator(
         a, dr, None,
         occupants=[],
-        near_door=False, outside_trigger=False, now=5.0,
+        outside_trigger=False, now=5.0,
         outside_names=frozenset({"r"}),
     )
     assert a.just_arrived == {}
@@ -420,7 +439,7 @@ def test_just_arrived_occupant_holds_door_open():
     a.just_arrived = {"r": True}
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
-    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], near_door=False, outside_trigger=False, now=5.0)
+    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], outside_trigger=False, now=5.0)
     assert not a.departing
     assert dr.last_trigger_sim_time == 5.0
 
@@ -434,21 +453,77 @@ def test_just_arrived_resident_blocks_depart_for_new_entrant():
     _step_elevator(
         a, dr, None,
         occupants=[("r", (0.0, 0.0)), ("r2", (0.0, 0.0))],
-        near_door=False, outside_trigger=False, now=5.0,
+        outside_trigger=False, now=5.0,
     )
     assert not a.departing
     assert dr.last_trigger_sim_time == 5.0
 
 
-def test_closing_abort_holds_door_when_inside_occupant_near_door():
-    """Inside occupant at the doorway holds the door (closing_abort)."""
-    a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
-    dr = _door_runtime(_door(name="a/door"), kind="sliding")
-    dr.state = _DoorState.CLOSING
-    dr.progress = 0.6
-    dr.last_trigger_sim_time = -100.0
-    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0))], near_door=True, outside_trigger=False, now=8.0)
-    assert dr.last_trigger_sim_time == 8.0
+def test_close_blocked_by_agent_disc_in_slot_reopens():
+    """A closing door whose remaining path overlaps an agent disc re-triggers instead of advancing."""
+    d = _door()
+    r = _door_runtime(d, kind="sliding")
+    r.state = _DoorState.CLOSING
+    r.progress = 0.6
+    r.last_trigger_sim_time = -100.0
+    _advance_state(r, dt=0.1, now=8.0, discs=[("r", (0.5, 0.0), 0.3)])
+    assert r.last_trigger_sim_time == 8.0
+    assert r.progress == 0.6
+    assert r.state == _DoorState.OPENING
+
+
+def test_close_proceeds_when_disc_clear_of_path():
+    """An agent outside the slab's remaining path does not hold the door."""
+    d = _door()
+    r = _door_runtime(d, kind="sliding")
+    r.state = _DoorState.CLOSING
+    r.progress = 0.6
+    r.last_trigger_sim_time = -100.0
+    _advance_state(r, dt=0.1, now=8.0, discs=[("r", (0.5, -0.5), 0.3)])
+    assert r.last_trigger_sim_time == -100.0
+    assert pytest.approx(r.progress) == 0.5
+
+
+def test_close_gate_honors_disc_radius():
+    """The same center blocks with a large radius and passes with a small one."""
+    d = _door()
+    small = _door_runtime(d, kind="sliding")
+    small.state = _DoorState.CLOSING
+    small.progress = 0.6
+    small.last_trigger_sim_time = -100.0
+    _advance_state(small, dt=0.1, now=8.0, discs=[("r", (0.5, -0.4), 0.05)])
+    assert pytest.approx(small.progress) == 0.5
+    large = _door_runtime(d, kind="sliding")
+    large.state = _DoorState.CLOSING
+    large.progress = 0.6
+    large.last_trigger_sim_time = -100.0
+    _advance_state(large, dt=0.1, now=8.0, discs=[("r", (0.5, -0.4), 0.4)])
+    assert large.progress == 0.6
+
+
+def test_opening_step_holds_at_contact():
+    """A disc in the sliding slab's parking band pauses opening at contact, without re-triggering."""
+    d = _door()
+    r = _door_runtime(d, kind="sliding")
+    r.state = _DoorState.OPENING
+    r.progress = 0.5
+    r.last_trigger_sim_time = 8.0
+    _advance_state(r, dt=0.1, now=8.0, discs=[("r", (1.6, 0.0), 0.05)])
+    assert r.progress == 0.5
+    assert r.state == _DoorState.OPENING
+
+
+def test_teleport_snap_close_blocked_by_disc_in_slot():
+    """A teleport door with an agent in the slot stays open instead of snapping closed."""
+    d = _door(kind="teleport", hold_time=2.0)
+    r = _door_runtime(d, kind="teleport")
+    r.state = _DoorState.OPEN
+    r.progress = 1.0
+    r.last_trigger_sim_time = 0.0
+    _advance_state(r, dt=0.1, now=10.0, discs=[("r", (0.5, 0.0), 0.3)])
+    assert r.state == _DoorState.OPEN
+    assert r.progress == 1.0
+    assert r.last_trigger_sim_time == 10.0
 
 
 def test_dispatched_cabin_stays_sealed_during_transit():
@@ -459,7 +534,7 @@ def test_dispatched_cabin_stays_sealed_during_transit():
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
     dr.last_trigger_sim_time = -100.0
-    result = _step_elevator(a, dr, None, occupants=[("r1", (0.0, 0.0))], near_door=True, outside_trigger=True, now=5.0)
+    result = _step_elevator(a, dr, None, occupants=[("r1", (0.0, 0.0))], outside_trigger=True, now=5.0)
     assert dr.last_trigger_sim_time == -100.0  # not refreshed: door stays closed
     assert not a.departing
     assert result.teleport_job is None
@@ -471,7 +546,7 @@ def test_dispatched_clears_when_rider_leaves_cabin():
     a.dispatched = {"r1"}
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
-    _step_elevator(a, dr, None, occupants=[], near_door=False, outside_trigger=False, now=5.0)
+    _step_elevator(a, dr, None, occupants=[], outside_trigger=False, now=5.0)
     assert a.dispatched == set()
 
 
@@ -503,10 +578,10 @@ def test_three_elevator_ring_occupant_rides_e1_to_e2():
     r2 = _elev_runtime(e2, door_name="e2/door", destination="e3")
     dr1 = _door_runtime(_door(name="e1/door"), kind="sliding")
     dr1.state = _DoorState.CLOSED
-    result = _step_elevator(r1, dr1, r2, occupants=[("rob", (0.0, 0.0))], near_door=False, outside_trigger=False, now=1.0)
+    result = _step_elevator(r1, dr1, r2, occupants=[("rob", (0.0, 0.0))], outside_trigger=False, now=1.0)
     # departing set, one more tick with closed door commits the teleport schedule.
     assert r1.departing
-    result2 = _step_elevator(r1, dr1, r2, occupants=[("rob", (0.0, 0.0))], near_door=False, outside_trigger=False, now=1.05)
+    result2 = _step_elevator(r1, dr1, r2, occupants=[("rob", (0.0, 0.0))], outside_trigger=False, now=1.05)
     assert r2.arriving_eta == pytest.approx(3.05)
     assert r2.pending_occupants == (("rob", (0.0, 0.0)),)
     assert result2.teleport_job is None
@@ -597,6 +672,7 @@ def _run_ticks(
     occupants = occupants or {}
     now = start
     jobs: list[tuple[str, str, list[tuple[str, tuple[float, float]]]]] = []
+    discs = [(agent, xy, 0.3) for occ in occupants.values() for agent, xy in occ]
     for _ in range(n):
         now += DT
         for name, elev in runtimes.items():
@@ -604,11 +680,9 @@ def _run_ticks(
             dest = runtimes.get(elev.destination_name)
             occ = occupants.get(name, [])
             outside = outside_trigger.get(name, False)
-            near = outside or _near_door_segment(door.door, [xy for _, xy in occ], INSIDE_DOOR_BLOCKER_RADIUS)
             r = _step_elevator(
                 elev, door, dest,
                 occupants=occ,
-                near_door=near,
                 outside_trigger=outside,
                 now=now,
                 outside_names=outside_names,
@@ -616,7 +690,7 @@ def _run_ticks(
             if r.teleport_job is not None:
                 jobs.append(r.teleport_job)
         for door in doors.values():
-            _advance_state(door, DT, now)
+            _advance_state(door, DT, now, discs)
     return now, jobs
 
 
@@ -775,7 +849,7 @@ def test_tick_accept_outside_calls_false_still_receives_arrival():
     b2.pending_occupants = (("r1", (9.5, 0.0)),)
     dr_b2 = doors2["b/door"]
     dr_b2.last_trigger_sim_time = -100.0
-    result = _step_elevator(b2, dr_b2, None, occupants=[], near_door=False, outside_trigger=False, now=5.0)
+    result = _step_elevator(b2, dr_b2, None, occupants=[], outside_trigger=False, now=5.0)
     assert dr_b2.last_trigger_sim_time == 5.0
     assert result.teleport_job is not None
 
@@ -851,7 +925,11 @@ def test_door_slot_minus_y_inset():
 def test_wall_geometries_plus_x_door():
     e = _make_elevator(door_side='+x')
     walls = {suffix: (size, pose) for suffix, size, pose in _elevator_wall_geometries(e)}
-    assert set(walls) == {'back', 'side_pos', 'side_neg'}
+    assert set(walls) == {'back', 'side_pos', 'side_neg', 'floor'}
+    floor_size, floor_pose = walls['floor']
+    assert floor_size == pytest.approx((2.0, 2.0, WALL_THICKNESS))
+    assert floor_pose.position.z < 0.011
+    assert floor_pose.position.z + WALL_THICKNESS / 2.0 == pytest.approx(0.01)
     back_size, back_pose = walls['back']
     assert back_size == pytest.approx((WALL_THICKNESS, 2.0, 2.5))
     assert back_pose.position.x == pytest.approx(-1.0)
@@ -874,5 +952,283 @@ def test_wall_geometries_minus_y_door():
 
 
 def test_wall_z_at_top_of_cabin():
-    for _suffix, _size, pose in _elevator_wall_geometries(_make_elevator()):
-        assert pose.position.z == pytest.approx(1.25)
+    for suffix, _size, pose in _elevator_wall_geometries(_make_elevator()):
+        if suffix != 'floor':
+            assert pose.position.z == pytest.approx(1.25)
+
+
+# ---------------------------------------------------------------------------
+# tick-driven mechanism double + real SemanticsManager
+# ---------------------------------------------------------------------------
+
+
+class _StubLogger:
+    def warning(self, _msg: str) -> None: ...
+
+    def info(self, _msg: str) -> None: ...
+
+
+class _StubTime:
+    def __init__(self) -> None:
+        self.seconds = 0.0
+
+    def to_seconds(self) -> float:
+        return self.seconds
+
+
+class _StubNode:
+    def __init__(self) -> None:
+        self._logger = _StubLogger()
+        self.sim_time = _StubTime()
+
+    def get_logger(self) -> _StubLogger:
+        return self._logger
+
+
+class _Mech:
+    """Duck-typed MechanismITF exposing exactly the surface _tick and reset_mechanisms read."""
+
+    def __init__(self) -> None:
+        self.node = _StubNode()
+        self._human_simulator = None
+        self._door_runtime: dict[str, _DoorRuntime] = {}
+        self._elevator_runtime: dict[str, _ElevatorRuntime] = {}
+        self._elevator_doors: dict[str, str] = {}
+        self._robots: dict[str, tuple[float, float]] = {}
+        self._semantics = SemanticsManager(self)
+
+    def robot_discs(self) -> list[tuple[str, tuple[float, float], float]]:
+        return [(name, xy, 0.3) for name, xy in self._robots.items()]
+
+    def robot_pose(self, sim_path: str) -> Pose | None:
+        xy = self._robots.get(sim_path)
+        if xy is None:
+            return None
+        return Pose(position=Position(xy[0], xy[1], 0.0), orientation=Orientation.from_yaw(0.0))
+
+    async def set_robot_pose(self, sim_path: str, pose: Pose) -> bool:
+        self._robots[sim_path] = (pose.position.x, pose.position.y)
+        return True
+
+    async def move_box(self, _name: str, _pose: Pose) -> bool:
+        return True
+
+
+# ---------------------------------------------------------------------------
+# reset_mechanisms: universal per-episode reset (annotated or bare)
+# ---------------------------------------------------------------------------
+
+
+def test_reset_mechanisms_resets_bare_door():
+    """A door with no semantics attached still resets to CLOSED on episode reset."""
+    mech = _Mech()
+    rt = _door_runtime(_door(name="d"), kind="sliding")
+    rt.state = _DoorState.OPEN
+    rt.progress = 1.0
+    rt.last_trigger_sim_time = 5.0
+    rt.last_applied_progress = 0.7
+    mech._door_runtime["d"] = rt
+    reset_mechanisms(mech)
+    assert rt.state == _DoorState.CLOSED
+    assert rt.progress == 0.0
+    assert rt.last_trigger_sim_time == -math.inf
+    assert rt.last_applied_progress == -1.0
+
+
+def test_reset_mechanisms_resets_bare_elevator_and_cabin_door():
+    """A bare elevator resets its runtime fields and its paired cabin door."""
+    mech = _Mech()
+    er = _elev_runtime(_elevator(name="e", destination="other"), door_name="e/door", destination="other")
+    er.arriving_eta = 8.0
+    er.pending_occupants = (("r", (1.0, 2.0)),)
+    er.just_arrived = {"r": True}
+    er.departing = True
+    er.dispatched = {"r"}
+    cabin = _door_runtime(_door(name="e/door"), kind="sliding")
+    cabin.state = _DoorState.OPEN
+    cabin.progress = 1.0
+    cabin.last_trigger_sim_time = 4.0
+    cabin.last_applied_progress = 0.5
+    mech._elevator_runtime["e"] = er
+    mech._door_runtime["e/door"] = cabin
+    reset_mechanisms(mech)
+    assert er.arriving_eta == -math.inf
+    assert er.pending_occupants == ()
+    assert er.just_arrived == {}
+    assert er.departing is False
+    assert er.dispatched == set()
+    assert cabin.state == _DoorState.CLOSED
+    assert cabin.progress == 0.0
+    assert cabin.last_trigger_sim_time == -math.inf
+    assert cabin.last_applied_progress == -1.0
+
+
+# ---------------------------------------------------------------------------
+# real _tick parity: observational semantics must not alter FSM evolution
+# ---------------------------------------------------------------------------
+
+
+async def _drive_door(mech: _Mech, *, near_ticks: int, total_ticks: int) -> list[tuple[_DoorState, float]]:
+    """Run the real wrapped _tick, robot at the doorway for near_ticks, then away."""
+    rt = mech._door_runtime["d"]
+    traj: list[tuple[_DoorState, float]] = []
+    t = 0.0
+    for i in range(total_ticks):
+        t += DT
+        mech.node.sim_time.seconds = t
+        mech._robots = {"r": (0.5, 0.5)} if i < near_ticks else {"r": (100.0, 100.0)}
+        await _tick(mech, DT)
+        traj.append((rt.state, rt.progress))
+    return traj
+
+
+def _make_door_mech() -> _Mech:
+    mech = _Mech()
+    mech._door_runtime["d"] = _door_runtime(_door(name="d", transition_time=1.0, hold_time=2.0), kind="sliding")
+    return mech
+
+
+def test_tick_door_parity_with_observational_semantics():
+    """Driving _tick end to end: a plain DoorSemantics observes but does not change FSM evolution."""
+    bare = _make_door_mech()
+    traj_bare = asyncio.run(_drive_door(bare, near_ticks=45, total_ticks=200))
+
+    annotated = _make_door_mech()
+    annotated._semantics.set_sim("gazebo")
+    annotated._semantics.attach("door", "d")
+    assert annotated._semantics.snapshot()  # semantics really attached, so the parity is not vacuous
+    traj_annotated = asyncio.run(_drive_door(annotated, near_ticks=45, total_ticks=200))
+
+    assert traj_bare == traj_annotated
+    # the drive must actually exercise a full trigger -> open -> close cycle.
+    assert {s for s, _ in traj_bare} == {
+        _DoorState.CLOSED,
+        _DoorState.OPENING,
+        _DoorState.OPEN,
+        _DoorState.CLOSING,
+    }
+
+
+def _make_elevator_mech() -> _Mech:
+    runtimes, doors = _prime_pair()
+    mech = _Mech()
+    mech._elevator_runtime = runtimes
+    mech._door_runtime = doors
+    mech._elevator_doors = {"a": "a/door", "b": "b/door"}
+    mech._robots = {"r1": (-0.5, 0.0)}  # inside cabin A, clear of the doorway
+    return mech
+
+
+async def _drive_elevator(mech: _Mech, *, total_ticks: int) -> list[tuple]:
+    """Run the real wrapped _tick over a boarding -> transit -> arrival cabin cycle."""
+    a = mech._elevator_runtime["a"]
+    b = mech._elevator_runtime["b"]
+    da = mech._door_runtime["a/door"]
+    db = mech._door_runtime["b/door"]
+    traj: list[tuple] = []
+    t = 0.0
+    for _ in range(total_ticks):
+        t += DT
+        mech.node.sim_time.seconds = t
+        await _tick(mech, DT)
+        traj.append((
+            da.state, da.progress, db.state, db.progress,
+            a.departing, b.arriving_eta, tuple(sorted(a.dispatched)),
+            tuple(sorted(b.just_arrived)), mech._robots.get("r1"),
+        ))
+    return traj
+
+
+def test_tick_elevator_parity_with_observational_semantics():
+    """Driving _tick end to end: a plain ElevatorSemantics observes but does not change FSM evolution."""
+    bare = _make_elevator_mech()
+    traj_bare = asyncio.run(_drive_elevator(bare, total_ticks=150))
+
+    annotated = _make_elevator_mech()
+    annotated._semantics.set_sim("gazebo")
+    annotated._semantics.attach("elevator", "a")
+    annotated._semantics.attach("elevator", "b")
+    assert len(annotated._semantics.snapshot()) == 2  # both elevators observed, so the parity is not vacuous
+    traj_annotated = asyncio.run(_drive_elevator(annotated, total_ticks=150))
+
+    assert traj_bare == traj_annotated
+    # the drive must actually complete a ride: rider teleported into B, B's door opened.
+    assert bare._robots["r1"] == pytest.approx((9.5, 0.0))
+    assert bare._door_runtime["b/door"].state == _DoorState.OPEN
+
+
+# ---------------------------------------------------------------------------
+# wire invariants: what the semantics layer publishes while the gate acts
+# ---------------------------------------------------------------------------
+
+
+def _record_changes(mech: _Mech) -> list[tuple[float, object]]:
+    """Attach a change recorder, returning (sim_time, SemanticChange) tuples as they fire."""
+    events: list[tuple[float, object]] = []
+
+    def on_changes(changes):
+        assert changes  # the manager must never fire an empty batch
+        events.extend((mech.node.sim_time.seconds, c) for c in changes)
+
+    mech._semantics.set_change_callback(on_changes)
+    return events
+
+
+async def _drive_blocked_door(mech: _Mech, *, enter_tick: int, leave_tick: int, total_ticks: int) -> None:
+    """Open via manual trigger with the slot clear, park the robot in the slot, then clear it."""
+    t = 0.0
+    for i in range(total_ticks):
+        t += DT
+        mech.node.sim_time.seconds = t
+        mech._robots = {"r": (0.5, 0.1)} if enter_tick <= i < leave_tick else {"r": (100.0, 100.0)}
+        await _tick(mech, DT)
+
+
+def test_wire_blocked_close_publishes_no_closing_and_no_flap():
+    """While a disc blocks the close, the wire shows a stable held-open door: no closing
+    state, no progress churn, no triggered flap. closed is only ever published after the
+    slot has cleared."""
+    mech = _Mech()
+    mech._door_runtime["d"] = _door_runtime(
+        _door(name="d", activation=(0.0, 0.0), transition_time=1.0, hold_time=2.0), kind="sliding"
+    )
+    mech._door_runtime["d"].last_trigger_sim_time = 0.0
+    mech._semantics.set_sim("gazebo")
+    mech._semantics.attach("door", "d")
+    events = _record_changes(mech)
+
+    clear_time = 245 * DT
+    asyncio.run(_drive_blocked_door(mech, enter_tick=45, leave_tick=245, total_ticks=400))
+
+    state_events = [(t, c) for t, c in events if c.field == "state"]
+    assert [c.current for _, c in state_events] == ["opening", "open", "closing", "closed"]
+    for t, c in state_events:
+        if c.current in ("closing", "closed"):
+            assert t > clear_time
+    hold_window = [(t, c) for t, c in events if 1.2 < t <= clear_time]
+    assert hold_window == []
+    assert mech._door_runtime["d"].state == _DoorState.CLOSED
+
+
+def test_wire_ride_events_are_deduplicated_and_bounded():
+    """A full ride publishes real transitions only: every change has previous != current,
+    departing toggles in order, the arrival door opens, and quantized progress cannot flood."""
+    mech = _make_elevator_mech()
+    mech._semantics.set_sim("gazebo")
+    mech._semantics.attach("elevator", "a")
+    mech._semantics.attach("elevator", "b")
+    mech._semantics.attach("door", "a/door")
+    mech._semantics.attach("door", "b/door")
+    events = _record_changes(mech)
+
+    asyncio.run(_drive_elevator(mech, total_ticks=150))
+
+    for _, c in events:
+        assert c.previous != c.current
+    departing = [c.current for _, c in events if c.entity == "a" and c.field == "departing"]
+    assert departing == ["true", "false"]
+    b_door_states = [c.current for _, c in events if c.entity == "b/door" and c.field == "state"]
+    assert b_door_states[-1] == "open"
+    for entity in ("a/door", "b/door"):
+        progress_events = [c for _, c in events if c.entity == entity and c.field == "progress"]
+        assert len(progress_events) <= 12  # one transit at quantum 0.1, not one event per tick

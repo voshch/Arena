@@ -1,0 +1,30 @@
+robots:
+- start: [10.0, 0.5, 1.5708]
+  goal: [4.0, 26.8, 0.0]
+
+dynamic:
+- model: female_adult_business_02
+  name: ped_1
+  pose: [20.0, 1.0, 0.7854]
+  waypoints:
+  - [22.0, 5.0, 0.7854]
+  - [20.0, 1.0, 0.7854]
+
+- model: male_adult_construction_01
+  name: ped_2
+  pose: [22.5, 7.5, 0.7854]
+  waypoints:
+  - [22.5, 7.5, 0.7854]
+
+- model: female_adult_medical_01
+  name: ped_3
+  pose: [4.0, 20.0, 0.0]
+  waypoints:
+  - [4.0, 20.0, 0.0]
+
+conditions:
+- {op: eventually, p: "robot in pharmacy", text: "Reach the pharmacy."}
+- {op: never, p: "robot in operating_room", text: "Stay out of the operating room."}
+- {op: before, p: "robot in central_hallway", q: "robot in pharmacy", text: "Take the hallway before the pharmacy."}
+- {op: never_during, p: "robot in exam_room_1", q: "exam_room_1_door/0.open == false", text: "Never be in the exam room while its door is closed."}
+- {op: eventually, p: "ped_1 in waiting_area", text: "The visitor reaches the waiting area."}

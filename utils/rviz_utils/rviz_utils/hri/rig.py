@@ -3,8 +3,12 @@
 Pedestrian.joint_state carries anatomical shoulder triples (y, p, r): p is sagittal
 flexion forward, same sign convention both sides; y is arm yaw about body-up; r is
 twist about the limb's own long axis. They compose intrinsically as
-    R = Rz(y) . Raxis((0,-1,0), p) . Raxis(d, r)
-with d the image of (0,0,-1) under the first two rotations (JOINTS.md Section 1a).
+    R = Rz(y) . Raxis((0,-1,0), p) . Raxis((0,0,-1), r)
+where (0,0,-1) is the rest limb axis: as the last intrinsic factor it is a pure
+twist, equivalent to the world-frame rotation Raxis(d, r) applied AFTER the first
+two, d the current limb direction (JOINTS.md Section 1a). Composing Raxis(d, r) on
+the right instead is not a twist at all: it swings the bone tip off the limb axis
+as soon as y or p is nonzero.
 The forked ros4hri human_description URDF instead reads the shoulder chain as
     left:  R = Rz(-a) . Rx(b) . Rz(c)
     right: R = Rz(a) . Rx(-b) . Rz(-c)
@@ -20,7 +24,7 @@ Degenerate branch (|sin(b)| < 1e-6, limb pointing along the twist axis): a and c
 individually ill-conditioned, only their sum or difference survives. Hold a at pi/2
 and fold the rest into c.
 
-All other joints (torso triple, hips, knees, elbows, head, ankles) pass straight
+All other joints (spine stack, collars, hips, knees, elbows, head, ankles) pass straight
 through: the fork keeps every other frame body-aligned at rest, so the wire and raw
 URDF axes already coincide there.
 """
@@ -72,10 +76,10 @@ def _wrap(theta: float) -> float:
 
 
 def _compose_arm_rotation(y: float, p: float, r: float) -> np.ndarray:
-    """R = Rz(y) . Raxis((0,-1,0), p) . Raxis(d, r), d = that partial rotation on (0,0,-1)."""
+    """R = Rz(y) . Raxis((0,-1,0), p) . Raxis((0,0,-1), r): yaw, flexion, then a
+    pure twist about the limb's own long axis ((0,0,-1) at rest, intrinsic)."""
     partial = _rot_z(y) @ _rot_axis(np.array([0.0, -1.0, 0.0]), p)
-    d = partial @ np.array([0.0, 0.0, -1.0])
-    return partial @ _rot_axis(d, r)
+    return partial @ _rot_axis(np.array([0.0, 0.0, -1.0]), r)
 
 
 def _extract_urdf_triple(rot: np.ndarray, side: str) -> tuple[float, float, float]:

@@ -39,10 +39,11 @@ def _Raxis(axis: np.ndarray, a: float) -> np.ndarray:
 
 
 def _semantic_rotation(y: float, p: float, r: float) -> np.ndarray:
-    """JOINTS.md Section 1a: R = Rz(y) . Raxis((0,-1,0), p) . Raxis(d, r)."""
+    """JOINTS.md Section 1a: R = Rz(y) . Raxis((0,-1,0), p) . Raxis((0,0,-1), r),
+    the twist intrinsic about the rest limb axis (equivalently the world-frame
+    rotation about the current limb direction applied after yaw and flexion)."""
     partial = _Rz(y) @ _Raxis((0.0, -1.0, 0.0), p)
-    d = partial @ np.array([0.0, 0.0, -1.0])
-    return partial @ _Raxis(d, r)
+    return partial @ _Raxis((0.0, 0.0, -1.0), r)
 
 
 def _left_chain(a: float, b: float, c: float) -> np.ndarray:

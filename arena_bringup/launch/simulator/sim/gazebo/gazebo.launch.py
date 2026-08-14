@@ -29,6 +29,25 @@ _VIEWPORT_GUI_PLUGIN = """\
 """
 
 
+def _prune_dead_ament_prefixes() -> None:
+    """Drop AMENT_PREFIX_PATH entries whose package-index markers all dangle."""
+    prefixes = [p for p in os.environ.get('AMENT_PREFIX_PATH', '').split(os.pathsep) if p]
+    kept: list[str] = []
+
+    for prefix in prefixes:
+        index = os.path.join(prefix, 'share', 'ament_index', 'resource_index', 'packages')
+        try:
+            entries = os.listdir(index)
+        except OSError:
+            kept.append(prefix)
+            continue
+        if not entries or any(os.path.isfile(os.path.join(index, name)) for name in entries):
+            kept.append(prefix)
+
+    if len(kept) != len(prefixes):
+        os.environ['AMENT_PREFIX_PATH'] = os.pathsep.join(kept)
+
+
 def _select_render_engine() -> str:
     """ogre2 renders PBR materials but needs a real GL device; ogre1 is the software-safe fallback.
     Forced-software GL (LIBGL_ALWAYS_SOFTWARE) segfaults ogre2's GL3Plus backend, so it pins ogre1."""
@@ -42,6 +61,8 @@ def _select_render_engine() -> str:
 
 
 def generate_launch_description():
+
+    _prune_dead_ament_prefixes()
 
     use_sim_time = LaunchArgument(
         "use_sim_time",

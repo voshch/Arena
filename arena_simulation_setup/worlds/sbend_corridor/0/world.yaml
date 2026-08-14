@@ -1,0 +1,95 @@
+zones:
+  - name: corridor_south
+    description: Southern corridor, traversed westbound
+    corners:
+      - [0.0, 0.0]
+      - [10.0, 0.0]
+      - [10.0, 3.0]
+      - [0.0, 3.0]
+    ceiling: false
+    walls:
+      - start: {x: 0.0, y: 0.0}
+        end: {x: 10.0, y: 0.0}
+      - start: {x: 3.0, y: 3.0}
+        end: {x: 10.0, y: 3.0}
+      - start: {x: 10.0, y: 0.0}
+        end: {x: 10.0, y: 13.0}
+      - start: {x: 0.0, y: 0.0}
+        end: {x: 0.0, y: 13.0}
+    doors: []
+    elevators: []
+    entities:
+      static: []
+      dynamic: []
+
+  - name: link_west
+    description: Western gap joining the southern and middle corridors
+    corners:
+      - [0.0, 3.0]
+      - [3.0, 3.0]
+      - [3.0, 5.0]
+      - [0.0, 5.0]
+    ceiling: false
+    walls:
+      - start: {x: 3.0, y: 3.0}
+        end: {x: 3.0, y: 5.0}
+    doors: []
+    elevators: []
+    entities:
+      static: []
+      dynamic: []
+
+  - name: corridor_middle
+    description: Middle corridor, traversed eastbound
+    corners:
+      - [0.0, 5.0]
+      - [10.0, 5.0]
+      - [10.0, 8.0]
+      - [0.0, 8.0]
+    ceiling: false
+    walls:
+      - start: {x: 3.0, y: 5.0}
+        end: {x: 10.0, y: 5.0}
+      - start: {x: 0.0, y: 8.0}
+        end: {x: 7.0, y: 8.0}
+    doors: []
+    elevators: []
+    entities:
+      static: []
+      dynamic: []
+
+  - name: link_east
+    description: Eastern gap joining the middle and northern corridors
+    corners:
+      - [7.0, 8.0]
+      - [10.0, 8.0]
+      - [10.0, 10.0]
+      - [7.0, 10.0]
+    ceiling: false
+    walls:
+      - start: {x: 7.0, y: 8.0}
+        end: {x: 7.0, y: 10.0}
+    doors: []
+    elevators: []
+    entities:
+      static: []
+      dynamic: []
+
+  - name: corridor_north
+    description: Northern corridor, traversed westbound to the goal
+    corners:
+      - [0.0, 10.0]
+      - [10.0, 10.0]
+      - [10.0, 13.0]
+      - [0.0, 13.0]
+    ceiling: false
+    walls:
+      - start: {x: 0.0, y: 10.0}
+        end: {x: 7.0, y: 10.0}
+      - start: {x: 0.0, y: 13.0}
+        end: {x: 10.0, y: 13.0}
+    doors: []
+    elevators: []
+    entities:
+      static: []
+      dynamic: []

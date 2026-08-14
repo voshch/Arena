@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 
+ARENA_PROJECT_NAME="arena-$(basename "${HOST_ARENA_WS_DIR:-$ARENA_WS_DIR}")"
+export ARENA_PROJECT_NAME
+export ARENA_IMAGE_TAG="$ARENA_PROJECT_NAME"
+export ARENA_IMAGE="arena:${ARENA_IMAGE_TAG}"
+
 arena_docker_compose(){
     local files="$ARENA_DIR/_meta/docker/docker-compose.yaml"
+    [ -d /dev/dri ] && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.dri.yaml"
     if [ -f "$ARENA_DIR/.installed" ]; then
         local feature ov
         while read -r feature; do

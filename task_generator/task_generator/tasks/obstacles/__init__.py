@@ -21,6 +21,9 @@ class TM_Obstacles(TaskMode):
     async def reset(self, **kwargs: object) -> Obstacles:
         return [], []
 
+    async def teardown(self) -> None:
+        """Release everything this mode drives; called when the mode is replaced or the task ends."""
+
     async def extend(self, kind: ObstacleKind, model: str, pose: Pose | None = None, level_id: str = "") -> str:
         resolved_pose = pose if pose is not None else await random_placement(self._ctx, level_id=level_id)
         name = f"ext_{model}_{uuid.uuid4().hex[:6]}"

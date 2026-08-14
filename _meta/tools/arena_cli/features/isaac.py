@@ -6,14 +6,17 @@ import sys
 import common
 from common import CLIError, Verb, make_verb
 
-from features import default_install
-
-SCRIPT_SHA256 = "5010ed764da2aced24169dc59e3c2f82b26a1e166e549924bc8f64c9023dfba8"
+import features
+from features import lifecycle_verbs, source_verb
 
 NAME = "isaac"
 ISAAC_VERSION = "4.2.0"
 
 DESCRIPTION = "NVIDIA Isaac Sim simulator."
+
+_FORMATS_SOURCE = 'case "$ARENA_MODELS_FORMATS" in *usd*) ;; *) export ARENA_MODELS_FORMATS="${ARENA_MODELS_FORMATS},usdz,usd,usda,usdc" ;; esac'
+
+_HOST_SOURCE = f'if [ -z ${{ISAAC_PATH+x}} ] ; then\n    . "$HOME/isaacsim-{ISAAC_VERSION}/setup.sh"\nfi\n{_FORMATS_SOURCE}'
 
 _FASTDDS_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 
@@ -55,7 +58,11 @@ export ISAAC_PATH="$MY_DIR"
 """
 
 
-def _update() -> int:
+def _shell_source() -> str:
+    return _FORMATS_SOURCE if features.in_container() else _HOST_SOURCE
+
+
+def _update_host() -> int:
     """Download Isaac Sim, install python deps, write config, init arena_isaac."""
     import shutil
     import subprocess
@@ -137,49 +144,83 @@ def _update() -> int:
     return 0
 
 
-def _require_installed() -> None:
-    if not common._reg_has(NAME):
-        raise CLIError(f"{NAME} is not installed, run 'arena feature {NAME} install' first")
-
-
-def install(argv: list[str]) -> None:
-    """Install the feature (pull repos, register, run its update)."""
-    if argv:
-        raise CLIError("unexpected arguments")
-    sys.exit(default_install(NAME, _update))
-
-
-def update(argv: list[str]) -> None:
-    """Update the feature to the latest state."""
-    if argv:
-        raise CLIError("unexpected arguments")
-    if not common._reg_has(NAME):
-        raise CLIError(f"{NAME} is not installed, run 'arena feature {NAME} install' first")
-    sys.exit(_update())
-
-
-def uninstall(argv: list[str]) -> None:
-    """Uninstall and unregister the feature."""
-    if argv:
-        raise CLIError("unexpected arguments")
+def _update_container() -> int:
+    """Pull arena_isaac and build the isaac compose service."""
     import subprocess
 
+    print(f"Updating {NAME}...")
+    rc = subprocess.run(["git", "submodule", "update", "--init", "--rebase", "arena_isaac"], cwd=common._env("ARENA_DIR"), check=False).returncode
+    if rc:
+        return rc
+    rc = features.compose(["build", "isaac"])
+    if rc:
+        return rc
+    return features.compose(["up", "-d", "--remove-orphans", "--no-start", "isaac"])
+
+
+def launch_host(argv: list[str]) -> None:
+    """Launch Isaac Sim."""
+    common._reg_require(NAME)
+    common._exec("ros2", "launch", "arena_isaac", "run_isaacsim.launch.py", *argv)
+
+
+def launch_container(argv: list[str]) -> None:
+    """Launch Isaac Sim in its container."""
+    common._reg_require(NAME)
+    rc = features.compose(["up", "-d", "--remove-orphans", "isaac"])
+    if rc:
+        sys.exit(rc)
+    try:
+        rc = features.compose(
+            [
+                "exec",
+                "-T",
+                "isaac",
+                "bash",
+                "-c",
+                'source /opt/arena_ws/install/local_setup.bash && python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py "$@"',
+                "--",
+                *argv,
+            ]
+        )
+    finally:
+        features.compose(["stop", "isaac"])
+    sys.exit(rc)
+
+
+def exec_(argv: list[str]) -> None:
+    """Run a command inside the isaac container."""
+    sys.exit(features.compose(["exec", "isaac", *argv]))
+
+
+def uninstall_container(argv: list[str]) -> None:
+    """Uninstall and unregister the feature."""
+    import subprocess
+
+    if argv:
+        raise CLIError("unexpected arguments")
+    features.compose(["rm", "-fs", "isaac"])
     subprocess.run(["git", "submodule", "deinit", "-f", "arena_isaac"], cwd=common._env("ARENA_DIR"), check=False)
     common._reg_remove(NAME)
 
 
-def launch(argv: list[str]) -> None:
-    """Launch Isaac Sim."""
-    _require_installed()
-    common._exec("ros2", "launch", "arena_isaac", "run_isaacsim.launch.py", *argv)
-
-
-COMMANDS: dict[str, Verb] = {
-    v.name: v
-    for v in [
-        make_verb("install", install),
-        make_verb("update", update),
-        make_verb("uninstall", uninstall),
-        make_verb("launch", launch, passthrough=True),
-    ]
-}
+if features.in_container():
+    COMMANDS: dict[str, Verb] = {
+        v.name: v
+        for v in [
+            *lifecycle_verbs(NAME, _update_container),
+            make_verb("uninstall", uninstall_container),
+            make_verb("launch", launch_container, passthrough=True),
+            make_verb("exec", exec_, passthrough=True),
+            source_verb(_shell_source),
+        ]
+    }
+else:
+    COMMANDS = {
+        v.name: v
+        for v in [
+            *lifecycle_verbs(NAME, _update_host, deinit="arena_isaac"),
+            make_verb("launch", launch_host, passthrough=True),
+            source_verb(_shell_source),
+        ]
+    }

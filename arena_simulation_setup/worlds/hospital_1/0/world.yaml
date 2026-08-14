@@ -71,6 +71,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - state: max_speed
+    value: 1.0
   entities:
     static: []
     dynamic: []
@@ -170,6 +173,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - state: max_speed
+    value: 1.0
   entities:
     static:
     - pose:
@@ -365,6 +371,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
   entities:
     static:
     - pose:
@@ -653,6 +662,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
   entities:
     static:
     - pose:
@@ -1001,6 +1013,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
   entities:
     static:
     - pose:
@@ -1280,6 +1295,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
   entities:
     static:
     - pose:
@@ -1595,6 +1613,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
   entities:
     static:
     - pose:
@@ -1871,6 +1892,9 @@ zones:
       _modifiers: null
   doors: []
   elevators: []
+  semantics:
+  - state: max_speed
+    value: 0.8
   entities:
     static: []
     dynamic: []
@@ -1970,6 +1994,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
   entities:
     static:
     - pose:
@@ -2213,6 +2240,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
   entities:
     static:
     - pose:
@@ -3236,6 +3266,9 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
   entities:
     static:
     - pose:

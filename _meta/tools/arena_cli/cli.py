@@ -12,16 +12,12 @@ from common import (
     Verb,
     _env,
     _exec,
-    _feature_dispatch,
     _reg_add,
     _reg_has,
     _reg_list,
     _reg_pull,
     _reg_remove,
-    _reg_resolve,
     _run,
-    _script_desc,
-    _script_help,
     make_verb,
 )
 
@@ -34,7 +30,7 @@ the underlying launch file or tool."""
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo"],
     "Attach": ["human", "robot", "cam"],
-    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload"],
+    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall"],
     "Features": ["feature", "registry"],
     "Shell": ["deactivate", "resource", "repair"],
 }
@@ -129,10 +125,10 @@ def main(prog_name: str = "arena") -> None:
         sys.exit(130)
 
 
-def _select_args(args: list[str]) -> list[str]:
+def _select_args(args: list[str], above: bool = False) -> list[str]:
     argv = list(args)
     if argv and not argv[0].startswith("--"):
-        argv = ["--packages-select", *argv]
+        argv = ["--packages-above" if above else "--packages-select", *argv]
     return argv
 
 
@@ -216,12 +212,12 @@ def cleanup(args: list[str]) -> None:
 def build(args: list[str]) -> None:
     """Build the workspace (or selected packages) with colcon.
 
-    Bare package names are shorthand for --packages-select. The shell
+    Bare package names are shorthand for --packages-above. The shell
     shim re-sources the environment afterwards.
     """
     from build import build_main
 
-    sys.exit(build_main(_select_args(args)))
+    sys.exit(build_main(_select_args(args, above=True)))
 
 
 @verb("rebuild", passthrough=True)
@@ -230,13 +226,14 @@ def rebuild(args: list[str]) -> None:
 
     Accepts bare package names or colcon selection flags, e.g.
     `arena rebuild foo bar` or `arena rebuild --packages-select-regex 'arena_.*'`.
+    Bare names expand to --packages-above like `arena build`.
     """
     import shutil
     import subprocess
 
     if not args:
         raise CLIError("rebuild needs a package selection")
-    argv = _select_args(args)
+    argv = _select_args(args, above=True)
     listing = subprocess.run(
         ["colcon", "list", "--names-only", "--base-paths", os.path.join(_env("ARENA_WS_DIR"), "src"), *argv],
         capture_output=True,
@@ -309,26 +306,14 @@ def update(args: list[str]) -> None:
     sys.exit(rc)
 
 
-UNIVERSAL_VERBS = {
-    "install": "Install the feature (pull repos, register, run its update).",
-    "update": "Update the feature to the latest state.",
-    "uninstall": "Uninstall and unregister the feature.",
-    "launch": "Launch the feature's runtime component.",
-}
-
 FEATURE_HELP = """Manage optional features.
 
-install, update, uninstall, and launch are common verbs. Any other
-verb is forwarded to the feature script, see each feature's help
-page for its full verb list."""
+install, update, and uninstall are common verbs, see each feature's
+help page for its full verb list."""
 
 
 def _feature_names() -> list[str]:
-    try:
-        entries = sorted(os.listdir(_env("ARENA_FEATURES_DIR")))
-    except OSError:
-        return []
-    return [e for e in entries if _reg_resolve(e)]
+    return [name for name in sorted(_features.available()) if _features.load(name) is not None]
 
 
 def _feature_desc(mod) -> str:
@@ -337,10 +322,7 @@ def _feature_desc(mod) -> str:
 
 def _feature_short(name: str) -> str:
     mod = _features.load(name)
-    if mod is not None:
-        return _feature_desc(mod).splitlines()[0]
-    path = _reg_resolve(name)
-    return _script_desc(path) if path else ""
+    return _feature_desc(mod).splitlines()[0] if mod is not None else ""
 
 
 def _feature_group_help() -> str:
@@ -359,43 +341,44 @@ def _feature_module_help(name: str, mod) -> str:
     return "\n".join(out)
 
 
-def _feature_script_help(name: str, path: str) -> str:
-    out = [f"Usage: arena feature {name} COMMAND [ARGS]...", "", f"  The {name} feature."]
-    out += ["", "Commands:", _listing(list(UNIVERSAL_VERBS.items()))]
-    text = _script_help(path)
-    if text:
-        out += ["", "Feature script help:", _indent(text)]
-    return "\n".join(out)
-
-
 def _feature_cmd(args: list[str]) -> int:
     if not args or args[0] in ("-h", "--help"):
         print(_feature_group_help())
         return 0
     name, sub = args[0], args[1:]
     mod = _features.load(name)
-    if mod is not None:
-        if not sub or sub[0] in ("-h", "--help"):
-            print(_feature_module_help(name, mod))
-            return 0
-        v = mod.COMMANDS.get(sub[0])
-        if v is None:
-            raise CLIError(f"No such command '{sub[0]}' for feature '{name}'.")
-        if _wants_help(sub[1:], v.passthrough):
-            print(_verb_help(v))
-            return 0
-        return v.run(sub[1:]) or 0
-    path = _reg_resolve(name)
-    if path is None:
+    if mod is None:
         raise CLIError(f"No such feature '{name}'.")
     if not sub or sub[0] in ("-h", "--help"):
-        print(_feature_script_help(name, path))
+        print(_feature_module_help(name, mod))
         return 0
-    return _feature_dispatch(name, tuple(sub))
+    v = mod.COMMANDS.get(sub[0])
+    if v is None:
+        raise CLIError(f"No such command '{sub[0]}' for feature '{name}'.")
+    if _wants_help(sub[1:], v.passthrough):
+        print(_verb_help(v))
+        return 0
+    return v.run(sub[1:]) or 0
 
 
 _register(make_verb("feature", _feature_cmd, help_text=FEATURE_HELP))
 _register(make_verb("ft", _feature_cmd, hidden=True, help_text="Alias for feature."))
+
+
+@verb("shellinit", hidden=True)
+def shellinit(args: list[str]) -> None:
+    """Print shell init code for installed features, eval'd by `source arena`."""
+    for name in _reg_list():
+        mod = _features.load(name)
+        if mod is None:
+            continue
+        v = mod.COMMANDS.get("source")
+        if v is None:
+            continue
+        try:
+            v.run([])
+        except Exception as e:
+            print(f"Failed to source {name}, skipping: {e}", file=sys.stderr)
 
 
 @verb("train", passthrough=True)
@@ -404,16 +387,16 @@ def train(args: list[str]) -> None:
 
     `arena train train_config:=<yaml> [launch args]`.
     """
-    sys.exit(_feature_dispatch("training", ("launch", *args)))
+    sys.exit(_feature_cmd(["training", "launch", *args]))
 
 
 @verb("evaluation", hidden=True, passthrough=True)
 def evaluation(args: list[str]) -> None:
     """Alias for feature evaluation."""
-    sys.exit(_feature_dispatch("evaluation", tuple(args)))
+    sys.exit(_feature_cmd(["evaluation", *args]))
 
 
-REGISTRY_VERBS = ("has", "require", "add", "remove", "list", "pull", "resolve")
+REGISTRY_VERBS = ("has", "require", "add", "remove", "list", "pull")
 
 
 @verb("registry")
@@ -440,11 +423,12 @@ def registry(args: list[str]) -> None:
         _reg_remove(name)
     elif action == "pull":
         _reg_pull(name)
-    elif action == "resolve":
-        path = _reg_resolve(name)
-        if path is None:
-            sys.exit(1)
-        print(path)
+
+
+@verb("uninstall")
+def uninstall(args: list[str]) -> None:
+    """Remove the container, image, and workspace trees (host only)."""
+    raise CLIError("host-level verb, run it from the host workspace: source arena uninstall")
 
 
 @verb("deactivate")

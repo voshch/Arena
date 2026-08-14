@@ -42,6 +42,8 @@ class Constants:
             RANDOM = "random"
             SCENARIO = "scenario"
             DEMO = "demo"
+            STATIONARY = "stationary"
+            CHARACTERIZATION = "characterization"
 
             @classmethod
             def prefix(cls, *args: object) -> Namespace:

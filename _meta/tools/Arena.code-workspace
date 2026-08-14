@@ -37,6 +37,7 @@
       "path": "src/Arena/arena_evaluation"
     },
     {
+      "name": "arena_models",
       "path": "src/deps/arena_models"
     },
     {
@@ -56,6 +57,7 @@
       "path": "src/Arena/arena_planners/planners"
     },
     {
+      "name": "arena_training",
       "path": "src/Arena/arena_training"
     }
   ],

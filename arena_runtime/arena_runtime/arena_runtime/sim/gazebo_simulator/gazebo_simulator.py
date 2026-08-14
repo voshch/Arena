@@ -9,7 +9,7 @@ import math
 import time
 import traceback
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 import arena_robots.catalog
@@ -19,7 +19,6 @@ import launch
 import launch_ros
 import rclpy.impl.rcutils_logger
 import rclpy.time
-import tf2_ros
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
@@ -188,6 +187,8 @@ class GazeboHost(SimLifecycle):
 
 
 class GazeboSimulator(BaseSim):
+    SIM_NAME = 'gazebo'
+
     # gz create CLI ack timeout (ms), kept generous so a slow server-side ack
     # under heavy load is not mistaken for a spawn failure, which would leak an
     # untracked orphan model.
@@ -206,17 +207,7 @@ class GazeboSimulator(BaseSim):
         self._material_texture_cache: dict[str, dict[str, str]] = {}
         self._spawned_names: set[str] = set()
 
-        self._agent_robots: dict[str, str] = {}
-        self._mechanism_tf_buffer = tf2_ros.Buffer()
-        self._mechanism_tf_listener = tf2_ros.TransformListener(self._mechanism_tf_buffer, self.node)
-
         self._viewport_camera_pose: Pose | None = None
-
-    async def before_reset_episode(self) -> bool:
-        return True
-
-    async def after_reset_episode(self) -> bool:
-        return True
 
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         args: dict[str, object] = {
@@ -284,7 +275,7 @@ class GazeboSimulator(BaseSim):
             self._robot_initialpose(robot)
             await self._robot_bridge(robot, model_description)
             robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-            self._agent_robots[robot.sim_path] = robot.frame.tf(robot_config.model_params.base_frame)
+            self._register_agent_robot(robot, robot_config.model_params)
             return True
 
         success = await asyncio.gather(*map(impl, robots))
@@ -314,7 +305,7 @@ class GazeboSimulator(BaseSim):
 
     async def robot_delete(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:
-            self._agent_robots.pop(robot.sim_path, None)
+            self._forget_agent_robot(robot.sim_path)
         return await asyncio.gather(*(self._delete_entity(robot.sim_path) for robot in robots))
 
     async def pedestrian_update(self, pedestrians: Pedestrians) -> Sequence[bool]:
@@ -340,31 +331,6 @@ class GazeboSimulator(BaseSim):
                 await self._spawn_sdf(name, ceiling_sdf, Pose())
             self._walls_entities.append(name)
         return True
-
-    def robot_positions_xy(self) -> Iterable[tuple[str, tuple[float, float]]]:
-        out: list[tuple[str, tuple[float, float]]] = []
-        for sim_path, frame in list(self._agent_robots.items()):
-            try:
-                t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                continue
-            out.append((sim_path, (t.transform.translation.x, t.transform.translation.y)))
-        return out
-
-    def robot_pose(self, sim_path: str) -> Pose | None:
-        frame = self._agent_robots.get(sim_path)
-        if frame is None:
-            return None
-        try:
-            t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            return None
-        tr = t.transform.translation
-        rot = t.transform.rotation
-        return Pose(
-            position=Position(x=tr.x, y=tr.y, z=tr.z),
-            orientation=Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z),
-        )
 
     async def set_robot_pose(self, sim_path: str, pose: Pose) -> bool:
         if sim_path not in self._agent_robots:

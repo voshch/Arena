@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -16,6 +17,8 @@ from task_generator.tasks.robots.adapters.mobile import MobileAdapter
 from task_generator.tasks.robots.request import GoToPhase, TaskPhase
 
 if TYPE_CHECKING:
+    from rclpy.impl.rcutils_logger import RcutilsLogger
+
     from task_generator.manager.robot_manager.robot_manager import RobotManager
     from task_generator.shared import Pose
     from task_generator.tasks.robots.adapters import ResetContext
@@ -67,13 +70,10 @@ class DrlAdapter(MobileAdapter):
         with open(manifest_path) as fh:
             manifest_dict: dict = yaml.safe_load(fh) or {}
 
-        self._manifest: dict | str
         if self._observations_override:
             manifest_dict.setdefault("observations", {})
             _deep_merge(manifest_dict["observations"], self._observations_override)
-            self._manifest = manifest_dict
-        else:
-            self._manifest = str(manifest_path)
+        self._manifest: dict = manifest_dict
 
         depends = manifest_dict.get("depends") or {}
         self._depends_global_plan: bool = bool(depends.get("global_plan", False))
@@ -106,6 +106,40 @@ class DrlAdapter(MobileAdapter):
 
     def _needs_global_plan(self) -> bool:
         return self._depends_global_plan and self._global_planner != "none"
+
+    def _bind_sensor_topics(self, sensors: list, namespace: str, logger: RcutilsLogger) -> dict:
+        """Resolve datasources declaring `sensor: <SensorType>` to that sensor's topic on this robot."""
+        from arena_robots.Sensor import resolve_topic  # noqa: PLC0415
+
+        manifest = copy.deepcopy(self._manifest)
+        observations = manifest.get("observations") or {}
+        datasources = observations.get("datasources") or {}
+        by_type: dict[str, list] = {}
+        for spec in sensors:
+            by_type.setdefault(str(spec.type), []).append(spec)
+
+        dropped: set[str] = set()
+        for name in list(datasources):
+            params = datasources[name].get("params") or {}
+            wanted = params.pop("sensor", None)
+            if wanted is None:
+                continue
+            matches = by_type.get(str(wanted)) or []
+            if not matches:
+                logger.warn(f"arena: planner={self._planner_name!r} datasource {name!r} wants sensor {wanted!r}, robot has {sorted(by_type)}; dropping it")
+                del datasources[name]
+                dropped.add(name)
+                continue
+            if len(matches) > 1:
+                logger.warn(f"arena: planner={self._planner_name!r} datasource {name!r} matches {len(matches)} {wanted!r} sensors; using {matches[0].name!r}")
+            params["topic"] = resolve_topic(matches[0], namespace)
+            datasources[name]["params"] = params
+
+        aliases = observations.get("aliases") or {}
+        for alias, target in list(aliases.items()):
+            if target in dropped:
+                del aliases[alias]
+        return manifest
 
     def launch_description(self, ctx: AdapterCtx) -> GroupAction:
         kwargs = dict(self._bringup_kwargs)
@@ -149,6 +183,15 @@ class DrlAdapter(MobileAdapter):
         mobile_cap = robot._config.caps.mobile if "mobile" in robot._config.caps.available else None
         is_holonomic = bool(mobile_cap.is_holonomic) if mobile_cap is not None else False
 
+        _limits: dict[str, tuple[float, float]] = {}
+        _vel = mobile_cap.velocity_limits if mobile_cap is not None else None
+        if _vel is None:
+            robot.node.get_logger().warn(f"arena: robot={robot.robot.name!r} declares no velocity_limits; planner output will not be clamped")
+        else:
+            _limits["linear"] = (_vel.linear.min, _vel.linear.max)
+            _limits["angular"] = (_vel.angular.min, _vel.angular.max)
+            _limits["lateral"] = (_vel.lateral.min, _vel.lateral.max) if _vel.lateral is not None else (0.0, 0.0)
+
         from arena_planners.resolver import load_manifest  # noqa: PLC0415
 
         _manifest = load_manifest(self._planner_name)
@@ -156,16 +199,18 @@ class DrlAdapter(MobileAdapter):
         _sensor_needs: list[str] = _manifest.get("sensor_needs") or []
         if _action_type is not None and is_holonomic != (_action_type == "omnidirectional"):
             robot.node.get_logger().warn(f"arena: planner={self._planner_name!r} (action_type={_action_type}) but robot={robot.robot.name!r} is_holonomic={is_holonomic}; bridge will apply projection")
-        _available = {s.type for s in robot._config.effective_sensors(robot._robot.resolved_request, frames=robot._robot.frames)}
+        _sensors = robot._config.effective_sensors(robot._robot.resolved_request, frames=robot._robot.frames)
+        _available = {s.type for s in _sensors}
         for _need in _sensor_needs:
             if _need not in _available:
                 robot.node.get_logger().warn(f"arena: planner={self._planner_name!r} needs sensor {_need!r} but robot={robot.robot.name!r} sensors={sorted(_available)}; planner will receive empty data")
+        _manifest = self._bind_sensor_topics(_sensors, ns, robot.node.get_logger())
 
         robot.node.get_logger().info(f"DRL edge for robot={robot.robot.name!r} planner={self._planner_name!r} ns={ns} holonomic={is_holonomic}")
 
         edge_node = PlannerEdgeNode(
             node_name=node_name,
-            manifest=self._manifest,
+            manifest=_manifest,
             planner_command=self._planner_command,
             namespace=ns,
             source_frame=source_frame,
@@ -173,6 +218,7 @@ class DrlAdapter(MobileAdapter):
             cmd_vel_topic=self.bringup.cmd_vel_topic,
             is_holonomic=is_holonomic,
             simulation_namespace=robot.node.get_namespace(),
+            velocity_limits=_limits,
         )
         robot.node.executor.add_node(edge_node)
 

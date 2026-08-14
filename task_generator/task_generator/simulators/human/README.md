@@ -41,7 +41,7 @@ specialized teleport semantics (e.g. resetting an internal hunav agent list).
 
 | Method | Signature |
 | --- | --- |
-| `pedestrian_positions_xy()` | `() -> Iterable[tuple[str, tuple[float, float]]]` (sync, reads `_ped_positions_xy`) |
+| `pedestrian_discs()` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, reads `_ped_positions_xy`, radius is `PED_RADIUS`) |
 | `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`) |
 
 ### Abstract `_impl` methods

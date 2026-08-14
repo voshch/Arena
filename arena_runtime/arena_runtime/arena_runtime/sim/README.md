@@ -52,7 +52,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `MechanismITF`
 
-[`_interface.py:138`](_interface.py#L138): door and elevator orchestration. Provides concrete default implementations driven by an internal sim-time tick loop ([`_mechanism_shim.py`](_mechanism_shim.py)) on top of five box/robot primitives. Any simulator that implements the primitives gets door animation, elevator pair-teleport, and ped/robot teleport for free; simulators with native support can override the four top-level methods.
+[`_interface.py:138`](_interface.py#L138): door and elevator orchestration. Provides concrete default implementations driven by an internal sim-time tick loop ([`_mechanism_shim.py`](_mechanism_shim.py)) on top of four box/robot primitives. Any simulator that implements the primitives gets door animation, elevator pair-teleport, and ped/robot teleport for free; simulators with native support can override the four top-level methods.
 
 | Default method | Signature | Purpose |
 | --- | --- | --- |
@@ -69,16 +69,17 @@ Defined in [`_interface.py`](_interface.py):
 | `move_box` | `(name, pose) -> bool` |
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |
-| `robot_positions_xy` | `() -> Iterable[tuple[str, tuple[float, float]]]` (sync) |
+
+Robot tracking is not a primitive to override: call `_register_agent_robot(robot, model_params)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
 
 The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 
 | Method | Signature |
 | --- | --- |
-| `pedestrian_positions_xy` | `() -> Iterable[tuple[str, tuple[float, float]]]` (sync, ground truth) |
+| `pedestrian_discs` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, ground truth: name, xy, radius) |
 | `pedestrian_teleport` | `(Mapping[str, tuple[float, float]]) -> bool` (async) |
 
-The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../task_generator/task_generator/simulators/human/README.md)). Without an attached human-sim, the shim still drives doors against `robot_positions_xy` alone and logs a no-op for ped teleports.
+The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../task_generator/task_generator/simulators/human/README.md)). Without an attached human-sim, the shim still drives doors against `robot_discs` alone and logs a no-op for ped teleports.
 
 ### `SimLifecycle`
 
@@ -100,12 +101,12 @@ Registered in `LifecycleRegistry` alongside `SimulatorRegistry` ([`__init__.py`]
 class BaseSim(NodeInterface, ObstacleITF, PedestrianITF, RobotITF, WorldITF, MechanismITF, abc.ABC):
 ```
 
-Additional abstract methods:
+Overridable hooks (concrete default no-ops):
 
 | Method | Purpose |
 | --- | --- |
-| `before_reset_episode()` | called before every episode reset; implementations pause the sim |
-| `after_reset_episode()` | called after every episode reset; implementations unpause the sim |
+| `before_reset_episode()` | episode-boundary hook before every reset, for sim work that must not ride the mid-episode pause path; default no-op |
+| `after_reset_episode()` | episode-boundary hook after every reset; default no-op |
 | `step(n=1)` | advance simulation by `n` ticks; default no-op returns `True` |
 
 ## Sim-paused invariant
@@ -132,13 +133,17 @@ instantiated via `SimulatorRegistry.get(key, **kwargs)`.
 ## Adding a new simulator
 
 1. Subclass `BaseSim`; implement all abstract methods from the four
-   sub-interfaces plus `before_reset_episode` and `after_reset_episode`.
-2. Implement the five `MechanismITF` primitives (`spawn_box`, `move_box`,
-   `delete_box`, `set_robot_pose`, `robot_positions_xy`) to get door + elevator
-   animation out of the box. Override `spawn_doors`/`remove_doors`/
-   `spawn_elevators`/`remove_elevators` only if the simulator has native door
-   support that supersedes the shim, and call `await self.stop_mechanisms()`
-   from `shutdown` if you use the defaults.
+   sub-interfaces. Define `SIM_NAME` (`ClassVar[str]`), consumed by
+   `MechanismITF.__init__` to tag semantics with the simulator key.
+   `before_reset_episode`/`after_reset_episode`/`step` default to no-ops,
+   override only if the simulator needs episode-boundary or stepped-sim work.
+2. Implement the four `MechanismITF` primitives (`spawn_box`, `move_box`,
+   `delete_box`, `set_robot_pose`) to get door + elevator animation out of
+   the box, and call `_register_agent_robot` on spawn / `_forget_agent_robot`
+   on remove so the door gate can see the simulator's robots. Override
+   `spawn_doors`/`remove_doors`/`spawn_elevators`/`remove_elevators` only if
+   the simulator has native door support that supersedes the shim, and call
+   `await self.stop_mechanisms()` from `shutdown` if you use the defaults.
 3. Register a lazy async factory:
 
 ```python

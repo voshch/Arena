@@ -2,7 +2,7 @@
 
 MCP (Model Context Protocol) server that wraps `task_generator_node` services as tools and resources. Provides LLM-friendly access to episode lifecycle, world/robot/obstacle queries, task-mode configuration, and runtime spawning.
 
-Transport: stdio (v0). Works with Claude Desktop, `mcp-cli`, and any stdio-MCP client.
+Transport: stdio (v0). Works with `mcp-cli` and any stdio-MCP client.
 
 ---
 
@@ -20,7 +20,7 @@ Transport: stdio (v0). Works with Claude Desktop, `mcp-cli`, and any stdio-MCP c
 
 | Tool | Args | Returns | Purpose |
 |---|---|---|---|
-| `lifecycle_reset_episode` | `world: str = ""`, `seed: int = -1` | `{success, error_msg}` | Advance to a new episode. Empty world inherits current; seed ≥ 0 for bit-perfect replay. |
+| `lifecycle_reset_episode` | `world: str = ""`, `seed: int = -1` | `{success, error_msg}` | Advance to a new episode. Empty world inherits current; seed >= 0 for bit-perfect replay. |
 | `lifecycle_pause` | - | `{success}` | Pause simulation clock. |
 | `lifecycle_unpause` | - | `{success}` | Resume simulation clock. |
 | `lifecycle_wait_for_world` | - | `{success}` | Block until the active world is fully loaded. |
@@ -74,9 +74,9 @@ Task-mode enum values for `tm_robots` / `tm_obstacles` / `tm_modules` are compil
 
 ## Setup
 
-### Claude Desktop
+### Stdio MCP host
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or equivalent:
+Add to the host's MCP server config:
 
 ```json
 {
@@ -91,7 +91,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-The `task_generator_mcp` console script is installed by `colcon build` into the ROS overlay. Source the overlay (`source ~/arena_ws/install/setup.bash`) before starting Claude Desktop, or set an absolute path to the installed binary.
+The `task_generator_mcp` console script is installed by `colcon build` into the ROS overlay. Source the overlay (`source ~/arena_ws/install/setup.bash`) before starting the host, or set an absolute path to the installed binary.
 
 ### mcp-cli
 

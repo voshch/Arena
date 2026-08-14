@@ -55,6 +55,9 @@ class TM_Composite(TM_Robots):
         await super().reset(**kwargs)
         await asyncio.gather(*(m.reset(**kwargs) for m in self._sub_modes))
 
+    async def teardown(self) -> None:
+        await asyncio.gather(*(m.teardown() for m in self._sub_modes))
+
     @property
     def start_poses(self) -> dict:
         merged: dict = {}

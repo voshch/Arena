@@ -2,7 +2,7 @@
 
 export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init - bash)"
+command -v pyenv > /dev/null 2>&1 && eval "$(pyenv init - bash)"
 
 if [ ! -f /.built ]; then
     exec 9> /tmp/arena-first-boot.lock
@@ -16,7 +16,7 @@ if [ ! -f /.built ]; then
             arena registry add docker
             echo "Running initial setup..."
             arena update
-            rm -r build/arena_models install/arena_models || true
+            rm -rf build/arena_models install/arena_models
             BUILD_ALL=1 arena build || true
             sudo touch /.built
             echo 'Initial setup complete.'
