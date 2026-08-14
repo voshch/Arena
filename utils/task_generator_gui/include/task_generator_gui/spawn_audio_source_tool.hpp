@@ -1,20 +1,20 @@
-#ifndef TASK_GENERATOR_GUI_SPAWN_MICROPHONE_TOOL_HPP
-#define TASK_GENERATOR_GUI_SPAWN_MICROPHONE_TOOL_HPP
+#ifndef TASK_GENERATOR_GUI_SPAWN_AUDIO_SOURCE_TOOL_HPP
+#define TASK_GENERATOR_GUI_SPAWN_AUDIO_SOURCE_TOOL_HPP
 
 #include <memory>
-#include <string>
 
 #include <QObject>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rviz_default_plugins/tools/pose/pose_tool.hpp>
 
-#include "task_generator_msgs/srv/spawn_microphone.hpp"
+#include "task_generator_msgs/srv/spawn_audio_source.hpp"
 
 namespace rviz_common
 {
 namespace properties
 {
+class EnumProperty;
 class FloatProperty;
 class StringProperty;
 }
@@ -22,13 +22,13 @@ class StringProperty;
 
 namespace task_generator_gui
 {
-class SpawnMicrophoneTool : public rviz_default_plugins::tools::PoseTool
+class SpawnAudioSourceTool : public rviz_default_plugins::tools::PoseTool
 {
   Q_OBJECT
 
 public:
-  SpawnMicrophoneTool();
-  ~SpawnMicrophoneTool() override;
+  SpawnAudioSourceTool();
+  ~SpawnAudioSourceTool() override;
 
   void onInitialize() override;
 
@@ -39,14 +39,13 @@ private Q_SLOTS:
   void updateClient();
 
 private:
-  void selectPlaybackListener(const std::string & listener_id);
-
   rviz_common::properties::StringProperty * target_node_property_;
+  rviz_common::properties::EnumProperty * mode_property_;
   rviz_common::properties::FloatProperty * height_property_;
 
   std::shared_ptr<rclcpp::Node> service_node_;
-  rclcpp::Client<task_generator_msgs::srv::SpawnMicrophone>::SharedPtr client_;
+  rclcpp::Client<task_generator_msgs::srv::SpawnAudioSource>::SharedPtr client_;
 };
 }  // namespace task_generator_gui
 
-#endif  // TASK_GENERATOR_GUI_SPAWN_MICROPHONE_TOOL_HPP
+#endif  // TASK_GENERATOR_GUI_SPAWN_AUDIO_SOURCE_TOOL_HPP

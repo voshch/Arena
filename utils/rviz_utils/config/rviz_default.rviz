@@ -87,6 +87,10 @@ Visualization Manager:
     - Class: task_generator_gui::SpawnMicrophoneTool
       Target: {task_generator_node}
       Height: 1.5
+    - Class: task_generator_gui::SpawnAudioSourceTool
+      Target: {task_generator_node}
+      Mode: Music
+      Height: 1.2
   Transformation:
     Current:
       Class: rviz_default_plugins/TF

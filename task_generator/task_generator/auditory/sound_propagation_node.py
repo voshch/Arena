@@ -23,7 +23,7 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from shapely.geometry import Point as ShapelyPoint
-from std_msgs.msg import String
+from std_msgs.msg import ColorRGBA, String
 from task_generator.auditory.acoustic_frame import (
     realize_acoustic_geometry,
     runtime_acoustic_offset,
@@ -68,6 +68,7 @@ from task_generator_msgs.msg import (
     SoundEvent,
 )
 from task_generator_msgs.srv import SpawnMicrophone
+from visualization_msgs.msg import Marker, MarkerArray
 
 
 class SoundPropagationNode(Node):
@@ -88,6 +89,10 @@ class SoundPropagationNode(Node):
         self.declare_parameter(
             "microphone_listeners_topic",
             "microphone_listeners",
+        )
+        self.declare_parameter(
+            "microphone_marker_topic",
+            "microphone_markers",
         )
         self.declare_parameter("arena_peds_topic", "arena_peds")
         self.declare_parameter("map_topic", "map")
@@ -213,11 +218,20 @@ class SoundPropagationNode(Node):
             str(self.get_parameter("microphone_listeners_topic").value),
             acoustic_metadata_qos(),
         )
+        self._microphone_marker_pub = self.create_publisher(
+            MarkerArray,
+            str(self.get_parameter("microphone_marker_topic").value),
+            acoustic_metadata_qos(),
+        )
         self._publish_microphone_registry()
         self._spawn_microphone_service = self.create_service(
             SpawnMicrophone,
             "runtime/spawn_microphone",
             self._spawn_microphone,
+        )
+        self._microphone_marker_timer = self.create_timer(
+            0.25,
+            self._publish_microphone_markers,
         )
         self.create_subscription(SoundEvent, sound_events_topic, self._cb_sound_event, transient_event_qos())
         self.create_subscription(
@@ -725,6 +739,88 @@ class SoundPropagationNode(Node):
         self._microphone_registry_pub.publish(
             String(data=json.dumps(listener_ids, separators=(",", ":")))
         )
+        self._publish_microphone_markers()
+
+    def _publish_microphone_markers(self) -> None:
+        frame_id = (
+            str(self._map.header.frame_id).strip()
+            if self._map is not None
+            else "map"
+        )
+        stamp = self.get_clock().now().to_msg()
+        clear = Marker()
+        clear.header.frame_id = frame_id
+        clear.header.stamp = stamp
+        clear.action = Marker.DELETEALL
+        markers = [clear]
+        color = ColorRGBA(r=0.12, g=0.95, b=0.45, a=0.85)
+        for index, (listener_id, position) in enumerate(
+            sorted(self._microphone_positions().items())
+        ):
+            marker = Marker()
+            marker.header.frame_id = frame_id
+            marker.header.stamp = stamp
+            marker.ns = "acoustic_microphones"
+            marker.id = index * 2
+            marker.type = Marker.TRIANGLE_LIST
+            marker.action = Marker.ADD
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = marker.scale.y = marker.scale.z = 1.0
+            marker.color = color
+            marker.lifetime.nanosec = 600_000_000
+            apex = Point(
+                x=float(position.x) + 0.28,
+                y=float(position.y),
+                z=float(position.z),
+            )
+            base_a = Point(
+                x=float(position.x) - 0.14,
+                y=float(position.y) - 0.16,
+                z=float(position.z) - 0.12,
+            )
+            base_b = Point(
+                x=float(position.x) - 0.14,
+                y=float(position.y) + 0.16,
+                z=float(position.z) - 0.12,
+            )
+            base_c = Point(
+                x=float(position.x) - 0.14,
+                y=float(position.y),
+                z=float(position.z) + 0.18,
+            )
+            marker.points = [
+                apex,
+                base_a,
+                base_b,
+                apex,
+                base_b,
+                base_c,
+                apex,
+                base_c,
+                base_a,
+                base_a,
+                base_c,
+                base_b,
+            ]
+
+            label = Marker()
+            label.header = marker.header
+            label.ns = "acoustic_microphone_labels"
+            label.id = index * 2 + 1
+            label.type = Marker.TEXT_VIEW_FACING
+            label.action = Marker.ADD
+            label.pose.position = Point(
+                x=float(position.x),
+                y=float(position.y),
+                z=float(position.z) + 0.35,
+            )
+            label.pose.orientation.w = 1.0
+            label.scale.z = 0.18
+            label.color = ColorRGBA(r=0.05, g=0.35, b=0.12, a=1.0)
+            label.lifetime = marker.lifetime
+            label.text = listener_id
+            markers.extend((marker, label))
+        self._microphone_marker_pub.publish(MarkerArray(markers=markers))
 
     def _spawn_microphone(
         self,
@@ -985,6 +1081,16 @@ class SoundPropagationNode(Node):
             if transformed is not None:
                 listeners[listener_id] = transformed
 
+        listeners.update(self._microphone_positions())
+
+        if not bool(self.get_parameter("robots_hear_self").value):
+            listeners.pop(f"robot:{event.source_agent_name}", None)
+
+        return listeners
+
+    def _microphone_positions(self) -> dict[str, Point]:
+        listeners: dict[str, Point] = {}
+
         for listener_id, (position, frame_id) in (
             self._robot_microphones.items()
         ):
@@ -1027,9 +1133,6 @@ class SoundPropagationNode(Node):
                 y=float(position.y),
                 z=float(position.z),
             )
-
-        if not bool(self.get_parameter("robots_hear_self").value):
-            listeners.pop(f"robot:{event.source_agent_name}", None)
 
         return listeners
 

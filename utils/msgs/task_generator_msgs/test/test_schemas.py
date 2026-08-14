@@ -218,6 +218,22 @@ def test_set_audio_system_srv():
     assert res.success is True
 
 
+def test_spawn_audio_source_srv():
+    from task_generator_msgs.srv import SpawnAudioSource
+
+    req = SpawnAudioSource.Request()
+    req.pose.header.frame_id = "map"
+    req.mode = "music"
+    assert req.pose.header.frame_id == "map"
+    assert req.mode == "music"
+
+    res = SpawnAudioSource.Response()
+    res.system_id = "runtime_music_1"
+    res.success = True
+    assert res.system_id == "runtime_music_1"
+    assert res.success is True
+
+
 def test_spawn_static_srv():
     from geometry_msgs.msg import PoseStamped
     from task_generator_msgs.srv import SpawnStatic

@@ -4,18 +4,24 @@ import hashlib
 import math
 from dataclasses import dataclass
 
+import rclpy
+import tf2_ros
 import yaml
 from arena_simulation_setup.shared import Obstacle, Position
 from arena_simulation_setup.tree.World import WorldDescription, WorldIdentifier
-from arena_simulation_setup.tree.World.Scenario import AudioSystem, ScenarioAudio
+from arena_simulation_setup.tree.World.Scenario import (
+    AudioEmitter,
+    AudioSystem,
+    ScenarioAudio,
+)
 from arena_simulation_setup.utils.cattrs import converter
 from builtin_interfaces.msg import Time
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Vector3
 from task_generator_msgs.msg import (
     AudioSystemState,
     ContinuousAudioSourceState,
 )
-from task_generator_msgs.srv import SetAudioSystem
+from task_generator_msgs.srv import SetAudioSystem, SpawnAudioSource
 
 from task_generator.auditory.qos_profiles import (
     acoustic_metadata_qos,
@@ -61,6 +67,11 @@ class Mod_AudioSystems(TM_Module):
             SetAudioSystem,
             self.node.service_namespace("runtime", "set_audio_system"),
             self._set_audio_system,
+        )
+        self._spawn_service = self.node.create_service(
+            SpawnAudioSource,
+            self.node.service_namespace("runtime", "spawn_audio_source"),
+            self._spawn_audio_source,
         )
         self._timer = self.node.create_timer(0.1, self._publish_sources)
 
@@ -232,6 +243,197 @@ class Mod_AudioSystems(TM_Module):
         self._publish_system_state(system_id, runtime)
         response.success = True
         return response
+
+    def _spawn_audio_source(
+        self,
+        request: SpawnAudioSource.Request,
+        response: SpawnAudioSource.Response,
+    ) -> SpawnAudioSource.Response:
+        mode = str(request.mode).strip().lower()
+        settings = {
+            "music": ("radio_loop", 62.0, ("radio", "music")),
+            "alarm": ("alarm_loop", 88.0, ("alarm", "emergency")),
+        }.get(mode)
+        if settings is None:
+            response.error_msg = "mode must be 'music' or 'alarm'"
+            return response
+
+        frame_id = str(request.pose.header.frame_id).strip().lstrip("/")
+        if not frame_id:
+            response.error_msg = "audio source pose requires a frame ID"
+            return response
+
+        position = request.pose.pose.position
+        orientation = request.pose.pose.orientation
+        values = (
+            position.x,
+            position.y,
+            position.z,
+            orientation.x,
+            orientation.y,
+            orientation.z,
+            orientation.w,
+        )
+        if not all(math.isfinite(value) for value in values):
+            response.error_msg = "audio source pose must be finite"
+            return response
+        orientation_norm = math.sqrt(
+            orientation.x**2
+            + orientation.y**2
+            + orientation.z**2
+            + orientation.w**2
+        )
+        if orientation_norm <= 1e-9:
+            response.error_msg = "audio source orientation must be valid"
+            return response
+
+        map_position = Point(
+            x=float(position.x),
+            y=float(position.y),
+            z=float(position.z),
+        )
+        map_orientation = (
+            float(orientation.x) / orientation_norm,
+            float(orientation.y) / orientation_norm,
+            float(orientation.z) / orientation_norm,
+            float(orientation.w) / orientation_norm,
+        )
+        if frame_id != "map":
+            try:
+                transform = self.node.tf_buffer.lookup_transform(
+                    "map",
+                    frame_id,
+                    rclpy.time.Time(),
+                ).transform
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException,
+            ) as exc:
+                response.error_msg = (
+                    f"cannot transform audio source from {frame_id!r} "
+                    f"to 'map': {exc}"
+                )
+                return response
+            transform_orientation = (
+                float(transform.rotation.x),
+                float(transform.rotation.y),
+                float(transform.rotation.z),
+                float(transform.rotation.w),
+            )
+            map_position = self._transform_position(
+                map_position,
+                transform_orientation,
+                transform.translation,
+            )
+            map_orientation = self._multiply_quaternions(
+                transform_orientation,
+                map_orientation,
+            )
+
+        if map_position.z < 0.0:
+            response.error_msg = "audio source height cannot be below the floor"
+            return response
+
+        index = 1
+        while f"runtime_{mode}_{index}" in self._systems:
+            index += 1
+        system_id = f"runtime_{mode}_{index}"
+        asset_id, source_volume_db, semantic_tags = settings
+        emitter_name = "radio" if mode == "music" else "alarm"
+        emitter = AudioEmitter(
+            name=emitter_name,
+            position=Position(
+                float(map_position.x),
+                float(map_position.y),
+                float(map_position.z),
+            ),
+            source_volume_db=source_volume_db,
+        )
+        specification = AudioSystem(
+            name=system_id,
+            sound_type=mode,
+            asset_id=asset_id,
+            emitters=[emitter],
+            loop=True,
+            initially_active=True,
+            semantic_tags=["runtime", *semantic_tags],
+        )
+        qx, qy, qz, qw = map_orientation
+        yaw = math.atan2(
+            2.0 * (qw * qz + qx * qy),
+            1.0 - 2.0 * (qy**2 + qz**2),
+        )
+        resolved = _ResolvedEmitter(
+            source_id=f"environment:{system_id}:{emitter_name}",
+            name=emitter_name,
+            position=Point(
+                x=float(map_position.x),
+                y=float(map_position.y),
+                z=float(map_position.z),
+            ),
+            yaw=float(yaw),
+            source_volume_db=source_volume_db,
+        )
+        runtime = _RuntimeSystem(
+            specification=specification,
+            emitters=(resolved,),
+            active=True,
+            program_start_time=self.node.get_clock().now().to_msg(),
+        )
+        self._systems[system_id] = runtime
+        self._publish_runtime_system(runtime)
+        self._publish_system_state(system_id, runtime)
+        response.system_id = system_id
+        response.success = True
+        self._logger.info(
+            f"spawned {mode} source {system_id!r} at "
+            f"({map_position.x:.2f}, {map_position.y:.2f}, "
+            f"{map_position.z:.2f})"
+        )
+        return response
+
+    @staticmethod
+    def _multiply_quaternions(
+        left: tuple[float, float, float, float],
+        right: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        lx, ly, lz, lw = left
+        rx, ry, rz, rw = right
+        return (
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+            lw * rw - lx * rx - ly * ry - lz * rz,
+        )
+
+    @staticmethod
+    def _transform_position(
+        position: Point,
+        rotation: tuple[float, float, float, float],
+        translation: Vector3,
+    ) -> Point:
+        qx, qy, qz, qw = rotation
+        norm = math.sqrt(qx**2 + qy**2 + qz**2 + qw**2)
+        if norm > 0.0:
+            qx /= norm
+            qy /= norm
+            qz /= norm
+            qw /= norm
+        x = float(position.x)
+        y = float(position.y)
+        z = float(position.z)
+        uv_x = qy * z - qz * y
+        uv_y = qz * x - qx * z
+        uv_z = qx * y - qy * x
+        uuv_x = qy * uv_z - qz * uv_y
+        uuv_y = qz * uv_x - qx * uv_z
+        uuv_z = qx * uv_y - qy * uv_x
+        return Point(
+            x=x + 2.0 * (qw * uv_x + uuv_x) + float(translation.x),
+            y=y + 2.0 * (qw * uv_y + uuv_y) + float(translation.y),
+            z=z + 2.0 * (qw * uv_z + uuv_z) + float(translation.z),
+        )
 
     def _publish_sources(self) -> None:
         for runtime in self._systems.values():

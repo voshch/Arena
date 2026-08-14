@@ -41,6 +41,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/QueueEpisode.srv
   srv/ResetEpisode.srv
   srv/SetAudioSystem.srv
+  srv/SpawnAudioSource.srv
   srv/SpawnDynamic.srv
   srv/SpawnMicrophone.srv
   srv/SpawnRobot.srv

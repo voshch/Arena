@@ -52,6 +52,7 @@ Expected nodes when enabled include:
 - `audio_system_states`: transient-local radio and alarm control state.
 - `microphone_listeners`: transient-local JSON registry of active microphone
   listener IDs.
+- `microphone_markers`: persistent RViz cones and listener ID labels.
 - `state/robots`: robot fleet metadata used by propagation, robot sound, and
   robot hearing nodes.
 - `<robot_name>/heard_sound`: per-robot heard event output.
@@ -148,10 +149,9 @@ physical sources, so propagation computes three independent speaker-to-listener
 paths and playback uses three independent RIR convolvers. A wall, doorway, or
 extra distance can therefore delay and attenuate each speaker differently.
 
-Register the referenced WAVs in
-`config/auditory/acoustic_assets.yaml`. Looping files should have matching
-waveform and level at their beginning and end so the join does not click. For
-example:
+The bundled catalog registers `radio_loop.wav` and `alarm_loop.wav`. Custom
+looping files should have matching waveform and level at their beginning and
+end so the join does not click. A custom music entry has this form:
 
 ```yaml
 assets:
@@ -214,8 +214,14 @@ An occasional recovered underrun does not stop propagation or playback.
 
 RViz lists fixed emitters in `Arena/Sound Propagation/Environmental Audio
 Sources`. Alarm markers are red, other active systems are cyan, and inactive
-systems are gray. The existing robot or pedestrian heard-sound display shows
-each active source-to-listener path, portal route, and delay. Set the
+systems are gray. Emitters use a box marker oriented by the placement drag.
+The **Spawn Radio** toolbar tool creates an active source at runtime. Set its
+`Mode` property to `Music` or `Alarm`, set `Height`, then click and drag in the
+map. The runtime transforms the RViz Fixed Frame pose into the global map, so
+placement also works in allocated environment frames. The source starts the
+corresponding bundled loop immediately and is cleared on the next episode
+reset. The existing robot or pedestrian heard-sound display shows each active
+source-to-listener path, portal route, and delay. Set the
 visualizer's `continuous_listener_id` parameter when a specific microphone
 should own the path display. If it is empty, the first continuous listener is
 used.
@@ -229,13 +235,16 @@ and stable positive index:
 ```bash
 arena launch \
   enable_auditory:=true \
-  audio_robot_microphones:='[{owner: robot, robot: jackal_1, placement: front, frame: microphone_link, index: 1}]' \
-  audio_listener_id:=microphone:robot:jackal_1:front:1
+  audio_robot_microphones:='[{owner: robot, robot: jackal, placement: body, frame: base_link, index: 1}, {owner: robot, robot: jackal, placement: front, frame: front_laser, index: 1}]' \
+  audio_listener_mode:=all
 ```
 
 The robot must exist in `state/robots`. A relative frame is resolved below that
 robot's frame prefix. The listener is inactive if the robot is absent or TF
-cannot resolve the frame.
+cannot resolve the frame. RViz shows one green triangular cone for each
+resolved microphone. The cones follow their TF frames. With playback mode
+`all`, the same source is rendered through both independent propagation paths
+and mixed on the workstation.
 
 World-mounted microphones are authored in each level's `world.yaml` beside
 `zones`:
@@ -273,9 +282,11 @@ independent listeners with increasing indices. These runtime microphones are
 cleared on the next episode or world change.
 
 The new microphone appears immediately in the Task Generator panel's **Audio
-Playback Listener** list. Spawning it does not redirect playback by itself.
-Choose its ID for specific-microphone playback, or select **all** to mix every
-registered microphone. The spawn service is available at
+Playback Listener** list and as a green triangular cone in
+`Arena/Sound Propagation/Microphones`. The tool selects it for human, robot,
+and environmental workstation playback, so active motor, radio, alarm, and
+human sounds are heard from that position. Choose **all** in the panel to mix
+every registered microphone instead. The spawn service is available at
 `<task-generator-namespace>/runtime/spawn_microphone` while auditory simulation
 is enabled.
 
