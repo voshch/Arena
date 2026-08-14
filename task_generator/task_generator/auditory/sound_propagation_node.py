@@ -1623,6 +1623,8 @@ class SoundPropagationNode(Node):
 
     @staticmethod
     def _source_height(event: SoundEvent) -> float:
+        if "static" in event.semantic_tags:
+            return float(event.source_position.z)
         sound_type = f"{event.sound_type} {event.label}".lower()
         if "foot" in sound_type or "step" in sound_type:
             return 0.05

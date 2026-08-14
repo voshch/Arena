@@ -873,6 +873,30 @@ def test_sound_propagation_uses_tf_height_for_microphones(rclpy_context):
     ) == pytest.approx(2.4)
 
 
+def test_static_audio_uses_authored_source_height(rclpy_context):
+    from task_generator.auditory.audio_playback_node import SoundPlaybackNode
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+    from task_generator_msgs.msg import ContinuousHeardSoundState, SoundEvent
+
+    source_height = 2.6
+    sound_event = SoundEvent()
+    sound_event.semantic_tags = ["environment", "static", "alarm"]
+    sound_event.source_position.z = source_height
+
+    heard_state = ContinuousHeardSoundState()
+    heard_state.source_model = "static_audio_source"
+    heard_state.source_position.z = source_height
+
+    assert SoundPropagationNode._source_height(sound_event) == pytest.approx(
+        source_height
+    )
+    assert SoundPlaybackNode._source_height(heard_state) == pytest.approx(
+        source_height
+    )
+
+
 def test_propagation_visualizer_splits_pedestrian_and_robot_markers(
     rclpy_context,
 ):

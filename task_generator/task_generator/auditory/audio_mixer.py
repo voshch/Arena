@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from importlib.resources import path
 import threading
 from dataclasses import dataclass
 
@@ -42,6 +41,7 @@ class AudioMixer:
         self._callback_count = 0
         self._last_output_peak = 0.0
         self._last_status = ""
+        self._status_count = 0
 
         try:
             sd.query_devices(device, "output")
@@ -92,6 +92,10 @@ class AudioMixer:
     @property
     def last_status(self) -> str:
         return self._last_status
+
+    @property
+    def status_count(self) -> int:
+        return self._status_count
 
     def play(self,sample: CachedSample,*, loop: bool = False,gain_db: float = 0.0, voice_id: str | None = None, bus: str = "main") -> None:
         voice = Voice(
@@ -180,7 +184,7 @@ class AudioMixer:
         self._callback_count = getattr(self, "_callback_count", 0) + 1
         if status:
             self._last_status = str(status)
-            print(f"audio callback status: {status}", flush=True)
+            self._status_count += 1
         outdata.fill(0.0)
 
         with self._lock:

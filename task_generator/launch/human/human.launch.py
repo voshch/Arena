@@ -47,6 +47,32 @@ def generate_launch_description():
         default_value="true",
     )
 
+    audio_block_size = LaunchArgument(
+        name="audio_block_size",
+        default_value="2048",
+    )
+
+    audio_device = LaunchArgument(
+        name="audio_device",
+        default_value="pulse",
+    )
+
+    audio_asset_catalog = LaunchArgument(
+        name="audio_asset_catalog",
+        default_value=PathJoinSubstitution([
+            FindPackageShare("task_generator"),
+            "config", "auditory", "acoustic_assets.yaml",
+        ]),
+    )
+
+    audio_sound_dir = LaunchArgument(
+        name="audio_sound_dir",
+        default_value=PathJoinSubstitution([
+            FindPackageShare("task_generator"),
+            "sounds",
+        ]),
+    )
+
     robot = LaunchArgument(
         name='robot',
         default_value='jackal',
@@ -146,8 +172,10 @@ def generate_launch_description():
         "episode_topic": "state/episode",
         "output_sample_rate": 44100,
         "output_channels": 1,
-        "block_size": 1024,
-        "audio_device": "pulse",
+        "block_size": audio_block_size.param_value(int),
+        "audio_device": audio_device.substitution,
+        "asset_catalog": audio_asset_catalog.substitution,
+        "sound_dir": audio_sound_dir.substitution,
         "master_gain_db": 0.0,
     }
 

@@ -102,6 +102,8 @@ namespace task_generator_gui
             task_generator_node + "/robot_sound_node");
         human_playback_node = normalizeNodePath(
             task_generator_node + "/human_sound_playback");
+        environment_playback_node = normalizeNodePath(
+            task_generator_node + "/environmental_sound_playback");
 
         // All clients go on `node` — rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
@@ -136,6 +138,13 @@ namespace task_generator_gui
             std::make_shared<rclcpp::AsyncParametersClient>(
                 node,
                 human_playback_node);
+        environment_playback_parameters_client =
+            std::make_shared<rclcpp::AsyncParametersClient>(
+                node,
+                environment_playback_node);
+        set_audio_system_client =
+            node->create_client<task_generator_msgs::srv::SetAudioSystem>(
+                task_generator_node + "/runtime/set_audio_system");
 
         {
             rclcpp::QoS qos(rclcpp::KeepLast(1));
@@ -175,6 +184,75 @@ namespace task_generator_gui
                             audio_listener_id_combobox->setCurrentText(selected);
                         }, Qt::QueuedConnection);
                     });
+        }
+
+        {
+            rclcpp::QoS qos(rclcpp::KeepLast(32));
+            qos.transient_local();
+            audio_system_states_sub = node->create_subscription<
+                task_generator_msgs::msg::AudioSystemState>(
+                task_generator_node + "/audio_system_states",
+                qos,
+                [this](
+                    const task_generator_msgs::msg::AudioSystemState::SharedPtr msg)
+                {
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, msg]()
+                        {
+                            if (!audio_systems_tree || !audio_systems_group)
+                                return;
+                            QSignalBlocker blocker(audio_systems_tree);
+                            QTreeWidgetItem *item = nullptr;
+                            for (int index = 0;
+                                 index < audio_systems_tree->topLevelItemCount();
+                                 ++index)
+                            {
+                                auto candidate =
+                                    audio_systems_tree->topLevelItem(index);
+                                if (candidate->data(0, Qt::UserRole).toString()
+                                    == QString::fromStdString(msg->system_id))
+                                {
+                                    item = candidate;
+                                    break;
+                                }
+                            }
+                            if (msg->emitter_ids.empty())
+                            {
+                                if (item)
+                                    delete item;
+                                audio_systems_group->setEnabled(
+                                    audio_systems_tree->topLevelItemCount() > 0);
+                                return;
+                            }
+                            if (!item)
+                            {
+                                item = new QTreeWidgetItem(audio_systems_tree);
+                                item->setData(
+                                    0,
+                                    Qt::UserRole,
+                                    QString::fromStdString(msg->system_id));
+                                item->setFlags(
+                                    item->flags() | Qt::ItemIsUserCheckable);
+                            }
+                            item->setText(
+                                0,
+                                QString::fromStdString(msg->system_id));
+                            item->setText(
+                                1,
+                                QString::fromStdString(
+                                    msg->sound_type + " / " + msg->asset_id));
+                            item->setText(
+                                2,
+                                QString::number(
+                                    static_cast<int>(msg->emitter_ids.size())));
+                            item->setCheckState(
+                                0,
+                                msg->active ? Qt::Checked : Qt::Unchecked);
+                            audio_systems_group->setEnabled(true);
+                        },
+                        Qt::QueuedConnection);
+                });
         }
 
         // Latched paused-state subscription.
@@ -385,6 +463,11 @@ namespace task_generator_gui
                     refreshAudioListenerRouting();
                     return;
                 }
+                if (msg->node == environment_playback_node)
+                {
+                    refreshAudioListenerRouting();
+                    return;
+                }
                 if (msg->node != expected_node) return;
 
                 bool obs_changed = false;
@@ -430,7 +513,8 @@ namespace task_generator_gui
             [this]()
             {
                 return motor_playback_parameters_client->service_is_ready()
-                    && human_playback_parameters_client->service_is_ready();
+                    && human_playback_parameters_client->service_is_ready()
+                    && environment_playback_parameters_client->service_is_ready();
             },
             [this]() { refreshAudioListenerRouting(); });
     }
@@ -657,8 +741,10 @@ namespace task_generator_gui
     {
         if (!motor_playback_parameters_client
             || !human_playback_parameters_client
+            || !environment_playback_parameters_client
             || !motor_playback_parameters_client->service_is_ready()
-            || !human_playback_parameters_client->service_is_ready())
+            || !human_playback_parameters_client->service_is_ready()
+            || !environment_playback_parameters_client->service_is_ready())
         {
             QMetaObject::invokeMethod(this, [this]()
             {
@@ -701,7 +787,8 @@ namespace task_generator_gui
             || !audio_listener_ids_edit)
             return;
         if (!motor_playback_parameters_client->service_is_ready()
-            || !human_playback_parameters_client->service_is_ready())
+            || !human_playback_parameters_client->service_is_ready()
+            || !environment_playback_parameters_client->service_is_ready())
         {
             refreshAudioListenerRouting();
             return;
@@ -756,6 +843,9 @@ namespace task_generator_gui
         };
         set_parameters(motor_playback_parameters_client, "robot_sound_node");
         set_parameters(human_playback_parameters_client, "human_sound_playback");
+        set_parameters(
+            environment_playback_parameters_client,
+            "environmental_sound_playback");
     }
 
     void TaskGeneratorPanel::syncAudioListenerRouting(
@@ -780,6 +870,55 @@ namespace task_generator_gui
             QString::fromStdString(parameters[2].as_string()));
         audio_listener_id_combobox->setEnabled(mode == "selected");
         audio_listener_ids_edit->setEnabled(mode == "list");
+    }
+
+    void TaskGeneratorPanel::setAudioSystemActive(
+        const std::string &system_id,
+        bool active)
+    {
+        if (system_id.empty()
+            || !set_audio_system_client
+            || !set_audio_system_client->service_is_ready())
+        {
+            if (audio_systems_group)
+                audio_systems_group->setEnabled(false);
+            RCLCPP_WARN(
+                node->get_logger(),
+                "static audio control is unavailable. Launch with "
+                "enable_static_audio_devices:=true");
+            return;
+        }
+        auto request =
+            std::make_shared<task_generator_msgs::srv::SetAudioSystem::Request>();
+        request->system_id = system_id;
+        request->active = active;
+        set_audio_system_client->async_send_request(
+            request,
+            [this, system_id](
+                rclcpp::Client<task_generator_msgs::srv::SetAudioSystem>::SharedFuture
+                    future)
+            {
+                try
+                {
+                    const auto response = future.get();
+                    if (!response->success)
+                    {
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "setting static audio system %s failed: %s",
+                            system_id.c_str(),
+                            response->error_msg.c_str());
+                    }
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "setting static audio system %s failed: %s",
+                        system_id.c_str(),
+                        exception.what());
+                }
+            });
     }
 
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
@@ -854,6 +993,38 @@ namespace task_generator_gui
         audio_listener_layout->addRow("Listener IDs", audio_listener_ids_edit);
         audio_listener_group->setLayout(audio_listener_layout);
         root_layout->addWidget(audio_listener_group);
+
+        audio_systems_group = new QGroupBox("Static Audio Devices");
+        audio_systems_group->setEnabled(false);
+        auto audio_systems_layout = new QVBoxLayout();
+        audio_systems_tree = new QTreeWidget();
+        audio_systems_tree->setColumnCount(3);
+        audio_systems_tree->setHeaderLabels(
+            QStringList{"Active / system", "Type / asset", "Speakers"});
+        audio_systems_tree->setRootIsDecorated(false);
+        audio_systems_tree->setToolTip(
+            "Check a radio or alarm to start it. Each row may drive several "
+            "independent speaker positions.");
+        connect(
+            audio_systems_tree,
+            &QTreeWidget::itemChanged,
+            this,
+            [this](QTreeWidgetItem *item, int column)
+            {
+                if (column != 0)
+                    return;
+                setAudioSystemActive(
+                    item->data(0, Qt::UserRole).toString().toStdString(),
+                    item->checkState(0) == Qt::Checked);
+            });
+        audio_systems_layout->addWidget(audio_systems_tree);
+        auto audio_hint = new QLabel(
+            "Use the Spawn Microphone toolbar button more than once to add "
+            "several listeners.");
+        audio_hint->setWordWrap(true);
+        audio_systems_layout->addWidget(audio_hint);
+        audio_systems_group->setLayout(audio_systems_layout);
+        root_layout->addWidget(audio_systems_group);
 
         setupTabs(this->root_layout);
 

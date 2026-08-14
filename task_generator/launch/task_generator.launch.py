@@ -203,6 +203,59 @@ def generate_launch_description():
             "motor emission or propagation."
         ),
     )
+    enable_environment_playback = LaunchArgument(
+        name="enable_environment_playback",
+        default_value="true",
+        description=(
+            "Play propagated radio and alarm audio on this workstation. "
+            "Emission and robot hearing continue when this is false."
+        ),
+    )
+    enable_static_audio_devices = LaunchArgument(
+        name="enable_static_audio_devices",
+        default_value="false",
+        description=(
+            "Load static radios and alarms from the selected scenario and "
+            "static_audio_devices, and expose their RViz controls."
+        ),
+    )
+    static_audio_devices = LaunchArgument(
+        name="static_audio_devices",
+        default_value="[]",
+        description=(
+            "YAML list of world-independent radio or alarm systems. Each "
+            "system can contain several emitters."
+        ),
+    )
+    audio_block_size = LaunchArgument(
+        name="audio_block_size",
+        default_value="2048",
+        description=(
+            "Audio callback block size. Increase this if PulseAudio reports "
+            "repeated output underflows."
+        ),
+    )
+    audio_device = LaunchArgument(
+        name="audio_device",
+        default_value="pulse",
+        description="PortAudio output device name.",
+    )
+    audio_asset_catalog = LaunchArgument(
+        name="audio_asset_catalog",
+        default_value=PathJoinSubstitution([
+            FindPackageShare("task_generator"),
+            "config", "auditory", "acoustic_assets.yaml",
+        ]),
+        description="Acoustic asset catalog used by all playback nodes.",
+    )
+    audio_sound_dir = LaunchArgument(
+        name="audio_sound_dir",
+        default_value=PathJoinSubstitution([
+            FindPackageShare("task_generator"),
+            "sounds",
+        ]),
+        description="Directory containing WAV files named by the catalog.",
+    )
     propagation_backend = LaunchArgument(
         name="propagation_backend",
         default_value="pyroomacoustics",
@@ -361,6 +414,28 @@ def generate_launch_description():
         human_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(human.substitution)) or default_human(arena_sim)
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
+        tm_modules_val = launch.utilities.perform_substitutions(
+            context,
+            launch.utilities.normalize_to_list_of_substitutions(
+                tm_modules.substitution
+            ),
+        )
+        configured_modules = [
+            value.strip()
+            for value in tm_modules_val.split(",")
+            if value.strip()
+        ]
+        static_audio_enabled = truthy(
+            launch.utilities.perform_substitutions(
+                context,
+                launch.utilities.normalize_to_list_of_substitutions(
+                    enable_static_audio_devices.substitution
+                ),
+            )
+        )
+        if static_audio_enabled and "audio_systems" not in configured_modules:
+            configured_modules.append("audio_systems")
+        tm_modules_val = ",".join(configured_modules)
 
         planner_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(planner.substitution))
         _planner_selector_override: tuple[str, str] | None = None
@@ -404,6 +479,13 @@ def generate_launch_description():
                 ),
                 "enable_robot_sound": enable_robot_sound.substitution,
                 "enable_motor_playback": enable_motor_playback.substitution,
+                "enable_environment_playback": (
+                    enable_environment_playback.substitution
+                ),
+                "audio_block_size": audio_block_size.substitution,
+                "audio_device": audio_device.substitution,
+                "audio_asset_catalog": audio_asset_catalog.substitution,
+                "audio_sound_dir": audio_sound_dir.substitution,
                 "propagation_backend": propagation_backend.substitution,
                 "enable_multi_portal_rir": enable_multi_portal_rir.substitution,
                 "compute_rir_in_propagation": (
@@ -491,8 +573,11 @@ def generate_launch_description():
                     **robot.str_param,
                     **tm_robots.str_param,
                     **tm_obstacles.str_param,
-                    **tm_modules.str_param,
+                    "tm_modules": tm_modules_val,
                     **world.str_param,
+                    "static_audio_devices": static_audio_devices.param_value(
+                        str
+                    ),
                     **record_data_dir.str_param,
                     **auto_reset.param(bool),
                     **fail_on_collision.param(bool),

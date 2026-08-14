@@ -4,9 +4,11 @@ import hashlib
 import math
 from dataclasses import dataclass
 
+import yaml
 from arena_simulation_setup.shared import Obstacle, Position
 from arena_simulation_setup.tree.World import WorldDescription, WorldIdentifier
-from arena_simulation_setup.tree.World.Scenario import AudioSystem
+from arena_simulation_setup.tree.World.Scenario import AudioSystem, ScenarioAudio
+from arena_simulation_setup.utils.cattrs import converter
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Point
 from task_generator_msgs.msg import (
@@ -40,24 +42,24 @@ class _RuntimeSystem:
 
 
 class Mod_AudioSystems(TM_Module):
-    """Publish scenario-authored static audio emitters."""
+    """Publish scenario and launch-configured static audio emitters."""
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._systems: dict[str, _RuntimeSystem] = {}
         self._source_publisher = self.node.create_publisher(
             ContinuousAudioSourceState,
-            "continuous_audio_sources",
+            self.node.service_namespace("continuous_audio_sources"),
             continuous_audio_qos(),
         )
         self._state_publisher = self.node.create_publisher(
             AudioSystemState,
-            "audio_system_states",
+            self.node.service_namespace("audio_system_states"),
             acoustic_metadata_qos(depth=32),
         )
         self._service = self.node.create_service(
             SetAudioSystem,
-            "runtime/set_audio_system",
+            self.node.service_namespace("runtime", "set_audio_system"),
             self._set_audio_system,
         )
         self._timer = self.node.create_timer(0.1, self._publish_sources)
@@ -70,19 +72,31 @@ class Mod_AudioSystems(TM_Module):
         scenario_name = str(
             self.node.get_parameter("task.scenario.file").value
         ).strip()
-        if not scenario_name:
-            self._logger.info("no scenario selected, static audio is disabled")
-            return
-        scenario_view = (
-            WorldIdentifier(world_name)
-            .resolve_sync()
-            .scenario(scenario_name)
-            .resolve_sync()
-        )
-        audio = scenario_view.load_audio()
-        world = WorldIdentifier(world_name).resolve_sync().load()
+        world_view = WorldIdentifier(world_name).resolve_sync()
+        specifications = self._configured_systems()
+        available_scenarios = {
+            identifier.shortname
+            for identifier in world_view.scenario.listall()
+        }
+        if scenario_name in available_scenarios:
+            scenario_view = world_view.scenario(scenario_name).resolve_sync()
+            specifications = [
+                *scenario_view.load_audio().systems,
+                *specifications,
+            ]
+        world = world_view.load()
 
-        for specification in audio.systems:
+        names = [specification.name for specification in specifications]
+        duplicates = sorted(
+            name for name in set(names) if names.count(name) > 1
+        )
+        if duplicates:
+            raise ValueError(
+                "static audio system names must be unique across scenario "
+                f"and launch configuration: {duplicates}"
+            )
+
+        for specification in specifications:
             emitters = self._resolve_emitters(specification, world)
             start_time = self.node.get_clock().now().to_msg()
             self._systems[specification.name] = _RuntimeSystem(
@@ -94,10 +108,35 @@ class Mod_AudioSystems(TM_Module):
 
         self._publish_sources()
         self._publish_system_states()
-        self._logger.info(
-            f"loaded {len(self._systems)} static audio system(s) from "
-            f"scenario {scenario_name!r}"
+        origin = (
+            f"scenario {scenario_name!r} and launch configuration"
+            if scenario_name in available_scenarios
+            else "launch configuration"
         )
+        self._logger.info(
+            f"loaded {len(self._systems)} static audio system(s) from {origin}"
+        )
+
+    def _configured_systems(self) -> list[AudioSystem]:
+        if not self.node.has_parameter("static_audio_devices"):
+            return []
+        raw = str(
+            self.node.get_parameter("static_audio_devices").value
+        ).strip()
+        parsed = yaml.safe_load(raw) if raw else []
+        if parsed is None:
+            parsed = []
+        if isinstance(parsed, dict):
+            parsed = parsed.get("systems", [])
+        if not isinstance(parsed, list):
+            raise ValueError(
+                "static_audio_devices must be a YAML list or a mapping with "
+                "a systems list"
+            )
+        return converter.structure(
+            {"systems": parsed},
+            ScenarioAudio,
+        ).systems
 
     def _resolve_emitters(
         self,
@@ -235,7 +274,7 @@ class Mod_AudioSystems(TM_Module):
         for system_id, runtime in self._systems.items():
             runtime.active = False
             self._publish_runtime_system(runtime)
-            self._publish_system_state(system_id, runtime)
+            self._publish_system_state(system_id, runtime, removed=True)
 
     def _publish_system_states(self) -> None:
         for system_id, runtime in self._systems.items():
@@ -245,6 +284,7 @@ class Mod_AudioSystems(TM_Module):
         self,
         system_id: str,
         runtime: _RuntimeSystem,
+        removed: bool = False,
     ) -> None:
         specification = runtime.specification
         msg = AudioSystemState()
@@ -256,7 +296,11 @@ class Mod_AudioSystems(TM_Module):
         msg.loop = specification.loop
         msg.active = runtime.active
         msg.program_start_time = runtime.program_start_time
-        msg.emitter_ids = [emitter.source_id for emitter in runtime.emitters]
+        msg.emitter_ids = (
+            []
+            if removed
+            else [emitter.source_id for emitter in runtime.emitters]
+        )
         self._state_publisher.publish(msg)
 
     @staticmethod

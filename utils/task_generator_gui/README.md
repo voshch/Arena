@@ -27,6 +27,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `config/queue_episode` | `task_generator_msgs::srv::QueueEpisode` | Queue / Next buttons (modes, world, robots, per-mode params staged for next reset) |
 | `runtime/spawn_dynamic` | `task_generator_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
 | `runtime/spawn_microphone` | `task_generator_msgs::srv::SpawnMicrophone` | Spawn microphone tool (clicked position and configured height) |
+| `runtime/set_audio_system` | `task_generator_msgs::srv::SetAudioSystem` | Start or stop a static radio or multi-speaker alarm |
 | `runtime/spawn_robot` | `task_generator_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
 
 ### Latched topics consumed
@@ -71,6 +72,13 @@ The new ID appears in the Task Generator panel's **Audio Playback Listener**
 selector. Spawning does not change playback routing automatically. Select the
 new microphone, or choose the existing **all** mode to mix every microphone.
 Runtime-spawned microphones are removed on an episode or world change.
+
+The panel's **Static Audio Devices** table lists every scenario- or
+launch-defined radio and alarm. Check a row to start the whole system and
+uncheck it to stop it. A system can contain several speakers. The listener
+routing controls are applied to human, robot, and environmental playback, so
+the selected, explicit-list, and all-microphones modes also affect radios and
+alarms.
 
 ## Discard / Queue / Next buttons
 

@@ -1008,6 +1008,7 @@ class SoundPlaybackNode(Node):
             f"callbacks={self._mixer.callback_count}, "
             f"output_peak={self._mixer.last_output_peak:.4f}, "
             f"stream_status={self._mixer.last_status!r}, "
+            f"stream_status_count={self._mixer.status_count}, "
             f"asset_cache_entries={self._catalog.cached_samples}, "
             f"asset_cache_hits={self._catalog.cache_hits}, "
             f"asset_cache_misses={self._catalog.cache_misses}, "
@@ -1392,6 +1393,11 @@ class SoundPlaybackNode(Node):
 
     @staticmethod
     def _source_height(msg) -> float:
+        if (
+            isinstance(msg, ContinuousHeardSoundState)
+            and msg.source_model == "static_audio_source"
+        ):
+            return float(msg.source_position.z)
         sound = f"{msg.sound_type} {getattr(msg, 'label', '')} " \
             f"{' '.join(str(tag) for tag in getattr(msg, 'semantic_tags', ())) }".lower()
         if "foot" in sound or "step" in sound:

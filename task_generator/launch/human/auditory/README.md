@@ -70,14 +70,15 @@ The generated RViz configuration shows pedestrian cones through
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
-The Task Generator RViz panel includes an `Audio Playback Listener` group,
-`Play robot motor audio on this workstation`, and a live `Motor Sound Tuning`
-group. The listener group follows the transient microphone registry and updates
-both playback nodes. It can select one microphone, accept an explicit YAML
-listener list, or mix all microphones. The controls follow changes made through
-ROS parameters and persist across episode resets. `enable_motor_playback:=false`
-sets the initial mute state. This is separate from `enable_robot_sound`, which
-controls simulated motor emission.
+The Task Generator RViz panel includes an `Audio Playback Listener` group, a
+`Static Audio Devices` table, `Play robot motor audio on this workstation`, and
+a live `Motor Sound Tuning` group. The listener group follows the transient
+microphone registry and updates human, robot, and environmental playback. It
+can select one microphone, accept an explicit YAML listener list, or mix all
+microphones. The controls follow changes made through ROS parameters and
+persist across episode resets. `enable_motor_playback:=false` sets the initial
+mute state. This is separate from `enable_robot_sound`, which controls
+simulated motor emission.
 
 The procedural defaults apply a `-9 dB` output trim, reduce the broadband
 mechanical-noise layer by `-12 dB`, and use a `1.5` velocity exponent so level
@@ -94,8 +95,9 @@ driven by signed left and right wheel velocity. The live controls are:
 ## Scenario radio and alarm systems
 
 Enable the optional Task Generator module at startup with
-`tm_modules:=audio_systems`. The selected scenario may then contain a top-level
-`audio` section:
+`enable_static_audio_devices:=true`. This automatically adds
+`audio_systems` to `tm_modules`. The selected scenario may then contain a
+top-level `audio` section:
 
 ```yaml
 audio:
@@ -168,19 +170,48 @@ assets:
         octave_band_levels_db: auto
 ```
 
+For a radio or alarm that should be available in any scenario without editing
+that scenario, pass the same system schema through `static_audio_devices`:
+
+```bash
+arena launch \
+  world:=demo \
+  enable_auditory:=true \
+  enable_static_audio_devices:=true \
+  static_audio_devices:='[{name: room_radio, sound_type: music, asset_id: radio_loop, loop: true, initially_active: false, emitters: [{name: speaker, position: [5.0, 5.0, 1.2], source_volume_db: 62.0}]}]'
+```
+
+Direct positions are local to the named level. Add `level: <level_id>` for
+multi-level worlds. Several radios are several list entries. A multi-speaker
+alarm is one list entry with several emitters. Scenario and launch-defined
+system names must be unique. To keep custom WAV files outside the package,
+pass `audio_asset_catalog:=/path/to/acoustic_assets.yaml` and
+`audio_sound_dir:=/path/to/wavs`.
+
+A custom catalog replaces the bundled catalog for every playback node. Keep
+the bundled `footstep`, `greeting`, and motor entries in it, and keep their WAV
+files in the selected sound directory, alongside the new radio and alarm
+assets.
+
 Start or stop one logical system, including all of its emitters, with:
 
 ```bash
 ros2 service call \
-  /task_generator_node/runtime/set_audio_system \
+  /arena/env_0/task_generator_node/runtime/set_audio_system \
   task_generator_msgs/srv/SetAudioSystem \
   "{system_id: building_alarm, active: true}"
 ```
 
+Replace `env_0` when the runtime allocated a different environment.
+
 `initially_active` sets the episode-reset state. The service changes simulated
-emission. The live `enable_environment_playback` parameter on
+emission. The launch argument and live `enable_environment_playback` parameter on
 `environmental_sound_playback` only mutes or unmutes local workstation output,
 so propagation and robot hearing continue while it is muted.
+
+The default `audio_block_size` is 2048 frames. If the host still reports
+repeated PulseAudio underflows under a heavy RIR workload, increase it to 4096.
+An occasional recovered underrun does not stop propagation or playback.
 
 RViz lists fixed emitters in `Arena/Sound Propagation/Environmental Audio
 Sources`. Alarm markers are red, other active systems are cyan, and inactive
@@ -259,7 +290,8 @@ share `heard_sound_events` and `continuous_heard_sounds`; the playback nodes
 filter those streams, render the selected feeds, and send the result to their
 configured workstation `audio_device`.
 
-Playback routing is shared by `human_sound_playback` and `robot_sound_node`:
+Playback routing is shared by `human_sound_playback`, `robot_sound_node`, and
+`environmental_sound_playback`:
 
 - `audio_listener_mode:=selected` plays `audio_listener_id`, or
   `robot:<audio_listener_robot>` when the ID is empty.
