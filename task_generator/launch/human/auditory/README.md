@@ -1,9 +1,8 @@
 # Auditory Module
 
 The auditory module adds sound events to the Arena human simulation path. It is
-enabled with `human:=arena enable_auditory:=true`; with
-`enable_auditory:=false`, the same Arena human simulator runs without the
-auditory nodes.
+enabled by default when the Arena human simulator is selected. Set
+`enable_auditory:=false` to run without the auditory nodes.
 
 ## Features
 
@@ -94,10 +93,10 @@ driven by signed left and right wheel velocity. The live controls are:
 
 ## Scenario radio and alarm systems
 
-Enable the optional Task Generator module at startup with
-`enable_static_audio_devices:=true`. This automatically adds
-`audio_systems` to `tm_modules`. The selected scenario may then contain a
-top-level `audio` section:
+The static-audio Task Generator module is enabled by default and automatically
+adds `audio_systems` to `tm_modules`. Set
+`enable_static_audio_devices:=false` to disable it. The selected scenario may
+contain a top-level `audio` section:
 
 ```yaml
 audio:

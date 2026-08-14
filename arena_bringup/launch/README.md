@@ -31,8 +31,8 @@ args (`sim`, `headless`, `world`, `use_sim_time`, `log_level`) go to
 | `tm_obstacles` | string | `random` | Obstacle task mode |
 | `tm_modules` | string | `rviz_ui` | Comma-separated task modules to load |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/` |
-| `enable_auditory` | bool string | `false` | Start sound propagation, hearing, playback, and sound visualization nodes. |
-| `enable_static_audio_devices` | bool string | `false` | Load scenario and launch-defined static radios and alarms. This adds `audio_systems` to `tm_modules`. |
+| `enable_auditory` | bool string | `true` | Start sound propagation, hearing, playback, and sound visualization nodes. |
+| `enable_static_audio_devices` | bool string | `true` | Load scenario and launch-defined static radios and alarms. This adds `audio_systems` to `tm_modules`. |
 | `static_audio_devices` | YAML string | `[]` | World-independent radio and alarm system list. Each system may contain several emitters. |
 | `enable_environment_playback` | bool string | `true` | Play propagated radios and alarms on the workstation without disabling simulated emission. |
 | `audio_block_size` | int string | `2048` | PortAudio callback size. Increase to `4096` if a heavy RIR workload causes repeated output underflows. |

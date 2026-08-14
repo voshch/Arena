@@ -176,7 +176,7 @@ def generate_launch_description():
     )
     enable_auditory = LaunchArgument(
         name="enable_auditory",
-        default_value="false",
+        default_value="true",
         description="Start auditory propagation, robot hearing, sound playback, and robot sound nodes.",
     )
     enable_sound_visualization = LaunchArgument(
@@ -213,7 +213,7 @@ def generate_launch_description():
     )
     enable_static_audio_devices = LaunchArgument(
         name="enable_static_audio_devices",
-        default_value="false",
+        default_value="true",
         description=(
             "Load static radios and alarms from the selected scenario and "
             "static_audio_devices, and expose their RViz controls."
