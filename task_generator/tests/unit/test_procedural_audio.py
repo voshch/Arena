@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
+from task_generator.auditory.asset_lib import CachedSample
 from task_generator.auditory.drivetrain import DrivetrainSpec, DrivetrainVoice
-from task_generator.auditory.procedural_audio import PartitionedConvolver
+from task_generator.auditory.procedural_audio import (
+    LoopingSampleRenderSource,
+    PartitionedConvolver,
+)
+
+
+def _cached_sample(values: list[float]) -> CachedSample:
+    samples = np.asarray(values, dtype=np.float32)[:, None]
+    return CachedSample(
+        sample_id="loop",
+        path=Path("loop.wav"),
+        samples=samples,
+        sample_rate=8,
+        channels=1,
+        duration_sec=len(samples) / 8,
+        normalization_dbfs=-6.0,
+        tags=frozenset(),
+        octave_band_levels_db={},
+    )
 
 
 def test_partitioned_convolver_matches_linear_convolution() -> None:
@@ -22,6 +43,65 @@ def test_partitioned_convolver_matches_linear_convolution() -> None:
     expected = np.convolve(signal, impulse)[: len(signal)]
 
     np.testing.assert_allclose(rendered, expected, rtol=2e-5, atol=2e-5)
+
+
+def test_looping_sources_share_phase_but_keep_distinct_rir_delays() -> None:
+    sample = _cached_sample([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    direct = LoopingSampleRenderSource(
+        sample,
+        block_size=4,
+        loop=True,
+        start_frame=2,
+    )
+    delayed = LoopingSampleRenderSource(
+        sample,
+        block_size=4,
+        loop=True,
+        start_frame=2,
+    )
+    direct.update(
+        gain_db=0.0,
+        active=True,
+        impulse=np.asarray([1.0], dtype=np.float32),
+        rir_signature=("direct",),
+    )
+    delayed.update(
+        gain_db=0.0,
+        active=True,
+        impulse=np.asarray([0.0, 1.0], dtype=np.float32),
+        rir_signature=("delayed",),
+    )
+
+    direct_block = direct.render(4)[:, 0]
+    delayed_block = delayed.render(4)[:, 0]
+
+    assert delayed_block[0] == 0.0
+    np.testing.assert_allclose(delayed_block[1:], direct_block[:-1])
+
+
+def test_looping_source_keeps_program_phase_while_inaudible() -> None:
+    source = LoopingSampleRenderSource(
+        _cached_sample([1.0, 2.0, 3.0, 4.0]),
+        block_size=2,
+        loop=True,
+    )
+    source.update(
+        gain_db=0.0,
+        active=False,
+        impulse=None,
+        rir_signature=None,
+    )
+    source.render(2)
+    source.update(
+        gain_db=0.0,
+        active=True,
+        impulse=None,
+        rir_signature=None,
+    )
+
+    resumed = source.render(2)[:, 0]
+
+    assert resumed[-1] == 4.0
 
 
 def test_drivetrain_runtime_tuning_changes_pitch_and_tonal_level() -> None:

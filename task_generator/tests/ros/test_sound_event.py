@@ -270,6 +270,94 @@ def test_robot_only_policy_excludes_pedestrian_listeners(rclpy_context):
         propagation.destroy_node()
 
 
+def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
+    from nav_msgs.msg import OccupancyGrid
+    from shapely.geometry import Polygon
+    from task_generator.auditory.acoustic_scene import (
+        AcousticScene,
+        AcousticZone,
+    )
+    from task_generator.auditory.microphone_config import WorldMicrophoneSpec
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+    from task_generator_msgs.msg import EpisodeRecord
+    from task_generator_msgs.srv import SpawnMicrophone
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    propagation = SoundPropagationNode(namespace=f"/test/{suffix}")
+    propagation._map = OccupancyGrid()
+    propagation._map.header.frame_id = "map"
+    propagation._scene = AcousticScene(
+        zones=(
+            AcousticZone(
+                name="reception",
+                polygon=Polygon(
+                    [(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)]
+                ),
+                floor_material_id="default",
+            ),
+        ),
+        walls=(),
+    )
+    authored_id = "microphone:zone:reception:placed:1"
+    propagation._world_microphones[authored_id] = WorldMicrophoneSpec(
+        listener_id=authored_id,
+        zone="reception",
+        placement="placed",
+        frame="map",
+        position=(1.0, 1.0, 1.5),
+        ceiling_height_m=None,
+    )
+
+    request = SpawnMicrophone.Request()
+    request.position.header.frame_id = "map"
+    request.position.point.x = 2.0
+    request.position.point.y = 3.0
+    request.position.point.z = 1.5
+    request.placement = "placed"
+
+    try:
+        response = propagation._spawn_microphone(
+            request,
+            SpawnMicrophone.Response(),
+        )
+        assert response.success is True
+        assert response.zone == "reception"
+        assert response.listener_id == (
+            "microphone:zone:reception:placed:2"
+        )
+        position = propagation._spawned_microphones[response.listener_id]
+        assert (position.x, position.y, position.z) == (2.0, 3.0, 1.5)
+
+        second = propagation._spawn_microphone(
+            request,
+            SpawnMicrophone.Response(),
+        )
+        assert second.success is True
+        assert second.listener_id == (
+            "microphone:zone:reception:placed:3"
+        )
+
+        request.position.point.x = 8.0
+        rejected = propagation._spawn_microphone(
+            request,
+            SpawnMicrophone.Response(),
+        )
+        assert rejected.success is False
+        assert rejected.error_msg == (
+            "clicked position is outside every world zone"
+        )
+        assert len(propagation._spawned_microphones) == 2
+
+        episode = EpisodeRecord()
+        episode.episode_id = 7
+        propagation._cb_episode_world(episode)
+        assert propagation._spawned_microphones == {}
+    finally:
+        propagation.destroy_node()
+
+
 def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
     from geometry_msgs.msg import Point
     from rclpy.parameter import Parameter

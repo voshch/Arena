@@ -7,6 +7,11 @@ string source_agent_name
 string source_model
 string sound_type
 string source_backend
+string system_id
+string asset_id
+string label
+bool loop
+builtin_interfaces/Time program_start_time
 
 geometry_msgs/Point source_position
 geometry_msgs/Point listener_position

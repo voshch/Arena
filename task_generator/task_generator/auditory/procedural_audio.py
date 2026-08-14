@@ -4,6 +4,7 @@ import threading
 
 import numpy as np
 
+from task_generator.auditory.asset_lib import CachedSample
 from task_generator.auditory.drivetrain import (
     DrivetrainVoice,
     JACKAL,
@@ -62,6 +63,166 @@ class PartitionedConvolver:
         self._overlap = rendered[self.block_size :].copy()
         self._position = (self._position + 1) % len(self._history)
         return output.astype(np.float32)
+
+
+class LoopingSampleRenderSource:
+    """Loop a decoded WAV through one independently updated RIR."""
+
+    def __init__(
+        self,
+        sample: CachedSample,
+        *,
+        block_size: int,
+        loop: bool,
+        start_frame: int = 0,
+        rir_crossfade_seconds: float = 0.1,
+    ) -> None:
+        self.block_size = int(block_size)
+        self.channels = int(sample.channels)
+        self._samples = sample.samples
+        self._sample_rate = int(sample.sample_rate)
+        self._loop = bool(loop)
+        self._position = max(int(start_frame), 0)
+        if self._loop:
+            self._position %= len(self._samples)
+        self._lock = threading.Lock()
+        self._active = True
+        self._program_finished = (
+            not self._loop and self._position >= len(self._samples)
+        )
+        self._current_gain = 0.0
+        self._target_gain = 0.0
+        self._inactive_frames = 0
+        self._rir_tail_frames = self.block_size
+        self._convolvers: list[PartitionedConvolver] | None = None
+        self._old_convolvers: list[PartitionedConvolver] | None = None
+        self._crossfade_total = max(
+            int(self._sample_rate * rir_crossfade_seconds),
+            1,
+        )
+        self._crossfade_remaining = 0
+        self._rir_signature: tuple[object, ...] | None = None
+
+    def update(
+        self,
+        *,
+        gain_db: float,
+        active: bool,
+        impulse: np.ndarray | None,
+        rir_signature: tuple[object, ...] | None,
+    ) -> None:
+        with self._lock:
+            self._target_gain = (
+                10.0 ** (float(gain_db) / 20.0) if active else 0.0
+            )
+            self._active = bool(active)
+            if active and not self._program_finished:
+                self._inactive_frames = 0
+            if impulse is not None and rir_signature != self._rir_signature:
+                next_convolvers = [
+                    PartitionedConvolver(impulse, self.block_size)
+                    for _ in range(self.channels)
+                ]
+                self._old_convolvers = self._convolvers
+                self._convolvers = next_convolvers
+                self._rir_signature = rir_signature
+                self._rir_tail_frames = max(len(impulse), self.block_size)
+                self._crossfade_remaining = (
+                    self._crossfade_total
+                    if self._old_convolvers is not None
+                    else 0
+                )
+
+    def render(self, frames: int) -> np.ndarray:
+        if int(frames) != self.block_size:
+            raise ValueError(
+                f"looping source configured for {self.block_size} frames, "
+                f"audio callback requested {frames}"
+            )
+        with self._lock:
+            program_finished = self._program_finished
+            position = self._position
+            active = self._active and not program_finished
+            target_gain = self._target_gain
+            convolvers = self._convolvers
+            old_convolvers = self._old_convolvers
+            crossfade_remaining = self._crossfade_remaining
+
+        dry = np.zeros((frames, self.channels), dtype=np.float32)
+        if not program_finished:
+            written = 0
+            while written < frames and not program_finished:
+                remaining = len(self._samples) - position
+                count = min(frames - written, remaining)
+                dry[written : written + count] = self._samples[
+                    position : position + count
+                ]
+                position += count
+                written += count
+                if position >= len(self._samples):
+                    if self._loop:
+                        position = 0
+                    else:
+                        program_finished = True
+            with self._lock:
+                self._position = position
+                self._program_finished = program_finished
+
+        gain = np.linspace(
+            self._current_gain,
+            target_gain if active else 0.0,
+            frames,
+            dtype=np.float32,
+        )
+        self._current_gain = float(gain[-1])
+        dry *= gain[:, None]
+
+        if convolvers is not None:
+            wet = np.stack(
+                [
+                    convolver.process(dry[:, channel])
+                    for channel, convolver in enumerate(convolvers)
+                ],
+                axis=1,
+            )
+            if old_convolvers is not None and crossfade_remaining > 0:
+                old_wet = np.stack(
+                    [
+                        convolver.process(dry[:, channel])
+                        for channel, convolver in enumerate(old_convolvers)
+                    ],
+                    axis=1,
+                )
+                elapsed = self._crossfade_total - crossfade_remaining
+                alpha = np.clip(
+                    (elapsed + np.arange(frames)) / self._crossfade_total,
+                    0.0,
+                    1.0,
+                ).astype(np.float32)
+                wet = (
+                    old_wet * np.sqrt(1.0 - alpha)[:, None]
+                    + wet * np.sqrt(alpha)[:, None]
+                )
+                remaining = max(crossfade_remaining - frames, 0)
+                with self._lock:
+                    self._crossfade_remaining = remaining
+                    if remaining == 0:
+                        self._old_convolvers = None
+            dry = wet
+
+        with self._lock:
+            if not active:
+                self._inactive_frames += frames
+        return np.asarray(dry, dtype=np.float32)
+
+    @property
+    def finished(self) -> bool:
+        with self._lock:
+            return (
+                (not self._active or self._program_finished)
+                and self._inactive_frames
+                >= self._rir_tail_frames + self._crossfade_total
+            )
 
 
 class DrivetrainRenderSource:

@@ -42,6 +42,11 @@ def generate_launch_description():
         default_value="true",
     )
 
+    enable_environment_playback = LaunchArgument(
+        name="enable_environment_playback",
+        default_value="true",
+    )
+
     robot = LaunchArgument(
         name='robot',
         default_value='jackal',
@@ -299,6 +304,12 @@ def generate_launch_description():
                 parameters=[{
                     "use_sim_time": True,
                     "heard_sound_events_topic": "heard_sound_events",
+                    "continuous_audio_sources_topic":
+                        "continuous_audio_sources",
+                    "continuous_heard_sounds_topic":
+                        "continuous_heard_sounds",
+                    "environmental_source_marker_topic":
+                        "environmental_audio_source_markers",
                     "pedestrian_marker_topic":
                         "pedestrian_sound_propagation_markers",
                     "robot_marker_topic":
@@ -353,7 +364,25 @@ def generate_launch_description():
                 }],
             ),
 
-             # 3. Robot hearing node
+            Node(
+                package='task_generator',
+                executable='environmental_sound_playback',
+                name='environmental_sound_playback',
+                namespace=namespace.substitution,
+                output='screen',
+                condition=launch.conditions.IfCondition(
+                    enable_auditory.substitution
+                ),
+                parameters=[{
+                    **playback_parameters,
+                    "continuous_heard_sounds_topic":
+                        "continuous_heard_sounds",
+                    **enable_environment_playback.param(bool),
+                    "environment_rir_crossfade_sec": 0.10,
+                }],
+            ),
+
+            # 3. Robot hearing node
             Node(
                 package='task_generator',
                 executable='robot_hearing_node',

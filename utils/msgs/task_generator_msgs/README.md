@@ -14,6 +14,8 @@ Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`are
 | `GetTaskModes.srv` | Return currently active task-mode strings. |
 | `QueryWorlds.srv` / `QueryScenarios.srv` / `QueryEnvironments.srv` / `QueryParametrizeds.srv` / `QueryRobots.srv` / `QueryStaticObstacles.srv` / `QueryDynamicObstacles.srv` / `QueryTaskModes.srv` | Listing of available shortnames for the corresponding asset class. |
 | `SpawnStatic.srv` / `SpawnDynamic.srv` / `SpawnRobot.srv` | Inject a static obstacle / dynamic pedestrian / additional robot into the running episode via `TM_Obstacles.extend` / `TM_Robots.extend`. `SpawnRobot` accepts an optional `args` (`diagnostic_msgs/KeyValue[]`) forwarded to `Robot.parse` (e.g. `mobile`, `mobile.local_planner`, `mobile.agent`), and an `immediate` flag that provisions the robot into the live world now (idle) instead of committing on the next reset. |
+| `SpawnMicrophone.srv` | Place an episode-local acoustic listener at a stamped point. The auditory runtime derives and validates its authored world zone and returns its stable listener ID. |
+| `SetAudioSystem.srv` | Start or stop one scenario-defined radio or multi-speaker alarm system. |
 | `DespawnRobot.srv` | Single fleet-removal surface: stages a live robot for teardown on the next reset, un-stages a queued despawn, or cancels a queued spawn (toggles `state/robots/pending`). |
 
 ## Messages (`msg/`)
@@ -26,6 +28,9 @@ Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`are
 | `RobotState.msg` | A resolved, live fleet member: `RobotDescriptor` + resolved `RobotCap[]` + resolved morphology `params`. |
 | `RobotFleet.msg` | All currently-active `RobotState`s in the env. Published latched on `state/robots`. |
 | `RobotQueue.msg` | Robots staged for spawn/despawn (the pending fleet delta, as lean `RobotDescriptor`s), applied on the next reset. Published latched on `state/robots/pending`. |
+| `ContinuousAudioSourceState.msg` | Persistent source state for robot drivetrains and scenario-defined WAV emitters. Environmental fields identify the logical system, asset, loop behavior, and shared program epoch. |
+| `ContinuousHeardSoundState.msg` | Listener-specific propagation result for a persistent source, including its route, delay, received level, and environmental playback metadata. |
+| `AudioSystemState.msg` | Transient-local active state and emitter membership for one scenario-defined radio or alarm system. |
 
 ## Actions (`action/`)
 

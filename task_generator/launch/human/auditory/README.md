@@ -23,6 +23,10 @@ auditory nodes.
   an RViz text marker when a robot hears a configured sound type.
 - Human audio playback: `human_sound_playback` plays human sound assets from
   `config/auditory/acoustic_assets.yaml`.
+- Environmental audio: scenarios can define a looping radio or one logical
+  alarm system backed by any number of fixed speakers. Each speaker keeps its
+  own propagation route, delay, attenuation, and RIR while sharing the same
+  playback position in the WAV.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
   messages from robot odometry. In the default `motor_audio_mode:=procedural`,
   Jackals instead publish continuous signed left/right drivetrain state;
@@ -37,6 +41,7 @@ Expected nodes when enabled include:
 - `robot_sound_node`
 - `robot_hearing_node`
 - `human_sound_playback`
+- `environmental_sound_playback`
 - `sound_propagation_visualizer` (enabled by default with the auditory module)
 
 ## Main Topics
@@ -45,6 +50,7 @@ Expected nodes when enabled include:
 - `heard_sound_events`: propagated `HeardSoundEvent` stream.
 - `continuous_audio_sources`: persistent procedural source state.
 - `continuous_heard_sounds`: listener-specific propagated procedural state.
+- `audio_system_states`: transient-local radio and alarm control state.
 - `microphone_listeners`: transient-local JSON registry of active microphone
   listener IDs.
 - `state/robots`: robot fleet metadata used by propagation, robot sound, and
@@ -56,6 +62,7 @@ Expected nodes when enabled include:
 - `<robot_name>/heard_sound_marker`: RViz text marker for sounds heard by the
   robot.
 - `sound_propagation_markers`: RViz source/portal/listener paths.
+- `environmental_audio_source_markers`: fixed radio and alarm emitters.
 
 The generated RViz configuration shows pedestrian cones through
 `Arena/Pedestrians/Extra` and places each motor display in the corresponding
@@ -83,6 +90,105 @@ driven by signed left and right wheel velocity. The live controls are:
 - `motor_broadband_gain_db`
 - `motor_speed_exponent`
 - `motor_velocity_smoothing_sec`
+
+## Scenario radio and alarm systems
+
+Enable the optional Task Generator module at startup with
+`tm_modules:=audio_systems`. The selected scenario may then contain a top-level
+`audio` section:
+
+```yaml
+audio:
+  systems:
+    - name: lobby_radio
+      sound_type: music
+      asset_id: radio_loop
+      loop: true
+      initially_active: true
+      reference_distance_m: 1.0
+      semantic_tags: [radio, background]
+      emitters:
+        - name: receiver
+          entity_ref: lobby_radio_cabinet
+          offset: [0.0, 0.0, 0.8]
+          source_volume_db: 62.0
+
+    - name: building_alarm
+      sound_type: alarm
+      asset_id: alarm_loop
+      loop: true
+      initially_active: false
+      semantic_tags: [alarm, emergency]
+      emitters:
+        - name: east
+          position: [3.0, 4.0, 2.6]
+          level: level_1
+          source_volume_db: 88.0
+        - name: west
+          position: [12.0, 4.0, 2.6]
+          level: level_1
+          source_volume_db: 88.0
+        - name: upper
+          position: [6.0, 8.0, 2.6]
+          level: level_2
+          source_volume_db: 88.0
+```
+
+An emitter uses either `entity_ref` or `position`. `entity_ref` must name one
+unique static world entity and its `offset` rotates with that entity. A direct
+`position` is level-local. `level` is required for direct positions in a
+multi-level world. The Task Generator realizer applies the map origin and the
+same multi-level flattening offset used by robots and obstacles before it
+publishes the source.
+
+All emitters in one system use one `program_start_time`. This makes the three
+alarm speakers play the same point in the alarm WAV. They are still separate
+physical sources, so propagation computes three independent speaker-to-listener
+paths and playback uses three independent RIR convolvers. A wall, doorway, or
+extra distance can therefore delay and attenuate each speaker differently.
+
+Register the referenced WAVs in
+`config/auditory/acoustic_assets.yaml`. Looping files should have matching
+waveform and level at their beginning and end so the join does not click. For
+example:
+
+```yaml
+assets:
+  radio_loop:
+    category: music
+    semantic_tags: [radio, background]
+    reference_level_db: 62.0
+    reference_distance_m: 1.0
+    normalization_dbfs: -9.0
+    loop: true
+    variants:
+      - sample_id: radio_loop_01
+        file: radio_loop.wav
+        tags: [music]
+        octave_band_levels_db: auto
+```
+
+Start or stop one logical system, including all of its emitters, with:
+
+```bash
+ros2 service call \
+  /task_generator_node/runtime/set_audio_system \
+  task_generator_msgs/srv/SetAudioSystem \
+  "{system_id: building_alarm, active: true}"
+```
+
+`initially_active` sets the episode-reset state. The service changes simulated
+emission. The live `enable_environment_playback` parameter on
+`environmental_sound_playback` only mutes or unmutes local workstation output,
+so propagation and robot hearing continue while it is muted.
+
+RViz lists fixed emitters in `Arena/Sound Propagation/Environmental Audio
+Sources`. Alarm markers are red, other active systems are cyan, and inactive
+systems are gray. The existing robot or pedestrian heard-sound display shows
+each active source-to-listener path, portal route, and delay. Set the
+visualizer's `continuous_listener_id` parameter when a specific microphone
+should own the path display. If it is empty, the first continuous listener is
+used.
 
 ## Microphones and playback routing
 
@@ -126,6 +232,22 @@ explicit `ceiling_height` by more than 5 cm. A non-map TF frame is permitted,
 but its resolved runtime position must remain in the declared zone. Ceiling
 height falls back to `pyroom_ceiling_height_m` when the zone does not specify
 one.
+
+Microphones can also be added during an episode with the RViz **Spawn
+Microphone** toolbar tool. Click the desired position and set its `Height` tool
+property. The runtime transforms the RViz Fixed Frame point into
+the acoustic map, requires it to fall inside an authored zone and between its
+floor and ceiling, and assigns the next available zone-local ID, for example
+`microphone:zone:reception:placed:2`. Multiple clicks in the same zone create
+independent listeners with increasing indices. These runtime microphones are
+cleared on the next episode or world change.
+
+The new microphone appears immediately in the Task Generator panel's **Audio
+Playback Listener** list. Spawning it does not redirect playback by itself.
+Choose its ID for specific-microphone playback, or select **all** to mix every
+registered microphone. The spawn service is available at
+`<task-generator-namespace>/runtime/spawn_microphone` while auditory simulation
+is enabled.
 
 Every finite human or robot clip is published as `SoundEvent` and propagated
 to one `HeardSoundEvent` per listener. Procedural drivetrain audio uses

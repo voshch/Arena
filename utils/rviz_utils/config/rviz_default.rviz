@@ -84,6 +84,9 @@ Visualization Manager:
     - Class: task_generator_gui::SpawnPedestrianTool
       Target: {task_generator_node}
       Model: arenian
+    - Class: task_generator_gui::SpawnMicrophoneTool
+      Target: {task_generator_node}
+      Height: 1.5
   Transformation:
     Current:
       Class: rviz_default_plugins/TF

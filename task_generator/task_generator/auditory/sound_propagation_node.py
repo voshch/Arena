@@ -28,6 +28,11 @@ from task_generator.auditory.acoustic_frame import (
     realize_acoustic_geometry,
     runtime_acoustic_offset,
 )
+from task_generator.auditory.acoustic_room_spec import (
+    AcousticRoomSpec,
+    AcousticRoomSpecBuilder,
+    AcousticRoomSpecConfig,
+)
 from task_generator.auditory.acoustic_scene import AcousticScene
 from task_generator.auditory.acoustic_world_graph import AcousticWorldGraph
 from task_generator.auditory.material_catalog import AcousticMaterialCatalog
@@ -36,7 +41,23 @@ from task_generator.auditory.microphone_config import (
     parse_robot_microphones,
     world_microphones,
 )
+from task_generator.auditory.portal_coupling import (
+    MultiPortalRirCoupler,
+    PortalCouplingConfig,
+    PortalCouplingResult,
+)
 from task_generator.auditory.propagation import Level3Propagation
+from task_generator.auditory.pyroomacoustics_adapter import (
+    PyroomacousticsAdapter,
+    PyroomacousticsConfig,
+    PyroomacousticsUnavailableError,
+    RoomImpulseResponse,
+)
+from task_generator.auditory.qos_profiles import (
+    acoustic_metadata_qos,
+    continuous_audio_qos,
+    transient_event_qos,
+)
 from task_generator_msgs.msg import (
     AcousticPath,
     ContinuousAudioSourceState,
@@ -46,28 +67,7 @@ from task_generator_msgs.msg import (
     RobotFleet,
     SoundEvent,
 )
-from task_generator.auditory.qos_profiles import (
-    acoustic_metadata_qos,
-    continuous_audio_qos,
-    transient_event_qos,
-)
-from task_generator.auditory.acoustic_room_spec import (
-    AcousticRoomSpec,
-    AcousticRoomSpecBuilder,
-    AcousticRoomSpecConfig,
-)
-from task_generator.auditory.pyroomacoustics_adapter import (
-    PyroomacousticsAdapter,
-    PyroomacousticsConfig,
-    PyroomacousticsUnavailableError,
-    RoomImpulseResponse,
-)
-from task_generator.auditory.portal_coupling import (
-    MultiPortalRirCoupler,
-    PortalCouplingConfig,
-    PortalCouplingResult,
-)
-
+from task_generator_msgs.srv import SpawnMicrophone
 
 
 class SoundPropagationNode(Node):
@@ -162,8 +162,10 @@ class SoundPropagationNode(Node):
         )
         self._robot_microphones: dict[str, tuple[Point, str]] = {}
         self._world_microphones: dict[str, WorldMicrophoneSpec] = {}
+        self._spawned_microphones: dict[str, Point] = {}
         self._missing_microphone_robots: set[str] = set()
         self._acoustic_offset: tuple[float, float] | None = None
+        self._episode_id = -1
         self._odom_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
@@ -212,6 +214,11 @@ class SoundPropagationNode(Node):
             acoustic_metadata_qos(),
         )
         self._publish_microphone_registry()
+        self._spawn_microphone_service = self.create_service(
+            SpawnMicrophone,
+            "runtime/spawn_microphone",
+            self._spawn_microphone,
+        )
         self.create_subscription(SoundEvent, sound_events_topic, self._cb_sound_event, transient_event_qos())
         self.create_subscription(
             ContinuousAudioSourceState,
@@ -305,13 +312,19 @@ class SoundPropagationNode(Node):
 
     def _cb_episode_world(self, msg: EpisodeRecord) -> None:
         """Recover the world even if a launch missed the standalone state topic."""
+        episode_id = int(msg.episode_id)
+        if episode_id != self._episode_id:
+            self._episode_id = episode_id
+            self._spawned_microphones.clear()
+            self._publish_microphone_registry()
         world_name = str(msg.world).strip()
         if world_name:
             self._cb_world(String(data=world_name))
-    
+
     def _start_world_load(self, world_name: str) -> None:
         self.get_logger().info(f"loading acoustic scene for world {world_name!r}")
         self._world_microphones.clear()
+        self._spawned_microphones.clear()
         self._publish_microphone_registry()
 
         self._world_load_future = self._world_loader.submit(
@@ -345,14 +358,26 @@ class SoundPropagationNode(Node):
         world_view = WorldIdentifier(world_name).resolve_sync()
         world_description = world_view.load()
         authored_map_origin = None
-        for level_id in sorted(world_description.levels):
-            map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
-            if not map_yaml.exists():
-                continue
-            map_config = yaml.safe_load(map_yaml.read_text(encoding="utf-8"))
-            origin = map_config.get("origin", (0.0, 0.0, 0.0))
-            authored_map_origin = (float(origin[0]), float(origin[1]))
-            break
+        level_origins = world_view.level_origins()
+        microphones = world_microphones(
+            world_description,
+            ceiling_height_m,
+            level_origins=level_origins,
+        )
+        if level_origins is not None:
+            world_description = world_description.compact_world(level_origins)
+            _, authored_map_origin = world_description.render_grid()
+        else:
+            for level_id in sorted(world_description.levels):
+                map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
+                if not map_yaml.exists():
+                    continue
+                map_config = yaml.safe_load(
+                    map_yaml.read_text(encoding="utf-8")
+                )
+                origin = map_config.get("origin", (0.0, 0.0, 0.0))
+                authored_map_origin = (float(origin[0]), float(origin[1]))
+                break
 
         scene = AcousticScene.from_world(world_description)
 
@@ -372,10 +397,6 @@ class SoundPropagationNode(Node):
             opening_portal_loss_db=opening_portal_loss_db,
         )
 
-        microphones = world_microphones(
-            world_description,
-            ceiling_height_m,
-        )
         return (
             world_name,
             scene,
@@ -697,11 +718,109 @@ class SoundPropagationNode(Node):
 
     def _publish_microphone_registry(self) -> None:
         listener_ids = sorted(
-            set(self._robot_microphones) | set(self._world_microphones)
+            set(self._robot_microphones)
+            | set(self._world_microphones)
+            | set(self._spawned_microphones)
         )
         self._microphone_registry_pub.publish(
             String(data=json.dumps(listener_ids, separators=(",", ":")))
         )
+
+    def _spawn_microphone(
+        self,
+        request: SpawnMicrophone.Request,
+        response: SpawnMicrophone.Response,
+    ) -> SpawnMicrophone.Response:
+        placement = str(request.placement).strip().lower()
+        if not placement or ":" in placement:
+            response.error_msg = (
+                "placement must be non-empty and contain no ':'"
+            )
+            return response
+        world_loading = self._world_load_future is not None or bool(
+            self._pending_world_name
+            and self._pending_world_name != self._world_name
+        )
+        if self._scene is None or self._map is None or world_loading:
+            response.error_msg = "acoustic world is not ready"
+            return response
+        point = request.position.point
+        if not all(
+            math.isfinite(value)
+            for value in (point.x, point.y, point.z)
+        ):
+            response.error_msg = "microphone position must be finite"
+            return response
+        transformed = self._point_in_acoustic_frame(
+            point,
+            str(request.position.header.frame_id),
+            "spawned microphone",
+        )
+        if transformed is None:
+            response.error_msg = (
+                "cannot transform position to the acoustic map frame"
+            )
+            return response
+        zone = next(
+            (
+                candidate
+                for candidate in self._scene.zones
+                if candidate.polygon.buffer(
+                    MICROPHONE_PLACEMENT_TOLERANCE_M
+                ).covers(ShapelyPoint(transformed.x, transformed.y))
+            ),
+            None,
+        )
+        if zone is None:
+            response.error_msg = "clicked position is outside every world zone"
+            return response
+        room_spec = next(
+            (
+                candidate
+                for candidate in self._room_specs
+                if candidate.zone_name == zone.name
+            ),
+            None,
+        )
+        if transformed.z < -MICROPHONE_PLACEMENT_TOLERANCE_M:
+            response.error_msg = "microphone height cannot be below the floor"
+            return response
+        if (
+            room_spec is not None
+            and transformed.z
+            > room_spec.ceiling_height_m + MICROPHONE_PLACEMENT_TOLERANCE_M
+        ):
+            response.error_msg = (
+                f"microphone height exceeds zone {zone.name!r} ceiling "
+                f"at {room_spec.ceiling_height_m:.2f} m"
+            )
+            return response
+
+        existing = set(self._world_microphones) | set(
+            self._spawned_microphones
+        )
+        index = 1
+        while True:
+            listener_id = f"microphone:zone:{zone.name}:{placement}:{index}"
+            if listener_id not in existing:
+                break
+            index += 1
+
+        self._spawned_microphones[listener_id] = Point(
+            x=float(transformed.x),
+            y=float(transformed.y),
+            z=float(transformed.z),
+        )
+        self._publish_microphone_registry()
+        response.listener_id = listener_id
+        response.zone = zone.name
+        response.success = True
+        self.get_logger().info(
+            f"spawned microphone {listener_id!r} at "
+            f"({transformed.x:.2f}, {transformed.y:.2f}, "
+            f"{transformed.z:.2f})"
+        )
+        return response
 
     def _cb_robot_odom(
         self,
@@ -777,13 +896,13 @@ class SoundPropagationNode(Node):
         event.source_agent_id = state.source_agent_id
         event.source_agent_name = state.source_agent_name
         event.sound_type = state.sound_type
-        event.label = state.sound_type
-        event.asset_id = state.source_backend
+        event.label = state.label or state.sound_type
+        event.asset_id = state.asset_id or state.source_backend
         event.source_position = state.source_position
         event.source_yaw = state.source_yaw
         event.source_volume_db = state.source_volume_db
-        event.semantic_tags = ["continuous", state.source_backend]
-        event.loop = True
+        event.semantic_tags = ["continuous", *state.semantic_tags]
+        event.loop = state.loop
 
         if not self._transform_event_source(event):
             return
@@ -808,6 +927,11 @@ class SoundPropagationNode(Node):
             output.source_model = state.source_model
             output.sound_type = state.sound_type
             output.source_backend = state.source_backend
+            output.system_id = state.system_id
+            output.asset_id = state.asset_id
+            output.label = state.label
+            output.loop = state.loop
+            output.program_start_time = state.program_start_time
             output.source_position = event.source_position
             output.listener_position = listener_pos
             output.linear_velocity_mps = state.linear_velocity_mps
@@ -896,6 +1020,13 @@ class SoundPropagationNode(Node):
             ):
                 continue
             listeners[listener_id] = transformed
+
+        for listener_id, position in self._spawned_microphones.items():
+            listeners[listener_id] = Point(
+                x=float(position.x),
+                y=float(position.y),
+                z=float(position.z),
+            )
 
         if not bool(self.get_parameter("robots_hear_self").value):
             listeners.pop(f"robot:{event.source_agent_name}", None)

@@ -96,6 +96,7 @@ def parse_robot_microphones(raw: str) -> tuple[RobotMicrophoneSpec, ...]:
 def world_microphones(
     world: object,
     default_ceiling_height_m: float,
+    level_origins: dict[str, tuple[float, float]] | None = None,
 ) -> tuple[WorldMicrophoneSpec, ...]:
     levels = world.levels
     specs = []
@@ -103,6 +104,12 @@ def world_microphones(
         zones = {zone.name: zone for zone in levels[level_id].zones}
         for microphone in levels[level_id].microphones:
             zone = zones[microphone.zone]
+            frame = microphone.frame.strip().strip("/")
+            offset = (
+                level_origins.get(str(level_id), (0.0, 0.0))
+                if level_origins is not None and frame == "map"
+                else (0.0, 0.0)
+            )
             ceiling_height = None
             if microphone.placement == "ceiling":
                 ceiling_height = (
@@ -128,10 +135,10 @@ def world_microphones(
                     listener_id=microphone.listener_id,
                     zone=microphone.zone,
                     placement=microphone.placement,
-                    frame=microphone.frame.strip().strip("/"),
+                    frame=frame,
                     position=(
-                        float(microphone.position.x),
-                        float(microphone.position.y),
+                        float(microphone.position.x) + offset[0],
+                        float(microphone.position.y) + offset[1],
                         float(microphone.position.z),
                     ),
                     ceiling_height_m=ceiling_height,

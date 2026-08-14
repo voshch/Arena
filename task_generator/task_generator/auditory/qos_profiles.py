@@ -10,8 +10,8 @@ def transient_event_qos(depth: int = 50) -> QoSProfile:
     )
 
 
-def continuous_audio_qos(depth: int = 5) -> QoSProfile:
-    """Low-latency state updates; old motor states have no replay value."""
+def continuous_audio_qos(depth: int = 64) -> QoSProfile:
+    """Low-latency persistent source updates without replay."""
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=depth,

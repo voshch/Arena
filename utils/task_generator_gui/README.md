@@ -4,6 +4,7 @@ RViz2 plugins for the Arena-Rosnav task generator. Ships:
 
 - **`TaskGeneratorPanel`** (`rviz_common::Panel`): episode management, task-mode selection, world/robot configuration, live episode history playlist.
 - **`SpawnPedestrianTool`** (`rviz_common::Tool`): toolbar tool that click+drags a pose and calls `runtime/spawn_dynamic` to spawn a dynamic obstacle (pedestrian).
+- **`SpawnMicrophoneTool`** (`rviz_common::Tool`): toolbar tool that places an acoustic listener at the clicked point in a world zone.
 
 ## Service contract
 
@@ -25,6 +26,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `query/task_modes` | `task_generator_msgs::srv::QueryTaskModes` | Populate mode comboboxes (obstacles, robots, modules) |
 | `config/queue_episode` | `task_generator_msgs::srv::QueueEpisode` | Queue / Next buttons (modes, world, robots, per-mode params staged for next reset) |
 | `runtime/spawn_dynamic` | `task_generator_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
+| `runtime/spawn_microphone` | `task_generator_msgs::srv::SpawnMicrophone` | Spawn microphone tool (clicked position and configured height) |
 | `runtime/spawn_robot` | `task_generator_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
 
 ### Latched topics consumed
@@ -53,6 +55,22 @@ episode. `Reset motor tuning` restores the quieter procedural defaults.
 ## SpawnPedestrianTool
 
 Subclass of `rviz_default_plugins::tools::PoseTool`. Click+drag in the 3D view to set position and yaw; the tool then calls `<Target>/runtime/spawn_dynamic` with `use_pose=true`, the clicked `PoseStamped` (in the rviz Fixed Frame), and the `Model` string. Both `Target` and `Model` are exposed as Tool Properties; `Model` defaults to `arenian`. Shortcut key: `p`.
+
+## SpawnMicrophoneTool
+
+Subclass of `rviz_default_plugins::tools::PoseTool`. Select **Spawn
+Microphone** in the toolbar, then click in the 3D view. The tool calls
+`<Target>/runtime/spawn_microphone` with the clicked point in the RViz Fixed
+Frame and the `Height` tool property, which defaults to 1.5 m. The acoustic
+runtime transforms the point into its map frame, finds the containing authored
+zone, and rejects positions outside all zones or outside the zone's vertical
+bounds. It assigns the next free stable ID such as
+`microphone:zone:reception:placed:2`.
+
+The new ID appears in the Task Generator panel's **Audio Playback Listener**
+selector. Spawning does not change playback routing automatically. Select the
+new microphone, or choose the existing **all** mode to mix every microphone.
+Runtime-spawned microphones are removed on an episode or world change.
 
 ## Discard / Queue / Next buttons
 

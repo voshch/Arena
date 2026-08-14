@@ -628,6 +628,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             )
         for name, topic in (
             (
+                "Environmental Audio Sources",
+                f"{auditory_ns}/environmental_audio_source_markers",
+            ),
+            (
                 "Pedestrian Heard Sound",
                 f"{auditory_ns}/pedestrian_sound_propagation_markers",
             ),

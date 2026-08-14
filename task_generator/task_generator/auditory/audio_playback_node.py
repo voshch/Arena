@@ -113,7 +113,7 @@ class SoundPlaybackNode(Node):
         **kwargs: object,
     ) -> None:
         super().__init__(node_name, **kwargs)
-        if source_kind not in {"human", "robot"}:
+        if source_kind not in {"environment", "human", "robot"}:
             raise ValueError(f"unsupported playback source kind {source_kind!r}")
         self._source_kind = source_kind
 
@@ -132,7 +132,7 @@ class SoundPlaybackNode(Node):
         self.declare_parameter("episode_topic", "state/episode")
         self.declare_parameter("use_rir", False)
         self.declare_parameter("heard_sound_events_topic", "heard_sound_events")
-        if self._source_kind == "robot":
+        if self._source_kind in {"environment", "robot"}:
             self.declare_parameter(
                 "continuous_heard_sounds_topic",
                 "continuous_heard_sounds",
@@ -377,7 +377,7 @@ class SoundPlaybackNode(Node):
                 self._cb_microphone_registry,
                 acoustic_metadata_qos(),
             )
-            if self._source_kind == "robot":
+            if self._source_kind in {"environment", "robot"}:
                 self.create_subscription(
                     ContinuousHeardSoundState,
                     str(
@@ -571,14 +571,21 @@ class SoundPlaybackNode(Node):
         world_view = WorldIdentifier(world_name).resolve_sync()
         world = world_view.load()
         authored_map_origin = None
-        for level_id in sorted(world.levels):
-            map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
-            if not map_yaml.exists():
-                continue
-            map_config = yaml.safe_load(map_yaml.read_text(encoding="utf-8"))
-            origin = map_config.get("origin", (0.0, 0.0, 0.0))
-            authored_map_origin = (float(origin[0]), float(origin[1]))
-            break
+        level_origins = world_view.level_origins()
+        if level_origins is not None:
+            world = world.compact_world(level_origins)
+            _, authored_map_origin = world.render_grid()
+        else:
+            for level_id in sorted(world.levels):
+                map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
+                if not map_yaml.exists():
+                    continue
+                map_config = yaml.safe_load(
+                    map_yaml.read_text(encoding="utf-8")
+                )
+                origin = map_config.get("origin", (0.0, 0.0, 0.0))
+                authored_map_origin = (float(origin[0]), float(origin[1]))
+                break
         specs = AcousticRoomSpecBuilder(
             AcousticRoomSpecConfig(ceiling_height_m=ceiling_height_m)
         ).from_world(world)

@@ -50,6 +50,7 @@ setup(
             'task_generator_node = task_generator.task_generator_node:main',
             'generate_map = task_generator.utils.map_generator:main',
             'human_sound_playback = task_generator.simulators.human.audio_playback_node:main',
+            'environmental_sound_playback = task_generator.auditory.environmental_sound_playback_node:main',
             'sound_propagation_node = task_generator.auditory.sound_propagation_node:main',
             'human_sound_node = task_generator.auditory.human_sound_node:main',
             'robot_sound_node = task_generator.auditory.robot_sound_node:main',

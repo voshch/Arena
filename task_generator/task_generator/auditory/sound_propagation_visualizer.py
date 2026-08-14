@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import zlib
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ from geometry_msgs.msg import Point
 from rclpy.node import Node
 from std_msgs.msg import ColorRGBA, String
 from task_generator_msgs.msg import (
+    ContinuousAudioSourceState,
     ContinuousHeardSoundState,
     HeardSoundEvent,
 )
@@ -85,6 +87,16 @@ class SoundPropagationVisualizer(Node):
             "robot_sound_propagation_markers",
         )
         self.declare_parameter("room_marker_topic", "acoustic_room_markers")
+        self.declare_parameter(
+            "environmental_source_marker_topic",
+            "environmental_audio_source_markers",
+        )
+        self.declare_parameter(
+            "continuous_audio_sources_topic",
+            "continuous_audio_sources",
+        )
+        self.declare_parameter("continuous_marker_lifetime_sec", 0.5)
+        self.declare_parameter("continuous_listener_id", "")
         self.declare_parameter("world_topic", "state/world")
         self.declare_parameter("robot_fleet_topic", "state/robots")
         self.declare_parameter("sync_robot_listener_to_tf", False)
@@ -167,11 +179,26 @@ class SoundPropagationVisualizer(Node):
             str(self.get_parameter("room_marker_topic").value),
             acoustic_metadata_qos(),
         )
+        self._environmental_source_publisher = self.create_publisher(
+            MarkerArray,
+            str(
+                self.get_parameter(
+                    "environmental_source_marker_topic"
+                ).value
+            ),
+            acoustic_metadata_qos(depth=32),
+        )
         self.create_subscription(
             HeardSoundEvent,
             str(self.get_parameter("heard_sound_events_topic").value),
             self._callback,
             transient_event_qos(),
+        )
+        self.create_subscription(
+            ContinuousAudioSourceState,
+            str(self.get_parameter("continuous_audio_sources_topic").value),
+            self._on_continuous_source,
+            continuous_audio_qos(),
         )
         self.create_subscription(
             ContinuousHeardSoundState,
@@ -216,6 +243,7 @@ class SoundPropagationVisualizer(Node):
         self._last_plot_signature: tuple[object, ...] | None = None
         self._last_plot_submit_time = 0.0
         self._selected_listener_id = ""
+        self._continuous_visual_listener_id = ""
         self._last_frame = ""
         self._room_marker_frame = ""
         self._reported_plot_errors: set[str] = set()
@@ -357,7 +385,171 @@ class SoundPropagationVisualizer(Node):
         if frame:
             self._last_frame = frame
             self._publish_room_geometry(frame)
+        self._publish_continuous_path(msg)
         self._consider_live_plot(msg)
+
+    def _on_continuous_source(self, msg: ContinuousAudioSourceState) -> None:
+        if str(msg.source_backend) != "wav_loop":
+            return
+        frame = str(msg.header.frame_id).strip()
+        if not frame:
+            return
+        lifetime = float(
+            self.get_parameter("continuous_marker_lifetime_sec").value
+        )
+        base_id = self._stable_marker_base(msg.source_id, 2)
+        sound_type = str(msg.sound_type).lower()
+        if not msg.active:
+            color = ColorRGBA(r=0.45, g=0.45, b=0.45, a=0.65)
+        elif "alarm" in sound_type or "siren" in sound_type:
+            color = ColorRGBA(r=1.0, g=0.08, b=0.05, a=0.95)
+        else:
+            color = ColorRGBA(r=0.05, g=0.75, b=0.95, a=0.92)
+
+        source = self._marker(frame, base_id, Marker.CYLINDER, lifetime)
+        source.ns = "environmental_audio_sources"
+        source.pose.position = Point(
+            x=float(msg.source_position.x),
+            y=float(msg.source_position.y),
+            z=float(msg.source_position.z),
+        )
+        source.scale.x = source.scale.y = 0.30
+        source.scale.z = 0.18
+        source.color = color
+
+        label = self._marker(
+            frame,
+            base_id + 1,
+            Marker.TEXT_VIEW_FACING,
+            lifetime,
+        )
+        label.ns = "environmental_audio_source_labels"
+        label.pose.position = Point(
+            x=float(msg.source_position.x),
+            y=float(msg.source_position.y),
+            z=float(msg.source_position.z) + 0.32,
+        )
+        label.scale.z = 0.22
+        label.color = color
+        state = "ACTIVE" if msg.active else "OFF"
+        label.text = f"{msg.label or msg.system_id} / {msg.source_agent_name} [{state}]"
+        self._environmental_source_publisher.publish(
+            MarkerArray(markers=[source, label])
+        )
+
+    def _publish_continuous_path(
+        self,
+        msg: ContinuousHeardSoundState,
+    ) -> None:
+        configured = str(
+            self.get_parameter("continuous_listener_id").value
+        ).strip()
+        listener_id = str(msg.listener_id)
+        if configured:
+            if listener_id != configured:
+                return
+        else:
+            if not self._continuous_visual_listener_id:
+                self._continuous_visual_listener_id = listener_id
+            if listener_id != self._continuous_visual_listener_id:
+                return
+        output = self._listener_output(listener_id)
+        if output is None:
+            return
+        publisher, listener_kind, color = output
+        frame = str(msg.header.frame_id).strip()
+        if not frame:
+            return
+        lifetime = float(
+            self.get_parameter("continuous_marker_lifetime_sec").value
+        )
+        base_id = self._stable_marker_base(
+            f"{msg.source_id}|{listener_id}",
+            4 + len(msg.portal_positions),
+        )
+        source = Point(
+            x=float(msg.source_position.x),
+            y=float(msg.source_position.y),
+            z=self._source_height(msg),
+        )
+        listener = Point(
+            x=float(msg.listener_position.x),
+            y=float(msg.listener_position.y),
+            z=self._listener_height(
+                listener_id,
+                float(msg.listener_position.z),
+            ),
+        )
+        portals = [
+            Point(x=float(point.x), y=float(point.y), z=float(point.z))
+            for point in msg.portal_positions
+        ]
+
+        path = self._marker(frame, base_id, Marker.LINE_STRIP, lifetime)
+        path.ns = f"{listener_kind}_continuous_audio_paths"
+        path.scale.x = 0.07
+        path.color = color
+        path.points = [source, *portals, listener]
+
+        source_marker = self._marker(
+            frame,
+            base_id + 1,
+            Marker.SPHERE,
+            lifetime,
+        )
+        source_marker.ns = f"{listener_kind}_continuous_audio_sources"
+        source_marker.pose.position = source
+        source_marker.scale.x = 0.22
+        source_marker.scale.y = 0.22
+        source_marker.scale.z = 0.22
+        source_marker.color = color
+
+        listener_marker = self._marker(
+            frame,
+            base_id + 2,
+            Marker.SPHERE,
+            lifetime,
+        )
+        listener_marker.ns = f"{listener_kind}_continuous_audio_listeners"
+        listener_marker.pose.position = listener
+        listener_marker.scale.x = 0.22
+        listener_marker.scale.y = 0.22
+        listener_marker.scale.z = 0.22
+        listener_marker.color = color
+
+        label = self._marker(
+            frame,
+            base_id + 3,
+            Marker.TEXT_VIEW_FACING,
+            lifetime,
+        )
+        label.ns = f"{listener_kind}_continuous_audio_labels"
+        label.pose.position = listener
+        label.pose.position.z += 0.35
+        label.scale.z = 0.22
+        label.color = color
+        label.text = (
+            f"{msg.label or msg.sound_type}: {msg.propagation_backend}\n"
+            f"{float(msg.direct_delay_sec) * 1000.0:.1f} ms, "
+            f"{len(portals)} portal(s)"
+        )
+
+        markers = [path, source_marker, listener_marker, label]
+        for index, point in enumerate(portals):
+            portal = self._marker(
+                frame,
+                base_id + 4 + index,
+                Marker.CUBE,
+                lifetime,
+            )
+            portal.ns = f"{listener_kind}_continuous_audio_portals"
+            portal.pose.position = point
+            portal.scale.x = 0.28
+            portal.scale.y = 0.28
+            portal.scale.z = 0.28
+            portal.color = color
+            markers.append(portal)
+        publisher.publish(MarkerArray(markers=markers))
 
     def _on_world(self, msg: String) -> None:
         world_name = str(msg.data).strip()
@@ -405,7 +597,11 @@ class SoundPropagationVisualizer(Node):
         rir_config: PyroomacousticsConfig,
         portal_config: PortalCouplingConfig,
     ) -> _LoadedAcousticWorld:
-        world = WorldIdentifier(world_name).resolve_sync().load()
+        world_view = WorldIdentifier(world_name).resolve_sync()
+        world = world_view.load()
+        level_origins = world_view.level_origins()
+        if level_origins is not None:
+            world = world.compact_world(level_origins)
         room_specs = AcousticRoomSpecBuilder(
             AcousticRoomSpecConfig(ceiling_height_m=ceiling_height_m)
         ).from_world(world)
@@ -847,6 +1043,11 @@ class SoundPropagationVisualizer(Node):
 
     @staticmethod
     def _source_height(msg: Any) -> float:
+        if (
+            isinstance(msg, ContinuousHeardSoundState)
+            and str(msg.source_backend) == "wav_loop"
+        ):
+            return float(msg.source_position.z)
         sound_type = str(msg.sound_type).lower()
         if "foot" in sound_type or "step" in sound_type:
             return 0.05
@@ -859,6 +1060,11 @@ class SoundPropagationVisualizer(Node):
         if listener_id.startswith("microphone:"):
             return listener_z
         return 0.35 if listener_id.startswith("robot:") else 1.60
+
+    @staticmethod
+    def _stable_marker_base(key: str, width: int) -> int:
+        maximum = max((2**31 - 1) // max(width, 1), 1)
+        return (zlib.crc32(key.encode()) % maximum) * max(width, 1)
 
     def _marker(
         self,

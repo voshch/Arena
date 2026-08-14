@@ -1,0 +1,7 @@
+geometry_msgs/PointStamped position
+string placement
+---
+string listener_id
+string zone
+bool success
+string error_msg
