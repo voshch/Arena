@@ -1087,9 +1087,7 @@ namespace task_generator_gui
         request->system_id = system_id;
         remove_audio_system_client->async_send_request(
             request,
-            [this, system_id](
-                rclcpp::Client<
-                    task_generator_msgs::srv::RemoveAudioSystem>::SharedFuture future)
+            [this, system_id]( rclcpp::Client<task_generator_msgs::srv::RemoveAudioSystem>::SharedFuture future)
             {
                 try
                 {
