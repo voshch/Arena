@@ -1,8 +1,8 @@
 from .World import (
+    MICROPHONE_PLACEMENT_TOLERANCE_M,
     ElevatorDescriptor,
     Level,
     LevelDescription,
-    MICROPHONE_PLACEMENT_TOLERANCE_M,
     MultiLevelWorldView,
     WorldDescription,
     WorldIdentifier,

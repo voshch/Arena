@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
+import attrs
 import numpy as np
 from numpy.typing import NDArray
 
@@ -13,11 +13,14 @@ from .acoustic_room_spec import (
 )
 from .pyroomacoustics_adapter import RoomImpulseResponse
 
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from mpl_toolkits.mplot3d import Axes3D
 
 Position3D = tuple[float, float, float]
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticPlotSnapshot:
     room_specs: tuple[AcousticRoomSpec, ...]
     source_position_m: Position3D
@@ -125,7 +128,7 @@ class AcousticPlotDashboard:
             self._figure.canvas.flush_events()
 
     @staticmethod
-    def _plot_geometry(axis: Any, snapshot: AcousticPlotSnapshot) -> None:
+    def _plot_geometry(axis: Axes3D, snapshot: AcousticPlotSnapshot) -> None:
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
         selected_zones = set(snapshot.traversed_zones)
@@ -231,7 +234,7 @@ class AcousticPlotDashboard:
 
     @staticmethod
     def _plot_rir(
-        axis: Any,
+        axis: Axes,
         snapshot: AcousticPlotSnapshot,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64], int]:
         samples = np.asarray(snapshot.rir.samples, dtype=np.float64)
@@ -270,7 +273,7 @@ class AcousticPlotDashboard:
 
     @staticmethod
     def _plot_decay(
-        axis: Any,
+        axis: Axes,
         samples: NDArray[np.float64],
         physical_time_ms: NDArray[np.float64],
     ) -> None:
@@ -289,7 +292,7 @@ class AcousticPlotDashboard:
 
     def _plot_energy(
         self,
-        axis: Any,
+        axis: Axes,
         samples: NDArray[np.float64],
         physical_time_ms: NDArray[np.float64],
         peak_index: int,

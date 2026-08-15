@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import attrs
 import yaml
-
 
 DEFAULT_OCTAVE_BANDS_HZ = (
     125,
@@ -19,7 +17,7 @@ DEFAULT_OCTAVE_BANDS_HZ = (
 )
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticMaterial:
     """Frequency-dependent acoustic properties for one material.
 
@@ -188,7 +186,7 @@ class AcousticMaterialCatalog:
         if material is not None:
             return material
 
-        return replace(
+        return attrs.evolve(
             self._default_material,
             material_id=requested_id,
             canonical_name=requested_id,

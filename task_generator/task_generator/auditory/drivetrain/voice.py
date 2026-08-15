@@ -16,10 +16,13 @@ Requires numpy. Nothing else — `stream.py` is standard library only and can be
 lifted out on its own.
 """
 import math
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
+from numpy.typing import ArrayLike, DTypeLike, NDArray
 
-from .spec import DrivetrainSpec, JACKAL
+from .spec import JACKAL, DrivetrainSpec
 
 __all__ = ["DrivetrainVoice", "TransferFilter", "design_transfer_fir",
            "prewarm", "clear_cache", "cache_bytes", "OUTPUT_GAIN"]
@@ -45,7 +48,7 @@ _CHUNK = 4096                     # internal subdivision, bounds peak memory onl
 # ----------------------------------------------------------------------------
 # transfer H(f): a linear-phase FIR, designed here so scipy is not needed
 # ----------------------------------------------------------------------------
-def _firwin2(numtaps, freq, gain):
+def _firwin2(numtaps: int, freq: ArrayLike, gain: ArrayLike) -> NDArray[np.float64]:
     """Frequency-sampling FIR design. Matches scipy.signal.firwin2 to ~1e-16.
 
     `freq` is normalised to Nyquist = 1 and must start at 0 and end at 1.
@@ -57,7 +60,7 @@ def _firwin2(numtaps, freq, gain):
     return np.fft.irfft(fx * shift)[:numtaps] * np.hamming(numtaps)
 
 
-def design_transfer_fir(spec):
+def design_transfer_fir(spec: DrivetrainSpec) -> NDArray[np.float64] | None:
     """FIR taps for the fitted chassis + room + mic transfer of `spec`."""
     if len(spec.transfer_hz) < 2:
         return None
@@ -80,19 +83,19 @@ class TransferFilter:
     keeps voices independent; a shared bus filter is cheaper for many voices.
     """
 
-    def __init__(self, taps):
+    def __init__(self, taps: ArrayLike) -> None:
         self.taps = np.asarray(taps, dtype=np.float64)
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self._tail = np.zeros(len(self.taps) - 1)
 
     @property
-    def latency(self):
+    def latency(self) -> int:
         """Group delay in samples (the FIR is linear phase)."""
         return (len(self.taps) - 1) // 2
 
-    def __call__(self, x):
+    def __call__(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
         z = np.concatenate([self._tail, x])
         self._tail = z[len(z) - (len(self.taps) - 1):].copy()
         return np.convolve(z, self.taps, mode="valid")
@@ -105,7 +108,7 @@ class _Tables:
     __slots__ = ("m", "a", "ph", "order", "levels", "dx0", "field_m", "nbytes")
 
 
-def _smooth_len(n):
+def _smooth_len(n: int) -> int:
     """Largest even 5-smooth number <= n.
 
     The field length falls where it falls, and at the shipped settings that is
@@ -126,10 +129,10 @@ def _smooth_len(n):
     return 2 * best
 
 
-_CACHE = {}
+_CACHE: dict[tuple[DrivetrainSpec, int, str], _Tables] = {}
 
 
-def _build(spec, seed, dtype):
+def _build(spec: DrivetrainSpec, seed: int, dtype: np.dtype) -> _Tables:
     """Comb table and mipmapped distance-domain noise field.
 
     The random draws happen in the same order as the reference renderer, so a
@@ -191,7 +194,7 @@ def _build(spec, seed, dtype):
     return t
 
 
-def _tables(spec, seed, dtype):
+def _tables(spec: DrivetrainSpec, seed: int, dtype: DTypeLike) -> _Tables:
     key = (spec, int(seed), np.dtype(dtype).str)
     t = _CACHE.get(key)
     if t is None:
@@ -199,7 +202,7 @@ def _tables(spec, seed, dtype):
     return t
 
 
-def prewarm(spec=JACKAL, seed=0, field_dtype="float32"):
+def prewarm(spec: DrivetrainSpec = JACKAL, seed: int = 0, field_dtype: DTypeLike = "float32") -> int:
     """Build and cache the noise field ahead of time.
 
     The field is a few million samples; generating it takes on the order of a
@@ -209,12 +212,12 @@ def prewarm(spec=JACKAL, seed=0, field_dtype="float32"):
     return _tables(spec, seed, field_dtype).nbytes
 
 
-def clear_cache():
+def clear_cache() -> None:
     """Drop all cached noise fields."""
     _CACHE.clear()
 
 
-def cache_bytes():
+def cache_bytes() -> int:
     """Total memory held by cached noise fields."""
     return sum(t.nbytes for t in _CACHE.values())
 
@@ -250,8 +253,8 @@ class DrivetrainVoice:
     a consumer thread.
     """
 
-    def __init__(self, spec=JACKAL, index=0, count=None, seed=0, k=None,
-                 transfer=True, gain=None, field_dtype="float32"):
+    def __init__(self, spec: DrivetrainSpec | Mapping[str, Any] = JACKAL, index: int = 0, count: int | None = None, seed: int = 0, k: float | None = None,
+                 transfer: bool = True, gain: float | None = None, field_dtype: DTypeLike = "float32") -> None:
         if not isinstance(spec, DrivetrainSpec):
             spec = DrivetrainSpec.from_dict(dict(spec))
         self.spec = spec
@@ -272,14 +275,14 @@ class DrivetrainVoice:
         self.transfer = TransferFilter(taps) if taps is not None else None
         self.reset()
 
-    def _default_k(self):
+    def _default_k(self) -> float:
         s = self.spec
         if self.count < 2 or s.lr_mismatch == 0.0:
             return s.K
         return s.K * (1.0 + (-0.5 if self.index % 2 == 0 else 0.5) * s.lr_mismatch)
 
     # -- state -------------------------------------------------------------
-    def reset(self):
+    def reset(self) -> None:
         """Rewind to the start: phase, field position, gate and filter state."""
         i = self.index
         self._psi_q = int((0.31 * i % 1.0) * Q32) % _MOD
@@ -291,26 +294,26 @@ class DrivetrainVoice:
             self.transfer.reset()
 
     @property
-    def distance(self):
+    def distance(self) -> float:
         """Metres of wheel travel accumulated, modulo the noise field length."""
         return self._x_q * self.field_metres / Q32
 
-    def loop_seconds(self, v):
+    def loop_seconds(self, v: float) -> float:
         """How long the noise field runs before repeating, at speed `v`."""
         return self.field_metres / max(abs(v), 1e-12)
 
     # -- rendering ----------------------------------------------------------
     def render(
         self,
-        v,
-        frames=None,
-        tau=0.0,
+        v: ArrayLike,
+        frames: int | None = None,
+        tau: ArrayLike = 0.0,
         *,
-        frequency_scale=1.0,
-        tonal_gain_db=0.0,
-        broadband_gain_db=0.0,
-        speed_exponent=None,
-    ):
+        frequency_scale: float = 1.0,
+        tonal_gain_db: float = 0.0,
+        broadband_gain_db: float = 0.0,
+        speed_exponent: float | None = None,
+    ) -> NDArray[np.float64]:
         """Render the next block and return it as float64 in [-1, 1]-ish.
 
         Args:
@@ -365,7 +368,7 @@ class DrivetrainVoice:
         self.frames_rendered += n
         return out * self.gain
 
-    def render_seconds(self, v, seconds, tau=0.0, **render_options):
+    def render_seconds(self, v: ArrayLike, seconds: float, tau: ArrayLike = 0.0, **render_options: float | None) -> NDArray[np.float64]:
         """Render `seconds` worth of audio, carrying the fractional remainder.
 
         Use this when the control loop ticks at a rate that is not a divisor of
@@ -380,14 +383,14 @@ class DrivetrainVoice:
     # -- internals ----------------------------------------------------------
     def _chunk(
         self,
-        v,
-        tau,
-        dt,
-        frequency_scale,
-        tonal_scale,
-        broadband_scale,
-        speed_exponent,
-    ):
+        v: NDArray[np.float64],
+        tau: NDArray[np.float64],
+        dt: float,
+        frequency_scale: float,
+        tonal_scale: float,
+        broadband_scale: float,
+        speed_exponent: float,
+    ) -> NDArray[np.float64]:
         s = self.spec
         n = len(v)
         av = np.abs(v)
@@ -462,7 +465,7 @@ class DrivetrainVoice:
         g = g * (1.0 + s.load_depth * tau)
         return acc * g * self._gate_env(av, dt)
 
-    def _read(self, level, pos0):
+    def _read(self, level: int, pos0: NDArray[np.float64]) -> NDArray[np.float64]:
         """Catmull-Rom read of one mipmap level. `pos0` is in level-0 samples."""
         tab = self._levels[level]
         n = len(tab)
@@ -479,7 +482,7 @@ class DrivetrainVoice:
         a2 = -0.5 * a + 0.5 * c
         return ((a0 * fr + a1) * fr + a2) * fr + b
 
-    def _gate_env(self, av, dt):
+    def _gate_env(self, av: NDArray[np.float64], dt: float) -> NDArray[np.float64]:
         """Static/driving crossfade, one-pole, state carried across calls.
 
         Evaluated in closed form per run of constant input rather than by
@@ -494,7 +497,7 @@ class DrivetrainVoice:
         edges = np.flatnonzero(np.diff(on)) + 1
         starts = np.concatenate([[0], edges])
         ends = np.concatenate([edges, [len(on)]])
-        for i, j in zip(starts, ends):
+        for i, j in zip(starts, ends, strict=True):
             u = on[i]
             y[i:j] = u + (prev - u) * a ** np.arange(1, j - i + 1)
             prev = y[j - 1]

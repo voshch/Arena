@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass
 
+import attrs
 import rclpy
 from arena_robots.Robot import RobotIdentifier
 from geometry_msgs.msg import Point
@@ -25,7 +25,7 @@ from task_generator.auditory.qos_profiles import (
 )
 
 
-@dataclass
+@attrs.define
 class RobotSoundSource:
     name: str
     namespace: str

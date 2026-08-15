@@ -5,6 +5,7 @@ import json
 import math
 import time
 from collections import deque
+from collections.abc import Hashable
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from arena_simulation_setup.tree.World import (
     MICROPHONE_PLACEMENT_TOLERANCE_M,
     WorldIdentifier,
 )
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import Point, PoseStamped, Transform
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
@@ -27,6 +28,18 @@ from rclpy.parameter import Parameter
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from shapely.geometry import Point as ShapelyPoint
 from std_msgs.msg import ColorRGBA, String
+from task_generator_msgs.msg import (
+    AcousticPath,
+    ContinuousAudioSourceState,
+    ContinuousHeardSoundState,
+    EpisodeRecord,
+    HeardSoundEvent,
+    RobotFleet,
+    SoundEvent,
+)
+from task_generator_msgs.srv import RemoveMicrophone, SpawnMicrophone
+from visualization_msgs.msg import Marker, MarkerArray
+
 from task_generator.auditory.acoustic_frame import (
     realize_acoustic_geometry,
     runtime_acoustic_offset,
@@ -37,7 +50,10 @@ from task_generator.auditory.acoustic_room_spec import (
     AcousticRoomSpecConfig,
 )
 from task_generator.auditory.acoustic_scene import AcousticScene
-from task_generator.auditory.acoustic_world_graph import AcousticWorldGraph
+from task_generator.auditory.acoustic_world_graph import (
+    AcousticPortalRoute,
+    AcousticWorldGraph,
+)
 from task_generator.auditory.material_catalog import AcousticMaterialCatalog
 from task_generator.auditory.microphone_config import (
     WorldMicrophoneSpec,
@@ -61,21 +77,10 @@ from task_generator.auditory.qos_profiles import (
     continuous_audio_qos,
     transient_event_qos,
 )
-from task_generator_msgs.msg import (
-    AcousticPath,
-    ContinuousAudioSourceState,
-    ContinuousHeardSoundState,
-    EpisodeRecord,
-    HeardSoundEvent,
-    RobotFleet,
-    SoundEvent,
-)
-from task_generator_msgs.srv import RemoveMicrophone, SpawnMicrophone
-from visualization_msgs.msg import Marker, MarkerArray
 
 
 class SoundPropagationNode(Node):
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: object) -> None:
         super().__init__("sound_propagation_node", **kwargs)
 
         self.declare_parameter("sound_events_topic", "human_sound_events")
@@ -180,7 +185,7 @@ class SoundPropagationNode(Node):
             tuple[str, str], ContinuousHeardSoundState
         ] = {}
         self._continuous_propagation_signatures: dict[
-            tuple[str, str], tuple[object, ...]
+            tuple[str, str], tuple[Hashable, ...]
         ] = {}
         self._missing_microphone_robots: set[str] = set()
         self._acoustic_offset: tuple[float, float] | None = None
@@ -201,9 +206,9 @@ class SoundPropagationNode(Node):
         self._authored_room_specs: tuple[AcousticRoomSpec, ...] = ()
         self._authored_world_graph: AcousticWorldGraph | None = None
         self._portal_coupler: MultiPortalRirCoupler | None = None
-        self._coverage_signature: tuple[object, ...] | None = None
+        self._coverage_signature: tuple[Hashable, ...] | None = None
         self._authored_map_origin: tuple[float, float] | None = None
-        self._acoustic_alignment_signature: tuple[object, ...] | None = None
+        self._acoustic_alignment_signature: tuple[Hashable, ...] | None = None
         self._reported_routes: set[tuple[str, str, str, str]] = set()
         self._pending_events: deque[
             tuple[SoundEvent, dict[str, Point]]
@@ -465,7 +470,7 @@ class SoundPropagationNode(Node):
             float(self.get_parameter("portal_loss_db").value),
             float(self.get_parameter("opening_portal_loss_db").value),
         )
-    
+
     @staticmethod
     def _load_acoustic_scene(
         world_name: str,
@@ -533,7 +538,7 @@ class SoundPropagationNode(Node):
             authored_map_origin,
             microphones,
         )
-    
+
     def _poll_world_load(self) -> None:
         if self._world_load_future is None:
             return
@@ -1288,7 +1293,7 @@ class SoundPropagationNode(Node):
         state: ContinuousAudioSourceState,
         source_position: Point,
         listener_position: Point,
-    ) -> tuple[object, ...]:
+    ) -> tuple[Hashable, ...]:
         return (
             int(state.source_agent_id),
             state.source_agent_name,
@@ -1623,7 +1628,7 @@ class SoundPropagationNode(Node):
         )
 
     @staticmethod
-    def _apply_transform(point: Point, transform) -> Point:
+    def _apply_transform(point: Point, transform: Transform) -> Point:
         rotation = transform.rotation
         translation = transform.translation
         qx = float(rotation.x)
@@ -1663,7 +1668,7 @@ class SoundPropagationNode(Node):
             heard = self._calculate_heard_event(event, listener_id, listener_pos)
             if heard.audible or bool(self.get_parameter("publish_inaudible").value):
                 self._heard_pub.publish(heard)
-    
+
     def _effective_sound_distance(self, geometric_distance: float, event: SoundEvent, listener_id: str,) -> float:
         if listener_id == f"robot:{event.source_agent_name}":
             return max(float(self.get_parameter("self_hearing_distance_m").value),1e-3)
@@ -1942,7 +1947,7 @@ class SoundPropagationNode(Node):
     @staticmethod
     def _apply_deferred_route_metadata(
         msg: HeardSoundEvent,
-        route,
+        route: AcousticPortalRoute,
     ) -> None:
         msg.portal_ids = [portal.portal_id for portal in route.portals]
         msg.traversed_zones = list(route.zones)

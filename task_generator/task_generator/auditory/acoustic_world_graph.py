@@ -1,27 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import heapq
 import itertools
 import math
 import re
+from collections.abc import Hashable
 from typing import Literal
 
+import attrs
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+from arena_simulation_setup.tree.World import WorldDescription
 from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry.base import BaseMultipartGeometry
 from shapely.ops import nearest_points
 
 from .acoustic_room_spec import AcousticRoomSpec
 from .world_compat import world_zone_groups, world_zones
 
-
 Point2D = tuple[float, float]
 Position3D = tuple[float, float, float]
 
 
-def _material_name(identifier, fallback: str) -> str:
+def _material_name(identifier: MaterialIdentifier | None, fallback: str) -> str:
     if identifier is None:
         return fallback
-    name = str(getattr(identifier, "name", "")).strip()
+    name = str(identifier.name).strip()
     return name or fallback
 
 
@@ -29,7 +32,7 @@ def _safe_id(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.:-]+", "_", value.strip())
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class UnpairedDoor:
     door_name: str
     owner_zone: str
@@ -38,7 +41,7 @@ class UnpairedDoor:
     reason: str
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticPortal:
     portal_id: str
     door_name: str
@@ -69,7 +72,7 @@ class AcousticPortal:
         raise KeyError(f"portal {self.portal_id!r} is not connected to {zone_name!r}")
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticPortalRoute:
     zones: tuple[str, ...]
     portals: tuple[AcousticPortal, ...]
@@ -81,7 +84,7 @@ class AcousticPortalRoute:
         return len(self.portals)
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticWorldGraph:
     """Acoustic rooms connected by authored doors and shared openings."""
 
@@ -93,7 +96,7 @@ class AcousticWorldGraph:
     @classmethod
     def from_world(
         cls,
-        world,
+        world: WorldDescription,
         rooms: tuple[AcousticRoomSpec, ...],
         *,
         adjacency_tolerance_m: float = 0.08,
@@ -102,7 +105,7 @@ class AcousticWorldGraph:
         minimum_opening_width_m: float = 0.30,
         door_portal_loss_db: float = 3.0,
         opening_portal_loss_db: float = 0.5,
-    ) -> "AcousticWorldGraph":
+    ) -> AcousticWorldGraph:
         if adjacency_tolerance_m <= 0.0:
             raise ValueError("adjacency_tolerance_m must be positive")
         if minimum_opening_width_m <= 0.0:
@@ -234,9 +237,9 @@ class AcousticWorldGraph:
                         for opening_b in openings_b:
                             shared = opening_a.intersection(opening_b)
                             lines = (
-                                [shared]
-                                if shared.geom_type == "LineString"
-                                else list(getattr(shared, "geoms", ()))
+                                list(shared.geoms)
+                                if isinstance(shared, BaseMultipartGeometry)
+                                else [shared]
                             )
                             for line in lines:
                                 if (
@@ -375,7 +378,7 @@ class AcousticWorldGraph:
 
         # (estimated total cost, sequence, accumulated cost, distance, zone,
         #  anchor, zones, portals)
-        queue: list[tuple[object, ...]] = []
+        queue: list[tuple[Hashable, ...]] = []
         sequence = itertools.count()
         heapq.heappush(
             queue,

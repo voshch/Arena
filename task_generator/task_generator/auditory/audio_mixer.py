@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from typing import Protocol
 
+import attrs
 import numpy as np
 import sounddevice as sd
 
 from task_generator.auditory.asset_lib import CachedSample
 
 
-@dataclass
+class RenderSource(Protocol):
+    """Anything the mixer can pull blocks from."""
+
+    @property
+    def finished(self) -> bool: ...
+
+    def render(self, frames: int) -> np.ndarray: ...
+
+
+@attrs.define
 class Voice:
     sample: CachedSample
     position: int = 0
@@ -23,15 +33,15 @@ class Voice:
     bus: str = "main"
 
 
-@dataclass
+@attrs.define
 class RenderVoice:
-    source: object
+    source: RenderSource
     voice_id: str
     bus: str = "main"
 
 
 class AudioMixer:
-    def __init__(self,*,sample_rate: int = 44100,channels: int = 2, block_size: int = 2048, device: str | int | None = None, master_gain_db: float = 0.0) -> None:
+    def __init__(self, *, channels: int = 2, master_gain_db: float = 0.0, output: sd.OutputStream | None = None) -> None:
         self._channels = channels
         self._voices: list[Voice] = []
         self._render_voices: list[RenderVoice] = []
@@ -42,16 +52,22 @@ class AudioMixer:
         self._last_output_peak = 0.0
         self._last_status = ""
         self._status_count = 0
+        self._stream = output
+        if self._stream is not None:
+            self._stream.start()
 
+    @classmethod
+    def open(cls, *, sample_rate: int = 44100, channels: int = 2, block_size: int = 2048, device: str | int | None = None, master_gain_db: float = 0.0) -> AudioMixer:
+        mixer = cls(channels=channels, master_gain_db=master_gain_db)
         try:
             sd.query_devices(device, "output")
-            self._stream = sd.OutputStream(
+            stream = sd.OutputStream(
                 samplerate=sample_rate,
                 channels=channels,
                 dtype="float32",
                 blocksize=block_size,
                 device=device,
-                callback=self._callback,
+                callback=mixer._callback,
             )
         except (ValueError, sd.PortAudioError) as exc:
             available = [
@@ -64,22 +80,22 @@ class AudioMixer:
                 f"cannot open requested audio output {requested}: {exc}; "
                 f"available outputs={available or ['none']}"
             ) from exc
-        self._stream.start()
+        mixer._stream = stream
+        stream.start()
+        return mixer
 
     @property
     def active(self) -> bool:
-        return bool(self._stream.active)
+        return self._stream is not None and bool(self._stream.active)
 
     @property
-    def device(self):
-        return self._stream.device
+    def device(self) -> int | None:
+        return None if self._stream is None else self._stream.device
 
     @property
     def voice_count(self) -> int:
         with self._lock:
-            return len(self._voices) + len(
-                getattr(self, "_render_voices", ())
-            )
+            return len(self._voices) + len(self._render_voices)
 
     @property
     def callback_count(self) -> int:
@@ -97,7 +113,7 @@ class AudioMixer:
     def status_count(self) -> int:
         return self._status_count
 
-    def play(self,sample: CachedSample,*, loop: bool = False,gain_db: float = 0.0, voice_id: str | None = None, bus: str = "main") -> None:
+    def play(self, sample: CachedSample, *, loop: bool = False, gain_db: float = 0.0, voice_id: str | None = None, bus: str = "main") -> None:
         voice = Voice(
             sample=sample,
             loop=loop,
@@ -114,10 +130,8 @@ class AudioMixer:
                 ]
             self._voices.append(voice)
 
-    def add_render_source(self, source: object, *, voice_id: str, bus: str = "main") -> None:
+    def add_render_source(self, source: RenderSource, *, voice_id: str, bus: str = "main") -> None:
         with self._lock:
-            if not hasattr(self, "_render_voices"):
-                self._render_voices = []
             self._render_voices = [
                 active
                 for active in self._render_voices
@@ -168,20 +182,20 @@ class AudioMixer:
     def stop_all(self) -> None:
         with self._lock:
             self._voices.clear()
-            if hasattr(self, "_render_voices"):
-                self._render_voices.clear()
+            self._render_voices.clear()
 
     def set_bus_enabled(self, bus: str, enabled: bool) -> None:
         with self._lock:
             self._bus_enabled[bus] = enabled
 
     def close(self) -> None:
+        if self._stream is None:
+            return
         self._stream.stop()
         self._stream.close()
 
-    def _callback(self, outdata, frames, time_info, status) -> None:
-        del time_info
-        self._callback_count = getattr(self, "_callback_count", 0) + 1
+    def _callback(self, outdata: np.ndarray, frames: int, _time_info: sd.CallbackTimeInfo, status: sd.CallbackFlags) -> None:
+        self._callback_count += 1
         if status:
             self._last_status = str(status)
             self._status_count += 1
@@ -221,7 +235,7 @@ class AudioMixer:
             self._voices = active
 
             active_renderers: list[RenderVoice] = []
-            for voice in getattr(self, "_render_voices", ()):
+            for voice in self._render_voices:
                 rendered = np.asarray(
                     voice.source.render(frames), dtype=np.float32
                 )

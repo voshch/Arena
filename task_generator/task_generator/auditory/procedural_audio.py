@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Hashable
 
 import numpy as np
 
 from task_generator.auditory.asset_lib import CachedSample
 from task_generator.auditory.drivetrain import (
-    DrivetrainVoice,
     JACKAL,
+    DrivetrainVoice,
     clear_cache,
     prewarm,
 )
@@ -101,7 +102,7 @@ class LoopingSampleRenderSource:
             1,
         )
         self._crossfade_remaining = 0
-        self._rir_signature: tuple[object, ...] | None = None
+        self._rir_signature: tuple[Hashable, ...] | None = None
 
     def update(
         self,
@@ -109,7 +110,7 @@ class LoopingSampleRenderSource:
         gain_db: float,
         active: bool,
         impulse: np.ndarray | None,
-        rir_signature: tuple[object, ...] | None,
+        rir_signature: tuple[Hashable, ...] | None,
     ) -> None:
         with self._lock:
             self._target_gain = (
@@ -289,7 +290,7 @@ class DrivetrainRenderSource:
             int(JACKAL.sample_rate * rir_crossfade_seconds), 1
         )
         self._crossfade_remaining = 0
-        self._rir_signature: tuple[object, ...] | None = None
+        self._rir_signature: tuple[Hashable, ...] | None = None
 
     def update(
         self,
@@ -299,7 +300,7 @@ class DrivetrainRenderSource:
         gain_db: float,
         active: bool,
         impulse: np.ndarray | None,
-        rir_signature: tuple[object, ...] | None,
+        rir_signature: tuple[Hashable, ...] | None,
     ) -> None:
         with self._lock:
             self._target_left = float(left_velocity) if active else 0.0

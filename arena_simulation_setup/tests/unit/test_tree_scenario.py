@@ -3,6 +3,7 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 
+import cattrs
 import pytest
 import yaml
 
@@ -212,8 +213,9 @@ def test_scenario_view_rejects_duplicate_audio_system_names(tmp_path):
     data = {"audio": {"systems": [system, system]}}
     (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
 
-    with pytest.raises(ValueError, match="duplicate audio system names"):
+    with pytest.raises(cattrs.errors.ClassValidationError) as excinfo:
         ScenarioView(scenario_dir).load_audio()
+    assert excinfo.group_contains(ValueError, match="duplicate audio system names")
 
 
 # ---------------------------------------------------------------------------

@@ -11,12 +11,12 @@ import wave
 from pathlib import Path
 from typing import Any
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = Path(__file__).resolve().parents[1] / "worlds" / "zones_readable.csv"
 DEFAULT_OUTPUT_DIR = REPOSITORY_ROOT / "task_generator" / "sounds" / "tts_generated_requests"
 REQUESTS = ("Move", "Go", "Navigate")
 VOICES = ("en_US-hfc_female-medium", "en_US-bryce-medium")
+VOICES_REPO = "rhasspy/piper-voices"
 ENTITY_COLUMNS = ("zone_entity_names", "zone_entities_names")
 
 
@@ -78,6 +78,27 @@ def load_requests(
     return requests
 
 
+def voice_repo_path(voice: str) -> str:
+    """Path of a voice inside the upstream repo, e.g. en/en_US/bryce/medium/<voice>.onnx."""
+    language, name, quality = voice.split("-", 2)
+    return f"{language.split('_')[0]}/{language}/{name}/{quality}/{voice}.onnx"
+
+
+def resolve_voice_model(voice: str, data_dir: Path | None) -> Path:
+    """Model path from ``data_dir``, else fetched from upstream into the HF cache."""
+    if data_dir is not None:
+        model_path = (data_dir / f"{voice}.onnx").resolve()
+        if not model_path.is_file():
+            raise FileNotFoundError(f"Piper model does not exist: {model_path}")
+        return model_path
+
+    from huggingface_hub import hf_hub_download
+
+    repo_path = voice_repo_path(voice)
+    hf_hub_download(VOICES_REPO, f"{repo_path}.json")
+    return Path(hf_hub_download(VOICES_REPO, repo_path))
+
+
 def load_piper_voice(model_path: Path, use_cuda: bool) -> Any:
     """Load Piper lazily so CSV errors do not require Piper to be installed."""
     try:
@@ -114,8 +135,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path.cwd(),
-        help="directory containing the downloaded Piper .onnx model and JSON config",
+        help=f"directory holding <voice>.onnx and its .json; default pulls from {VOICES_REPO}",
     )
     parser.add_argument(
         "--input",
@@ -145,16 +165,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     input_path = args.input.resolve()
-    model_path = (args.data_dir / f"{args.voice}.onnx").resolve()
     output_dir = args.output_dir.resolve()
 
     if not input_path.is_file():
         raise SystemExit(f"Input CSV does not exist: {input_path}")
-    if not model_path.is_file():
-        raise SystemExit(f"Piper model does not exist: {model_path}")
 
     try:
         requests = load_requests(input_path, random.Random(args.seed), args.voice)
+        model_path = resolve_voice_model(args.voice, args.data_dir)
         voice = load_piper_voice(model_path, args.use_cuda)
         synthesize_requests(voice, requests, output_dir)
     except (OSError, csv.Error, ValueError, RuntimeError) as error:

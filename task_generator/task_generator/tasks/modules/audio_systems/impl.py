@@ -4,8 +4,8 @@ import hashlib
 import math
 import threading
 import traceback
-from dataclasses import dataclass, replace
 
+import attrs
 import rclpy
 import tf2_ros
 import yaml
@@ -37,7 +37,7 @@ from task_generator.auditory.qos_profiles import (
 from task_generator.tasks.modules import TM_Module
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class _ResolvedEmitter:
     source_id: str
     name: str
@@ -46,7 +46,7 @@ class _ResolvedEmitter:
     source_volume_db: float
 
 
-@dataclass
+@attrs.define
 class _RuntimeSystem:
     specification: AudioSystem
     emitters: tuple[_ResolvedEmitter, ...]
@@ -522,7 +522,7 @@ class Mod_AudioSystems(TM_Module):
 
     def _publish_sources_impl(self) -> None:
         with self._systems_lock:
-            systems = tuple(replace(runtime) for runtime in self._systems.values())
+            systems = tuple(attrs.evolve(runtime) for runtime in self._systems.values())
             pending_states = tuple(self._pending_system_states)
         for _, runtime, removed in pending_states:
             if removed:
@@ -586,7 +586,7 @@ class Mod_AudioSystems(TM_Module):
     ) -> None:
         with self._systems_lock:
             self._pending_system_states.append(
-                (system_id, replace(runtime), removed)
+                (system_id, attrs.evolve(runtime), removed)
             )
 
     def _publish_system_state(

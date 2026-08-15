@@ -1,16 +1,20 @@
-from types import SimpleNamespace
+from pathlib import Path
 
-from arena_simulation_setup.tree.World import WorldIdentifier
-
+import pytest
+from arena_simulation_setup.tree.World import (
+    Level,
+    WorldDescription,
+    WorldIdentifier,
+)
 from task_generator.auditory.acoustic_room_spec import AcousticRoomSpecBuilder
 from task_generator.auditory.acoustic_scene import AcousticScene
 from task_generator.auditory.acoustic_world_graph import AcousticWorldGraph
 
+_HOSPITAL_WORLD = Path(__file__).resolve().parents[3] / "arena_simulation_setup" / "worlds" / "hospital_1"
+
 
 def test_world_without_zones_builds_empty_acoustic_models():
-    world = SimpleNamespace(
-        levels={"0": SimpleNamespace(zones=())},
-    )
+    world = WorldDescription(levels={"0": Level()})
 
     scene = AcousticScene.from_world(world)
     rooms = AcousticRoomSpecBuilder().from_world(world)
@@ -24,9 +28,10 @@ def test_world_without_zones_builds_empty_acoustic_models():
 
 
 def test_current_multilevel_world_schema_builds_rooms_and_portals():
+    if not _HOSPITAL_WORLD.is_dir():
+        pytest.skip(f"fixture world not found: {_HOSPITAL_WORLD}")
     world = WorldIdentifier("hospital_1").resolve_sync().load()
 
-    assert hasattr(world, "levels")
     scene = AcousticScene.from_world(world)
     rooms = AcousticRoomSpecBuilder().from_world(world)
     graph = AcousticWorldGraph.from_world(world, rooms)

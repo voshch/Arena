@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
 
+import attrs
 import numpy as np
-from PIL import Image
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_simulation_setup.tree.World import WorldIdentifier
+from PIL import Image
 from shapely.geometry import Point, Polygon
 
 from .acoustic_room_spec import AcousticRoomSpecBuilder
@@ -16,7 +16,7 @@ from .acoustic_scene import AcousticScene
 from .acoustic_world_graph import AcousticWorldGraph
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticWorldAudit:
     world_name: str
     rooms: int

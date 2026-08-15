@@ -3,16 +3,17 @@ from __future__ import annotations
 import math
 import time
 import zlib
+from collections.abc import Hashable
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+import attrs
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from arena_simulation_setup.tree.World import WorldIdentifier
 from geometry_msgs.msg import Point
 from rclpy.node import Node
+from rclpy.publisher import Publisher
 from std_msgs.msg import ColorRGBA, String
 from task_generator_msgs.msg import (
     ContinuousAudioSourceState,
@@ -45,8 +46,11 @@ from .qos_profiles import (
     transient_event_qos,
 )
 
+#: Both heard-event flavours the visualizer draws.
+HeardEventMsg = ContinuousHeardSoundState | HeardSoundEvent
 
-@dataclass(frozen=True)
+
+@attrs.frozen
 class _LoadedAcousticWorld:
     name: str
     room_specs: tuple[AcousticRoomSpec, ...]
@@ -55,7 +59,7 @@ class _LoadedAcousticWorld:
     portal_coupler: MultiPortalRirCoupler | None
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class _PlotRequest:
     world: _LoadedAcousticWorld
     source_position_m: Position3D
@@ -241,7 +245,7 @@ class SoundPropagationVisualizer(Node):
         self._loaded_world: _LoadedAcousticWorld | None = None
         self._pending_world_name = ""
         self._pending_plot_request: _PlotRequest | None = None
-        self._last_plot_signature: tuple[object, ...] | None = None
+        self._last_plot_signature: tuple[Hashable, ...] | None = None
         self._last_plot_submit_time = 0.0
         self._selected_listener_id = ""
         self._continuous_visual_listener_id = ""
@@ -695,7 +699,7 @@ class SoundPropagationVisualizer(Node):
                 self._reported_plot_errors.add(key)
                 self.get_logger().warning(f"RIR plot update failed: {key}")
 
-    def _consider_live_plot(self, msg: Any) -> None:
+    def _consider_live_plot(self, msg: HeardEventMsg) -> None:
         if self._plot_mode != "live" or self._loaded_world is None:
             return
         if not str(msg.header.frame_id).strip():
@@ -1046,7 +1050,7 @@ class SoundPropagationVisualizer(Node):
         return values
 
     @staticmethod
-    def _source_height(msg: Any) -> float:
+    def _source_height(msg: HeardEventMsg) -> float:
         if (
             isinstance(msg, ContinuousHeardSoundState)
             and str(msg.source_backend) == "wav_loop"
@@ -1092,7 +1096,7 @@ class SoundPropagationVisualizer(Node):
     def _listener_output(
         self,
         listener_id: str,
-    ) -> tuple[object, str, ColorRGBA] | None:
+    ) -> tuple[Publisher, str, ColorRGBA] | None:
         if listener_id.startswith("agent:"):
             return (
                 self._pedestrian_publisher,

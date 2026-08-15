@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+import attrs
 import rclpy
 from arena_robots.Robot import RobotIdentifier
 from rclpy.node import Node
 from rclpy.time import Time
-
-from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
-from task_generator_msgs.msg import HeardSoundEvent, RobotFleet
 from std_msgs.msg import ColorRGBA
+from task_generator_msgs.msg import HeardSoundEvent, RobotFleet
 from visualization_msgs.msg import Marker
 
+from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
 
-@dataclass
+
+@attrs.define
 class PendingHeardSound:
     release_time: Time
     robot_name: str
@@ -21,7 +20,7 @@ class PendingHeardSound:
 
 
 class RobotHearingNode(Node):
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: object) -> None:
         super().__init__("robot_hearing_node", **kwargs)
 
         # self.declare_parameter("robot_name", "")

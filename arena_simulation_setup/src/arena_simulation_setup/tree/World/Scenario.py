@@ -94,7 +94,7 @@ class RegionAssignment:
 def _optional_position(value: object) -> Position | None:
     if value is None:
         return None
-    return Position.parse(value)
+    return Position.instance_or(Position.parse)(value)
 
 
 @attrs.define

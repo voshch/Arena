@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
+
 import numpy as np
-from scipy.signal import welch
 from scipy.integrate import trapezoid
+from scipy.signal import welch
 
 DEFAULT_OCTAVE_CENTERS_HZ = (63, 125, 250, 500, 1000, 2000,4000, 8000)
 
@@ -15,7 +16,7 @@ def calculate_octave_band_levels_db(samples: np.ndarray, sample_rate: int, *, ce
         return {}
 
     if samples.ndim == 2:
-        mono = np.mean(samples, axis=1, dtype=np.float64) 
+        mono = np.mean(samples, axis=1, dtype=np.float64)
     else:
         mono = samples.astype(np.float64, copy=False)
 

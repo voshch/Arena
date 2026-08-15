@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections import OrderedDict
-from dataclasses import dataclass, replace
 import math
+from collections import OrderedDict
+from collections.abc import Hashable
 
+import attrs
 import numpy as np
 from scipy.signal import fftconvolve
 
@@ -16,7 +17,7 @@ from .acoustic_world_graph import (
 from .pyroomacoustics_adapter import PyroomacousticsAdapter, RoomImpulseResponse
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class PortalCouplingConfig:
     portal_inset_m: float = 0.03
     portal_loss_db: float = 3.0
@@ -28,7 +29,7 @@ class PortalCouplingConfig:
     max_portal_hops: int = 4
     route_distance_loss_db_per_m: float = 0.05
 
-    def __post_init__(self) -> None:
+    def __attrs_post_init__(self) -> None:
         if self.portal_inset_m <= 0.0:
             raise ValueError("portal_inset_m must be positive")
         if self.portal_loss_db < 0.0:
@@ -49,7 +50,7 @@ class PortalCouplingConfig:
             raise ValueError("route_distance_loss_db_per_m cannot be negative")
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class PortalCouplingResult:
     rir: RoomImpulseResponse
     portal: AcousticPortal
@@ -77,11 +78,11 @@ class MultiPortalRirCoupler:
         self._graph = graph
         self._world_name = world_name
         self._config = config or PortalCouplingConfig()
-        self._cache: OrderedDict[tuple[object, ...], RoomImpulseResponse] = OrderedDict()
+        self._cache: OrderedDict[tuple[Hashable, ...], RoomImpulseResponse] = OrderedDict()
         self._cache_hits = 0
         self._cache_misses = 0
         self._route_cache: OrderedDict[
-            tuple[object, ...],
+            tuple[Hashable, ...],
             PortalCouplingResult,
         ] = OrderedDict()
         self._route_cache_hits = 0
@@ -144,7 +145,7 @@ class MultiPortalRirCoupler:
         if cached_route is not None:
             self._route_cache[route_key] = cached_route
             self._route_cache_hits += 1
-            return replace(
+            return attrs.evolve(
                 cached_route,
                 cache_hits=self._cache_hits,
                 cache_misses=self._cache_misses,
@@ -272,7 +273,7 @@ class MultiPortalRirCoupler:
         route: AcousticPortalRoute,
         source: Position3D,
         listener: Position3D,
-    ) -> tuple[object, ...]:
+    ) -> tuple[Hashable, ...]:
         quantization = self._config.position_quantization_m
 
         def quantize(position: Position3D) -> tuple[int, int, int]:

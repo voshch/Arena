@@ -7,7 +7,7 @@ import rclpy
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_simulation_setup.tree.World import WorldIdentifier
 from builtin_interfaces.msg import Duration, Time
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Quaternion
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -104,7 +104,7 @@ class HumanSoundNode(Node):
             return
         try:
             world = WorldIdentifier(world_name).resolve_sync().load()
-            self._acoustic_scene = ne.from_world(world)
+            self._acoustic_scene = AcousticScene.from_world(world)
         except Exception as exc:
             self.get_logger().warning(
                 "failed to load acoustic scene for footstep material mapping: "
@@ -244,7 +244,7 @@ class HumanSoundNode(Node):
         return ColorRGBA(r=0.8, g=0.8, b=0.8, a=0.3)
 
     @staticmethod
-    def _yaw(quaternion: object) -> float:
+    def _yaw(quaternion: Quaternion) -> float:
         siny_cosp = 2.0 * (
             quaternion.w * quaternion.z + quaternion.x * quaternion.y
         )

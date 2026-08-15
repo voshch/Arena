@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+
+import attrs
 import shapely
 from geometry_msgs.msg import Point
-from .acoustic_scene import AcousticScene, AcousticWall
+
+from .acoustic_scene import AcousticScene, AcousticWall, AcousticZone
 from .material_catalog import AcousticMaterialCatalog
 
 SPEED_OF_SOUND_MPS = 343.0
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class PropagationPath:
     delay_sec: float
     gain_db: float
@@ -20,7 +22,7 @@ class PropagationPath:
     material_id: str = ""
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class PropagationResult:
     received_volume_db: float
     direct_delay_sec: float
@@ -186,7 +188,7 @@ class Level3Propagation:
         projected_y = y1 + projection * dy
 
         return Point( x=2.0 * projected_x - point.x, y=2.0 * projected_y - point.y, z=point.z)
-    
+
     @staticmethod
     def _distance(a: Point, b: Point) -> float:
         dx = float(a.x - b.x)
@@ -226,7 +228,7 @@ class Level3Propagation:
 
         return 10.0 * math.log10(sum(powers))
 
-    def _estimate_rt60(self, scene, zone) -> float:
+    def _estimate_rt60(self, scene: AcousticScene, zone: AcousticZone) -> float:
         floor_area = max(zone.polygon.area, 1e-6)
         perimeter = zone.polygon.length
         height = scene.ceiling_height_m

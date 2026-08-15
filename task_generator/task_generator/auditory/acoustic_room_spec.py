@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
 import math
+from typing import Literal
 
+import attrs
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+from arena_simulation_setup.tree.World import LevelDescription, WorldDescription
 from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.polygon import orient
 
@@ -13,7 +15,7 @@ Point2D = tuple[float, float]
 BoundaryKind = Literal["wall", "door", "opening"]
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticBoundarySpec:
     start: Point2D
     end: Point2D
@@ -22,7 +24,7 @@ class AcousticBoundarySpec:
     height_m: float | None = None
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticRoomSpec:
     zone_name: str
     boundary: tuple[AcousticBoundarySpec, ...]
@@ -38,12 +40,12 @@ class AcousticRoomSpec:
     @property
     def wall_material_ids(self) -> tuple[str, ...]:
         return tuple(segment.material_id for segment in self.boundary)
-    
+
     @property
     def boundary_material_ids(self) -> tuple[str, ...]:
         return tuple(segment.material_id for segment in self.boundary)
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticRoomSpecConfig:
     ceiling_height_m: float = 3.0
     default_wall_material_id: str = "Acoustic_Default_Wall"
@@ -56,7 +58,7 @@ class AcousticRoomSpecConfig:
 def _is_finite_point(point: Point2D) -> bool:
     return math.isfinite(point[0]) and math.isfinite(point[1])
 
-def _normalize_polygon(zone) -> Polygon:
+def _normalize_polygon(zone: LevelDescription.Zone) -> Polygon:
     """Validate and orient an Arena zone polygon counter-clockwise."""
 
     coordinates = [
@@ -96,7 +98,7 @@ def _normalize_polygon(zone) -> Polygon:
 
     return orient(polygon, sign=1.0)
 
-@dataclass(frozen=True)
+@attrs.frozen
 class _SourceSegment:
     start: Point2D
     end: Point2D
@@ -171,13 +173,13 @@ def _points_close(
     )
 
 def _material_name(
-    identifier,
+    identifier: MaterialIdentifier | None,
     fallback: str,
 ) -> str:
     if identifier is None:
         return fallback
 
-    name = str(getattr(identifier, "name", "")).strip()
+    name = str(identifier.name).strip()
     return name or fallback
 
 def _segment_covers_point(
@@ -274,6 +276,7 @@ def _split_polygon_edge(
     for start_parameter, end_parameter in zip(
         ordered,
         ordered[1:],
+        strict=False,
     ):
         if end_parameter - start_parameter <= 1e-9:
             continue
@@ -378,14 +381,14 @@ class AcousticRoomSpecBuilder:
 
     def from_world(
         self,
-        world,
+        world: WorldDescription,
     ) -> tuple[AcousticRoomSpec, ...]:
         return tuple(
             self._from_zone(zone)
             for zone in world_zones(world)
         )
-    
-    def _normalize_walls(self,zone) -> list[_SourceSegment]:
+
+    def _normalize_walls(self, zone: LevelDescription.Zone) -> list[_SourceSegment]:
         return [
             _SourceSegment(
                 start=(
@@ -404,8 +407,8 @@ class AcousticRoomSpecBuilder:
             )
             for wall in zone.walls
         ]
-    
-    def _normalize_doors(self,zone) -> list[_SourceSegment]:
+
+    def _normalize_doors(self, zone: LevelDescription.Zone) -> list[_SourceSegment]:
         return [
             _SourceSegment(
                 start=(
@@ -426,7 +429,7 @@ class AcousticRoomSpecBuilder:
             for door in zone.doors
         ]
 
-    def _from_zone(self, zone) -> AcousticRoomSpec:
+    def _from_zone(self, zone: LevelDescription.Zone) -> AcousticRoomSpec:
         polygon = _normalize_polygon(zone)
 
         corners = list(polygon.exterior.coords)[:-1]

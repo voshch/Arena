@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import math
 from collections import OrderedDict
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Hashable, Sequence
 from importlib import import_module
 from types import ModuleType
-from typing import Any
-import math
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+import attrs
 import numpy as np
 from numpy.typing import NDArray
 
@@ -17,15 +17,27 @@ from .material_catalog import (
     AcousticMaterialCatalog,
 )
 
+if TYPE_CHECKING:
+    import pyroomacoustics
+
 
 Position3D = tuple[float, float, float]
+
+
+@runtime_checkable
+class PointLike(Protocol):
+    """Structural stand-in for geometry_msgs/Point, so ROS stays out of here."""
+
+    x: float
+    y: float
+    z: float
 
 
 class PyroomacousticsUnavailableError(RuntimeError):
     """Raised when pyroomacoustics is required but not installed."""
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class PyroomacousticsConfig:
     """Controls construction of pyroomacoustics rooms.
 
@@ -56,7 +68,7 @@ class PyroomacousticsConfig:
     cache_position_quantization_m: float = 0.10
     cache_size: int = 512
 
-    def __post_init__(self) -> None:
+    def __attrs_post_init__(self) -> None:
         if (
             isinstance(self.sample_rate_hz, bool)
             or not isinstance(self.sample_rate_hz, int)
@@ -133,7 +145,7 @@ class PyroomacousticsConfig:
             raise ValueError("cache_size must be positive")
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class BuiltPyroom:
     """A pyroomacoustics room and information about its construction."""
 
@@ -145,7 +157,7 @@ class BuiltPyroom:
     fallback_material_ids: tuple[str, ...]
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class RoomImpulseResponse:
     """One source-to-listener room impulse response."""
 
@@ -222,7 +234,7 @@ class PyroomMaterialAdapter:
         material_or_id: AcousticMaterial | str,
         *,
         pyroomacoustics_module: ModuleType | None = None,
-    ) -> Any:
+    ) -> pyroomacoustics.Material:
         """Create a fresh pyroomacoustics Material.
 
         A fresh object is returned for each call because pyroomacoustics
@@ -283,7 +295,7 @@ class PyroomacousticsAdapter:
             material_catalog
         )
         self._rir_cache: OrderedDict[
-            tuple[object, ...],
+            tuple[Hashable, ...],
             RoomImpulseResponse,
         ] = OrderedDict()
         self._cache_hits = 0
@@ -500,23 +512,19 @@ class PyroomacousticsAdapter:
 
     @staticmethod
     def _position_xyz(
-        value: Sequence[float] | object,
+        value: Sequence[float] | PointLike,
         *,
         name: str,
     ) -> Position3D:
-        # Supports geometry_msgs/Point-like values without importing ROS.
-        if all(
-            hasattr(value, coordinate)
-            for coordinate in ("x", "y", "z")
-        ):
+        if isinstance(value, PointLike):
             raw = (
-                getattr(value, "x"),
-                getattr(value, "y"),
-                getattr(value, "z"),
+                value.x,
+                value.y,
+                value.z,
             )
         else:
             try:
-                raw = tuple(value)  # type: ignore[arg-type]
+                raw = tuple(value)
             except TypeError as exc:
                 raise TypeError(
                     f"{name} must be a 3-element sequence or "

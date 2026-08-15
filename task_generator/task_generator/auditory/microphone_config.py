@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
+import attrs
 import yaml
-
 from arena_simulation_setup.tree.World import (
     MICROPHONE_PLACEMENT_TOLERANCE_M,
+    WorldDescription,
 )
 
 
@@ -21,7 +21,7 @@ def _identifier(value: object, field: str) -> str:
     return result
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class RobotMicrophoneSpec:
     robot: str
     placement: str
@@ -42,7 +42,7 @@ class RobotMicrophoneSpec:
         return "/".join(part for part in (prefix, frame) if part)
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class WorldMicrophoneSpec:
     listener_id: str
     zone: str
@@ -94,7 +94,7 @@ def parse_robot_microphones(raw: str) -> tuple[RobotMicrophoneSpec, ...]:
 
 
 def world_microphones(
-    world: object,
+    world: WorldDescription,
     default_ceiling_height_m: float,
     level_origins: dict[str, tuple[float, float]] | None = None,
 ) -> tuple[WorldMicrophoneSpec, ...]:

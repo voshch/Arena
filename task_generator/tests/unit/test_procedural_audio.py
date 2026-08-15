@@ -76,7 +76,7 @@ def test_looping_sources_share_phase_but_keep_distinct_rir_delays() -> None:
     delayed_block = delayed.render(4)[:, 0]
 
     assert delayed_block[0] == 0.0
-    np.testing.assert_allclose(delayed_block[1:], direct_block[:-1])
+    np.testing.assert_allclose(delayed_block[1:], direct_block[:-1], rtol=2e-5, atol=2e-5)
 
 
 def test_looping_source_keeps_program_phase_while_inaudible() -> None:

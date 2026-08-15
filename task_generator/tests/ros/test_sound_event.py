@@ -111,6 +111,7 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
     from geometry_msgs.msg import Point
     from geometry_msgs.msg import TransformStamped
     from nav_msgs.msg import OccupancyGrid
+    from task_generator.auditory.acoustic_frame import runtime_acoustic_offset
     from task_generator.auditory.qos_profiles import transient_event_qos
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode
     from task_generator_msgs.msg import HeardSoundEvent, SoundEvent
@@ -161,6 +162,12 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
         transient_event_qos(),
     )
 
+    propagation._map = OccupancyGrid()
+    propagation._map.header.frame_id = "map"
+    propagation._map.info.resolution = 1.0
+    propagation._map.info.width = 20
+    propagation._map.info.height = 20
+    propagation._map.info.origin.orientation.w = 1.0
     pedestrians = Pedestrians()
     pedestrians.pedestrians.append(_make_pedestrian(2, 3.0, 4.0))
     propagation._cb_peds(pedestrians)
@@ -210,12 +217,10 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
         shifted_map.info.origin.orientation.w = 1.0
         propagation._map = shifted_map
         propagation._authored_map_origin = (-0.25, -0.25)
-        assert propagation._map_frame_offset() == pytest.approx(
-            (5.0, 4.95)
-        )
-        assert propagation._world_to_grid(
-            Point(x=0.0, y=0.0)
-        ) == (5, 5)
+        assert runtime_acoustic_offset(
+            propagation._map, propagation._authored_map_origin
+        ) == pytest.approx((5.0, 4.95))
+        assert propagation._world_to_grid(Point(x=5.0, y=4.95)) == (5, 5)
     finally:
         emitter.destroy_node()
         consumer.destroy_node()
@@ -248,6 +253,10 @@ def test_robot_only_policy_excludes_pedestrian_listeners(rclpy_context):
     }
     propagation._map = OccupancyGrid()
     propagation._map.header.frame_id = "map"
+    propagation._map.info.resolution = 1.0
+    propagation._map.info.width = 20
+    propagation._map.info.height = 20
+    propagation._map.info.origin.orientation.w = 1.0
     event = _make_sound_event()
     event.source_agent_id = 1
 
@@ -343,6 +352,8 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
         assert second.success is True
         assert second.listener_id == "microphone2"
 
+        from geometry_msgs.msg import TransformStamped
+
         transform = TransformStamped()
         transform.header.frame_id = "map"
         transform.child_frame_id = "robot/base_link"
@@ -368,7 +379,7 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
         ]
         assert attached_frame == "robot/base_link"
         assert (local_position.x, local_position.y) == (1.0, 2.0)
-        resolved = propagation._microphone_positions()[attached.listener_id]
+        resolved = propagation._all_microphone_positions()[attached.listener_id]
         assert (resolved.x, resolved.y, resolved.z) == (2.0, 3.0, 1.5)
 
         request.position.point.x = 8.0
@@ -441,6 +452,7 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
 
 def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
     from geometry_msgs.msg import Point
+    from nav_msgs.msg import OccupancyGrid
     from rclpy.parameter import Parameter
     from task_generator.auditory.sound_propagation_node import (
         SoundPropagationNode,
@@ -474,6 +486,12 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
         "microphone1": (Point(), "map"),
         "microphone2": (Point(), "map"),
     }
+    propagation._map = OccupancyGrid()
+    propagation._map.header.frame_id = "map"
+    propagation._map.info.resolution = 1.0
+    propagation._map.info.width = 20
+    propagation._map.info.height = 20
+    propagation._map.info.origin.orientation.w = 1.0
 
     try:
         selection_results = propagation.set_parameters([
@@ -526,6 +544,10 @@ def test_viewport_camera_registers_selectable_microphones(rclpy_context):
     )
     propagation._map = OccupancyGrid()
     propagation._map.header.frame_id = "map"
+    propagation._map.info.resolution = 1.0
+    propagation._map.info.width = 20
+    propagation._map.info.height = 20
+    propagation._map.info.origin.orientation.w = 1.0
     camera_pose = PoseStamped()
     camera_pose.header.frame_id = "map"
     camera_pose.pose.position.x = 3.0
@@ -587,7 +609,7 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
     try:
         propagation._cb_robot_fleet(fleet)
         first = dict(propagation._odom_subs)
-        assert len(first) == 1
+        assert ("robot1", f"/test/{suffix}/robot1/odom") in first
         assert "robot1_mic" in propagation._robot_microphones
         robot_mic_position, robot_mic_frame = (
             propagation._robot_microphones["robot1_mic"]
@@ -614,7 +636,8 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
 def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
     import rclpy
     from rclpy.parameter import Parameter
-    from nav_msgs.msg import Odometry
+    from geometry_msgs.msg import TransformStamped
+    from nav_msgs.msg import OccupancyGrid, Odometry
     from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
     from task_generator.auditory.robot_hearing_node import RobotHearingNode
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode
@@ -648,6 +671,12 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
             Parameter("publish_inaudible", Parameter.Type.BOOL, True),
         ],
     )
+    propagation._map = OccupancyGrid()
+    propagation._map.header.frame_id = "map"
+    propagation._map.info.resolution = 1.0
+    propagation._map.info.width = 20
+    propagation._map.info.height = 20
+    propagation._map.info.origin.orientation.w = 1.0
 
     hearing = RobotHearingNode(
         namespace=ns,
@@ -719,6 +748,13 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
             lambda: "robot:robot1" in propagation._robots,
             timeout_sec=5.0,
         )
+        # Listener poses resolve through TF, not odom coordinates.
+        transform = TransformStamped()
+        transform.header.frame_id = "map"
+        transform.child_frame_id = "robot1/base_link"
+        transform.transform.translation.x = 1.0
+        transform.transform.rotation.w = 1.0
+        propagation._tf_buffer.set_transform_static(transform, "test")
 
         event = _make_sound_event()
         event.event_id = "full_auditory_roundtrip_001"
@@ -1079,10 +1115,16 @@ def test_sound_propagation_uses_tf_height_for_microphones(rclpy_context):
     from geometry_msgs.msg import Point
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode
 
-    assert SoundPropagationNode._listener_height(
-        "microphone:zone:reception:ceiling:1",
-        Point(z=2.4),
-    ) == pytest.approx(2.4)
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    propagation = SoundPropagationNode(namespace=f"/test/{suffix}")
+    try:
+        listener_id = "microphone:zone:reception:ceiling:1"
+        propagation._spawned_microphones[listener_id] = (Point(z=2.4), "map")
+        assert propagation._listener_height(listener_id, Point(z=2.4)) == pytest.approx(2.4)
+        assert propagation._listener_height("robot:robot1", Point(z=2.4)) == pytest.approx(0.35)
+        assert propagation._listener_height("agent:1", Point(z=2.4)) == pytest.approx(1.60)
+    finally:
+        propagation.destroy_node()
 
 
 def test_static_audio_uses_authored_source_height(rclpy_context):

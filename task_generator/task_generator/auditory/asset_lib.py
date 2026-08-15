@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import math
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 
+import attrs
 import numpy as np
 import yaml
 from scipy.io import wavfile
@@ -16,7 +16,7 @@ from task_generator.auditory.octave_bands import (
 )
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticSample:
     """Lightweight WAV metadata retained by the catalog at startup."""
 
@@ -27,7 +27,7 @@ class AcousticSample:
     octave_band_levels_db: dict[int, float] | str | None
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class CachedSample:
     sample_id: str
     path: Path
@@ -40,7 +40,7 @@ class CachedSample:
     octave_band_levels_db: dict[int, float]
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticAsset:
     asset_id: str
     category: str

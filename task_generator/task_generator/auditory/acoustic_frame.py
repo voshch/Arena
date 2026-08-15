@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
+import attrs
 from nav_msgs.msg import OccupancyGrid
 from shapely.affinity import translate
 
@@ -12,7 +11,6 @@ from .acoustic_world_graph import (
     AcousticWorldGraph,
     UnpairedDoor,
 )
-
 
 Offset2D = tuple[float, float]
 
@@ -37,10 +35,10 @@ def realize_acoustic_geometry(
     """Translate authored acoustic geometry into the runtime map frame."""
     dx, dy = offset
     realized_rooms = tuple(_translate_room(room, dx, dy) for room in rooms)
-    realized_scene = replace(
+    realized_scene = attrs.evolve(
         scene,
         zones=tuple(
-            replace(
+            attrs.evolve(
                 zone,
                 polygon=translate(zone.polygon, xoff=dx, yoff=dy),
             )
@@ -48,7 +46,7 @@ def realize_acoustic_geometry(
         ),
         walls=tuple(_translate_wall(wall, dx, dy) for wall in scene.walls),
     )
-    realized_graph = replace(
+    realized_graph = attrs.evolve(
         graph,
         rooms=realized_rooms,
         portals=tuple(
@@ -74,7 +72,7 @@ def realize_rooms_and_graph(
     """Translate playback room and portal geometry into the runtime map frame."""
     dx, dy = offset
     realized_rooms = tuple(_translate_room(room, dx, dy) for room in rooms)
-    return realized_rooms, replace(
+    return realized_rooms, attrs.evolve(
         graph,
         rooms=realized_rooms,
         portals=tuple(
@@ -96,10 +94,10 @@ def _translate_room(
     dx: float,
     dy: float,
 ) -> AcousticRoomSpec:
-    return replace(
+    return attrs.evolve(
         room,
         boundary=tuple(
-            replace(
+            attrs.evolve(
                 boundary,
                 start=_translate_xy(boundary.start, dx, dy),
                 end=_translate_xy(boundary.end, dx, dy),
@@ -114,7 +112,7 @@ def _translate_wall(
     dx: float,
     dy: float,
 ) -> AcousticWall:
-    return replace(
+    return attrs.evolve(
         wall,
         start=_translate_xy(wall.start, dx, dy),
         end=_translate_xy(wall.end, dx, dy),
@@ -126,7 +124,7 @@ def _translate_portal(
     dx: float,
     dy: float,
 ) -> AcousticPortal:
-    return replace(
+    return attrs.evolve(
         portal,
         start=_translate_xy(portal.start, dx, dy),
         end=_translate_xy(portal.end, dx, dy),
@@ -138,7 +136,7 @@ def _translate_unpaired_door(
     dx: float,
     dy: float,
 ) -> UnpairedDoor:
-    return replace(
+    return attrs.evolve(
         door,
         start=_translate_xy(door.start, dx, dy),
         end=_translate_xy(door.end, dx, dy),

@@ -1,12 +1,14 @@
 from __future__ import annotations
-from dataclasses import dataclass
+
+import attrs
 import shapely
+from arena_simulation_setup.tree.World import WorldDescription
 from geometry_msgs.msg import Point
 
 from .world_compat import world_zones
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticWall:
     start: tuple[float, float]
     end: tuple[float, float]
@@ -17,14 +19,14 @@ class AcousticWall:
         return shapely.LineString([self.start, self.end])
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticZone:
     name: str
     polygon: shapely.Polygon
     floor_material_id: str
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class AcousticScene:
     zones: tuple[AcousticZone, ...]
     walls: tuple[AcousticWall, ...]
@@ -32,7 +34,7 @@ class AcousticScene:
     zone_lookup_tolerance_m: float = 0.2
 
     @classmethod
-    def from_world(cls, world) -> "AcousticScene":
+    def from_world(cls, world: WorldDescription) -> AcousticScene:
         zones = []
         walls = []
 

@@ -3,19 +3,22 @@
 `DrivetrainSpec` is frozen and hashable so that voices sharing a spec also share
 their (large) generated noise field — see `voice._tables`.
 """
-from dataclasses import dataclass, asdict, replace as _replace
 import json
+from collections.abc import Iterable, Mapping
+from typing import Any
+
+import attrs
 
 from ._jackal import JACKAL_PARAMS
 
 __all__ = ["DrivetrainSpec", "JACKAL"]
 
 
-def _t(x):
+def _t(x: Iterable[float]) -> tuple[float, ...]:
     return tuple(float(v) for v in x)
 
 
-@dataclass(frozen=True)
+@attrs.frozen
 class DrivetrainSpec:
     """Calibrated parameters for the order-domain drivetrain model.
 
@@ -38,11 +41,11 @@ class DrivetrainSpec:
     # --- phase clock ---------------------------------------------------
     K: float = 2720.0                 # rad/m; lumped gear teeth * ratio / wheel radius
     # --- order-domain source: the gear-mesh comb -----------------------
-    partials_db: tuple = ()           # S_k at integer orders k = 1, 2, 3, ...
+    partials_db: tuple[float, ...] = attrs.field(converter=_t, default=())  # S_k at integer orders k = 1, 2, 3, ...
     tonal_gain_db: float = 0.0
     # --- order-domain source: the broadband ----------------------------
-    order_grid: tuple = ()            # order axis for the broadband PSD
-    order_db: tuple = ()              # broadband PSD, dB, at those orders
+    order_grid: tuple[float, ...] = attrs.field(converter=_t, default=())  # order axis for the broadband PSD
+    order_db: tuple[float, ...] = attrs.field(converter=_t, default=())  # broadband PSD, dB, at those orders
     order_max: float = 200.0          # highest order the noise field resolves
     field_metres: float = 24.0        # noise field length; also its loop period
     field_levels: int = 6             # mipmap depth
@@ -50,8 +53,8 @@ class DrivetrainSpec:
     field_smooth: bool = True         # see note below
     broadband_gain_db: float = 0.0
     # --- fixed transfer -------------------------------------------------
-    transfer_hz: tuple = ()
-    transfer_db: tuple = ()
+    transfer_hz: tuple[float, ...] = attrs.field(converter=_t, default=())
+    transfer_db: tuple[float, ...] = attrs.field(converter=_t, default=())
     transfer_taps: int = 513          # linear-phase FIR length
     # --- level ----------------------------------------------------------
     speed_exponent: float = 1.0
@@ -68,12 +71,7 @@ class DrivetrainSpec:
     sample_rate: int = 44100
     alias_limit: float = 0.45         # comb partials are faded out below this * fs
 
-    def __post_init__(self):
-        object.__setattr__(self, "partials_db", _t(self.partials_db))
-        object.__setattr__(self, "order_grid", _t(self.order_grid))
-        object.__setattr__(self, "order_db", _t(self.order_db))
-        object.__setattr__(self, "transfer_hz", _t(self.transfer_hz))
-        object.__setattr__(self, "transfer_db", _t(self.transfer_db))
+    def __attrs_post_init__(self) -> None:
         if len(self.order_grid) != len(self.order_db):
             raise ValueError("order_grid and order_db must be the same length")
         if len(self.transfer_hz) != len(self.transfer_db):
@@ -88,32 +86,32 @@ class DrivetrainSpec:
             raise ValueError("field_levels must be >= 1")
 
     # -- conversions ------------------------------------------------------
-    def to_dict(self):
-        return asdict(self)
+    def to_dict(self) -> dict[str, Any]:
+        return attrs.asdict(self)
 
     @classmethod
-    def from_dict(cls, d):
+    def from_dict(cls, d: Mapping[str, Any]) -> "DrivetrainSpec":
         """Build from a dict, ignoring keys this version does not use."""
-        known = {f for f in cls.__dataclass_fields__}
+        known = {f.name for f in attrs.fields(cls)}
         return cls(**{k: v for k, v in d.items() if k in known})
 
-    def to_json(self, **kw):
+    def to_json(self, **kw: Any) -> str:
         kw.setdefault("indent", 2)
         return json.dumps(self.to_dict(), **kw)
 
     @classmethod
-    def from_json(cls, text):
+    def from_json(cls, text: str | bytes) -> "DrivetrainSpec":
         return cls.from_dict(json.loads(text))
 
-    def replace(self, **kw):
-        return _replace(self, **kw)
+    def replace(self, **kw: Any) -> "DrivetrainSpec":
+        return attrs.evolve(self, **kw)
 
     # -- derived ----------------------------------------------------------
-    def f_mesh(self, v):
+    def f_mesh(self, v: float) -> float:
         """Fundamental gear-mesh frequency, Hz, at speed v (m/s)."""
         return self.K * v / (2.0 * 3.141592653589793)
 
-    def field_seconds(self, v):
+    def field_seconds(self, v: float) -> float:
         """Nominal loop period of the noise field, seconds, at speed v.
 
         `field_smooth` shortens the field by 0.23%; `DrivetrainVoice.loop_seconds`

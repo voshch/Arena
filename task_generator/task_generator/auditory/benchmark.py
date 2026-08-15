@@ -8,32 +8,33 @@ import os
 import signal
 import subprocess
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 
+import attrs
 import rclpy
 from geometry_msgs.msg import Point
 from rclpy.node import Node
-from task_generator.auditory.qos_profiles import transient_event_qos
 from task_generator_msgs.msg import HeardSoundEvent, SoundEvent
 
+from task_generator.auditory.qos_profiles import transient_event_qos
 
-@dataclass
+
+@attrs.define
 class CpuSample:
     timestamp_sec: float
     cpu_percent: float
     process_count: int
 
 
-@dataclass
+@attrs.define
 class RunMetrics:
     label: str
     duration_sec: float
-    cpu_samples: list[CpuSample] = field(default_factory=list)
+    cpu_samples: list[CpuSample] = attrs.field(factory=list)
     sound_events: int = 0
     heard_events: int = 0
     injected_events: int = 0
-    latencies_ms: list[float] = field(default_factory=list)
+    latencies_ms: list[float] = attrs.field(factory=list)
 
     def summary(self) -> dict[str, object]:
         cpu = [sample.cpu_percent for sample in self.cpu_samples]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import traceback
+from collections.abc import Hashable
 from concurrent.futures import Future
 
 import rclpy
@@ -23,7 +24,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
         ] = {}
         self._environment_assets: dict[tuple[str, str], AcousticAsset] = {}
         self._environment_rir_signatures: dict[
-            tuple[str, str], tuple[object, ...]
+            tuple[str, str], tuple[Hashable, ...]
         ] = {}
         self._environment_programs: dict[
             tuple[str, str], tuple[str, str, int, int]

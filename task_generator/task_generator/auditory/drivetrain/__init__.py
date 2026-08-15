@@ -1,6 +1,6 @@
 """Embedded source-only drivetrain synthesizer used by Arena playback."""
 
-from .spec import DrivetrainSpec, JACKAL
+from .spec import JACKAL, DrivetrainSpec
 from .voice import (
     OUTPUT_GAIN,
     DrivetrainVoice,

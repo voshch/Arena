@@ -6,7 +6,7 @@ import numpy as np
 import yaml
 from scipy.io import wavfile
 
-from task_generator.auditory.asset_lib import AcousticAssetCatalog
+from task_generator.auditory.asset_lib import AcousticAssetCatalog, AcousticSample
 
 
 def _catalog(tmp_path: Path) -> AcousticAssetCatalog:
@@ -56,7 +56,7 @@ def test_catalog_select_is_metadata_only_and_load_is_cached(tmp_path):
     _, sample_spec = selected
 
     assert catalog.cached_samples == 0
-    assert not hasattr(sample_spec, "samples")
+    assert isinstance(sample_spec, AcousticSample)
 
     first = catalog.load(sample_spec)
     second = catalog.load(sample_spec)
