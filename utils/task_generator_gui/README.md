@@ -4,7 +4,8 @@ RViz2 plugins for the Arena-Rosnav task generator. Ships:
 
 - **`TaskGeneratorPanel`** (`rviz_common::Panel`): episode management, task-mode selection, world/robot configuration, live episode history playlist.
 - **`SpawnPedestrianTool`** (`rviz_common::Tool`): toolbar tool that click+drags a pose and calls `runtime/spawn_dynamic` to spawn a dynamic obstacle (pedestrian).
-- **`SpawnMicrophoneTool`** (`rviz_common::Tool`): toolbar tool that places an acoustic listener at the clicked point in a world zone.
+- **`SpawnMicrophoneTool`** (`rviz_common::Tool`): toolbar tool that places a fixed or TF-attached acoustic listener.
+- **`SpawnAudioSourceTool`** (`rviz_common::Tool`): toolbar tool that places a configurable radio or alarm.
 
 ## Service contract
 
@@ -27,7 +28,10 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `config/queue_episode` | `task_generator_msgs::srv::QueueEpisode` | Queue / Next buttons (modes, world, robots, per-mode params staged for next reset) |
 | `runtime/spawn_dynamic` | `task_generator_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
 | `runtime/spawn_microphone` | `task_generator_msgs::srv::SpawnMicrophone` | Spawn microphone tool (clicked position and configured height) |
+| `runtime/remove_microphone` | `task_generator_msgs::srv::RemoveMicrophone` | Remove a runtime-spawned microphone |
+| `runtime/spawn_audio_source` | `task_generator_msgs::srv::SpawnAudioSource` | Spawn a radio, alarm, or custom catalog asset |
 | `runtime/set_audio_system` | `task_generator_msgs::srv::SetAudioSystem` | Start or stop a static radio or multi-speaker alarm |
+| `runtime/remove_audio_system` | `task_generator_msgs::srv::RemoveAudioSystem` | Remove a runtime-spawned radio or alarm |
 | `runtime/spawn_robot` | `task_generator_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
 
 ### Latched topics consumed
@@ -64,14 +68,19 @@ Microphone** in the toolbar, then click in the 3D view. The tool calls
 `<Target>/runtime/spawn_microphone` with the clicked point in the RViz Fixed
 Frame and the `Height` tool property, which defaults to 1.5 m. The acoustic
 runtime transforms the point into its map frame, finds the containing authored
-zone, and rejects positions outside all zones or outside the zone's vertical
-bounds. It assigns the next free stable ID such as
-`microphone:zone:reception:placed:2`.
+zone when one exists, and rejects positions outside the loaded map or above
+the applicable ceiling. It assigns the next free stable ID such as
+`microphone:zone:reception:placed:2`, or `microphone:map:placed:1` in a world
+without a zone at that point.
+
+Set `Attach TF Frame` to a frame from the RViz TF tree to make the listener
+follow that frame. The clicked point is converted into an offset in the named
+frame. Leaving the property empty creates a fixed listener.
 
 The new ID appears in the Task Generator panel's **Audio Playback Listener**
-selector. Spawning does not change playback routing automatically. Select the
-new microphone, or choose the existing **all** mode to mix every microphone.
-Runtime-spawned microphones are removed on an episode or world change.
+selector and is selected automatically for playback. Choose the existing
+**all** mode to mix every microphone. Runtime-spawned microphones are removed
+with the panel button or on an episode or world change.
 
 The panel's **Static Audio Devices** table lists every scenario- or
 launch-defined radio and alarm. Check a row to start the whole system and
@@ -79,6 +88,15 @@ uncheck it to stop it. A system can contain several speakers. The listener
 routing controls are applied to human, robot, and environmental playback, so
 the selected, explicit-list, and all-microphones modes also affect radios and
 alarms.
+
+The panel's **Auditory Runtime** controls independently enable simulated
+propagation and local environmental playback. Disabling local playback does
+not stop propagation or robot hearing. Runtime sources can be selected and
+removed from the static-device table.
+
+`Spawn Radio` defaults to the bundled looping music or alarm asset and starts
+immediately. `Custom Playback` exposes the catalog asset ID, source volume,
+loop flag, and initial active state.
 
 ## Discard / Queue / Next buttons
 

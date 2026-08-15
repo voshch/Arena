@@ -109,6 +109,7 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
     from rclpy.qos import DurabilityPolicy
     from arena_people_msgs.msg import Pedestrians
     from geometry_msgs.msg import Point
+    from geometry_msgs.msg import TransformStamped
     from nav_msgs.msg import OccupancyGrid
     from task_generator.auditory.qos_profiles import transient_event_qos
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode
@@ -282,12 +283,16 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
         SoundPropagationNode,
     )
     from task_generator_msgs.msg import EpisodeRecord
-    from task_generator_msgs.srv import SpawnMicrophone
+    from task_generator_msgs.srv import RemoveMicrophone, SpawnMicrophone
 
     suffix = f"t_{uuid.uuid4().hex[:8]}"
     propagation = SoundPropagationNode(namespace=f"/test/{suffix}")
     propagation._map = OccupancyGrid()
     propagation._map.header.frame_id = "map"
+    propagation._map.info.resolution = 1.0
+    propagation._map.info.width = 10
+    propagation._map.info.height = 10
+    propagation._map.info.origin.orientation.w = 1.0
     propagation._scene = AcousticScene(
         zones=(
             AcousticZone(
@@ -327,8 +332,11 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
         assert response.listener_id == (
             "microphone:zone:reception:placed:2"
         )
-        position = propagation._spawned_microphones[response.listener_id]
+        position, frame = propagation._spawned_microphones[
+            response.listener_id
+        ]
         assert (position.x, position.y, position.z) == (2.0, 3.0, 1.5)
+        assert frame == "map"
 
         second = propagation._spawn_microphone(
             request,
@@ -339,21 +347,114 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
             "microphone:zone:reception:placed:3"
         )
 
+        transform = TransformStamped()
+        transform.header.frame_id = "map"
+        transform.child_frame_id = "robot/base_link"
+        transform.transform.translation.x = 1.0
+        transform.transform.translation.y = 1.0
+        transform.transform.rotation.w = 1.0
+        propagation._tf_buffer.set_transform_static(transform, "test")
+        attached_request = SpawnMicrophone.Request()
+        attached_request.position.header.frame_id = "map"
+        attached_request.position.point.x = 2.0
+        attached_request.position.point.y = 3.0
+        attached_request.position.point.z = 1.5
+        attached_request.placement = "body"
+        attached_request.attached_frame = "robot/base_link"
+        attached = propagation._spawn_microphone(
+            attached_request,
+            SpawnMicrophone.Response(),
+        )
+        assert attached.success is True
+        assert attached.listener_id == (
+            "microphone:tf:robot_base_link:body:1"
+        )
+        local_position, attached_frame = propagation._spawned_microphones[
+            attached.listener_id
+        ]
+        assert attached_frame == "robot/base_link"
+        assert (local_position.x, local_position.y) == (1.0, 2.0)
+        resolved = propagation._microphone_positions()[attached.listener_id]
+        assert (resolved.x, resolved.y, resolved.z) == (2.0, 3.0, 1.5)
+
         request.position.point.x = 8.0
+        outside_zone = propagation._spawn_microphone(
+            request,
+            SpawnMicrophone.Response(),
+        )
+        assert outside_zone.success is True
+        assert outside_zone.zone == "map"
+        assert outside_zone.listener_id == "microphone:map:placed:1"
+
+        request.position.point.x = 12.0
         rejected = propagation._spawn_microphone(
             request,
             SpawnMicrophone.Response(),
         )
         assert rejected.success is False
-        assert rejected.error_msg == (
-            "clicked position is outside every world zone"
+        assert rejected.error_msg == "clicked position is outside the loaded map"
+        assert len(propagation._spawned_microphones) == 4
+
+        propagation._scene = None
+        request.position.point.x = 6.0
+        no_zones = propagation._spawn_microphone(
+            request,
+            SpawnMicrophone.Response(),
         )
-        assert len(propagation._spawned_microphones) == 2
+        assert no_zones.success is True
+        assert no_zones.zone == "map"
+        assert no_zones.listener_id == "microphone:map:placed:2"
+
+        removed = propagation._remove_microphone(
+            RemoveMicrophone.Request(listener_id=no_zones.listener_id),
+            RemoveMicrophone.Response(),
+        )
+        assert removed.success is True
+        assert no_zones.listener_id not in propagation._spawned_microphones
+
+        authored_removal = propagation._remove_microphone(
+            RemoveMicrophone.Request(listener_id=authored_id),
+            RemoveMicrophone.Response(),
+        )
+        assert authored_removal.success is False
+        assert authored_removal.error_msg == (
+            "world-authored microphones cannot be removed"
+        )
 
         episode = EpisodeRecord()
         episode.episode_id = 7
         propagation._cb_episode_world(episode)
         assert propagation._spawned_microphones == {}
+    finally:
+        propagation.destroy_node()
+
+
+def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+    from task_generator_msgs.msg import ContinuousHeardSoundState
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    propagation = SoundPropagationNode(namespace=f"/test/{suffix}")
+    previous = ContinuousHeardSoundState()
+    previous.source_id = "environment:runtime_music_1:radio"
+    previous.listener_id = "microphone:map:placed:1"
+    previous.active = True
+    previous.audible = True
+    key = (previous.source_id, previous.listener_id)
+    propagation._last_continuous_outputs[key] = previous
+
+    try:
+        results = propagation.set_parameters([
+            Parameter("enable_propagation", Parameter.Type.BOOL, False),
+        ])
+        assert results[0].successful is True
+        assert propagation.get_parameter("enable_propagation").value is False
+        stopped = propagation._last_continuous_outputs[key]
+        assert stopped.active is False
+        assert stopped.audible is False
     finally:
         propagation.destroy_node()
 

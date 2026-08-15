@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <rviz_common/display_context.hpp>
+#include <rviz_common/properties/bool_property.hpp>
 #include <rviz_common/properties/enum_property.hpp>
 #include <rviz_common/properties/float_property.hpp>
 #include <rviz_common/properties/string_property.hpp>
@@ -27,11 +28,33 @@ SpawnAudioSourceTool::SpawnAudioSourceTool()
     getPropertyContainer());
   mode_property_->addOption("Music", 0);
   mode_property_->addOption("Alarm", 1);
+  connect(
+    mode_property_, SIGNAL(changed()), this, SLOT(updateModeDefaults()));
 
   height_property_ = new rviz_common::properties::FloatProperty(
     "Height", 1.2, "Source Z coordinate in the RViz Fixed Frame, in metres.",
     getPropertyContainer());
   height_property_->setMin(0.0);
+
+  customize_property_ = new rviz_common::properties::BoolProperty(
+    "Custom Playback", false,
+    "Use the asset, volume, loop, and initial-state properties below.",
+    getPropertyContainer());
+  asset_property_ = new rviz_common::properties::StringProperty(
+    "Asset ID", "",
+    "Catalog asset ID. Empty uses radio_loop or alarm_loop.",
+    getPropertyContainer());
+  volume_property_ = new rviz_common::properties::FloatProperty(
+    "Source Volume", 62.0,
+    "Source level in dB.", getPropertyContainer());
+  volume_property_->setMin(-120.0);
+  volume_property_->setMax(160.0);
+  loop_property_ = new rviz_common::properties::BoolProperty(
+    "Loop", true, "Loop the selected WAV.", getPropertyContainer());
+  initially_active_property_ = new rviz_common::properties::BoolProperty(
+    "Start Immediately", true,
+    "Start emission and playback when the source is spawned.",
+    getPropertyContainer());
 }
 
 SpawnAudioSourceTool::~SpawnAudioSourceTool() = default;
@@ -55,6 +78,16 @@ void SpawnAudioSourceTool::updateClient()
     target_node_property_->getStdString() + "/runtime/spawn_audio_source");
 }
 
+void SpawnAudioSourceTool::updateModeDefaults()
+{
+  if (!volume_property_ || !customize_property_
+    || customize_property_->getBool())
+  {
+    return;
+  }
+  volume_property_->setFloat(mode_property_->getOptionInt() == 0 ? 62.0 : 88.0);
+}
+
 void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
 {
   if (!client_) {
@@ -70,6 +103,11 @@ void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
   request->pose.pose.orientation.z = std::sin(theta / 2.0);
   request->pose.pose.orientation.w = std::cos(theta / 2.0);
   request->mode = mode_property_->getOptionInt() == 0 ? "music" : "alarm";
+  request->customize_playback = customize_property_->getBool();
+  request->asset_id = asset_property_->getStdString();
+  request->source_volume_db = volume_property_->getFloat();
+  request->loop = loop_property_->getBool();
+  request->initially_active = initially_active_property_->getBool();
 
   if (!client_->wait_for_service(1s)) {
     RCLCPP_WARN(

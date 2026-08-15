@@ -70,9 +70,11 @@ The generated RViz configuration shows pedestrian cones through
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
-The Task Generator RViz panel includes an `Audio Playback Listener` group, a
-`Static Audio Devices` table, `Play robot motor audio on this workstation`, and
-a live `Motor Sound Tuning` group. The listener group follows the transient
+The Task Generator RViz panel includes an `Auditory Runtime` group, an `Audio
+Playback Listener` group, a `Static Audio Devices` table, `Play robot motor
+audio on this workstation`, and a live `Motor Sound Tuning` group. The runtime
+group independently controls propagation and local radio/alarm playback. The
+listener group follows the transient
 microphone registry and updates human, robot, and environmental playback. It
 can select one microphone, accept an explicit YAML listener list, or mix all
 microphones. The controls follow changes made through ROS parameters and
@@ -215,12 +217,16 @@ An occasional recovered underrun does not stop propagation or playback.
 RViz lists fixed emitters in `Arena/Sound Propagation/Environmental Audio
 Sources`. Alarm markers are red, other active systems are cyan, and inactive
 systems are gray. Emitters use a box marker oriented by the placement drag.
-The **Spawn Radio** toolbar tool creates an active source at runtime. Set its
-`Mode` property to `Music` or `Alarm`, set `Height`, then click and drag in the
-map. The runtime transforms the RViz Fixed Frame pose into the global map, so
-placement also works in allocated environment frames. The source starts the
-corresponding bundled loop immediately and is cleared on the next episode
-reset. The existing robot or pedestrian heard-sound display shows each active
+The **Spawn Radio** toolbar tool creates a source at runtime. Set its `Mode`
+property to `Music` or `Alarm`, set `Height`, then click and drag in the map.
+By default the source starts the corresponding bundled loop immediately.
+Enable `Custom Playback` to choose another catalog asset ID, source volume,
+loop behavior, or an initially stopped state. The runtime transforms the RViz
+Fixed Frame pose into the global map, so placement also works in allocated
+environment frames. Use the `Static Audio Devices` checkbox to start or stop
+emission and playback. Select a `runtime_*` row and use `Remove selected runtime
+source` to delete it. Runtime sources are cleared on the next episode reset.
+The existing robot or pedestrian heard-sound display shows each active
 source-to-listener path, portal route, and delay. Set the
 visualizer's `continuous_listener_id` parameter when a specific microphone
 should own the path display. If it is empty, the first continuous listener is
@@ -244,7 +250,8 @@ robot's frame prefix. The listener is inactive if the robot is absent or TF
 cannot resolve the frame. RViz shows one green triangular cone for each
 resolved microphone. The cones follow their TF frames. With playback mode
 `all`, the same source is rendered through both independent propagation paths
-and mixed on the workstation.
+and mixed on the workstation. Entries may name different active robots, so one
+launch can use microphones on several robots at the same time.
 
 World-mounted microphones are authored in each level's `world.yaml` beside
 `zones`:
@@ -274,12 +281,17 @@ one.
 
 Microphones can also be added during an episode with the RViz **Spawn
 Microphone** toolbar tool. Click the desired position and set its `Height` tool
-property. The runtime transforms the RViz Fixed Frame point into
-the acoustic map, requires it to fall inside an authored zone and between its
-floor and ceiling, and assigns the next available zone-local ID, for example
-`microphone:zone:reception:placed:2`. Multiple clicks in the same zone create
-independent listeners with increasing indices. These runtime microphones are
-cleared on the next episode or world change.
+property. Leave `Attach TF Frame` empty for a fixed microphone. Set it to a
+resolvable frame such as `env_0/jackal/base_link` to store the clicked offset
+in that frame and make the microphone follow it. The runtime transforms the
+RViz Fixed Frame point into the acoustic
+map, requires it to fall inside the loaded map and between its floor and
+ceiling, and assigns the next available ID. A point in an authored zone
+receives a zone-local ID such as `microphone:zone:reception:placed:2`. A point
+in a world without zones, or outside its authored zones, receives a map-local
+ID such as `microphone:map:placed:1`. Repeated clicks create independent
+listeners with increasing indices. These runtime microphones are cleared on
+the next episode or world change.
 
 The new microphone appears immediately in the Task Generator panel's **Audio
 Playback Listener** list and as a green triangular cone in
@@ -288,7 +300,8 @@ and environmental workstation playback, so active motor, radio, alarm, and
 human sounds are heard from that position. Choose **all** in the panel to mix
 every registered microphone instead. The spawn service is available at
 `<task-generator-namespace>/runtime/spawn_microphone` while auditory simulation
-is enabled.
+is enabled. `Remove selected runtime microphone` removes the current runtime
+listener and reroutes playback to the next available microphone.
 
 Every finite human or robot clip is published as `SoundEvent` and propagated
 to one `HeardSoundEvent` per listener. Procedural drivetrain audio uses

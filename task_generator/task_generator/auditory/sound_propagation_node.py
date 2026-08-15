@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
 import time
@@ -20,7 +21,9 @@ from arena_simulation_setup.tree.World import (
 )
 from geometry_msgs.msg import Point
 from nav_msgs.msg import OccupancyGrid, Odometry
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from shapely.geometry import Point as ShapelyPoint
 from std_msgs.msg import ColorRGBA, String
@@ -67,7 +70,7 @@ from task_generator_msgs.msg import (
     RobotFleet,
     SoundEvent,
 )
-from task_generator_msgs.srv import SpawnMicrophone
+from task_generator_msgs.srv import RemoveMicrophone, SpawnMicrophone
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -86,6 +89,7 @@ class SoundPropagationNode(Node):
             "continuous_heard_sounds",
         )
         self.declare_parameter("robot_microphones", "[]")
+        self.declare_parameter("enable_propagation", True)
         self.declare_parameter(
             "microphone_listeners_topic",
             "microphone_listeners",
@@ -167,7 +171,10 @@ class SoundPropagationNode(Node):
         )
         self._robot_microphones: dict[str, tuple[Point, str]] = {}
         self._world_microphones: dict[str, WorldMicrophoneSpec] = {}
-        self._spawned_microphones: dict[str, Point] = {}
+        self._spawned_microphones: dict[str, tuple[Point, str]] = {}
+        self._last_continuous_outputs: dict[
+            tuple[str, str], ContinuousHeardSoundState
+        ] = {}
         self._missing_microphone_robots: set[str] = set()
         self._acoustic_offset: tuple[float, float] | None = None
         self._episode_id = -1
@@ -229,6 +236,12 @@ class SoundPropagationNode(Node):
             "runtime/spawn_microphone",
             self._spawn_microphone,
         )
+        self._remove_microphone_service = self.create_service(
+            RemoveMicrophone,
+            "runtime/remove_microphone",
+            self._remove_microphone,
+        )
+        self.add_on_set_parameters_callback(self._on_set_parameters)
         self._microphone_marker_timer = self.create_timer(
             0.25,
             self._publish_microphone_markers,
@@ -308,6 +321,30 @@ class SoundPropagationNode(Node):
             )
         self._propagation = Level3Propagation(materials)
 
+    def _on_set_parameters(
+        self,
+        parameters: list[Parameter],
+    ) -> SetParametersResult:
+        for parameter in parameters:
+            if parameter.name != "enable_propagation":
+                continue
+            if parameter.type_ != Parameter.Type.BOOL:
+                return SetParametersResult(
+                    successful=False,
+                    reason="enable_propagation must be a boolean",
+                )
+            if not bool(parameter.value):
+                for key, previous in tuple(
+                    self._last_continuous_outputs.items()
+                ):
+                    stopped = copy.deepcopy(previous)
+                    stopped.header.stamp = self.get_clock().now().to_msg()
+                    stopped.active = False
+                    stopped.audible = False
+                    self._last_continuous_outputs[key] = stopped
+                    self._continuous_heard_pub.publish(stopped)
+        return SetParametersResult(successful=True)
+
     def _cb_peds(self, msg: Pedestrians) -> None:
         self._peds = {int(p.id): p for p in msg.pedestrians}
         self._peds_frame_id = str(msg.header.frame_id).strip() or "map"
@@ -330,6 +367,7 @@ class SoundPropagationNode(Node):
         if episode_id != self._episode_id:
             self._episode_id = episode_id
             self._spawned_microphones.clear()
+            self._last_continuous_outputs.clear()
             self._publish_microphone_registry()
         world_name = str(msg.world).strip()
         if world_name:
@@ -339,6 +377,7 @@ class SoundPropagationNode(Node):
         self.get_logger().info(f"loading acoustic scene for world {world_name!r}")
         self._world_microphones.clear()
         self._spawned_microphones.clear()
+        self._last_continuous_outputs.clear()
         self._publish_microphone_registry()
 
         self._world_load_future = self._world_loader.submit(
@@ -448,6 +487,11 @@ class SoundPropagationNode(Node):
         self._authored_room_specs = room_specs
         self._authored_world_graph = graph
         self._authored_map_origin = authored_map_origin
+        if not scene.zones:
+            self.get_logger().warning(
+                f"world {world_name!r} has no authored acoustic zones, "
+                "using map-based distance and occlusion propagation"
+            )
         if authored_map_origin is None:
             self.get_logger().error(
                 f"cannot realize acoustic scene for {world_name!r}: "
@@ -578,6 +622,7 @@ class SoundPropagationNode(Node):
         if (
             not bool(self.get_parameter("validate_zone_coverage").value)
             or self._scene is None
+            or not self._scene.zones
             or self._map is None
         ):
             return
@@ -748,11 +793,7 @@ class SoundPropagationNode(Node):
             else "map"
         )
         stamp = self.get_clock().now().to_msg()
-        clear = Marker()
-        clear.header.frame_id = frame_id
-        clear.header.stamp = stamp
-        clear.action = Marker.DELETEALL
-        markers = [clear]
+        markers = []
         color = ColorRGBA(r=0.12, g=0.95, b=0.45, a=0.85)
         for index, (listener_id, position) in enumerate(
             sorted(self._microphone_positions().items())
@@ -767,7 +808,7 @@ class SoundPropagationNode(Node):
             marker.pose.orientation.w = 1.0
             marker.scale.x = marker.scale.y = marker.scale.z = 1.0
             marker.color = color
-            marker.lifetime.nanosec = 600_000_000
+            marker.lifetime.sec = 1
             apex = Point(
                 x=float(position.x) + 0.28,
                 y=float(position.y),
@@ -833,11 +874,8 @@ class SoundPropagationNode(Node):
                 "placement must be non-empty and contain no ':'"
             )
             return response
-        world_loading = self._world_load_future is not None or bool(
-            self._pending_world_name
-            and self._pending_world_name != self._world_name
-        )
-        if self._scene is None or self._map is None or world_loading:
+        world_loading = self._world_load_future is not None
+        if self._map is None or world_loading:
             response.error_msg = "acoustic world is not ready"
             return response
         point = request.position.point
@@ -857,24 +895,48 @@ class SoundPropagationNode(Node):
                 "cannot transform position to the acoustic map frame"
             )
             return response
-        zone = next(
-            (
-                candidate
-                for candidate in self._scene.zones
-                if candidate.polygon.buffer(
-                    MICROPHONE_PLACEMENT_TOLERANCE_M
-                ).covers(ShapelyPoint(transformed.x, transformed.y))
-            ),
-            None,
-        )
-        if zone is None:
-            response.error_msg = "clicked position is outside every world zone"
+        attached_frame = str(request.attached_frame).strip().lstrip("/")
+        stored_position = transformed
+        stored_frame = str(self._map.header.frame_id).strip().lstrip("/")
+        if attached_frame:
+            attached_position = self._point_between_frames(
+                point,
+                str(request.position.header.frame_id),
+                attached_frame,
+                "spawned microphone attachment",
+            )
+            if attached_position is None:
+                response.error_msg = (
+                    f"cannot transform clicked position into TF frame "
+                    f"{attached_frame!r}"
+                )
+                return response
+            stored_position = attached_position
+            stored_frame = attached_frame
+        if self._world_to_grid(transformed) is None:
+            response.error_msg = "clicked position is outside the loaded map"
             return response
+        zone = (
+            next(
+                (
+                    candidate
+                    for candidate in self._scene.zones
+                    if candidate.polygon.buffer(
+                        MICROPHONE_PLACEMENT_TOLERANCE_M
+                    ).covers(
+                        ShapelyPoint(transformed.x, transformed.y)
+                    )
+                ),
+                None,
+            )
+            if self._scene is not None
+            else None
+        )
         room_spec = next(
             (
                 candidate
                 for candidate in self._room_specs
-                if candidate.zone_name == zone.name
+                if zone is not None and candidate.zone_name == zone.name
             ),
             None,
         )
@@ -891,31 +953,78 @@ class SoundPropagationNode(Node):
                 f"at {room_spec.ceiling_height_m:.2f} m"
             )
             return response
+        if (
+            room_spec is None
+            and transformed.z
+            > float(self.get_parameter("pyroom_ceiling_height_m").value)
+            + MICROPHONE_PLACEMENT_TOLERANCE_M
+        ):
+            response.error_msg = "microphone height exceeds the default ceiling"
+            return response
 
         existing = set(self._world_microphones) | set(
             self._spawned_microphones
         )
+        if attached_frame:
+            frame_key = attached_frame.replace("/", "_").replace(":", "_")
+            location = f"tf:{frame_key}"
+        else:
+            location = f"zone:{zone.name}" if zone is not None else "map"
         index = 1
         while True:
-            listener_id = f"microphone:zone:{zone.name}:{placement}:{index}"
+            listener_id = f"microphone:{location}:{placement}:{index}"
             if listener_id not in existing:
                 break
             index += 1
 
-        self._spawned_microphones[listener_id] = Point(
-            x=float(transformed.x),
-            y=float(transformed.y),
-            z=float(transformed.z),
+        self._spawned_microphones[listener_id] = (
+            Point(
+                x=float(stored_position.x),
+                y=float(stored_position.y),
+                z=float(stored_position.z),
+            ),
+            stored_frame,
         )
         self._publish_microphone_registry()
         response.listener_id = listener_id
-        response.zone = zone.name
+        response.zone = zone.name if zone is not None else "map"
+        response.attached_frame = attached_frame
         response.success = True
         self.get_logger().info(
             f"spawned microphone {listener_id!r} at "
             f"({transformed.x:.2f}, {transformed.y:.2f}, "
             f"{transformed.z:.2f})"
         )
+        return response
+
+    def _remove_microphone(
+        self,
+        request: RemoveMicrophone.Request,
+        response: RemoveMicrophone.Response,
+    ) -> RemoveMicrophone.Response:
+        listener_id = str(request.listener_id).strip()
+        if listener_id not in self._spawned_microphones:
+            if listener_id in self._world_microphones:
+                response.error_msg = (
+                    "world-authored microphones cannot be removed"
+                )
+            elif listener_id in self._robot_microphones:
+                response.error_msg = (
+                    "launch-configured microphones cannot be removed"
+                )
+            else:
+                response.error_msg = f"unknown runtime microphone {listener_id!r}"
+            return response
+        self._spawned_microphones.pop(listener_id)
+        for key in tuple(self._last_continuous_outputs):
+            if key[1] == listener_id:
+                stopped = self._last_continuous_outputs.pop(key)
+                stopped.header.stamp = self.get_clock().now().to_msg()
+                stopped.active = False
+                stopped.audible = False
+                self._continuous_heard_pub.publish(stopped)
+        self._publish_microphone_registry()
+        response.success = True
         return response
 
     def _cb_robot_odom(
@@ -932,8 +1041,9 @@ class SoundPropagationNode(Node):
             frame_id,
         )
 
-
     def _cb_sound_event(self, event: SoundEvent) -> None:
+        if not bool(self.get_parameter("enable_propagation").value):
+            return
         if not event.sound_type.strip():
             return
 
@@ -979,6 +1089,8 @@ class SoundPropagationNode(Node):
         state: ContinuousAudioSourceState,
     ) -> None:
         """Propagate persistent source state through the same acoustic model."""
+        if not bool(self.get_parameter("enable_propagation").value):
+            return
         if not state.sound_type.strip():
             return
         # Continuous publishers refresh their state. Waiting for the next
@@ -1051,6 +1163,9 @@ class SoundPropagationNode(Node):
             output.portal_hop_count = heard.portal_hop_count
             output.portal_route_loss_db = heard.portal_route_loss_db
             output.deterministic_seed = state.deterministic_seed
+            self._last_continuous_outputs[(state.source_id, listener_id)] = (
+                copy.deepcopy(output)
+            )
             self._continuous_heard_pub.publish(output)
 
     def _listeners_for_event(self, event: SoundEvent) -> dict[str, Point]:
@@ -1127,12 +1242,16 @@ class SoundPropagationNode(Node):
                 continue
             listeners[listener_id] = transformed
 
-        for listener_id, position in self._spawned_microphones.items():
-            listeners[listener_id] = Point(
-                x=float(position.x),
-                y=float(position.y),
-                z=float(position.z),
+        for listener_id, (position, frame_id) in (
+            self._spawned_microphones.items()
+        ):
+            transformed = self._point_in_acoustic_frame(
+                position,
+                frame_id,
+                listener_id,
             )
+            if transformed is not None:
+                listeners[listener_id] = transformed
 
         return listeners
 
@@ -1278,8 +1397,22 @@ class SoundPropagationNode(Node):
         if self._map is None:
             return None
         target_frame = str(self._map.header.frame_id).strip()
+        return self._point_between_frames(
+            point,
+            source_frame,
+            target_frame,
+            entity_id,
+        )
+
+    def _point_between_frames(
+        self,
+        point: Point,
+        source_frame: str,
+        target_frame: str,
+        entity_id: str,
+    ) -> Point | None:
         source_frame = source_frame.strip().lstrip("/")
-        target_frame = target_frame.lstrip("/")
+        target_frame = target_frame.strip().lstrip("/")
         if not source_frame or not target_frame:
             self._warn_transform_unavailable(
                 entity_id,
@@ -1428,14 +1561,18 @@ class SoundPropagationNode(Node):
     def _calculate_heard_event(
         self, event: SoundEvent, listener_id: str, listener_pos: Point
     ) -> HeardSoundEvent:
-        if self._scene is None:
+        if self._scene is None or not self._scene.zones:
             msg = self._calculate_legacy_event(event, listener_id, listener_pos)
             return self._finalize_backend(
                 msg,
                 backend="legacy_distance_occlusion",
                 used_fallback=self._requested_backend == "pyroomacoustics",
                 fallback_reason=(
-                    "acoustic_scene_not_loaded"
+                    (
+                        "acoustic_scene_not_loaded"
+                        if self._scene is None
+                        else "acoustic_scene_has_no_zones"
+                    )
                     if self._requested_backend == "pyroomacoustics" else ""
                 ),
             )

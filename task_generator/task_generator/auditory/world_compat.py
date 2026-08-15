@@ -27,10 +27,6 @@ def world_zones(world: object) -> tuple[object, ...]:
         for level in ordered_levels
         for zone in getattr(level, "zones", ())
     )
-    if not zones:
-        raise ValueError(
-            f"{type(world).__name__} contains no acoustic zones"
-        )
     return zones
 
 

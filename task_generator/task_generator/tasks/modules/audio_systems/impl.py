@@ -21,7 +21,11 @@ from task_generator_msgs.msg import (
     AudioSystemState,
     ContinuousAudioSourceState,
 )
-from task_generator_msgs.srv import SetAudioSystem, SpawnAudioSource
+from task_generator_msgs.srv import (
+    RemoveAudioSystem,
+    SetAudioSystem,
+    SpawnAudioSource,
+)
 
 from task_generator.auditory.qos_profiles import (
     acoustic_metadata_qos,
@@ -53,6 +57,7 @@ class Mod_AudioSystems(TM_Module):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._systems: dict[str, _RuntimeSystem] = {}
+        self._runtime_system_ids: set[str] = set()
         self._source_publisher = self.node.create_publisher(
             ContinuousAudioSourceState,
             self.node.service_namespace("continuous_audio_sources"),
@@ -73,11 +78,17 @@ class Mod_AudioSystems(TM_Module):
             self.node.service_namespace("runtime", "spawn_audio_source"),
             self._spawn_audio_source,
         )
+        self._remove_service = self.node.create_service(
+            RemoveAudioSystem,
+            self.node.service_namespace("runtime", "remove_audio_system"),
+            self._remove_audio_system,
+        )
         self._timer = self.node.create_timer(0.1, self._publish_sources)
 
     def after_reset(self) -> None:
         self._publish_removed_sources()
         self._systems.clear()
+        self._runtime_system_ids.clear()
 
         world_name = self._ctx.world_manager.loaded_world
         scenario_name = str(
@@ -257,6 +268,20 @@ class Mod_AudioSystems(TM_Module):
         if settings is None:
             response.error_msg = "mode must be 'music' or 'alarm'"
             return response
+        default_asset_id, default_volume_db, semantic_tags = settings
+        if bool(request.customize_playback):
+            asset_id = str(request.asset_id).strip() or default_asset_id
+            source_volume_db = float(request.source_volume_db)
+            if not math.isfinite(source_volume_db):
+                response.error_msg = "source volume must be finite"
+                return response
+            loop = bool(request.loop)
+            initially_active = bool(request.initially_active)
+        else:
+            asset_id = default_asset_id
+            source_volume_db = default_volume_db
+            loop = True
+            initially_active = True
 
         frame_id = str(request.pose.header.frame_id).strip().lstrip("/")
         if not frame_id:
@@ -339,7 +364,6 @@ class Mod_AudioSystems(TM_Module):
         while f"runtime_{mode}_{index}" in self._systems:
             index += 1
         system_id = f"runtime_{mode}_{index}"
-        asset_id, source_volume_db, semantic_tags = settings
         emitter_name = "radio" if mode == "music" else "alarm"
         emitter = AudioEmitter(
             name=emitter_name,
@@ -355,8 +379,8 @@ class Mod_AudioSystems(TM_Module):
             sound_type=mode,
             asset_id=asset_id,
             emitters=[emitter],
-            loop=True,
-            initially_active=True,
+            loop=loop,
+            initially_active=initially_active,
             semantic_tags=["runtime", *semantic_tags],
         )
         qx, qy, qz, qw = map_orientation
@@ -378,10 +402,11 @@ class Mod_AudioSystems(TM_Module):
         runtime = _RuntimeSystem(
             specification=specification,
             emitters=(resolved,),
-            active=True,
+            active=initially_active,
             program_start_time=self.node.get_clock().now().to_msg(),
         )
         self._systems[system_id] = runtime
+        self._runtime_system_ids.add(system_id)
         self._publish_runtime_system(runtime)
         self._publish_system_state(system_id, runtime)
         response.system_id = system_id
@@ -391,6 +416,29 @@ class Mod_AudioSystems(TM_Module):
             f"({map_position.x:.2f}, {map_position.y:.2f}, "
             f"{map_position.z:.2f})"
         )
+        return response
+
+    def _remove_audio_system(
+        self,
+        request: RemoveAudioSystem.Request,
+        response: RemoveAudioSystem.Response,
+    ) -> RemoveAudioSystem.Response:
+        system_id = str(request.system_id).strip()
+        runtime = self._systems.get(system_id)
+        if runtime is None:
+            response.error_msg = f"unknown audio system {system_id!r}"
+            return response
+        if system_id not in self._runtime_system_ids:
+            response.error_msg = (
+                "scenario and launch-configured audio systems cannot be removed"
+            )
+            return response
+        runtime.active = False
+        self._publish_runtime_system(runtime)
+        self._publish_system_state(system_id, runtime, removed=True)
+        self._systems.pop(system_id)
+        self._runtime_system_ids.remove(system_id)
+        response.success = True
         return response
 
     @staticmethod

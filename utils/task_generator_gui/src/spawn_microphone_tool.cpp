@@ -29,6 +29,11 @@ SpawnMicrophoneTool::SpawnMicrophoneTool()
     "Microphone Z coordinate in the RViz Fixed Frame, in metres.",
     getPropertyContainer());
   height_property_->setMin(0.0);
+
+  attached_frame_property_ = new rviz_common::properties::StringProperty(
+    "Attach TF Frame", "",
+    "Optional TF frame. Empty creates a fixed microphone. A frame makes the microphone follow it.",
+    getPropertyContainer());
 }
 
 SpawnMicrophoneTool::~SpawnMicrophoneTool() = default;
@@ -67,6 +72,7 @@ void SpawnMicrophoneTool::onPoseSet(double x, double y, double theta)
   request->position.point.y = y;
   request->position.point.z = height_property_->getFloat();
   request->placement = "placed";
+  request->attached_frame = attached_frame_property_->getStdString();
 
   if (!client_->wait_for_service(1s)) {
     RCLCPP_WARN(
@@ -96,8 +102,10 @@ void SpawnMicrophoneTool::onPoseSet(double x, double y, double theta)
     selectPlaybackListener(response->listener_id);
     RCLCPP_INFO(
       service_node_->get_logger(),
-      "spawned and selected microphone %s in zone %s",
-      response->listener_id.c_str(), response->zone.c_str());
+      "spawned and selected microphone %s in zone %s%s%s",
+      response->listener_id.c_str(), response->zone.c_str(),
+      response->attached_frame.empty() ? "" : " attached to ",
+      response->attached_frame.c_str());
   }
 }
 

@@ -104,6 +104,8 @@ namespace task_generator_gui
             task_generator_node + "/human_sound_playback");
         environment_playback_node = normalizeNodePath(
             task_generator_node + "/environmental_sound_playback");
+        propagation_node = normalizeNodePath(
+            task_generator_node + "/sound_propagation_node");
 
         // All clients go on `node` — rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
@@ -142,9 +144,19 @@ namespace task_generator_gui
             std::make_shared<rclcpp::AsyncParametersClient>(
                 node,
                 environment_playback_node);
+        propagation_parameters_client =
+            std::make_shared<rclcpp::AsyncParametersClient>(
+                node,
+                propagation_node);
         set_audio_system_client =
             node->create_client<task_generator_msgs::srv::SetAudioSystem>(
                 task_generator_node + "/runtime/set_audio_system");
+        remove_microphone_client =
+            node->create_client<task_generator_msgs::srv::RemoveMicrophone>(
+                task_generator_node + "/runtime/remove_microphone");
+        remove_audio_system_client =
+            node->create_client<task_generator_msgs::srv::RemoveAudioSystem>(
+                task_generator_node + "/runtime/remove_audio_system");
 
         {
             rclcpp::QoS qos(rclcpp::KeepLast(1));
@@ -157,31 +169,7 @@ namespace task_generator_gui
                     {
                         QMetaObject::invokeMethod(this, [this, data = msg->data]()
                         {
-                            if (!audio_listener_id_combobox)
-                                return;
-                            const QString selected =
-                                audio_listener_id_combobox->currentText();
-                            const auto document = QJsonDocument::fromJson(
-                                QByteArray::fromStdString(data));
-                            if (!document.isArray())
-                            {
-                                RCLCPP_WARN(
-                                    node->get_logger(),
-                                    "ignoring invalid microphone listener registry");
-                                return;
-                            }
-                            QSignalBlocker blocker(audio_listener_id_combobox);
-                            audio_listener_id_combobox->clear();
-                            for (const auto &value : document.array())
-                            {
-                                if (!value.isString())
-                                    continue;
-                                const QString listener_id = value.toString();
-                                if (listener_id.startsWith("microphone:"))
-                                    audio_listener_id_combobox->addItem(
-                                        listener_id);
-                            }
-                            audio_listener_id_combobox->setCurrentText(selected);
+                            updateMicrophoneListeners(data);
                         }, Qt::QueuedConnection);
                     });
         }
@@ -466,6 +454,12 @@ namespace task_generator_gui
                 if (msg->node == environment_playback_node)
                 {
                     refreshAudioListenerRouting();
+                    refreshAuditoryControls();
+                    return;
+                }
+                if (msg->node == propagation_node)
+                {
+                    refreshAuditoryControls();
                     return;
                 }
                 if (msg->node != expected_node) return;
@@ -517,6 +511,13 @@ namespace task_generator_gui
                     && environment_playback_parameters_client->service_is_ready();
             },
             [this]() { refreshAudioListenerRouting(); });
+        whenReady(
+            [this]()
+            {
+                return propagation_parameters_client->service_is_ready()
+                    && environment_playback_parameters_client->service_is_ready();
+            },
+            [this]() { refreshAuditoryControls(); });
     }
 
     void TaskGeneratorPanel::refreshMotorPlayback()
@@ -780,6 +781,68 @@ namespace task_generator_gui
             });
     }
 
+    void TaskGeneratorPanel::updateMicrophoneListeners(
+        const std::string &data)
+    {
+        microphone_listener_registry_ = data;
+        if (!audio_listener_id_combobox)
+            return;
+        const auto document = QJsonDocument::fromJson(
+            QByteArray::fromStdString(data));
+        if (!document.isArray())
+        {
+            RCLCPP_WARN(
+                node->get_logger(),
+                "ignoring invalid microphone listener registry");
+            return;
+        }
+
+        const QString selected = audio_listener_id_combobox->currentText();
+        QString added_listener;
+        std::set<std::string> listener_ids;
+        QStringList listener_items;
+        for (const auto &value : document.array())
+        {
+            if (!value.isString())
+                continue;
+            const QString listener_id = value.toString();
+            if (!listener_id.startsWith("microphone:"))
+                continue;
+            const std::string id = listener_id.toStdString();
+            listener_items.append(listener_id);
+            listener_ids.insert(id);
+            if (microphone_listener_ids_.find(id)
+                == microphone_listener_ids_.end())
+            {
+                added_listener = listener_id;
+            }
+        }
+        microphone_listener_ids_ = std::move(listener_ids);
+
+        {
+            QSignalBlocker blocker(audio_listener_id_combobox);
+            audio_listener_id_combobox->clear();
+            audio_listener_id_combobox->addItems(listener_items);
+            if (!added_listener.isEmpty())
+            {
+                audio_listener_id_combobox->setCurrentText(added_listener);
+            }
+            else if (audio_listener_id_combobox->findText(selected) >= 0)
+            {
+                audio_listener_id_combobox->setCurrentText(selected);
+            }
+        }
+        const bool selection_changed =
+            audio_listener_id_combobox->currentText() != selected;
+        if (remove_microphone_button)
+        {
+            remove_microphone_button->setEnabled(
+                !audio_listener_id_combobox->currentText().isEmpty());
+        }
+        if (selection_changed && !audio_listener_id_combobox->currentText().isEmpty())
+            setAudioListenerRouting();
+    }
+
     void TaskGeneratorPanel::setAudioListenerRouting()
     {
         if (!audio_listener_mode_combobox
@@ -872,6 +935,212 @@ namespace task_generator_gui
         audio_listener_ids_edit->setEnabled(mode == "list");
     }
 
+    void TaskGeneratorPanel::refreshAuditoryControls()
+    {
+        const bool propagation_available = propagation_parameters_client
+            && propagation_parameters_client->service_is_ready();
+        const bool playback_available = environment_playback_parameters_client
+            && environment_playback_parameters_client->service_is_ready();
+        syncAuditoryControls(
+            propagation_checkbox && propagation_checkbox->isChecked(),
+            environment_playback_checkbox
+                && environment_playback_checkbox->isChecked(),
+            propagation_available,
+            playback_available);
+        if (propagation_available)
+        {
+            propagation_parameters_client->get_parameters(
+                {"enable_propagation"},
+                [this](
+                    std::shared_future<std::vector<rclcpp::Parameter>> future)
+                {
+                    bool enabled = false;
+                    bool available = false;
+                    try
+                    {
+                        const auto parameters = future.get();
+                        available = parameters.size() == 1;
+                        enabled = available && parameters.front().as_bool();
+                    }
+                    catch (const std::exception &exception)
+                    {
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "reading propagation state failed: %s",
+                            exception.what());
+                    }
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, enabled, available]()
+                        {
+                            if (!propagation_checkbox)
+                                return;
+                            QSignalBlocker blocker(propagation_checkbox);
+                            propagation_checkbox->setChecked(enabled);
+                            propagation_checkbox->setEnabled(available);
+                        },
+                        Qt::QueuedConnection);
+                });
+        }
+        if (playback_available)
+        {
+            environment_playback_parameters_client->get_parameters(
+                {"enable_environment_playback"},
+                [this](
+                    std::shared_future<std::vector<rclcpp::Parameter>> future)
+                {
+                    bool enabled = false;
+                    bool available = false;
+                    try
+                    {
+                        const auto parameters = future.get();
+                        available = parameters.size() == 1;
+                        enabled = available && parameters.front().as_bool();
+                    }
+                    catch (const std::exception &exception)
+                    {
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "reading environmental playback state failed: %s",
+                            exception.what());
+                    }
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, enabled, available]()
+                        {
+                            if (!environment_playback_checkbox)
+                                return;
+                            QSignalBlocker blocker(
+                                environment_playback_checkbox);
+                            environment_playback_checkbox->setChecked(enabled);
+                            environment_playback_checkbox->setEnabled(available);
+                        },
+                        Qt::QueuedConnection);
+                });
+        }
+    }
+
+    void TaskGeneratorPanel::setPropagationEnabled(bool enabled)
+    {
+        if (!propagation_parameters_client
+            || !propagation_parameters_client->service_is_ready())
+        {
+            refreshAuditoryControls();
+            return;
+        }
+        propagation_checkbox->setEnabled(false);
+        propagation_parameters_client->set_parameters(
+            {rclcpp::Parameter("enable_propagation", enabled)},
+            [this](auto) { refreshAuditoryControls(); });
+    }
+
+    void TaskGeneratorPanel::setEnvironmentPlaybackEnabled(bool enabled)
+    {
+        if (!environment_playback_parameters_client
+            || !environment_playback_parameters_client->service_is_ready())
+        {
+            refreshAuditoryControls();
+            return;
+        }
+        environment_playback_checkbox->setEnabled(false);
+        environment_playback_parameters_client->set_parameters(
+            {rclcpp::Parameter("enable_environment_playback", enabled)},
+            [this](auto) { refreshAuditoryControls(); });
+    }
+
+    void TaskGeneratorPanel::syncAuditoryControls(
+        bool propagation_enabled,
+        bool playback_enabled,
+        bool propagation_available,
+        bool playback_available)
+    {
+        if (propagation_checkbox)
+        {
+            QSignalBlocker blocker(propagation_checkbox);
+            propagation_checkbox->setChecked(propagation_enabled);
+            propagation_checkbox->setEnabled(propagation_available);
+        }
+        if (environment_playback_checkbox)
+        {
+            QSignalBlocker blocker(environment_playback_checkbox);
+            environment_playback_checkbox->setChecked(playback_enabled);
+            environment_playback_checkbox->setEnabled(playback_available);
+        }
+    }
+
+    void TaskGeneratorPanel::removeSelectedMicrophone()
+    {
+        if (!audio_listener_id_combobox
+            || !remove_microphone_client
+            || !remove_microphone_client->service_is_ready())
+            return;
+        const std::string listener_id =
+            audio_listener_id_combobox->currentText().toStdString();
+        if (listener_id.empty())
+            return;
+        auto request = std::make_shared<
+            task_generator_msgs::srv::RemoveMicrophone::Request>();
+        request->listener_id = listener_id;
+        remove_microphone_client->async_send_request(
+            request,
+            [this, listener_id](auto future)
+            {
+                try
+                {
+                    const auto response = future.get();
+                    if (!response->success)
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "removing microphone %s failed: %s",
+                            listener_id.c_str(), response->error_msg.c_str());
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "removing microphone %s failed: %s",
+                        listener_id.c_str(), exception.what());
+                }
+            });
+    }
+
+    void TaskGeneratorPanel::removeSelectedAudioSystem()
+    {
+        if (!audio_systems_tree
+            || !remove_audio_system_client
+            || !remove_audio_system_client->service_is_ready())
+            return;
+        const auto items = audio_systems_tree->selectedItems();
+        if (items.isEmpty())
+            return;
+        const std::string system_id =
+            items.front()->data(0, Qt::UserRole).toString().toStdString();
+        auto request = std::make_shared<
+            task_generator_msgs::srv::RemoveAudioSystem::Request>();
+        request->system_id = system_id;
+        remove_audio_system_client->async_send_request(
+            request,
+            [this, system_id](auto future)
+            {
+                try
+                {
+                    const auto response = future.get();
+                    if (!response->success)
+                        RCLCPP_WARN(
+                            node->get_logger(),
+                            "removing audio source %s failed: %s",
+                            system_id.c_str(), response->error_msg.c_str());
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(
+                        node->get_logger(),
+                        "removing audio source %s failed: %s",
+                        system_id.c_str(), exception.what());
+                }
+            });
+    }
+
     void TaskGeneratorPanel::setAudioSystemActive(
         const std::string &system_id,
         bool active)
@@ -945,6 +1214,33 @@ namespace task_generator_gui
         world_combobox->setEnabled(false);
         connect(world_combobox, &QComboBox::currentTextChanged, this, &TaskGeneratorPanel::onWorldChanged);
 
+        auto auditory_controls_group = new QGroupBox("Auditory Runtime");
+        auto auditory_controls_layout = new QVBoxLayout();
+        propagation_checkbox = new QCheckBox(
+            "Enable sound propagation");
+        propagation_checkbox->setEnabled(false);
+        propagation_checkbox->setToolTip(
+            "Stops or resumes listener-specific simulated sound propagation.");
+        connect(
+            propagation_checkbox,
+            &QCheckBox::toggled,
+            this,
+            &TaskGeneratorPanel::setPropagationEnabled);
+        environment_playback_checkbox = new QCheckBox(
+            "Play radio and alarm audio on this workstation");
+        environment_playback_checkbox->setEnabled(false);
+        environment_playback_checkbox->setToolTip(
+            "Mutes only local output. Propagation and robot hearing continue.");
+        connect(
+            environment_playback_checkbox,
+            &QCheckBox::toggled,
+            this,
+            &TaskGeneratorPanel::setEnvironmentPlaybackEnabled);
+        auditory_controls_layout->addWidget(propagation_checkbox);
+        auditory_controls_layout->addWidget(environment_playback_checkbox);
+        auditory_controls_group->setLayout(auditory_controls_layout);
+        root_layout->addWidget(auditory_controls_group);
+
         audio_listener_group = new QGroupBox("Audio Playback Listener");
         audio_listener_group->setEnabled(false);
         auto audio_listener_layout = new QFormLayout();
@@ -958,6 +1254,8 @@ namespace task_generator_gui
         audio_listener_id_combobox = new QComboBox();
         audio_listener_id_combobox->setEditable(true);
         audio_listener_id_combobox->setInsertPolicy(QComboBox::NoInsert);
+        if (!microphone_listener_registry_.empty())
+            updateMicrophoneListeners(microphone_listener_registry_);
         audio_listener_ids_edit = new QLineEdit("[]");
         audio_listener_ids_edit->setPlaceholderText(
             "[microphone:zone:reception:ceiling:1]");
@@ -991,6 +1289,24 @@ namespace task_generator_gui
         audio_listener_layout->addRow("Mode", audio_listener_mode_combobox);
         audio_listener_layout->addRow("Listener", audio_listener_id_combobox);
         audio_listener_layout->addRow("Listener IDs", audio_listener_ids_edit);
+        remove_microphone_button = new QPushButton(
+            "Remove selected runtime microphone");
+        remove_microphone_button->setEnabled(false);
+        connect(
+            remove_microphone_button,
+            &QPushButton::clicked,
+            this,
+            &TaskGeneratorPanel::removeSelectedMicrophone);
+        connect(
+            audio_listener_id_combobox,
+            &QComboBox::currentTextChanged,
+            this,
+            [this](const QString &listener_id)
+            {
+                remove_microphone_button->setEnabled(
+                    !listener_id.isEmpty());
+            });
+        audio_listener_layout->addRow(remove_microphone_button);
         audio_listener_group->setLayout(audio_listener_layout);
         root_layout->addWidget(audio_listener_group);
 
@@ -1018,6 +1334,27 @@ namespace task_generator_gui
                     item->checkState(0) == Qt::Checked);
             });
         audio_systems_layout->addWidget(audio_systems_tree);
+        remove_audio_system_button = new QPushButton(
+            "Remove selected runtime source");
+        remove_audio_system_button->setEnabled(false);
+        connect(
+            remove_audio_system_button,
+            &QPushButton::clicked,
+            this,
+            &TaskGeneratorPanel::removeSelectedAudioSystem);
+        connect(
+            audio_systems_tree,
+            &QTreeWidget::itemSelectionChanged,
+            this,
+            [this]()
+            {
+                const auto items = audio_systems_tree->selectedItems();
+                remove_audio_system_button->setEnabled(
+                    !items.isEmpty()
+                    && items.front()->data(0, Qt::UserRole).toString()
+                        .startsWith("runtime_"));
+            });
+        audio_systems_layout->addWidget(remove_audio_system_button);
         auto audio_hint = new QLabel(
             "Use the Spawn Microphone toolbar button more than once to add "
             "several listeners.");

@@ -650,7 +650,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     topic=topic,
                     topic_type="visualization_msgs/MarkerArray",
                     kind=DisplayKind.MARKER_ARRAY,
-                    style_json=StyleSpec(enabled=True).to_json(),
+                    style_json=(
+                        latched
+                        if name == "Microphones"
+                        else StyleSpec(enabled=True).to_json()
+                    ),
                     topic_must_exist=False,
                     group="Sound Propagation",
                 )

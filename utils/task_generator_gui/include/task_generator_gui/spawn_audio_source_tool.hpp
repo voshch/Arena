@@ -15,6 +15,7 @@ namespace rviz_common
 namespace properties
 {
 class EnumProperty;
+class BoolProperty;
 class FloatProperty;
 class StringProperty;
 }
@@ -37,11 +38,17 @@ protected:
 
 private Q_SLOTS:
   void updateClient();
+  void updateModeDefaults();
 
 private:
   rviz_common::properties::StringProperty * target_node_property_;
   rviz_common::properties::EnumProperty * mode_property_;
   rviz_common::properties::FloatProperty * height_property_;
+  rviz_common::properties::BoolProperty * customize_property_;
+  rviz_common::properties::StringProperty * asset_property_;
+  rviz_common::properties::FloatProperty * volume_property_;
+  rviz_common::properties::BoolProperty * loop_property_;
+  rviz_common::properties::BoolProperty * initially_active_property_;
 
   std::shared_ptr<rclcpp::Node> service_node_;
   rclcpp::Client<task_generator_msgs::srv::SpawnAudioSource>::SharedPtr client_;
