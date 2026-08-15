@@ -275,9 +275,9 @@ namespace task_generator_gui
         QCheckBox *motor_playback_checkbox;
         QGroupBox *motor_tuning_group{nullptr};
         QGroupBox *audio_listener_group{nullptr};
-        QComboBox *audio_listener_mode_combobox{nullptr};
+        MultiSelectComboBox *audio_listener_multiselect{nullptr};
         QComboBox *audio_listener_id_combobox{nullptr};
-        QLineEdit *audio_listener_ids_edit{nullptr};
+        bool audio_listener_selection_pending_{false};
         QCheckBox *propagation_checkbox{nullptr};
         QCheckBox *environment_playback_checkbox{nullptr};
         QPushButton *remove_microphone_button{nullptr};

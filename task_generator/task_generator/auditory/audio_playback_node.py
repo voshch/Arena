@@ -780,7 +780,7 @@ class SoundPlaybackNode(Node):
             listener_ids = json.loads(msg.data)
             if not isinstance(listener_ids, list) or not all(
                 isinstance(listener_id, str)
-                and listener_id.startswith("microphone:")
+                and listener_id.strip()
                 for listener_id in listener_ids
             ):
                 raise ValueError("expected a list of microphone listener IDs")
@@ -1406,9 +1406,8 @@ class SoundPlaybackNode(Node):
             return 0.25
         return 1.60
 
-    @staticmethod
-    def _listener_height(msg) -> float:
-        if str(msg.listener_id).startswith("microphone:"):
+    def _listener_height(self, msg) -> float:
+        if str(msg.listener_id) in self._microphone_listener_ids:
             return float(msg.listener_position.z)
         return 0.35
 

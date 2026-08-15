@@ -3,10 +3,8 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
-#include <rclcpp/parameter_client.hpp>
 #include <rviz_common/display_context.hpp>
 #include <rviz_common/properties/float_property.hpp>
 #include <rviz_common/properties/string_property.hpp>
@@ -19,6 +17,8 @@ using namespace std::chrono_literals;
 
 SpawnMicrophoneTool::SpawnMicrophoneTool()
 {
+  shortcut_key_ = 'm';
+
   target_node_property_ = new rviz_common::properties::StringProperty(
     "Target", "/task_generator_node",
     "Namespace providing the acoustic runtime/spawn_microphone service.",
@@ -99,54 +99,12 @@ void SpawnMicrophoneTool::onPoseSet(double x, double y, double theta)
       service_node_->get_logger(),
       "spawn_microphone rejected: %s", response->error_msg.c_str());
   } else {
-    selectPlaybackListener(response->listener_id);
     RCLCPP_INFO(
       service_node_->get_logger(),
-      "spawned and selected microphone %s in zone %s%s%s",
-      response->listener_id.c_str(), response->zone.c_str(),
+      "spawned microphone %s%s%s",
+      response->listener_id.c_str(),
       response->attached_frame.empty() ? "" : " attached to ",
       response->attached_frame.c_str());
-  }
-}
-
-void SpawnMicrophoneTool::selectPlaybackListener(const std::string & listener_id)
-{
-  const std::vector<std::string> playback_nodes = {
-    "human_sound_playback",
-    "robot_sound_node",
-    "environmental_sound_playback",
-  };
-  for (const auto & node_name : playback_nodes) {
-    const auto remote_node =
-      target_node_property_->getStdString() + "/" + node_name;
-    auto parameters = std::make_shared<rclcpp::AsyncParametersClient>(
-      service_node_, remote_node);
-    if (!parameters->wait_for_service(500ms)) {
-      RCLCPP_WARN(
-        service_node_->get_logger(),
-        "parameter service not available for %s", remote_node.c_str());
-      continue;
-    }
-    auto future = parameters->set_parameters({
-      rclcpp::Parameter("listener_mode", "selected"),
-      rclcpp::Parameter("listener_id", listener_id),
-    });
-    if (rclcpp::spin_until_future_complete(service_node_, future, 2s) !=
-      rclcpp::FutureReturnCode::SUCCESS)
-    {
-      RCLCPP_WARN(
-        service_node_->get_logger(),
-        "listener selection timed out for %s", remote_node.c_str());
-      continue;
-    }
-    for (const auto & result : future.get()) {
-      if (!result.successful) {
-        RCLCPP_WARN(
-          service_node_->get_logger(),
-          "listener selection failed for %s: %s",
-          remote_node.c_str(), result.reason.c_str());
-      }
-    }
   }
 }
 }  // namespace task_generator_gui

@@ -1061,7 +1061,7 @@ class SoundPropagationVisualizer(Node):
 
     @staticmethod
     def _listener_height(listener_id: str, listener_z: float = 0.0) -> float:
-        if listener_id.startswith("microphone:"):
+        if listener_id.startswith("microphone") or listener_id.endswith("_mic"):
             return listener_z
         return 0.35 if listener_id.startswith("robot:") else 1.60
 
@@ -1105,7 +1105,7 @@ class SoundPropagationVisualizer(Node):
                 "robot",
                 ColorRGBA(r=0.65, g=0.20, b=1.0, a=0.92),
             )
-        if listener_id.startswith("microphone:"):
+        if listener_id.startswith("microphone") or listener_id.endswith("_mic"):
             listener_kind = listener_id.replace(":", "_").replace("/", "_")
             return (
                 self._robot_publisher,

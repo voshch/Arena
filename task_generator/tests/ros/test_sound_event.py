@@ -329,9 +329,7 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
         )
         assert response.success is True
         assert response.zone == "reception"
-        assert response.listener_id == (
-            "microphone:zone:reception:placed:2"
-        )
+        assert response.listener_id == "microphone1"
         position, frame = propagation._spawned_microphones[
             response.listener_id
         ]
@@ -343,9 +341,7 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
             SpawnMicrophone.Response(),
         )
         assert second.success is True
-        assert second.listener_id == (
-            "microphone:zone:reception:placed:3"
-        )
+        assert second.listener_id == "microphone2"
 
         transform = TransformStamped()
         transform.header.frame_id = "map"
@@ -366,9 +362,7 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
             SpawnMicrophone.Response(),
         )
         assert attached.success is True
-        assert attached.listener_id == (
-            "microphone:tf:robot_base_link:body:1"
-        )
+        assert attached.listener_id == "microphone3"
         local_position, attached_frame = propagation._spawned_microphones[
             attached.listener_id
         ]
@@ -383,17 +377,17 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
             SpawnMicrophone.Response(),
         )
         assert outside_zone.success is True
-        assert outside_zone.zone == "map"
-        assert outside_zone.listener_id == "microphone:map:placed:1"
+        assert outside_zone.zone == ""
+        assert outside_zone.listener_id == "microphone4"
 
         request.position.point.x = 12.0
-        rejected = propagation._spawn_microphone(
+        outside_map = propagation._spawn_microphone(
             request,
             SpawnMicrophone.Response(),
         )
-        assert rejected.success is False
-        assert rejected.error_msg == "clicked position is outside the loaded map"
-        assert len(propagation._spawned_microphones) == 4
+        assert outside_map.success is True
+        assert outside_map.listener_id == "microphone5"
+        assert len(propagation._spawned_microphones) == 5
 
         propagation._scene = None
         request.position.point.x = 6.0
@@ -402,8 +396,8 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
             SpawnMicrophone.Response(),
         )
         assert no_zones.success is True
-        assert no_zones.zone == "map"
-        assert no_zones.listener_id == "microphone:map:placed:2"
+        assert no_zones.zone == ""
+        assert no_zones.listener_id == "microphone6"
 
         removed = propagation._remove_microphone(
             RemoveMicrophone.Request(listener_id=no_zones.listener_id),
@@ -421,15 +415,32 @@ def test_spawn_microphone_assigns_zone_and_next_index(rclpy_context):
             "world-authored microphones cannot be removed"
         )
 
+        propagation._map = None
+        request.position.header.frame_id = "rviz_map"
+        request.position.point.x = 4.0
+        without_map = propagation._spawn_microphone(
+            request,
+            SpawnMicrophone.Response(),
+        )
+        assert without_map.success is True
+        assert without_map.listener_id == "microphone7"
+        marker_position, marker_frame = propagation._microphone_marker_poses()[
+            without_map.listener_id
+        ]
+        assert marker_frame == "rviz_map"
+        assert marker_position.x == 4.0
+
         episode = EpisodeRecord()
         episode.episode_id = 7
         propagation._cb_episode_world(episode)
         assert propagation._spawned_microphones == {}
+        assert propagation._spawned_microphone_index == 0
     finally:
         propagation.destroy_node()
 
 
 def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
+    from geometry_msgs.msg import Point
     from rclpy.parameter import Parameter
     from task_generator.auditory.sound_propagation_node import (
         SoundPropagationNode,
@@ -440,13 +451,43 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
     propagation = SoundPropagationNode(namespace=f"/test/{suffix}")
     previous = ContinuousHeardSoundState()
     previous.source_id = "environment:runtime_music_1:radio"
-    previous.listener_id = "microphone:map:placed:1"
+    previous.listener_id = "microphone1"
     previous.active = True
     previous.audible = True
     key = (previous.source_id, previous.listener_id)
     propagation._last_continuous_outputs[key] = previous
+    excluded = ContinuousHeardSoundState()
+    excluded.source_id = previous.source_id
+    excluded.listener_id = "microphone2"
+    excluded.active = True
+    excluded.audible = True
+    excluded_key = (excluded.source_id, excluded.listener_id)
+    propagation._last_continuous_outputs[excluded_key] = excluded
+    robot_listener = ContinuousHeardSoundState()
+    robot_listener.source_id = previous.source_id
+    robot_listener.listener_id = "robot:robot1"
+    robot_listener.active = True
+    robot_listener.audible = True
+    robot_key = (robot_listener.source_id, robot_listener.listener_id)
+    propagation._last_continuous_outputs[robot_key] = robot_listener
+    propagation._robot_microphones = {
+        "microphone1": (Point(), "map"),
+        "microphone2": (Point(), "map"),
+    }
 
     try:
+        selection_results = propagation.set_parameters([
+            Parameter(
+                "active_microphone_ids",
+                Parameter.Type.STRING,
+                '["microphone1"]',
+            ),
+        ])
+        assert selection_results[0].successful is True
+        assert propagation._last_continuous_outputs[key].active is True
+        assert propagation._last_continuous_outputs[excluded_key].active is False
+        assert propagation._last_continuous_outputs[robot_key].active is True
+
         results = propagation.set_parameters([
             Parameter("enable_propagation", Parameter.Type.BOOL, False),
         ])
@@ -455,6 +496,7 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
         stopped = propagation._last_continuous_outputs[key]
         assert stopped.active is False
         assert stopped.audible is False
+        assert propagation._last_continuous_outputs[robot_key].active is False
     finally:
         propagation.destroy_node()
 
@@ -484,6 +526,12 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
         propagation._cb_robot_fleet(fleet)
         first = dict(propagation._odom_subs)
         assert len(first) == 1
+        assert "robot1_mic" in propagation._robot_microphones
+        robot_mic_position, robot_mic_frame = (
+            propagation._robot_microphones["robot1_mic"]
+        )
+        assert robot_mic_position.z == 0.35
+        assert robot_mic_frame == "robot1/base_link"
 
         propagation._cb_robot_fleet(fleet)
         assert propagation._odom_subs.keys() == first.keys()
@@ -496,6 +544,7 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
         propagation._cb_robot_fleet(RobotFleet())
         assert propagation._odom_subs == {}
         assert "robot:robot1" not in propagation._robots
+        assert "robot1_mic" not in propagation._robot_microphones
     finally:
         propagation.destroy_node()
 

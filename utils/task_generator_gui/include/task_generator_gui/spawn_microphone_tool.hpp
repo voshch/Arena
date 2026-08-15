@@ -39,8 +39,6 @@ private Q_SLOTS:
   void updateClient();
 
 private:
-  void selectPlaybackListener(const std::string & listener_id);
-
   rviz_common::properties::StringProperty * target_node_property_;
   rviz_common::properties::FloatProperty * height_property_;
   rviz_common::properties::StringProperty * attached_frame_property_;

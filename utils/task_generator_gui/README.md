@@ -67,27 +67,28 @@ Subclass of `rviz_default_plugins::tools::PoseTool`. Select **Spawn
 Microphone** in the toolbar, then click in the 3D view. The tool calls
 `<Target>/runtime/spawn_microphone` with the clicked point in the RViz Fixed
 Frame and the `Height` tool property, which defaults to 1.5 m. The acoustic
-runtime transforms the point into its map frame, finds the containing authored
-zone when one exists, and rejects positions outside the loaded map or above
-the applicable ceiling. It assigns the next free stable ID such as
-`microphone:zone:reception:placed:2`, or `microphone:map:placed:1` in a world
-without a zone at that point.
+runtime registers the clicked frame and position immediately. It assigns
+`microphone1`, `microphone2`, and later increasing IDs for the episode. The
+green triangular cone and ID label therefore appear without waiting for room
+geometry to load.
 
 Set `Attach TF Frame` to a frame from the RViz TF tree to make the listener
 follow that frame. The clicked point is converted into an offset in the named
 frame. Leaving the property empty creates a fixed listener.
 
-The new ID appears in the Task Generator panel's **Audio Playback Listener**
-selector and is selected automatically for playback. Choose the existing
-**all** mode to mix every microphone. Runtime-spawned microphones are removed
-with the panel button or on an episode or world change.
+The new ID appears and is checked automatically in the Task Generator panel's
+**Microphones used** list. Check one or several microphones to control both
+propagation and playback. Several checked feeds are mixed. Runtime-spawned
+microphones are removed with the panel button or on an episode or world
+change. Every live robot also contributes `<robot_name>_mic`, attached to its
+base TF frame.
 
-The panel's **Static Audio Devices** table lists every scenario- or
+The **Spawn Radio** toolbar button places a static radio or alarm. The panel's
+**Static Audio Devices** table lists every scenario- or
 launch-defined radio and alarm. Check a row to start the whole system and
 uncheck it to stop it. A system can contain several speakers. The listener
 routing controls are applied to human, robot, and environmental playback, so
-the selected, explicit-list, and all-microphones modes also affect radios and
-alarms.
+the checked microphones also affect radios and alarms.
 
 The panel's **Auditory Runtime** controls independently enable simulated
 propagation and local environmental playback. Disabling local playback does

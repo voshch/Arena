@@ -70,6 +70,19 @@ namespace
             normalized.pop_back();
         return normalized;
     }
+
+    bool isRuntimeMicrophoneId(const QString &listener_id)
+    {
+        if (!listener_id.startsWith("microphone"))
+            return false;
+        const QString suffix = listener_id.mid(10);
+        if (suffix.isEmpty())
+            return false;
+        for (const QChar character : suffix)
+            if (!character.isDigit())
+                return false;
+        return true;
+    }
 }
 
 namespace task_generator_gui
@@ -107,7 +120,7 @@ namespace task_generator_gui
         propagation_node = normalizeNodePath(
             task_generator_node + "/sound_propagation_node");
 
-        // All clients go on `node` — rviz spins it continuously.
+        // All clients go on `node` and rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
             task_generator_node + "/query/environments");
         query_parametrizeds_client = node->create_client<task_generator_msgs::srv::QueryParametrizeds>(
@@ -261,7 +274,7 @@ namespace task_generator_gui
                 });
         }
 
-        // Latched state/episode subscription — deduped into history_buffer_.
+        // Latched state/episode subscription deduped into history_buffer_.
         {
             rclcpp::QoS qos(rclcpp::KeepLast(20));
             qos.transient_local();
@@ -301,7 +314,7 @@ namespace task_generator_gui
                 });
         }
 
-        // Latched state/queue subscription — populates widgets when a new queued record arrives.
+        // Latched state/queue subscription populates widgets when a new queued record arrives.
         {
             rclcpp::QoS qos(rclcpp::KeepLast(1));
             qos.transient_local();
@@ -323,7 +336,7 @@ namespace task_generator_gui
                 });
         }
 
-        // Build empty UI shell immediately — dropdowns populated as responses arrive.
+        // Build empty UI shell immediately and populate dropdowns as responses arrive.
         setupUi();
 
         // Bootstrap queries are gated on service readiness so they survive the
@@ -508,9 +521,16 @@ namespace task_generator_gui
             {
                 return motor_playback_parameters_client->service_is_ready()
                     && human_playback_parameters_client->service_is_ready()
-                    && environment_playback_parameters_client->service_is_ready();
+                    && environment_playback_parameters_client->service_is_ready()
+                    && propagation_parameters_client->service_is_ready();
             },
-            [this]() { refreshAudioListenerRouting(); });
+            [this]()
+            {
+                if (audio_listener_selection_pending_)
+                    setAudioListenerRouting();
+                else
+                    refreshAudioListenerRouting();
+            });
         whenReady(
             [this]()
             {
@@ -740,12 +760,34 @@ namespace task_generator_gui
 
     void TaskGeneratorPanel::refreshAudioListenerRouting()
     {
+        if (audio_listener_selection_pending_)
+        {
+            if (motor_playback_parameters_client
+                && human_playback_parameters_client
+                && environment_playback_parameters_client
+                && propagation_parameters_client
+                && motor_playback_parameters_client->service_is_ready()
+                && human_playback_parameters_client->service_is_ready()
+                && environment_playback_parameters_client->service_is_ready()
+                && propagation_parameters_client->service_is_ready())
+            {
+                setAudioListenerRouting();
+                return;
+            }
+            QMetaObject::invokeMethod(this, [this]()
+            {
+                syncAudioListenerRouting({}, false);
+            }, Qt::QueuedConnection);
+            return;
+        }
         if (!motor_playback_parameters_client
             || !human_playback_parameters_client
             || !environment_playback_parameters_client
+            || !propagation_parameters_client
             || !motor_playback_parameters_client->service_is_ready()
             || !human_playback_parameters_client->service_is_ready()
-            || !environment_playback_parameters_client->service_is_ready())
+            || !environment_playback_parameters_client->service_is_ready()
+            || !propagation_parameters_client->service_is_ready())
         {
             QMetaObject::invokeMethod(this, [this]()
             {
@@ -785,7 +827,7 @@ namespace task_generator_gui
         const std::string &data)
     {
         microphone_listener_registry_ = data;
-        if (!audio_listener_id_combobox)
+        if (!audio_listener_multiselect || !audio_listener_id_combobox)
             return;
         const auto document = QJsonDocument::fromJson(
             QByteArray::fromStdString(data));
@@ -797,8 +839,8 @@ namespace task_generator_gui
             return;
         }
 
-        const QString selected = audio_listener_id_combobox->currentText();
-        QString added_listener;
+        const QStringList selected = audio_listener_multiselect->currentText();
+        QStringList next_selected;
         std::set<std::string> listener_ids;
         QStringList listener_items;
         for (const auto &value : document.array())
@@ -806,7 +848,7 @@ namespace task_generator_gui
             if (!value.isString())
                 continue;
             const QString listener_id = value.toString();
-            if (!listener_id.startsWith("microphone:"))
+            if (listener_id.trimmed().isEmpty())
                 continue;
             const std::string id = listener_id.toStdString();
             listener_items.append(listener_id);
@@ -814,58 +856,68 @@ namespace task_generator_gui
             if (microphone_listener_ids_.find(id)
                 == microphone_listener_ids_.end())
             {
-                added_listener = listener_id;
+                next_selected.append(listener_id);
             }
+            else if (selected.contains(listener_id))
+                next_selected.append(listener_id);
         }
         microphone_listener_ids_ = std::move(listener_ids);
 
         {
-            QSignalBlocker blocker(audio_listener_id_combobox);
+            QSignalBlocker selection_blocker(audio_listener_multiselect);
+            QSignalBlocker removal_blocker(audio_listener_id_combobox);
+            const QString removal_selection =
+                audio_listener_id_combobox->currentText();
+            audio_listener_multiselect->clear();
+            audio_listener_multiselect->addItems(listener_items);
+            audio_listener_multiselect->setCurrentText(next_selected);
             audio_listener_id_combobox->clear();
             audio_listener_id_combobox->addItems(listener_items);
-            if (!added_listener.isEmpty())
-            {
-                audio_listener_id_combobox->setCurrentText(added_listener);
-            }
-            else if (audio_listener_id_combobox->findText(selected) >= 0)
-            {
-                audio_listener_id_combobox->setCurrentText(selected);
-            }
+            if (audio_listener_id_combobox->findText(removal_selection) >= 0)
+                audio_listener_id_combobox->setCurrentText(removal_selection);
+            else if (!listener_items.isEmpty())
+                audio_listener_id_combobox->setCurrentIndex(
+                    listener_items.size() - 1);
         }
-        const bool selection_changed =
-            audio_listener_id_combobox->currentText() != selected;
         if (remove_microphone_button)
         {
             remove_microphone_button->setEnabled(
-                !audio_listener_id_combobox->currentText().isEmpty());
+                isRuntimeMicrophoneId(
+                    audio_listener_id_combobox->currentText()));
         }
-        if (selection_changed && !audio_listener_id_combobox->currentText().isEmpty())
+        if (next_selected != selected)
             setAudioListenerRouting();
     }
 
     void TaskGeneratorPanel::setAudioListenerRouting()
     {
-        if (!audio_listener_mode_combobox
-            || !audio_listener_id_combobox
-            || !audio_listener_ids_edit)
+        if (!audio_listener_multiselect)
             return;
         if (!motor_playback_parameters_client->service_is_ready()
             || !human_playback_parameters_client->service_is_ready()
-            || !environment_playback_parameters_client->service_is_ready())
+            || !environment_playback_parameters_client->service_is_ready()
+            || !propagation_parameters_client->service_is_ready())
         {
+            audio_listener_selection_pending_ = true;
             refreshAudioListenerRouting();
             return;
         }
+        audio_listener_selection_pending_ = false;
+        const QStringList selected = audio_listener_multiselect->currentText();
+        QJsonArray selected_json;
+        for (const auto &listener_id : selected)
+            selected_json.append(listener_id);
+        const std::string listener_ids = QJsonDocument(selected_json)
+            .toJson(QJsonDocument::Compact)
+            .toStdString();
         const std::vector<rclcpp::Parameter> parameters{
-            rclcpp::Parameter(
-                "listener_mode",
-                audio_listener_mode_combobox->currentData().toString().toStdString()),
+            rclcpp::Parameter("listener_mode", "list"),
             rclcpp::Parameter(
                 "listener_id",
-                audio_listener_id_combobox->currentText().toStdString()),
-            rclcpp::Parameter(
-                "listener_ids",
-                audio_listener_ids_edit->text().toStdString()),
+                selected.isEmpty()
+                    ? std::string()
+                    : selected.front().toStdString()),
+            rclcpp::Parameter("listener_ids", listener_ids),
         };
         audio_listener_group->setEnabled(false);
         auto set_parameters = [this, parameters](
@@ -909,6 +961,9 @@ namespace task_generator_gui
         set_parameters(
             environment_playback_parameters_client,
             "environmental_sound_playback");
+        propagation_parameters_client->set_parameters(
+            {rclcpp::Parameter("active_microphone_ids", listener_ids)},
+            [this](auto) { refreshAudioListenerRouting(); });
     }
 
     void TaskGeneratorPanel::syncAudioListenerRouting(
@@ -920,19 +975,36 @@ namespace task_generator_gui
         audio_listener_group->setEnabled(available);
         if (!available || parameters.size() != 3)
             return;
-        QSignalBlocker mode_blocker(audio_listener_mode_combobox);
-        QSignalBlocker id_blocker(audio_listener_id_combobox);
-        QSignalBlocker ids_blocker(audio_listener_ids_edit);
+        QSignalBlocker selection_blocker(audio_listener_multiselect);
         const QString mode = QString::fromStdString(parameters[0].as_string());
-        const int mode_index = audio_listener_mode_combobox->findData(mode);
-        if (mode_index >= 0)
-            audio_listener_mode_combobox->setCurrentIndex(mode_index);
-        audio_listener_id_combobox->setCurrentText(
-            QString::fromStdString(parameters[1].as_string()));
-        audio_listener_ids_edit->setText(
-            QString::fromStdString(parameters[2].as_string()));
-        audio_listener_id_combobox->setEnabled(mode == "selected");
-        audio_listener_ids_edit->setEnabled(mode == "list");
+        QStringList selected;
+        if (mode == "all")
+        {
+            for (const auto &listener_id : microphone_listener_ids_)
+                selected.append(QString::fromStdString(listener_id));
+        }
+        else if (mode == "selected")
+        {
+            const QString listener_id =
+                QString::fromStdString(parameters[1].as_string());
+            if (!listener_id.isEmpty())
+                selected.append(listener_id);
+        }
+        else
+        {
+            const auto document = QJsonDocument::fromJson(
+                QByteArray::fromStdString(parameters[2].as_string()));
+            if (document.isArray())
+            {
+                for (const auto &value : document.array())
+                {
+                    if (value.isString())
+                        selected.append(value.toString());
+                }
+            }
+        }
+        audio_listener_multiselect->ResetSelection();
+        audio_listener_multiselect->setCurrentText(selected);
     }
 
     void TaskGeneratorPanel::refreshAuditoryControls()
@@ -1209,7 +1281,7 @@ namespace task_generator_gui
 
     void TaskGeneratorPanel::setupUi()
     {
-        // World combobox — disabled until worlds arrive.
+        // World combobox is disabled until worlds arrive.
         world_combobox = setupComboBoxWithLabel(this->root_layout, QStringList{"Loading..."}, QString("World"));
         world_combobox->setEnabled(false);
         connect(world_combobox, &QComboBox::currentTextChanged, this, &TaskGeneratorPanel::onWorldChanged);
@@ -1241,54 +1313,26 @@ namespace task_generator_gui
         auditory_controls_group->setLayout(auditory_controls_layout);
         root_layout->addWidget(auditory_controls_group);
 
-        audio_listener_group = new QGroupBox("Audio Playback Listener");
+        audio_listener_group = new QGroupBox("Microphone Routing");
         audio_listener_group->setEnabled(false);
         auto audio_listener_layout = new QFormLayout();
-        audio_listener_mode_combobox = new QComboBox();
-        audio_listener_mode_combobox->addItem(
-            "Selected", QString("selected"));
-        audio_listener_mode_combobox->addItem(
-            "Explicit list", QString("list"));
-        audio_listener_mode_combobox->addItem(
-            "All microphones", QString("all"));
+        audio_listener_multiselect = new MultiSelectComboBox();
+        audio_listener_multiselect->SetPlaceHolderText(
+            "Select one or more microphones");
+        audio_listener_multiselect->SetSearchBarPlaceHolderText(
+            "Find microphone");
         audio_listener_id_combobox = new QComboBox();
-        audio_listener_id_combobox->setEditable(true);
-        audio_listener_id_combobox->setInsertPolicy(QComboBox::NoInsert);
-        if (!microphone_listener_registry_.empty())
-            updateMicrophoneListeners(microphone_listener_registry_);
-        audio_listener_ids_edit = new QLineEdit("[]");
-        audio_listener_ids_edit->setPlaceholderText(
-            "[microphone:zone:reception:ceiling:1]");
         connect(
-            audio_listener_mode_combobox,
-            &QComboBox::currentTextChanged,
-            this,
-            [this]()
-            {
-                const QString mode =
-                    audio_listener_mode_combobox->currentData().toString();
-                audio_listener_id_combobox->setEnabled(mode == "selected");
-                audio_listener_ids_edit->setEnabled(mode == "list");
-                setAudioListenerRouting();
-            });
-        connect(
-            audio_listener_id_combobox,
-            QOverload<int>::of(&QComboBox::activated),
-            this,
-            [this](int) { setAudioListenerRouting(); });
-        connect(
-            audio_listener_id_combobox->lineEdit(),
-            &QLineEdit::editingFinished,
+            audio_listener_multiselect,
+            &MultiSelectComboBox::selectionChanged,
             this,
             &TaskGeneratorPanel::setAudioListenerRouting);
-        connect(
-            audio_listener_ids_edit,
-            &QLineEdit::editingFinished,
-            this,
-            &TaskGeneratorPanel::setAudioListenerRouting);
-        audio_listener_layout->addRow("Mode", audio_listener_mode_combobox);
-        audio_listener_layout->addRow("Listener", audio_listener_id_combobox);
-        audio_listener_layout->addRow("Listener IDs", audio_listener_ids_edit);
+        audio_listener_layout->addRow(
+            "Microphones used",
+            audio_listener_multiselect);
+        audio_listener_layout->addRow(
+            "Microphone to remove",
+            audio_listener_id_combobox);
         remove_microphone_button = new QPushButton(
             "Remove selected runtime microphone");
         remove_microphone_button->setEnabled(false);
@@ -1304,9 +1348,11 @@ namespace task_generator_gui
             [this](const QString &listener_id)
             {
                 remove_microphone_button->setEnabled(
-                    !listener_id.isEmpty());
+                    isRuntimeMicrophoneId(listener_id));
             });
         audio_listener_layout->addRow(remove_microphone_button);
+        if (!microphone_listener_registry_.empty())
+            updateMicrophoneListeners(microphone_listener_registry_);
         audio_listener_group->setLayout(audio_listener_layout);
         root_layout->addWidget(audio_listener_group);
 

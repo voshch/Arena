@@ -18,6 +18,8 @@ using namespace std::chrono_literals;
 
 SpawnAudioSourceTool::SpawnAudioSourceTool()
 {
+  shortcut_key_ = 'r';
+
   target_node_property_ = new rviz_common::properties::StringProperty(
     "Target", "/task_generator_node",
     "Node providing runtime/spawn_audio_source.",

@@ -301,13 +301,13 @@ def test_spawn_microphone_srv():
     assert req.attached_frame == "robot/base_link"
 
     res = SpawnMicrophone.Response()
-    res.listener_id = "microphone:zone:reception:placed:1"
+    res.listener_id = "microphone1"
     res.zone = "reception"
     res.attached_frame = "robot/base_link"
     res.success = True
     res.error_msg = ""
 
-    assert res.listener_id == "microphone:zone:reception:placed:1"
+    assert res.listener_id == "microphone1"
     assert res.zone == "reception"
     assert res.attached_frame == "robot/base_link"
     assert res.success is True
