@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import math
 import threading
-from dataclasses import dataclass
+import traceback
+from dataclasses import dataclass, replace
 
 import rclpy
 import tf2_ros
@@ -18,6 +19,7 @@ from arena_simulation_setup.tree.World.Scenario import (
 from arena_simulation_setup.utils.cattrs import converter
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Point, Vector3
+from rclpy.clock import Clock, ClockType
 from task_generator_msgs.msg import (
     AudioSystemState,
     ContinuousAudioSourceState,
@@ -60,6 +62,9 @@ class Mod_AudioSystems(TM_Module):
         self._systems_lock = threading.RLock()
         self._systems: dict[str, _RuntimeSystem] = {}
         self._runtime_system_ids: set[str] = set()
+        self._pending_system_states: list[
+            tuple[str, _RuntimeSystem, bool]
+        ] = []
         self._source_publisher = self.node.create_publisher(
             ContinuousAudioSourceState,
             self.node.service_namespace("continuous_audio_sources"),
@@ -85,7 +90,11 @@ class Mod_AudioSystems(TM_Module):
             self.node.service_namespace("runtime", "remove_audio_system"),
             self._remove_audio_system,
         )
-        self._timer = self.node.create_timer(0.1, self._publish_sources)
+        self._timer = self.node.create_timer(
+            0.1,
+            self._publish_sources,
+            clock=Clock(clock_type=ClockType.STEADY_TIME),
+        )
 
     def after_reset(self) -> None:
         with self._systems_lock:
@@ -132,7 +141,6 @@ class Mod_AudioSystems(TM_Module):
                     program_start_time=start_time,
                 )
 
-            self._publish_sources()
             self._publish_system_states()
             loaded_system_count = len(self._systems)
         origin = (
@@ -256,12 +264,26 @@ class Mod_AudioSystems(TM_Module):
             if active and not runtime.active:
                 runtime.program_start_time = self.node.get_clock().now().to_msg()
             runtime.active = active
-            self._publish_runtime_system(runtime)
-            self._publish_system_state(system_id, runtime)
+            self._queue_system_state(system_id, runtime)
         response.success = True
         return response
 
     def _spawn_audio_source(
+        self,
+        request: SpawnAudioSource.Request,
+        response: SpawnAudioSource.Response,
+    ) -> SpawnAudioSource.Response:
+        try:
+            return self._spawn_audio_source_impl(request, response)
+        except Exception as exc:
+            self._logger.error(
+                "spawning runtime audio source failed:\n"
+                f"{traceback.format_exc()}"
+            )
+            response.error_msg = f"{type(exc).__name__}: {exc}"
+            return response
+
+    def _spawn_audio_source_impl(
         self,
         request: SpawnAudioSource.Request,
         response: SpawnAudioSource.Response,
@@ -414,8 +436,7 @@ class Mod_AudioSystems(TM_Module):
             )
             self._systems[system_id] = runtime
             self._runtime_system_ids.add(system_id)
-            self._publish_runtime_system(runtime)
-            self._publish_system_state(system_id, runtime)
+            self._queue_system_state(system_id, runtime)
         response.system_id = system_id
         response.success = True
         self._logger.info(
@@ -442,8 +463,7 @@ class Mod_AudioSystems(TM_Module):
                 )
                 return response
             runtime.active = False
-            self._publish_runtime_system(runtime)
-            self._publish_system_state(system_id, runtime, removed=True)
+            self._queue_system_state(system_id, runtime, removed=True)
             self._systems.pop(system_id)
             self._runtime_system_ids.remove(system_id)
         response.success = True
@@ -492,9 +512,27 @@ class Mod_AudioSystems(TM_Module):
         )
 
     def _publish_sources(self) -> None:
+        try:
+            self._publish_sources_impl()
+        except Exception:
+            self._logger.error(
+                "publishing static audio state failed:\n"
+                f"{traceback.format_exc()}"
+            )
+
+    def _publish_sources_impl(self) -> None:
         with self._systems_lock:
-            for runtime in self._systems.values():
+            systems = tuple(replace(runtime) for runtime in self._systems.values())
+            pending_states = tuple(self._pending_system_states)
+        for _, runtime, removed in pending_states:
+            if removed:
                 self._publish_runtime_system(runtime)
+        for runtime in systems:
+            self._publish_runtime_system(runtime)
+        for system_id, runtime, removed in pending_states:
+            self._publish_system_state(system_id, runtime, removed=removed)
+        with self._systems_lock:
+            del self._pending_system_states[:len(pending_states)]
 
     def _publish_runtime_system(self, runtime: _RuntimeSystem) -> None:
         specification = runtime.specification
@@ -533,13 +571,23 @@ class Mod_AudioSystems(TM_Module):
         with self._systems_lock:
             for system_id, runtime in self._systems.items():
                 runtime.active = False
-                self._publish_runtime_system(runtime)
-                self._publish_system_state(system_id, runtime, removed=True)
+                self._queue_system_state(system_id, runtime, removed=True)
 
     def _publish_system_states(self) -> None:
         with self._systems_lock:
             for system_id, runtime in self._systems.items():
-                self._publish_system_state(system_id, runtime)
+                self._queue_system_state(system_id, runtime)
+
+    def _queue_system_state(
+        self,
+        system_id: str,
+        runtime: _RuntimeSystem,
+        removed: bool = False,
+    ) -> None:
+        with self._systems_lock:
+            self._pending_system_states.append(
+                (system_id, replace(runtime), removed)
+            )
 
     def _publish_system_state(
         self,
