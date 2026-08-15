@@ -17,6 +17,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/Heartbeat.msg
   msg/HoldEntry.msg
   msg/HoldRegistry.msg
+  msg/LockstepChannel.msg
+  msg/LockstepHeartbeat.msg
+  msg/LockstepRegistration.msg
+  msg/LockstepStatus.msg
   msg/ShutdownRequest.msg
   msg/WorldExtent.msg
   srv/ClaimEnv.srv
@@ -24,7 +28,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/ConfirmWorld.srv
   srv/DespawnEnv.srv
   srv/LifecycleHold.srv
+  srv/LifecycleStep.srv
   srv/LifecycleUnpauseWindow.srv
+  srv/LockstepRegister.srv
+  srv/LockstepStart.srv
   srv/RegisterEnv.srv
   srv/SpawnEnv.srv
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces rcl_interfaces sensor_msgs

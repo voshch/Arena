@@ -23,6 +23,7 @@ from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Ceiling
 from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.material import MdlUtil
@@ -78,12 +79,15 @@ class GazeboHost(SimLifecycle):
         service_control_world: ClientWrapper,
         service_delete_entity: ClientWrapper,
         logger: rclpy.impl.rcutils_logger.RcutilsLogger,
+        physics_dt: float,
     ) -> None:
         self._node = node
         self._semaphore = semaphore
         self._service_control_world = service_control_world
         self._service_delete_entity = service_delete_entity
         self._logger = logger
+        self._dt = physics_dt
+        self._rtf_boosted = False
 
     async def ensure_ready(self) -> None:
         await self._node.do_launch(
@@ -128,7 +132,28 @@ class GazeboHost(SimLifecycle):
                 traceback.print_exc()
                 return False
 
+    async def _set_physics_rtf(self, value: float) -> None:
+        # gz applies the FULL Physics message: unset fields land as zeros, and a
+        # sparse request zeroes gravity (models levitate), so send world defaults
+        req = (
+            f'real_time_factor: {value}'
+            ', gravity: {x: 0, y: 0, z: -9.8}'
+            ', magnetic_field: {x: 5.5645e-06, y: 2.28758e-05, z: -4.23884e-05}'
+        )
+        process = await asyncio.create_subprocess_exec(
+            'gz', 'service', '-s', '/world/default/set_physics',
+            '--reqtype', 'gz.msgs.Physics', '--reptype', 'gz.msgs.Boolean',
+            '--timeout', '3000', '--req', req,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await process.wait()
+
     async def unpause(self) -> bool:
+        # returning to free-run: restore gz's realtime pacing
+        if self._rtf_boosted:
+            await self._set_physics_rtf(1.0)
+            self._rtf_boosted = False
         async with self._semaphore:
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
@@ -145,6 +170,60 @@ class GazeboHost(SimLifecycle):
                 self._logger.error(f"Error unpausing simulation: {str(e)}")
                 traceback.print_exc()
                 return False
+
+    async def step_seconds(self, seconds: float) -> float:
+        """Advance sim time by paused ControlWorld multi_step requests. Raises on service failure."""
+        n = round(seconds / self._dt)
+        if seconds > 0:
+            n = max(1, n)
+        if n <= 0:
+            return 0.0
+        # gz throttles stepped iterations to real_time_factor x wall clock, so
+        # lift the limiter while stepping drives the sim, unpause() restores it
+        if not self._rtf_boosted:
+            await self._set_physics_rtf(1e6)
+            self._rtf_boosted = True
+        # gz acks multi_step on acceptance and completion is observed via /clock, so
+        # record the target before sending (half-tick slack for float vs ns rounding)
+        target = self._node.sim_time + Time.from_float((n - 0.5) * self._dt)
+        # send in chunks of at most one sim second: pending iterations cannot be
+        # cancelled, so a caller that dies mid-step orphans at most one chunk
+        max_chunk = max(1, round(1.0 / self._dt))
+        # gz silently drops multi_step when the request lands while a previous
+        # batch is still executing (Paused() is false mid-batch), so watch for
+        # motion and resend the remaining ticks whenever the clock freezes
+        while self._node.sim_time < target:
+            start_sim = self._node.sim_time
+            remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
+            chunk = min(max_chunk, remaining)
+            chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
+            await self._send_multi_step(chunk, seconds)
+            last = start_sim
+            stall = 0.0
+            while self._node.sim_time < chunk_target and stall < 1.0:
+                await asyncio.sleep(0.002)
+                if self._node.sim_time > last:
+                    last = self._node.sim_time
+                    stall = 0.0
+                else:
+                    stall += 0.002
+        return n * self._dt
+
+    async def _send_multi_step(self, n: int, seconds: float) -> None:
+        async with self._semaphore:
+            request = ControlWorld.Request()
+            request.world_control = WorldControl()
+            # pause must be set in the same request as multi_step, else gz free-runs.
+            request.world_control.pause = True
+            request.world_control.multi_step = n
+            try:
+                result = await self._service_control_world.call_timeout(request)
+            except Exception as e:
+                self._logger.error(f"Error stepping simulation by {n}: {str(e)}")
+                traceback.print_exc()
+                raise RuntimeError(f"step_seconds({seconds}) failed: {e}") from e
+            if result is None or not result.success:
+                raise RuntimeError(f"step_seconds({seconds}) service call failed")
 
     async def cleanup_namespace(self, prefix: str) -> int:
         names = await self._list_models()
@@ -612,6 +691,9 @@ class GazeboSimulator(BaseSim):
         async with self._semaphore:
             request = ControlWorld.Request()
             request.world_control = WorldControl()
+            # gz queues multi_step only if already paused, so pause is applied first from
+            # this same message, then the runner steps n iterations and re-pauses
+            request.world_control.pause = True
             request.world_control.multi_step = n
             try:
                 result = await self._service_control_world.call_timeout(request)

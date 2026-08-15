@@ -48,6 +48,7 @@ from isaacsim_msgs.srv import (
     SpawnUrdf,
     SpawnUsd,
     SpawnWalls,
+    StepSimulation,
 )
 from task_generator.shared import Ceiling as CeilingDefinition
 from task_generator.shared import (
@@ -148,8 +149,13 @@ def _transform_urdf_for_bridge(
     tree.write(out_path, encoding='utf-8', xml_declaration=True)
 
 
+# matches World(physics_dt=rendering_dt=1/60) pinned in run_isaacsim.py
+_ISAAC_PHYSICS_HZ = 60.0
+
+
 class IsaacHost(SimLifecycle):
     def __init__(self, node: ArenaMixinNode) -> None:
+        self._node = node
         self._logger = node.get_logger().get_child(type(self).__name__)
         self._pause_client: ClientWrapper = node.create_client_wrapper(
             std_srvs.srv.Trigger,
@@ -163,12 +169,17 @@ class IsaacHost(SimLifecycle):
             DeletePrims,
             "/isaac/DeletePrims",
         )
+        self._step_client: ClientWrapper = node.create_client_wrapper(
+            StepSimulation,
+            "/isaac/StepSimulationN",
+        )
 
     async def ensure_ready(self) -> None:
         await asyncio.gather(
             self._pause_client.ensure(),
             self._unpause_client.ensure(),
             self._delete_prims_client.ensure(),
+            self._step_client.ensure(),
         )
 
     async def pause(self) -> bool:
@@ -184,6 +195,17 @@ class IsaacHost(SimLifecycle):
         if not res.ret:
             return 0
         return 1 if res.ret[0] else 0
+
+    async def step_seconds(self, seconds: float) -> float:
+        n = max(1, round(seconds * _ISAAC_PHYSICS_HZ))
+        res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
+        if not res.success:
+            raise RuntimeError(res.error_msg)
+        await self._node.poll(
+            lambda: self._node.sim_time.to_seconds() >= res.target_sim_time,
+            f"isaac sim clock >= {res.target_sim_time:.3f}s",
+        )
+        return n / _ISAAC_PHYSICS_HZ
 
 
 def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Material) -> isaacsim_msgs.msg.Material:
@@ -670,9 +692,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
         return await self._move_entity(prim_name, pose)
 
     async def step(self, n: int = 1) -> bool:
-        async with self.node.unpause_window():
-            await asyncio.sleep(0.01 * n)
-        return True
+        """Unused wall-clock fake, superseded by SimLifecycle.step_seconds."""
+        del n
+        raise NotImplementedError('use sim_lifecycle/step')
 
     async def pedestrian_spawn(self, pedestrians: Sequence[DynamicObstacle]) -> Sequence[bool]:
 

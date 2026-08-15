@@ -322,6 +322,7 @@ class EnvironmentManager(NodeInterface):
         up after new ones have been spawned successfully.
         """
         old_walls, old_doors = self._human_simulator.unuse_world()
+        await self._simulator.remove_mechanisms()
         await self._simulator.remove_world()
         await self.spawn_world_obstacles(world, detected_walls=detected_walls)
         self._human_simulator.remove_stale_world(old_walls, old_doors)

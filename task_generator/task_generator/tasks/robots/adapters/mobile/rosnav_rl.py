@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     import geometry_msgs.msg
 
     from task_generator.manager.robot_manager.robot_manager import RobotManager
+    from task_generator.tasks.robots.adapters import ResetContext
 
 
 @AdapterMeta.attach(
@@ -50,11 +51,17 @@ class RosnavRlAdapter(MobileAdapter):
     ) -> None:
         assert isinstance(phase, GoToPhase), f"RosnavRlAdapter only accepts GOTO_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
+        if self.client.is_done() is False:
+            self.client.cancel()
         goal = GotoPose.Goal()
         goal.target = self._phase_to_pose_stamped(phase, robot)
-        goal.pose_tolerance = float(phase.tolerance_radius or 0.0)
-        goal.yaw_tolerance = float(phase.tolerance_angle or 0.0)
+        goal.pose_tolerance, goal.yaw_tolerance = self._resolve_tolerances(phase, robot)
         await self.client.send_goal(goal)
+
+    async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
+        if self.client.is_done() is False:
+            self.client.cancel()
+        await super().on_reset(robot, ctx)
 
     async def wait_until_ready(
         self,

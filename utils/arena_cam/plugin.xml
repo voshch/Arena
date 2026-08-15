@@ -1,0 +1,17 @@
+<library path="arena_cam">
+  <class name="arena_cam" type="arena_cam.plugin.CamSteering" base_class_type="rqt_gui_py::Plugin">
+    <description>
+      Keyboard flying for the Arena viewport cameras: fly and orbit modes, entity framing, canonical views.
+    </description>
+    <qtgui>
+      <group>
+        <label>Arena</label>
+        <icon type="theme">folder</icon>
+        <statustip>Plugins related to Arena-Rosnav.</statustip>
+      </group>
+      <label>Cam Steering</label>
+      <icon type="file">resource/arena_cam_icon.png</icon>
+      <statustip>Fly the simulator and rviz viewport cameras from the keyboard.</statustip>
+    </qtgui>
+  </class>
+</library>

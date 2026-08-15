@@ -28,7 +28,7 @@ arena_ws workspace. Most verbs forward KEY:=VALUE tokens verbatim to
 the underlying launch file or tool."""
 
 SECTIONS = {
-    "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo"],
+    "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
     "Attach": ["human", "robot", "cam"],
     "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall"],
     "Features": ["feature", "registry"],
@@ -186,7 +186,136 @@ _register(_robot_mod.VERB)
 @verb("cam", passthrough=True)
 def cam(args: list[str]) -> None:
     """Control the simulator viewport camera."""
-    _exec("ros2", "run", "arena_runtime", "cam", *args)
+    _exec("ros2", "run", "arena_cam", "cam", *args)
+
+
+_LOCKSTEP_PRESETS = {
+    "engine": {"name": "engine", "topic": "/arena/{env}/task_generator_node/agent_states", "type": "arena_humansim_msgs/msg/AgentStates", "period_s": 0.05, "hard": True},
+    "peds": {"name": "peds", "topic": "/arena/{env}/arena_peds", "type": "arena_people_msgs/msg/Pedestrians", "period_s": 0.15, "hard": True},
+}
+
+
+def _lockstep_parse_channel(spec: str) -> dict:
+    if spec in _LOCKSTEP_PRESETS:
+        return _LOCKSTEP_PRESETS[spec]
+    fields = spec.split("|")
+    if len(fields) != 5:
+        raise CLIError(f"bad channel spec '{spec}', want name|topic|type|period_s|role")
+    name, topic, type_, period_s, role = fields
+    try:
+        period = float(period_s)
+    except ValueError:
+        raise CLIError(f"bad channel spec '{spec}', period_s must be a number") from None
+    if period <= 0:
+        raise CLIError(f"bad channel spec '{spec}', period_s must be > 0")
+    if role not in ("hard", "soft"):
+        raise CLIError(f"bad channel spec '{spec}', role must be hard or soft")
+    return {"name": name, "topic": topic, "type": type_, "period_s": period, "hard": role == "hard"}
+
+
+def _lockstep_yq(s: str) -> str:
+    """YAML single-quoted scalar, safe for a bash double-quoted string."""
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _lockstep_channel_yaml(c: dict) -> str:
+    return (
+        "{name: " + _lockstep_yq(c["name"])
+        + ", topic: " + _lockstep_yq(c["topic"])
+        + ", type: " + _lockstep_yq(c["type"])
+        + f", period_s: {c['period_s']}, hard: {'true' if c['hard'] else 'false'}}}"
+    )
+
+
+@verb("lockstep")
+def lockstep(args: list[str]) -> None:
+    """Run or inspect the lockstep scheduler.
+
+    `arena lockstep run [rtf:=10] [for:=60] [ungated]` runs the sim in
+    lockstep until Ctrl-C or `for:=` seconds elapse, then pauses (sim stays
+    frozen at the tick boundary; `off` returns to free-run). `on`/`off`
+    start/stop without blocking, `pause`/`resume` freeze and continue a
+    running lockstep, `status` echoes the scheduler's latched status (config,
+    measured RTF, gate state).
+    `rtf:=` paces to a target real-time factor (0 = flat out). `ungated`
+    ignores registered gate channels and free-steps.
+    `arena lockstep gate [engine|peds|CHANNEL ...]` registers the channels
+    the scheduler gates on, under caller "cli" (global, all envs). A CHANNEL
+    is a preset name (engine, peds) or a raw 'name|topic|type|period_s|role'
+    spec; {env} expands per env. No args clears the cli registration.
+    """
+    if not args or args[0] not in ("run", "on", "off", "pause", "resume", "status", "gate"):
+        raise CLIError("lockstep needs one of: run, on, off, pause, resume, status, gate")
+    action, rest = args[0], args[1:]
+    unreachable = "lockstep unreachable"
+
+    def srv_guard(name: str) -> str:
+        return f'ros2 service list 2>/dev/null | grep -qx /arena/sim_lifecycle/lockstep/{name} || {{ echo "{unreachable}"; exit 1; }}'
+
+    if action == "status":
+        _exec(
+            "bash",
+            "-c",
+            f'ros2 topic list 2>/dev/null | grep -qx /arena/state/lockstep || {{ echo "{unreachable}"; exit 1; }};'
+            " ros2 topic echo /arena/state/lockstep --once"
+            " --qos-durability transient_local --qos-reliability reliable",
+        )
+    stop = "ros2 service call /arena/sim_lifecycle/lockstep/stop std_srvs/srv/Trigger >/dev/null 2>&1"
+    if action == "off":
+        _exec("bash", "-c", f'{srv_guard("stop")}; {stop} && echo "lockstep off"')
+    if action in ("pause", "resume"):
+        _exec(
+            "bash",
+            "-c",
+            f"{srv_guard(action)};"
+            f" R=$(ros2 service call /arena/sim_lifecycle/lockstep/{action} std_srvs/srv/Trigger 2>&1);"
+            f' grep -q "success=True" <<< "$R" && echo "lockstep {action}d" || {{ echo "lockstep not running"; exit 1; }}',
+        )
+    if action == "gate":
+        channels = [_lockstep_parse_channel(a) for a in rest]
+        reg = "registration: {caller: 'cli', env: ''" + f", channels: [{', '.join(_lockstep_channel_yaml(c) for c in channels)}]}}"
+        register = (
+            f"{srv_guard('register')};"
+            " R=$(ros2 service call /arena/sim_lifecycle/lockstep/register"
+            f' arena_runtime_msgs/srv/LockstepRegister "{reg}" 2>&1);'
+            ' grep -q "success=True" <<< "$R" || { grep -oE "error_msg=.*" <<< "$R"; exit 1; }'
+        )
+        msg = "cli gates: " + ", ".join(c["name"] for c in channels) if channels else "cli gates cleared"
+        _exec("bash", "-c", f'{register} && echo "{msg}"')
+
+    rtf = duration = None
+    ungated = False
+    for a in rest:
+        if a == "ungated":
+            ungated = True
+        elif a.startswith("rtf:="):
+            rtf = float(a.removeprefix("rtf:="))
+            if rtf <= 0:
+                raise CLIError("rtf:= must be > 0")
+        elif a.startswith("for:="):
+            if action != "run":
+                raise CLIError("for:= only applies to lockstep run")
+            duration = float(a.removeprefix("for:="))
+        else:
+            raise CLIError(f"lockstep {action}: unrecognized argument '{a}'")
+    start_req = f"{{target_rtf: {rtf if rtf is not None else 0.0}, ungated: {'true' if ungated else 'false'}}}"
+    start = (
+        f"{srv_guard('start')};"
+        " R=$(ros2 service call /arena/sim_lifecycle/lockstep/start"
+        f" arena_runtime_msgs/srv/LockstepStart '{start_req}' 2>&1);"
+        ' grep -q "success=True" <<< "$R" || { grep -oE "error_msg=.*" <<< "$R"; exit 1; }'
+    )
+    if action == "on":
+        _exec("bash", "-c", f'{start} && echo "lockstep on"')
+    pause_cmd = "ros2 service call /arena/sim_lifecycle/lockstep/pause std_srvs/srv/Trigger >/dev/null 2>&1"
+    trap_pause = f"ros2 service list 2>/dev/null | grep -qx /arena/sim_lifecycle/lockstep/pause && {pause_cmd}; echo lockstep paused"
+    wait = f"sleep {duration}" if duration is not None else "sleep infinity"
+    _exec(
+        "bash",
+        "-c",
+        f'{start} && echo "lockstep running (ctrl-c to pause)";'
+        f' trap "{trap_pause}" EXIT; trap "exit 0" INT TERM; {wait}',
+    )
 
 
 @verb("preload", passthrough=True)

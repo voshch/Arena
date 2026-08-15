@@ -204,36 +204,29 @@ def generate_launch_description():
             print(f'[gazebo.launch] PedSkeletonPlugin injection failed: {exc}', file=sys.stderr)
             return world_sdf_path
 
-    def _render_gui_config(engine: str) -> str | None:
-        """Derive a gui.config from gz's effective default (~/.gz/sim/8/gui.config) by
-        appending the ViewportCamera plugin and pinning the render engine, written to a
-        temp file for --gui-config. gz only writes that default on its first GUI run, so
-        until it exists we return None (no --gui-config) and the plugin loads from the
-        next launch on."""
-        default = os.path.join(os.path.expanduser('~'), '.gz', 'sim', '8', 'gui.config')
-        if not os.path.isfile(default):
-            print(
-                '[gazebo.launch] no ~/.gz/sim/8/gui.config yet; viewport camera plugin '
-                'loads from the next gz GUI launch',
-                file=sys.stderr,
-            )
-            return None
+    def _render_gui_config(engine: str) -> str:
+        """Render a --gui-config temp file from the user's own ~/.gz layout (else the
+        stock config) with the engine pinned and the ViewportCamera plugin ensured."""
+        user_config = os.path.join(os.path.expanduser('~'), '.gz', 'sim', '8', 'gui.config')
+        checked_in_config = os.path.join(package_root, 'configs', 'gazebo', 'gui.config')
+        base = user_config if os.path.isfile(user_config) else checked_in_config
         try:
-            with open(default) as f:
+            with open(base) as f:
                 content = f.read()
-            # The default pins ogre2; match it to the engine actually selected.
-            content = re.sub(r'<engine>[^<]*</engine>', f'<engine>{engine}</engine>', content)
+        except Exception as exc:
+            print(f'[gazebo.launch] gui.config read failed ({base}): {exc}', file=sys.stderr)
+            content = ''
+        # The default pins ogre2, so match it to the engine actually selected.
+        content = re.sub(r'<engine>[^<]*</engine>', f'<engine>{engine}</engine>', content)
+        if 'Arena viewport camera' not in content:
             # gz config is a flat list of top-level elements, so append the plugin verbatim.
             content = content.rstrip() + '\n\n' + _VIEWPORT_GUI_PLUGIN.strip() + '\n'
-            tmp = tempfile.NamedTemporaryFile(
-                mode='w', suffix='.config', delete=False, prefix='arena_gui_',
-            )
-            tmp.write(content)
-            tmp.close()
-            return tmp.name
-        except Exception as exc:
-            print(f'[gazebo.launch] gui.config derive failed: {exc}', file=sys.stderr)
-            return None
+        tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.config', delete=False, prefix='arena_gui_',
+        )
+        tmp.write(content)
+        tmp.close()
+        return tmp.name
 
     def _launch_gazebo(context, *args, **kwargs):
         resolved_world = context.perform_substitution(world_path)
@@ -246,9 +239,7 @@ def generate_launch_description():
         if headless_val.lower() in ("true", "1"):
             gz_args += " -s"
         else:
-            gui_config = _render_gui_config(engine)
-            if gui_config is not None:
-                gz_args += f" --gui-config {gui_config}"
+            gz_args += f" --gui-config {_render_gui_config(engine)}"
         include = IncludeLaunchDescription(
             PathJoinSubstitution([
                 FindPackageShare('ros_gz_sim'),

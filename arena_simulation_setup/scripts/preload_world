@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 """Preload all assets referenced by a world via the standard arena_models resolvers.
 
-Resolves every Material/Object/Pedestrian/Wall identifier that appears in the
+Resolves every Material/Object/Human/Wall identifier that appears in the
 world description and its scenarios. The normal resolver chain
 (world-local → shared local → network provider) downloads any missing assets
 to disk under ``ARENA_ASSETS_DIR/<provider>``.
@@ -17,8 +17,8 @@ from pathlib import Path
 
 import yaml
 from arena_simulation_setup.tree import DynamicPaths, Identifier
+from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
-from arena_simulation_setup.tree.assets.Pedestrian import PedestrianIdentifier
 from arena_simulation_setup.tree.Wall import WallIdentifier
 from arena_simulation_setup.tree.World import (
     MultiLevelWorldView,
@@ -80,7 +80,7 @@ def _scenario_identifiers(scenario_path: Path) -> list[Identifier]:
     for entry in dynamic_entries:
         if isinstance(entry, dict) and 'model' in entry:
             try:
-                out.append(PedestrianIdentifier.parse(entry['model']))
+                out.append(HumanIdentifier.parse(entry['model']))
             except Exception as exc:
                 print(f'  skip dynamic model {entry.get("model")!r}: {exc}', file=sys.stderr)
 

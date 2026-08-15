@@ -19,6 +19,7 @@ from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime.constants import SimSimulator
 from arena_runtime.sim import BaseSim
+from arena_runtime_msgs.msg import LockstepChannel
 from geometry_msgs.msg import Point
 from hunav_msgs.msg import Agent, AgentBehavior, Agents, WallSegment
 from hunav_msgs.srv import ComputeAgent, ComputeAgents, GetAgents, GetWalls, MoveAgent
@@ -168,6 +169,18 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
         self._logger.debug("Service wait complete")
 
         self._logger.debug("=== HUNAVMANAGER INIT COMPLETE ===")
+
+        await self._register_lockstep_channels(
+            [
+                LockstepChannel(
+                    name="roster",
+                    topic=str(self._namespace("arena_peds")),
+                    type="arena_people_msgs/msg/Pedestrians",
+                    period_s=0.15,
+                    hard=True,
+                ),
+            ]
+        )
 
         self._update_loop_task = asyncio.create_task(self._move_entity_loop())
         self._publish_loop_task = asyncio.create_task(self._publish_arena_peds_loop())
@@ -750,6 +763,7 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
                         for ped in self._arena_pedestrians_container.pedestrians:
                             self._logger.debug(f"Publishing pedestrian {ped.name} at ({ped.pose.position.x}, {ped.pose.position.y}) with velocity ({ped.twist.linear.x}, {ped.twist.linear.y})")
 
+                        self._arena_pedestrians_container.header.stamp = self.node.sim_time.to_msg()
                         self.publish_arena_peds(self._arena_pedestrians_container)
                         self._publish_wall_markers()
 

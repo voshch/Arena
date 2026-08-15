@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, ClassVar
 from arena_robots.bringup.mobile.drl import DrlBringup
 from arena_robots.clients.goto_pose import GotoPoseClient
 from arena_robots.task_kinds import TaskKind
+from arena_robots_msgs.action import GotoPose
 from launch.actions import GroupAction
 
 from task_generator.tasks.robots.adapters import AdapterCtx, AdapterMeta
@@ -17,6 +18,7 @@ from task_generator.tasks.robots.adapters.mobile import MobileAdapter
 from task_generator.tasks.robots.request import GoToPhase, TaskPhase
 
 if TYPE_CHECKING:
+    import geometry_msgs.msg
     from rclpy.impl.rcutils_logger import RcutilsLogger
 
     from task_generator.manager.robot_manager.robot_manager import RobotManager
@@ -288,6 +290,26 @@ class DrlAdapter(MobileAdapter):
                 },
             )
 
+        if self.client.is_done() is False:
+            self.client.cancel()
+        goal = GotoPose.Goal()
+        goal.target = self._phase_to_pose_stamped(phase, robot)
+        goal.pose_tolerance, goal.yaw_tolerance = self._resolve_tolerances(phase, robot)
+        await self.client.send_goal(goal)
+
+    def _phase_to_pose_stamped(
+        self,
+        phase: GoToPhase,
+        robot: RobotManager,
+    ) -> geometry_msgs.msg.PoseStamped:
+        import geometry_msgs.msg
+
+        msg = geometry_msgs.msg.PoseStamped()
+        msg.header.frame_id = "map"
+        msg.header.stamp = robot.node.sim_time.to_msg()
+        msg.pose = phase.pose.to_msg()
+        return msg
+
     def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
         return None
 
@@ -296,6 +318,8 @@ class DrlAdapter(MobileAdapter):
     # ------------------------------------------------------------------
 
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
+        if self.client.is_done() is False:
+            self.client.cancel()
         await super().on_reset(robot, ctx)
         if self._edge_node is not None and self._current_phase is not None:
             await self._edge_node.request_reset(
