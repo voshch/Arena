@@ -315,6 +315,17 @@ The RViz dropdown applies one microphone ID to propagation,
 `environmental_sound_playback`. For a non-RViz workflow, set
 `audio_listener_id:=robot1_mic` or another registered microphone ID at launch.
 
+When the simulator viewport publishes `/arena/viewport/camera_pose`, two more
+listeners appear in the same dropdown:
+
+- `microphone:viewport:projective_center` follows the camera position.
+- `microphone:viewport:down_projection` follows the camera x/y position at
+  `audio_viewport_down_projection_height_m`, which defaults to 1.6 m.
+
+Selecting either listener detaches workstation playback from the robot
+microphone. Viewport microphones are available only when the simulator GUI
+publishes the viewport pose.
+
 ## Pyroomacoustics portal routing
 
 Enable the pyroomacoustics backend and optional RViz path visualizer with:

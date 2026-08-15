@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import threading
 from dataclasses import dataclass
 
 import rclpy
@@ -56,6 +57,7 @@ class Mod_AudioSystems(TM_Module):
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
+        self._systems_lock = threading.RLock()
         self._systems: dict[str, _RuntimeSystem] = {}
         self._runtime_system_ids: set[str] = set()
         self._source_publisher = self.node.create_publisher(
@@ -86,9 +88,10 @@ class Mod_AudioSystems(TM_Module):
         self._timer = self.node.create_timer(0.1, self._publish_sources)
 
     def after_reset(self) -> None:
-        self._publish_removed_sources()
-        self._systems.clear()
-        self._runtime_system_ids.clear()
+        with self._systems_lock:
+            self._publish_removed_sources()
+            self._systems.clear()
+            self._runtime_system_ids.clear()
 
         world_name = self._ctx.world_manager.loaded_world
         scenario_name = str(
@@ -118,25 +121,27 @@ class Mod_AudioSystems(TM_Module):
                 f"and launch configuration: {duplicates}"
             )
 
-        for specification in specifications:
-            emitters = self._resolve_emitters(specification, world)
-            start_time = self.node.get_clock().now().to_msg()
-            self._systems[specification.name] = _RuntimeSystem(
-                specification=specification,
-                emitters=emitters,
-                active=specification.initially_active,
-                program_start_time=start_time,
-            )
+        with self._systems_lock:
+            for specification in specifications:
+                emitters = self._resolve_emitters(specification, world)
+                start_time = self.node.get_clock().now().to_msg()
+                self._systems[specification.name] = _RuntimeSystem(
+                    specification=specification,
+                    emitters=emitters,
+                    active=specification.initially_active,
+                    program_start_time=start_time,
+                )
 
-        self._publish_sources()
-        self._publish_system_states()
+            self._publish_sources()
+            self._publish_system_states()
+            loaded_system_count = len(self._systems)
         origin = (
             f"scenario {scenario_name!r} and launch configuration"
             if scenario_name in available_scenarios
             else "launch configuration"
         )
         self._logger.info(
-            f"loaded {len(self._systems)} static audio system(s) from {origin}"
+            f"loaded {loaded_system_count} static audio system(s) from {origin}"
         )
 
     def _configured_systems(self) -> list[AudioSystem]:
@@ -242,16 +247,17 @@ class Mod_AudioSystems(TM_Module):
         response: SetAudioSystem.Response,
     ) -> SetAudioSystem.Response:
         system_id = str(request.system_id).strip()
-        runtime = self._systems.get(system_id)
-        if runtime is None:
-            response.error_msg = f"unknown audio system {system_id!r}"
-            return response
-        active = bool(request.active)
-        if active and not runtime.active:
-            runtime.program_start_time = self.node.get_clock().now().to_msg()
-        runtime.active = active
-        self._publish_runtime_system(runtime)
-        self._publish_system_state(system_id, runtime)
+        with self._systems_lock:
+            runtime = self._systems.get(system_id)
+            if runtime is None:
+                response.error_msg = f"unknown audio system {system_id!r}"
+                return response
+            active = bool(request.active)
+            if active and not runtime.active:
+                runtime.program_start_time = self.node.get_clock().now().to_msg()
+            runtime.active = active
+            self._publish_runtime_system(runtime)
+            self._publish_system_state(system_id, runtime)
         response.success = True
         return response
 
@@ -360,55 +366,56 @@ class Mod_AudioSystems(TM_Module):
             response.error_msg = "audio source height cannot be below the floor"
             return response
 
-        index = 1
-        while f"runtime_{mode}_{index}" in self._systems:
-            index += 1
-        system_id = f"runtime_{mode}_{index}"
-        emitter_name = "radio" if mode == "music" else "alarm"
-        emitter = AudioEmitter(
-            name=emitter_name,
-            position=Position(
-                float(map_position.x),
-                float(map_position.y),
-                float(map_position.z),
-            ),
-            source_volume_db=source_volume_db,
-        )
-        specification = AudioSystem(
-            name=system_id,
-            sound_type=mode,
-            asset_id=asset_id,
-            emitters=[emitter],
-            loop=loop,
-            initially_active=initially_active,
-            semantic_tags=["runtime", *semantic_tags],
-        )
-        qx, qy, qz, qw = map_orientation
-        yaw = math.atan2(
-            2.0 * (qw * qz + qx * qy),
-            1.0 - 2.0 * (qy**2 + qz**2),
-        )
-        resolved = _ResolvedEmitter(
-            source_id=f"environment:{system_id}:{emitter_name}",
-            name=emitter_name,
-            position=Point(
-                x=float(map_position.x),
-                y=float(map_position.y),
-                z=float(map_position.z),
-            ),
-            yaw=float(yaw),
-            source_volume_db=source_volume_db,
-        )
-        runtime = _RuntimeSystem(
-            specification=specification,
-            emitters=(resolved,),
-            active=initially_active,
-            program_start_time=self.node.get_clock().now().to_msg(),
-        )
-        self._systems[system_id] = runtime
-        self._runtime_system_ids.add(system_id)
-        self._publish_runtime_system(runtime)
-        self._publish_system_state(system_id, runtime)
+        with self._systems_lock:
+            index = 1
+            while f"runtime_{mode}_{index}" in self._systems:
+                index += 1
+            system_id = f"runtime_{mode}_{index}"
+            emitter_name = "radio" if mode == "music" else "alarm"
+            emitter = AudioEmitter(
+                name=emitter_name,
+                position=Position(
+                    float(map_position.x),
+                    float(map_position.y),
+                    float(map_position.z),
+                ),
+                source_volume_db=source_volume_db,
+            )
+            specification = AudioSystem(
+                name=system_id,
+                sound_type=mode,
+                asset_id=asset_id,
+                emitters=[emitter],
+                loop=loop,
+                initially_active=initially_active,
+                semantic_tags=["runtime", *semantic_tags],
+            )
+            qx, qy, qz, qw = map_orientation
+            yaw = math.atan2(
+                2.0 * (qw * qz + qx * qy),
+                1.0 - 2.0 * (qy**2 + qz**2),
+            )
+            resolved = _ResolvedEmitter(
+                source_id=f"environment:{system_id}:{emitter_name}",
+                name=emitter_name,
+                position=Point(
+                    x=float(map_position.x),
+                    y=float(map_position.y),
+                    z=float(map_position.z),
+                ),
+                yaw=float(yaw),
+                source_volume_db=source_volume_db,
+            )
+            runtime = _RuntimeSystem(
+                specification=specification,
+                emitters=(resolved,),
+                active=initially_active,
+                program_start_time=self.node.get_clock().now().to_msg(),
+            )
+            self._systems[system_id] = runtime
+            self._runtime_system_ids.add(system_id)
+            self._publish_runtime_system(runtime)
+            self._publish_system_state(system_id, runtime)
         response.system_id = system_id
         response.success = True
         self._logger.info(
@@ -424,20 +431,21 @@ class Mod_AudioSystems(TM_Module):
         response: RemoveAudioSystem.Response,
     ) -> RemoveAudioSystem.Response:
         system_id = str(request.system_id).strip()
-        runtime = self._systems.get(system_id)
-        if runtime is None:
-            response.error_msg = f"unknown audio system {system_id!r}"
-            return response
-        if system_id not in self._runtime_system_ids:
-            response.error_msg = (
-                "scenario and launch-configured audio systems cannot be removed"
-            )
-            return response
-        runtime.active = False
-        self._publish_runtime_system(runtime)
-        self._publish_system_state(system_id, runtime, removed=True)
-        self._systems.pop(system_id)
-        self._runtime_system_ids.remove(system_id)
+        with self._systems_lock:
+            runtime = self._systems.get(system_id)
+            if runtime is None:
+                response.error_msg = f"unknown audio system {system_id!r}"
+                return response
+            if system_id not in self._runtime_system_ids:
+                response.error_msg = (
+                    "scenario and launch-configured audio systems cannot be removed"
+                )
+                return response
+            runtime.active = False
+            self._publish_runtime_system(runtime)
+            self._publish_system_state(system_id, runtime, removed=True)
+            self._systems.pop(system_id)
+            self._runtime_system_ids.remove(system_id)
         response.success = True
         return response
 
@@ -484,8 +492,9 @@ class Mod_AudioSystems(TM_Module):
         )
 
     def _publish_sources(self) -> None:
-        for runtime in self._systems.values():
-            self._publish_runtime_system(runtime)
+        with self._systems_lock:
+            for runtime in self._systems.values():
+                self._publish_runtime_system(runtime)
 
     def _publish_runtime_system(self, runtime: _RuntimeSystem) -> None:
         specification = runtime.specification
@@ -521,14 +530,16 @@ class Mod_AudioSystems(TM_Module):
             self._source_publisher.publish(msg)
 
     def _publish_removed_sources(self) -> None:
-        for system_id, runtime in self._systems.items():
-            runtime.active = False
-            self._publish_runtime_system(runtime)
-            self._publish_system_state(system_id, runtime, removed=True)
+        with self._systems_lock:
+            for system_id, runtime in self._systems.items():
+                runtime.active = False
+                self._publish_runtime_system(runtime)
+                self._publish_system_state(system_id, runtime, removed=True)
 
     def _publish_system_states(self) -> None:
-        for system_id, runtime in self._systems.items():
-            self._publish_system_state(system_id, runtime)
+        with self._systems_lock:
+            for system_id, runtime in self._systems.items():
+                self._publish_system_state(system_id, runtime)
 
     def _publish_system_state(
         self,

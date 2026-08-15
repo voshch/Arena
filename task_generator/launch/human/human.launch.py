@@ -113,6 +113,11 @@ def generate_launch_description():
         default_value="[]",
     )
 
+    audio_viewport_down_projection_height_m = LaunchArgument(
+        name="audio_viewport_down_projection_height_m",
+        default_value="1.6",
+    )
+
     motor_playback_mode = LaunchArgument(
         name="motor_playback_mode",
         choices=["sequence", "single_loop"],
@@ -242,6 +247,10 @@ def generate_launch_description():
                         "continuous_heard_sounds",
                     "robot_microphones":
                         audio_robot_microphones.param_value(str),
+                    "viewport_down_projection_height_m":
+                        audio_viewport_down_projection_height_m.param_value(
+                            float
+                        ),
                     "active_microphone_id":
                         audio_listener_id.substitution,
                     "microphone_listeners_topic":
