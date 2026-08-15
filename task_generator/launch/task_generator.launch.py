@@ -295,34 +295,12 @@ def generate_launch_description():
             "existing WAV sequence. Other robot models always use WAVs."
         ),
     )
-    audio_listener_robot = LaunchArgument(
-        name="audio_listener_robot",
-        default_value="jackal",
-        description="Robot instance name whose microphone feeds playback.",
-    )
     audio_listener_id = LaunchArgument(
         name="audio_listener_id",
         default_value="",
         description=(
-            "Listener ID that feeds playback, for example "
-            "microphone:zone:reception:ceiling:1. "
-            "Empty uses robot:<audio_listener_robot>."
-        ),
-    )
-    audio_listener_mode = LaunchArgument(
-        name="audio_listener_mode",
-        choices=["selected", "list", "all"],
-        default_value="selected",
-        description=(
-            "Playback one listener, an explicit listener list, or all "
-            "registered microphones."
-        ),
-    )
-    audio_listener_ids = LaunchArgument(
-        name="audio_listener_ids",
-        default_value="[]",
-        description=(
-            "YAML listener ID list used when audio_listener_mode:=list."
+            "One microphone ID that feeds playback, for example "
+            "robot1_mic or microphone1. RViz selects it when empty."
         ),
     )
     audio_robot_microphones = LaunchArgument(
@@ -493,10 +471,7 @@ def generate_launch_description():
                 ),
                 "motor_playback_mode": motor_playback_mode.substitution,
                 "motor_audio_mode": motor_audio_mode.substitution,
-                "audio_listener_robot": audio_listener_robot.substitution,
                 "audio_listener_id": audio_listener_id.substitution,
-                "audio_listener_mode": audio_listener_mode.substitution,
-                "audio_listener_ids": audio_listener_ids.substitution,
                 "audio_robot_microphones":
                     audio_robot_microphones.substitution,
             }.items(),

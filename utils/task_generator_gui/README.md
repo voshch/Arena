@@ -76,19 +76,18 @@ Set `Attach TF Frame` to a frame from the RViz TF tree to make the listener
 follow that frame. The clicked point is converted into an offset in the named
 frame. Leaving the property empty creates a fixed listener.
 
-The new ID appears and is checked automatically in the Task Generator panel's
-**Microphones used** list. Check one or several microphones to control both
-propagation and playback. Several checked feeds are mixed. Runtime-spawned
-microphones are removed with the panel button or on an episode or world
-change. Every live robot also contributes `<robot_name>_mic`, attached to its
-base TF frame.
+The new ID appears in the Task Generator panel's **Audio Playback Microphone**
+dropdown. Choose it under **Listen through** to route propagation and playback
+through that microphone only. Runtime-spawned microphones are cleared on an
+episode or world change. Every live robot also contributes
+`<robot_name>_mic`, attached to its base TF frame.
 
 The **Spawn Radio** toolbar button places a static radio or alarm. The panel's
 **Static Audio Devices** table lists every scenario- or
 launch-defined radio and alarm. Check a row to start the whole system and
 uncheck it to stop it. A system can contain several speakers. The listener
-routing controls are applied to human, robot, and environmental playback, so
-the checked microphones also affect radios and alarms.
+routing control is applied to human, robot, and environmental playback, so the
+selected microphone also applies to radios and alarms.
 
 The panel's **Auditory Runtime** controls independently enable simulated
 propagation and local environmental playback. Disabling local playback does

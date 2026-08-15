@@ -90,7 +90,7 @@ class SoundPropagationNode(Node):
         )
         self.declare_parameter("robot_microphones", "[]")
         self.declare_parameter("enable_propagation", True)
-        self.declare_parameter("active_microphone_ids", "all")
+        self.declare_parameter("active_microphone_id", "")
         self.declare_parameter(
             "microphone_listeners_topic",
             "microphone_listeners",
@@ -329,23 +329,13 @@ class SoundPropagationNode(Node):
     ) -> SetParametersResult:
         for parameter in parameters:
             if parameter.name != "enable_propagation":
-                if parameter.name == "active_microphone_ids":
+                if parameter.name == "active_microphone_id":
                     if parameter.type_ != Parameter.Type.STRING:
                         return SetParametersResult(
                             successful=False,
-                            reason="active_microphone_ids must be a string",
+                            reason="active_microphone_id must be a string",
                         )
-                    try:
-                        selected = self._parse_active_microphone_ids(
-                            str(parameter.value)
-                        )
-                    except ValueError as exc:
-                        return SetParametersResult(
-                            successful=False,
-                            reason=str(exc),
-                        )
-                    if selected is not None:
-                        self._stop_continuous_outputs(selected)
+                    self._stop_continuous_outputs(str(parameter.value).strip())
                 continue
             if parameter.type_ != Parameter.Type.BOOL:
                 return SetParametersResult(
@@ -358,7 +348,7 @@ class SoundPropagationNode(Node):
 
     def _stop_continuous_outputs(
         self,
-        active_listener_ids: set[str] | None = None,
+        active_microphone_id: str | None = None,
     ) -> None:
         microphone_ids = (
             set(self._robot_microphones)
@@ -366,10 +356,10 @@ class SoundPropagationNode(Node):
             | set(self._spawned_microphones)
         )
         for key, previous in tuple(self._last_continuous_outputs.items()):
-            if active_listener_ids is not None:
+            if active_microphone_id is not None:
                 if key[1] not in microphone_ids:
                     continue
-                if key[1] in active_listener_ids:
+                if key[1] == active_microphone_id:
                     continue
             stopped = copy.deepcopy(previous)
             stopped.header.stamp = self.get_clock().now().to_msg()
@@ -377,20 +367,6 @@ class SoundPropagationNode(Node):
             stopped.audible = False
             self._last_continuous_outputs[key] = stopped
             self._continuous_heard_pub.publish(stopped)
-
-    @staticmethod
-    def _parse_active_microphone_ids(raw: str) -> set[str] | None:
-        if raw.strip().lower() == "all":
-            return None
-        configured = yaml.safe_load(raw) if raw.strip() else []
-        if not isinstance(configured, list) or not all(
-            isinstance(listener_id, str) and listener_id.strip()
-            for listener_id in configured
-        ):
-            raise ValueError(
-                "active_microphone_ids must be 'all' or a YAML string list"
-            )
-        return {listener_id.strip() for listener_id in configured}
 
     def _cb_peds(self, msg: Pedestrians) -> None:
         self._peds = {int(p.id): p for p in msg.pedestrians}
@@ -1275,16 +1251,12 @@ class SoundPropagationNode(Node):
 
     def _microphone_positions(self) -> dict[str, Point]:
         listeners = self._all_microphone_positions()
-        selected = self._parse_active_microphone_ids(
-            str(self.get_parameter("active_microphone_ids").value)
-        )
-        if selected is None:
-            return listeners
-        return {
-            listener_id: position
-            for listener_id, position in listeners.items()
-            if listener_id in selected
-        }
+        selected = str(
+            self.get_parameter("active_microphone_id").value
+        ).strip()
+        if selected not in listeners:
+            return {}
+        return {selected: listeners[selected]}
 
     def _all_microphone_positions(self) -> dict[str, Point]:
         listeners: dict[str, Point] = {}

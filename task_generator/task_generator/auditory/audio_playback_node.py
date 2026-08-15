@@ -137,10 +137,7 @@ class SoundPlaybackNode(Node):
                 "continuous_heard_sounds_topic",
                 "continuous_heard_sounds",
             )
-        self.declare_parameter("listener_robot_name", "jackal")
         self.declare_parameter("listener_id", "")
-        self.declare_parameter("listener_mode", "selected")
-        self.declare_parameter("listener_ids", "[]")
         self.declare_parameter(
             "microphone_listeners_topic",
             "microphone_listeners",
@@ -197,14 +194,6 @@ class SoundPlaybackNode(Node):
         self.declare_parameter("portal_position_quantization_m", 0.10)
         self.declare_parameter("portal_rir_cache_size", 256)
         self.declare_parameter("rir_event_buffer_size", 128)
-
-        if self._listener_mode() not in {"selected", "list", "all"}:
-            raise ValueError(
-                "listener_mode must be 'selected', 'list', or 'all'"
-            )
-        self._parse_listener_ids(
-            str(self.get_parameter("listener_ids").value)
-        )
 
         sample_rate = int(self.get_parameter("output_sample_rate").value)
         channels = int(self.get_parameter("output_channels").value)
@@ -451,37 +440,11 @@ class SoundPlaybackNode(Node):
     def _on_set_parameters(self, parameters) -> SetParametersResult:
         selection_changed = False
         for parameter in parameters:
-            if parameter.name == "listener_mode":
-                if (
-                    parameter.type_ != Parameter.Type.STRING
-                    or parameter.value not in {"selected", "list", "all"}
-                ):
-                    return SetParametersResult(
-                        successful=False,
-                        reason=(
-                            "listener_mode must be 'selected', 'list', or 'all'"
-                        ),
-                    )
-                selection_changed = True
-            elif parameter.name == "listener_ids":
+            if parameter.name == "listener_id":
                 if parameter.type_ != Parameter.Type.STRING:
                     return SetParametersResult(
                         successful=False,
-                        reason="listener_ids must be a YAML list string",
-                    )
-                try:
-                    self._parse_listener_ids(str(parameter.value))
-                except ValueError as exc:
-                    return SetParametersResult(
-                        successful=False,
-                        reason=str(exc),
-                    )
-                selection_changed = True
-            elif parameter.name in {"listener_id", "listener_robot_name"}:
-                if parameter.type_ != Parameter.Type.STRING:
-                    return SetParametersResult(
-                        successful=False,
-                        reason=f"{parameter.name} must be a string",
+                        reason="listener_id must be a string",
                     )
                 selection_changed = True
 
@@ -717,63 +680,14 @@ class SoundPlaybackNode(Node):
         self._process_heard_sound(msg)
 
     def _configured_listener_id(self) -> str:
-        listener_id = str(self.get_parameter("listener_id").value).strip()
-        if listener_id:
-            return listener_id
-        robot_name = str(
-            self.get_parameter("listener_robot_name").value
-        ).strip()
-        return f"robot:{robot_name}"
-
-    @staticmethod
-    def _parse_listener_ids(raw: str) -> frozenset[str]:
-        configured = yaml.safe_load(raw) if raw.strip() else []
-        if configured is None:
-            configured = []
-        if not isinstance(configured, list) or not all(
-            isinstance(listener_id, str) and listener_id.strip()
-            for listener_id in configured
-        ):
-            raise ValueError("listener_ids must be a YAML list of listener IDs")
-        return frozenset(
-            listener_id.strip() for listener_id in configured
-        )
-
-    def _listener_mode(self) -> str:
-        return str(self.get_parameter("listener_mode").value).strip()
+        return str(self.get_parameter("listener_id").value).strip()
 
     def _matches_listener(self, listener_id: str) -> bool:
-        mode = self._listener_mode()
-        if mode == "selected":
-            return listener_id == self._configured_listener_id()
-        if mode == "list":
-            return listener_id in self._parse_listener_ids(
-                str(self.get_parameter("listener_ids").value)
-            )
-        return listener_id in self._microphone_listener_ids
+        selected = self._configured_listener_id()
+        return bool(selected) and listener_id == selected
 
     def _listener_description(self) -> str:
-        mode = self._listener_mode()
-        if mode == "selected":
-            return self._configured_listener_id()
-        if mode == "list":
-            return str(sorted(self._parse_listener_ids(
-                str(self.get_parameter("listener_ids").value)
-            )))
-        return "all registered microphones"
-
-    def _listener_mix_gain_db(self) -> float:
-        mode = self._listener_mode()
-        if mode == "selected":
-            return 0.0
-        count = (
-            len(self._parse_listener_ids(
-                str(self.get_parameter("listener_ids").value)
-            ))
-            if mode == "list"
-            else len(self._microphone_listener_ids)
-        )
-        return -20.0 * math.log10(max(count, 1))
+        return self._configured_listener_id() or "no microphone selected"
 
     def _cb_microphone_registry(self, msg: String) -> None:
         try:
@@ -789,21 +703,7 @@ class SoundPlaybackNode(Node):
                 f"ignoring invalid microphone registry: {exc}"
             )
             return
-        updated = set(listener_ids)
-        if (
-            updated != self._microphone_listener_ids
-            and self._listener_mode() == "all"
-        ):
-            self._mixer.stop_all()
-            self._pending_heard_events.clear()
-            while self._pending_asset_loads:
-                future, _, _, _ = self._pending_asset_loads.popleft()
-                future.cancel()
-            if self._source_kind == "robot":
-                self._cancelled_motor_starts.clear()
-                self._continuous_sources.clear()
-                self._continuous_rir_signatures.clear()
-        self._microphone_listener_ids = updated
+        self._microphone_listener_ids = set(listener_ids)
 
     def _process_heard_sound(self, msg: HeardSoundEvent) -> None:
         # A stop event is also a control transition for an already-playing
@@ -927,7 +827,6 @@ class SoundPlaybackNode(Node):
         gain_db = (
             float(msg.received_volume_db)
             - float(msg.source_volume_db)
-            + self._listener_mix_gain_db()
         )
         has_rir = (
             impulse is not None
@@ -1188,7 +1087,6 @@ class SoundPlaybackNode(Node):
 
         playback_gain_db += asset.playback_gain_db
         playback_gain_db += self._material_gain_db(msg, asset_id)
-        playback_gain_db += self._event_listener_mix_gain_db(msg)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1266,7 +1164,6 @@ class SoundPlaybackNode(Node):
     ) -> None:
         playback_gain_db = self._event_playback_gain_db(msg, asset)
         playback_gain_db += self._material_gain_db(msg, asset.asset_id)
-        playback_gain_db += self._event_listener_mix_gain_db(msg)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1307,7 +1204,6 @@ class SoundPlaybackNode(Node):
         start_asset = assets[0]
         playback_gain_db = self._event_playback_gain_db(msg, start_asset)
         playback_gain_db += self._material_gain_db(msg, start_asset.asset_id)
-        playback_gain_db += self._event_listener_mix_gain_db(msg)
         if playback_gain_db < self._minimum_playback_gain_db:
             self._heard_filtered += 1
             return
@@ -1350,11 +1246,6 @@ class SoundPlaybackNode(Node):
         else:
             level_db = float(msg.source_volume_db)
         return level_db - asset.reference_level_db + asset.playback_gain_db
-
-    def _event_listener_mix_gain_db(self, msg: object) -> float:
-        if not str(getattr(msg, "listener_id", "")):
-            return 0.0
-        return self._listener_mix_gain_db()
 
     def _event_occurrence(self, msg: object, asset_id: str) -> int:
         event_id = str(msg.event_id)

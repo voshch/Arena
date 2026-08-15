@@ -478,12 +478,13 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
     try:
         selection_results = propagation.set_parameters([
             Parameter(
-                "active_microphone_ids",
+                "active_microphone_id",
                 Parameter.Type.STRING,
-                '["microphone1"]',
+                "microphone1",
             ),
         ])
         assert selection_results[0].successful is True
+        assert set(propagation._microphone_positions()) == {"microphone1"}
         assert propagation._last_continuous_outputs[key].active is True
         assert propagation._last_continuous_outputs[excluded_key].active is False
         assert propagation._last_continuous_outputs[robot_key].active is True

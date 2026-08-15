@@ -9,7 +9,6 @@ from builtin_interfaces.msg import Time
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.parameter import Parameter
-from std_msgs.msg import String
 from task_generator_msgs.msg import ContinuousHeardSoundState, EpisodeRecord
 
 from task_generator.auditory.asset_lib import AcousticAsset, CachedSample
@@ -55,13 +54,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
         parameters: list[Parameter],
     ) -> SetParametersResult:
         routing_changed = any(
-            parameter.name
-            in {
-                "listener_id",
-                "listener_ids",
-                "listener_mode",
-                "listener_robot_name",
-            }
+            parameter.name == "listener_id"
             for parameter in parameters
         )
         result = super()._on_set_parameters(parameters)
@@ -86,15 +79,6 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
         if self._episode_id == previous_episode:
             return
         self._clear_environment_sources()
-
-    def _cb_microphone_registry(self, msg: String) -> None:
-        previous_listeners = set(self._microphone_listener_ids)
-        super()._cb_microphone_registry(msg)
-        if (
-            self._listener_mode() == "all"
-            and self._microphone_listener_ids != previous_listeners
-        ):
-            self._clear_environment_sources()
 
     def _clear_environment_sources(self) -> None:
         for future, _, _ in self._environment_pending.values():
@@ -254,7 +238,6 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
             float(msg.received_volume_db)
             - float(asset.reference_level_db)
             + float(asset.playback_gain_db)
-            + self._listener_mix_gain_db()
         )
         active = bool(
             active

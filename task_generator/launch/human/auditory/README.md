@@ -70,16 +70,14 @@ The generated RViz configuration shows pedestrian cones through
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
-The Task Generator RViz panel includes an `Auditory Runtime` group, a
-`Microphone Routing` group, a `Static Audio Devices` table, `Play robot motor
+The Task Generator RViz panel includes an `Auditory Runtime` group, an
+`Audio Playback Microphone` group, a `Static Audio Devices` table, `Play robot motor
 audio on this workstation`, and a live `Motor Sound Tuning` group. The runtime
 group independently controls propagation and local radio/alarm playback. The
-listener group follows the transient
-microphone registry and updates human, robot, and environmental playback. It
-uses a checklist to select one or several microphones for propagation and
-playback. Newly spawned microphones are selected automatically. When several
-are selected, their independently propagated feeds are mixed with gain
-compensation. The controls follow changes made through ROS parameters and
+listener group follows the transient microphone registry and updates human,
+robot, and environmental playback. Its dropdown selects exactly one
+microphone, so workstation audio represents only what that microphone hears.
+The controls follow changes made through ROS parameters and
 persist across episode resets. `enable_motor_playback:=false` sets the initial
 mute state. This is separate from `enable_robot_sound`, which controls
 simulated motor emission.
@@ -248,17 +246,15 @@ relative or robot-prefixed TF frame, and stable positive index:
 ```bash
 arena launch \
   enable_auditory:=true \
-  audio_robot_microphones:='[{owner: robot, robot: jackal, placement: body, frame: base_link, index: 1}, {owner: robot, robot: jackal, placement: front, frame: front_laser, index: 1}]' \
-  audio_listener_mode:=all
+  audio_robot_microphones:='[{owner: robot, robot: jackal, placement: body, frame: base_link, index: 1}, {owner: robot, robot: jackal, placement: front, frame: front_laser, index: 1}]'
 ```
 
 The robot must exist in `state/robots`. A relative frame is resolved below that
 robot's frame prefix. The listener is inactive if the robot is absent or TF
 cannot resolve the frame. RViz shows one green triangular cone for each
-resolved microphone. The cones follow their TF frames. With playback mode
-`all`, the same source is rendered through both independent propagation paths
-and mixed on the workstation. Entries may name different active robots, so one
-launch can use microphones on several robots at the same time.
+resolved microphone. The cones follow their TF frames. Entries may name
+different active robots, so one launch can expose microphones on several
+robots at the same time. Choose one of them in the RViz playback dropdown.
 
 World-mounted microphones are authored in each level's `world.yaml` beside
 `zones`:
@@ -297,14 +293,12 @@ increasing IDs. These runtime microphones are cleared and the index restarts
 on the next episode or world change.
 
 The new microphone appears immediately in the Task Generator panel's **Audio
-Playback Listener** list and as a green triangular cone in
-`Arena/Sound Propagation/Microphones`. It is checked automatically in the
-panel's **Microphones used** list. Check or uncheck any combination to choose
-which paths are propagated and played. Multiple checked microphones are mixed.
+Playback Microphone** dropdown and as a green triangular cone in
+`Arena/Sound Propagation/Microphones`. Select it in **Listen through** to hear
+only that microphone's propagated audio.
 The spawn service is available at
 `<task-generator-namespace>/runtime/spawn_microphone` while auditory simulation
-is enabled. `Remove selected runtime microphone` removes the current runtime
-listener and reroutes playback to the next available microphone.
+is enabled.
 
 Every finite human or robot clip is published as `SoundEvent` and propagated
 to one `HeardSoundEvent` per listener. Procedural drivetrain audio uses
@@ -316,21 +310,10 @@ share `heard_sound_events` and `continuous_heard_sounds`; the playback nodes
 filter those streams, render the selected feeds, and send the result to their
 configured workstation `audio_device`.
 
-The RViz multi-select control applies the same microphone list to propagation,
+The RViz dropdown applies one microphone ID to propagation,
 `human_sound_playback`, `robot_sound_node`, and
-`environmental_sound_playback`. The corresponding launch parameters remain
-available for non-RViz workflows:
-
-- `audio_listener_mode:=selected` plays `audio_listener_id`, or
-  `robot:<audio_listener_robot>` when the ID is empty.
-- `audio_listener_mode:=list` mixes the YAML IDs in `audio_listener_ids`.
-- `audio_listener_mode:=all` mixes every registered microphone listener.
-
-Multi-listener playback applies a `-20 log10(N)` dB average trim to each
-listener path before the mixer sums them, preventing coherent microphone feeds
-from increasing the peak level. Continuous render voices are keyed by both
-listener and source, so one microphone cannot replace another's drivetrain
-stream.
+`environmental_sound_playback`. For a non-RViz workflow, set
+`audio_listener_id:=robot1_mic` or another registered microphone ID at launch.
 
 ## Pyroomacoustics portal routing
 

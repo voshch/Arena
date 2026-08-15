@@ -59,7 +59,6 @@
 #include <QTableWidgetItem>
 #include <QScrollArea>
 #include <QLineEdit>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -73,7 +72,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -145,7 +143,6 @@ namespace task_generator_gui
             bool propagation_available,
             bool playback_available);
         void setAudioSystemActive(const std::string &system_id, bool active);
-        void removeSelectedMicrophone();
         void removeSelectedAudioSystem();
 
         // Send reset_episode (world field intentionally empty; node resolves from pending overrides).
@@ -230,7 +227,6 @@ namespace task_generator_gui
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr microphone_listeners_sub;
         rclcpp::Subscription<task_generator_msgs::msg::AudioSystemState>::SharedPtr audio_system_states_sub;
         std::string microphone_listener_registry_;
-        std::set<std::string> microphone_listener_ids_;
 
         std::string staged_world;
 
@@ -275,12 +271,10 @@ namespace task_generator_gui
         QCheckBox *motor_playback_checkbox;
         QGroupBox *motor_tuning_group{nullptr};
         QGroupBox *audio_listener_group{nullptr};
-        MultiSelectComboBox *audio_listener_multiselect{nullptr};
         QComboBox *audio_listener_id_combobox{nullptr};
         bool audio_listener_selection_pending_{false};
         QCheckBox *propagation_checkbox{nullptr};
         QCheckBox *environment_playback_checkbox{nullptr};
-        QPushButton *remove_microphone_button{nullptr};
         QGroupBox *audio_systems_group{nullptr};
         QTreeWidget *audio_systems_tree{nullptr};
         QPushButton *remove_audio_system_button{nullptr};
