@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 import zlib
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -406,15 +407,18 @@ class SoundPropagationVisualizer(Node):
         else:
             color = ColorRGBA(r=0.05, g=0.75, b=0.95, a=0.92)
 
-        source = self._marker(frame, base_id, Marker.CYLINDER, lifetime)
+        source = self._marker(frame, base_id, Marker.CUBE, lifetime)
         source.ns = "environmental_audio_sources"
         source.pose.position = Point(
             x=float(msg.source_position.x),
             y=float(msg.source_position.y),
             z=float(msg.source_position.z),
         )
-        source.scale.x = source.scale.y = 0.30
-        source.scale.z = 0.18
+        source.pose.orientation.z = math.sin(float(msg.source_yaw) / 2.0)
+        source.pose.orientation.w = math.cos(float(msg.source_yaw) / 2.0)
+        source.scale.x = 0.42
+        source.scale.y = 0.26
+        source.scale.z = 0.22
         source.color = color
 
         label = self._marker(
@@ -1057,7 +1061,7 @@ class SoundPropagationVisualizer(Node):
 
     @staticmethod
     def _listener_height(listener_id: str, listener_z: float = 0.0) -> float:
-        if listener_id.startswith("microphone:"):
+        if listener_id.startswith("microphone") or listener_id.endswith("_mic"):
             return listener_z
         return 0.35 if listener_id.startswith("robot:") else 1.60
 
@@ -1101,7 +1105,7 @@ class SoundPropagationVisualizer(Node):
                 "robot",
                 ColorRGBA(r=0.65, g=0.20, b=1.0, a=0.92),
             )
-        if listener_id.startswith("microphone:"):
+        if listener_id.startswith("microphone") or listener_id.endswith("_mic"):
             listener_kind = listener_id.replace(":", "_").replace("/", "_")
             return (
                 self._robot_publisher,

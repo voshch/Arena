@@ -3,6 +3,7 @@
 #include <QLineEdit>
 #include <QCheckBox>
 #include <QEvent>
+#include <QSignalBlocker>
 
 namespace
 {
@@ -151,6 +152,8 @@ void MultiSelectComboBox::SetPlaceHolderText(const QString &aPlaceHolderText)
 void MultiSelectComboBox::clear()
 {
     mListWidget->clear();
+    mLineEdit->clear();
+    mLineEdit->setToolTip("");
     QListWidgetItem *curItem = new QListWidgetItem(mListWidget);
     mSearchBar = new QLineEdit(this);
     mSearchBar->setPlaceholderText("Search...");
@@ -196,12 +199,10 @@ void MultiSelectComboBox::setCurrentText(const QStringList &aText)
     {
         QWidget *widget = mListWidget->itemWidget(mListWidget->item(i));
         QCheckBox *checkBox = static_cast<QCheckBox *>(widget);
-        QString checkBoxString = checkBox->text();
-        if (aText.contains(checkBoxString))
-        {
-            checkBox->setChecked(true);
-        }
+        QSignalBlocker blocker(checkBox);
+        checkBox->setChecked(aText.contains(checkBox->text()));
     }
+    stateChanged(0);
 }
 
 void MultiSelectComboBox::ResetSelection()
@@ -212,6 +213,8 @@ void MultiSelectComboBox::ResetSelection()
     {
         QWidget *widget = mListWidget->itemWidget(mListWidget->item(i));
         QCheckBox *checkBox = static_cast<QCheckBox *>(widget);
+        QSignalBlocker blocker(checkBox);
         checkBox->setChecked(false);
     }
+    stateChanged(0);
 }

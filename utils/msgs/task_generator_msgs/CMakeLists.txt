@@ -41,9 +41,12 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/QueryTaskModes.srv
   srv/QueryWorlds.srv
   srv/QueueEpisode.srv
+  srv/RemoveAudioSystem.srv
+  srv/RemoveMicrophone.srv
   srv/ResetEpisode.srv
   srv/SetSemantic.srv
   srv/SetAudioSystem.srv
+  srv/SpawnAudioSource.srv
   srv/SpawnDynamic.srv
   srv/SpawnMicrophone.srv
   srv/SpawnRobot.srv

@@ -22,6 +22,7 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 qt5_wrap_cpp(MOC_FILES
   include/task_generator_gui/task_generator_panel.hpp
+  include/task_generator_gui/spawn_audio_source_tool.hpp
   include/task_generator_gui/spawn_microphone_tool.hpp
   include/task_generator_gui/spawn_pedestrian_tool.hpp
   include/task_generator_gui/world_generator_panel.hpp
@@ -35,6 +36,7 @@ qt5_wrap_cpp(MOC_FILES
   src/fleet_panel.cpp
   src/task_generator_panel_dynamic_params.cpp
   src/utils/dynamic_param_tree.cpp
+  src/spawn_audio_source_tool.cpp
   src/spawn_microphone_tool.cpp
   src/spawn_pedestrian_tool.cpp
   src/world_generator_panel.cpp

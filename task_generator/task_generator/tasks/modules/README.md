@@ -59,7 +59,8 @@ semantics that clears all per-level forbidden zones.
 
 [`audio_systems/impl.py:34`](audio_systems/impl.py#L34)
 
-Loads the selected scenario's top-level `audio.systems` section after each
+Loads the selected scenario's top-level `audio.systems` section and the
+world-independent `static_audio_devices` launch configuration after each
 reset. It resolves fixed emitters through the task generator realizer,
 publishes `ContinuousAudioSourceState` for propagation, publishes
 `AudioSystemState` for control feedback, and serves

@@ -87,6 +87,16 @@ Visualization Manager:
     - Class: task_generator_gui::SpawnMicrophoneTool
       Target: {task_generator_node}
       Height: 1.5
+      Attach TF Frame: ""
+    - Class: task_generator_gui::SpawnAudioSourceTool
+      Target: {task_generator_node}
+      Mode: Music
+      Height: 1.2
+      Custom Playback: false
+      Asset ID: ""
+      Source Volume: 62.0
+      Loop: true
+      Start Immediately: true
   Transformation:
     Current:
       Class: rviz_default_plugins/TF

@@ -2,6 +2,7 @@
 #define TASK_GENERATOR_GUI_SPAWN_MICROPHONE_TOOL_HPP
 
 #include <memory>
+#include <string>
 
 #include <QObject>
 
@@ -40,6 +41,7 @@ private Q_SLOTS:
 private:
   rviz_common::properties::StringProperty * target_node_property_;
   rviz_common::properties::FloatProperty * height_property_;
+  rviz_common::properties::StringProperty * attached_frame_property_;
 
   std::shared_ptr<rclcpp::Node> service_node_;
   rclcpp::Client<task_generator_msgs::srv::SpawnMicrophone>::SharedPtr client_;

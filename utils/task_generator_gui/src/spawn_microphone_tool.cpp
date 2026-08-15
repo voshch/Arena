@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <rviz_common/display_context.hpp>
@@ -16,6 +17,8 @@ using namespace std::chrono_literals;
 
 SpawnMicrophoneTool::SpawnMicrophoneTool()
 {
+  shortcut_key_ = 'm';
+
   target_node_property_ = new rviz_common::properties::StringProperty(
     "Target", "/task_generator_node",
     "Namespace providing the acoustic runtime/spawn_microphone service.",
@@ -26,6 +29,11 @@ SpawnMicrophoneTool::SpawnMicrophoneTool()
     "Microphone Z coordinate in the RViz Fixed Frame, in metres.",
     getPropertyContainer());
   height_property_->setMin(0.0);
+
+  attached_frame_property_ = new rviz_common::properties::StringProperty(
+    "Attach TF Frame", "",
+    "Optional TF frame. Empty creates a fixed microphone. A frame makes the microphone follow it.",
+    getPropertyContainer());
 }
 
 SpawnMicrophoneTool::~SpawnMicrophoneTool() = default;
@@ -36,7 +44,7 @@ void SpawnMicrophoneTool::onInitialize()
   setName("Spawn Microphone");
 
   service_node_ = std::make_shared<rclcpp::Node>("spawn_microphone_tool_node");
-  service_node_->get_logger().set_level(rclcpp::Logger::Level::Warn);
+  service_node_->get_logger().set_level(rclcpp::Logger::Level::Info);
   updateClient();
 }
 
@@ -64,6 +72,7 @@ void SpawnMicrophoneTool::onPoseSet(double x, double y, double theta)
   request->position.point.y = y;
   request->position.point.z = height_property_->getFloat();
   request->placement = "placed";
+  request->attached_frame = attached_frame_property_->getStdString();
 
   if (!client_->wait_for_service(1s)) {
     RCLCPP_WARN(
@@ -92,8 +101,10 @@ void SpawnMicrophoneTool::onPoseSet(double x, double y, double theta)
   } else {
     RCLCPP_INFO(
       service_node_->get_logger(),
-      "spawned microphone %s in zone %s",
-      response->listener_id.c_str(), response->zone.c_str());
+      "spawned microphone %s%s%s",
+      response->listener_id.c_str(),
+      response->attached_frame.empty() ? "" : " attached to ",
+      response->attached_frame.c_str());
   }
 }
 }  // namespace task_generator_gui

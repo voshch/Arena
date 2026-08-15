@@ -1,9 +1,8 @@
 # Auditory Module
 
 The auditory module adds sound events to the Arena human simulation path. It is
-enabled with `human:=arena enable_auditory:=true`; with
-`enable_auditory:=false`, the same Arena human simulator runs without the
-auditory nodes.
+enabled by default when the Arena human simulator is selected. Set
+`enable_auditory:=false` to run without the auditory nodes.
 
 ## Features
 
@@ -53,6 +52,7 @@ Expected nodes when enabled include:
 - `audio_system_states`: transient-local radio and alarm control state.
 - `microphone_listeners`: transient-local JSON registry of active microphone
   listener IDs.
+- `microphone_markers`: persistent RViz cones and listener ID labels.
 - `state/robots`: robot fleet metadata used by propagation, robot sound, and
   robot hearing nodes.
 - `<robot_name>/heard_sound`: per-robot heard event output.
@@ -70,14 +70,17 @@ The generated RViz configuration shows pedestrian cones through
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
-The Task Generator RViz panel includes an `Audio Playback Listener` group,
-`Play robot motor audio on this workstation`, and a live `Motor Sound Tuning`
-group. The listener group follows the transient microphone registry and updates
-both playback nodes. It can select one microphone, accept an explicit YAML
-listener list, or mix all microphones. The controls follow changes made through
-ROS parameters and persist across episode resets. `enable_motor_playback:=false`
-sets the initial mute state. This is separate from `enable_robot_sound`, which
-controls simulated motor emission.
+The Task Generator RViz panel includes an `Auditory Runtime` group, an
+`Audio Playback Microphone` group, a `Static Audio Devices` table, `Play robot motor
+audio on this workstation`, and a live `Motor Sound Tuning` group. The runtime
+group independently controls propagation and local radio/alarm playback. The
+listener group follows the transient microphone registry and updates human,
+robot, and environmental playback. Its dropdown selects exactly one
+microphone, so workstation audio represents only what that microphone hears.
+The controls follow changes made through ROS parameters and
+persist across episode resets. `enable_motor_playback:=false` sets the initial
+mute state. This is separate from `enable_robot_sound`, which controls
+simulated motor emission.
 
 The procedural defaults apply a `-9 dB` output trim, reduce the broadband
 mechanical-noise layer by `-12 dB`, and use a `1.5` velocity exponent so level
@@ -93,9 +96,10 @@ driven by signed left and right wheel velocity. The live controls are:
 
 ## Scenario radio and alarm systems
 
-Enable the optional Task Generator module at startup with
-`tm_modules:=audio_systems`. The selected scenario may then contain a top-level
-`audio` section:
+The static-audio Task Generator module is enabled by default and automatically
+adds `audio_systems` to `tm_modules`. Set
+`enable_static_audio_devices:=false` to disable it. The selected scenario may
+contain a top-level `audio` section:
 
 ```yaml
 audio:
@@ -147,10 +151,9 @@ physical sources, so propagation computes three independent speaker-to-listener
 paths and playback uses three independent RIR convolvers. A wall, doorway, or
 extra distance can therefore delay and attenuate each speaker differently.
 
-Register the referenced WAVs in
-`config/auditory/acoustic_assets.yaml`. Looping files should have matching
-waveform and level at their beginning and end so the join does not click. For
-example:
+The bundled catalog registers `radio_loop.wav` and `alarm_loop.wav`. Custom
+looping files should have matching waveform and level at their beginning and
+end so the join does not click. A custom music entry has this form:
 
 ```yaml
 assets:
@@ -168,44 +171,90 @@ assets:
         octave_band_levels_db: auto
 ```
 
+For a radio or alarm that should be available in any scenario without editing
+that scenario, pass the same system schema through `static_audio_devices`:
+
+```bash
+arena launch \
+  world:=demo \
+  enable_auditory:=true \
+  enable_static_audio_devices:=true \
+  static_audio_devices:='[{name: room_radio, sound_type: music, asset_id: radio_loop, loop: true, initially_active: false, emitters: [{name: speaker, position: [5.0, 5.0, 1.2], source_volume_db: 62.0}]}]'
+```
+
+Direct positions are local to the named level. Add `level: <level_id>` for
+multi-level worlds. Several radios are several list entries. A multi-speaker
+alarm is one list entry with several emitters. Scenario and launch-defined
+system names must be unique. To keep custom WAV files outside the package,
+pass `audio_asset_catalog:=/path/to/acoustic_assets.yaml` and
+`audio_sound_dir:=/path/to/wavs`.
+
+A custom catalog replaces the bundled catalog for every playback node. Keep
+the bundled `footstep`, `greeting`, and motor entries in it, and keep their WAV
+files in the selected sound directory, alongside the new radio and alarm
+assets.
+
 Start or stop one logical system, including all of its emitters, with:
 
 ```bash
 ros2 service call \
-  /task_generator_node/runtime/set_audio_system \
+  /arena/env_0/task_generator_node/runtime/set_audio_system \
   task_generator_msgs/srv/SetAudioSystem \
   "{system_id: building_alarm, active: true}"
 ```
 
+Replace `env_0` when the runtime allocated a different environment.
+
 `initially_active` sets the episode-reset state. The service changes simulated
-emission. The live `enable_environment_playback` parameter on
+emission. The launch argument and live `enable_environment_playback` parameter on
 `environmental_sound_playback` only mutes or unmutes local workstation output,
 so propagation and robot hearing continue while it is muted.
 
+The default `audio_block_size` is 2048 frames. If the host still reports
+repeated PulseAudio underflows under a heavy RIR workload, increase it to 4096.
+An occasional recovered underrun does not stop propagation or playback.
+
 RViz lists fixed emitters in `Arena/Sound Propagation/Environmental Audio
 Sources`. Alarm markers are red, other active systems are cyan, and inactive
-systems are gray. The existing robot or pedestrian heard-sound display shows
-each active source-to-listener path, portal route, and delay. Set the
+systems are gray. Emitters use a box marker oriented by the placement drag.
+The **Spawn Radio** toolbar tool creates a source at runtime. Set its `Mode`
+property to `Music` or `Alarm`, set `Height`, then click and drag in the map.
+By default the source starts the corresponding bundled loop immediately.
+Enable `Custom Playback` to choose another catalog asset ID, source volume,
+loop behavior, or an initially stopped state. The runtime transforms the RViz
+Fixed Frame pose into the global map, so placement also works in allocated
+environment frames. Use the `Static Audio Devices` checkbox to start or stop
+emission and playback. Select a `runtime_*` row and use `Remove selected runtime
+source` to delete it. Runtime sources are cleared on the next episode reset.
+The existing robot or pedestrian heard-sound display shows each active
+source-to-listener path, portal route, and delay. Set the
 visualizer's `continuous_listener_id` parameter when a specific microphone
 should own the path display. If it is empty, the first continuous listener is
 used.
 
 ## Microphones and playback routing
 
-Robot-mounted microphones are configured with `audio_robot_microphones`. Each
-entry names the robot instance, placement, relative or robot-prefixed TF frame,
-and stable positive index:
+Every robot in `state/robots` automatically creates one microphone named from
+the robot instance, for example `robot1_mic` and `robot2_mic`. It follows the
+robot base TF frame and appears as a green triangular cone in RViz. This makes
+multi-robot microphone testing available without extra launch arguments.
+
+Additional robot-mounted microphones can be configured with
+`audio_robot_microphones`. Each entry names the robot instance, placement,
+relative or robot-prefixed TF frame, and stable positive index:
 
 ```bash
 arena launch \
   enable_auditory:=true \
-  audio_robot_microphones:='[{owner: robot, robot: jackal_1, placement: front, frame: microphone_link, index: 1}]' \
-  audio_listener_id:=microphone:robot:jackal_1:front:1
+  audio_robot_microphones:='[{owner: robot, robot: jackal, placement: body, frame: base_link, index: 1}, {owner: robot, robot: jackal, placement: front, frame: front_laser, index: 1}]'
 ```
 
 The robot must exist in `state/robots`. A relative frame is resolved below that
 robot's frame prefix. The listener is inactive if the robot is absent or TF
-cannot resolve the frame.
+cannot resolve the frame. RViz shows one green triangular cone for each
+resolved microphone. The cones follow their TF frames. Entries may name
+different active robots, so one launch can expose microphones on several
+robots at the same time. Choose one of them in the RViz playback dropdown.
 
 World-mounted microphones are authored in each level's `world.yaml` beside
 `zones`:
@@ -235,17 +284,19 @@ one.
 
 Microphones can also be added during an episode with the RViz **Spawn
 Microphone** toolbar tool. Click the desired position and set its `Height` tool
-property. The runtime transforms the RViz Fixed Frame point into
-the acoustic map, requires it to fall inside an authored zone and between its
-floor and ceiling, and assigns the next available zone-local ID, for example
-`microphone:zone:reception:placed:2`. Multiple clicks in the same zone create
-independent listeners with increasing indices. These runtime microphones are
-cleared on the next episode or world change.
+property. Leave `Attach TF Frame` empty for a fixed microphone. Set it to a
+resolvable frame such as `env_0/jackal/base_link` to store the clicked offset
+in that frame and make the microphone follow it. The runtime transforms the
+clicked pose is registered immediately in its RViz or attached TF frame. The
+first click creates `microphone1`, followed by `microphone2` and later
+increasing IDs. These runtime microphones are cleared and the index restarts
+on the next episode or world change.
 
 The new microphone appears immediately in the Task Generator panel's **Audio
-Playback Listener** list. Spawning it does not redirect playback by itself.
-Choose its ID for specific-microphone playback, or select **all** to mix every
-registered microphone. The spawn service is available at
+Playback Microphone** dropdown and as a green triangular cone in
+`Arena/Sound Propagation/Microphones`. Select it in **Listen through** to hear
+only that microphone's propagated audio.
+The spawn service is available at
 `<task-generator-namespace>/runtime/spawn_microphone` while auditory simulation
 is enabled.
 
@@ -259,18 +310,10 @@ share `heard_sound_events` and `continuous_heard_sounds`; the playback nodes
 filter those streams, render the selected feeds, and send the result to their
 configured workstation `audio_device`.
 
-Playback routing is shared by `human_sound_playback` and `robot_sound_node`:
-
-- `audio_listener_mode:=selected` plays `audio_listener_id`, or
-  `robot:<audio_listener_robot>` when the ID is empty.
-- `audio_listener_mode:=list` mixes the YAML IDs in `audio_listener_ids`.
-- `audio_listener_mode:=all` mixes every registered `microphone:*` listener.
-
-Multi-listener playback applies a `-20 log10(N)` dB average trim to each
-listener path before the mixer sums them, preventing coherent microphone feeds
-from increasing the peak level. Continuous render voices are keyed by both
-listener and source, so one microphone cannot replace another's drivetrain
-stream.
+The RViz dropdown applies one microphone ID to propagation,
+`human_sound_playback`, `robot_sound_node`, and
+`environmental_sound_playback`. For a non-RViz workflow, set
+`audio_listener_id:=robot1_mic` or another registered microphone ID at launch.
 
 ## Pyroomacoustics portal routing
 

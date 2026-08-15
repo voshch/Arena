@@ -1,8 +1,26 @@
+from types import SimpleNamespace
+
 from arena_simulation_setup.tree.World import WorldIdentifier
 
 from task_generator.auditory.acoustic_room_spec import AcousticRoomSpecBuilder
 from task_generator.auditory.acoustic_scene import AcousticScene
 from task_generator.auditory.acoustic_world_graph import AcousticWorldGraph
+
+
+def test_world_without_zones_builds_empty_acoustic_models():
+    world = SimpleNamespace(
+        levels={"0": SimpleNamespace(zones=())},
+    )
+
+    scene = AcousticScene.from_world(world)
+    rooms = AcousticRoomSpecBuilder().from_world(world)
+    graph = AcousticWorldGraph.from_world(world, rooms)
+
+    assert scene.zones == ()
+    assert scene.walls == ()
+    assert rooms == ()
+    assert graph.rooms == ()
+    assert graph.portals == ()
 
 
 def test_current_multilevel_world_schema_builds_rooms_and_portals():
