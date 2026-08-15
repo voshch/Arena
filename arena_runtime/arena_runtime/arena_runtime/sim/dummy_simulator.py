@@ -41,11 +41,7 @@ class DummySimulator(BaseSim):
     Does nothing.
     """
 
-    async def before_reset_episode(self) -> bool:
-        return True
-
-    async def after_reset_episode(self) -> bool:
-        return True
+    SIM_NAME = 'dummy'
 
     # fake spawn
     @staticmethod

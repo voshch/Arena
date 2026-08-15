@@ -1,0 +1,7 @@
+# Set a writable semantic field on one annotated entity.
+string entity                # env-prefixed instance name, e.g. "env_0/signal_1"
+string field                 # writable state or predicate name
+string value                 # stringified: token, "true"/"false", or float literal
+---
+bool success                 # true when applied
+string error_msg             # empty on success

@@ -43,94 +43,12 @@ export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/ros/${ARENA_ROS_DISTRO}/lib/"
 export ASSET_BUCKETS=${ARENA_ASSET_BUCKETS:-"default"}
 
-_feature_registry(){
-    local verb="$1"
-    local name="$2"
-    case "$verb" in
-        has)
-            grep -qx -- "$name" "$INSTALLED" 2>/dev/null
-            return $?
-        ;;
-        require)
-            if ! _feature_registry has "$name"; then
-                echo "$name is not installed; run 'arena feature $name install' first." >&2
-                return 1
-            fi
-            return 0
-        ;;
-        add)
-            if ! _feature_registry has "$name"; then
-                echo "$name" >> "$INSTALLED"
-            fi
-            return 0
-        ;;
-        remove)
-            [ -f "$INSTALLED" ] || return 0
-            local escaped
-            escaped=$(printf '%s\n' "$name" | sed 's/[][\.*^$/]/\\&/g')
-            sed -i "/^${escaped}\$/d" "$INSTALLED"
-            return $?
-        ;;
-        list)
-            cat "$INSTALLED" 2>/dev/null
-            return 0
-        ;;
-        pull)
-            local repos_file="$ARENA_DIR/_meta/repos/${name}.repos"
-            [ -f "$repos_file" ] || return 0
-            vcs import --input "$repos_file" --shallow --recursive --ff \
-                --add-existing "$ARENA_WS_DIR/src" \
-                || echo "failed to pull all $name repos, ignoring" >&2
-            return 0
-        ;;
-        resolve)
-            if [ -f "$ARENA_FEATURES_DIR/${name}" ] ; then
-                echo "$ARENA_FEATURES_DIR/${name}"
-            elif [ -d "$ARENA_FEATURES_DIR/${name}" ] && [ -f "$ARENA_FEATURES_DIR/${name}/main" ] ; then
-                echo "$ARENA_FEATURES_DIR/${name}/main"
-            else
-                return 1
-            fi
-            return 0
-        ;;
-        *)
-            echo "Usage: _feature_registry <has|require|add|remove|list|pull|resolve> [name]" >&2
-            return 1
-        ;;
-    esac
-}
-export -f _feature_registry 2>/dev/null || true
-
-_feature_default_install(){
-    local name="$1"
-    local feature_path
-    feature_path="$(_feature_registry resolve "$name")" || { echo "Unknown feature '$name'" >&2; return 1; }
-    if _feature_registry has "$name"; then
-        echo "$name is already installed."
-        return 0
-    fi
-    _feature_registry pull "$name"
-    _feature_registry add "$name"
-    if ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path' update"); then
-        echo "Installed $name successfully."
-        return 0
-    fi
-    _feature_registry remove "$name"
-    echo "Install of $name failed during update." >&2
-    return 1
-}
-export -f _feature_default_install 2>/dev/null || true
-
 export ARENA_MODELS_FORMATS="yaml,png,jpg,mdl"
 
 exit(){
-    echo "Failed to source $1, skipping" >&2
+    echo "Failed to source feature, skipping" >&2
 }
-while read -r feature; do
-    if feature_path="$(_feature_registry resolve "$feature")"; then
-        source "$feature_path" source
-    fi
-done < <(_feature_registry list)
+eval "$(python3 "$TOOLS_DIR/arena_cli/__main__.py" shellinit)"
 unset -f exit
 
 

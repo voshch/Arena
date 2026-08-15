@@ -15,6 +15,10 @@ zones:
       - [15.0, 23.0]
       - [0.0, 23.0]
 
+    semantics:
+      - predicate: restricted
+        value: true
+
     entities:
       static:
         - name: vending_machine
@@ -51,7 +55,11 @@ zones:
         end: [15.0, 5.0]
         height: 2.0
         kind: "sliding"
-          
+
+    semantics:
+      - predicate: quiet
+        value: true
+
     entities:
       static:
         - name: nurse_station

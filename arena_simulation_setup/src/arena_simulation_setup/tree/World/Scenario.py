@@ -10,7 +10,7 @@ from collections.abc import Iterable
 import attrs
 import yaml
 
-from arena_simulation_setup.shared import DynamicObstacle, Obstacle, Pose, Position
+from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Obstacle, Pose, Position
 from arena_simulation_setup.tree import PathView
 from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, converter
 
@@ -92,11 +92,35 @@ class RegionAssignment:
 
 
 @attrs.define
+class TimelineEntry(Parseable):
+    """One scenario timeline entry: exactly one trigger (at/every/when) plus a set action list."""
+
+    set: list[dict] = attrs.field(factory=list)
+    at: float | None = None
+    every: float | None = None
+    offset: float = 0.0
+    until: float | None = None
+    when: dict | None = None
+
+    @classmethod
+    def parse(cls, value: dict) -> "TimelineEntry":
+        triggers = [key for key in ("at", "every", "when") if value.get(key) is not None]
+        if len(triggers) != 1:
+            raise ValueError(f"timeline entry must set exactly one of 'at', 'every', 'when'; got {triggers}")
+        return converter.structure_attrs_fromdict(dict(value), cls)
+
+
+_MODERN_ONLY_KEYS: frozenset[str] = frozenset({"conditions", "timeline", "regions"})
+
+
+@attrs.define
 class Scenario:
     static: list[Obstacle] = attrs.field(factory=list)
     dynamic: list[DynamicObstacle] = attrs.field(factory=list)
     robots: list[RobotGoal] = attrs.field(factory=list)
     regions: dict[str, RegionAssignment] = attrs.field(factory=dict)
+    timeline: list[TimelineEntry] = attrs.field(factory=list)
+    conditions: list[EpisodeCondition] = attrs.field(factory=list)
 
 
 class ScenarioView(PathView):
@@ -128,6 +152,7 @@ class ScenarioView(PathView):
         )
 
     def load(self, converter: ArenaConverter = converter) -> Scenario:
+        raw: object = None
         load_exc: Exception
         try:
             with open(self.scenario_path) as f:
@@ -138,6 +163,9 @@ class ScenarioView(PathView):
             return scenario
         except Exception as e:
             load_exc = e
+
+        if isinstance(raw, dict) and _MODERN_ONLY_KEYS.intersection(raw):
+            raise RuntimeError(f"Scenario {self.scenario_path}: modern-format scenario failed to parse, refusing to degrade to legacy. Underlying error:\n{''.join(traceback.format_exception(type(load_exc), load_exc, load_exc.__traceback__))}") from load_exc
 
         legacy_exc: Exception
         try:

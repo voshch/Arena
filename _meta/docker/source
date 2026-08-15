@@ -238,7 +238,7 @@ do_run(){
                 local RUN_STATUS
                 RUN_STATUS=$(docker inspect -f '{{.State.Status}}' "$ID" 2>/dev/null)
 
-                if [ "$HEALTH_STATUS" == "healthy" ] || { [ "$HEALTH_STATUS" == "none" ] && [ "$RUN_STATUS" == "running" ]; }; then
+                if [ "$HEALTH_STATUS" = "healthy" ] || { [ "$HEALTH_STATUS" = "none" ] && [ "$RUN_STATUS" = "running" ]; }; then
                     break
                 fi
 

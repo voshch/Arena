@@ -4,12 +4,22 @@ import asyncio
 import logging
 
 import rclpy
+import rclpy.executors
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListResourcesResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    ReadResourceRequestParams,
+    ReadResourceResult,
+)
 
-from .resources import register_resources
+from .resources import build_resources_list, read_resource_content
 from .ros_bridge import RosBridge
-from .tools import register_tools
+from .tools import build_tools_list, dispatch_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -29,34 +39,53 @@ async def _wait_for_bridge(bridge: RosBridge) -> None:
 async def _run(bridge: RosBridge) -> None:
     await _wait_for_bridge(bridge)
 
-    # Fetch param descriptors once for the full allowlist; tools.py caches them.
-    # (Descriptors are passed through to register_tools for schema building.)
-    from rcl_interfaces.srv import DescribeParameters
-
-    from .params import EPISODE_PARAMS, STATIC_CONFIG_PARAMS
-
-    all_params = list(EPISODE_PARAMS) + list(STATIC_CONFIG_PARAMS)
-    req = DescribeParameters.Request()
-    req.names = all_params
-    resp = await bridge.client_describe_parameters.call_timeout(req, timeout_sec=_DISCOVERY_TIMEOUT)
-    param_descriptors: dict[str, object] = {}
-    if resp is not None:
-        for name, desc in zip(all_params, resp.descriptors, strict=True):
-            param_descriptors[name] = desc
-
     server = Server("task_generator_mcp")
-    register_tools(server, bridge, param_descriptors)
-    register_resources(server, bridge)
+
+    async def handle_list_tools(_ctx: object, _params: PaginatedRequestParams) -> ListToolsResult:
+        return ListToolsResult(tools=build_tools_list())
+
+    server.add_request_handler("tools/list", PaginatedRequestParams, handle_list_tools)
+
+    async def handle_call_tool(_ctx: object, params: CallToolRequestParams) -> CallToolResult:
+        return await dispatch_tool_call(params, bridge)
+
+    server.add_request_handler("tools/call", CallToolRequestParams, handle_call_tool)
+
+    async def handle_list_resources(_ctx: object, _params: PaginatedRequestParams) -> ListResourcesResult:
+        return ListResourcesResult(resources=build_resources_list())
+
+    server.add_request_handler("resources/list", PaginatedRequestParams, handle_list_resources)
+
+    async def handle_read_resource(_ctx: object, params: ReadResourceRequestParams) -> ReadResourceResult:
+        return read_resource_content(params, bridge)
+
+    server.add_request_handler("resources/read", ReadResourceRequestParams, handle_read_resource)
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
+async def _amain() -> None:
+    loop = asyncio.get_running_loop()
+    executor = rclpy.executors.MultiThreadedExecutor()
+    bridge = RosBridge()
+    executor.add_node(bridge)
+    spin_task = loop.run_in_executor(None, executor.spin)
+    try:
+        await _run(bridge)
+    finally:
+        executor.shutdown()
+        await spin_task
+        bridge.destroy_node()
+
+
 def main() -> None:
     rclpy.init()
-    bridge = RosBridge()
     try:
-        asyncio.run(_run(bridge))
+        asyncio.run(_amain())
     finally:
-        bridge.destroy_node()
         rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

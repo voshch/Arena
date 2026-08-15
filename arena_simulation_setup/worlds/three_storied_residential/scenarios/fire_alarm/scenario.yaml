@@ -1,0 +1,10 @@
+# Timeline reference: flips the fire_alarm schedule's `active` at t=12s, see AUTHORING.md
+static: []
+dynamic: []
+robots: []
+timeline:
+- at: 12.0
+  set:
+  - entity: fire_alarm
+    field: active
+    value: "true"

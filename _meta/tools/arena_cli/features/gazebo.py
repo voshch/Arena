@@ -5,13 +5,25 @@ import os
 import common
 from common import Verb, make_verb
 
-from features import lifecycle_verbs
-
-SCRIPT_SHA256 = "9ca27ab8b87980010b699996f39a681e6b1092ae0109f44ed9f09ea5f3af0ec0"
+import features
+from features import lifecycle_verbs, source_verb
 
 NAME = "gazebo"
 
 DESCRIPTION = "Gazebo simulator (ros_gz + OpenUSD tooling)."
+
+_FORMATS_SOURCE = 'case "$ARENA_MODELS_FORMATS" in *sdf*) ;; *) export ARENA_MODELS_FORMATS="${ARENA_MODELS_FORMATS},sdf" ;; esac'
+
+_HOST_SOURCE = (
+    'export USD_PATH="$ARENA_WS_DIR/tools/OpenUSD/install"\n'
+    'export PATH="$USD_PATH/bin:$PATH"\n'
+    'export LD_LIBRARY_PATH="$USD_PATH/lib:$LD_LIBRARY_PATH"\n'
+    'export CMAKE_PREFIX_PATH="$USD_PATH:$CMAKE_PREFIX_PATH"\n' + _FORMATS_SOURCE
+)
+
+
+def _shell_source() -> str:
+    return _FORMATS_SOURCE if features.in_container() else _HOST_SOURCE
 
 
 def _source_env() -> dict[str, str]:
@@ -29,8 +41,11 @@ def _source_env() -> dict[str, str]:
 
 
 def _update() -> int:
-    """Install ros_gz packages and build OpenUSD."""
+    """Install ros_gz packages and build OpenUSD (no-op in the container)."""
     import subprocess
+
+    if features.in_container():
+        return 0
 
     env = _source_env()
     ws_dir = common._env("ARENA_WS_DIR")
@@ -141,5 +156,6 @@ COMMANDS: dict[str, Verb] = {
     for v in [
         *lifecycle_verbs(NAME, _update),
         make_verb("launch", launch, passthrough=True),
+        source_verb(_shell_source),
     ]
 }

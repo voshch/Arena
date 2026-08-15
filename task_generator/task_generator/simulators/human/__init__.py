@@ -14,10 +14,13 @@ import rclpy.qos
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_people_msgs.srv import MovePedestrians
+from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim
+from arena_runtime_msgs.msg import LockstepChannel, LockstepRegistration
+from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Pose as PoseMsg
@@ -33,6 +36,8 @@ from task_generator.simulators.human.utils import (
     KnownObstacles,
     ObstacleLayer,
 )
+
+PED_RADIUS = 0.3
 
 _STREAM_QOS = rclpy.qos.QoSProfile(
     reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
@@ -132,7 +137,34 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._cb_human_move,
         )
 
+        self._lockstep_register_client: ClientWrapper = self.node.create_client_wrapper(
+            LockstepRegister,
+            "/arena/sim_lifecycle/lockstep/register",
+        )
+
         self._simulator.attach_human_simulator(self)
+
+    _LOCKSTEP_REGISTER_TIMEOUT: typing.ClassVar[float] = 3.0
+
+    async def _register_lockstep_channels(self, channels: Sequence[LockstepChannel]) -> None:
+        """Fire-once, best-effort registration of this adapter's lockstep channels
+        (the service may be absent this session)."""
+        if not await self._lockstep_register_client.ensure(timeout_sec=self._LOCKSTEP_REGISTER_TIMEOUT):
+            self._logger.info("lockstep register service not available, skipping channel registration")
+            return
+        request = LockstepRegister.Request()
+        request.registration = LockstepRegistration(
+            caller=self.node.get_fully_qualified_name(),
+            env=str(self._namespace),
+            channels=list(channels),
+        )
+        try:
+            response = await self._lockstep_register_client.call_timeout(request)
+        except Exception as e:
+            self._logger.warning(f"lockstep channel registration call failed: {e}")
+            return
+        if response is not None and not response.success:
+            self._logger.warning(f"lockstep channel registration failed: {response.error_msg}")
 
     def publish_arena_peds(self, msg: Pedestrians) -> None:
         """Stamp the header, substitute possessed peds, fill bare-name joint_state for peds missing one, then publish."""
@@ -178,8 +210,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     def _on_arena_peds(self, msg: Pedestrians) -> None:
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
 
-    def pedestrian_positions_xy(self) -> Iterable[tuple[str, tuple[float, float]]]:
-        return list(self._ped_positions_xy.items())
+    def pedestrian_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
+        return [(name, xy, PED_RADIUS) for name, xy in self._ped_positions_xy.items()]
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
         """Teleport tracked pedestrians to given (x, y). Default impl asks the sim to move them."""
@@ -671,6 +703,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         stale_doors = [name for name, known in self._known_doors.items() if purge >= known.layer]
 
         if purge >= ObstacleLayer.WORLD:
+            await self._simulator.remove_mechanisms()
             futures.append(self._simulator.remove_world())
 
         if stale_walls:

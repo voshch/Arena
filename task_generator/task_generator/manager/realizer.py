@@ -1,7 +1,7 @@
 import typing
 
 import attrs
-from arena_simulation_setup.shared import Ceiling, Elevator
+from arena_simulation_setup.shared import Ceiling, Elevator, Schedule, Signal
 
 from task_generator.shared import (
     Door,
@@ -181,6 +181,26 @@ class Realizer:
             destination=self._realize_destination(elevator.destination),
         )
 
+    @typing.overload
+    def realize(self, target: Schedule, level_id: str = "") -> Schedule: ...
+
+    def _realize_schedule(self, schedule: Schedule, level_id: str = "") -> Schedule:
+        return attrs.evolve(schedule, name=self._prefix(schedule.name, level_id))
+
+    @typing.overload
+    def realize(self, target: Signal, level_id: str = "") -> Signal: ...
+
+    def _realize_signal(self, signal: Signal, level_id: str = "") -> Signal:
+        return attrs.evolve(signal, name=self._prefix(signal.name, level_id))
+
+    def realize_polygon(self, corners: typing.Sequence[Position], level_id: str = "") -> list[tuple[float, float]]:
+        """Env-realized xy ring for a zone polygon, for occupancy_cap attach."""
+        ring: list[tuple[float, float]] = []
+        for corner in corners:
+            realized = self._realize_position(corner, level_id)
+            ring.append((realized.x, realized.y))
+        return ring
+
     def realize(self, target: object = None, level_id: str = "") -> object:
         if target is None:
             return self._prefix(level_id)
@@ -216,6 +236,12 @@ class Realizer:
 
         elif isinstance(target, Elevator):
             res = self._realize_elevator(target, level_id)
+
+        elif isinstance(target, Schedule):
+            res = self._realize_schedule(target, level_id)
+
+        elif isinstance(target, Signal):
+            res = self._realize_signal(target, level_id)
 
         if res is None:
             raise TypeError(f'realization not implemented for type {type(target)}')

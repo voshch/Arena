@@ -30,9 +30,11 @@ from rcl_interfaces.msg import ParameterDescriptor
 from rclpy import Parameter
 from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import Bool
+from std_srvs.srv import Trigger
 
 from arena_runtime.constants import SimSimulator
 from arena_runtime.holds import HoldRegistry
+from arena_runtime.lockstep import ChannelSpec, LockstepConfig, LockstepScheduler, _parse_channel_spec
 from arena_runtime.registry import EnvRegistry, _extent_eq, sweep_verdict
 from arena_runtime.sim import LifecycleRegistry, SimLifecycle
 from arena_runtime.sim.dummy_simulator import DummyHost
@@ -97,6 +99,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     _heartbeat_timer: rclpy.timer.Timer | None
     _clock_task: asyncio.Task | None
     _windows: HoldRegistry
+    _lockstep: LockstepScheduler
 
     def __init__(self) -> None:
         super().__init__("arena")
@@ -115,9 +118,11 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     async def setup(self) -> None:
         sim_name = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
         sim_key = SimSimulator(sim_name)
+        physics_dt = self.rosparam[float].get("physics_dt", 0.0333)
 
-        self._lifecycle = await LifecycleRegistry.get(sim_key, node=self)
+        self._lifecycle = await LifecycleRegistry.get(sim_key, node=self, physics_dt=physics_dt)
         self._holds = HoldRegistry()
+        self._lockstep = LockstepScheduler(self)
 
         if isinstance(self._lifecycle, DummyHost):
             self._clock_publisher = self.create_publisher(rosgraph_msgs.msg.Clock, '/clock', 10)
@@ -174,6 +179,42 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             self._cb_unpause_window,
             callback_group=srv_cb_group,
         )
+        self._srv_step = self.create_service(
+            arena_runtime_msgs.srv.LifecycleStep,
+            self.service_namespace("sim_lifecycle", "step"),
+            self._cb_step,
+            callback_group=srv_cb_group,
+        )
+        self._srv_lockstep_start = self.create_service(
+            arena_runtime_msgs.srv.LockstepStart,
+            self.service_namespace("sim_lifecycle", "lockstep", "start"),
+            self._cb_lockstep_start,
+            callback_group=srv_cb_group,
+        )
+        self._srv_lockstep_register = self.create_service(
+            arena_runtime_msgs.srv.LockstepRegister,
+            self.service_namespace("sim_lifecycle", "lockstep", "register"),
+            self._cb_lockstep_register,
+            callback_group=srv_cb_group,
+        )
+        self._srv_lockstep_stop = self.create_service(
+            Trigger,
+            self.service_namespace("sim_lifecycle", "lockstep", "stop"),
+            self._cb_lockstep_stop,
+            callback_group=srv_cb_group,
+        )
+        self._srv_lockstep_pause = self.create_service(
+            Trigger,
+            self.service_namespace("sim_lifecycle", "lockstep", "pause"),
+            self._cb_lockstep_pause,
+            callback_group=srv_cb_group,
+        )
+        self._srv_lockstep_resume = self.create_service(
+            Trigger,
+            self.service_namespace("sim_lifecycle", "lockstep", "resume"),
+            self._cb_lockstep_resume,
+            callback_group=srv_cb_group,
+        )
         self._srv_cleanup = self.create_service(
             arena_runtime_msgs.srv.CleanupEnv,
             self.service_namespace("cleanup_env"),
@@ -226,6 +267,34 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         env_n = self.rosparam[int].get("env_n", 0)
         if env_n > 0:
             asyncio.create_task(self._spawn_initial_envs(env_n))
+
+        # bootstrap-only: read once here, runtime control goes through the services
+        self.rosparam.declare_safe(
+            "lockstep.channels",
+            [],
+            descriptor=ParameterDescriptor(type=Parameter.Type.STRING_ARRAY.value),
+        )
+        channels = list(self.get_parameter("lockstep.channels").value or [])
+        bootstrap_ok = True
+        if channels:
+            try:
+                specs = [_parse_channel_spec(e) for e in channels if e]
+            except ValueError as e:
+                self.get_logger().error(f"lockstep bootstrap channels invalid: {e}")
+                bootstrap_ok = False
+            else:
+                self._lockstep.register("launch", "", specs)
+        if bootstrap_ok and self.rosparam[bool].get("lockstep.autostart", False):
+            rtf = self.rosparam[float].get("lockstep.target_rtf", 0.0)
+            try:
+                config = LockstepConfig(target_rtf=rtf, ungated=False)
+            except ValueError as e:
+                self.get_logger().error(f"lockstep autostart config invalid: {e}")
+            else:
+                await self._lockstep.start(config)
+                if self.rosparam[bool].get("lockstep.paused", True):
+                    self._lockstep.pause()
+                    self.get_logger().warning("lockstep paused")
 
         self.trigger_configure()
         self.trigger_activate()
@@ -387,6 +456,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             await self._lifecycle.unpause()
         self._publish_state()
 
+        self._lockstep.drop_env(record.fqn)
+
         self._publish_shutdown_request(env_id, reason)
 
         env = self._envs.pop(env_id, None)
@@ -404,6 +475,21 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
 
         self.get_logger().info(f"evicted env_{env_id} ({reason})")
 
+    async def _acquire_hold(self, caller: str, reason: str) -> int:
+        """Acquire a hold, pausing the sim on the empty->nonempty edge if no window is open."""
+        was_empty = self._holds.is_empty()
+        count = self._holds.acquire(caller, reason)
+        if was_empty and self._windows.is_empty():
+            await self._lifecycle.pause()
+        return count
+
+    async def _release_hold(self, caller: str, reason: str) -> int:
+        """Release a hold, unpausing the sim on the nonempty->empty edge if no window is open."""
+        count = self._holds.release(caller, reason)
+        if self._holds.is_empty() and self._windows.is_empty():
+            await self._lifecycle.unpause()
+        return count
+
     async def _cb_hold(
         self,
         request: arena_runtime_msgs.srv.LifecycleHold.Request,
@@ -413,14 +499,9 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         reason = request.reason
 
         if request.action == arena_runtime_msgs.srv.LifecycleHold.Request.ACQUIRE:
-            was_empty = self._holds.is_empty()
-            count = self._holds.acquire(caller, reason)
-            if was_empty and self._windows.is_empty():
-                await self._lifecycle.pause()
+            count = await self._acquire_hold(caller, reason)
         elif request.action == arena_runtime_msgs.srv.LifecycleHold.Request.RELEASE:
-            count = self._holds.release(caller, reason)
-            if self._holds.is_empty() and self._windows.is_empty():
-                await self._lifecycle.unpause()
+            count = await self._release_hold(caller, reason)
         else:
             self.get_logger().warning(f"unknown action {request.action}; ignoring")
             count = self._holds.total_count()
@@ -471,6 +552,98 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self.get_logger().warning(f"unknown unpause_window action {request.action}; ignoring")
         response.success = False
         response.error_msg = f"unknown action {request.action}"
+        return response
+
+    async def _cb_step(
+        self,
+        request: arena_runtime_msgs.srv.LifecycleStep.Request,
+        response: arena_runtime_msgs.srv.LifecycleStep.Response,
+    ) -> arena_runtime_msgs.srv.LifecycleStep.Response:
+        if self._holds.is_empty() or not self._windows.is_empty():
+            response.success = False
+            response.advanced = 0.0
+            response.error_msg = "step requires an active hold and no open unpause window"
+            return response
+
+        try:
+            response.advanced = await self._lifecycle.step_seconds(request.seconds)
+        except NotImplementedError:
+            response.success = False
+            response.advanced = 0.0
+            response.error_msg = "unsupported for this simulator"
+            return response
+        except RuntimeError as e:
+            response.success = False
+            response.advanced = 0.0
+            response.error_msg = str(e)
+            return response
+
+        response.success = True
+        response.error_msg = ""
+        return response
+
+    async def _cb_lockstep_start(
+        self,
+        request: arena_runtime_msgs.srv.LockstepStart.Request,
+        response: arena_runtime_msgs.srv.LockstepStart.Response,
+    ) -> arena_runtime_msgs.srv.LockstepStart.Response:
+        try:
+            config = LockstepConfig(target_rtf=request.target_rtf, ungated=request.ungated)
+        except ValueError as e:
+            response.success = False
+            response.error_msg = str(e)
+            return response
+        await self._lockstep.start(config)
+        response.success = True
+        response.error_msg = ""
+        return response
+
+    async def _cb_lockstep_register(
+        self,
+        request: arena_runtime_msgs.srv.LockstepRegister.Request,
+        response: arena_runtime_msgs.srv.LockstepRegister.Response,
+    ) -> arena_runtime_msgs.srv.LockstepRegister.Response:
+        registration = request.registration
+        try:
+            self._lockstep.register(
+                registration.caller,
+                registration.env,
+                [ChannelSpec.from_msg(ch) for ch in registration.channels],
+            )
+        except ValueError as e:
+            response.success = False
+            response.error_msg = str(e)
+            return response
+        response.success = True
+        response.error_msg = ""
+        return response
+
+    async def _cb_lockstep_stop(
+        self,
+        request: Trigger.Request,
+        response: Trigger.Response,
+    ) -> Trigger.Response:
+        await self._lockstep.stop()
+        response.success = True
+        response.message = ""
+        return response
+
+    async def _cb_lockstep_pause(
+        self,
+        request: Trigger.Request,
+        response: Trigger.Response,
+    ) -> Trigger.Response:
+        response.success = self._lockstep.pause()
+        response.message = "" if response.success else "lockstep not running"
+        return response
+
+    async def _cb_lockstep_resume(
+        self,
+        request: Trigger.Request,
+        response: Trigger.Response,
+    ) -> Trigger.Response:
+        response.success = self._lockstep.resume()
+        response.message = "" if response.success else "lockstep not running"
         return response
 
     async def _force_release_window(self, caller_id: str) -> None:

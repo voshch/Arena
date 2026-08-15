@@ -87,6 +87,7 @@ src = [
     "utils/arena_rclpy_mixins/arena_rclpy_mixins",
     "utils/rviz_utils/rviz_utils",
     "utils/human_steering/human_steering",
+    "utils/arena_cam/arena_cam",
 ]
 extend-exclude = [
     "_meta",

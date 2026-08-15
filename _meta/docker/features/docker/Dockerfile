@@ -20,7 +20,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     sudo \
     ros-jazzy-rmw-cyclonedds-cpp
 
-RUN pipx install git+https://github.com/voshch/vcstool.git
+RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin \
+    pipx install git+https://github.com/voshch/vcstool.git
 
 WORKDIR /opt/arena_ws
 

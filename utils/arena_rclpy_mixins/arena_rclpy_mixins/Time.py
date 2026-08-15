@@ -223,6 +223,32 @@ class TimeNode(rclpy.node.Node):
                 self.get_logger().warning(f"waiting on {what} ({elapsed:.0f}s)")
                 next_warn = elapsed + warn_period
 
+    async def arrives(
+        self,
+        topic: str,
+        msg_type: type[T],
+        *,
+        min_stamp: Time | None = None,
+        qos: int | rclpy.qos.QoSProfile = 10,
+        warn_period: float = 10.0,
+    ) -> T:
+        """Temp-subscribe to topic, resolve on first message with header.stamp >= min_stamp
+        (any message when min_stamp is None). Unbounded, narrates at warn_period."""
+        result: list[T] = []
+
+        def _callback(msg: T) -> None:
+            if result:
+                return
+            if min_stamp is None or Time.from_msg(msg.header.stamp) >= min_stamp:
+                result.append(msg)
+
+        sub = self.create_subscription(msg_type, topic, _callback, qos)
+        try:
+            await self.poll(lambda: bool(result), topic, warn_period=warn_period)
+        finally:
+            self.destroy_subscription(sub)
+        return result[0]
+
     async def await_sim_step(self, timeout_sec: float | None = None) -> bool:
         """Block until /clock advances past its current value (proof the sim is stepping). False on timeout."""
         start = self.sim_time.to_seconds()

@@ -21,6 +21,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/RobotFleet.msg
   msg/RobotQueue.msg
   msg/RobotState.msg
+  msg/SemanticEntityState.msg
+  msg/SemanticSnapshot.msg
   srv/DespawnRobot.srv
   srv/GetTaskModes.srv
   srv/Pause.srv
@@ -34,6 +36,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/QueryWorlds.srv
   srv/QueueEpisode.srv
   srv/ResetEpisode.srv
+  srv/SetSemantic.srv
   srv/SpawnDynamic.srv
   srv/SpawnRobot.srv
   srv/SpawnStatic.srv

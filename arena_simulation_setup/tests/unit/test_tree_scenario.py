@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import warnings
+from pathlib import Path
 
 import pytest
 import yaml
 
+from arena_simulation_setup.shared.conditions import EpisodeCondition
 from arena_simulation_setup.tree.World.Scenario import (
     RobotGoal,
     Scenario,
@@ -12,7 +14,9 @@ from arena_simulation_setup.tree.World.Scenario import (
     ScenarioGotoPhase,
     ScenarioPhase,
     ScenarioView,
+    TimelineEntry,
 )
+from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Pose
 
 
@@ -254,3 +258,201 @@ def test_robot_goal_phases_takes_priority_over_goal():
     phases = rg.phase_list()
     assert len(phases) == 1
     assert isinstance(phases[0], ScenarioGesturePhase)
+
+
+# ---------------------------------------------------------------------------
+# TimelineEntry / Scenario.timeline (M2)
+# ---------------------------------------------------------------------------
+
+
+def test_timeline_entry_parse_at():
+    entry = TimelineEntry.parse({"at": 12.0, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}]})
+    assert entry.at == pytest.approx(12.0)
+    assert entry.every is None
+    assert entry.when is None
+    assert entry.set == [{"entity": "fire_alarm", "field": "active", "value": "true"}]
+
+
+def test_timeline_entry_parse_every():
+    entry = TimelineEntry.parse({"every": 5.0, "offset": 1.0, "until": 30.0, "set": []})
+    assert entry.every == pytest.approx(5.0)
+    assert entry.offset == pytest.approx(1.0)
+    assert entry.until == pytest.approx(30.0)
+
+
+def test_timeline_entry_parse_when():
+    entry = TimelineEntry.parse({"when": {"entity": "door_1", "field": "open", "is": True}, "set": []})
+    assert entry.when == {"entity": "door_1", "field": "open", "is": True}
+
+
+def test_timeline_entry_requires_exactly_one_trigger_none_set():
+    with pytest.raises(ValueError):
+        TimelineEntry.parse({"set": []})
+
+
+def test_timeline_entry_requires_exactly_one_trigger_multiple_set():
+    with pytest.raises(ValueError):
+        TimelineEntry.parse({"at": 1.0, "every": 2.0, "set": []})
+
+
+def test_timeline_entry_round_trip_through_cattrs():
+    entry = TimelineEntry.parse({"at": 12.0, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}]})
+    raw = converter.unstructure(entry)
+    reparsed = converter.structure(raw, TimelineEntry)
+    assert reparsed == entry
+
+
+def test_scenario_timeline_default_empty():
+    s = Scenario()
+    assert s.timeline == []
+
+
+def test_scenario_timeline_structures_from_yaml(tmp_path):
+    scenario_dir = tmp_path / "sc_timeline"
+    scenario_dir.mkdir()
+    data = {
+        "static": [],
+        "dynamic": [],
+        "robots": [],
+        "timeline": [
+            {"at": 12.0, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}]},
+        ],
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    scenario = ScenarioView(scenario_dir).load()
+    assert len(scenario.timeline) == 1
+    assert scenario.timeline[0].at == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# Scenario.conditions (M3)
+# ---------------------------------------------------------------------------
+
+
+def test_scenario_conditions_default_empty():
+    s = Scenario()
+    assert s.conditions == []
+
+
+def test_scenario_conditions_structures_from_yaml(tmp_path):
+    scenario_dir = tmp_path / "sc_conditions"
+    scenario_dir.mkdir()
+    data = {
+        "static": [],
+        "dynamic": [],
+        "robots": [],
+        "conditions": [
+            {"op": "eventually", "p": "robot in ward_a", "text": "Deliver the package to ward A."},
+            {"op": "never", "p": "robot in pharmacy", "text": "Never enter the pharmacy."},
+            {
+                "op": "never_during",
+                "p": "robot in ward_a_doorway",
+                "q": "ward_a_door.open == false",
+                "text": "Wait for the door before passing through.",
+            },
+        ],
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    scenario = ScenarioView(scenario_dir).load()
+    assert len(scenario.conditions) == 3
+    assert [c.op for c in scenario.conditions] == ["eventually", "never", "never_during"]
+    assert scenario.conditions[2].q == "ward_a_door.open == false"
+
+
+def test_scenario_conditions_round_trip_through_cattrs():
+    cond = EpisodeCondition.parse({"op": "eventually", "p": "robot in ward_a"})
+    s = Scenario(conditions=[cond])
+    raw = converter.unstructure(s)
+    reparsed = converter.structure(raw, Scenario)
+    assert reparsed.conditions == [cond]
+
+
+def test_scenario_conditions_rejects_malformed_entry():
+    data = {
+        "static": [],
+        "dynamic": [],
+        "robots": [],
+        "conditions": [{"op": "eventually"}],  # missing 'p'
+    }
+    with pytest.raises(Exception):
+        converter.structure(data, Scenario)
+
+
+def test_scenario_view_load_modern_condition_malformed_reraises(tmp_path):
+    scenario_dir = tmp_path / "sc_bad_condition"
+    scenario_dir.mkdir()
+    data = {
+        "static": [],
+        "dynamic": [],
+        "robots": [],
+        "conditions": [{"op": "until", "p": "robot in ward_a"}],  # unknown op
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    view = ScenarioView(scenario_dir)
+    with pytest.raises(RuntimeError, match="modern"):
+        view.load()
+
+
+def test_scenario_view_load_modern_binary_op_missing_q_reraises(tmp_path):
+    scenario_dir = tmp_path / "sc_bad_condition2"
+    scenario_dir.mkdir()
+    data = {
+        "static": [],
+        "dynamic": [],
+        "robots": [],
+        "conditions": [{"op": "before", "p": "robot in ward_a"}],  # binary op missing 'q'
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    view = ScenarioView(scenario_dir)
+    with pytest.raises(RuntimeError, match="modern"):
+        view.load()
+
+
+def test_scenario_view_load_legacy_shape_still_falls_back(tmp_path):
+    scenario_dir = tmp_path / "sc_legacy_no_modern_keys"
+    scenario_dir.mkdir()
+    data = {
+        "obstacles": {
+            "static": [{"name": "obs1", "pose": [0.0, 0.0], "model": "box"}],
+            "dynamic": [],
+        },
+        "robots": [{"start": [1.0, 2.0], "goal": [3.0, 4.0]}],
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    view = ScenarioView(scenario_dir)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        scenario = view.load()
+    assert isinstance(scenario, Scenario)
+    assert scenario.conditions == []
+    assert scenario.timeline == []
+    assert len(scenario.robots) == 1
+
+
+# ---------------------------------------------------------------------------
+# Fire-alarm reference scenario (M2-D reference)
+# ---------------------------------------------------------------------------
+
+_FIRE_ALARM_SCENARIO = (
+    Path(__file__).resolve().parents[2]
+    / "worlds"
+    / "three_storied_residential"
+    / "scenarios"
+    / "fire_alarm"
+    / "scenario.yaml"
+)
+
+
+def test_fire_alarm_reference_scenario_parses():
+    if not _FIRE_ALARM_SCENARIO.exists():
+        pytest.skip(f"reference scenario not found: {_FIRE_ALARM_SCENARIO}")
+    scenario = ScenarioView(_FIRE_ALARM_SCENARIO.parent).load()
+    assert len(scenario.timeline) == 1
+    entry = scenario.timeline[0]
+    assert entry.at == pytest.approx(12.0)
+    assert entry.set == [{"entity": "fire_alarm", "field": "active", "value": "true"}]

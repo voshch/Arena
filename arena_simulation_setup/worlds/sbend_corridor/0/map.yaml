@@ -1,0 +1,9 @@
+free_thresh: 0.1
+image: map.png
+negate: 0
+occupied_thresh: 0.9
+origin:
+- -0.25
+- -0.25
+- 0
+resolution: 0.05

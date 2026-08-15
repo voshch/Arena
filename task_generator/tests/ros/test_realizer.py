@@ -153,6 +153,15 @@ def test_realize_floor_translates_and_prefixes_name(realizer):
     assert math.isclose(result.pos.y, 2.0)
 
 
+def test_realize_door_preserves_semantics_with_prefixed_name(realizer):
+    from arena_simulation_setup.shared import Door
+    from arena_simulation_setup.utils.geometry import Position
+    d = Door(start=Position(0, 0), end=Position(1, 0), name="door1", semantics=[{"preset": "gate"}], extra={})
+    result = realizer.realize(d)
+    assert "door1" in result.name
+    assert [(cfg.role, cfg.name) for cfg in result.semantics] == [(cfg.role, cfg.name) for cfg in d.semantics]
+
+
 def test_realize_elevator_translates_and_prefixes(realizer):
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
@@ -160,6 +169,15 @@ def test_realize_elevator_translates_and_prefixes(realizer):
     result = realizer.realize(e)
     assert "elev1" in result.name
     assert math.isclose(result.position.x, 1.0)
+
+
+def test_realize_elevator_preserves_semantics_with_prefixed_name(realizer):
+    from arena_simulation_setup.shared import Elevator
+    from arena_simulation_setup.utils.geometry import Position
+    e = Elevator(position=Position(0, 0), name="elev1", semantics=[{"preset": "pressure_plate"}], extra={})
+    result = realizer.realize(e)
+    assert "elev1" in result.name
+    assert [(cfg.role, cfg.name) for cfg in result.semantics] == [(cfg.role, cfg.name) for cfg in e.semantics]
 
 
 def test_realize_elevator_no_destination(realizer):
@@ -224,6 +242,38 @@ def test_realize_position_inverse_round_trip(realizer):
 def test_realize_unknown_type_raises(realizer):
     with pytest.raises(TypeError, match="realization not implemented"):
         realizer.realize(object())
+
+
+def test_realize_schedule_prefixes_name(realizer):
+    from arena_simulation_setup.shared import Schedule
+    s = Schedule(name="fire_alarm", semantics=[{"preset": "schedule"}], extra={})
+    result = realizer.realize(s)
+    assert "fire_alarm" in result.name
+    assert "world" in result.name
+    assert [(cfg.role, cfg.name) for cfg in result.semantics] == [(cfg.role, cfg.name) for cfg in s.semantics]
+
+
+def test_realize_signal_prefixes_name(realizer):
+    from arena_simulation_setup.shared import Signal
+    s = Signal(name="crossing_1", semantics=[{"preset": "signal"}], extra={})
+    result = realizer.realize(s)
+    assert "crossing_1" in result.name
+    assert "world" in result.name
+    assert [(cfg.role, cfg.name) for cfg in result.semantics] == [(cfg.role, cfg.name) for cfg in s.semantics]
+
+
+def test_realize_polygon_translates_corners(realizer):
+    from arena_simulation_setup.utils.geometry import Position
+    corners = [Position(0, 0), Position(2, 0), Position(2, 2), Position(0, 2)]
+    ring = realizer.realize_polygon(corners)
+    assert ring == [(1.0, 2.0), (3.0, 2.0), (3.0, 4.0), (1.0, 4.0)]
+
+
+def test_realize_polygon_zero_offset(zero_realizer):
+    from arena_simulation_setup.utils.geometry import Position
+    corners = [Position(1, 1), Position(3, 1), Position(3, 3)]
+    ring = zero_realizer.realize_polygon(corners)
+    assert ring == [(1.0, 1.0), (3.0, 1.0), (3.0, 3.0)]
 
 
 def test_entity_sim_path_set_after_realize(realizer):

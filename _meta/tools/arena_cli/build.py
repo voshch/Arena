@@ -31,7 +31,7 @@ def build_main(argv: list[str]) -> int:
 
     from common import _env
 
-    args = argv[1:]
+    args = list(argv)
 
     skip_old_env = os.environ.get("SKIP_OLD")
     if skip_old_env:
@@ -119,4 +119,4 @@ def build_main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(build_main(sys.argv))
+    sys.exit(build_main(sys.argv[1:]))

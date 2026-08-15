@@ -1,6 +1,3 @@
-import os
-from glob import glob
-
 from setuptools import find_packages, setup
 
 package_name = 'arena_runtime'
@@ -17,8 +14,6 @@ setup(
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'configs', 'cam', 'shots'),
-         glob('configs/cam/shots/*.yaml')),
     ],
     install_requires=['setuptools', 'pyyaml'],
     extras_require={
@@ -33,7 +28,6 @@ setup(
         'console_scripts': [
             'arena_node = arena_runtime.arena_node:main',
             'urdf_publisher = arena_runtime.urdf_publisher:main',
-            'cam = arena_runtime.cam.cli:main',
         ]
     }
 )

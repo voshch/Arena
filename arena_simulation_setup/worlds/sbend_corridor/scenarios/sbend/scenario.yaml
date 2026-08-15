@@ -1,0 +1,6 @@
+robots:
+  - start: [9.0, 1.5, 3.14159]
+    phases:
+      - {goto: [1.0, 11.5, 3.14159]}
+static: []
+dynamic: []

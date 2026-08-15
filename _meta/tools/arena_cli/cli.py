@@ -12,16 +12,12 @@ from common import (
     Verb,
     _env,
     _exec,
-    _feature_dispatch,
     _reg_add,
     _reg_has,
     _reg_list,
     _reg_pull,
     _reg_remove,
-    _reg_resolve,
     _run,
-    _script_desc,
-    _script_help,
     make_verb,
 )
 
@@ -32,7 +28,7 @@ arena_ws workspace. Most verbs forward KEY:=VALUE tokens verbatim to
 the underlying launch file or tool."""
 
 SECTIONS = {
-    "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo"],
+    "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
     "Attach": ["human", "robot", "cam"],
     "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall"],
     "Features": ["feature", "registry"],
@@ -129,10 +125,10 @@ def main(prog_name: str = "arena") -> None:
         sys.exit(130)
 
 
-def _select_args(args: list[str]) -> list[str]:
+def _select_args(args: list[str], above: bool = False) -> list[str]:
     argv = list(args)
     if argv and not argv[0].startswith("--"):
-        argv = ["--packages-select", *argv]
+        argv = ["--packages-above" if above else "--packages-select", *argv]
     return argv
 
 
@@ -190,7 +186,136 @@ _register(_robot_mod.VERB)
 @verb("cam", passthrough=True)
 def cam(args: list[str]) -> None:
     """Control the simulator viewport camera."""
-    _exec("ros2", "run", "arena_runtime", "cam", *args)
+    _exec("ros2", "run", "arena_cam", "cam", *args)
+
+
+_LOCKSTEP_PRESETS = {
+    "engine": {"name": "engine", "topic": "/arena/{env}/task_generator_node/agent_states", "type": "arena_humansim_msgs/msg/AgentStates", "period_s": 0.05, "hard": True},
+    "peds": {"name": "peds", "topic": "/arena/{env}/arena_peds", "type": "arena_people_msgs/msg/Pedestrians", "period_s": 0.15, "hard": True},
+}
+
+
+def _lockstep_parse_channel(spec: str) -> dict:
+    if spec in _LOCKSTEP_PRESETS:
+        return _LOCKSTEP_PRESETS[spec]
+    fields = spec.split("|")
+    if len(fields) != 5:
+        raise CLIError(f"bad channel spec '{spec}', want name|topic|type|period_s|role")
+    name, topic, type_, period_s, role = fields
+    try:
+        period = float(period_s)
+    except ValueError:
+        raise CLIError(f"bad channel spec '{spec}', period_s must be a number") from None
+    if period <= 0:
+        raise CLIError(f"bad channel spec '{spec}', period_s must be > 0")
+    if role not in ("hard", "soft"):
+        raise CLIError(f"bad channel spec '{spec}', role must be hard or soft")
+    return {"name": name, "topic": topic, "type": type_, "period_s": period, "hard": role == "hard"}
+
+
+def _lockstep_yq(s: str) -> str:
+    """YAML single-quoted scalar, safe for a bash double-quoted string."""
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _lockstep_channel_yaml(c: dict) -> str:
+    return (
+        "{name: " + _lockstep_yq(c["name"])
+        + ", topic: " + _lockstep_yq(c["topic"])
+        + ", type: " + _lockstep_yq(c["type"])
+        + f", period_s: {c['period_s']}, hard: {'true' if c['hard'] else 'false'}}}"
+    )
+
+
+@verb("lockstep")
+def lockstep(args: list[str]) -> None:
+    """Run or inspect the lockstep scheduler.
+
+    `arena lockstep run [rtf:=10] [for:=60] [ungated]` runs the sim in
+    lockstep until Ctrl-C or `for:=` seconds elapse, then pauses (sim stays
+    frozen at the tick boundary; `off` returns to free-run). `on`/`off`
+    start/stop without blocking, `pause`/`resume` freeze and continue a
+    running lockstep, `status` echoes the scheduler's latched status (config,
+    measured RTF, gate state).
+    `rtf:=` paces to a target real-time factor (0 = flat out). `ungated`
+    ignores registered gate channels and free-steps.
+    `arena lockstep gate [engine|peds|CHANNEL ...]` registers the channels
+    the scheduler gates on, under caller "cli" (global, all envs). A CHANNEL
+    is a preset name (engine, peds) or a raw 'name|topic|type|period_s|role'
+    spec; {env} expands per env. No args clears the cli registration.
+    """
+    if not args or args[0] not in ("run", "on", "off", "pause", "resume", "status", "gate"):
+        raise CLIError("lockstep needs one of: run, on, off, pause, resume, status, gate")
+    action, rest = args[0], args[1:]
+    unreachable = "lockstep unreachable"
+
+    def srv_guard(name: str) -> str:
+        return f'ros2 service list 2>/dev/null | grep -qx /arena/sim_lifecycle/lockstep/{name} || {{ echo "{unreachable}"; exit 1; }}'
+
+    if action == "status":
+        _exec(
+            "bash",
+            "-c",
+            f'ros2 topic list 2>/dev/null | grep -qx /arena/state/lockstep || {{ echo "{unreachable}"; exit 1; }};'
+            " ros2 topic echo /arena/state/lockstep --once"
+            " --qos-durability transient_local --qos-reliability reliable",
+        )
+    stop = "ros2 service call /arena/sim_lifecycle/lockstep/stop std_srvs/srv/Trigger >/dev/null 2>&1"
+    if action == "off":
+        _exec("bash", "-c", f'{srv_guard("stop")}; {stop} && echo "lockstep off"')
+    if action in ("pause", "resume"):
+        _exec(
+            "bash",
+            "-c",
+            f"{srv_guard(action)};"
+            f" R=$(ros2 service call /arena/sim_lifecycle/lockstep/{action} std_srvs/srv/Trigger 2>&1);"
+            f' grep -q "success=True" <<< "$R" && echo "lockstep {action}d" || {{ echo "lockstep not running"; exit 1; }}',
+        )
+    if action == "gate":
+        channels = [_lockstep_parse_channel(a) for a in rest]
+        reg = "registration: {caller: 'cli', env: ''" + f", channels: [{', '.join(_lockstep_channel_yaml(c) for c in channels)}]}}"
+        register = (
+            f"{srv_guard('register')};"
+            " R=$(ros2 service call /arena/sim_lifecycle/lockstep/register"
+            f' arena_runtime_msgs/srv/LockstepRegister "{reg}" 2>&1);'
+            ' grep -q "success=True" <<< "$R" || { grep -oE "error_msg=.*" <<< "$R"; exit 1; }'
+        )
+        msg = "cli gates: " + ", ".join(c["name"] for c in channels) if channels else "cli gates cleared"
+        _exec("bash", "-c", f'{register} && echo "{msg}"')
+
+    rtf = duration = None
+    ungated = False
+    for a in rest:
+        if a == "ungated":
+            ungated = True
+        elif a.startswith("rtf:="):
+            rtf = float(a.removeprefix("rtf:="))
+            if rtf <= 0:
+                raise CLIError("rtf:= must be > 0")
+        elif a.startswith("for:="):
+            if action != "run":
+                raise CLIError("for:= only applies to lockstep run")
+            duration = float(a.removeprefix("for:="))
+        else:
+            raise CLIError(f"lockstep {action}: unrecognized argument '{a}'")
+    start_req = f"{{target_rtf: {rtf if rtf is not None else 0.0}, ungated: {'true' if ungated else 'false'}}}"
+    start = (
+        f"{srv_guard('start')};"
+        " R=$(ros2 service call /arena/sim_lifecycle/lockstep/start"
+        f" arena_runtime_msgs/srv/LockstepStart '{start_req}' 2>&1);"
+        ' grep -q "success=True" <<< "$R" || { grep -oE "error_msg=.*" <<< "$R"; exit 1; }'
+    )
+    if action == "on":
+        _exec("bash", "-c", f'{start} && echo "lockstep on"')
+    pause_cmd = "ros2 service call /arena/sim_lifecycle/lockstep/pause std_srvs/srv/Trigger >/dev/null 2>&1"
+    trap_pause = f"ros2 service list 2>/dev/null | grep -qx /arena/sim_lifecycle/lockstep/pause && {pause_cmd}; echo lockstep paused"
+    wait = f"sleep {duration}" if duration is not None else "sleep infinity"
+    _exec(
+        "bash",
+        "-c",
+        f'{start} && echo "lockstep running (ctrl-c to pause)";'
+        f' trap "{trap_pause}" EXIT; trap "exit 0" INT TERM; {wait}',
+    )
 
 
 @verb("preload", passthrough=True)
@@ -216,12 +341,12 @@ def cleanup(args: list[str]) -> None:
 def build(args: list[str]) -> None:
     """Build the workspace (or selected packages) with colcon.
 
-    Bare package names are shorthand for --packages-select. The shell
+    Bare package names are shorthand for --packages-above. The shell
     shim re-sources the environment afterwards.
     """
     from build import build_main
 
-    sys.exit(build_main(_select_args(args)))
+    sys.exit(build_main(_select_args(args, above=True)))
 
 
 @verb("rebuild", passthrough=True)
@@ -230,13 +355,14 @@ def rebuild(args: list[str]) -> None:
 
     Accepts bare package names or colcon selection flags, e.g.
     `arena rebuild foo bar` or `arena rebuild --packages-select-regex 'arena_.*'`.
+    Bare names expand to --packages-above like `arena build`.
     """
     import shutil
     import subprocess
 
     if not args:
         raise CLIError("rebuild needs a package selection")
-    argv = _select_args(args)
+    argv = _select_args(args, above=True)
     listing = subprocess.run(
         ["colcon", "list", "--names-only", "--base-paths", os.path.join(_env("ARENA_WS_DIR"), "src"), *argv],
         capture_output=True,
@@ -309,26 +435,14 @@ def update(args: list[str]) -> None:
     sys.exit(rc)
 
 
-UNIVERSAL_VERBS = {
-    "install": "Install the feature (pull repos, register, run its update).",
-    "update": "Update the feature to the latest state.",
-    "uninstall": "Uninstall and unregister the feature.",
-    "launch": "Launch the feature's runtime component.",
-}
-
 FEATURE_HELP = """Manage optional features.
 
-install, update, uninstall, and launch are common verbs. Any other
-verb is forwarded to the feature script, see each feature's help
-page for its full verb list."""
+install, update, and uninstall are common verbs, see each feature's
+help page for its full verb list."""
 
 
 def _feature_names() -> list[str]:
-    try:
-        entries = sorted(os.listdir(_env("ARENA_FEATURES_DIR")))
-    except OSError:
-        return []
-    return [e for e in entries if _reg_resolve(e)]
+    return [name for name in sorted(_features.available()) if _features.load(name) is not None]
 
 
 def _feature_desc(mod) -> str:
@@ -337,10 +451,7 @@ def _feature_desc(mod) -> str:
 
 def _feature_short(name: str) -> str:
     mod = _features.load(name)
-    if mod is not None:
-        return _feature_desc(mod).splitlines()[0]
-    path = _reg_resolve(name)
-    return _script_desc(path) if path else ""
+    return _feature_desc(mod).splitlines()[0] if mod is not None else ""
 
 
 def _feature_group_help() -> str:
@@ -359,43 +470,44 @@ def _feature_module_help(name: str, mod) -> str:
     return "\n".join(out)
 
 
-def _feature_script_help(name: str, path: str) -> str:
-    out = [f"Usage: arena feature {name} COMMAND [ARGS]...", "", f"  The {name} feature."]
-    out += ["", "Commands:", _listing(list(UNIVERSAL_VERBS.items()))]
-    text = _script_help(path)
-    if text:
-        out += ["", "Feature script help:", _indent(text)]
-    return "\n".join(out)
-
-
 def _feature_cmd(args: list[str]) -> int:
     if not args or args[0] in ("-h", "--help"):
         print(_feature_group_help())
         return 0
     name, sub = args[0], args[1:]
     mod = _features.load(name)
-    if mod is not None:
-        if not sub or sub[0] in ("-h", "--help"):
-            print(_feature_module_help(name, mod))
-            return 0
-        v = mod.COMMANDS.get(sub[0])
-        if v is None:
-            raise CLIError(f"No such command '{sub[0]}' for feature '{name}'.")
-        if _wants_help(sub[1:], v.passthrough):
-            print(_verb_help(v))
-            return 0
-        return v.run(sub[1:]) or 0
-    path = _reg_resolve(name)
-    if path is None:
+    if mod is None:
         raise CLIError(f"No such feature '{name}'.")
     if not sub or sub[0] in ("-h", "--help"):
-        print(_feature_script_help(name, path))
+        print(_feature_module_help(name, mod))
         return 0
-    return _feature_dispatch(name, tuple(sub))
+    v = mod.COMMANDS.get(sub[0])
+    if v is None:
+        raise CLIError(f"No such command '{sub[0]}' for feature '{name}'.")
+    if _wants_help(sub[1:], v.passthrough):
+        print(_verb_help(v))
+        return 0
+    return v.run(sub[1:]) or 0
 
 
 _register(make_verb("feature", _feature_cmd, help_text=FEATURE_HELP))
 _register(make_verb("ft", _feature_cmd, hidden=True, help_text="Alias for feature."))
+
+
+@verb("shellinit", hidden=True)
+def shellinit(args: list[str]) -> None:
+    """Print shell init code for installed features, eval'd by `source arena`."""
+    for name in _reg_list():
+        mod = _features.load(name)
+        if mod is None:
+            continue
+        v = mod.COMMANDS.get("source")
+        if v is None:
+            continue
+        try:
+            v.run([])
+        except Exception as e:
+            print(f"Failed to source {name}, skipping: {e}", file=sys.stderr)
 
 
 @verb("train", passthrough=True)
@@ -404,16 +516,16 @@ def train(args: list[str]) -> None:
 
     `arena train train_config:=<yaml> [launch args]`.
     """
-    sys.exit(_feature_dispatch("training", ("launch", *args)))
+    sys.exit(_feature_cmd(["training", "launch", *args]))
 
 
 @verb("evaluation", hidden=True, passthrough=True)
 def evaluation(args: list[str]) -> None:
     """Alias for feature evaluation."""
-    sys.exit(_feature_dispatch("evaluation", tuple(args)))
+    sys.exit(_feature_cmd(["evaluation", *args]))
 
 
-REGISTRY_VERBS = ("has", "require", "add", "remove", "list", "pull", "resolve")
+REGISTRY_VERBS = ("has", "require", "add", "remove", "list", "pull")
 
 
 @verb("registry")
@@ -440,11 +552,6 @@ def registry(args: list[str]) -> None:
         _reg_remove(name)
     elif action == "pull":
         _reg_pull(name)
-    elif action == "resolve":
-        path = _reg_resolve(name)
-        if path is None:
-            sys.exit(1)
-        print(path)
 
 
 @verb("uninstall")

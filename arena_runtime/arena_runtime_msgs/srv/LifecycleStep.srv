@@ -1,0 +1,6 @@
+# Advance the held sim by an exact sim-time delta (quantized to physics steps).
+float64 seconds
+---
+bool success
+float64 advanced     # sim time actually advanced
+string error_msg

@@ -57,8 +57,8 @@ class Task(NodeInterface):
     __param_tm_robots: Constants.TaskMode.TM_Robots
     __param_tm_obstacles: Constants.TaskMode.TM_Obstacles
 
-    __tm_robots: TM_Robots
-    __tm_obstacles: TM_Obstacles
+    __tm_robots: TM_Robots | None = None
+    __tm_obstacles: TM_Obstacles | None = None
 
     _force_reset: bool
     _abort_reason: str | None
@@ -80,8 +80,8 @@ class Task(NodeInterface):
             modules=modules,
             **kwargs,
         )
-        self.set_tm_robots(self.node.conf.TaskMode.TM_ROBOTS.value)
-        self.set_tm_obstacles(self.node.conf.TaskMode.TM_OBSTACLES.value)
+        await self.set_tm_robots(self.node.conf.TaskMode.TM_ROBOTS.value)
+        await self.set_tm_obstacles(self.node.conf.TaskMode.TM_OBSTACLES.value)
         await self.robots_manager.set_up()
         return self
 
@@ -136,14 +136,20 @@ class Task(NodeInterface):
             meta = MODULE_MODES.meta(module)
             self.__modules.append(cls(ctx=self._ctx, namespace=meta.namespace, task=self, node=self.node))
 
-    def set_tm_robots(self, tm_robots: Constants.TaskMode.TM_Robots):
+    async def _tear_down_tm_robots(self) -> None:
+        if self.__tm_robots is not None:
+            await self.__tm_robots.teardown()
+            self.__tm_robots = None
+
+    async def set_tm_robots(self, tm_robots: Constants.TaskMode.TM_Robots):
         assert tm_robots in ROBOTS_MODES, f"TaskMode '{tm_robots}' for robots is not registered!"
         cls = ROBOTS_MODES.get(tm_robots)
         meta = ROBOTS_MODES.meta(tm_robots)
+        await self._tear_down_tm_robots()
         self.__tm_robots = cls(ctx=self._ctx, namespace=meta.namespace, node=self.node)
         self.__param_tm_robots = tm_robots
 
-    def set_tm_robots_composite(
+    async def set_tm_robots_composite(
         self,
         specs: typing.Sequence[TaskModeSpec],
     ) -> None:
@@ -177,6 +183,7 @@ class Task(NodeInterface):
             scoped = _scoped_ctx(self._ctx, (r.name for r in robots))
             sub_modes.append(tm_cls(ctx=scoped, namespace=ns, node=self.node))
 
+        await self._tear_down_tm_robots()
         self.__tm_robots = TM_Composite(
             ctx=self._ctx,
             namespace=_REGISTRY_NAMESPACE("composite"),
@@ -188,12 +195,22 @@ class Task(NodeInterface):
         # from retriggering a rebind.
         self.__param_tm_robots = None  # type: ignore[assignment]
 
-    def set_tm_obstacles(self, tm_obstacles: Constants.TaskMode.TM_Obstacles):
+    async def set_tm_obstacles(self, tm_obstacles: Constants.TaskMode.TM_Obstacles):
         assert tm_obstacles in OBSTACLES_MODES, f"TaskMode '{tm_obstacles}' for obstacles is not registered!"
         cls = OBSTACLES_MODES.get(tm_obstacles)
         meta = OBSTACLES_MODES.meta(tm_obstacles)
+        if self.__tm_obstacles is not None:
+            await self.__tm_obstacles.teardown()
+            self.__tm_obstacles = None
         self.__tm_obstacles = cls(ctx=self._ctx, namespace=meta.namespace, node=self.node)
         self.__param_tm_obstacles = tm_obstacles
+
+    async def teardown(self) -> None:
+        """Release both task modes; called when the task itself goes down."""
+        await self._tear_down_tm_robots()
+        if self.__tm_obstacles is not None:
+            await self.__tm_obstacles.teardown()
+            self.__tm_obstacles = None
 
     async def _reset_episode(self, **kwargs: object) -> None:
         try:
@@ -210,17 +227,17 @@ class Task(NodeInterface):
                 self.node._apply_staged_params()
 
                 if (new_tm_robots := self.node.conf.TaskMode.TM_ROBOTS.value) != self.__param_tm_robots:
-                    self.set_tm_robots(new_tm_robots)
+                    await self.set_tm_robots(new_tm_robots)
 
                 if (new_tm_obstacles := self.node.conf.TaskMode.TM_OBSTACLES.value) != self.__param_tm_obstacles:
-                    self.set_tm_obstacles(new_tm_obstacles)
+                    await self.set_tm_obstacles(new_tm_obstacles)
 
                 for module in self.__modules:
                     module.before_reset()
 
-                await self.__tm_robots.reset(**kwargs)
+                await self.tm_robots.reset(**kwargs)
 
-                obstacles, dynamic_obstacles = await self.__tm_obstacles.reset(**kwargs)
+                obstacles, dynamic_obstacles = await self.tm_obstacles.reset(**kwargs)
 
                 async def respawn():
                     await asyncio.gather(
@@ -235,7 +252,7 @@ class Task(NodeInterface):
                         mgr.reset(
                             ResetContext(
                                 rng=self.node.conf.General.RNG.stream("robot-adapter", name),
-                                start_pose=self.__tm_robots.start_poses.get(name),
+                                start_pose=self.tm_robots.start_poses.get(name),
                                 episode_index=self.node._episodes.current.episode_id,
                             )
                         )
@@ -274,24 +291,26 @@ class Task(NodeInterface):
 
     @property
     async def is_done(self) -> bool:
-        return self._force_reset or await self.__tm_robots.done
+        return self._force_reset or await self.tm_robots.done
 
     @property
     def tm_obstacles(self) -> TM_Obstacles:
+        assert self.__tm_obstacles is not None, "obstacle task mode is not bound"
         return self.__tm_obstacles
 
     @property
     def tm_robots(self) -> TM_Robots:
+        assert self.__tm_robots is not None, "robot task mode is not bound"
         return self.__tm_robots
 
     async def set_robot_position(self, pose: Pose):
         """Broadcast a teleport to all robots (back-compat shim for RViz / training UI)."""
-        await self.__tm_robots.set_position(pose)
+        await self.tm_robots.set_position(pose)
         self.node._flip_integrity()
 
     async def set_robot_goal(self, pose: Pose):
         """Broadcast a goal to all robots (back-compat shim for RViz / training UI)."""
-        await self.__tm_robots.set_goal(pose)
+        await self.tm_robots.set_goal(pose)
         self.node._flip_integrity()
 
     async def submit_task(self, request: TaskRequest, robot_name: str) -> None:

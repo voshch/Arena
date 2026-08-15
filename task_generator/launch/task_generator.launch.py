@@ -11,6 +11,7 @@ import launch_ros.actions
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_bringup.actions import IsolatedGroupAction
+from arena_rclpy_mixins import launch_str_to_value
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.defaults import default_human
 from arena_bringup.substitutions import LaunchArgument
@@ -246,33 +247,23 @@ def generate_launch_description():
             output="screen",
         )
 
-        def _coerce(raw: str) -> object:
-            # accept list/dict/numeric coercions only, raw otherwise
-            try:
-                parsed = yaml.safe_load(raw)
-            except yaml.YAMLError:
-                return raw
-            if isinstance(parsed, (list, dict, int, float)) and not isinstance(parsed, bool):
-                return parsed
-            return raw
-
         dotted_overrides: dict[str, object] = {}
         for k, v in context.launch_configurations.items():
             if k.startswith("task."):
-                dotted_overrides[k] = _coerce(v)
+                dotted_overrides[k] = launch_str_to_value(v)
             elif k.startswith("mobile.") or k.startswith("arm."):
                 # `<cap>.<key>:=<val>` becomes `robot.<cap>.<key>` and lands as a
                 # kwarg in RobotManager._adapter_kwargs_for, overlaying the
                 # cap-file YAML for the bound adapter.
-                dotted_overrides[f"robot.{k}"] = _coerce(v)
+                dotted_overrides[f"robot.{k}"] = launch_str_to_value(v)
         if _planner_selector_override is not None:
             sel_key, sel_val = _planner_selector_override
             param_key = f"robot.mobile.{sel_key}"
             if param_key not in dotted_overrides:
                 dotted_overrides[param_key] = sel_val
 
-        dotted_overrides.update(expand_flag_namespace(context, "optim", _coerce))
-        debug_flags = expand_flag_namespace(context, "debug", _coerce)
+        dotted_overrides.update(expand_flag_namespace(context, "optim", launch_str_to_value))
+        debug_flags = expand_flag_namespace(context, "debug", launch_str_to_value)
         dotted_overrides.update(debug_flags)
 
         # launch_ros.normalize_parameters turns list values into tuples and

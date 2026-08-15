@@ -9,7 +9,7 @@ import math
 import time
 import traceback
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 import arena_robots.catalog
@@ -19,11 +19,11 @@ import launch
 import launch_ros
 import rclpy.impl.rcutils_logger
 import rclpy.time
-import tf2_ros
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Ceiling
 from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.material import MdlUtil
@@ -79,12 +79,15 @@ class GazeboHost(SimLifecycle):
         service_control_world: ClientWrapper,
         service_delete_entity: ClientWrapper,
         logger: rclpy.impl.rcutils_logger.RcutilsLogger,
+        physics_dt: float,
     ) -> None:
         self._node = node
         self._semaphore = semaphore
         self._service_control_world = service_control_world
         self._service_delete_entity = service_delete_entity
         self._logger = logger
+        self._dt = physics_dt
+        self._rtf_boosted = False
 
     async def ensure_ready(self) -> None:
         await self._node.do_launch(
@@ -129,7 +132,28 @@ class GazeboHost(SimLifecycle):
                 traceback.print_exc()
                 return False
 
+    async def _set_physics_rtf(self, value: float) -> None:
+        # gz applies the FULL Physics message: unset fields land as zeros, and a
+        # sparse request zeroes gravity (models levitate), so send world defaults
+        req = (
+            f'real_time_factor: {value}'
+            ', gravity: {x: 0, y: 0, z: -9.8}'
+            ', magnetic_field: {x: 5.5645e-06, y: 2.28758e-05, z: -4.23884e-05}'
+        )
+        process = await asyncio.create_subprocess_exec(
+            'gz', 'service', '-s', '/world/default/set_physics',
+            '--reqtype', 'gz.msgs.Physics', '--reptype', 'gz.msgs.Boolean',
+            '--timeout', '3000', '--req', req,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await process.wait()
+
     async def unpause(self) -> bool:
+        # returning to free-run: restore gz's realtime pacing
+        if self._rtf_boosted:
+            await self._set_physics_rtf(1.0)
+            self._rtf_boosted = False
         async with self._semaphore:
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
@@ -146,6 +170,60 @@ class GazeboHost(SimLifecycle):
                 self._logger.error(f"Error unpausing simulation: {str(e)}")
                 traceback.print_exc()
                 return False
+
+    async def step_seconds(self, seconds: float) -> float:
+        """Advance sim time by paused ControlWorld multi_step requests. Raises on service failure."""
+        n = round(seconds / self._dt)
+        if seconds > 0:
+            n = max(1, n)
+        if n <= 0:
+            return 0.0
+        # gz throttles stepped iterations to real_time_factor x wall clock, so
+        # lift the limiter while stepping drives the sim, unpause() restores it
+        if not self._rtf_boosted:
+            await self._set_physics_rtf(1e6)
+            self._rtf_boosted = True
+        # gz acks multi_step on acceptance and completion is observed via /clock, so
+        # record the target before sending (half-tick slack for float vs ns rounding)
+        target = self._node.sim_time + Time.from_float((n - 0.5) * self._dt)
+        # send in chunks of at most one sim second: pending iterations cannot be
+        # cancelled, so a caller that dies mid-step orphans at most one chunk
+        max_chunk = max(1, round(1.0 / self._dt))
+        # gz silently drops multi_step when the request lands while a previous
+        # batch is still executing (Paused() is false mid-batch), so watch for
+        # motion and resend the remaining ticks whenever the clock freezes
+        while self._node.sim_time < target:
+            start_sim = self._node.sim_time
+            remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
+            chunk = min(max_chunk, remaining)
+            chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
+            await self._send_multi_step(chunk, seconds)
+            last = start_sim
+            stall = 0.0
+            while self._node.sim_time < chunk_target and stall < 1.0:
+                await asyncio.sleep(0.002)
+                if self._node.sim_time > last:
+                    last = self._node.sim_time
+                    stall = 0.0
+                else:
+                    stall += 0.002
+        return n * self._dt
+
+    async def _send_multi_step(self, n: int, seconds: float) -> None:
+        async with self._semaphore:
+            request = ControlWorld.Request()
+            request.world_control = WorldControl()
+            # pause must be set in the same request as multi_step, else gz free-runs.
+            request.world_control.pause = True
+            request.world_control.multi_step = n
+            try:
+                result = await self._service_control_world.call_timeout(request)
+            except Exception as e:
+                self._logger.error(f"Error stepping simulation by {n}: {str(e)}")
+                traceback.print_exc()
+                raise RuntimeError(f"step_seconds({seconds}) failed: {e}") from e
+            if result is None or not result.success:
+                raise RuntimeError(f"step_seconds({seconds}) service call failed")
 
     async def cleanup_namespace(self, prefix: str) -> int:
         names = await self._list_models()
@@ -188,6 +266,8 @@ class GazeboHost(SimLifecycle):
 
 
 class GazeboSimulator(BaseSim):
+    SIM_NAME = 'gazebo'
+
     # gz create CLI ack timeout (ms), kept generous so a slow server-side ack
     # under heavy load is not mistaken for a spawn failure, which would leak an
     # untracked orphan model.
@@ -206,17 +286,7 @@ class GazeboSimulator(BaseSim):
         self._material_texture_cache: dict[str, dict[str, str]] = {}
         self._spawned_names: set[str] = set()
 
-        self._agent_robots: dict[str, str] = {}
-        self._mechanism_tf_buffer = tf2_ros.Buffer()
-        self._mechanism_tf_listener = tf2_ros.TransformListener(self._mechanism_tf_buffer, self.node)
-
         self._viewport_camera_pose: Pose | None = None
-
-    async def before_reset_episode(self) -> bool:
-        return True
-
-    async def after_reset_episode(self) -> bool:
-        return True
 
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         args: dict[str, object] = {
@@ -284,7 +354,7 @@ class GazeboSimulator(BaseSim):
             self._robot_initialpose(robot)
             await self._robot_bridge(robot, model_description)
             robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-            self._agent_robots[robot.sim_path] = robot.frame.tf(robot_config.model_params.base_frame)
+            self._register_agent_robot(robot, robot_config.model_params)
             return True
 
         success = await asyncio.gather(*map(impl, robots))
@@ -314,7 +384,7 @@ class GazeboSimulator(BaseSim):
 
     async def robot_delete(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:
-            self._agent_robots.pop(robot.sim_path, None)
+            self._forget_agent_robot(robot.sim_path)
         return await asyncio.gather(*(self._delete_entity(robot.sim_path) for robot in robots))
 
     async def pedestrian_update(self, pedestrians: Pedestrians) -> Sequence[bool]:
@@ -340,31 +410,6 @@ class GazeboSimulator(BaseSim):
                 await self._spawn_sdf(name, ceiling_sdf, Pose())
             self._walls_entities.append(name)
         return True
-
-    def robot_positions_xy(self) -> Iterable[tuple[str, tuple[float, float]]]:
-        out: list[tuple[str, tuple[float, float]]] = []
-        for sim_path, frame in list(self._agent_robots.items()):
-            try:
-                t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                continue
-            out.append((sim_path, (t.transform.translation.x, t.transform.translation.y)))
-        return out
-
-    def robot_pose(self, sim_path: str) -> Pose | None:
-        frame = self._agent_robots.get(sim_path)
-        if frame is None:
-            return None
-        try:
-            t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            return None
-        tr = t.transform.translation
-        rot = t.transform.rotation
-        return Pose(
-            position=Position(x=tr.x, y=tr.y, z=tr.z),
-            orientation=Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z),
-        )
 
     async def set_robot_pose(self, sim_path: str, pose: Pose) -> bool:
         if sim_path not in self._agent_robots:
@@ -646,6 +691,9 @@ class GazeboSimulator(BaseSim):
         async with self._semaphore:
             request = ControlWorld.Request()
             request.world_control = WorldControl()
+            # gz queues multi_step only if already paused, so pause is applied first from
+            # this same message, then the runner steps n iterations and re-pauses
+            request.world_control.pause = True
             request.world_control.multi_step = n
             try:
                 result = await self._service_control_world.call_timeout(request)

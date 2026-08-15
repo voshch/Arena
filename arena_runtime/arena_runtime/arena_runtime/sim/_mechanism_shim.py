@@ -12,13 +12,16 @@ import attrs
 import rclpy.impl.rcutils_logger
 from task_generator.shared import Door, Elevator, Orientation, Pose, Position
 
+from ._interface import _BOX_FLOOR_CLEARANCE
+
 if typing.TYPE_CHECKING:
     from ._interface import MechanismITF
 
 MECHANISM_TICK_RATE = 30.0  # Hz, sim time
-INSIDE_DOOR_BLOCKER_RADIUS = 0.05
 DOOR_INSET = 0.05
 WALL_THICKNESS = 0.05
+
+Disc = tuple[str, tuple[float, float], float]
 
 _DOOR_AXES: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
     '+x': ((1.0, 0.0), (0.0, 1.0)),
@@ -56,8 +59,8 @@ def _elevator_wall_geometries(elevator: Elevator) -> list[tuple[str, tuple[float
     pos = elevator.position
     wall_z = pos.z + ez / 2.0
 
-    def pose(cx: float, cy: float) -> Pose:
-        return Pose(position=Position(x=cx, y=cy, z=wall_z), orientation=Orientation.from_yaw(0.0))
+    def pose(cx: float, cy: float, cz: float | None = None) -> Pose:
+        return Pose(position=Position(x=cx, y=cy, z=wall_z if cz is None else cz), orientation=Orientation.from_yaw(0.0))
 
     if outward[0] != 0:
         back_size = (WALL_THICKNESS, ey, ez)
@@ -69,10 +72,13 @@ def _elevator_wall_geometries(elevator: Elevator) -> list[tuple[str, tuple[float
     back_cy = 2.0 * pos.y - face_cy
     side_dx = tangent[0] * tan_extent
     side_dy = tangent[1] * tan_extent
+    # cabins may overhang the authored floor polygons, so the cabin carries its own floor slab
+    floor_z = pos.z + _BOX_FLOOR_CLEARANCE - WALL_THICKNESS / 2.0
     return [
         ('back', back_size, pose(back_cx, back_cy)),
         ('side_pos', side_size, pose(pos.x + side_dx, pos.y + side_dy)),
         ('side_neg', side_size, pose(pos.x - side_dx, pos.y - side_dy)),
+        ('floor', (ex, ey, WALL_THICKNESS), pose(pos.x, pos.y, floor_z)),
     ]
 
 
@@ -116,6 +122,29 @@ class _ElevatorRuntime:
 class _ElevatorStepResult:
     teleport_job: tuple[str, str, list[tuple[str, tuple[float, float]]]] | None = None
     missing_destination: bool = False
+
+
+def _reset_door(runtime: _DoorRuntime) -> None:
+    """Reset a door runtime to spawn defaults (last_applied_progress = -1 forces a re-close next tick)."""
+    runtime.state = _DoorState.CLOSED
+    runtime.progress = 0.0
+    runtime.last_trigger_sim_time = -math.inf
+    runtime.last_applied_progress = -1.0
+
+
+def reset_mechanisms(mech: MechanismITF) -> None:
+    """Reset every door and elevator runtime to spawn defaults for a deterministic episode start."""
+    for runtime in mech._door_runtime.values():
+        _reset_door(runtime)
+    for name, runtime in mech._elevator_runtime.items():
+        runtime.arriving_eta = -math.inf
+        runtime.pending_occupants = ()
+        runtime.just_arrived = {}
+        runtime.departing = False
+        runtime.dispatched = set()
+        cabin = mech._door_runtime.get(f"{name}/door")
+        if cabin is not None:
+            _reset_door(cabin)
 
 
 def _effective_kind(
@@ -242,11 +271,41 @@ def _near_door_segment(door: Door, positions: list[tuple[float, float]], radius:
     return False
 
 
-def _advance_state(runtime: _DoorRuntime, dt: float, now: float) -> None:
-    """Advance door state machine one tick: linear T-delta for sliding, instant snap for teleport."""
+def _swept_slab_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
+    """True when the slab band swept between the two progress values overlaps any agent disc.
+    Vertical kinds (teleport, sliding_top) occupy the slot itself regardless of progress."""
+    door = runtime.door
+    sx, sy = door.start.x, door.start.y
+    ex, ey = door.end.x, door.end.y
+    length = math.hypot(ex - sx, ey - sy)
+    if length <= 0.0 or not discs:
+        return False
+    ux, uy = (ex - sx) / length, (ey - sy) / length
+    lo, hi = (0.0, 0.0) if runtime.effective_kind != 'sliding' else (min(p_from, p_to) * length, max(p_from, p_to) * length)
+    cx = (sx + ex) / 2.0 + ux * (lo + hi) / 2.0
+    cy = (sy + ey) / 2.0 + uy * (lo + hi) / 2.0
+    half_l = length / 2.0 + (hi - lo) / 2.0
+    half_w = door.width / 2.0
+    for _name, (x, y), radius in discs:
+        dx, dy = x - cx, y - cy
+        along = abs(dx * ux + dy * uy)
+        across = abs(-dx * uy + dy * ux)
+        if math.hypot(max(along - half_l, 0.0), max(across - half_w, 0.0)) <= radius:
+            return True
+    return False
+
+
+def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence[Disc]) -> None:
+    """Advance door state machine one tick: linear T-delta for sliding, instant snap for teleport.
+    The slab never moves through an agent: a blocked close re-triggers the door (it reverses,
+    tested against the full remaining path so nobody in the slot is approached), a blocked
+    opening step holds in place. Vertical kinds open away from agents and are never open-blocked."""
     door = runtime.door
     fresh = (now - runtime.last_trigger_sim_time) <= door.hold_time
     if runtime.effective_kind == 'teleport':
+        if not fresh and _swept_slab_blocked(runtime, runtime.progress, 0.0, discs):
+            runtime.last_trigger_sim_time = now
+            fresh = True
         runtime.progress = 1.0 if fresh else 0.0
         runtime.state = _DoorState.OPEN if fresh else _DoorState.CLOSED
         return
@@ -255,10 +314,17 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float) -> None:
     step = dt / max(door.transition_time, 1e-9)
     if target > runtime.progress:
         runtime.state = _DoorState.OPENING
-        runtime.progress = min(1.0, runtime.progress + step)
+        next_progress = min(1.0, runtime.progress + step)
+        if runtime.effective_kind == 'sliding' and _swept_slab_blocked(runtime, runtime.progress, next_progress, discs):
+            return
+        runtime.progress = next_progress
         if runtime.progress >= 1.0:
             runtime.state = _DoorState.OPEN
     elif target < runtime.progress:
+        if _swept_slab_blocked(runtime, 0.0, runtime.progress, discs):
+            runtime.last_trigger_sim_time = now
+            runtime.state = _DoorState.OPEN if runtime.progress >= 1.0 else _DoorState.OPENING
+            return
         runtime.state = _DoorState.CLOSING
         runtime.progress = max(0.0, runtime.progress - step)
         if runtime.progress <= 0.0:
@@ -287,13 +353,11 @@ def _step_elevator(
     door_runtime: _DoorRuntime,
     dest_runtime: _ElevatorRuntime | None,
     occupants: Sequence[tuple[str, tuple[float, float]]],
-    near_door: bool,
     outside_trigger: bool,
     now: float,
     outside_names: frozenset[str] = frozenset(),
 ) -> _ElevatorStepResult:
     result = _ElevatorStepResult()
-    closing_abort = near_door and door_runtime.state != _DoorState.CLOSED
 
     # Update just_arrived tracking: confirm inside observation, clear on real exit.
     current = frozenset(name for name, _ in occupants)
@@ -334,12 +398,8 @@ def _step_elevator(
     # Track new (non-just-arrived) occupants in the cabin.
     new_occupants = current - runtime.just_arrived.keys()
 
-    # Departing phase: door closing with occupants; abort if blocker appears.
+    # Departing phase: door closing with occupants, slab gate holds it open while blocked
     if runtime.departing:
-        if closing_abort:
-            runtime.departing = False
-            door_runtime.last_trigger_sim_time = now
-            return result
         if door_runtime.state == _DoorState.CLOSED:
             if dest_runtime is None:
                 result.missing_destination = True
@@ -355,8 +415,8 @@ def _step_elevator(
         # Door still closing: hold off.
         return result
 
-    # Hold door open for just-arrived occupants (post-teleport) or closing blocker.
-    if runtime.just_arrived or closing_abort:
+    # Hold door open for just-arrived occupants (post-teleport)
+    if runtime.just_arrived:
         door_runtime.last_trigger_sim_time = now
         return result
 
@@ -417,10 +477,11 @@ async def _loop(mech: MechanismITF) -> None:
 
 async def _tick(mech: MechanismITF, dt: float) -> None:
     """Single tick: update triggers, advance state machines, dispatch move_box and teleports."""
-    robot_positions = list(mech.robot_positions_xy())
-    ped_positions: list[tuple[str, tuple[float, float]]] = list(mech._human_simulator.pedestrian_positions_xy()) if mech._human_simulator is not None else []
-    named_positions = robot_positions + ped_positions
-    ped_names: set[str] = {name for name, _ in ped_positions}
+    robot_discs = list(mech.robot_discs())
+    ped_discs: list[Disc] = list(mech._human_simulator.pedestrian_discs()) if mech._human_simulator is not None else []
+    discs = robot_discs + ped_discs
+    named_positions = [(name, xy) for name, xy, _radius in discs]
+    ped_names: set[str] = {name for name, _xy, _radius in ped_discs}
     now = mech.node.sim_time.to_seconds()
 
     elev_occupant_idx: dict[str, set[int]] = {}
@@ -442,13 +503,12 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             continue
         occupants = [named_positions[i] for i in elev_occupant_idx[elev_name]]
         outside_trigger = _is_triggered(door_runtime.door, outside_xys)
-        near_door = outside_trigger or _near_door_segment(
-            door_runtime.door,
-            [xy for _, xy in occupants],
-            INSIDE_DOOR_BLOCKER_RADIUS,
-        )
         dest_runtime = mech._elevator_runtime.get(runtime.destination_name)
-        result = _step_elevator(runtime, door_runtime, dest_runtime, occupants, near_door, outside_trigger, now, outside_names=outside_names)
+        if mech._semantics.elevator_recalled(elev_name, now):
+            door_runtime.last_trigger_sim_time = now  # recall: hold cabin door open
+            runtime.departing = False
+            continue
+        result = _step_elevator(runtime, door_runtime, dest_runtime, occupants, outside_trigger, now, outside_names=outside_names)
         if result.missing_destination:
             logger.warning(f"Elevator {elev_name!r}: destination {runtime.destination_name!r} unknown; door held open.")
         if result.teleport_job is not None:
@@ -458,12 +518,14 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
     for name, runtime in mech._door_runtime.items():
         if name in elevator_door_names:
             continue
-        if _is_triggered(runtime.door, all_xys):
+        if _is_triggered(runtime.door, all_xys) and mech._semantics.trigger_allowed(name, now):
             runtime.last_trigger_sim_time = now
+
+    mech._semantics.apply_plate_drives(now)
 
     pending: list[typing.Awaitable] = []
     for name, runtime in mech._door_runtime.items():
-        _advance_state(runtime, dt, now)
+        _advance_state(runtime, dt, now, discs)
         if runtime.progress != runtime.last_applied_progress:
             runtime.last_applied_progress = runtime.progress
             pending.append(mech.move_box(name, _interp_pose(runtime)))
@@ -493,6 +555,8 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
                     logger.warning(f"Elevator ped teleport {source_name!r} -> {dest_name!r} failed: {e!r}")
             else:
                 logger.info(f"Elevator teleport (no-op, no human sim): {len(ped_destinations)} peds {source_name!r} -> {dest_name!r}")
+
+    mech._semantics.step(now)
 
 
 async def shim_spawn_doors(mech: MechanismITF, doors: Sequence[Door]) -> bool:

@@ -5,6 +5,8 @@ import pytest
 from arena_simulation_setup.shared.world import Door
 from arena_simulation_setup.shared.walls import Wall
 from arena_simulation_setup.tree.World.World import LevelDescription as WorldDescription
+from arena_simulation_setup.tree.World.World import Schedule, Signal
+from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Position
 
 
@@ -72,6 +74,40 @@ def test_all_walls_multiple_zones():
     assert len(list(wd.all_walls)) == 2
 
 
+# ---------------------------------------------------------------------------
+# Zone semantics
+# ---------------------------------------------------------------------------
+
+
+def test_zone_semantics_default_emitted_as_empty_list():
+    zone = _make_zone()
+    unstructured = converter.unstructure(zone)
+    assert unstructured['semantics'] == []
+
+
+def test_zone_semantics_primitives_round_trip():
+    raw = {
+        'name': 'lobby',
+        'corners': [],
+        'semantics': [
+            {'state': 'max_speed', 'value': 1.5},
+            {'predicate': 'quiet', 'value': True},
+            {'predicate': 'restricted', 'value': False},
+        ],
+    }
+    zone = converter.structure(raw, WorldDescription.Zone)
+    assert [c.name for c in zone.semantics] == ['max_speed', 'quiet', 'restricted']
+    assert [c.value for c in zone.semantics] == [1.5, True, False]
+    unstructured = converter.unstructure(zone)
+    zone2 = converter.structure(unstructured, WorldDescription.Zone)
+    assert zone2.semantics == zone.semantics
+
+
+def test_zone_semantics_author_defined_name_accepted():
+    zone = converter.structure({'name': 'z', 'semantics': [{'predicate': 'custom_flag'}]}, WorldDescription.Zone)
+    assert zone.semantics[0].name == 'custom_flag'
+
+
 def test_all_doors_empty():
     wd = WorldDescription(zones=[])
     assert list(wd.all_doors) == []
@@ -87,6 +123,74 @@ def test_all_doors_populated():
 def test_all_elevators_empty():
     wd = WorldDescription(zones=[])
     assert list(wd.all_elevators) == []
+
+
+# ---------------------------------------------------------------------------
+# Schedule / Signal (M2 standalone semantic entities)
+# ---------------------------------------------------------------------------
+
+
+def test_schedule_round_trip():
+    raw = {
+        'name': 'fire_alarm',
+        'semantics': [{'preset': 'schedule', 'params': {'windows': [], 'regime': 'alarm'}}],
+    }
+    schedule = converter.structure(raw, Schedule)
+    assert schedule.name == 'fire_alarm'
+    assert [(c.role, c.name) for c in schedule.semantics] == [
+        ('state', 'state'),
+        ('predicate', 'active'),
+        ('state', 'window_remaining'),
+    ]
+    unstructured = converter.unstructure(schedule)
+    reparsed = converter.structure(unstructured, Schedule)
+    assert reparsed.name == schedule.name
+    assert reparsed.semantics == schedule.semantics
+
+
+def test_signal_round_trip():
+    raw = {
+        'name': 'crosswalk_light',
+        'semantics': [{'preset': 'signal', 'params': {'phases': [{'name': 'go', 'duration': 5.0}]}}],
+    }
+    signal = converter.structure(raw, Signal)
+    assert signal.name == 'crosswalk_light'
+    assert [(c.role, c.name) for c in signal.semantics] == [
+        ('state', 'state'),
+        ('state', 'phase_remaining'),
+        ('predicate', 'stop'),
+    ]
+    unstructured = converter.unstructure(signal)
+    reparsed = converter.structure(unstructured, Signal)
+    assert reparsed.name == signal.name
+    assert reparsed.semantics == signal.semantics
+
+
+def test_schedule_default_semantics_empty():
+    schedule = converter.structure({'name': 'bare'}, Schedule)
+    assert schedule.semantics == []
+
+
+def test_zone_schedules_and_signals_default_empty():
+    zone = _make_zone()
+    assert zone.schedules == []
+    assert zone.signals == []
+
+
+def test_all_schedules_populated():
+    schedule = Schedule(name='fire_alarm')
+    zone = _make_zone()
+    zone.schedules = [schedule]
+    wd = WorldDescription(zones=[zone])
+    assert list(wd.all_schedules) == [schedule]
+
+
+def test_all_signals_populated():
+    signal = Signal(name='crosswalk_light')
+    zone = _make_zone()
+    zone.signals = [signal]
+    wd = WorldDescription(zones=[zone])
+    assert list(wd.all_signals) == [signal]
 
 
 def test_all_floors_count():

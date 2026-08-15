@@ -25,21 +25,14 @@ class BaseSim(NodeInterface, ObstacleITF, PedestrianITF, RobotITF, WorldITF, Mec
         self._realizer = realizer
         self._env_id = env_id
 
-    @abc.abstractmethod
     async def before_reset_episode(self) -> bool:
-        """
-        Is executed each time before the task is reset. This is useful in
-        order to pause the simulation.
-        """
-        raise NotImplementedError()
+        """Episode-boundary hook before the task resets, for sim work that must not ride
+        the mid-episode pause path (physics state reset, contact caches). Default no-op."""
+        return True
 
-    @abc.abstractmethod
     async def after_reset_episode(self) -> bool:
-        """
-        Is executed after the task is reset. This is useful to unpause the
-        simulation.
-        """
-        raise NotImplementedError()
+        """Episode-boundary hook after the task resets. Default no-op."""
+        return True
 
     async def step(self, n: int = 1) -> bool:
         """Advance the simulation by ``n`` ticks. Default no-op."""
@@ -92,7 +85,7 @@ async def lazy_gazebo(**kwargs: object) -> BaseSim:
 
 
 @LifecycleRegistry.register(SimSimulator.GAZEBO)
-async def lazy_gazebo_lifecycle(node: object, **kwargs: object) -> SimLifecycle:
+async def lazy_gazebo_lifecycle(node: object, physics_dt: float = 0.0333, **kwargs: object) -> SimLifecycle:
     import asyncio
 
     from arena_rclpy_mixins import ArenaMixinNode
@@ -109,6 +102,7 @@ async def lazy_gazebo_lifecycle(node: object, **kwargs: object) -> SimLifecycle:
         service_control_world=node.create_client_wrapper(ControlWorld, "/world/default/control"),
         service_delete_entity=node.create_client_wrapper(DeleteEntity, "/world/default/remove"),
         logger=node.get_logger().get_child("GazeboHost"),
+        physics_dt=physics_dt,
     )
 
 

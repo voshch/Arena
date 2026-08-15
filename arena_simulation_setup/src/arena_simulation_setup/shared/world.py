@@ -9,6 +9,7 @@ from arena_simulation_setup.tree.assets.Material import Material, MaterialIdenti
 from arena_simulation_setup.utils.geometry import Position
 
 from .entities import Named
+from .semantics import SemanticCfg, parse_semantics
 
 
 def _activation_distance_converter(x: float | typing.Sequence[float]) -> tuple[float, float]:
@@ -25,11 +26,14 @@ class Elevator(Named):
     door_side: typing.Literal['+x', '-x', '+y', '-y'] = '+x'
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('elevator'))
     destination: str = attrs.field(default="")
-    activation_distance: float = 1.5
+    # must cover v_max * transition_time plus latency so the door is fully open before arrival
+    activation_distance: float = 3.0
     transition_time: float = 1.0
     hold_time: float = 2.0
     travel_time: float = 3.0
     accept_outside_calls: bool = True
+    recall_on: str | None = None
+    semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
     def cabin_corners(self) -> list[Position]:
         cx, cy = self.position.x, self.position.y
@@ -56,6 +60,7 @@ class Door(Named):
     )
     transition_time: float = 1.0
     hold_time: float = 2.0
+    semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
     @property
     def corners(self) -> list[Position]:
@@ -87,3 +92,17 @@ class Ceiling(Named):
     z: float = attrs.field(converter=float, default=2.0)
     cast_shadows: bool = attrs.field(default=False)
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('ceiling'))
+
+
+@attrs.define
+class Schedule(Named):
+    """Standalone time-windowed semantic entity (kind = schedule), no geometry."""
+
+    semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+
+@attrs.define
+class Signal(Named):
+    """Standalone cycling-phase semantic entity (kind = signal), no geometry."""
+
+    semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)

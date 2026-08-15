@@ -6,9 +6,11 @@ import sys
 
 def pull_main(argv: list[str]) -> int:
     """Pull Arena repos/submodules/features and refresh rosdep and python deps. Chdirs to ARENA_DIR for the duration."""
+    import shutil
     import subprocess
 
-    from common import _env, _feature_dispatch, _reg_list, _reg_pull, _reg_resolve
+    import features
+    from common import _cli, _env, _reg_list, _reg_pull
 
     arena_dir = _env("ARENA_DIR")
     arena_ws_dir = _env("ARENA_WS_DIR")
@@ -28,15 +30,15 @@ def pull_main(argv: list[str]) -> int:
         if rc:
             return rc
 
-        print("updating vcstool...")
-        if subprocess.run(["python", "-m", "pip", "install", "git+https://github.com/voshch/vcstool.git"], env=env, check=False).returncode:
-            print("failed vcstool upgrade, ignoring")
-
         if do_git:
             print("updating Arena...")
-            rc = subprocess.run(["git", "pull", "--ff-only", "--autostash"], env=env, check=False).returncode
-            if rc:
-                return rc
+            has_upstream = subprocess.run(["git", "rev-parse", "--verify", "-q", "@{u}"], env=env, check=False, capture_output=True).returncode == 0
+            if has_upstream:
+                rc = subprocess.run(["git", "pull", "--ff-only", "--autostash"], env=env, check=False).returncode
+                if rc:
+                    return rc
+            else:
+                print("no upstream for current branch, skipping Arena pull")
 
             if subprocess.run(["git", "submodule", "update", "--init", "--checkout", "arena_planners", "arena_robots", "humansim"], env=env, check=False).returncode:
                 print("failed to init/update arena_planners/arena_robots/humansim, ignoring")
@@ -58,11 +60,16 @@ def pull_main(argv: list[str]) -> int:
             if subprocess.run(["vcs", "import", "--input", repos_file, "--recursive", "--ff", "--add-existing", ws_src], env=env, check=False).returncode:
                 print("failed to pull all arena repos, ignoring")
 
+            deps_dir = os.path.join(ws_src, "deps")
+            if not os.path.isdir(deps_dir) or not os.listdir(deps_dir):
+                print(f"no repos imported into {deps_dir} (vcs: {shutil.which('vcs')}), the workspace cannot build", file=sys.stderr)
+                return 1
+
             for name in _reg_list():
-                if _reg_resolve(name) is None:
+                if features.load(name) is None:
                     continue
                 _reg_pull(name)
-                if _feature_dispatch(name, ("update",)):
+                if _cli("feature", name, "update"):
                     print(f"failed to update feature {name}, ignoring", file=sys.stderr)
 
         if do_rosdep:

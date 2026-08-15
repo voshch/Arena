@@ -1,0 +1,5 @@
+float64 target_rtf   # 0 = unpaced
+bool ungated         # ignore gates, free-step
+---
+bool success
+string error_msg

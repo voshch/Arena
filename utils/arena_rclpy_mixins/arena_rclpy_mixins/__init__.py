@@ -13,6 +13,8 @@ _EXPORTS = {
     'AsyncLifecycleClient': '.LifecycleClient',
     'LifecycleClient': '.LifecycleClient',
     'ArenaMixinNode': '.node',
+    'launch_str_to_value': '.launch_params',
+    'param_value_to_launch_str': '.launch_params',
     'AsyncFactoryRegistry': '.registry',
     'ClassRegistry': '.registry',
     'FactoryRegistry': '.registry',
@@ -64,6 +66,8 @@ if typing.TYPE_CHECKING:
     from .Async import (
         ClientWrapper as ClientWrapper,
     )
+    from .launch_params import launch_str_to_value as launch_str_to_value
+    from .launch_params import param_value_to_launch_str as param_value_to_launch_str
     from .LifecycleClient import AsyncLifecycleClient as AsyncLifecycleClient
     from .LifecycleClient import LifecycleClient as LifecycleClient
     from .node import ArenaMixinNode as ArenaMixinNode

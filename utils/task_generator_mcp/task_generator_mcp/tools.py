@@ -5,8 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import rclpy.parameter
 from arena_runtime_msgs.srv import LifecycleHold
-from mcp.server import Server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolRequestParams, CallToolResult, TextContent, Tool
 from rcl_interfaces.msg import Parameter, ParameterValue
 from rcl_interfaces.srv import GetParameters, SetParameters
 from std_srvs.srv import Empty
@@ -120,205 +119,202 @@ def _python_to_param_value(name: str, value: object) -> Parameter:
     return p
 
 
-def register_tools(
-    server: Server,
-    bridge: RosBridge,
-    param_descriptors: dict[str, object],
-) -> None:
-    """Register all MCP tools on *server* using *bridge* for ROS calls."""
+def build_tools_list() -> list[Tool]:
+    """Build the full tool list served on tools/list."""
+    return [
+        Tool(
+            name="lifecycle_reset_episode",
+            description="Advance to a new episode. Specify a world id to switch worlds; leave empty to inherit the current world. Pass seed >= 0 for bit-perfect replay of a historical episode.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "world": {"type": "string", "default": "", "description": "World id for the new episode. Empty inherits current."},
+                    "seed": {"type": "integer", "default": -1, "description": "Seed for RNG. -1 derives automatically; non-negative replays exactly."},
+                },
+            },
+        ),
+        Tool(
+            name="lifecycle_pause",
+            description="Pause the simulation clock.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="lifecycle_unpause",
+            description="Unpause / resume the simulation clock.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="lifecycle_toggle_pause",
+            description="Toggle the simulation pause state. Returns the resulting paused flag.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="lifecycle_wait_for_world",
+            description="Block until the active world is fully loaded.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="lifecycle_run_episode",
+            description="Queue and run a single episode to completion via the action server. Returns outcome state, reason, and episode_id.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "world": {"type": "string", "default": "", "description": "World to load before the episode; empty keeps current."},
+                },
+            },
+        ),
+        Tool(
+            name="query_worlds",
+            description="List all available world ids.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="query_scenarios",
+            description="List scenario shortnames. Pass world to restrict to that world; empty uses current world.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "world": {"type": "string", "default": "", "description": "World to restrict results; empty = current world."},
+                },
+            },
+        ),
+        Tool(
+            name="query_robots",
+            description="List available robot model shortnames.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="query_static_obstacles",
+            description="List available static obstacle model shortnames.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="query_dynamic_obstacles",
+            description="List available dynamic obstacle (pedestrian/dynamic entity) model shortnames.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="query_environments",
+            description="List available environment configuration shortnames.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="query_parametrizeds",
+            description="List available parametrized obstacle configuration shortnames.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="query_episode",
+            description="Get the current episode and the queued (next) episode.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="config_queue_episode",
+            description="Queue episode configuration. Empty string for any field preserves the prior queued value. tm_modules replaces the current set unless keep_modules=true.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "tm_robots": {"type": "string", "enum": TM_ROBOTS_VALUES, "default": "", "description": "Robot goal-dispatch mode .value string."},
+                    "tm_obstacles": {"type": "string", "enum": TM_OBSTACLES_VALUES, "default": "", "description": "Obstacle population mode .value string."},
+                    "tm_modules": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": TM_MODULE_VALUES},
+                        "description": "Cross-cutting module .value strings. Replaces current set unless keep_modules=true.",
+                    },
+                    "keep_modules": {"type": "boolean", "default": False, "description": "When true, tm_modules is ignored and the prior queued module set is preserved."},
+                    "world": {"type": "string", "default": "", "description": "World id for the queued episode. Empty keeps prior queued value."},
+                },
+            },
+        ),
+        Tool(
+            name="config_get_task_modes",
+            description="Get the currently active task modes (tm_robots, tm_obstacles, tm_modules) as .value strings.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="config_set_episode_params",
+            description="Set one or more episode-shaping parameters. Only supplied (non-null) fields are written.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "timeout": {"type": "number", "description": "Episode timeout in seconds."},
+                    "goal_tolerance_radius": {"type": "number", "description": "Distance from goal within which the episode is considered successful."},
+                    "robot_safe_dist": {"type": "number", "description": "Minimum safe distance between robot and obstacles."},
+                    "auto_reset": {"type": "boolean", "description": "When true the node auto-advances on episode terminal."},
+                    "episodes": {"type": "integer", "description": "Number of episodes to run before shutdown. -1 = unlimited."},
+                    "record_data_dir": {"type": "string", "description": "Directory for episode recording; empty disables recording."},
+                },
+            },
+        ),
+        Tool(
+            name="config_get_episode_params",
+            description="Read current values of all episode-shaping parameters.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="config_get_static_config",
+            description="Read the startup configuration parameters (sim, human, mobile/arm adapters).",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="runtime_spawn_static",
+            description="Spawn a static obstacle by model shortname. Omit pose for random placement via the active task mode.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Static obstacle model shortname (see query_static_obstacles)."},
+                    "pose": {**_POSE_SCHEMA, "description": "Optional spawn pose. Omit for random placement."},
+                },
+                "required": ["model"],
+            },
+        ),
+        Tool(
+            name="runtime_spawn_dynamic",
+            description="Spawn a dynamic obstacle / pedestrian by model shortname. Omit pose for random placement.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Dynamic obstacle model shortname (see query_dynamic_obstacles)."},
+                    "pose": {**_POSE_SCHEMA, "description": "Optional spawn pose. Omit for random placement."},
+                },
+                "required": ["model"],
+            },
+        ),
+        Tool(
+            name="runtime_spawn_robot",
+            description="Spawn a robot by model shortname. Experimental. Omit name for auto-generated name. Omit pose for placement by the active task mode.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Robot model shortname (see query_robots)."},
+                    "name": {"type": "string", "default": "", "description": "Robot name; empty auto-generates."},
+                    "pose": {**_POSE_SCHEMA, "description": "Optional spawn pose. Omit for placement by active task mode."},
+                    "immediate": {"type": "boolean", "default": False, "description": "Provision into the live world now (idle), else commit on the next reset."},
+                },
+                "required": ["model"],
+            },
+        ),
+        Tool(
+            name="runtime_despawn_robot",
+            description="Despawn a robot by name.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Robot name to despawn."},
+                },
+                "required": ["name"],
+            },
+        ),
+    ]
 
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name="lifecycle_reset_episode",
-                description="Advance to a new episode. Specify a world id to switch worlds; leave empty to inherit the current world. Pass seed >= 0 for bit-perfect replay of a historical episode.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "world": {"type": "string", "default": "", "description": "World id for the new episode. Empty inherits current."},
-                        "seed": {"type": "integer", "default": -1, "description": "Seed for RNG. -1 derives automatically; non-negative replays exactly."},
-                    },
-                },
-            ),
-            Tool(
-                name="lifecycle_pause",
-                description="Pause the simulation clock.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="lifecycle_unpause",
-                description="Unpause / resume the simulation clock.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="lifecycle_toggle_pause",
-                description="Toggle the simulation pause state. Returns the resulting paused flag.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="lifecycle_wait_for_world",
-                description="Block until the active world is fully loaded.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="lifecycle_run_episode",
-                description="Queue and run a single episode to completion via the action server. Returns outcome state, reason, and episode_id.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "world": {"type": "string", "default": "", "description": "World to load before the episode; empty keeps current."},
-                    },
-                },
-            ),
-            Tool(
-                name="query_worlds",
-                description="List all available world ids.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="query_scenarios",
-                description="List scenario shortnames. Pass world to restrict to that world; empty uses current world.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "world": {"type": "string", "default": "", "description": "World to restrict results; empty = current world."},
-                    },
-                },
-            ),
-            Tool(
-                name="query_robots",
-                description="List available robot model shortnames.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="query_static_obstacles",
-                description="List available static obstacle model shortnames.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="query_dynamic_obstacles",
-                description="List available dynamic obstacle (pedestrian/dynamic entity) model shortnames.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="query_environments",
-                description="List available environment configuration shortnames.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="query_parametrizeds",
-                description="List available parametrized obstacle configuration shortnames.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="query_episode",
-                description="Get the current episode and the queued (next) episode.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="config_queue_episode",
-                description="Queue episode configuration. Empty string for any field preserves the prior queued value. tm_modules replaces the current set unless keep_modules=true.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "tm_robots": {"type": "string", "enum": TM_ROBOTS_VALUES, "default": "", "description": "Robot goal-dispatch mode .value string."},
-                        "tm_obstacles": {"type": "string", "enum": TM_OBSTACLES_VALUES, "default": "", "description": "Obstacle population mode .value string."},
-                        "tm_modules": {
-                            "type": "array",
-                            "items": {"type": "string", "enum": TM_MODULE_VALUES},
-                            "description": "Cross-cutting module .value strings. Replaces current set unless keep_modules=true.",
-                        },
-                        "keep_modules": {"type": "boolean", "default": False, "description": "When true, tm_modules is ignored and the prior queued module set is preserved."},
-                        "world": {"type": "string", "default": "", "description": "World id for the queued episode. Empty keeps prior queued value."},
-                    },
-                },
-            ),
-            Tool(
-                name="config_get_task_modes",
-                description="Get the currently active task modes (tm_robots, tm_obstacles, tm_modules) as .value strings.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="config_set_episode_params",
-                description="Set one or more episode-shaping parameters. Only supplied (non-null) fields are written.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "timeout": {"type": "number", "description": "Episode timeout in seconds."},
-                        "goal_tolerance_radius": {"type": "number", "description": "Distance from goal within which the episode is considered successful."},
-                        "robot_safe_dist": {"type": "number", "description": "Minimum safe distance between robot and obstacles."},
-                        "auto_reset": {"type": "boolean", "description": "When true the node auto-advances on episode terminal."},
-                        "episodes": {"type": "integer", "description": "Number of episodes to run before shutdown. -1 = unlimited."},
-                        "record_data_dir": {"type": "string", "description": "Directory for episode recording; empty disables recording."},
-                    },
-                },
-            ),
-            Tool(
-                name="config_get_episode_params",
-                description="Read current values of all episode-shaping parameters.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="config_get_static_config",
-                description="Read the startup configuration parameters (sim, human, mobile/arm adapters).",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="runtime_spawn_static",
-                description="Spawn a static obstacle by model shortname. Omit pose for random placement via the active task mode.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "model": {"type": "string", "description": "Static obstacle model shortname (see query_static_obstacles)."},
-                        "pose": {**_POSE_SCHEMA, "description": "Optional spawn pose. Omit for random placement."},
-                    },
-                    "required": ["model"],
-                },
-            ),
-            Tool(
-                name="runtime_spawn_dynamic",
-                description="Spawn a dynamic obstacle / pedestrian by model shortname. Omit pose for random placement.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "model": {"type": "string", "description": "Dynamic obstacle model shortname (see query_dynamic_obstacles)."},
-                        "pose": {**_POSE_SCHEMA, "description": "Optional spawn pose. Omit for random placement."},
-                    },
-                    "required": ["model"],
-                },
-            ),
-            Tool(
-                name="runtime_spawn_robot",
-                description="Spawn a robot by model shortname. Experimental. Omit name for auto-generated name. Omit pose for placement by the active task mode.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "model": {"type": "string", "description": "Robot model shortname (see query_robots)."},
-                        "name": {"type": "string", "default": "", "description": "Robot name; empty auto-generates."},
-                        "pose": {**_POSE_SCHEMA, "description": "Optional spawn pose. Omit for placement by active task mode."},
-                        "immediate": {"type": "boolean", "default": False, "description": "Provision into the live world now (idle), else commit on the next reset."},
-                    },
-                    "required": ["model"],
-                },
-            ),
-            Tool(
-                name="runtime_despawn_robot",
-                description="Despawn a robot by name.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Robot name to despawn."},
-                    },
-                    "required": ["name"],
-                },
-            ),
-        ]
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        result = await _dispatch(name, arguments, bridge)
-        return [TextContent(type="text", text=json.dumps(result, default=str))]
+async def dispatch_tool_call(params: CallToolRequestParams, bridge: RosBridge) -> CallToolResult:
+    """Dispatch a tools/call request and wrap the outcome."""
+    result = await _dispatch(params.name, params.arguments or {}, bridge)
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(result, default=str))],
+        isError=isinstance(result, dict) and "error" in result,
+    )
 
 
 async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> object:

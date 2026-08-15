@@ -24,3 +24,5 @@ bool integrity
 rcl_interfaces/Parameter[] obstacles_params
 # Effective params for tm_robots only; live values overlaid with staged dict for queued records.
 rcl_interfaces/Parameter[] robots_params
+# JSON list of {op, p, q, text} episode conditions, empty when none
+string conditions

@@ -85,6 +85,10 @@ arena launch \
 | `world:=map_empty` | Resolved to `arena_simulation_setup/worlds/map_empty/worlds/map_empty.world`; falls back to `configs/gazebo/empty.sdf` if absent |
 | `mobile.local_planner:=teb` | TEB local planner; `mobile` adapter defaults to `nav2` for gazebo, the override lands as `robot.mobile.local_planner` and is forwarded to nav2's bringup |
 | `headless` | Omitted → `false` (sim GUI visible, rviz shown). Pass `headless:=true` to hide the sim GUI (viz also suppressed unless `viz:=true` is set explicitly) |
+| `lockstep:=true` | Start the lockstep scheduler at bringup: the sim advances tick by tick, gated on every registered hard channel, instead of free-running. Comes up paused (frozen at tick zero) unless `lockstep.paused:=false`. Continue with `arena lockstep resume`. Toggle later with `arena lockstep on\|off` |
+| `lockstep.paused:=false` | Autostarted lockstep begins stepping immediately instead of waiting for `arena lockstep resume` |
+| `lockstep.channels:="a;b"` | Semicolon-separated `name\|topic\|type\|period_s\|hard-or-soft` entries registered under caller `launch`, extra channels, producers self-register their own. `{env}` expands per env |
+| `lockstep.rtf:=N` | Target real-time factor for the lockstep scheduler, 0 or empty = unpaced |
 
 To suppress the human-simulation backend (`arena` by default for gazebo)
 when no human obstacles are needed, add `human:=none` to the command above.

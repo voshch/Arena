@@ -29,6 +29,8 @@ def test_registry_has_robots_entries():
     assert Constants.TaskMode.TM_Robots.EXPLORE in ROBOTS_MODES
     assert Constants.TaskMode.TM_Robots.RANDOM in ROBOTS_MODES
     assert Constants.TaskMode.TM_Robots.SCENARIO in ROBOTS_MODES
+    assert Constants.TaskMode.TM_Robots.STATIONARY in ROBOTS_MODES
+    assert Constants.TaskMode.TM_Robots.CHARACTERIZATION in ROBOTS_MODES
 
 
 def test_registry_has_module_entries():

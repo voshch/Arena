@@ -22,9 +22,13 @@ from arena_simulation_setup.shared import (
     Elevator,
     Floor,
     Obstacle,
+    Schedule,
+    SemanticCfg,
+    Signal,
     Wall,
 )
-from arena_simulation_setup.tree import FallbackResolver, Identifier, PathView
+from arena_simulation_setup.shared.semantics import parse_semantics
+from arena_simulation_setup.tree import FallbackResolver, Identifier, PathView, SimplePathResolver
 from arena_simulation_setup.tree.assets.Material import (
     Material,
     MaterialIdentifier,
@@ -67,6 +71,8 @@ class LevelDescription:
         walls: list[Wall] = attrs.field(factory=list)
         doors: list[Door] = attrs.field(factory=list)
         elevators: list[Elevator] = attrs.field(factory=list)
+        schedules: list[Schedule] = attrs.field(factory=list)
+        signals: list[Signal] = attrs.field(factory=list)
         entities: WorldEntities = attrs.field(factory=WorldEntities)
         ceiling: bool = attrs.field(default=True)
         ceiling_height: float | None = attrs.field(default=None)
@@ -79,6 +85,7 @@ class LevelDescription:
             converter=MaterialIdentifier.converter,
             default=Material.default('wall'),
         )
+        semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
         @property
         def floor(self) -> Floor:
@@ -104,6 +111,14 @@ class LevelDescription:
     @property
     def all_elevators(self) -> typing.Iterable[Elevator]:
         return (elevator for zone in self.zones for elevator in zone.elevators)
+
+    @property
+    def all_schedules(self) -> typing.Iterable[Schedule]:
+        return (schedule for zone in self.zones for schedule in zone.schedules)
+
+    @property
+    def all_signals(self) -> typing.Iterable[Signal]:
+        return (signal for zone in self.zones for signal in zone.signals)
 
     @property
     def all_floors(self) -> typing.Iterable[Floor]:
@@ -979,7 +994,14 @@ class WorldIdentifier(Identifier[MultiLevelWorldView]):
     @classmethod
     def listall(cls, **kwargs: object) -> Iterator[Self]:
         del kwargs
-        yield from (WorldIdentifier(name) for name in os.listdir(ASS_DIR / 'worlds') if name.lower() != 'readme.md')
+        seen: set[str] = set()
+        for root in [*_world_search_roots(), ASS_DIR / 'worlds']:
+            if not root.is_dir():
+                continue
+            for name in os.listdir(root):
+                if name.lower() != 'readme.md' and name not in seen:
+                    seen.add(name)
+                    yield WorldIdentifier(name)
 
     def load(self, path: Path, /, **kwargs: object) -> MultiLevelWorldView:
         del kwargs
@@ -999,4 +1021,10 @@ class WorldIdentifier(Identifier[MultiLevelWorldView]):
         return name, ids or None
 
 
+def _world_search_roots() -> list[Path]:
+    """Extra world roots from ARENA_WORLD_PATH (colon-separated), searched before the canonical tree."""
+    return [Path(p) for p in os.environ.get('ARENA_WORLD_PATH', '').split(':') if p]
+
+
+WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _world_search_roots()))
 WorldIdentifier.use(FallbackResolver(WorldIdentifier, ASS_DIR / 'worlds'))

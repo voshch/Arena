@@ -11,6 +11,7 @@ from task_generator.tasks.robots.adapters import ADAPTERS, Adapter, AdapterDispl
 if TYPE_CHECKING:
     from task_generator.manager.robot_manager.robot_manager import RobotManager
     from task_generator.tasks.robots.adapters import ResetContext
+    from task_generator.tasks.robots.request import GoToPhase
 
 
 class MobileAdapter(Adapter):
@@ -49,6 +50,19 @@ class MobileAdapter(Adapter):
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
         if ctx.start_pose is not None:
             await robot.move(ctx.start_pose)
+
+    def _resolve_tolerances(self, phase: GoToPhase, robot: RobotManager) -> tuple[float, float]:
+        """Effective (distance, yaw) tolerances, resolved exactly as the tier-3
+        completion check resolves them."""
+        conf = robot.node.conf.Robot
+        dist = phase.tolerance_radius if phase.tolerance_radius is not None else conf.GOAL_TOLERANCE_RADIUS.value
+        if phase.tolerance_angle is not None:
+            ang = phase.tolerance_angle
+        elif self.controls_orientation:
+            ang = conf.GOAL_TOLERANCE_ANGLE.value
+        else:
+            ang = 0.0
+        return float(dist), float(ang)
 
     async def publish_goal_loop(self) -> None:
         """Republish `<ns>/goal_pose` at 1Hz until the goal object changes. Override to noop if the adapter has its own goal transport."""

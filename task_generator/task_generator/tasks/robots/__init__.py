@@ -6,7 +6,7 @@ from task_generator.tasks.mode import TaskMode
 from task_generator.tasks.robots._placement import random_placement
 from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
-from . import demo, explore, guided, random, scenario
+from . import characterization, demo, explore, guided, random, scenario, stationary
 
 
 class TM_Robots(TaskMode):
@@ -27,6 +27,9 @@ class TM_Robots(TaskMode):
     async def reset(self, **kwargs: object) -> None:
         self._last_reset = self.node.sim_time.sec
         self._start_poses = {}
+
+    async def teardown(self) -> None:
+        """Release everything this mode drives; called when the mode is replaced or the task ends."""
 
     async def set_position(self, pose: Pose):
         """Handle an external pose-estimate override for the robots in this mode.
@@ -71,4 +74,4 @@ class TM_Robots(TaskMode):
         return True
 
 
-__all__ = ["TM_Robots", "demo", "explore", "guided", "random", "scenario"]
+__all__ = ["TM_Robots", "characterization", "demo", "explore", "guided", "random", "scenario", "stationary"]

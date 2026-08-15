@@ -1,4 +1,5 @@
 """Test: SetParameters.Request is built correctly from the EPISODE_PARAMS allowlist."""
+import pytest
 import rclpy.parameter
 from rcl_interfaces.msg import Parameter, ParameterValue
 from rcl_interfaces.srv import SetParameters

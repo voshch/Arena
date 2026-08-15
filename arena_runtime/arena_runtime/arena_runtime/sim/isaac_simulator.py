@@ -6,7 +6,7 @@ import traceback
 import types
 import typing
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 
 import arena_people_msgs.msg
 import arena_robots.catalog
@@ -17,10 +17,8 @@ import geometry_msgs.msg
 import isaacsim_msgs.msg
 import launch
 import launch_ros
-import rclpy.time
 import std_msgs.msg
 import std_srvs.srv
-import tf2_ros
 from arena_people_msgs.msg import Pedestrian, SpawnPedestrian
 from arena_people_msgs.srv import (
     DeletePedestrians,
@@ -50,6 +48,7 @@ from isaacsim_msgs.srv import (
     SpawnUrdf,
     SpawnUsd,
     SpawnWalls,
+    StepSimulation,
 )
 from task_generator.shared import Ceiling as CeilingDefinition
 from task_generator.shared import (
@@ -57,7 +56,6 @@ from task_generator.shared import (
     Model,
     ModelType,
     Obstacle,
-    Orientation,
     Pose,
     Position,
     Robot,
@@ -151,8 +149,13 @@ def _transform_urdf_for_bridge(
     tree.write(out_path, encoding='utf-8', xml_declaration=True)
 
 
+# matches World(physics_dt=rendering_dt=1/60) pinned in run_isaacsim.py
+_ISAAC_PHYSICS_HZ = 60.0
+
+
 class IsaacHost(SimLifecycle):
     def __init__(self, node: ArenaMixinNode) -> None:
+        self._node = node
         self._logger = node.get_logger().get_child(type(self).__name__)
         self._pause_client: ClientWrapper = node.create_client_wrapper(
             std_srvs.srv.Trigger,
@@ -166,12 +169,17 @@ class IsaacHost(SimLifecycle):
             DeletePrims,
             "/isaac/DeletePrims",
         )
+        self._step_client: ClientWrapper = node.create_client_wrapper(
+            StepSimulation,
+            "/isaac/StepSimulationN",
+        )
 
     async def ensure_ready(self) -> None:
         await asyncio.gather(
             self._pause_client.ensure(),
             self._unpause_client.ensure(),
             self._delete_prims_client.ensure(),
+            self._step_client.ensure(),
         )
 
     async def pause(self) -> bool:
@@ -187,6 +195,17 @@ class IsaacHost(SimLifecycle):
         if not res.ret:
             return 0
         return 1 if res.ret[0] else 0
+
+    async def step_seconds(self, seconds: float) -> float:
+        n = max(1, round(seconds * _ISAAC_PHYSICS_HZ))
+        res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
+        if not res.success:
+            raise RuntimeError(res.error_msg)
+        await self._node.poll(
+            lambda: self._node.sim_time.to_seconds() >= res.target_sim_time,
+            f"isaac sim clock >= {res.target_sim_time:.3f}s",
+        )
+        return n / _ISAAC_PHYSICS_HZ
 
 
 def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Material) -> isaacsim_msgs.msg.Material:
@@ -211,6 +230,8 @@ def _offset_pose(pose: Pose, center: tuple[float, float, float]) -> Pose:
 
 
 class IsaacSimulator(BaseSim, NodeInterface):
+    SIM_NAME = 'isaac'
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize IsaacSimulator"""
         super().__init__(*args, **kwargs)
@@ -241,10 +262,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         )
         self._peds_publisher = self.node.create_publisher(arena_people_msgs.msg.Pedestrians, "/isaac/arena_peds", 10)
 
-        # sim_path -> (tf_frame, prim_name)
-        self._agent_robots: dict[str, tuple[str, str]] = {}
-        self._mechanism_tf_buffer = tf2_ros.Buffer()
-        self._mechanism_tf_listener = tf2_ros.TransformListener(self._mechanism_tf_buffer, self.node)
+        self._robot_prims: dict[str, str] = {}
 
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
@@ -321,7 +339,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     await self._launch_robot_stack(robot, robot_params, rsp_urdf_path)
 
-                    self._agent_robots[robot.sim_path] = (robot.frame.tf(robot_params.base_frame), fq_name)
+                    self._register_agent_robot(robot, robot_params)
+                    self._robot_prims[robot.sim_path] = fq_name
                     return True
 
                 # TODO
@@ -512,7 +531,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
     async def robot_delete(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:
-            self._agent_robots.pop(robot.sim_path, None)
+            self._forget_agent_robot(robot.sim_path)
+            self._robot_prims.pop(robot.sim_path, None)
         return await asyncio.gather(*(self._delete_entity(self._NS_ROBOT(r.name)) for r in robots))
 
     async def remove_world(self) -> bool:
@@ -665,49 +685,16 @@ class IsaacSimulator(BaseSim, NodeInterface):
     async def delete_box(self, name: str) -> bool:
         return await self._delete_entity(name)
 
-    def robot_positions_xy(self) -> Iterable[tuple[str, tuple[float, float]]]:
-        out: list[tuple[str, tuple[float, float]]] = []
-        for sim_path, (frame, _prim) in list(self._agent_robots.items()):
-            try:
-                t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-                continue
-            out.append((sim_path, (t.transform.translation.x, t.transform.translation.y)))
-        return out
-
-    def robot_pose(self, sim_path: str) -> Pose | None:
-        entry = self._agent_robots.get(sim_path)
-        if entry is None:
-            return None
-        frame, _prim = entry
-        try:
-            t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            return None
-        tr = t.transform.translation
-        rot = t.transform.rotation
-        return Pose(
-            position=Position(x=tr.x, y=tr.y, z=tr.z),
-            orientation=Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z),
-        )
-
     async def set_robot_pose(self, sim_path: str, pose: Pose) -> bool:
-        entry = self._agent_robots.get(sim_path)
-        if entry is None:
+        prim_name = self._robot_prims.get(sim_path)
+        if prim_name is None:
             return False
-        _frame, prim_name = entry
         return await self._move_entity(prim_name, pose)
 
-    async def before_reset_episode(self) -> bool:
-        return True
-
-    async def after_reset_episode(self) -> bool:
-        return True
-
     async def step(self, n: int = 1) -> bool:
-        async with self.node.unpause_window():
-            await asyncio.sleep(0.01 * n)
-        return True
+        """Unused wall-clock fake, superseded by SimLifecycle.step_seconds."""
+        del n
+        raise NotImplementedError('use sim_lifecycle/step')
 
     async def pedestrian_spawn(self, pedestrians: Sequence[DynamicObstacle]) -> Sequence[bool]:
 

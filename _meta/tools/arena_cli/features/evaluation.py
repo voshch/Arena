@@ -5,8 +5,6 @@ from common import Verb, make_verb
 
 from features import lifecycle_verbs
 
-SCRIPT_SHA256 = "cd5e8276c1a82d186e77767a0081594de5b60b885cdf0ddecae7b5d824655d6f"
-
 NAME = "evaluation"
 
 DESCRIPTION = "arena_evaluation for recording, metrics, and benchmarking."
@@ -51,6 +49,24 @@ def tail(argv: list[str]) -> None:
     common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "tail", *argv)
 
 
+def ps_(argv: list[str]) -> None:
+    """list running arena processes (benchmark runner, sim, nodes)"""
+    common._reg_require(NAME)
+    common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "ps", *argv)
+
+
+def console(argv: list[str]) -> None:
+    """tail a benchmark run's console log (MCP-launched runs only)"""
+    common._reg_require(NAME)
+    common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "console", *argv)
+
+
+def acoustic(argv: list[str]) -> None:
+    """acoustic field visualization (list, animate, snapshot)"""
+    common._reg_require(NAME)
+    common._exec("ros2", "run", "arena_evaluation", "evaluation", "acoustic", *argv)
+
+
 def extract(argv: list[str]) -> None:
     """extract MCAP topics into the Parquet cache"""
     common._reg_require(NAME)
@@ -89,10 +105,13 @@ COMMANDS: dict[str, Verb] = {
         make_verb("list", list_, passthrough=True),
         make_verb("status", status, passthrough=True),
         make_verb("tail", tail, passthrough=True),
+        make_verb("ps", ps_, passthrough=True),
+        make_verb("console", console, passthrough=True),
         make_verb("extract", extract, passthrough=True),
         make_verb("run", run, passthrough=True),
         make_verb("process", process, passthrough=True),
         make_verb("report", report, passthrough=True),
         make_verb("plot", plot, passthrough=True),
+        make_verb("acoustic", acoustic, passthrough=True),
     ]
 }

@@ -7,8 +7,6 @@ from common import Verb, make_verb
 
 from features import lifecycle_verbs
 
-SCRIPT_SHA256 = "f4c6f25f6956145715fa3f2a5914fa41eb12b445d83c6e9416767720616d9581"
-
 NAME = "training"
 
 DESCRIPTION = (

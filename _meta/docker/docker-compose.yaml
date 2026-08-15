@@ -45,7 +45,7 @@ services:
       - CYCLONEDDS_URI=file:///opt/arena_ws/src/Arena/_meta/docker/cyclonedds.xml
       - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.xml
     env_file:
-      - "$HOST_ARENA_WS_DIR/.env"
+      - .env
     user: "${HOST_UID}"
     group_add:
       - sudo
