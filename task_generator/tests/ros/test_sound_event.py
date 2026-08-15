@@ -502,6 +502,67 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
         propagation.destroy_node()
 
 
+def test_viewport_camera_registers_selectable_microphones(rclpy_context):
+    from geometry_msgs.msg import PoseStamped
+    from nav_msgs.msg import OccupancyGrid
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+
+    propagation = SoundPropagationNode(
+        parameter_overrides=[
+            Parameter(
+                "active_microphone_id",
+                Parameter.Type.STRING,
+                "microphone:viewport:projective_center",
+            ),
+            Parameter(
+                "viewport_down_projection_height_m",
+                Parameter.Type.DOUBLE,
+                1.7,
+            ),
+        ],
+    )
+    propagation._map = OccupancyGrid()
+    propagation._map.header.frame_id = "map"
+    camera_pose = PoseStamped()
+    camera_pose.header.frame_id = "map"
+    camera_pose.pose.position.x = 3.0
+    camera_pose.pose.position.y = 4.0
+    camera_pose.pose.position.z = 8.0
+
+    try:
+        propagation._cb_viewport_camera_pose(camera_pose)
+
+        assert set(propagation._viewport_microphones) == {
+            "microphone:viewport:down_projection",
+            "microphone:viewport:projective_center",
+        }
+        projective_center = propagation._microphone_positions()[
+            "microphone:viewport:projective_center"
+        ]
+        assert (
+            projective_center.x,
+            projective_center.y,
+            projective_center.z,
+        ) == (3.0, 4.0, 8.0)
+        assert propagation._listener_height(
+            "microphone:viewport:projective_center",
+            projective_center,
+        ) == 8.0
+        down_projection = propagation._all_microphone_positions()[
+            "microphone:viewport:down_projection"
+        ]
+        assert (
+            down_projection.x,
+            down_projection.y,
+            down_projection.z,
+        ) == (3.0, 4.0, 1.7)
+    finally:
+        propagation.destroy_node()
+
+
 def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
     from geometry_msgs.msg import Point
     from rclpy.parameter import Parameter

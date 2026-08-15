@@ -1,7 +1,7 @@
 #include "task_generator_gui/spawn_audio_source_tool.hpp"
 
-#include <chrono>
 #include <cmath>
+#include <exception>
 #include <memory>
 
 #include <rviz_common/display_context.hpp>
@@ -9,13 +9,12 @@
 #include <rviz_common/properties/enum_property.hpp>
 #include <rviz_common/properties/float_property.hpp>
 #include <rviz_common/properties/string_property.hpp>
+#include <rviz_common/ros_integration/ros_node_abstraction_iface.hpp>
 
 #include <pluginlib/class_list_macros.hpp>
 
 namespace task_generator_gui
 {
-using namespace std::chrono_literals;
-
 SpawnAudioSourceTool::SpawnAudioSourceTool()
 {
   shortcut_key_ = 'r';
@@ -66,8 +65,8 @@ void SpawnAudioSourceTool::onInitialize()
   PoseTool::onInitialize();
   setName("Spawn Radio");
 
-  service_node_ = std::make_shared<rclcpp::Node>("spawn_audio_source_tool_node");
-  service_node_->get_logger().set_level(rclcpp::Logger::Level::Info);
+  auto node_abstraction = context_->getRosNodeAbstraction().lock();
+  service_node_ = node_abstraction->get_raw_node();
   updateClient();
 }
 
@@ -111,7 +110,7 @@ void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
   request->loop = loop_property_->getBool();
   request->initially_active = initially_active_property_->getBool();
 
-  if (!client_->wait_for_service(1s)) {
+  if (!client_->service_is_ready()) {
     RCLCPP_WARN(
       service_node_->get_logger(),
       "spawn_audio_source service not available at %s",
@@ -119,28 +118,27 @@ void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
     return;
   }
 
-  auto future = client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(service_node_, future, 5s) !=
-    rclcpp::FutureReturnCode::SUCCESS)
-  {
-    RCLCPP_ERROR(
-      service_node_->get_logger(),
-      "spawn_audio_source call to %s timed out",
-      client_->get_service_name());
-    return;
-  }
-
-  auto response = future.get();
-  if (!response->success) {
-    RCLCPP_WARN(
-      service_node_->get_logger(),
-      "spawn_audio_source rejected: %s", response->error_msg.c_str());
-    return;
-  }
-  RCLCPP_INFO(
-    service_node_->get_logger(),
-    "spawned %s source %s",
-    request->mode.c_str(), response->system_id.c_str());
+  const auto logger = service_node_->get_logger();
+  client_->async_send_request(
+    request,
+    [logger, mode = request->mode](
+      rclcpp::Client<task_generator_msgs::srv::SpawnAudioSource>::SharedFuture future)
+    {
+      try {
+        const auto response = future.get();
+        if (!response->success) {
+          RCLCPP_WARN(
+            logger, "spawn_audio_source rejected: %s",
+            response->error_msg.c_str());
+          return;
+        }
+        RCLCPP_INFO(
+          logger, "spawned %s source %s",
+          mode.c_str(), response->system_id.c_str());
+      } catch (const std::exception & exception) {
+        RCLCPP_ERROR(logger, "spawn_audio_source failed: %s", exception.what());
+      }
+    });
 }
 }  // namespace task_generator_gui
 

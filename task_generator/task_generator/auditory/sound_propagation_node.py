@@ -19,7 +19,7 @@ from arena_simulation_setup.tree.World import (
     MICROPHONE_PLACEMENT_TOLERANCE_M,
     WorldIdentifier,
 )
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
@@ -89,6 +89,7 @@ class SoundPropagationNode(Node):
             "continuous_heard_sounds",
         )
         self.declare_parameter("robot_microphones", "[]")
+        self.declare_parameter("viewport_down_projection_height_m", 1.6)
         self.declare_parameter("enable_propagation", True)
         self.declare_parameter("active_microphone_id", "")
         self.declare_parameter(
@@ -173,9 +174,13 @@ class SoundPropagationNode(Node):
         self._robot_microphones: dict[str, tuple[Point, str]] = {}
         self._world_microphones: dict[str, WorldMicrophoneSpec] = {}
         self._spawned_microphones: dict[str, tuple[Point, str]] = {}
+        self._viewport_microphones: dict[str, tuple[Point, str]] = {}
         self._spawned_microphone_index = 0
         self._last_continuous_outputs: dict[
             tuple[str, str], ContinuousHeardSoundState
+        ] = {}
+        self._continuous_propagation_signatures: dict[
+            tuple[str, str], tuple[object, ...]
         ] = {}
         self._missing_microphone_robots: set[str] = set()
         self._acoustic_offset: tuple[float, float] | None = None
@@ -260,6 +265,12 @@ class SoundPropagationNode(Node):
             continuous_audio_qos(),
         )
         self.create_subscription(Pedestrians, peds_topic, self._cb_peds, 10)
+        self.create_subscription(
+            PoseStamped,
+            "/arena/viewport/camera_pose",
+            self._cb_viewport_camera_pose,
+            10,
+        )
         self.create_subscription(
             OccupancyGrid,
             map_topic,
@@ -354,6 +365,7 @@ class SoundPropagationNode(Node):
             set(self._robot_microphones)
             | set(self._world_microphones)
             | set(self._spawned_microphones)
+            | set(self._viewport_microphones)
         )
         for key, previous in tuple(self._last_continuous_outputs.items()):
             if active_microphone_id is not None:
@@ -365,12 +377,48 @@ class SoundPropagationNode(Node):
             stopped.header.stamp = self.get_clock().now().to_msg()
             stopped.active = False
             stopped.audible = False
+            self._continuous_propagation_signatures.pop(key, None)
             self._last_continuous_outputs[key] = stopped
             self._continuous_heard_pub.publish(stopped)
 
     def _cb_peds(self, msg: Pedestrians) -> None:
         self._peds = {int(p.id): p for p in msg.pedestrians}
         self._peds_frame_id = str(msg.header.frame_id).strip() or "map"
+
+    def _cb_viewport_camera_pose(self, msg: PoseStamped) -> None:
+        frame_id = str(msg.header.frame_id).strip().lstrip("/")
+        position = msg.pose.position
+        if not frame_id or not all(
+            math.isfinite(value)
+            for value in (position.x, position.y, position.z)
+        ):
+            return
+        down_projection_height = float(
+            self.get_parameter("viewport_down_projection_height_m").value
+        )
+        if not math.isfinite(down_projection_height):
+            return
+        publish_registry = not self._viewport_microphones
+        self._viewport_microphones = {
+            "microphone:viewport:down_projection": (
+                Point(
+                    x=float(position.x),
+                    y=float(position.y),
+                    z=down_projection_height,
+                ),
+                frame_id,
+            ),
+            "microphone:viewport:projective_center": (
+                Point(
+                    x=float(position.x),
+                    y=float(position.y),
+                    z=float(position.z),
+                ),
+                frame_id,
+            ),
+        }
+        if publish_registry:
+            self._publish_microphone_registry()
 
     def _cb_world(self, msg: String) -> None:
         world_name = msg.data.strip()
@@ -392,6 +440,7 @@ class SoundPropagationNode(Node):
             self._spawned_microphones.clear()
             self._spawned_microphone_index = 0
             self._last_continuous_outputs.clear()
+            self._continuous_propagation_signatures.clear()
             self._publish_microphone_registry()
         world_name = str(msg.world).strip()
         if world_name:
@@ -403,6 +452,7 @@ class SoundPropagationNode(Node):
         self._spawned_microphones.clear()
         self._spawned_microphone_index = 0
         self._last_continuous_outputs.clear()
+        self._continuous_propagation_signatures.clear()
         self._publish_microphone_registry()
 
         self._world_load_future = self._world_loader.submit(
@@ -586,6 +636,7 @@ class SoundPropagationNode(Node):
             )
             if self._pra_adapter is not None else None
         )
+        self._continuous_propagation_signatures.clear()
         self._coverage_signature = None
         graph = self._world_graph
         self.get_logger().info(
@@ -816,6 +867,7 @@ class SoundPropagationNode(Node):
             set(self._robot_microphones)
             | set(self._world_microphones)
             | set(self._spawned_microphones)
+            | set(self._viewport_microphones)
         )
         self._microphone_registry_pub.publish(
             String(data=json.dumps(listener_ids, separators=(",", ":")))
@@ -1015,6 +1067,7 @@ class SoundPropagationNode(Node):
             set(self._robot_microphones)
             | set(self._world_microphones)
             | set(self._spawned_microphones)
+            | set(self._viewport_microphones)
         )
         while True:
             self._spawned_microphone_index += 1
@@ -1058,6 +1111,8 @@ class SoundPropagationNode(Node):
                 response.error_msg = (
                     "robot-attached microphones cannot be removed"
                 )
+            elif listener_id in self._viewport_microphones:
+                response.error_msg = "viewport microphones cannot be removed"
             else:
                 response.error_msg = f"unknown runtime microphone {listener_id!r}"
             return response
@@ -1065,6 +1120,7 @@ class SoundPropagationNode(Node):
         for key in tuple(self._last_continuous_outputs):
             if key[1] == listener_id:
                 stopped = self._last_continuous_outputs.pop(key)
+                self._continuous_propagation_signatures.pop(key, None)
                 stopped.header.stamp = self.get_clock().now().to_msg()
                 stopped.active = False
                 stopped.audible = False
@@ -1163,16 +1219,45 @@ class SoundPropagationNode(Node):
 
         listeners = self._listeners_for_event(event)
         for listener_id, listener_pos in listeners.items():
-            heard = self._calculate_heard_event(
-                event,
-                listener_id,
+            key = (state.source_id, listener_id)
+            signature = self._continuous_propagation_signature(
+                state,
+                event.source_position,
                 listener_pos,
             )
-            if not heard.audible and not bool(
-                self.get_parameter("publish_inaudible").value
-            ):
-                continue
-            output = ContinuousHeardSoundState()
+            output = None
+            if signature == self._continuous_propagation_signatures.get(key):
+                previous = self._last_continuous_outputs.get(key)
+                if previous is not None:
+                    output = copy.deepcopy(previous)
+
+            if output is None:
+                heard = self._calculate_heard_event(
+                    event,
+                    listener_id,
+                    listener_pos,
+                )
+                if not heard.audible and not bool(
+                    self.get_parameter("publish_inaudible").value
+                ):
+                    continue
+                output = ContinuousHeardSoundState()
+                output.received_volume_db = heard.received_volume_db
+                output.direct_delay_sec = heard.direct_delay_sec
+                output.audible = heard.audible
+                output.occluded = heard.occluded
+                output.source_zone = heard.source_zone
+                output.listener_zone = heard.listener_zone
+                output.propagation_backend = heard.propagation_backend
+                output.used_backend_fallback = heard.used_backend_fallback
+                output.backend_fallback_reason = heard.backend_fallback_reason
+                output.portal_ids = heard.portal_ids
+                output.traversed_zones = heard.traversed_zones
+                output.portal_positions = heard.portal_positions
+                output.portal_hop_count = heard.portal_hop_count
+                output.portal_route_loss_db = heard.portal_route_loss_db
+                self._continuous_propagation_signatures[key] = signature
+
             output.header = event.header
             output.source_id = state.source_id
             output.listener_id = listener_id
@@ -1193,26 +1278,33 @@ class SoundPropagationNode(Node):
             output.left_velocity_mps = state.left_velocity_mps
             output.right_velocity_mps = state.right_velocity_mps
             output.source_volume_db = state.source_volume_db
-            output.received_volume_db = heard.received_volume_db
-            output.direct_delay_sec = heard.direct_delay_sec
             output.active = state.active
-            output.audible = heard.audible
-            output.occluded = heard.occluded
-            output.source_zone = heard.source_zone
-            output.listener_zone = heard.listener_zone
-            output.propagation_backend = heard.propagation_backend
-            output.used_backend_fallback = heard.used_backend_fallback
-            output.backend_fallback_reason = heard.backend_fallback_reason
-            output.portal_ids = heard.portal_ids
-            output.traversed_zones = heard.traversed_zones
-            output.portal_positions = heard.portal_positions
-            output.portal_hop_count = heard.portal_hop_count
-            output.portal_route_loss_db = heard.portal_route_loss_db
             output.deterministic_seed = state.deterministic_seed
-            self._last_continuous_outputs[(state.source_id, listener_id)] = (
-                copy.deepcopy(output)
-            )
+            self._last_continuous_outputs[key] = copy.deepcopy(output)
             self._continuous_heard_pub.publish(output)
+
+    @staticmethod
+    def _continuous_propagation_signature(
+        state: ContinuousAudioSourceState,
+        source_position: Point,
+        listener_position: Point,
+    ) -> tuple[object, ...]:
+        return (
+            int(state.source_agent_id),
+            state.source_agent_name,
+            state.source_model,
+            state.sound_type,
+            state.label,
+            tuple(state.semantic_tags),
+            float(state.source_volume_db),
+            float(source_position.x),
+            float(source_position.y),
+            float(source_position.z),
+            float(state.source_yaw),
+            float(listener_position.x),
+            float(listener_position.y),
+            float(listener_position.z),
+        )
 
     def _listeners_for_event(self, event: SoundEvent) -> dict[str, Point]:
         """Snapshot listeners according to the configured hearing policy."""
@@ -1299,6 +1391,17 @@ class SoundPropagationNode(Node):
 
         for listener_id, (position, frame_id) in (
             self._spawned_microphones.items()
+        ):
+            transformed = self._point_in_acoustic_frame(
+                position,
+                frame_id,
+                listener_id,
+            )
+            if transformed is not None:
+                listeners[listener_id] = transformed
+
+        for listener_id, (position, frame_id) in (
+            self._viewport_microphones.items()
         ):
             transformed = self._point_in_acoustic_frame(
                 position,
@@ -1938,6 +2041,7 @@ class SoundPropagationNode(Node):
             set(self._robot_microphones)
             | set(self._world_microphones)
             | set(self._spawned_microphones)
+            | set(self._viewport_microphones)
         ):
             return float(listener_position.z)
         return 0.35 if listener_id.startswith("robot:") else 1.60

@@ -312,6 +312,14 @@ def generate_launch_description():
             "robot, placement, frame, and index."
         ),
     )
+    audio_viewport_down_projection_height_m = LaunchArgument(
+        name="audio_viewport_down_projection_height_m",
+        default_value="1.6",
+        description=(
+            "Listening height for the simulator viewport camera's "
+            "down-projection microphone."
+        ),
+    )
     robot = LaunchArgument(name="robot", default_value="jackal")
     tm_robots = LaunchArgument(name="tm_robots", default_value="explore")
     task_config = LaunchArgument(name="task_config", default_value="")
@@ -475,6 +483,9 @@ def generate_launch_description():
                 "audio_listener_id": audio_listener_id.substitution,
                 "audio_robot_microphones":
                     audio_robot_microphones.substitution,
+                "audio_viewport_down_projection_height_m": (
+                    audio_viewport_down_projection_height_m.substitution
+                ),
             }.items(),
         )
 
