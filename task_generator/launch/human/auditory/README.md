@@ -70,8 +70,8 @@ The generated RViz configuration shows pedestrian cones through
 portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
-The Task Generator RViz panel includes an `Auditory Runtime` group, an
-`Audio Playback Microphone` group, a `Static Audio Devices` table, `Play robot motor
+The Auditory RViz panel provides an `Auditory Runtime` group, an
+`Audio Playback Microphone` group, an `Environment Audio Sources` table, `Play robot motor
 audio on this workstation`, and a live `Motor Sound Tuning` group. The runtime
 group independently controls propagation and local radio/alarm playback. The
 listener group follows the transient microphone registry and updates human,
@@ -222,7 +222,7 @@ By default the source starts the corresponding bundled loop immediately.
 Enable `Custom Playback` to choose another catalog asset ID, source volume,
 loop behavior, or an initially stopped state. The runtime transforms the RViz
 Fixed Frame pose into the global map, so placement also works in allocated
-environment frames. Use the `Static Audio Devices` checkbox to start or stop
+environment frames. Use the `Environment Audio Sources` checkbox to start or stop
 emission and playback. Select a `runtime_*` row and use `Remove selected runtime
 source` to delete it. Runtime sources are cleared on the next episode reset.
 The existing robot or pedestrian heard-sound display shows each active
@@ -291,7 +291,7 @@ first click creates `microphone1`, followed by `microphone2` and later
 increasing IDs. These runtime microphones are cleared and the index restarts
 on the next episode or world change.
 
-The new microphone appears immediately in the Task Generator panel's **Audio
+The new microphone appears immediately in the Auditory panel's **Audio
 Playback Microphone** dropdown and as a green triangular cone in
 `Arena/Sound Propagation/Microphones`. Select it in **Listen through** to hear
 only that microphone's propagated audio.

@@ -21,10 +21,6 @@
 #include "task_generator_msgs/srv/queue_episode.hpp"
 
 #include "task_generator_msgs/msg/episode_record.hpp"
-#include "task_generator_msgs/msg/audio_system_state.hpp"
-#include "task_generator_msgs/srv/remove_audio_system.hpp"
-#include "task_generator_msgs/srv/remove_microphone.hpp"
-#include "task_generator_msgs/srv/set_audio_system.hpp"
 
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -51,7 +47,6 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
-#include <QFormLayout>
 #include <QGroupBox>
 #include <QFontMetrics>
 #include <QTextEdit>
@@ -59,7 +54,6 @@
 #include <QTableWidgetItem>
 #include <QScrollArea>
 #include <QLineEdit>
-#include <QJsonDocument>
 #include <QSignalBlocker>
 #include <QTimer>
 #include "Qt-MultiSelectComboBox/MultiSelectComboBox.h"
@@ -72,6 +66,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -117,33 +112,6 @@ namespace task_generator_gui
 
         // Render history_buffer_ + current + queued rows into playlist_table.
         void refreshHistory();
-
-        void refreshMotorPlayback();
-        void setMotorPlaybackEnabled(bool enabled);
-        void syncMotorPlaybackCheckbox(bool enabled, bool available);
-        void setMotorTuningParameter(
-            const std::string &name,
-            double value);
-        void syncMotorTuningControls(
-            const std::vector<rclcpp::Parameter> &parameters,
-            bool available);
-        void resetMotorTuning();
-        void refreshAudioListenerRouting();
-        void setAudioListenerRouting();
-        void updateMicrophoneListeners(const std::string &data);
-        void syncAudioListenerRouting(
-            const std::vector<rclcpp::Parameter> &parameters,
-            bool available);
-        void refreshAuditoryControls();
-        void setPropagationEnabled(bool enabled);
-        void setEnvironmentPlaybackEnabled(bool enabled);
-        void syncAuditoryControls(
-            bool propagation_enabled,
-            bool playback_enabled,
-            bool propagation_available,
-            bool playback_available);
-        void setAudioSystemActive(const std::string &system_id, bool active);
-        void removeSelectedAudioSystem();
 
         // Send reset_episode (world field intentionally empty; node resolves from pending overrides).
         void sendResetEpisode();
@@ -195,17 +163,6 @@ namespace task_generator_gui
         rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client;
 
         std::shared_ptr<rclcpp::AsyncParametersClient> parameters_client;
-        std::shared_ptr<rclcpp::AsyncParametersClient> motor_playback_parameters_client;
-        std::shared_ptr<rclcpp::AsyncParametersClient> human_playback_parameters_client;
-        std::shared_ptr<rclcpp::AsyncParametersClient> environment_playback_parameters_client;
-        std::shared_ptr<rclcpp::AsyncParametersClient> propagation_parameters_client;
-        std::string motor_playback_node;
-        std::string human_playback_node;
-        std::string environment_playback_node;
-        std::string propagation_node;
-        rclcpp::Client<task_generator_msgs::srv::SetAudioSystem>::SharedPtr set_audio_system_client;
-        rclcpp::Client<task_generator_msgs::srv::RemoveMicrophone>::SharedPtr remove_microphone_client;
-        rclcpp::Client<task_generator_msgs::srv::RemoveAudioSystem>::SharedPtr remove_audio_system_client;
 
         // --- state/episode subscription (current, deduped into history_buffer_) ---
         rclcpp::Subscription<task_generator_msgs::msg::EpisodeRecord>::SharedPtr episode_sub;
@@ -224,9 +181,6 @@ namespace task_generator_gui
 
         // --- state/paused subscription (latched) ---
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr paused_state_sub;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr microphone_listeners_sub;
-        rclcpp::Subscription<task_generator_msgs::msg::AudioSystemState>::SharedPtr audio_system_states_sub;
-        std::string microphone_listener_registry_;
 
         std::string staged_world;
 
@@ -268,18 +222,6 @@ namespace task_generator_gui
         QComboBox *obstacles_task_mode_combobox;
         QComboBox *robot_task_mode_combobox;
         QComboBox *world_combobox;
-        QCheckBox *motor_playback_checkbox;
-        QGroupBox *motor_tuning_group{nullptr};
-        QGroupBox *audio_listener_group{nullptr};
-        QComboBox *audio_listener_id_combobox{nullptr};
-        bool audio_listener_selection_pending_{false};
-        QCheckBox *propagation_checkbox{nullptr};
-        QCheckBox *environment_playback_checkbox{nullptr};
-        QGroupBox *audio_systems_group{nullptr};
-        QTreeWidget *audio_systems_tree{nullptr};
-        QPushButton *remove_audio_system_button{nullptr};
-        std::unordered_map<std::string, QDoubleSpinBox *>
-            motor_tuning_spinboxes;
 
         QPushButton *discard_button;
         QPushButton *queue_button;

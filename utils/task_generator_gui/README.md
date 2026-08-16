@@ -4,6 +4,7 @@ RViz2 plugins for the Arena-Rosnav task generator. Ships:
 
 - **`TaskGeneratorPanel`** (`rviz_common::Panel`): episode management, task-mode selection, world/robot configuration, live episode history playlist.
 - **`SpawnPedestrianTool`** (`rviz_common::Tool`): toolbar tool that click+drags a pose and calls `runtime/spawn_dynamic` to spawn a dynamic obstacle (pedestrian).
+- **`AuditoryPanel`** (`rviz_common::Panel`): propagation and workstation playback switches, microphone routing, motor playback and tuning, environment audio sources.
 - **`SpawnMicrophoneTool`** (`rviz_common::Tool`): toolbar tool that places a fixed or TF-attached acoustic listener.
 - **`SpawnAudioSourceTool`** (`rviz_common::Tool`): toolbar tool that places a configurable radio or alarm.
 
@@ -43,7 +44,13 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `state/paused` | `std_msgs::msg::Bool` | Drives the pause button label authoritatively. The pause button is fire-and-forget; UI reflects the published state, not the service-call return. |
 | `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == task_generator_node`; if any changed/new/deleted parameter starts with `task.<active_mode>.`, rebuilds the matching family's param tree on the Qt thread. |
 
-## Motor playback and tuning
+## AuditoryPanel
+
+Sibling panel with the same `Target` config key. Its parameter clients target
+`<Target>/robot_sound_node`, `<Target>/human_sound_playback`,
+`<Target>/environment_sound_playback`, and `<Target>/sound_propagation_node`;
+every group stays disabled until the matching node's parameter service appears,
+so the panel is inert under `auditory:=none`.
 
 `Play robot motor audio on this workstation` controls the live
 `enable_motor_playback` parameter on `<Target>/robot_sound_node`. It mutes
@@ -76,23 +83,23 @@ Set `Attach TF Frame` to a frame from the RViz TF tree to make the listener
 follow that frame. The clicked point is converted into an offset in the named
 frame. Leaving the property empty creates a fixed listener.
 
-The new ID appears in the Task Generator panel's **Audio Playback Microphone**
+The new ID appears in the Auditory panel's **Audio Playback Microphone**
 dropdown. Choose it under **Listen through** to route propagation and playback
 through that microphone only. Runtime-spawned microphones are cleared on an
 episode or world change. Every live robot also contributes
 `<robot_name>_mic`, attached to its base TF frame.
 
-The **Spawn Radio** toolbar button places a static radio or alarm. The panel's
-**Static Audio Devices** table lists every scenario- or
-launch-defined radio and alarm. Check a row to start the whole system and
+The **Spawn Radio** toolbar button places an environment source (radio or alarm). The Auditory panel's
+**Environment Audio Sources** table lists every scenario- or
+launch-defined source. Check a row to start the whole system and
 uncheck it to stop it. A system can contain several speakers. The listener
-routing control is applied to human, robot, and environmental playback, so the
+routing control is applied to human, robot, and environment playback, so the
 selected microphone also applies to radios and alarms.
 
-The panel's **Auditory Runtime** controls independently enable simulated
-propagation and local environmental playback. Disabling local playback does
+The Auditory panel's **Auditory Runtime** controls independently enable simulated
+propagation and local environment playback. Disabling local playback does
 not stop propagation or robot hearing. Runtime sources can be selected and
-removed from the static-device table.
+removed from the environment-sources table.
 
 `Spawn Radio` defaults to the bundled looping music or alarm asset and starts
 immediately. `Custom Playback` exposes the catalog asset ID, source volume,
