@@ -107,7 +107,6 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self._heartbeat_timer = None
         self._clock_task = None
         self._windows = HoldRegistry()
-        self._rejected_heartbeat_owners: set[tuple[int, str, str, str]] = set()
 
     def on_configure(self, state: rclpy.lifecycle.State) -> rclpy.lifecycle.TransitionCallbackReturn:
         return rclpy.lifecycle.TransitionCallbackReturn.SUCCESS
@@ -220,12 +219,6 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             arena_runtime_msgs.srv.CleanupEnv,
             self.service_namespace("cleanup_env"),
             self._cb_cleanup_env,
-            callback_group=srv_cb_group,
-        )
-        self._srv_claim_env = self.create_service(
-            arena_runtime_msgs.srv.ClaimEnv,
-            self.service_namespace("claim_env"),
-            self._cb_claim_env,
             callback_group=srv_cb_group,
         )
         self._srv_register_env = self.create_service(
@@ -364,37 +357,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             self._on_transition_event(env_id, msg)
 
         def _heartbeat_cb(msg: arena_runtime_msgs.msg.Heartbeat) -> None:
-            try:
-                if int(msg.env_id) != env_id:
-                    raise ValueError(
-                        f"heartbeat env_id {int(msg.env_id)} does not match {env_id}"
-                    )
-                self._env_registry.update_heartbeat(
-                    env_id,
-                    msg.fqn,
-                    msg.lease_id,
-                    msg.instance_id,
-                    self.wall_time.to_msg(),
-                )
-            except ValueError as exc:
-                owner = (
-                    int(msg.env_id),
-                    str(msg.fqn),
-                    str(msg.lease_id),
-                    str(msg.instance_id),
-                )
-                if owner not in self._rejected_heartbeat_owners:
-                    self._rejected_heartbeat_owners.add(owner)
-                    self.get_logger().warning(
-                        f"rejected stale heartbeat on {heartbeat_topic!r}: {exc}"
-                    )
-                self._publish_shutdown_request(
-                    int(msg.env_id),
-                    "environment_ownership_lost",
-                    fqn=str(msg.fqn),
-                    lease_id=str(msg.lease_id),
-                    instance_id=str(msg.instance_id),
-                )
+            self._env_registry.update_heartbeat(env_id, msg.stamp)
 
         transition_sub = self.create_subscription(TransitionEvent, transition_topic, _transition_cb, 10)
         heartbeat_sub = self.create_subscription(arena_runtime_msgs.msg.Heartbeat, heartbeat_topic, _heartbeat_cb, 10)
@@ -713,7 +676,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         requested_ns = request.ns or None
 
         try:
-            env_id, namespace, lease_id = self._env_registry.reserve(
+            env_id, namespace = self._env_registry.reserve(
                 requested_env_id=requested,
                 requested_ns=requested_ns,
                 now=self.wall_time.to_msg(),
@@ -731,56 +694,12 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         response.success = True
         response.env_id = env_id
         response.ns = namespace
-        response.lease_id = lease_id
         response.sim = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
         response.error_msg = ""
         return response
 
-    async def _cb_claim_env(
-        self,
-        request: arena_runtime_msgs.srv.ClaimEnv.Request,
-        response: arena_runtime_msgs.srv.ClaimEnv.Response,
-    ) -> arena_runtime_msgs.srv.ClaimEnv.Response:
-        try:
-            self._env_registry.claim(
-                int(request.env_id),
-                str(request.fqn),
-                str(request.lease_id),
-                str(request.instance_id),
-            )
-        except ValueError as exc:
-            response.success = False
-            response.error_msg = str(exc)
-            return response
-        self._publish_envs()
-        response.success = True
-        response.error_msg = ""
-        return response
-
-    def _publish_shutdown_request(
-        self,
-        env_id: int,
-        reason: str,
-        *,
-        fqn: str | None = None,
-        lease_id: str | None = None,
-        instance_id: str | None = None,
-    ) -> None:
-        record = self._env_registry.get(env_id)
-        msg = arena_runtime_msgs.msg.ShutdownRequest()
-        msg.env_id = env_id
-        msg.fqn = fqn if fqn is not None else (record.fqn if record is not None else "")
-        msg.lease_id = (
-            lease_id
-            if lease_id is not None
-            else (record.lease_id if record is not None else "")
-        )
-        msg.instance_id = (
-            instance_id
-            if instance_id is not None
-            else (record.owner_instance_id if record is not None else "")
-        )
-        msg.reason = reason
+    def _publish_shutdown_request(self, env_id: int, reason: str) -> None:
+        msg = arena_runtime_msgs.msg.ShutdownRequest(env_id=env_id, reason=reason)
         self._pub_shutdown_request.publish(msg)
 
     async def _shutdown_pg(
@@ -866,7 +785,7 @@ sys.exit(ls.run())
         requested_ns = request.ns or None
 
         try:
-            env_id, namespace, lease_id = self._env_registry.reserve(
+            env_id, namespace = self._env_registry.reserve(
                 requested_env_id=None,
                 requested_ns=requested_ns,
                 now=self.wall_time.to_msg(),
@@ -890,7 +809,6 @@ sys.exit(ls.run())
             "env_id": str(env_id),
             "ns": namespace,
             "sim": sim_name,
-            "env_lease_id": lease_id,
         }
 
         merged: dict[str, str] = {}
@@ -978,7 +896,6 @@ sys.exit(ls.run())
         response.success = True
         response.env_id = env_id
         response.ns = namespace
-        response.lease_id = lease_id
         response.log_path = str(log_path)
         response.error_msg = ""
         return response

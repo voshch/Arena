@@ -2,7 +2,7 @@
 
 The auditory module adds sound events to the Arena human simulation path. It is
 enabled by default when the Arena human simulator is selected. Set
-`enable_auditory:=false` to run without the auditory nodes.
+`auditory:=none` (the default) runs without the auditory nodes; `auditory:=arena` enables them.
 
 ## Features
 
@@ -22,14 +22,14 @@ enabled by default when the Arena human simulator is selected. Set
   an RViz text marker when a robot hears a configured sound type.
 - Human audio playback: `human_sound_playback` plays human sound assets from
   `config/auditory/acoustic_assets.yaml`.
-- Environmental audio: scenarios can define a looping radio or one logical
+- Environment audio: scenarios can define a looping radio or one logical
   alarm system backed by any number of fixed speakers. Each speaker keeps its
   own propagation route, delay, attenuation, and RIR while sharing the same
   playback position in the WAV.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
-  messages from robot odometry. In the default `motor_audio_mode:=procedural`,
+  messages from robot odometry. In the default `auditory.motor:=procedural`,
   Jackals instead publish continuous signed left/right drivetrain state;
-  other robot models retain the WAV fallback. Set `motor_audio_mode:=wav` to
+  other robot models retain the WAV fallback. Set `auditory.motor:=wav` to
   use WAV playback for Jackals as well. The node also renders and plays robot
   audio. Its live `enable_motor_playback` parameter mutes only workstation
   motor audio while motor emission and ROS propagation continue.
@@ -40,7 +40,7 @@ Expected nodes when enabled include:
 - `robot_sound_node`
 - `robot_hearing_node`
 - `human_sound_playback`
-- `environmental_sound_playback`
+- `environment_sound_playback`
 - `sound_propagation_visualizer` (enabled by default with the auditory module)
 
 ## Main Topics
@@ -62,7 +62,7 @@ Expected nodes when enabled include:
 - `<robot_name>/heard_sound_marker`: RViz text marker for sounds heard by the
   robot.
 - `sound_propagation_markers`: RViz source/portal/listener paths.
-- `environmental_audio_source_markers`: fixed radio and alarm emitters.
+- `environment_audio_source_markers`: fixed radio and alarm emitters.
 
 The generated RViz configuration shows pedestrian cones through
 `Arena/Pedestrians/Extra` and places each motor display in the corresponding
@@ -75,11 +75,11 @@ The Task Generator RViz panel includes an `Auditory Runtime` group, an
 audio on this workstation`, and a live `Motor Sound Tuning` group. The runtime
 group independently controls propagation and local radio/alarm playback. The
 listener group follows the transient microphone registry and updates human,
-robot, and environmental playback. Its dropdown selects exactly one
+robot, and environment playback. Its dropdown selects exactly one
 microphone, so workstation audio represents only what that microphone hears.
 The controls follow changes made through ROS parameters and
-persist across episode resets. `enable_motor_playback:=false` sets the initial
-mute state. This is separate from `enable_robot_sound`, which controls
+persist across episode resets. `auditory.motor:=off` sets the initial
+mute state. This is separate from `auditory.robot_sound`, which controls
 simulated motor emission.
 
 The procedural defaults apply a `-9 dB` output trim, reduce the broadband
@@ -98,7 +98,7 @@ driven by signed left and right wheel velocity. The live controls are:
 
 The static-audio Task Generator module is enabled by default and automatically
 adds `audio_systems` to `tm_modules`. Set
-`enable_static_audio_devices:=false` to disable it. The selected scenario may
+leave `auditory.static_devices` empty to disable it. The selected scenario may
 contain a top-level `audio` section:
 
 ```yaml
@@ -172,22 +172,21 @@ assets:
 ```
 
 For a radio or alarm that should be available in any scenario without editing
-that scenario, pass the same system schema through `static_audio_devices`:
+that scenario, pass the same system schema through `auditory.static_devices`:
 
 ```bash
 arena launch \
   world:=demo \
-  enable_auditory:=true \
-  enable_static_audio_devices:=true \
-  static_audio_devices:='[{name: room_radio, sound_type: music, asset_id: radio_loop, loop: true, initially_active: false, emitters: [{name: speaker, position: [5.0, 5.0, 1.2], source_volume_db: 62.0}]}]'
+  auditory:=arena \
+  auditory.static_devices:='[{name: room_radio, sound_type: music, asset_id: radio_loop, loop: true, initially_active: false, emitters: [{name: speaker, position: [5.0, 5.0, 1.2], source_volume_db: 62.0}]}]'
 ```
 
 Direct positions are local to the named level. Add `level: <level_id>` for
 multi-level worlds. Several radios are several list entries. A multi-speaker
 alarm is one list entry with several emitters. Scenario and launch-defined
 system names must be unique. To keep custom WAV files outside the package,
-pass `audio_asset_catalog:=/path/to/acoustic_assets.yaml` and
-`audio_sound_dir:=/path/to/wavs`.
+pass `auditory.assets:=/path/to/acoustic_assets.yaml` and
+`auditory.sound_dir:=/path/to/wavs`.
 
 A custom catalog replaces the bundled catalog for every playback node. Keep
 the bundled `footstep`, `greeting`, and motor entries in it, and keep their WAV
@@ -207,14 +206,14 @@ Replace `env_0` when the runtime allocated a different environment.
 
 `initially_active` sets the episode-reset state. The service changes simulated
 emission. The launch argument and live `enable_environment_playback` parameter on
-`environmental_sound_playback` only mutes or unmutes local workstation output,
+`environment_sound_playback` only mutes or unmutes local workstation output,
 so propagation and robot hearing continue while it is muted.
 
-The default `audio_block_size` is 2048 frames. If the host still reports
+The default `auditory.block_size` is 2048 frames. If the host still reports
 repeated PulseAudio underflows under a heavy RIR workload, increase it to 4096.
 An occasional recovered underrun does not stop propagation or playback.
 
-RViz lists fixed emitters in `Arena/Sound Propagation/Environmental Audio
+RViz lists fixed emitters in `Arena/Sound Propagation/Environment Audio
 Sources`. Alarm markers are red, other active systems are cyan, and inactive
 systems are gray. Emitters use a box marker oriented by the placement drag.
 The **Spawn Radio** toolbar tool creates a source at runtime. Set its `Mode`
@@ -240,13 +239,13 @@ robot base TF frame and appears as a green triangular cone in RViz. This makes
 multi-robot microphone testing available without extra launch arguments.
 
 Additional robot-mounted microphones can be configured with
-`audio_robot_microphones`. Each entry names the robot instance, placement,
+`auditory.microphones`. Each entry names the robot instance, placement,
 relative or robot-prefixed TF frame, and stable positive index:
 
 ```bash
 arena launch \
-  enable_auditory:=true \
-  audio_robot_microphones:='[{owner: robot, robot: jackal, placement: body, frame: base_link, index: 1}, {owner: robot, robot: jackal, placement: front, frame: front_laser, index: 1}]'
+  auditory:=arena \
+  auditory.microphones:='[{owner: robot, robot: jackal, placement: body, frame: base_link, index: 1}, {owner: robot, robot: jackal, placement: front, frame: front_laser, index: 1}]'
 ```
 
 The robot must exist in `state/robots`. A relative frame is resolved below that
@@ -312,15 +311,15 @@ configured workstation `audio_device`.
 
 The RViz dropdown applies one microphone ID to propagation,
 `human_sound_playback`, `robot_sound_node`, and
-`environmental_sound_playback`. For a non-RViz workflow, set
-`audio_listener_id:=robot1_mic` or another registered microphone ID at launch.
+`environment_sound_playback`. For a non-RViz workflow, set
+`auditory.listener:=robot1_mic` or another registered microphone ID at launch.
 
 When the simulator viewport publishes `/arena/viewport/camera_pose`, two more
 listeners appear in the same dropdown:
 
 - `microphone:viewport:projective_center` follows the camera position.
 - `microphone:viewport:down_projection` follows the camera x/y position at
-  `audio_viewport_down_projection_height_m`, which defaults to 1.6 m.
+  `auditory.viewport_height`, which defaults to 1.6 m.
 
 Selecting either listener detaches workstation playback from the robot
 microphone. Viewport microphones are available only when the simulator GUI
@@ -332,9 +331,9 @@ Enable the pyroomacoustics backend and optional RViz path visualizer with:
 
 ```bash
 arena launch \
-  enable_auditory:=true \
-  propagation_backend:=pyroomacoustics \
-  enable_sound_visualization:=true
+  auditory:=arena \
+  auditory.propagation:=pyroomacoustics \
+  auditory.viz:=true
 ```
 
 On world load, Arena pairs each authored door with the acoustic zone touching
@@ -361,7 +360,7 @@ non-source pedestrian as an `agent:<id>` listener. Robot and microphone
 listener events receive the complete route metadata. Human events are rendered
 by `human_sound_playback`, and robot events are rendered by
 `robot_sound_node`. The launch default sets
-`compute_rir_in_propagation=true`, so the propagation node
+`auditory.rir_in_propagation:=true`, so the propagation node
 constructs the same-room or portal-route RIR and reports the actual
 `pyroomacoustics_same_room`, `pyroomacoustics_one_door`, or
 `pyroomacoustics_multi_portal` backend in ROS propagation results. Playback
@@ -498,12 +497,12 @@ The round-trip test checks:
 ## Benchmark
 
 Use the benchmark when you want a same-condition CPU and latency comparison.
-The baseline and auditory commands should differ only by `enable_auditory`.
+The baseline and auditory commands should differ only by `auditory`.
 
 ```bash
 ros2 run task_generator auditory_benchmark \
-  --baseline-cmd "python3 -m arena_bringup.supervisor sim:=gazebo headless:=true human:=arena rviz:=false enable_auditory:=false" \
-  --auditory-cmd "python3 -m arena_bringup.supervisor sim:=gazebo headless:=true human:=arena rviz:=false enable_auditory:=true" \
+  --baseline-cmd "python3 -m arena_bringup.supervisor sim:=gazebo headless:=true human:=arena rviz:=false auditory:=none" \
+  --auditory-cmd "python3 -m arena_bringup.supervisor sim:=gazebo headless:=true human:=arena rviz:=false auditory:=arena" \
   --duration-sec 120 \
   --startup-delay-sec 20 \
   --output-json /tmp/auditory_benchmark.json \

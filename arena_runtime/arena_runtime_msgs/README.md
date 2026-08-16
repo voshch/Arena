@@ -8,9 +8,8 @@ Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live
 
 | File | Purpose |
 |---|---|
-| `RegisterEnv.srv` | Reserve an env_id, normalized namespace, and lease for an external environment. |
-| `ClaimEnv.srv` | Atomically bind one launch instance to a reserved environment lease. |
-| `SpawnEnv.srv` | Reserve and launch `task_generator.launch.py` as a child process, then wait for ACTIVE. |
+| `RegisterEnv.srv` | Reserve an env_id and namespace; called by an env that launches without managed mode. |
+| `SpawnEnv.srv` | Reserve + launch `task_generator.launch.py` as a child process; waits for ACTIVE. |
 | `DespawnEnv.srv` | Publish a `ShutdownRequest` asking an env to self-shutdown via lifecycle. |
 | `ConfirmWorld.srv` | Run the shelf packer for an env's extent; returns `reference`, `slot_extent`, `prespawn`. |
 | `LifecycleHold.srv` | Acquire or release a pause hold (ref-counted across callers). |
@@ -24,9 +23,9 @@ Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live
 
 | File | Purpose |
 |---|---|
-| `EnvRecord.msg` | Single environment entry including its normalized FQN, lease, owner, placement, and liveness state. |
+| `EnvRecord.msg` | Single env entry: `env_id`, `fqn`, `placed`, `reference`, `slot_extent`, `extent`, `draining`. |
 | `EnvRegistry.msg` | Snapshot of all non-draining `EnvRecord`s. Published latched on `state/envs`. |
-| `Heartbeat.msg` | Lease-bound liveness ping from a `task_generator_node`. |
+| `Heartbeat.msg` | Liveness ping from a managed env's `task_generator_node`. |
 | `HoldEntry.msg` | One `(caller_id, reason, count)` triple. |
 | `HoldRegistry.msg` | All active `HoldEntry`s. Published latched on `state/holders`. |
 | `LockstepChannel.msg` | One registered data channel: `name`, `topic`, `type`, `period_s`, `hard`. |

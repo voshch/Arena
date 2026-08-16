@@ -93,8 +93,8 @@ class SoundPropagationVisualizer(Node):
         )
         self.declare_parameter("room_marker_topic", "acoustic_room_markers")
         self.declare_parameter(
-            "environmental_source_marker_topic",
-            "environmental_audio_source_markers",
+            "environment_source_marker_topic",
+            "environment_audio_source_markers",
         )
         self.declare_parameter(
             "continuous_audio_sources_topic",
@@ -184,11 +184,11 @@ class SoundPropagationVisualizer(Node):
             str(self.get_parameter("room_marker_topic").value),
             acoustic_metadata_qos(),
         )
-        self._environmental_source_publisher = self.create_publisher(
+        self._environment_source_publisher = self.create_publisher(
             MarkerArray,
             str(
                 self.get_parameter(
-                    "environmental_source_marker_topic"
+                    "environment_source_marker_topic"
                 ).value
             ),
             acoustic_metadata_qos(depth=32),
@@ -412,7 +412,7 @@ class SoundPropagationVisualizer(Node):
             color = ColorRGBA(r=0.05, g=0.75, b=0.95, a=0.92)
 
         source = self._marker(frame, base_id, Marker.CUBE, lifetime)
-        source.ns = "environmental_audio_sources"
+        source.ns = "environment_audio_sources"
         source.pose.position = Point(
             x=float(msg.source_position.x),
             y=float(msg.source_position.y),
@@ -431,7 +431,7 @@ class SoundPropagationVisualizer(Node):
             Marker.TEXT_VIEW_FACING,
             lifetime,
         )
-        label.ns = "environmental_audio_source_labels"
+        label.ns = "environment_audio_source_labels"
         label.pose.position = Point(
             x=float(msg.source_position.x),
             y=float(msg.source_position.y),
@@ -441,7 +441,7 @@ class SoundPropagationVisualizer(Node):
         label.color = color
         state = "ACTIVE" if msg.active else "OFF"
         label.text = f"{msg.label or msg.system_id} / {msg.source_agent_name} [{state}]"
-        self._environmental_source_publisher.publish(
+        self._environment_source_publisher.publish(
             MarkerArray(markers=[source, label])
         )
 

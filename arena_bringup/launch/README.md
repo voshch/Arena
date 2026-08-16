@@ -31,13 +31,14 @@ args (`sim`, `headless`, `world`, `use_sim_time`, `log_level`) go to
 | `tm_obstacles` | string | `random` | Obstacle task mode |
 | `tm_modules` | string | `rviz_ui` | Comma-separated task modules to load |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/` |
-| `enable_auditory` | bool string | `true` | Start sound propagation, hearing, playback, and sound visualization nodes. |
-| `enable_static_audio_devices` | bool string | `true` | Load scenario and launch-defined static radios and alarms. This adds `audio_systems` to `tm_modules`. |
-| `static_audio_devices` | YAML string | `[]` | World-independent radio and alarm system list. Each system may contain several emitters. |
-| `enable_environment_playback` | bool string | `true` | Play propagated radios and alarms on the workstation without disabling simulated emission. |
-| `audio_block_size` | int string | `2048` | PortAudio callback size. Increase to `4096` if a heavy RIR workload causes repeated output underflows. |
-| `audio_device` | string | `pulse` | PortAudio output device name. |
-| `audio_asset_catalog` / `audio_sound_dir` | paths | bundled files | Asset catalog and WAV directory shared by all playback nodes. |
+| `auditory` | `none` \| `arena` | `none` | Auditory pipeline: sound propagation, robot hearing, robot and human sound emission. Sub-keys below take effect only when not `none`; see [auditory/README.md](../../task_generator/launch/human/auditory/README.md). |
+| `auditory.playback` | string | `auto` | PortAudio output device for workstation playback; `auto` = system default, `none` starts no playback nodes. |
+| `auditory.viz` | bool string | `false` | Publish propagation markers. |
+| `auditory.static_devices` | YAML string | `[]` | World-independent environment audio systems (radios, alarms); non-empty adds `audio_systems` to `tm_modules`. |
+| `auditory.motor` | `off` \| `wav` \| `procedural` | `procedural` | Robot motor audio source. |
+| `auditory.environment_playback` | bool string | `true` | Play propagated environment audio locally without disabling simulated emission. |
+| `auditory.block_size` | int string | `2048` | PortAudio callback size; raise to `4096` on repeated underflows. |
+| `auditory.assets` / `auditory.sound_dir` | paths | bundled files | Asset catalog and WAV directory shared by all playback nodes. |
 | `use_sim_time` | bool string | `true` | Use sim clock instead of wall clock |
 | `env_n` | int string | `1` | Number of task-generator environments `arena launch` will spawn this invocation. Additive: if the runtime already has envs, these add to them rather than replace. |
 | `env_d` | float string | `50` | Spacing (metres) between environments on the snail grid |

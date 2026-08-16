@@ -1,5 +1,6 @@
 import launch
 from launch.substitutions import PathJoinSubstitution
+import launch_ros.parameter_descriptions
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -22,55 +23,84 @@ def generate_launch_description():
         name='environment_namespace',
     )
 
-    enable_auditory = LaunchArgument(
-        name="enable_auditory",
-        default_value="true",
+    auditory = LaunchArgument(
+        name="auditory",
+        choices=["none", "arena"],
+        default_value="none",
     )
-
-    enable_sound_visualization = LaunchArgument(
-        name="enable_sound_visualization",
-        default_value="true",
+    auditory_viz = LaunchArgument(
+        name="auditory.viz",
+        default_value="false",
     )
-
-    enable_robot_sound = LaunchArgument(
-        name="enable_robot_sound",
-        default_value="true",
+    auditory_playback = LaunchArgument(
+        name="auditory.playback",
+        default_value="auto",
+        description="PortAudio output device for local playback; auto = system default, none = no playback nodes",
     )
-
-    enable_motor_playback = LaunchArgument(
-        name="enable_motor_playback",
-        default_value="true",
-    )
-
-    enable_environment_playback = LaunchArgument(
-        name="enable_environment_playback",
-        default_value="true",
-    )
-
-    audio_block_size = LaunchArgument(
-        name="audio_block_size",
+    auditory_block_size = LaunchArgument(
+        name="auditory.block_size",
         default_value="2048",
     )
-
-    audio_device = LaunchArgument(
-        name="audio_device",
-        default_value="pulse",
-    )
-
-    audio_asset_catalog = LaunchArgument(
-        name="audio_asset_catalog",
+    auditory_assets = LaunchArgument(
+        name="auditory.assets",
         default_value=PathJoinSubstitution([
             FindPackageShare("task_generator"),
             "config", "auditory", "acoustic_assets.yaml",
         ]),
     )
-
-    audio_sound_dir = LaunchArgument(
-        name="audio_sound_dir",
+    auditory_sound_dir = LaunchArgument(
+        name="auditory.sound_dir",
         default_value=PathJoinSubstitution([
             FindPackageShare("task_generator"),
             "sounds",
         ]),
+    )
+    auditory_propagation = LaunchArgument(
+        name="auditory.propagation",
+        choices=["level3", "pyroomacoustics"],
+        default_value="pyroomacoustics",
+    )
+    auditory_multi_portal = LaunchArgument(
+        name="auditory.multi_portal",
+        default_value="true",
+    )
+    auditory_rir_in_propagation = LaunchArgument(
+        name="auditory.rir_in_propagation",
+        default_value="true",
+    )
+    auditory_robot_sound = LaunchArgument(
+        name="auditory.robot_sound",
+        default_value="true",
+    )
+    auditory_motor = LaunchArgument(
+        name="auditory.motor",
+        choices=["off", "wav", "procedural"],
+        default_value="procedural",
+    )
+    auditory_motor_playback = LaunchArgument(
+        name="auditory.motor.playback",
+        choices=["sequence", "single_loop"],
+        default_value="sequence",
+    )
+    auditory_environment_playback = LaunchArgument(
+        name="auditory.environment_playback",
+        default_value="true",
+    )
+    auditory_listener = LaunchArgument(
+        name="auditory.listener",
+        default_value="",
+    )
+    auditory_listener_frame = LaunchArgument(
+        name="auditory.listener_frame",
+        default_value="",
+    )
+    auditory_microphones = LaunchArgument(
+        name="auditory.microphones",
+        default_value="[]",
+    )
+    auditory_viewport_height = LaunchArgument(
+        name="auditory.viewport_height",
+        default_value="1.6",
     )
 
     robot = LaunchArgument(
@@ -78,57 +108,36 @@ def generate_launch_description():
         default_value='jackal',
     )
 
-    propagation_backend = LaunchArgument(
-        name="propagation_backend",
-        choices=["level3", "pyroomacoustics"],
-        default_value="pyroomacoustics",
+    auditory_on = launch.conditions.IfCondition(
+        launch.substitutions.PythonExpression([
+            "'", auditory.substitution, "' != 'none'",
+        ])
     )
-    enable_multi_portal_rir = LaunchArgument(
-        name="enable_multi_portal_rir",
-        default_value="true",
+    auditory_playback_on = launch.conditions.IfCondition(
+        launch.substitutions.PythonExpression([
+            "'", auditory.substitution, "' != 'none' and '",
+            auditory_playback.substitution, "' != 'none'",
+        ])
     )
-    compute_rir_in_propagation = LaunchArgument(
-        name="compute_rir_in_propagation",
-        default_value="true",
+    auditory_viz_on = launch.conditions.IfCondition(
+        launch.substitutions.PythonExpression([
+            "'", auditory.substitution, "' != 'none' and '",
+            auditory_viz.substitution, "' == 'true'",
+        ])
     )
-
-    motor_audio_mode = LaunchArgument(
-        name="motor_audio_mode",
-        choices=["procedural", "wav"],
-        default_value="procedural",
-    )
-
-    audio_listener_frame = LaunchArgument(
-        name="audio_listener_frame",
-        default_value="",
-    )
-
-    audio_listener_id = LaunchArgument(
-        name="audio_listener_id",
-        default_value="",
-    )
-
-    audio_robot_microphones = LaunchArgument(
-        name="audio_robot_microphones",
-        default_value="[]",
-    )
-
-    audio_viewport_down_projection_height_m = LaunchArgument(
-        name="audio_viewport_down_projection_height_m",
-        default_value="1.6",
-    )
-
-    motor_playback_mode = LaunchArgument(
-        name="motor_playback_mode",
-        choices=["sequence", "single_loop"],
-        default_value="sequence",
-    )
+    motor_enabled = launch.substitutions.PythonExpression([
+        "'", auditory_motor.substitution, "' != 'off'",
+    ])
+    motor_audio_mode = launch.substitutions.PythonExpression([
+        "'procedural' if '", auditory_motor.substitution,
+        "' == 'off' else '", auditory_motor.substitution, "'",
+    ])
 
     playback_parameters = {
         "sound_events_topic": "human_sound_events",
         "heard_sound_events_topic": "heard_sound_events",
         "use_rir": True,
-        "listener_id": audio_listener_id.substitution,
+        "listener_id": auditory_listener.substitution,
         "microphone_listeners_topic": "microphone_listeners",
         "world_topic": "state/world",
         "rir_sample_rate_hz": 44100,
@@ -145,7 +154,7 @@ def generate_launch_description():
         "opening_portal_loss_db": 0.5,
         "derive_opening_portals": True,
         "minimum_opening_width_m": 0.2,
-        **enable_multi_portal_rir.param(bool),
+        "enable_multi_portal_rir": auditory_multi_portal.param_value(bool),
         "max_portal_hops": 4,
         "route_distance_loss_db_per_m": 0.05,
         "portal_source_early_window_sec": 0.08,
@@ -158,10 +167,10 @@ def generate_launch_description():
         "episode_topic": "state/episode",
         "output_sample_rate": 44100,
         "output_channels": 1,
-        "block_size": audio_block_size.param_value(int),
-        "audio_device": audio_device.substitution,
-        "asset_catalog": audio_asset_catalog.substitution,
-        "sound_dir": audio_sound_dir.substitution,
+        "block_size": auditory_block_size.param_value(int),
+        "audio_device": auditory_playback.substitution,
+        "asset_catalog": auditory_assets.substitution,
+        "sound_dir": auditory_sound_dir.substitution,
         "master_gain_db": 0.0,
     }
 
@@ -211,9 +220,7 @@ def generate_launch_description():
                 name='human_sound_node',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(
-                    enable_auditory.substitution
-                ),
+                condition=auditory_on,
                 parameters=[{
                     "use_sim_time": True,
                     "arena_peds_topic": PathJoinSubstitution([
@@ -236,7 +243,7 @@ def generate_launch_description():
                 name='sound_propagation_node',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(enable_auditory.substitution),
+                condition=auditory_on,
                 parameters=[{
                     "use_sim_time": True,
                     "sound_events_topic": "human_sound_events",
@@ -246,17 +253,15 @@ def generate_launch_description():
                     "continuous_heard_sounds_topic":
                         "continuous_heard_sounds",
                     "robot_microphones":
-                        audio_robot_microphones.param_value(str),
+                        auditory_microphones.param_value(str),
                     "viewport_down_projection_height_m":
-                        audio_viewport_down_projection_height_m.param_value(
-                            float
-                        ),
+                        auditory_viewport_height.param_value(float),
                     "active_microphone_id":
-                        audio_listener_id.substitution,
+                        auditory_listener.substitution,
                     "microphone_listeners_topic":
                         "microphone_listeners",
                     "robot_listener_frame":
-                        audio_listener_frame.substitution,
+                        auditory_listener_frame.substitution,
                     "arena_peds_topic": PathJoinSubstitution([
                         environment_namespace.substitution,
                         "arena_peds",
@@ -282,8 +287,8 @@ def generate_launch_description():
                     "pyroom_cache_position_quantization_m": 0.10,
                     "pyroom_cache_size": 512,
                     "pyroom_robot_listeners_only": True,
-                    **compute_rir_in_propagation.param(bool),
-                    "propagation_backend": propagation_backend.substitution,
+                    "compute_rir_in_propagation": auditory_rir_in_propagation.param_value(bool),
+                    "propagation_backend": auditory_propagation.substitution,
                     "portal_adjacency_tolerance_m": 0.2,
                     "portal_inset_m": 0.03,
                     "portal_loss_db": 3.0,
@@ -292,7 +297,7 @@ def generate_launch_description():
                     "minimum_opening_width_m": 0.2,
                     # Each authored zone is one ordinary pyroomacoustics
                     # room. Cross-zone rendering may follow a portal route.
-                    **enable_multi_portal_rir.param(bool),
+                    "enable_multi_portal_rir": auditory_multi_portal.param_value(bool),
                     "max_portal_hops": 4,
                     "route_distance_loss_db_per_m": 0.05,
                     "portal_source_early_window_sec": 0.08,
@@ -313,14 +318,7 @@ def generate_launch_description():
                 name='sound_propagation_visualizer',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(
-                    launch.substitutions.PythonExpression([
-                        "'", enable_auditory.substitution,
-                        "' == 'true' and '",
-                        enable_sound_visualization.substitution,
-                        "' == 'true'",
-                    ])
-                ),
+                condition=auditory_viz_on,
                 parameters=[{
                     "use_sim_time": True,
                     "heard_sound_events_topic": "heard_sound_events",
@@ -328,8 +326,8 @@ def generate_launch_description():
                         "continuous_audio_sources",
                     "continuous_heard_sounds_topic":
                         "continuous_heard_sounds",
-                    "environmental_source_marker_topic":
-                        "environmental_audio_source_markers",
+                    "environment_source_marker_topic":
+                        "environment_audio_source_markers",
                     "pedestrian_marker_topic":
                         "pedestrian_sound_propagation_markers",
                     "robot_marker_topic":
@@ -348,20 +346,20 @@ def generate_launch_description():
                 name='robot_sound_node',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(enable_auditory.substitution),
+                condition=auditory_on,
                 parameters=[{
                     "use_sim_time": True,
                     **playback_parameters,
-                    **enable_robot_sound.param(bool),
-                    **enable_motor_playback.param(bool),
+                    "enable_robot_sound": auditory_robot_sound.param_value(bool),
+                    "enable_motor_playback": launch_ros.parameter_descriptions.ParameterValue(motor_enabled, value_type=bool),
                     "robot_fleet_topic": "state/robots",
                     "continuous_audio_sources_topic":
                         "continuous_audio_sources",
                     "continuous_heard_sounds_topic":
                         "continuous_heard_sounds",
-                    "motor_audio_mode": motor_audio_mode.substitution,
+                    "motor_audio_mode": motor_audio_mode,
                     "motor_rir_crossfade_sec": 0.10,
-                    "motor_playback_mode": motor_playback_mode.substitution,
+                    "motor_playback_mode": auditory_motor_playback.substitution,
                     "motor_single_asset_id": "motor",
                     "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
                     "sound_type": "motor",
@@ -386,18 +384,16 @@ def generate_launch_description():
 
             Node(
                 package='task_generator',
-                executable='environmental_sound_playback',
-                name='environmental_sound_playback',
+                executable='environment_sound_playback',
+                name='environment_sound_playback',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(
-                    enable_auditory.substitution
-                ),
+                condition=auditory_playback_on,
                 parameters=[{
                     **playback_parameters,
                     "continuous_heard_sounds_topic":
                         "continuous_heard_sounds",
-                    **enable_environment_playback.param(bool),
+                    "enable_environment_playback": auditory_environment_playback.param_value(bool),
                     "environment_rir_crossfade_sec": 0.10,
                 }],
             ),
@@ -409,7 +405,7 @@ def generate_launch_description():
                 name='robot_hearing_node',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(enable_auditory.substitution),
+                condition=auditory_on,
                 parameters=[{
                     "use_sim_time": True,
                     "robot_fleet_topic": "state/robots",
@@ -433,7 +429,7 @@ def generate_launch_description():
                 name='human_sound_playback',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=launch.conditions.IfCondition(enable_auditory.substitution),
+                condition=auditory_playback_on,
                 parameters=[{
                     **playback_parameters,
                 }],

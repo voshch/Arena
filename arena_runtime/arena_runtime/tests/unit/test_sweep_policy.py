@@ -16,13 +16,7 @@ from arena_runtime.registry import EnvRecord, EnvRegistry, sweep_verdict  # noqa
 
 
 def _record(*, ready: bool = True, draining: bool = False) -> EnvRecord:
-    return EnvRecord(
-        env_id=0,
-        fqn="/test",
-        lease_id="lease",
-        ready=ready,
-        draining=draining,
-    )
+    return EnvRecord(env_id=0, fqn="/test", ready=ready, draining=draining)
 
 
 def _time(sec: int = 0) -> builtin_interfaces.msg.Time:
@@ -87,83 +81,7 @@ def test_process_alive_true_pre_ready_still_uses_bootstrap_budget():
 
 def test_reserve_stamps_last_heartbeat():
     reg = EnvRegistry()
-    env_id, _ns, _lease_id = reg.reserve(now=_time(sec=42))
+    env_id, _ns = reg.reserve(now=_time(sec=42))
     record = reg.get(env_id)
     assert record is not None
     assert record.last_heartbeat.sec == 42
-
-
-def test_reserve_rejects_normalized_namespace_duplicate_without_consuming_id():
-    reg = EnvRegistry()
-    env_id, namespace, _lease_id = reg.reserve(
-        requested_ns="/arena//shared/task_generator_node/",
-        now=_time(),
-    )
-    assert env_id == 0
-    assert namespace == "arena/shared/task_generator_node"
-
-    with pytest.raises(ValueError, match="already owned"):
-        reg.reserve(
-            requested_ns="arena/shared/task_generator_node",
-            now=_time(),
-        )
-
-    next_id, next_namespace, _next_lease_id = reg.reserve(now=_time())
-    assert next_id == 1
-    assert next_namespace == "arena/env_1/task_generator_node"
-
-
-def test_free_releases_namespace_ownership():
-    reg = EnvRegistry()
-    env_id, namespace, _lease_id = reg.reserve(
-        requested_ns="arena/shared/task_generator_node",
-        now=_time(),
-    )
-    reg.free(env_id)
-
-    reused_id, reused_namespace, _reused_lease_id = reg.reserve(
-        requested_ns="/arena/shared/task_generator_node/",
-        now=_time(),
-    )
-    assert reused_id == env_id
-    assert reused_namespace == namespace
-
-
-def test_only_one_instance_can_claim_a_reservation():
-    reg = EnvRegistry()
-    env_id, namespace, lease_id = reg.reserve(now=_time())
-    fqn = f"/{namespace}"
-
-    reg.claim(env_id, fqn, lease_id, "instance-a")
-    reg.claim(env_id, fqn, lease_id, "instance-a")
-
-    with pytest.raises(ValueError, match="already claimed"):
-        reg.claim(env_id, fqn, lease_id, "instance-b")
-
-
-def test_heartbeat_requires_current_owner_and_uses_supplied_receipt_time():
-    reg = EnvRegistry()
-    env_id, namespace, lease_id = reg.reserve(now=_time(sec=1))
-    fqn = f"/{namespace}"
-    reg.claim(env_id, fqn, lease_id, "instance-a")
-
-    reg.update_heartbeat(
-        env_id,
-        fqn,
-        lease_id,
-        "instance-a",
-        _time(sec=9),
-    )
-    record = reg.get(env_id)
-    assert record is not None
-    assert record.last_heartbeat.sec == 9
-
-    with pytest.raises(ValueError, match="instance does not own"):
-        reg.update_heartbeat(
-            env_id,
-            fqn,
-            lease_id,
-            "instance-b",
-            _time(sec=99),
-        )
-    assert record.last_heartbeat.sec == 9

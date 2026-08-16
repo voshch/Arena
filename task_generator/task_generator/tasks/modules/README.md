@@ -57,7 +57,7 @@ semantics that clears all per-level forbidden zones.
 
 ### `Mod_AudioSystems`
 
-[`audio_systems/impl.py:34`](audio_systems/impl.py#L34)
+[`audio_systems/impl.py:57`](audio_systems/impl.py#L57)
 
 Loads the selected scenario's top-level `audio.systems` section and the
 world-independent `static_audio_devices` launch configuration after each

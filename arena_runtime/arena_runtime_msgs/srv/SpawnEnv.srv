@@ -6,6 +6,5 @@ string[] launch_args     # passthrough to task_generator.launch.py, "name:=value
 bool success
 uint16 env_id
 string ns
-string lease_id
 string log_path          # path to the env subprocess's log file
 string error_msg

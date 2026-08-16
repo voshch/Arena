@@ -17,7 +17,7 @@ from task_generator.auditory.audio_playback_node import SoundPlaybackNode
 from task_generator.auditory.procedural_audio import LoopingSampleRenderSource
 
 
-class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
+class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
     def __init__(self, **kwargs: object) -> None:
         self._environment_sources: dict[
             tuple[str, str], LoopingSampleRenderSource
@@ -38,7 +38,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
             ],
         ] = {}
         self._completed_programs: set[tuple[str, str, int, int]] = set()
-        super().__init__("environmental_sound_playback", "environment", **kwargs)
+        super().__init__("environment_sound_playback", "environment", **kwargs)
         self.declare_parameter("enable_environment_playback", True)
         self.declare_parameter("environment_rir_crossfade_sec", 0.1)
         self._mixer.set_bus_enabled(
@@ -144,7 +144,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
             )
             if selected is None:
                 self.get_logger().warning(
-                    f"no environmental acoustic asset for {asset_id!r}"
+                    f"no environment acoustic asset for {asset_id!r}"
                 )
                 return
             asset, sample_spec = selected
@@ -204,7 +204,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
                 self._played_events += 1
             except Exception:
                 self.get_logger().error(
-                    "environmental acoustic asset load failed:\n"
+                    "environment acoustic asset load failed:\n"
                     f"{traceback.format_exc()}"
                 )
 
@@ -228,7 +228,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
                 self._environment_rir_signatures[source_key] = signature
             except Exception as exc:
                 self.get_logger().warning(
-                    f"environmental RIR unavailable for {msg.source_id!r}: "
+                    f"environment RIR unavailable for {msg.source_id!r}: "
                     f"{exc}"
                 )
         has_rir = (
@@ -280,7 +280,7 @@ class EnvironmentalSoundPlaybackNode(SoundPlaybackNode):
 
 def main() -> None:
     rclpy.init()
-    node = EnvironmentalSoundPlaybackNode()
+    node = EnvironmentSoundPlaybackNode()
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

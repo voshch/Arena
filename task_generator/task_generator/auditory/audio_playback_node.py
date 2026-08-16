@@ -209,7 +209,7 @@ class SoundPlaybackNode(Node):
 
         sample_rate = int(self.get_parameter("output_sample_rate").value)
         channels = int(self.get_parameter("output_channels").value)
-        device = str(self.get_parameter("audio_device").value).strip() or None
+        device = str(self.get_parameter("audio_device").value).strip()
 
         self._catalog = AcousticAssetCatalog(
             config_path=Path(str(self.get_parameter("asset_catalog").value)),
@@ -234,7 +234,7 @@ class SoundPlaybackNode(Node):
             thread_name_prefix="audio_asset_loader",
         )
         self._pending_asset_loads: deque[
-            tuple[Future, object, object, str | None]
+            tuple[Future, PlaybackEventMsg, AcousticAsset | tuple[AcousticAsset, ...], str | None]
         ] = deque()
         self._cancelled_motor_starts: set[str] = set()
         self._asset_poll_timer = self.create_timer(
@@ -242,13 +242,21 @@ class SoundPlaybackNode(Node):
             self._poll_asset_loads,
         )
 
-        self._mixer = AudioMixer.open(
-            sample_rate=sample_rate,
-            channels=channels,
-            block_size=int(self.get_parameter("block_size").value),
-            device=device,
-            master_gain_db=float(self.get_parameter("master_gain_db").value),
-        )
+        master_gain_db = float(self.get_parameter("master_gain_db").value)
+        if device == "none":
+            self._mixer = AudioMixer(channels=channels, master_gain_db=master_gain_db)
+        else:
+            try:
+                self._mixer = AudioMixer.open(
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    block_size=int(self.get_parameter("block_size").value),
+                    device=None if device in ("", "auto") else device,
+                    master_gain_db=master_gain_db,
+                )
+            except RuntimeError as exc:
+                self.get_logger().warning(f"{exc}; continuing without audio output")
+                self._mixer = AudioMixer(channels=channels, master_gain_db=master_gain_db)
         if self._source_kind == "robot":
             self._mixer.set_bus_enabled(
                 "motor",
