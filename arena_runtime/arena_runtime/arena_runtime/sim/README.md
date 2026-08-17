@@ -131,12 +131,17 @@ running lockstep live. The arena_humansim adapter self-registers `engine`
 (hard) and `peds` (soft). The hunav adapter self-registers `roster` (hard).
 The arena_robots task_server registers per-robot beats only while a goal is
 active: `nav/<robot>` (hard, pulsed per cmd_vel) during goto_pose for both
-nav2 (one controller period) and the goal-window passthrough stacks
-(drl/rosnav_rl/external, fixed 0.25 s period, action held open until
-arrival), `reach/<robot>` and `gesture/<robot>` (hard, pulsed per
-JTC controller_state) during reach_pose / play_gesture. The `none`,
-`manual`, and `test_collision` bringups keep fire-and-forget goto_pose and
-stay ungated. `arena cam ... lockstep=true` recording registers `cam`
+nav2 (one controller period) and the goal-window passthrough stacks whose
+control loop Arena does not own (rosnav_rl/external, fixed 0.25 s liveness
+period, action held open until arrival), `reach/<robot>` and
+`gesture/<robot>` (hard, pulsed per JTC controller_state) during reach_pose
+/ play_gesture. The arena_planners bridge (`mobile:=drl`) registers
+`planner/<robot>` (hard, no keepalive) for the lifetime of its run loop,
+with the period snapped to a whole number of physics steps and every pulse
+stamped with the observation time its action was computed for, so a
+lockstep run steps exactly one planner tick per action: obs at the frozen
+boundary, action, step. The `none`, `manual`, and `test_collision` bringups
+keep fire-and-forget goto_pose and stay ungated. `arena cam ... lockstep=true` recording registers `cam`
 (hard, 1/fps) for the take when a lockstep run is active, so the recording
 is gated like any other producer and frame-exact at any target rtf. With no
 run active it holds and steps the sim itself. Beats republish
@@ -158,7 +163,8 @@ starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced,
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by
 design. `soft` channels are observed and reported only. The scheduler also
-idles while a foreign hold or an unpause window is open (episode resets).
+idles while a foreign hold or an unpause window is open (episode resets)
+and rebases its window grid to whatever sim time passed meanwhile.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
 pause state and gz `real_time_factor`. `sim_lifecycle/lockstep/pause` /
 `sim_lifecycle/lockstep/resume` freeze and unfreeze the clock within a run

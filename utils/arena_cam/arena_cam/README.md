@@ -96,7 +96,7 @@ return. **Streamed verbs** publish on `cmd_view` for their full duration.
 
 #### Discrete
 
-**`look` / `cut`** -- `eye`, `target`, `fov=0.0`
+**`look` / `cut`** -- `eye=(6,6,3)`, `target=(0,0,0.5)`, `fov=0.0`
 One-shot framing in the current reference frame. Calls `set_view` and
 releases the camera to manual control. `fov` in radians, 0 leaves it
 unchanged.
@@ -113,39 +113,41 @@ Reset the reference frame to the world origin.
 Freeze the reference at its current world pose. Stops tracking without
 a visible camera jump.
 
-**`reference`** -- `pose`, `mode="full"`
+**`reference`** -- `pose=((0,0,0),(1,0,0,0))`, `mode="full"`
 Pin the reference frame to a constant world pose. `pose` is
-`((x, y, z), (w, x, y, z))`.
+`((x, y, z), (w, x, y, z))`. Bare `reference` equals `world`.
 
-**`projection`** -- string `"perspective"` or `"orthographic"`, OR dict `{projection: ...}`
+**`projection`** -- string `"perspective"` (default) or `"orthographic"`, OR dict `{projection: ...}`
 Set the Gazebo camera projection mode via `set_projection`.
 
 #### Streamed
 
-**`hold`** -- `duration`
+**`hold`** -- `duration=2.0`
 Keep the current framing for `duration` seconds.
 
-**`move_to`** -- `eye`, `target`, `duration`, `ease="inout"`, `fov=None`, `world_orientation=False`
+**`move_to`** -- `eye=(6,6,3)`, `target=(0,0,0.5)`, `duration=4.0`, `ease="inout"`, `fov=None`, `world_orientation=False`
 Glide from the current pose to look from `eye` toward `target` over
 `duration` seconds. `fov` in radians, `None` keeps the current value.
 
-**`orbit`** -- `radius`, `elevation_deg` or `elevation=0.0`, `center=(0,0,0)`, `sweep_deg` or `sweep` (default 2π), `start_deg` or `start_angle=None`, `duration=8.0`, `ease="inout"`, `look_height=0.0`, `fov=None`, `world_orientation=False`
+**`orbit`** -- `radius=None`, `elevation_deg` or `elevation=None`, `center=(0,0,0)`, `sweep_deg` or `sweep` (default 2π), `start_deg` or `start_angle=None`, `duration=8.0`, `ease="inout"`, `look_height=0.0`, `fov=None`, `world_orientation=False`
 Sweep azimuth on a sphere of `radius` around `center`, always looking at it, so
 the subject keeps a constant distance. `elevation` is the angle above the
 horizontal (0 = level ring, +90° straight down); the aim point is
-`(center_x, center_y, center_z + look_height)`. When `start_angle` is `None`
-the orbit starts at the current camera angle around `center`. Negative sweep
-goes clockwise.
+`(center_x, center_y, center_z + look_height)`. `radius`, `elevation` and
+`start_angle` left `None` take the current camera's distance, elevation and
+angle around `center`, so a bare `orbit` sweeps a full circle from where the
+camera sits. Negative sweep goes clockwise.
 
-**`dolly`** -- `distance`, `duration=2.0`, `ease="inout"`
+**`dolly`** -- `distance=2.0`, `duration=2.0`, `ease="inout"`
 Move along the view axis. Positive `distance` pushes toward the target,
 negative pulls back.
 
-**`dolly_zoom`** -- `target`, `from_fov`, `to_fov`, `duration=3.0`, `ease="inout"`
+**`dolly_zoom`** -- `target=(0,0,0.5)`, `from_fov=None`, `to_fov=1.2`, `duration=3.0`, `ease="inout"`
 Vertigo (Hitchcock) effect: change fov while dollying so `target` stays
-the same apparent size in frame. Both fov values are radians.
+the same apparent size in frame. Both fov values are radians. `from_fov=None`
+takes the current fov if a verb set one, else `FOV_DEFAULT` (1.047).
 
-**`flyby`** -- `eyes`, `target`, `fov=None`, `duration=8.0`, `ease="inout"`, `world_orientation=False`
+**`flyby`** -- `eyes=[(6,-6,3),(6,6,3),(-6,6,3)]`, `target=(0,0,0.5)`, `fov=None`, `duration=8.0`, `ease="inout"`, `world_orientation=False`
 Catmull-Rom spline through `eyes` (a list of `(x,y,z)` waypoints, prepended
 with the current cursor position), looking at `target` throughout.
 
@@ -155,9 +157,10 @@ Rotate the view in place horizontally: eye fixed, yaw sweeps, pitch held.
 **`tilt`** -- `sweep_deg` or `sweep` (default π/6), `duration=4.0`, `ease="inout"`
 Rotate the view in place vertically: eye fixed, pitch sweeps, yaw held.
 
-**`zoom`** -- `from_fov`, `to_fov`, `duration=2.0`, `ease="inout"`
-Change fov only, eye and aim fixed. `from_fov` is explicit because fov
-cannot be read back from the sim.
+**`zoom`** -- `from_fov=None`, `to_fov=0.6`, `duration=2.0`, `ease="inout"`
+Change fov only, eye and aim fixed. fov cannot be read back from the sim, so
+`from_fov=None` takes the current fov if a verb set one, else `FOV_DEFAULT`
+(1.047).
 
 `ease` choices: `linear`, `in`, `out`, `inout` (default), `sine_inout`.
 
@@ -310,23 +313,26 @@ registered verb and shot works in YAML automatically. All angles are
 
 ### Timeline verb parameters
 
+Every param except `track`'s `entity` has a default (`arena cam show <verb>`
+prints them), so each verb runs bare.
+
 | verb | required | optional |
 | --- | --- | --- |
-| `look` / `cut` | `eye`, `target` | `fov` (rad, default 0) |
+| `look` / `cut` | | `eye`, `target`, `fov` (rad, default 0) |
 | `track` | `entity` | `mode` |
 | `world` | | |
 | `latch` | | |
-| `reference` | `pose` | `mode` |
-| `projection` | string value | |
-| `hold` | `duration` | |
-| `move_to` | `eye`, `target`, `duration` | `ease`, `fov`, `world_orientation` |
-| `orbit` | `radius` | `elevation` (rad) or `elevation_deg`, `center`, `sweep` (rad) or `sweep_deg`, `start_angle` (rad) or `start_deg`, `duration`, `ease`, `look_height`, `fov`, `world_orientation` |
-| `dolly` | `distance` | `duration`, `ease` |
-| `dolly_zoom` | `target`, `from_fov`, `to_fov` | `duration`, `ease` |
-| `flyby` | `eyes` (list of [x,y,z]), `target` | `fov`, `duration`, `ease`, `world_orientation` |
+| `reference` | | `pose`, `mode` |
+| `projection` | | string value |
+| `hold` | | `duration` |
+| `move_to` | | `eye`, `target`, `duration`, `ease`, `fov`, `world_orientation` |
+| `orbit` | | `radius`, `elevation` (rad) or `elevation_deg`, `center`, `sweep` (rad) or `sweep_deg`, `start_angle` (rad) or `start_deg`, `duration`, `ease`, `look_height`, `fov`, `world_orientation` |
+| `dolly` | | `distance`, `duration`, `ease` |
+| `dolly_zoom` | | `target`, `from_fov`, `to_fov`, `duration`, `ease` |
+| `flyby` | | `eyes` (list of [x,y,z]), `target`, `fov`, `duration`, `ease`, `world_orientation` |
 | `pan` | | `sweep` (rad) or `sweep_deg`, `duration`, `ease` |
 | `tilt` | | `sweep` (rad) or `sweep_deg`, `duration`, `ease` |
-| `zoom` | `from_fov`, `to_fov` | `duration`, `ease` |
+| `zoom` | | `from_fov`, `to_fov`, `duration`, `ease` |
 
 ### Full example
 
@@ -362,7 +368,10 @@ Run a verb, a shot, or a YAML file against the live sim.
   file. A `.yaml`/`.yml` suffix, a `/` in the name, or an existing file
   on disk routes the argument through `load_shot`; otherwise it is a
   registry lookup (verbs first, then shots).
-- `key=value` tokens are params passed to the verb or shot.
+- `key=value` tokens are params passed to the verb or shot. Every verb runs
+  bare (only `track` needs `entity=`), `arena cam show <name>` prints the
+  defaults. An unknown name or a missing required param exits with a one-line
+  message.
 - Target flags select which viewport cameras the shot drives:
   - no flag drives everything (the sim GUI camera and every env's rviz camera);
   - `--sim` drives only the sim GUI camera (`/arena/viewport/*`);

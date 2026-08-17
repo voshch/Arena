@@ -26,6 +26,7 @@ _CLOCK_QOS = rclpy.qos.QoSProfile(
 )
 
 _NANOSECONDS_PER_SECOND = 10**9
+_RATE_EPS_S = 1e-6
 
 
 @functools.total_ordering
@@ -345,7 +346,7 @@ class TimeNode(rclpy.node.Node):
             while not done.is_set():
                 await asyncio.sleep(0.01)
                 now = self.sim_time
-                if is_put := (dt := (now - last_time).to_seconds()) >= interval:
+                if is_put := (dt := (now - last_time).to_seconds()) >= interval - _RATE_EPS_S:
                     last_time = now
                     await events.put(dt)
                 if finish_time is not None and now >= finish_time:

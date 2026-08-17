@@ -163,7 +163,10 @@ def main(argv: list[str] | None = None) -> None:
     lockstep = bool(params.pop("lockstep", False))
 
     targets = _resolve_targets(args.sim, args.viz)
-    cam = load_shot(args.name, targets) if _is_path(args.name) else Camera(targets).add(args.name, params)
+    try:
+        cam = load_shot(args.name, targets) if _is_path(args.name) else Camera(targets).add(args.name, params)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     if record is not None:
         try:
             cam.record(str(record), fps=fps, force=args.force, lockstep=lockstep)

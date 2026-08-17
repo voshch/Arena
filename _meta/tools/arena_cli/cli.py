@@ -3,6 +3,7 @@
 import os
 import sys
 
+import complete as _complete
 import features as _features
 import human as _human_mod
 import robot as _robot_mod
@@ -20,6 +21,7 @@ from common import (
     _run,
     make_verb,
 )
+from complete import Files, Flags, Kv, LaunchArgs, Manifest, Nothing, Packages, Static, Sub, Union
 
 MAIN_HELP = """Arena workspace CLI.
 
@@ -42,9 +44,9 @@ def _register(v: Verb) -> None:
     _VERBS[v.name] = v
 
 
-def verb(name: str, *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None):
+def verb(name: str, *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: _complete.Spec | None = None):
     def deco(fn):
-        _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text))
+        _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text, complete=complete))
         return fn
 
     return deco
@@ -136,11 +138,26 @@ def _supervisor(*argv: str) -> None:
     _exec("python3", "-m", "arena_bringup.supervisor", *argv)
 
 
-@verb("launch", passthrough=True)
+_LAUNCH_FILES = {"task.config": Files(), "task.scenario": Files(), "task.params": Files(), "record.dir": Files()}
+RUNTIME_ARGS = LaunchArgs("arena_bringup", "arena_runtime.launch.py", _LAUNCH_FILES)
+ENV_ARGS = LaunchArgs("task_generator", "task_generator.launch.py", _LAUNCH_FILES)
+SUPERVISOR_KNOBS = Kv(
+    {
+        "env.n": None,
+        "viz": Static(["true", "false"]),
+        "headless": Static(["true", "false"]),
+        "human.steering": Static(["auto", "true", "false"]),
+        **{f"viz.{k}": v for k, v in _viz_mod.VIZ_KV.keys.items()},
+    }
+)
+LAUNCH_SPEC = Union(SUPERVISOR_KNOBS, RUNTIME_ARGS, ENV_ARGS)
+
+
+@verb("launch", passthrough=True, complete=LAUNCH_SPEC)
 def launch(args: list[str]) -> None:
     """Start a full simulation (runtime, envs, viz).
 
-    Attaches additively if a runtime is already up, spawning env_n more
+    Attaches additively if a runtime is already up, spawning env.n more
     envs against it (errors on sim:= mismatch). Otherwise starts
     arena_runtime.launch.py, spawns N envs, and attaches rviz unless
     headless:=true.
@@ -148,17 +165,18 @@ def launch(args: list[str]) -> None:
     _supervisor(*args)
 
 
-DEMO_DEFAULTS = ("tm_robots:=demo", "world:=demo", "sim:=isaac", "viz.view:=robot3p")
+DEMO_DEFAULTS = ("task.robots:=demo", "world:=demo", "sim:=isaac", "viz.view:=robot3p")
+_DEMO_ALIASES = {"tm_robots": "task.robots"}
 
 
-@verb("demo", passthrough=True, help_text=f"Launch a demo.\n\nSame as `arena launch` with defaults {' '.join(DEMO_DEFAULTS)}, any KEY:=VALUE you pass overrides the corresponding default.")
+@verb("demo", passthrough=True, complete=LAUNCH_SPEC, help_text=f"Launch a demo.\n\nSame as `arena launch` with defaults {' '.join(DEMO_DEFAULTS)}, any KEY:=VALUE you pass overrides the corresponding default.")
 def demo(args: list[str]) -> None:
-    given = {a.split(":=", 1)[0] for a in args if ":=" in a}
+    given = {_DEMO_ALIASES.get(k, k) for k in (a.split(":=", 1)[0] for a in args if ":=" in a)}
     merged = [d for d in DEMO_DEFAULTS if d.split(":=", 1)[0] not in given]
     _supervisor(*merged, *args)
 
 
-@verb("runtime", passthrough=True)
+@verb("runtime", passthrough=True, complete=RUNTIME_ARGS)
 def runtime(args: list[str]) -> None:
     """Start the runtime only (sim + arena_node, no envs).
 
@@ -168,7 +186,7 @@ def runtime(args: list[str]) -> None:
     _exec("ros2", "launch", "arena_bringup", "arena_runtime.launch.py", *args)
 
 
-@verb("env", passthrough=True)
+@verb("env", passthrough=True, complete=ENV_ARGS)
 def env_(args: list[str]) -> None:
     """Attach one task-generator env to a running runtime.
 
@@ -227,7 +245,20 @@ def _lockstep_channel_yaml(c: dict) -> str:
     )
 
 
-@verb("lockstep")
+_LOCKSTEP_SPEC = Sub(
+    {
+        "run": Union(Kv({"rtf": None, "for": None}), Static(["ungated"])),
+        "on": Union(Kv({"rtf": None}), Static(["ungated"])),
+        "off": Nothing(),
+        "pause": Nothing(),
+        "resume": Nothing(),
+        "status": Nothing(),
+        "gate": Static({k: v["topic"] for k, v in _LOCKSTEP_PRESETS.items()}),
+    }
+)
+
+
+@verb("lockstep", complete=_LOCKSTEP_SPEC)
 def lockstep(args: list[str]) -> None:
     """Run or inspect the lockstep scheduler.
 
@@ -318,11 +349,11 @@ def lockstep(args: list[str]) -> None:
     )
 
 
-@verb("preload", passthrough=True)
+@verb("preload", passthrough=True, complete=Union(Manifest("world"), Flags({"--no-scenarios": "skip scenario assets"})))
 def preload(args: list[str]) -> None:
     """Preload a world's assets ahead of launch.
 
-    `arena preload <world_name> [--no-scenarios] [-v]`.
+    `arena preload <world_name> [--no-scenarios]`.
     """
     if not args:
         raise CLIError("missing argument WORLD")
@@ -337,7 +368,7 @@ def cleanup(args: list[str]) -> None:
     _exec("ros2", "service", "call", "/arena/cleanup_env", "arena_runtime_msgs/srv/CleanupEnv", f"{{env_id: {args[0]}}}")
 
 
-@verb("build", passthrough=True)
+@verb("build", passthrough=True, complete=Packages())
 def build(args: list[str]) -> None:
     """Build the workspace (or selected packages) with colcon.
 
@@ -349,7 +380,7 @@ def build(args: list[str]) -> None:
     sys.exit(build_main(_select_args(args, above=True)))
 
 
-@verb("rebuild", passthrough=True)
+@verb("rebuild", passthrough=True, complete=Packages())
 def rebuild(args: list[str]) -> None:
     """Clean and rebuild selected packages.
 
@@ -389,7 +420,7 @@ def rebuild(args: list[str]) -> None:
 TEST_DEFAULT_SELECT = ("--packages-select-regex", "^arena_", "^task_generator$")
 
 
-@verb("test", passthrough=True, help_text=f"Run colcon test and print a summary.\n\nDefaults to `{' '.join(TEST_DEFAULT_SELECT)}` unless a selection flag is given. Bare package names are shorthand for --packages-select.")
+@verb("test", passthrough=True, complete=Packages(), help_text=f"Run colcon test and print a summary.\n\nDefaults to `{' '.join(TEST_DEFAULT_SELECT)}` unless a selection flag is given. Bare package names are shorthand for --packages-select.")
 def test(args: list[str]) -> None:
     import re
     import subprocess
@@ -490,8 +521,14 @@ def _feature_cmd(args: list[str]) -> int:
     return v.run(sub[1:]) or 0
 
 
-_register(make_verb("feature", _feature_cmd, help_text=FEATURE_HELP))
-_register(make_verb("ft", _feature_cmd, hidden=True, help_text="Alias for feature."))
+def _feature_subs() -> dict[str, Sub]:
+    return {name: Sub(_features.load(name).COMMANDS) for name in _feature_names()}
+
+
+FEATURE_SPEC = Sub(_feature_subs)
+
+_register(make_verb("feature", _feature_cmd, help_text=FEATURE_HELP, complete=FEATURE_SPEC))
+_register(make_verb("ft", _feature_cmd, hidden=True, help_text="Alias for feature.", complete=FEATURE_SPEC))
 
 
 @verb("shellinit", hidden=True)
@@ -510,7 +547,7 @@ def shellinit(args: list[str]) -> None:
             print(f"Failed to source {name}, skipping: {e}", file=sys.stderr)
 
 
-@verb("train", passthrough=True)
+@verb("train", passthrough=True, complete=LaunchArgs("arena_training", "training.launch.py", {"train_config": Files()}))
 def train(args: list[str]) -> None:
     """Run DRL training (requires the training feature).
 
@@ -519,7 +556,7 @@ def train(args: list[str]) -> None:
     sys.exit(_feature_cmd(["training", "launch", *args]))
 
 
-@verb("evaluation", hidden=True, passthrough=True)
+@verb("evaluation", hidden=True, passthrough=True, complete=Sub(lambda: _features.load("evaluation").COMMANDS))
 def evaluation(args: list[str]) -> None:
     """Alias for feature evaluation."""
     sys.exit(_feature_cmd(["evaluation", *args]))
@@ -528,7 +565,7 @@ def evaluation(args: list[str]) -> None:
 REGISTRY_VERBS = ("has", "require", "add", "remove", "list", "pull")
 
 
-@verb("registry")
+@verb("registry", complete=Sub({a: Nothing() if a == "list" else Static(_features.available) for a in REGISTRY_VERBS}))
 def registry(args: list[str]) -> None:
     """Query or mutate the installed-features registry."""
     if not args or args[0] not in REGISTRY_VERBS:
@@ -552,6 +589,14 @@ def registry(args: list[str]) -> None:
         _reg_remove(name)
     elif action == "pull":
         _reg_pull(name)
+
+
+@verb("complete", hidden=True, passthrough=True)
+def complete_(args: list[str]) -> None:
+    """Print completion candidates for a command line (`arena` and every word up to the cursor). `--refresh` regenerates the manifest cache."""
+    if args == ["--refresh"]:
+        sys.exit(_complete.refresh(_env("ARENA_WS_DIR")))
+    print("\n".join(_complete.complete(args[1:], _VERBS, SECTIONS, _env("ARENA_WS_DIR"))))
 
 
 @verb("uninstall")

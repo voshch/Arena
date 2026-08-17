@@ -127,6 +127,13 @@ class _Params:
         return set(self._raw) - self._seen
 
 
+def _from_params(name: str, params: object) -> _Action:
+    try:
+        return PRIMITIVES[name].from_params(params)
+    except KeyError as e:
+        raise ValueError(f"cam verb {name!r}: missing required param {e.args[0]!r}") from None
+
+
 def resolve(name: str, spec: object = None, stack: tuple[str, ...] = ()) -> list[_Action]:
     """Expand a verb-or-shot name + params to a flat list of atomic actions.
 
@@ -134,10 +141,14 @@ def resolve(name: str, spec: object = None, stack: tuple[str, ...] = ()) -> list
     shots is eager, so cycles surface here as a load-time error.
     """
     if name in PRIMITIVES:
+        if spec is None:
+            return [_from_params(name, {})]
+        if isinstance(spec, str) and name == "projection":
+            return [_from_params(name, spec)]
         if not isinstance(spec, dict):
-            return [PRIMITIVES[name].from_params(spec if spec is not None else {})]
+            raise ValueError(f"cam verb {name!r}: params must be a mapping, got {type(spec).__name__}")
         params = _Params(spec)
-        action = PRIMITIVES[name].from_params(params)
+        action = _from_params(name, params)
         unknown = params.unknown()
         if unknown:
             _LOGGER.warning("cam: verb %r ignores unknown param(s) %s", name, sorted(unknown))

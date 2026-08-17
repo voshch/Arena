@@ -5,6 +5,8 @@ import sys
 
 import common
 from common import Verb, make_verb
+import complete
+from complete import Flags, Static, Union
 
 import features
 
@@ -30,10 +32,27 @@ def _deps_build() -> int:
     return common._resourced("arena deps && arena build --executor sequential")
 
 
+def _names() -> list[str]:
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("_planners_payload", _payload())
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return sorted(mod.planner_submodules(Path(common._env("ARENA_DIR"))))
+
+
+_ALL = Flags({"--all": "every planner"})
+_SELECT = Union(Static(_names), _ALL)
+
+
 def _forward(verb: str, args: list[str]) -> int:
     import subprocess
 
-    return subprocess.run(["python3", _payload(), verb, *args], check=False).returncode
+    rc = subprocess.run(["python3", _payload(), verb, *args], check=False).returncode
+    if verb in ("add", "rm", "update", "uninstall"):
+        complete.invalidate(common._env("ARENA_WS_DIR"))
+    return rc
 
 
 def add(argv: list[str]) -> None:
@@ -75,12 +94,12 @@ def uninstall(argv: list[str]) -> None:
 COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
-        make_verb("add", add, passthrough=True, help_text="clone planner's submodules (alias: install)"),
+        make_verb("add", add, passthrough=True, help_text="clone planner's submodules (alias: install)", complete=_SELECT),
         make_verb("update", update, passthrough=True, help_text="Update the feature to the latest state."),
-        make_verb("rm", rm, passthrough=True, help_text="deinit planner's submodules (alias: uninstall <name...>)"),
+        make_verb("rm", rm, passthrough=True, help_text="deinit planner's submodules (alias: uninstall <name...>)", complete=Union(_SELECT, Flags({"-f": "deinit shared paths too"}))),
         make_verb("ls", ls, passthrough=True, help_text="list planners, [x] ready, [ ] pending"),
-        make_verb("check", check, passthrough=True, help_text="verify planner submodules are initialized"),
-        make_verb("install", install, passthrough=True, help_text="clone planner's submodules (alias for add)"),
-        make_verb("uninstall", uninstall, passthrough=True, help_text="Uninstall and unregister the feature."),
+        make_verb("check", check, passthrough=True, help_text="verify planner submodules are initialized", complete=Union(_ALL, Flags({"-q": "quiet"}))),
+        make_verb("install", install, passthrough=True, help_text="clone planner's submodules (alias for add)", complete=_SELECT),
+        make_verb("uninstall", uninstall, passthrough=True, help_text="Uninstall and unregister the feature.", complete=Static(_names)),
     ]
 }

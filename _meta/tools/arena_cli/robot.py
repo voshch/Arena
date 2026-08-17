@@ -7,6 +7,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from common import make_verb
+from complete import Flags, Kv, Manifest, Static, Sub, Union
 
 if TYPE_CHECKING:
     import argparse
@@ -387,4 +388,21 @@ def _main(argv: list[str]) -> int:
     return cmd_spawn(pargs.model, kv, pargs)
 
 
-VERB = make_verb("robot", _main, passthrough=True, help_text=HELP)
+_TARGET = Flags({"--env": "env id", "--ns": "env namespace"}, valued=("--env", "--ns"))
+_NOWAIT = Flags({"--nowait": "return once the request is accepted"})
+_SPAWN = Union(
+    Kv({"name": None, "count": None, "mobile": None, "arm": None, "immediate": Static(["true", "false"])}),
+    _TARGET,
+    _NOWAIT,
+)
+SPEC = Sub(
+    {
+        "ls": Union(_TARGET, Flags({"--all": "every env"})),
+        "rm": Union(_TARGET, _NOWAIT),
+        "caps": Sub({}, extra=Manifest("robot")),
+    },
+    extra=Union(Manifest("robot"), _SPAWN),
+    fallback=_SPAWN,
+)
+
+VERB = make_verb("robot", _main, passthrough=True, help_text=HELP, complete=SPEC)

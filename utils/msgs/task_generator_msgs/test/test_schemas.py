@@ -185,6 +185,62 @@ def test_get_task_modes_srv():
     assert res.tm_modules == ["benchmark"]
 
 
+def test_audio_system_state_msg():
+    from task_generator_msgs.msg import AudioSystemState
+
+    msg = AudioSystemState()
+    msg.system_id = "building_alarm"
+    msg.sound_type = "alarm"
+    msg.asset_id = "alarm_loop"
+    msg.loop = True
+    msg.active = True
+    msg.program_start_time.sec = 12
+    msg.emitter_ids = ["environment:building_alarm:east"]
+
+    assert msg.system_id == "building_alarm"
+    assert msg.active is True
+    assert msg.program_start_time.sec == 12
+    assert msg.emitter_ids == ["environment:building_alarm:east"]
+
+
+def test_set_audio_system_srv():
+    from task_generator_msgs.srv import SetAudioSystem
+
+    req = SetAudioSystem.Request()
+    req.system_id = "building_alarm"
+    req.active = True
+    assert req.system_id == "building_alarm"
+    assert req.active is True
+
+    res = SetAudioSystem.Response()
+    res.success = True
+    res.error_msg = ""
+    assert res.success is True
+
+
+def test_spawn_audio_source_srv():
+    from task_generator_msgs.srv import SpawnAudioSource
+
+    req = SpawnAudioSource.Request()
+    req.pose.header.frame_id = "map"
+    req.mode = "music"
+    req.customize_playback = True
+    req.asset_id = "custom_radio"
+    req.source_volume_db = 70.0
+    req.loop = True
+    req.initially_active = False
+    assert req.pose.header.frame_id == "map"
+    assert req.mode == "music"
+    assert req.asset_id == "custom_radio"
+    assert req.initially_active is False
+
+    res = SpawnAudioSource.Response()
+    res.system_id = "runtime_music_1"
+    res.success = True
+    assert res.system_id == "runtime_music_1"
+    assert res.success is True
+
+
 def test_spawn_static_srv():
     from geometry_msgs.msg import PoseStamped
     from task_generator_msgs.srv import SpawnStatic
@@ -224,6 +280,61 @@ def test_spawn_dynamic_srv():
     res.error_msg = ""
 
     assert res.id == "ped_0"
+
+
+def test_spawn_microphone_srv():
+    from geometry_msgs.msg import PointStamped
+    from task_generator_msgs.srv import SpawnMicrophone
+
+    req = SpawnMicrophone.Request()
+    req.position = PointStamped()
+    req.position.header.frame_id = "map"
+    req.position.point.x = 2.0
+    req.position.point.y = 3.0
+    req.position.point.z = 1.5
+    req.placement = "placed"
+    req.attached_frame = "robot/base_link"
+
+    assert req.position.header.frame_id == "map"
+    assert req.position.point.z == 1.5
+    assert req.placement == "placed"
+    assert req.attached_frame == "robot/base_link"
+
+    res = SpawnMicrophone.Response()
+    res.listener_id = "microphone1"
+    res.zone = "reception"
+    res.attached_frame = "robot/base_link"
+    res.success = True
+    res.error_msg = ""
+
+    assert res.listener_id == "microphone1"
+    assert res.zone == "reception"
+    assert res.attached_frame == "robot/base_link"
+    assert res.success is True
+
+
+def test_remove_audio_system_srv():
+    from task_generator_msgs.srv import RemoveAudioSystem
+
+    req = RemoveAudioSystem.Request()
+    req.system_id = "runtime_music_1"
+    res = RemoveAudioSystem.Response()
+    res.success = True
+
+    assert req.system_id == "runtime_music_1"
+    assert res.success is True
+
+
+def test_remove_microphone_srv():
+    from task_generator_msgs.srv import RemoveMicrophone
+
+    req = RemoveMicrophone.Request()
+    req.listener_id = "microphone:map:placed:1"
+    res = RemoveMicrophone.Response()
+    res.success = True
+
+    assert req.listener_id == "microphone:map:placed:1"
+    assert res.success is True
 
 
 def test_spawn_robot_srv():

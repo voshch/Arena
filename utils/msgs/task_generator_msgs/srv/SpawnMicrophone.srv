@@ -1,0 +1,9 @@
+geometry_msgs/PointStamped position
+string placement
+string attached_frame
+---
+string listener_id
+string zone
+string attached_frame
+bool success
+string error_msg

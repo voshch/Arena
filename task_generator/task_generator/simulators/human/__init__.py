@@ -4,8 +4,8 @@ import abc
 import asyncio
 import itertools
 import math
-import typing
 import os
+import typing
 from collections.abc import Iterable, Mapping, Sequence
 
 import attrs
@@ -85,13 +85,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._known_regions: dict[str, Region] = {}
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
-
         self._arena_peds_publisher = self.node.create_publisher(Pedestrians, self._namespace("arena_peds"), 10)
         self._marker_publisher = self.node.create_publisher(
             MarkerArray,
             self._namespace("pedestrian_markers", "extra"),
             rclpy.qos.QoSProfile(
-                reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
+                reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
                 durability=rclpy.qos.DurabilityPolicy.VOLATILE,
                 history=rclpy.qos.HistoryPolicy.KEEP_LAST,
                 depth=10,
@@ -107,7 +106,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 depth=1,
             ),
         )
-
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
         self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}

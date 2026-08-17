@@ -270,6 +270,16 @@ class LockstepScheduler:
                         reassert = 0.0
                     await asyncio.sleep(0.05)
 
+                # the window/hold ran the sim outside this loop's bookkeeping, so
+                # rebase or every gate is satisfied by the previous window's stamp
+                drift = (self._node.sim_time - base).to_seconds() - now
+                if drift > dt / 2.0:
+                    self._node.get_logger().info(f"lockstep: sim advanced {drift:.3f}s outside the run, rebasing")
+                    now += drift
+                    sim_before = now
+                    for ch in channels.values():
+                        ch.next_due = now + ch.period
+
                 if not config.ungated:
                     self._refresh_channels(channels, dt, now)
 

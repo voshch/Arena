@@ -5,6 +5,7 @@ import sys
 
 import common
 from common import CLIError, Verb, make_verb
+from complete import LaunchArgs
 
 import features
 from features import lifecycle_verbs, source_verb
@@ -210,7 +211,7 @@ if features.in_container():
         for v in [
             *lifecycle_verbs(NAME, _update_container),
             make_verb("uninstall", uninstall_container),
-            make_verb("launch", launch_container, passthrough=True),
+            make_verb("launch", launch_container, passthrough=True, complete=LaunchArgs("arena_isaac", "run_isaacsim.launch.py")),
             make_verb("exec", exec_, passthrough=True),
             source_verb(_shell_source),
         ]
@@ -220,7 +221,7 @@ else:
         v.name: v
         for v in [
             *lifecycle_verbs(NAME, _update_host, deinit="arena_isaac"),
-            make_verb("launch", launch_host, passthrough=True),
+            make_verb("launch", launch_host, passthrough=True, complete=LaunchArgs("arena_isaac", "run_isaacsim.launch.py")),
             source_verb(_shell_source),
         ]
     }

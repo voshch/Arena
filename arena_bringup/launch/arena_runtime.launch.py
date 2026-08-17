@@ -3,11 +3,11 @@ import launch.event_handlers
 import launch_ros.actions
 from arena_bringup.actions import IsolatedGroupAction
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-from arena_bringup.substitutions import LaunchArgument
+from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
-_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused'})
+_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'sim.isaac.physics', 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused'})
 
 
 def generate_launch_description():
@@ -40,14 +40,16 @@ def generate_launch_description():
         default_value='False',
     )
 
-    record_data_dir = LaunchArgument(
-        name='record_data_dir',
+    LaunchArgument(
+        name='record.dir',
         default_value='',
+        description='Directory for episode recording; empty disables.',
     )
 
-    disable_auto_recorder = LaunchArgument(
-        name='disable_auto_recorder',
-        default_value='false',
+    LaunchArgument(
+        name='record.auto',
+        default_value='true',
+        description='Spawn the data recorder per env when record.dir is set.',
     )
 
     LaunchArgument(
@@ -99,8 +101,14 @@ def generate_launch_description():
         output='screen',
     )
 
+    given_args: dict[str, str] = {}
+
+    def _aliases(context: launch.LaunchContext) -> None:
+        deprecated_launch_args(context)
+        given_args.update(context.launch_configurations)
+
     def _arena_node(context: launch.LaunchContext) -> list[launch.Action]:
-        env_args = [f'{k}:={v}' for k, v in context.launch_configurations.items() if k not in _RUNTIME_OWNED]
+        env_args = [f'{k}:={v}' for k, v in given_args.items() if k not in _RUNTIME_OWNED]
         params: dict = {'sim': sim.substitution, 'env_args': env_args}
         if context.launch_configurations.get('lockstep', 'false').lower() in ('true', '1'):
             params['lockstep.autostart'] = True
@@ -130,6 +138,7 @@ def generate_launch_description():
 
     return launch.LaunchDescription(
         [
+            launch.actions.OpaqueFunction(function=_aliases),
             *ld_items,
             SetGlobalLogLevelAction(log_level.substitution),
             IsolatedGroupAction([launch_sim]),

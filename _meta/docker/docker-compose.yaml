@@ -8,9 +8,12 @@ services:
       args:
         - gid=${HOST_GID}
         - uid=${HOST_UID}
+    devices:
+      - "/dev/snd:/dev/snd"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+      - "/run/user/${HOST_UID}/pulse:/tmp/pulse"
       - "shared:/tmp/shared"
       - "$HOST_ARENA_WS_DIR/src/Arena/.venv:/opt/venv"
       - "$HOST_ARENA_WS_DIR/src:/opt/arena_ws/src"
@@ -25,6 +28,7 @@ services:
       - QT_X11_NO_MITSHM=1
       - TMPDIR=/tmp/shared
       - DISPLAY
+      - PULSE_SERVER=unix:/tmp/pulse/native
       - UV_LINK_MODE=copy
       - UV_PYTHON_INSTALL_DIR=/opt/arena_ws/.uv-python
       - UV_CACHE_DIR=/opt/arena_ws/.uv-cache
@@ -49,6 +53,7 @@ services:
     user: "${HOST_UID}"
     group_add:
       - sudo
+      - audio
     network_mode: host
     command: ["bash"]
     stdin_open: true 

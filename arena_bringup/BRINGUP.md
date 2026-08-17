@@ -8,7 +8,7 @@ either:
 - **attaches additively** to an already-running runtime, with a sim-mismatch
   check on `sim:=`.
 
-Either way it then spawns `env_n` task-generator envs and, unless
+Either way it then spawns `env.n` task-generator envs and, unless
 `headless:=true` (or explicit `viz:=false`), runs `arena viz --all` so each
 env gets a rviz window.
 
@@ -47,8 +47,8 @@ arena launch \
     sim:=dummy \
     world:=map_empty \
     robot:=jackal \
-    tm_robots:=explore \
-    tm_obstacles:=random
+    task.robots:=explore \
+    task.obstacles:=random
 ```
 
 | Arg | Implication |
@@ -56,8 +56,8 @@ arena launch \
 | `sim:=dummy` | No physics engine; a `map->dummy` static TF is published instead. Must be explicit - the default is `gazebo`. |
 | `world:=map_empty` | Loads the empty map from `arena_simulation_setup` |
 | `robot:=jackal` | Single jackal; `mobile` adapter defaults to `none` (dummy sim has no nav2) |
-| `tm_robots:=explore` | Robot gets fresh random goals continuously |
-| `tm_obstacles:=random` | Random static/dynamic obstacles placed each episode |
+| `task.robots:=explore` | Robot gets fresh random goals continuously |
+| `task.obstacles:=random` | Random static/dynamic obstacles placed each episode |
 
 The `human` arg defaults to `dummy` when `sim=dummy`, so pedestrians stay
 idle until driven from a `human_steering` panel. `arena launch` auto-attaches
@@ -74,16 +74,16 @@ arena launch \
     sim:=gazebo \
     world:=map_empty \
     robot:=jackal \
-    mobile.local_planner:=teb \
-    tm_robots:=explore \
-    tm_obstacles:=random
+    robot.mobile.local_planner:=teb \
+    task.robots:=explore \
+    task.obstacles:=random
 ```
 
 | Arg | Implication |
 |---|---|
 | `sim:=gazebo` | Starts gz-sim 8 (dart physics, ogre renderer). `human` defaults to `arena` |
 | `world:=map_empty` | Resolved to `arena_simulation_setup/worlds/map_empty/worlds/map_empty.world`; falls back to `configs/gazebo/empty.sdf` if absent |
-| `mobile.local_planner:=teb` | TEB local planner; `mobile` adapter defaults to `nav2` for gazebo, the override lands as `robot.mobile.local_planner` and is forwarded to nav2's bringup |
+| `robot.mobile.local_planner:=teb` | TEB local planner; `mobile` adapter defaults to `nav2` for gazebo, the override lands as ROS param `robot.mobile.local_planner` and is forwarded to nav2's bringup |
 | `headless` | Omitted → `false` (sim GUI visible, rviz shown). Pass `headless:=true` to hide the sim GUI (viz also suppressed unless `viz:=true` is set explicitly) |
 | `lockstep:=true` | Start the lockstep scheduler at bringup: the sim advances tick by tick, gated on every registered hard channel, instead of free-running. Comes up paused (frozen at tick zero) unless `lockstep.paused:=false`. Continue with `arena lockstep resume`. Toggle later with `arena lockstep on\|off` |
 | `lockstep.paused:=false` | Autostarted lockstep begins stepping immediately instead of waiting for `arena lockstep resume` |
@@ -103,17 +103,17 @@ arena launch \
     world:=map_empty \
     robot:=jackal \
     human:=hunav \
-    tm_robots:=explore \
-    tm_obstacles:=random
+    task.robots:=explore \
+    task.obstacles:=random
 ```
 
 `human:=hunav` starts `hunav_agent_manager` in the task-generator namespace.
 Human pedestrian models are managed by the HuNavSim plugin; the
-`tm_obstacles` mode controls non-human obstacles separately.
+`task.obstacles` mode controls non-human obstacles separately.
 
 ---
 
-### 4. Isaac + multi-robot via task_config
+### 4. Isaac + multi-robot via task.config
 
 Isaac must be installed and `arena feature isaac` must be set up before launch.
 
@@ -121,15 +121,15 @@ Isaac must be installed and `arena feature isaac` must be set up before launch.
 arena launch \
     sim:=isaac \
     world:=map_empty \
-    task_config:=$(ros2 pkg prefix arena_bringup)/share/arena_bringup/configs/tasks/default.yaml \
-    tm_obstacles:=random \
+    task.config:=$(ros2 pkg prefix arena_bringup)/share/arena_bringup/configs/tasks/default.yaml \
+    task.obstacles:=random \
     headless:=true
 ```
 
 | Arg | Implication |
 |---|---|
 | `sim:=isaac` | Runs `arena feature isaac launch` via bash. `mobile` adapter defaults to `nav2` |
-| `task_config:=<path>` | Structured `TaskModeSpec` YAML; overrides `tm_robots`. Use to split a fleet across multiple task modes |
+| `task.config:=<path>` | Structured `TaskModeSpec` YAML; overrides `task.robots`. Use to split a fleet across multiple task modes |
 | `headless:=true` | Sim GUI hidden; rviz suppressed (no GUI at all) |
 
 Multi-robot fleet with two modes:
@@ -151,8 +151,8 @@ arena launch \
     sim:=isaac \
     world:=map_empty \
     robot:=jackal \
-    task_config:=/tmp/fleet.yaml \
-    tm_obstacles:=random \
+    task.config:=/tmp/fleet.yaml \
+    task.obstacles:=random \
     headless:=true
 ```
 
@@ -168,12 +168,12 @@ arena launch \
     sim:=gazebo \
     world:=map_empty \
     robot:=jackal \
-    env_n:=3
+    env.n:=3
 ```
 
 | Arg | Implication |
 |---|---|
-| `env_n:=3` | Three task-generator instances under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
+| `env.n:=3` | Three task-generator instances under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
 
 Slot positions are placed by the shelf packer in `arena_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_node` (default 5 m).
 
@@ -193,11 +193,11 @@ Then attach pieces from other terminals:
 
 ```bash
 # Add an env. Multiple invocations stack (different robot/task each).
-arena env robot:=jackal tm_robots:=explore tm_obstacles:=random
+arena env robot:=jackal task.robots:=explore task.obstacles:=random
 
 # Or use arena launch, which detects the existing runtime and attaches
 # additively rather than bringing up a fresh one. Errors on sim:= mismatch.
-arena launch sim:=gazebo env_n:=1 robot:=burger tm_robots:=random
+arena launch sim:=gazebo env.n:=1 robot:=burger task.robots:=random
 
 # Attach rviz to an existing env (auto-pick, by id, or all).
 arena viz
@@ -338,8 +338,8 @@ assigned name).
 log_level:=debug     # verbose output from all nodes
 use_sim_time:=false  # real-time clock (unusual, only for real robots)
 complexity:=2        # AMCL (position unknown); 3 = SLAM
-record_data_dir:=/tmp/arena_run  # enable data recording
-fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
+record.dir:=/tmp/arena_run  # enable data recording (record.auto:=false keeps the recorder off)
+task.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
 ```
 
 ### sim:=
@@ -384,8 +384,8 @@ shapes of argument:
 
 | Shape | Example | Lands as | Purpose |
 |---|---|---|---|
-| `<cap>:=<kind>` | `mobile:=rosnav_rl`, `mobile:=drl` | `robot.<cap>_adapter` | Pick which `Bringup` runs for the cap. |
-| `<cap>.<key>:=<val>` | `mobile.local_planner:=teb`, `mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from `caps/<cap>.yaml`. |
+| `robot.<cap>:=<kind>` | `robot.mobile:=rosnav_rl`, `robot.mobile:=drl` | `robot.<cap>_adapter` | Pick which `Bringup` runs for the cap. |
+| `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from `caps/<cap>.yaml`. |
 | `<adapter-kwarg>:=<val>` | `global_planner:=smac`, `global_planner:=nav2/navfn` | `robot.<cap>.<key>` (via the adapter's launch file) | Adapter-internal launch kwargs (nav2 planner names, or the `<family>/<kind>` form consumed by the `drl` adapter). |
 
 The cap-scoped form is the recommended style because it's self-documenting and
@@ -430,6 +430,35 @@ When an explicit robot is named and its kinematic class or sensor set
 disagrees with the chosen planner, a mismatch warning is emitted; the bridge
 applies the canonical projection for that planner in that case.
 
+## Deprecated launch args
+
+Public launch args moved into dotted namespaces. The old names still work
+(the launch layer prints a yellow warning and the new key wins if both are
+given) and will be removed in a future release.
+
+| Old | New |
+|---|---|
+| `isaac.physics` | `sim.isaac.physics` |
+| `record_data_dir` | `record.dir` |
+| `disable_auto_recorder` | `record.auto` (inverted: `disable_auto_recorder:=true` is `record.auto:=false`, default `true`) |
+| `env_n` | `env.n` |
+| `env_id` | `env.id` |
+| `ns` | `env.ns` |
+| `managed` | `env.managed` |
+| `tm_robots` | `task.robots` |
+| `tm_obstacles` | `task.obstacles` |
+| `tm_modules` | `task.modules` |
+| `task_config` | `task.config` |
+| `scenario_file` | `task.scenario` |
+| `parameter_file` | `task.params` |
+| `episodes` | `task.episodes` |
+| `auto_reset` | `task.auto_reset` |
+| `fail_on_collision` | `task.fail_on_collision` |
+| `mobile`, `mobile.<key>` | `robot.mobile`, `robot.mobile.<key>` |
+| `arm`, `arm.<key>` | `robot.arm`, `robot.arm.<key>` |
+| `planner` | `robot.planner` |
+| `train_mode` | `robot.train` |
+
 ## CLI verbs
 
 `source arena` (from `~/arena_ws`) loads a bash function that wraps the
@@ -448,11 +477,24 @@ common entry points. Verbs relevant to bringup:
 
 None of these verbs killall anything. `arena launch` checks for an existing
 runtime via `/arena/register_env`: if present, it attaches additively
-(spawning `env_n` more envs against the existing runtime) and errors out
+(spawning `env.n` more envs against the existing runtime) and errors out
 only if `sim:=` on the command line mismatches the running runtime's `sim`
 parameter. `arena runtime` will fail if another `/arena` node is already
 registered (ROS doesn't allow duplicate node names); kill the prior one
 manually or call `arena cleanup` on its envs first.
+
+### Shell completion
+
+`source arena` registers TAB completion for `arena` in bash and zsh (zsh
+registration waits for `compinit` if it has not run yet). Verb names, subverbs,
+flags, supervisor knobs, and package names complete without ROS. Launch-arg
+names and values (`sim:=`, `world:=`, `robot:=`, `task.*:=`, `human:=`) come from
+a manifest cached under `${XDG_CACHE_HOME:-~/.cache}/arena/`, regenerated in the
+background on the first TAB after a rebuild or on demand with `arena complete --refresh`.
+`robot:=` and `robot.planner:=` list only what `arena feature robots|planners ls`
+marks installed. Dotted keys fold to their group at each level (`arena launch
+<TAB>` shows `task`, `task<TAB>` shows `task.robots` and siblings), a leaf key
+completes straight to `key:=`, and `:` after a group name picks the group's own key.
 
 ## Benchmark mode
 

@@ -4,6 +4,7 @@ import os
 import sys
 
 from common import make_verb
+from complete import Flags
 
 MANIFEST_SUFFIX = "/state/viz_manifest"
 
@@ -98,4 +99,4 @@ def cmd(argv: list[str]) -> None:
     sys.exit(_main(list(argv)))
 
 
-VERB = make_verb("human", cmd, passthrough=True)
+VERB = make_verb("human", cmd, passthrough=True, complete=Flags({"--ns": "explicit env namespace", "--unlimited": "pose sliders run 0..2pi"}, valued=("--ns",)))

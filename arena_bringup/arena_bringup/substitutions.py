@@ -4,9 +4,11 @@ import copy
 import os
 import tempfile
 import typing
+from collections.abc import Callable, Mapping, MutableMapping
 
 import launch
 import launch.actions
+import launch.logging
 import launch.substitutions
 import launch.utilities
 import launch_ros.parameter_descriptions
@@ -62,6 +64,64 @@ class LaunchArgument(launch.actions.DeclareLaunchArgument):
     @property
     def str_param(self) -> dict[str, launch_ros.parameter_descriptions.ParameterValue]:
         return self.param(str)
+
+
+DEPRECATED_LAUNCH_ARGS: Mapping[str, str] = {
+    'isaac.physics': 'sim.isaac.physics',
+    'env_id': 'env.id',
+    'ns': 'env.ns',
+    'managed': 'env.managed',
+    'tm_robots': 'task.robots',
+    'tm_obstacles': 'task.obstacles',
+    'tm_modules': 'task.modules',
+    'task_config': 'task.config',
+    'scenario_file': 'task.scenario',
+    'parameter_file': 'task.params',
+    'episodes': 'task.episodes',
+    'auto_reset': 'task.auto_reset',
+    'fail_on_collision': 'task.fail_on_collision',
+    'mobile': 'robot.mobile',
+    'mobile.': 'robot.mobile.',
+    'arm': 'robot.arm',
+    'arm.': 'robot.arm.',
+    'planner': 'robot.planner',
+    'train_mode': 'robot.train',
+    'record_data_dir': 'record.dir',
+    'disable_auto_recorder': 'record.auto',
+}
+INVERTED_LAUNCH_ARGS: frozenset[str] = frozenset({'disable_auto_recorder'})
+
+
+def resolve_deprecated_args(
+    configs: MutableMapping[str, str],
+    warn: Callable[[str, str], None],
+    aliases: Mapping[str, str] = DEPRECATED_LAUNCH_ARGS,
+    inverted: frozenset[str] = INVERTED_LAUNCH_ARGS,
+) -> None:
+    """Move deprecated keys onto their successors in place; a trailing '.' aliases a whole prefix, `inverted` flips booleans."""
+    for old, new in aliases.items():
+        if old.endswith('.'):
+            hits = [(k, new + k[len(old) :]) for k in list(configs) if k.startswith(old)]
+        elif old in configs:
+            hits = [(old, new)]
+        else:
+            continue
+        for old_key, new_key in hits:
+            warn(old_key, new_key)
+            value = configs.pop(old_key)
+            if new_key in configs:
+                continue
+            if old in inverted:
+                value = 'false' if value.strip().lower() in ('true', '1') else 'true'
+            configs[new_key] = value
+
+
+def deprecated_launch_args(context: launch.LaunchContext) -> None:
+    logger = launch.logging.get_logger('arena')
+    resolve_deprecated_args(
+        context.launch_configurations,
+        lambda old, new: logger.warning(f"\033[33mlaunch arg '{old}' is deprecated, use '{new}'\033[0m"),
+    )
 
 
 class OptionalLaunchArgument:

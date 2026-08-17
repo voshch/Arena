@@ -4,7 +4,10 @@ import dataclasses
 import os
 import sys
 from collections.abc import Callable
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
+
+if TYPE_CHECKING:
+    from complete import Spec
 
 
 class CLIError(Exception):
@@ -25,13 +28,14 @@ class Verb:
     help: str
     hidden: bool = False
     passthrough: bool = False
+    complete: "Spec | None" = None
 
 
-def make_verb(name: str, run: Callable[[list[str]], int | None], *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None) -> Verb:
+def make_verb(name: str, run: Callable[[list[str]], int | None], *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: "Spec | None" = None) -> Verb:
     text = (help_text if help_text is not None else run.__doc__) or ""
     text = "\n".join(line.strip() for line in text.replace("\b", "").strip().splitlines())
     short = text.splitlines()[0] if text else ""
-    return Verb(name, run, short, text, hidden, passthrough)
+    return Verb(name, run, short, text, hidden, passthrough, complete)
 
 
 def _env(name: str) -> str:

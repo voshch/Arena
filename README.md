@@ -55,16 +55,16 @@ The container will start automatically on source and continue running in the bac
 cd ~/arena_ws # replace with your actual workspace path
 source arena
 arena launch sim:=isaac                                         # Isaac Sim
-arena launch mobile:=rosnav_rl mobile.agent:=<your_agent>       # rosnav_rl DRL planner
-arena launch mobile:=drl mobile.planner:=drlvo                  # arena_planners DRL bridge
-arena train sim:=gazebo mobile:=rosnav_rl train_config:=<config.yaml>  # DRL training
+arena launch robot.mobile:=rosnav_rl robot.mobile.agent:=<your_agent>       # rosnav_rl DRL planner
+arena launch robot.mobile:=drl robot.mobile.planner:=drlvo                  # arena_planners DRL bridge
+arena train sim:=gazebo robot.mobile:=rosnav_rl train_config:=<config.yaml>  # DRL training
 ```
 
 ### DRL quick-start
-Place your trained agent folder inside `Arena/arena_training/agents/<agent_name>/` (must contain `training_config.yaml` and `best_model.zip`), then launch with `mobile:=rosnav_rl mobile.agent:=<agent_name>`. Refer to the [arena_training](arena_training/README.md) for training instructions.
+Place your trained agent folder inside `Arena/arena_training/agents/<agent_name>/` (must contain `training_config.yaml` and `best_model.zip`), then launch with `robot.mobile:=rosnav_rl robot.mobile.agent:=<agent_name>`. Refer to the [arena_training](arena_training/README.md) for training instructions.
 
 ### arena_planners bridge
-For research planners (DRL-VO, CrowdNav, ...) where the policy lives in its own venv, use `mobile:=drl mobile.planner:=<name>`. Install a planner with `arena feature planners add <name>`. The [arena_planners](arena_planners/README.md) submodule handles the bridge, observation pipeline, and HF weight fetch. Optional global plan via `mobile.global_planner:=nav2/navfn`.
+For research planners (DRL-VO, CrowdNav, ...) where the policy lives in its own venv, use `robot.mobile:=drl robot.mobile.planner:=<name>`. Install a planner with `arena feature planners add <name>`. The [arena_planners](arena_planners/README.md) submodule handles the bridge, observation pipeline, and HF weight fetch. Optional global plan via `robot.mobile.global_planner:=nav2/navfn`.
 
 
 ## Development

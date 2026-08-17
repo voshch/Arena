@@ -4,11 +4,10 @@ import math
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 import attrs
-
-import rclpy
-
 import numpy as np
+import rclpy
 
 from .gait import GaitGenerator
 

@@ -1,0 +1,6 @@
+builtin_interfaces/Duration delay
+float32 gain_db
+float32 bearing_rad
+geometry_msgs/Point reflection_point
+string interaction_type
+string material_id

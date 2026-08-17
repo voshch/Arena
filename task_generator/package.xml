@@ -10,10 +10,12 @@
   <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>rclcpp</depend>
+  <depend>rcl_interfaces</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
 
   <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_bringup</exec_depend>

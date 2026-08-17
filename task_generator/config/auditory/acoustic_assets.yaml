@@ -1,0 +1,136 @@
+assets:
+  footstep:
+    category: footstep
+    semantic_tags: [human, movement, transient]
+    reference_level_db: 45.0
+    reference_distance_m: 1.0
+    normalization_dbfs: -6.0
+    loop: false
+
+    variants:
+      - sample_id: footstep_default_01
+        file: footstep_default.wav
+        tags: [walk, default]
+        octave_band_levels_db: {63: -21.333389, 125: -13.993669, 250: -13.977864, 500: -10.999610, 1000: -7.106079, 2000: -3.551195, 4000: -7.722054, 8000: -15.498134}
+
+      - sample_id: footstep_walnut_planks_01
+        file: footstep_walnut_planks.wav
+        tags: [walk, walnut_planks]
+        octave_band_levels_db: {63: -13.692369, 125: -7.970632, 250: -2.640051, 500: -8.020362, 1000: -12.007623, 2000: -15.925765, 4000: -23.081786, 8000: -26.983838}
+
+      - sample_id: footstep_oak_planks_01
+        file: footstep_oak_planks.wav
+        tags: [walk, oak_planks]
+        octave_band_levels_db: {63: -4.100706, 125: -5.145659, 250: -7.931331, 500: -12.938256, 1000: -18.065306, 2000: -14.337190, 4000: -16.775306, 8000: -17.009794}
+
+      - sample_id: footstep_marble_tile_01
+        file: footstep_marble_tile.wav
+        tags: [walk, marble_tile]
+        octave_band_levels_db: {63: -2.180976, 125: -10.638742, 250: -11.243792, 500: -8.497902, 1000: -11.313188, 2000: -19.399105, 4000: -24.109866, 8000: -25.556647}
+
+      - sample_id: footstep_smooth_concrete_01
+        file: footstep_smooth_concrete.wav
+        tags: [walk, smooth_concrete]
+        octave_band_levels_db: {63: -14.698930, 125: -9.314544, 250: -5.035520, 500: -9.022069, 1000: -8.230625, 2000: -7.513082, 4000: -11.985844, 8000: -17.163257}
+
+      - sample_id: footstep_ceramic_tile_01
+        file: footstep_ceramic_tile.wav
+        tags: [walk, ceramic_tile]
+        octave_band_levels_db: {63: -17.274452, 125: -8.097153, 250: -11.561107, 500: -4.419122, 1000: -4.912663, 2000: -13.866710, 4000: -17.840627, 8000: -18.281753}
+
+  greeting:
+    category: speech
+    semantic_tags: [human, vocalization, greeting]
+    reference_level_db: 60.0
+    reference_distance_m: 1.0
+    normalization_dbfs: -6.0
+    loop: false
+
+    variants:
+      - sample_id: greeting_01
+        file: greeting.wav
+        tags: [neutral, adult]
+        octave_band_levels_db: {63: -22.866275, 125: -15.374348, 250: -8.055535, 500: -2.280545, 1000: -9.301727, 2000: -11.202185, 4000: -16.188442, 8000: -32.656465}
+
+  motor:
+    category: mechanical
+    semantic_tags: [robot, movement]
+    reference_level_db: 45.0
+    reference_distance_m: 1.0
+    normalization_dbfs: -9.0
+    playback_gain_db: 0.0
+    loop: false
+
+    variants:
+      - sample_id: motor_sound_01
+        file: short_motor_sound.wav
+        tags: [robot, motor]
+        octave_band_levels_db: {63: -23.288282, 125: -20.531268, 250: -9.076258, 500: -3.538704, 1000: -6.531169, 2000: -7.680394, 4000: -15.851052, 8000: -29.279367}
+
+  motor_start:
+    playback_gain_db: -3.0
+    category: mechanical
+    semantic_tags: [robot, movement, motor, start]
+    reference_level_db: 55.0
+    reference_distance_m: 1.0
+    # normalization_dbfs: -9.0
+    loop: false
+    variants:
+      - sample_id: motor_start_01
+        file: long_motor_sound_start.wav
+        tags: [robot, motor, start]
+        octave_band_levels_db: {63: -12.827441, 125: -15.371230, 250: -15.014656, 500: -5.539979, 1000: -3.532634, 2000: -8.514789, 4000: -16.558970, 8000: -27.334656}
+
+  motor_loop:
+    playback_gain_db: -3.0
+    category: mechanical
+    semantic_tags: [robot, movement, motor, steady]
+    reference_level_db: 55.0
+    reference_distance_m: 1.0
+    # normalization_dbfs: -9.0
+    loop: true
+    variants:
+      - sample_id: motor_loop_01
+        file: long_motor_sound_middle.wav
+        tags: [robot, motor, steady]
+        octave_band_levels_db: {63: -25.387042, 125: -20.079695, 250: -12.704296, 500: -2.852755, 1000: -6.414718, 2000: -7.684598, 4000: -18.205245, 8000: -28.822832}
+
+  motor_stop:
+    playback_gain_db: -3.0
+    category: mechanical
+    semantic_tags: [robot, movement, motor, stop]
+    reference_level_db: 55.0
+    reference_distance_m: 1.0
+    # normalization_dbfs: -9.0
+    loop: false
+    variants:
+      - sample_id: motor_stop_01
+        file: long_motor_sound_end.wav
+        tags: [robot, motor, stop]
+        octave_band_levels_db: {63: -34.531032, 125: -24.250725, 250: -4.257732, 500: -5.895499, 1000: -6.454629, 2000: -11.584620, 4000: -11.749702, 8000: -30.341817}
+
+  radio_loop:
+    category: music
+    semantic_tags: [radio, music, background]
+    reference_level_db: 62.0
+    reference_distance_m: 1.0
+    normalization_dbfs: -9.0
+    loop: true
+    variants:
+      - sample_id: radio_loop_01
+        file: radio_loop.wav
+        tags: [radio, music]
+        octave_band_levels_db: auto
+
+  alarm_loop:
+    category: alarm
+    semantic_tags: [alarm, emergency]
+    reference_level_db: 88.0
+    reference_distance_m: 1.0
+    normalization_dbfs: -9.0
+    loop: true
+    variants:
+      - sample_id: alarm_loop_01
+        file: alarm_loop.wav
+        tags: [alarm]
+        octave_band_levels_db: auto

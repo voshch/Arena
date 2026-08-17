@@ -358,7 +358,7 @@ DRIVE_EMPTY_RANDOM = {
     "interactive": {"min": 0, "max": 0},
 }
 DRIVE_OWN_KEYS = frozenset({"map", "episodes", "timeout"})
-KV_RE = re.compile(r"^(\w+):=(.*)$")
+KV_RE = re.compile(r"^([\w.]+):=(.*)$")
 
 
 def _ready_robots(arena: Path) -> list[str]:

@@ -4,6 +4,7 @@ import os
 
 import common
 from common import Verb, make_verb
+from complete import LaunchArgs
 
 import features
 from features import lifecycle_verbs, source_verb
@@ -155,7 +156,7 @@ COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
         *lifecycle_verbs(NAME, _update),
-        make_verb("launch", launch, passthrough=True),
+        make_verb("launch", launch, passthrough=True, complete=LaunchArgs("arena_bringup", "gazebo.launch.py")),
         source_verb(_shell_source),
     ]
 }

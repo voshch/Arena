@@ -52,7 +52,7 @@ arena_isaac:   run_isaacsim.launch.py                         (Isaac Sim app)
   `arena_bringup/configs/gazebo/empty.sdf` if the file is absent.
 - Launches `ros_gz_sim gz_sim.launch.py` (gz-sim 8, dart physics, ogre
   renderer). When `headless=True`, passes `-s` (server-only).
-- Starts a `ros_gz_bridge parameter_bridge` for `/clock`.
+- Starts a `ros_gz_bridge parameter_bridge` for gz's clock on `/gz/clock` and the arena_runtime `clock_relay` that forwards it to `/clock` only when sim time advances (a paused gz loop republishes the same stamp every iteration).
 
 ### run_isaacsim.launch.py (arena_isaac)
 

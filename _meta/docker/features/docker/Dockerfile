@@ -18,7 +18,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libncurses-dev \
     libncursesw5-dev \
     sudo \
-    ros-jazzy-rmw-cyclonedds-cpp
+    ros-jazzy-rmw-cyclonedds-cpp \
+    libportaudio2 \
+    portaudio19-dev \
+    libasound2-dev \
+    libasound2-plugins \
+    alsa-utils \
+    && ldconfig
+
 
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin \
     pipx install git+https://github.com/voshch/vcstool.git
