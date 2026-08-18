@@ -4,11 +4,11 @@ import math
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 import attrs
-
-import rclpy
-
 import numpy as np
+import rclpy
+import yaml
 
 from .gait import GaitGenerator
 
@@ -63,6 +63,26 @@ class AnimationManager:
     # Automatically use GaitGenerator to synthesis poses for upper body for realistic movements
     AUTO_BLEND_SYNTHESIS = ["wave"]
 
+    # Default state to animation map matching Pedestrian.msg constants
+    STATE_TO_ANIMATION_MAP: dict[int, str] = {
+        0: "idle",  # IDLE
+        1: "walk",  # WALKING
+        2: "run",  # RUNNING
+        3: "idle",  # PANIC (treated as idle/synthesis fallback for now)
+        4: "idle",  # SURPRISED (treated as idle/synthesis fallback for now)
+        5: "idle",  # CURIOUS (treated as idle/synthesis fallback for now)
+        6: "idle",  # THREATENING (treated as idle/synthesis fallback for now)
+        7: "hug",
+        8: "jump",
+        9: "point_straight",
+        10: "shake_hand",
+        11: "sit",
+        12: "talk_with_arm_gesture",
+        13: "wave",
+        14: "wave_high",
+        15: "collapse_to_ground",
+    }
+
     def __init__(
         self,
         animation_database_path: str | Path,
@@ -97,14 +117,16 @@ class AnimationManager:
         # Procedural gait generator used as high-fidelity base walking/running fallback
         self.gait_generator = GaitGenerator()
 
-        # TODO: Implement proper state to animation map
-        self.state_to_animation_map: dict[int, str] = {0: "wave", 1: "wave", 3: "wave"}
+        # Transition tracking per agent (for smooth interpolation between clips/synthesized states)
+        self._transitions: dict[int, dict] = {}
+        # Tracking the previous animation state integer per agent
+        self._ped_anim_state: dict[int, int] = {}
 
     def map_state_to_animation(self, state: int, anim_name: str) -> None:
         """
         Map a Pedestrian.msg animation state index to a registered animation.
         """
-        self.state_to_animation_map[state] = anim_name
+        self.STATE_TO_ANIMATION_MAP[state] = anim_name
 
     def cache_animations(self, animation_name: list[str] | None = None, loop_mapping: dict[str, bool] | None = None) -> None:
         """
@@ -118,8 +140,24 @@ class AnimationManager:
         if loop_mapping is None:
             loop_mapping = {}
 
+        # Attempt to load annotations from a database metadata/annotation file if present
+        annotations = {}
+        annotations_path = self.database_path / "annotations.yaml"
+        if annotations_path.is_file():
+            try:
+                with open(annotations_path) as f:
+                    annotations = yaml.safe_load(f) or {}
+                    self.logger.info(annotations)
+                self.logger.info(f"Loaded animation annotations from {annotations_path.name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to load annotations from {annotations_path}: {e}")
+
+        # Update one_shot_animations if defined in annotations
+        if "one_shot_animations" in annotations:
+            self.one_shot_animations.update(annotations["one_shot_animations"])
+
         if animation_name is None:
-            animation_name = [f.name.split(".")[0] for f in self.database_path.iterdir()]
+            animation_name = [f.name.split(".")[0] for f in self.database_path.iterdir() if f.suffix == ".npy"]
 
         for name in self.USE_SYNTHESIS:
             self.animations[name] = Animation(name=name, frames=[], n_frames=0, duration=0.0, loop=True)
@@ -140,9 +178,11 @@ class AnimationManager:
             n_frames = len(anim_frames)
             duration = n_frames / self._fps
 
-            # TODO: Use annotation from dataset istead
-            # For now, use hardcoded annotation
-            is_loop = loop_mapping.get(name, name not in self.one_shot_animations)
+            # Use annotation from dataset if available, falling back to loop_mapping arg,
+            # and finally falling back to loop=False for one_shot_animations, True otherwise.
+            is_loop = annotations.get("loop_mapping", {}).get(name)
+            if is_loop is None:
+                is_loop = loop_mapping.get(name, name not in self.one_shot_animations)
 
             assert n_frames > 0, "Animation does not contain any frames"
             assert duration > 0.0, f"Animation duration is invalid, got: {duration}"
@@ -190,6 +230,8 @@ class AnimationManager:
         self._overlay_playhead.pop(agent_id, None)
         self._ped_anim.pop(agent_id, None)
         self._ped_blend.pop(agent_id, None)
+        self._transitions.pop(agent_id, None)
+        self._ped_anim_state.pop(agent_id, None)
         self.gait_generator.forget(agent_id)
 
     def phase(self, agent_id: int) -> float:
@@ -288,24 +330,85 @@ class AnimationManager:
         Resolves joint angles by advancing playheads and performing dynamic blending.
         """
         self.check_animations_cached()
-        assert animation_state in self.state_to_animation_map, f"Can not map `animation_state` {animation_state} to any animation"
+        assert animation_state in self.STATE_TO_ANIMATION_MAP, f"Can not map `animation_state` {animation_state} to any animation"
 
-        cur_anim = self.get_current_ped_animation(agent_id)
-        cur_playhead = self._get_playhead(agent_id)
+        # Determine target/next animation name
+        next_anim_name = self.STATE_TO_ANIMATION_MAP[animation_state]
+        next_anim = self.animations[next_anim_name]
 
-        # Set next animation
-        self.set_ped_anim(agent_id, self.state_to_animation_map[animation_state])
-        next_anim = self.get_current_ped_animation(agent_id)
-        assert isinstance(next_anim, Animation)
+        # Check if animation is changing (transition)
+        cur_anim_name = self._ped_anim.get(agent_id)
 
-        # Resolve base joint angles
+        # If transitioning to a new base animation
+        if cur_anim_name is not None and cur_anim_name != next_anim_name:
+            # Initialize or update transition tracking
+            from_anim = self.animations[cur_anim_name]
+            from_playhead = self._get_playhead(agent_id)
+
+            # Record transition state
+            self._transitions[agent_id] = {
+                "from_anim": from_anim,
+                "from_state": self._ped_anim_state.get(agent_id, 0),
+                "from_playhead": from_playhead,
+                "progress": 0.0,
+                "duration": 0.5,  # Smooth 0.5s blend window
+            }
+
+            # Safely set the new base animation in state
+            self.set_ped_anim(agent_id, next_anim_name)
+        elif cur_anim_name is None:
+            # No transition, just initialize
+            self.set_ped_anim(agent_id, next_anim_name)
+
+        # Track the current state integer for potential transition fallbacks
+        self._ped_anim_state[agent_id] = animation_state
+
+        # Now compute the base target angles for this step
+        target_playhead = self._get_playhead(agent_id)
         if next_anim.name in self.USE_SYNTHESIS or next_anim.name in self.AUTO_BLEND_SYNTHESIS:
-            # Procedural high-fidelity GaitGenerator
-            base_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt)
+            target_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt)
         else:
-            next_playhead = self._get_playhead(agent_id) + dt
+            # Advance base playhead
+            next_playhead = target_playhead + dt
             self._playhead[agent_id] = next_playhead
-            base_angles = self._sample(cur_playhead, next_playhead, cur_anim, next_anim)
+            target_angles = self._sample_single_animation(next_playhead, next_anim)
+
+        # Handle active transition blending
+        transition = self._transitions.get(agent_id)
+        if transition is not None:
+            # Advance transition progress
+            transition["progress"] += dt
+            progress = transition["progress"]
+            duration = transition["duration"]
+
+            # Blend weight
+            weight = min(progress / duration, 1.0)
+
+            # Advance previous animation's playhead and compute its angles
+            from_anim = transition["from_anim"]
+            from_state = transition["from_state"]
+
+            if from_anim.name in self.USE_SYNTHESIS or from_anim.name in self.AUTO_BLEND_SYNTHESIS:
+                # Synthesized fallback
+                from_angles = self.gait_generator.compute(agent_id, from_state, speed, dt)
+            else:
+                # Recorded animation playhead advancement
+                next_from_playhead = transition["from_playhead"] + dt
+                transition["from_playhead"] = next_from_playhead
+                from_angles = self._sample_single_animation(next_from_playhead, from_anim)
+
+            # Perform linear interpolation blending
+            base_angles = {}
+            for name in JOINT_NAMES:
+                val_from = from_angles.get(name, 0.0)
+                val_to = target_angles.get(name, 0.0)
+                base_angles[name] = val_from * (1.0 - weight) + val_to * weight
+
+            # If transition is finished, clear it
+            if progress >= duration:
+                self._transitions.pop(agent_id, None)
+        else:
+            base_angles = target_angles
 
         # Apply overlay animation blending
         if next_anim.name in self.AUTO_BLEND_SYNTHESIS:
