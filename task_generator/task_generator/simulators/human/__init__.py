@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import itertools
+import json
 import math
 import os
 import typing
@@ -19,7 +20,7 @@ from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim
-from arena_runtime_msgs.msg import LockstepChannel, LockstepRegistration
+from arena_runtime_msgs.msg import LockstepChannel, LockstepRegistration, LockstepStatus
 from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
@@ -30,6 +31,7 @@ from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Region, Robot, Wall
 from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.gestures import GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.utils import (
     KnownObstacle,
@@ -109,11 +111,20 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
         self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
+        self._gestures = GestureLayer(self._gait, self._logger)
+        self._gait.gesture_hook = self._gestures
+        self._gesture_opts_warned: set[int] = set()
         self.node.create_subscription(
             Pedestrians,
             self._namespace("arena_peds"),
             self._on_arena_peds,
             10,
+        )
+        self.node.create_subscription(
+            LockstepStatus,
+            "/arena/state/lockstep",
+            self._on_lockstep_status,
+            rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL),
         )
 
         self._possession: PossessionTable[Pedestrian] = PossessionTable(phase=self._gait.phase)
@@ -179,7 +190,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         current_ids: set[int] = {ped.id for ped in out.pedestrians}
         for stale in sorted(set(self._gait_prev_stamp) - current_ids):
+            self._gestures.forget(stale)
             self._gait.forget(stale)
+            self._gesture_opts_warned.discard(stale)
             del self._gait_prev_stamp[stale]
 
         for ped in out.pedestrians:
@@ -187,15 +200,44 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if ped.joint_state.name:
                 continue
             prev = self._gait_prev_stamp.get(ped.id)
-            dt = (now_sec - prev) if prev is not None and now_sec > prev else 0.1
+            if prev is None:
+                dt = 0.05
+            else:
+                dt = max(0.0, now_sec - prev)
             self._gait_prev_stamp[ped.id] = now_sec
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
             speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
-            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt)
+            gesture = GestureRequest(
+                kind=ped.gesture.kind,
+                at=(ped.gesture.at.x, ped.gesture.at.y, ped.gesture.at.z),
+                pose=(ped.pose.position.x, ped.pose.position.y, yaw),
+                moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
+                opts=self._gesture_opts(ped.id, ped.gesture.opts),
+            )
+            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture)
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
 
         self._arena_peds_publisher.publish(out)
+
+    def _gesture_opts(self, ped_id: int, raw: str) -> dict:
+        """Gesture.opts JSON as a dict, empty on empty or invalid input (warned once per ped)."""
+        if not raw:
+            return {}
+        try:
+            opts = json.loads(raw)
+        except ValueError:
+            opts = None
+        if not isinstance(opts, dict):
+            if ped_id not in self._gesture_opts_warned:
+                self._gesture_opts_warned.add(ped_id)
+                self._logger.warning(f"ped {ped_id}: gesture opts {raw!r} is not a JSON object, ignoring")
+            return {}
+        return opts
+
+    def _on_lockstep_status(self, msg: LockstepStatus) -> None:
+        """Gesture clips are generated inline while a gated lockstep run is active, so their timing is sim-deterministic."""
+        self._gestures.sync = bool(msg.active and not msg.ungated)
 
     def publish_markers(self, markers: MarkerArray) -> None:
         """Publish a transient debug-overlay MarkerArray on `pedestrian_markers/extra`."""

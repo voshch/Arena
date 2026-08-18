@@ -350,6 +350,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             )
             a.desired_velocity = curr_a.desired_velocity
             a.radius = curr_a.radius
+            a.name = curr_a.name
+            a.gesture = curr_a.gesture
+            a.gesture_at = curr_a.gesture_at
+            a.gesture_opts = curr_a.gesture_opts
             msg.agents.append(a)
         return msg
 
@@ -557,6 +561,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         for robot in self._dirty_robots.values():
             a = AgentStateMsg()
             a.agent_id = stable_int(robot.name) & 0x7FFFFFFF
+            a.name = robot.name
             yaw = robot.pose.orientation.to_yaw()
             a.pose = Pose2DMsg(
                 x=robot.pose.position.x,
@@ -570,6 +575,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a = AgentStateMsg()
             aid = name_to_aid.get(name)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
+            a.name = name
             a.pose = Pose2DMsg(
                 x=ped.pose.position.x,
                 y=ped.pose.position.y,
@@ -606,6 +612,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 ped.animation_state = Pedestrian.WALKING
             else:
                 ped.animation_state = Pedestrian.IDLE
+            ped.gesture.kind = agent.gesture
+            ped.gesture.at = agent.gesture_at
+            ped.gesture.opts = agent.gesture_opts
 
             peds.pedestrians.append(ped)
         return peds
@@ -841,6 +850,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         for obstacle in obstacles:
             agent_msg = AgentStateMsg()
             agent_msg.agent_id = self._next_id
+            agent_msg.name = obstacle.sim_path
             self._bridge_agent_ids.add(self._next_id)
             self._agent_names[self._next_id] = obstacle.sim_path
             self._next_id += 1

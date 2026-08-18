@@ -18,6 +18,9 @@ uint8 CURIOUS = 5
 uint8 THREATENING = 6
 uint8 animation_state
 
+# Upper-body gesture, composes with animation_state
+Gesture gesture
+
 # Empty = synthesize fallback gait, non-empty = upstream override.
 sensor_msgs/JointState joint_state
 

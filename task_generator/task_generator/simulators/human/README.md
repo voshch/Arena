@@ -66,9 +66,26 @@ joint angles are committed to the `arena_peds` bus.  For each `Pedestrian` in
 the outgoing message it checks `ped.joint_state.name`:
 
 - **non-empty**: upstream backend supplied its own joint state, published unchanged (override path: an upstream producer that already computes joint angles).
-- **empty**: `publish_arena_peds` calls `GaitGenerator.compute` + `GaitGenerator.joint_state` and fills the field with bare semantic joint names (20 DOF, ~9 active per gait mode, no body suffix).
+- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (36 DOF, no body suffix).
 
-The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer`.  The 3D engines do not read it: Isaac animates pedestrians with its native omni.anim.people AnimGraph and Gazebo clip-scrubs `walk.dae`, both driven by pedestrian pose and twist.  So `GaitGenerator` is the ROS-side articulation ground truth, while the in-engine meshes play plausible locomotion that is not bone-for-bone identical to it.
+The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac and Gazebo pedestrian rigs.
+
+## Gestures
+
+`Pedestrian.gesture` (`arena_people_msgs/Gesture`: `kind` string, `at` world-frame point, `opts` JSON string)
+is an intent, not a pose. Backends only forward it (arena_humansim copies
+`AgentState.gesture`/`gesture_at`/`gesture_opts`, the possession stream carries it as-is), and
+`publish_arena_peds` hands it per ped to the [`GestureLayer`](gestures/__init__.py) as a `GestureRequest`
+(kind, world target, ped pose, moving flag, opts dict). `opts` is parsed there: empty string = `{}`, invalid
+JSON warns once per ped and counts as `{}`. The layer resolves the target into the ped frame once per clip,
+asks the registered generator for frames, and plays them as `AnimationManager` overlay slots (`arm`, `head`,
+...) over the locomotion base. `point` also drives a `look` companion on the head slot. See
+[gestures/README.md](gestures/README.md) for slots, companions, options, timing, hysteresis, and how to add a kind.
+
+Empty `kind` releases. Unknown kinds warn once per ped and count as empty: a live gesture releases and
+nothing new starts. Clip generation runs
+on two worker threads (a few hundred ms per clip) unless a gated lockstep run is active
+(`/arena/state/lockstep`), then it runs inline so clip timing is sim-deterministic.
 
 ## Visualization topics
 

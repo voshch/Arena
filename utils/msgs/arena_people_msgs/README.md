@@ -23,6 +23,7 @@ only `name` and `pose`.
 
 | File | Purpose |
 |---|---|
-| `Pedestrian.msg` | Standard pedestrian representation: `name`/`id`, `pose`/`twist`, `animation_state` (`IDLE`/`WALKING`/`RUNNING`/`PANIC`/`SURPRISED`/`CURIOUS`/`THREATENING`), `joint_state` (empty = synthesize fallback gait, non-empty = upstream override), `gait_phase`, `model_uri`. |
+| `Pedestrian.msg` | Standard pedestrian representation: `name`/`id`, `pose`/`twist`, `animation_state` (`IDLE`/`WALKING`/`RUNNING`/`PANIC`/`SURPRISED`/`CURIOUS`/`THREATENING`), `gesture`, `joint_state` (empty = synthesize fallback gait, non-empty = upstream override), `gait_phase`, `model_uri`. |
 | `SpawnPedestrian.msg` | One pedestrian to spawn: a `Pedestrian` plus `model_ref`, a backend-interpreted asset reference (Gazebo: SDF path or inline XML, Isaac: character name). |
+| `Gesture.msg` | Upper-body gesture intent: `kind` (registered gesture name, empty = none), `at` (world-frame target point) and `opts` (JSON object string with per-kind options, empty = defaults). Composes with `animation_state`, resolved to joints by the animation layer. |
 | `Pedestrians.msg` | `Pedestrian[]` with a `Header`, the wire type for the `arena_peds` bus and the `human_steering` GUI's `human/stream`. |
