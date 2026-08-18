@@ -109,7 +109,9 @@ def generate_launch_description():
 
     def _arena_node(context: launch.LaunchContext) -> list[launch.Action]:
         env_args = [f'{k}:={v}' for k, v in given_args.items() if k not in _RUNTIME_OWNED]
-        params: dict = {'sim': sim.substitution, 'env_args': env_args}
+        params: dict = {'sim': sim.substitution}
+        if env_args:
+            params['env_args'] = env_args
         if context.launch_configurations.get('lockstep', 'false').lower() in ('true', '1'):
             params['lockstep.autostart'] = True
         channels = [c for c in context.launch_configurations.get('lockstep.channels', '').split(';') if c]

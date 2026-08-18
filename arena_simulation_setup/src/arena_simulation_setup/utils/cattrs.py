@@ -7,6 +7,7 @@ import typing
 from collections.abc import Mapping
 from copy import deepcopy
 
+import attrs
 import cattrs
 
 from arena_simulation_setup.utils.resolution import activate_resolver
@@ -198,6 +199,9 @@ class Parseable:
                 # try "normal" attrs structuring
                 try:
                     if isinstance(value, dict):
+                        unknown = set(value) - {f.name for f in attrs.fields(target_type)}
+                        if unknown:
+                            raise ValueError(f'unknown keys {sorted(unknown)} for {target_type}')
                         return c.structure_attrs_fromdict(value, target_type)
                 except Exception as e:
                     errors.append(e)

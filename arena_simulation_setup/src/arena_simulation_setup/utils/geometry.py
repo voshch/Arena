@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import typing
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 import attrs
 import numpy as np
@@ -108,10 +108,10 @@ class Position(Parseable, Idempotent, Vector3):
     """
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Point | Sequence[float]) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Point | Sequence[float] | Mapping[str, float]) -> Self:
         """
         parse value into Position
-        formats: [x,y], [x,y,z], zone ref name
+        formats: [x,y], [x,y,z], {x,y[,z]}, zone ref name
         """
         if isinstance(value, str):
             point = resolve_zone_point(value)
@@ -119,6 +119,11 @@ class Position(Parseable, Idempotent, Vector3):
 
         if isinstance(value, geometry_msgs.msg.Point):
             return cls.from_msg(value)
+
+        if isinstance(value, Mapping):
+            if not {"x", "y"} <= set(value) or not set(value) <= {"x", "y", "z"}:
+                raise ValueError(f"Translation mapping must have keys x, y[, z], got {value}")
+            return cls(x=value["x"], y=value["y"], z=value.get("z", 0.0))
 
         if len(value) == 3:
             return cls(*value)
@@ -286,16 +291,24 @@ class Pose(Parseable, Idempotent):
     orientation: Orientation = attrs.field(converter=Orientation.converter, factory=lambda: Orientation(1, 0, 0, 0))
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]]) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, object]) -> Self:
         """
         parse value into Pose
-        formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], zone ref name
+        formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,yaw]}, zone ref name
         """
         if isinstance(value, str):
             return cls(position=resolve_zone_point(value), orientation=Orientation.identity())
 
         if isinstance(value, geometry_msgs.msg.Pose):
             return cls.from_msg(value)
+
+        if isinstance(value, Mapping) and not {"position", "orientation"} & set(value):
+            if not {"x", "y"} <= set(value) or not set(value) <= {"x", "y", "z", "yaw"}:
+                raise ValueError(f"Pose mapping must have keys x, y[, z][, yaw], got {value}")
+            return cls(
+                position=Position(x=value["x"], y=value["y"], z=value.get("z", 0.0)),
+                orientation=Orientation.from_yaw(value["yaw"]) if "yaw" in value else Orientation.identity(),
+            )
 
         # direct sequence
         if all(isinstance(v, (int, float)) for v in value):
