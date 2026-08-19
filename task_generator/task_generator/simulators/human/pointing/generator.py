@@ -46,7 +46,7 @@ import numpy as np
 from . import contract as C
 from . import skeleton as S
 
-TEMPLATES = ("point_to_right", "point_straight", "point_to_left")
+TEMPLATES = ("point_to_right",)
 
 
 def _animations_dir() -> str:

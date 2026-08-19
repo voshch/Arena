@@ -80,7 +80,7 @@ def test_segment_distance_vs_brute_force():
     assert err < 1e-6
 
 
-@pytest.mark.parametrize("name", ["point_to_right", "point_straight", "point_to_left"])
+@pytest.mark.parametrize("name", ["point_to_right"])
 def test_template(name):
     t = load_template(name)
     assert t.w[0] == 0.0 and t.w.max() == 1.0
