@@ -270,18 +270,26 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self.node.create_subscription(
             MarkerArray,
             self.node.service_namespace("viz_static", "walls"),
-            self._static_walls_pub.publish,
+            lambda msg: self._static_walls_pub.publish(self._markers_from_engine(msg)),
             static_qos,
         )
         self.node.create_subscription(
             MarkerArray,
             self.node.service_namespace("viz_static", "objects"),
-            self._static_objects_pub.publish,
+            lambda msg: self._static_objects_pub.publish(self._markers_from_engine(msg)),
             static_qos,
         )
 
     def _forward_debug_markers(self, msg: MarkerArray):
-        self.publish_markers(msg)
+        self.publish_markers(self._markers_from_engine(msg))
+
+    def _markers_from_engine(self, msg: MarkerArray) -> MarkerArray:
+        """Engine markers into the env frame: marker poses shift, points are pose-relative and stay."""
+        cfg = self._realizer.get_config()
+        for marker in msg.markers:
+            marker.pose.position.x += cfg.x
+            marker.pose.position.y += cfg.y
+        return msg
 
     def _agent_states_callback(self, msg: AgentStatesMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
@@ -516,6 +524,28 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     def _engine_pose(self, pose: Pose) -> Pose2DMsg:
         x, y = self._to_engine(pose.position.x, pose.position.y)
         return Pose2DMsg(x=x, y=y, theta=pose.orientation.to_yaw())
+
+    def _seat_pose(self, object_pose: Pose, seat: Mapping[str, float]) -> Pose2DMsg:
+        """An object-local seat (``{x, y[, yaw]}``, the pose grammar) from the model annotation or the scenario, in the engine frame."""
+        keys = set(seat)
+        if not {"x", "y"} <= keys or not keys <= {"x", "y", "yaw"}:
+            raise ValueError(f"seat must have keys x, y[, yaw], got {dict(seat)}")
+        yaw = object_pose.orientation.to_yaw()
+        sx, sy, syaw = float(seat["x"]), float(seat["y"]), float(seat.get("yaw", 0.0))
+        wx = object_pose.position.x + math.cos(yaw) * sx - math.sin(yaw) * sy
+        wy = object_pose.position.y + math.sin(yaw) * sx + math.cos(yaw) * sy
+        x, y = self._to_engine(wx, wy)
+        return Pose2DMsg(x=x, y=y, theta=yaw + syaw)
+
+    def _seat_poses(self, obstacle: Obstacle, annotated: Sequence[Mapping[str, float]]) -> list[Pose2DMsg]:
+        """Scenario seats override the annotation's, including an empty list. A bad seat costs the seats, not the object."""
+        extra = obstacle.extra
+        raw = extra["seats"] if "seats" in extra else annotated
+        try:
+            return [self._seat_pose(obstacle.pose, seat) for seat in raw]
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            self._logger.warning(f"Ignoring seats of '{obstacle.sim_path}': {e}")
+            return []
 
     async def _pedestrian_update_loop(self):
         """Spawn an actor for each flow agent a source creates, delete it when a
@@ -782,11 +812,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 pose = self._engine_pose(obstacle.pose)
 
                 obstacle_type = ""
+                seats: list = []
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
                         annotation: dict = yaml.safe_load(f.read())
+                    seats = list(annotation.get("seats") or [])
                     (x_min, x_max), (y_min, y_max), (z_min, z_max) = annotation["bounding_box"]
                     obstacle_type = annotation.get("name", "") or annotation.get("desc", "")
                     msg = ObstacleConfigMsg()
@@ -815,6 +847,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 info.satisfies_values = [float(v) for v in satisfies.values()]
                 interaction_radius = extra.get("interaction_radius")
                 info.interaction_radius = float(interaction_radius) if interaction_radius is not None else 0.0
+                info.seats = self._seat_poses(obstacle, seats)
                 formation: dict = extra.get("formation") or {}
                 formation_type = formation.get("type", "")
                 if formation_type:

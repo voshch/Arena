@@ -234,6 +234,17 @@ the engine does not recognize become transient external obstacles in its
 force pool instead. Either way the crowd sees and avoids a possessed ped,
 walking or parked.
 
+The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
+the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses
+are un-shifted going in, agent poses, gesture targets, flow agents and the engine's marker layers are shifted
+coming out. Nothing engine-side knows the env.
+
+World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
+`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y, theta}`
+list, from the annotation or overridden per scenario entry). Seats become the cluster slots a sitter is
+placed on, so a `SIT_ON` parks the ped on the seat, not on a ring around the object. An object without
+seats keeps the ring.
+
 ## HuNavSim default agent template
 
 `HunavHumanSimulator` derives pedestrian parameters from a `HunavDynamicObstacle`
