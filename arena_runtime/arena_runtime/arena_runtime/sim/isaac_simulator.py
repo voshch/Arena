@@ -198,12 +198,14 @@ class IsaacHost(SimLifecycle):
 
     async def step_seconds(self, seconds: float) -> float:
         n = max(1, round(seconds * _ISAAC_PHYSICS_HZ))
+        start = self._node.sim_time.to_seconds()
         res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
         if not res.success:
             raise RuntimeError(res.error_msg)
+        target = start + n / _ISAAC_PHYSICS_HZ - 1e-6
         await self._node.poll(
-            lambda: self._node.sim_time.to_seconds() >= res.target_sim_time,
-            f"isaac sim clock >= {res.target_sim_time:.3f}s",
+            lambda: self._node.sim_time.to_seconds() >= target,
+            f"isaac sim clock >= {target:.3f}s",
         )
         return n / _ISAAC_PHYSICS_HZ
 
