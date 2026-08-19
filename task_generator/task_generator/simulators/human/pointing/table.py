@@ -22,7 +22,7 @@ SIDES = ("l", "r")
 AZ_STEP = 5.0
 EL_STEP = 5.0
 EL_MAX = 85.0  # the poles are degenerate for the (az, el) grid, clamp just short of them
-COLLAR_SCALE = 0.3  # the recorded template shrugs the clavicle to its limit at the peak, keep a fraction of that
+COLLAR_SCALE = 0.3  # fraction of the template's clavicle shrug kept in the bake
 SEAM_RAD = math.radians(30.0)  # corner holds further apart than this are not blended, the nearest wins
 FIXED_POINT_ITERS = 12  # target-point aim refinement through the baked wrist
 FIXED_POINT_DAMPING = 0.55  # under-relaxed like PointAtGenerator._aim_for_point, close targets do not contract otherwise
@@ -291,12 +291,7 @@ class BakedPointAt(PointAtGenerator):
         return cell, aim
 
     def _swing(self, side: str, cell: Cell, upright: bool) -> tuple[dict[str, float], np.ndarray]:
-        """Linear DOF deltas vs the anchor source frame, and the ped-frame rotation carrying the recorded arm onto the hold.
-
-        World-frame, as in ``PointAtGenerator.point_at``: the collar moves with the assist, and a delta fixed to it
-        would let the aim ride along with the torso. The hold's world direction is the table's (solved with the
-        template torso), the emitted arc is expressed against the torso that will actually be shown.
-        """
+        """Linear DOF deltas vs the anchor frame, and the world rotation swinging the recorded arm onto the hold."""
         tri = [f"{side}_y_shoulder", f"{side}_p_shoulder", f"{side}_r_shoulder"]
         anchor = anchor_index(self)
         src = self._source_pose(anchor, side)
@@ -307,13 +302,12 @@ class BakedPointAt(PointAtGenerator):
         return delta, r_delta
 
     def _collar(self, side: str, angles: dict, upright: bool) -> np.ndarray:
-        """Collar frame of a pose, with the spine zeroed when the torso DOFs will not be blended."""
-        if upright:
-            angles = dict(angles)
+        """Collar frame of a pose, spine zeroed when the torso DOFs are not blended (upright)."""
+        r = np.eye(3)
+        if not upright:
             for seg in C.SPINE_SEGMENTS:
-                angles[seg] = angles[f"y_{seg}"] = angles[f"r_{seg}"] = 0.0
-        _, fr = S.fk(angles, self.body)
-        return fr[f"{side}_collar"]
+                r = r @ S.segment_rot(angles[f"r_{seg}"], angles[f"y_{seg}"], angles[seg])
+        return r @ S.collar_rot(side, angles[f"{side}_y_collar"], angles[f"{side}_p_collar"])
 
     def _posed(self, side: str, src: dict, delta: dict[str, float], w: float) -> dict:
         out = dict(src)

@@ -128,7 +128,7 @@ Components self-register their data channels via
 a `caller` replaces its set, an empty `channels[]` clears it, per-env
 registrations drop when their env despawns, and registrations merge into a
 running lockstep live. The arena_humansim adapter self-registers `engine`
-(hard) and `peds` (soft). The hunav adapter self-registers `roster` (hard).
+and `peds` (both hard). The hunav adapter self-registers `roster` (hard).
 The arena_robots task_server registers per-robot beats only while a goal is
 active: `nav/<robot>` (hard, pulsed per cmd_vel) during goto_pose for both
 nav2 (one controller period) and the goal-window passthrough stacks whose

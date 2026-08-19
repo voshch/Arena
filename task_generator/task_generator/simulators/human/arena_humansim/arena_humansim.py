@@ -207,6 +207,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self.node.service_namespace("arena_humansim", "set_parameters"),
         )
         self._sent_origin: tuple[float, float] | None = None
+        self._publish_pending = False
 
         self._next_id: int = 1
 
@@ -291,10 +292,17 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
         self._prev_agent_states = self._curr_agent_states
         self._curr_agent_states = msg
-        # publish on receipt too: the rate loop emits once per stepped clock burst and
-        # can race this batch, leaving lockstep consumers gating on a pre-burst stamp
+        # publish on receipt (the rate loop can race a stepped clock burst), but
+        # coalesced: one roster compute per burst, not per engine tick
+        if self._publish_pending:
+            return
+        self._publish_pending = True
         loop = self.node.event_loop
-        loop.call_soon_threadsafe(lambda: loop.create_task(self._publish_interpolated()))
+        loop.call_soon_threadsafe(lambda: loop.create_task(self._publish_on_receipt()))
+
+    async def _publish_on_receipt(self) -> None:
+        self._publish_pending = False
+        await self._publish_interpolated()
 
     async def _publish_interpolated(self) -> None:
         """Interpolate at the current sim time and publish the roster."""
@@ -422,12 +430,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     period_s=engine_dt,
                     hard=True,
                 ),
+                # hard: a starved roster makes consumers dead-reckon and snap, a slow one should pace the sim down
                 LockstepChannel(
                     name="peds",
                     topic=str(self._namespace("arena_peds")),
                     type="arena_people_msgs/msg/Pedestrians",
                     period_s=engine_dt,
-                    hard=False,
+                    hard=True,
                 ),
             ]
         )
