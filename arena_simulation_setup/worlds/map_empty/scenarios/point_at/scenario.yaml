@@ -1,0 +1,35 @@
+# Gesture smoke test in the open map_empty room.
+# Three pointers stand in a row facing north, each working a grid 3 m ahead of them:
+#   grid_1: 4x4, one cell at a time, gaze on the cell
+#   grid_2: 3x3, chained in a fixed order, no gaze
+#   grid_3: 4x4, one cell at a time, gaze on the mirrored cell
+# walker circles them on a wide square, pointing and looking at 1, 2, 3 for as long as reach allows.
+
+dynamic:
+  - name: grid_1
+    model: female_adult_business_02
+    pose: [10.0, 8.0, 1.5708]
+    agent: {agent_type: ./grid_4x4.yaml, desired_velocity: 1.0}
+    waypoints:
+      - {x: 10.0, y: 8.0}
+
+  - name: grid_2
+    model: male_adult_construction_01
+    pose: [15.0, 8.0, 1.5708]
+    agent: {agent_type: ./grid_3x3.yaml, desired_velocity: 1.0}
+    waypoints:
+      - {x: 15.0, y: 8.0}
+
+  - name: grid_3
+    model: female_adult_business_02
+    pose: [20.0, 8.0, 1.5708]
+    agent: {agent_type: ./grid_4x4_mirror.yaml, desired_velocity: 1.0}
+    waypoints:
+      - {x: 20.0, y: 8.0}
+
+  - name: walker
+    model: male_adult_construction_01
+    pose: [5.0, 3.0, 0.0]
+    agent: {agent_type: ./walker.yaml, desired_velocity: 1.2}
+    waypoints:
+      - {x: 5.0, y: 3.0}
