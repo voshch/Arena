@@ -72,15 +72,16 @@ The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and t
 
 ## Gestures
 
-`Pedestrian.gestures` (`arena_people_msgs/Gesture[]`: `slot` in `head|arm|arm_l|arm_r`, `at` world-frame point,
-`opts` JSON string) are attention channels, not poses. Backends only forward them (arena_humansim copies
-`AgentState.gestures` one to one, the possession stream carries them as-is), and `publish_arena_peds`
-hands them per ped to the [`GestureLayer`](gestures/__init__.py) as a `GestureRequest` (a `Channel(slot, at, opts)`
-per entry, ped pose, moving flag). `opts` is parsed there: empty string = `{}`, invalid JSON warns once per
-ped and slot and counts as `{}`. The layer resolves each target into the ped frame once per clip, asks the
-slot's generator for frames (`head` -> `look`, `arm*` -> `point`), and plays them as independent
-`AnimationManager` overlay slots (`head`, `arm`) over the locomotion base. Nothing is synthesized: no channel
-published = that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
+`Pedestrian.gestures` (`arena_people_msgs/Gesture[]`: `slot` in `head|arm|arm_l|arm_r|body`, `at` world-frame
+point for the aimed slots, `clip` name on `body`, `hand` on `arm`) are attention channels, not poses. Backends
+only forward them (arena_humansim copies `AgentState.gestures` one to one, the possession stream carries them
+as-is), and `publish_arena_peds` hands them per ped to the [`GestureLayer`](gestures/__init__.py) as a
+`GestureRequest` (a `Channel(slot, at, clip, hand)` per entry, ped pose, moving flag). The layer resolves each
+aimed target into the ped frame once per clip, asks the slot's generator for frames (`head` -> `look`,
+`arm*` -> `point`, `body` -> `clip`, the cached `.npy` named on the wire over the joints
+[annotations.yaml](animations/annotations.yaml) lists for it), and plays them as independent `AnimationManager`
+overlay slots (`head`, `arm`, `body`) over the locomotion base. Nothing is synthesized: no channel published =
+that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
 timing, and how to add a kind.
 
 An empty list releases every slot, a missing entry releases that slot. Unknown slots warn once per ped and are

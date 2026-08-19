@@ -161,11 +161,11 @@ def _pose(x: float, y: float, yaw_deg: float) -> tuple[float, float, float]:
 
 
 def arm(at: tuple[float, float, float], **opts: str) -> Channel:
-    return Channel("arm", at, dict(opts))
+    return Channel("arm", at, hand=opts.get("dominant", ""))
 
 
 def head(at: tuple[float, float, float]) -> Channel:
-    return Channel("head", at, {})
+    return Channel("head", at)
 
 
 def default_cases() -> list[Case]:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,8 +25,7 @@ else:
         JointState = None  # type: ignore[assignment,misc]
 
 
-# Default supported animations mapping to their file names
-SUPPORTED_ANIMATIONS = {"hug": "hug.npy", "t-pose": "t-pose.npy", "jump": "jump.npy", "shake_hand": "shake_hand.npy", "sit": "sit.npy", "talk_with_arm_gesture": "talk_with_arm_gesture.npy", "wave": "wave.npy"}
+ANNOTATIONS_FILE = "annotations.yaml"  # per clip: loop (bool), joints (the ones the clip moves, see gestures/annotate.py)
 
 
 @attrs.define
@@ -39,6 +37,7 @@ class Animation:
     loop: bool = True
     fps: float = 20.0
     loop_from: int = 0  # looping clips wrap back to this frame, so an intro plays once
+    joints: tuple[str, ...] = ()  # joints the clip moves, empty = all (canned clips carry this from annotations)
 
     def __len__(self) -> int:
         return len(self.frames)
@@ -131,7 +130,7 @@ class AnimationManager:
 
         self.animations: dict[str, Animation] = {}
         # Default one-shot animation list
-        self.one_shot_animations = {"t-pose", "jump", "seated", "sit", "lie"}
+        self.one_shot_animations = {"t-pose", "jump", "seated", "sit", "lie", "collapse_to_ground"}
 
         self.cache_animations()
 
@@ -165,28 +164,17 @@ class AnimationManager:
         Load animations from database and cache them.
 
         Args:
-            animation_name: List of animation names to load.
-            loop_mapping: Optional map specifying whether each animation loops.
-                          If omitted, defaults to loop=False for one_shot_animations, True otherwise.
+            animation_name: List of animation names to load, default every .npy in the database.
+            loop_mapping: Loop override per clip, else annotations.yaml, else loop unless listed in one_shot_animations.
         """
         if loop_mapping is None:
             loop_mapping = {}
 
-        # Attempt to load annotations from a database metadata/annotation file if present
-        annotations = {}
-        annotations_path = self.database_path / "annotations.yaml"
+        annotations: dict[str, dict] = {}
+        annotations_path = self.database_path / ANNOTATIONS_FILE
         if annotations_path.is_file():
-            try:
-                with open(annotations_path) as f:
-                    annotations = yaml.safe_load(f) or {}
-                    self.logger.info(annotations)
-                self.logger.info(f"Loaded animation annotations from {annotations_path.name}")
-            except Exception as e:
-                self.logger.warning(f"Failed to load annotations from {annotations_path}: {e}")
-
-        # Update one_shot_animations if defined in annotations
-        if "one_shot_animations" in annotations:
-            self.one_shot_animations.update(annotations["one_shot_animations"])
+            with open(annotations_path) as f:
+                annotations = yaml.safe_load(f) or {}
 
         if animation_name is None:
             animation_name = [f.name.split(".")[0] for f in self.database_path.iterdir() if f.suffix == ".npy"]
@@ -199,27 +187,19 @@ class AnimationManager:
             if name in self.animations.keys():
                 self.logger.warning(f"Animation `{name}` is already cached, overiding...")
 
-            filename = SUPPORTED_ANIMATIONS.get(name, f"{name}.npy")
-            path = Path(os.path.join(self.database_path, filename))
-            if not path.is_file():
-                path = Path(os.path.join(self.database_path, f"{name}.npy"))
-
+            path = self.database_path / f"{name}.npy"
             assert path.is_file(), f"Animation {name} does not appear at {str(path)}"
 
             anim_frames = np.load(path, allow_pickle=True)
             n_frames = len(anim_frames)
             duration = n_frames / self._fps
-
-            # Use annotation from dataset if available, falling back to loop_mapping arg,
-            # and finally falling back to loop=False for one_shot_animations, True otherwise.
-            is_loop = annotations.get("loop_mapping", {}).get(name)
-            if is_loop is None:
-                is_loop = loop_mapping.get(name, name not in self.one_shot_animations)
+            annotation = annotations.get(name, {})
+            is_loop = loop_mapping.get(name, annotation.get("loop", name not in self.one_shot_animations))
 
             assert n_frames > 0, "Animation does not contain any frames"
             assert duration > 0.0, f"Animation duration is invalid, got: {duration}"
 
-            self.animations[name] = Animation(name=name, frames=anim_frames, n_frames=n_frames, duration=duration, loop=is_loop, fps=self._fps)
+            self.animations[name] = Animation(name=name, frames=anim_frames, n_frames=n_frames, duration=duration, loop=is_loop, fps=self._fps, joints=tuple(annotation.get("joints", ())))
             self.logger.info(f"Animation loaded: [{name}]: [{n_frames} frames - {duration}s at {self._fps}, loop={is_loop}]")
 
     def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0) -> Animation:

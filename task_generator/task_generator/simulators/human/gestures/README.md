@@ -4,17 +4,23 @@ World-frame attention channels from the `arena_peds` bus become upper-body overl
 
 ## Wire
 
-Every `Pedestrian.gestures[]` entry is one channel: `slot` names the body part (`head`, `arm`, `arm_l`, `arm_r`),
-`at` is a world-frame point, `opts` is a JSON object string with per-slot options (empty = defaults).
+Every `Pedestrian.gestures[]` entry is one channel: `slot` names the body part (`head`, `arm`, `arm_l`, `arm_r`, `body`),
+`at` is a world-frame point (aimed slots), `clip` an animation name (`body`), `hand` the dominant hand (`arm`).
 `BaseHumanSimulator.publish_arena_peds` builds one `GestureRequest(channels, pose, moving)` per ped with a
-`Channel(slot, at, opts)` per entry (opts parsed every tick, invalid JSON warns once per ped and slot and becomes `{}`)
+`Channel(slot, at, clip, hand)` per entry (`Channel.opts` presents them to the generators as a dict)
 and passes it to `AnimationManager.compute(..., gesture=...)`, which calls the layer through `gesture_hook`.
 
-| slot | kind | opts | hand |
+| slot | kind | wire | hand |
 | --- | --- | --- | --- |
-| `head` | `look` | none | |
-| `arm` | `point` | `{"dominant": "l\|r"}` (default `r`) | resolved once at slot start: `dominant` within the 20 deg midline band, else the target-side arm |
-| `arm_l` / `arm_r` | `point` | none | forced left / right |
+| `head` | `look` | `at` | |
+| `arm` | `point` | `at`, `hand` (default `r`) | resolved once at slot start: `hand` within the 20 deg midline band, else the target-side arm |
+| `arm_l` / `arm_r` | `point` | `at` | forced left / right |
+| `body` | `clip` | `clip` | |
+
+`clip` plays the manager's cached `.npy` of that name as an overlay over the joints its entry in
+[animations/annotations.yaml](../animations/annotations.yaml) lists (none listed = whole body), looping when
+annotated so, else parking on the last frame until the channel disappears. It needs no target and no generator:
+the slot holds from the first tick and fades back into the gait on release.
 
 The engine publishes exactly the active channels each tick. Nothing is implicit: no head channel = the head idles
 while the arm points.

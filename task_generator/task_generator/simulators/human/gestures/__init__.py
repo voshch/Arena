@@ -29,9 +29,11 @@ RELEASE_STRETCH = 1.25  # lowering arcs play this much slower than the recorded 
 BREATH_HZ = 0.3
 BREATH_AMP_RAD = math.radians(1.5)
 
-SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point"}
-SLOT_OVERLAY = {"head": "head", "arm": "arm", "arm_l": "arm", "arm_r": "arm"}
-OVERLAYS = ("head", "arm")
+SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point", "body": "clip"}
+SLOT_OVERLAY = {"head": "head", "arm": "arm", "arm_l": "arm", "arm_r": "arm", "body": "body"}
+OVERLAYS = ("head", "arm", "body")
+AIMED_SLOTS = ("head", "arm", "arm_l", "arm_r")
+ZERO3 = np.zeros(3)
 
 
 def move_time(swept_rad: float) -> float:
@@ -58,11 +60,22 @@ def resample(frames: Sequence[dict], n: int) -> list[dict]:
 
 @attrs.frozen
 class Channel:
-    """One attention channel of a ped: wire slot, world target, per-slot options."""
+    """One attention channel of a ped: wire slot, world target (aimed slots), clip name (body), dominant hand (arm)."""
 
     slot: str
     at: tuple[float, float, float]
-    opts: dict = attrs.field(factory=dict)
+    clip: str = ""
+    hand: str = ""
+
+    @property
+    def opts(self) -> dict:
+        """Per-slot generator options as the ``Gesture`` protocol sees them."""
+        opts: dict = {}
+        if self.hand:
+            opts["dominant"] = self.hand
+        if self.clip:
+            opts["clip"] = self.clip
+        return opts
 
 
 @attrs.frozen
@@ -86,6 +99,8 @@ class GestureClip:
     hold: object
     report: dict
     release: Sequence[dict] | None = None  # lowering arc from the park pose, None = keep the previous one
+    joints: frozenset[str] | None = None  # blend set fixed by the clip itself, None = ask ``Gesture.joints``
+    loop: bool = False  # loop the whole clip on the hold instead of parking on ``hold_end``
 
 
 class Gesture(typing.Protocol):
@@ -106,21 +121,28 @@ class Gesture(typing.Protocol):
         ...
 
 
-GESTURES: ClassRegistry[str, Callable[[], Gesture]] = ClassRegistry()
+GESTURES: ClassRegistry[str, Callable[[AnimationManager], Gesture]] = ClassRegistry()
 
 
 @GESTURES.register("point")
-def _load_point() -> Callable[[], Gesture]:
+def _load_point() -> Callable[[AnimationManager], Gesture]:
     from .point import PointGesture
 
-    return PointGesture
+    return lambda _manager: PointGesture()
 
 
 @GESTURES.register("look")
-def _load_look() -> Callable[[], Gesture]:
+def _load_look() -> Callable[[AnimationManager], Gesture]:
     from .look import LookGesture
 
-    return LookGesture
+    return lambda _manager: LookGesture()
+
+
+@GESTURES.register("clip")
+def _load_clip() -> Callable[[AnimationManager], Gesture]:
+    from .clip import ClipGesture
+
+    return ClipGesture
 
 
 def world_to_local(at: Sequence[float], pose: Sequence[float]) -> np.ndarray:
@@ -235,8 +257,12 @@ class GestureLayer:
 
     def _gesture(self, kind: str) -> Gesture:
         if kind not in self._gestures:
-            self._gestures[kind] = GESTURES.get(kind)()
+            self._gestures[kind] = GESTURES.get(kind)(self._manager)
         return self._gestures[kind]
+
+    @staticmethod
+    def _joints(gesture: Gesture, clip: GestureClip, moving: bool) -> set[str]:
+        return set(clip.joints) if clip.joints is not None else gesture.joints(clip.side, moving)
 
     def _wanted(self, agent_id: int, req: GestureRequest) -> dict[str, Channel]:
         """Overlay slot -> channel; unknown slots warn once, a second arm channel is ignored."""
@@ -282,7 +308,7 @@ class GestureLayer:
     def _serve(self, agent_id: int, overlay: str, st: _Slot | None, ch: Channel, req: GestureRequest) -> None:
         kind = SLOT_KIND[ch.slot]
         gesture = self._gesture(kind)
-        local = world_to_local(ch.at, req.pose)
+        local = world_to_local(ch.at, req.pose) if ch.slot in AIMED_SLOTS else ZERO3
         ag = self._agents.get(agent_id)
         if st is None:
             if self._dropped.get((agent_id, overlay)) != self._drop_key(ch.slot, local, ch.opts):
@@ -304,7 +330,7 @@ class GestureLayer:
         for st in list(ag.slots.values()):
             if st.clip is None or st.phase == "release":
                 continue
-            joints = self._gesture(st.kind).joints(st.clip.side, ag.moving)
+            joints = self._joints(self._gesture(st.kind), st.clip, ag.moving)
             if joints != st.joints:
                 st.joints = joints
                 self._manager.set_overlay_joints(agent_id, st.slot, joints, FADE_S)
@@ -380,9 +406,9 @@ class GestureLayer:
             st.release_frames = clip.release
         self._report(agent_id, st, clip)
         gesture = self._gesture(st.kind)
-        st.joints = gesture.joints(clip.side, ag.moving)
+        st.joints = self._joints(gesture, clip, ag.moving)
         frames, loop_from = self._breathed(agent_id, st, clip, gesture.breathing(clip.side))
-        anim = self._manager.register_transient(f"gesture:{st.kind}:{agent_id}:{st.slot}", frames, fps=clip.fps, loop=loop_from is not None, owner=agent_id, loop_from=loop_from or 0)
+        anim = self._manager.register_transient(f"gesture:{st.kind}:{agent_id}:{st.slot}", frames, fps=clip.fps, loop=loop_from is not None or clip.loop, owner=agent_id, loop_from=loop_from or 0)
         self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, fade_in_s=FADE_S if fresh else 0.0, slot=st.slot, carry_ramps=not fresh)
 
     def _breathed(self, agent_id: int, st: _Slot, clip: GestureClip, amps: dict[str, float]) -> tuple[list[dict], int | None]:

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.animation_mananager import JOINT_NAMES, AnimationManager
 from task_generator.simulators.human.gestures import (
     BREATH_AMP_RAD,
     BREATH_HZ,
@@ -58,11 +58,11 @@ def req(*channels: Channel, moving: bool = False) -> GestureRequest:
 
 
 def arm(at: tuple[float, float, float], slot: str = "arm", **opts: str) -> Channel:
-    return Channel(slot, at, dict(opts))
+    return Channel(slot, at, hand=opts.get("dominant", ""))
 
 
 def head_ch(at: tuple[float, float, float]) -> Channel:
-    return Channel("head", at, {})
+    return Channel("head", at)
 
 
 def point(at: tuple[float, float, float], moving: bool = False, **opts: str) -> GestureRequest:
@@ -637,3 +637,53 @@ def test_retarget_install_carries_the_moving_crossfade(rig):
     assert steps.max() < 0.1
     assert max(abs(seen[0][j] - seen[-1][j]) for j in spine) > 0.05
 
+
+
+# -- body clips ----------------------------------------------------------------
+
+
+def body(clip: str) -> Channel:
+    return Channel("body", (0.0, 0.0, 0.0), clip=clip)
+
+
+def test_clip_channel_plays_annotated_joints_and_loops(rig):
+    mgr, layer, log = rig
+    r = req(body("wave"))
+    tick(mgr, 1, r)
+    st = layer._agents[1].slots["body"]
+    anim = mgr.animations["wave"]
+    assert st.kind == "clip" and st.clip is not None and st.clip.loop is anim.loop
+    assert st.joints == set(anim.joints) and "l_knee" not in st.joints and "r_elbow" in st.joints
+    overlay = mgr._ped_blend[1]["body"]
+    assert overlay.anim.loop and overlay.anim.n_frames == anim.n_frames
+    angles = tick(mgr, 1, r, n=anim.n_frames + 5)
+    assert set(angles) == set(JOINT_NAMES)
+    assert "body" in layer._agents[1].slots
+    assert not [line for line in log.lines if "failed" in line or "rejected" in line]
+
+
+def test_clip_channel_whole_body_when_unannotated(rig):
+    mgr, layer, _ = rig
+    tick(mgr, 1, req(body("jump")))
+    st = layer._agents[1].slots["body"]
+    assert st.joints == set(JOINT_NAMES)
+    assert not mgr._ped_blend[1]["body"].anim.loop
+
+
+def test_clip_channel_releases_with_fade_and_unknown_clip_drops(rig):
+    mgr, layer, log = rig
+    r = req(body("wave"))
+    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.animations["wave"].n_frames + 4)
+    tick(mgr, 1, req(), n=int(FADE_S / DT) + 4)
+    assert 1 not in layer._agents
+    tick(mgr, 2, req(body("no_such_clip")), n=2)
+    assert 2 not in layer._agents
+    assert sum("rejected" in line for line in log.lines) == 1
+
+
+def test_clip_and_point_share_a_ped(rig):
+    mgr, layer, _ = rig
+    r = req(arm((1.0, 5.0, 1.2)), body("wave"))
+    tick(mgr, 1, r, n=3)
+    slots = layer._agents[1].slots
+    assert set(slots) == {"arm", "body"}

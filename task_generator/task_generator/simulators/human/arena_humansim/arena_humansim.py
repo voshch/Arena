@@ -79,8 +79,8 @@ from geometry_msgs.msg import Pose as PoseMsg
 from geometry_msgs.msg import (
     Pose2D as Pose2DMsg,
 )
-from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
-from rcl_interfaces.srv import GetParameters, SetParameters
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters
 from rclpy.qos import (
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
@@ -91,7 +91,7 @@ from visualization_msgs.msg import MarkerArray
 
 from task_generator.constants import Constants
 from task_generator.constants.rng import stable_int
-from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, resolve_agent_type_path
 
@@ -202,11 +202,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             Feedback,
             self.node.service_namespace(self.SERVICE_FEEDBACK),
         )
-        self._set_parameters_client: ClientWrapper = self.node.create_client_wrapper(
-            SetParameters,
-            self.node.service_namespace("arena_humansim", "set_parameters"),
-        )
-        self._sent_origin: tuple[float, float] | None = None
         self._publish_pending = False
 
         self._next_id: int = 1
@@ -412,7 +407,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     self._reset_client,
                     self._get_profile_client,
                     self._feedback_client,
-                    self._set_parameters_client,
                 )
             )
         )
@@ -505,9 +499,23 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Create a DynamicObstacle for a source-spawned agent using a default model."""
         return self._runtime_obstacle(
             name=f"flow_{agent.agent_id}",
-            pose=Pose(Position(agent.pose.x, agent.pose.y)),
+            pose=Pose(Position(*self._from_engine(agent.pose.x, agent.pose.y))),
             velocity=agent.desired_velocity,
         )
+
+    # The engine runs in the world frame (authored coordinates, levels laid out), this adapter owns the env offset:
+    # everything sent in is un-shifted, everything coming out is shifted back.
+    def _to_engine(self, x: float, y: float) -> tuple[float, float]:
+        cfg = self._realizer.get_config()
+        return float(x - cfg.x), float(y - cfg.y)
+
+    def _from_engine(self, x: float, y: float) -> tuple[float, float]:
+        cfg = self._realizer.get_config()
+        return float(x + cfg.x), float(y + cfg.y)
+
+    def _engine_pose(self, pose: Pose) -> Pose2DMsg:
+        x, y = self._to_engine(pose.position.x, pose.position.y)
+        return Pose2DMsg(x=x, y=y, theta=pose.orientation.to_yaw())
 
     async def _pedestrian_update_loop(self):
         """Spawn an actor for each flow agent a source creates, delete it when a
@@ -577,12 +585,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a = AgentStateMsg()
             a.agent_id = stable_int(robot.name) & 0x7FFFFFFF
             a.name = robot.name
-            yaw = robot.pose.orientation.to_yaw()
-            a.pose = Pose2DMsg(
-                x=robot.pose.position.x,
-                y=robot.pose.position.y,
-                theta=yaw,
-            )
+            a.pose = self._engine_pose(robot.pose)
             a.radius = 0.3
             msg.agents.append(a)
         name_to_aid = {agent_name: aid for aid, agent_name in self._agent_names.items()}
@@ -591,11 +594,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             aid = name_to_aid.get(name)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
             a.name = name
-            a.pose = Pose2DMsg(
-                x=ped.pose.position.x,
-                y=ped.pose.position.y,
-                theta=Orientation.from_msg(ped.pose.orientation).to_yaw(),
-            )
+            a.pose = self._engine_pose(Pose.from_msg(ped.pose))
             a.velocity = ped.twist.linear
             a.radius = 0.35
             msg.agents.append(a)
@@ -611,8 +610,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.name = self._agent_names.get(agent.agent_id, str(agent.agent_id))
 
             yaw = agent.pose.theta
+            x, y = self._from_engine(agent.pose.x, agent.pose.y)
             ped.pose = PoseMsg(
-                position=Point(x=agent.pose.x, y=agent.pose.y, z=0.0),
+                position=Point(x=x, y=y, z=0.0),
                 orientation=Quaternion(
                     z=math.sin(yaw / 2.0),
                     w=math.cos(yaw / 2.0),
@@ -621,7 +621,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.twist = Twist(linear=agent.velocity)
 
             ped.animation_state = agent.animation_state
-            ped.gestures = [GestureMsg(slot=g.slot, at=g.at, opts=g.opts) for g in agent.gestures]
+            ped.gestures = [GestureMsg(slot=g.slot, at=Point(x=gx, y=gy, z=g.at.z), clip=g.clip, hand=g.hand) for g in agent.gestures for gx, gy in (self._from_engine(g.at.x, g.at.y),)]
 
             peds.pedestrians.append(ped)
         return peds
@@ -667,7 +667,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         src_msg = SourceConfigMsg()
         src_msg.name = region.name
         centroid = self._polygon_centroid(region.polygon)
-        src_msg.pose = Pose2DMsg(x=centroid[0], y=centroid[1], theta=0.0)
+        cx, cy = self._to_engine(*centroid)
+        src_msg.pose = Pose2DMsg(x=cx, y=cy, theta=0.0)
         src_msg.shape = self._polygon_to_shape_msg(region.polygon, centroid)
 
         cfg = region.config
@@ -704,7 +705,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         sink_msg = SinkConfigMsg()
         sink_msg.name = region.name
         centroid = self._polygon_centroid(region.polygon)
-        sink_msg.pose = Pose2DMsg(x=centroid[0], y=centroid[1], theta=0.0)
+        cx, cy = self._to_engine(*centroid)
+        sink_msg.pose = Pose2DMsg(x=cx, y=cy, theta=0.0)
         sink_msg.shape = self._polygon_to_shape_msg(region.polygon, centroid)
 
         cfg = region.config
@@ -777,11 +779,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         world_objects_request = AddWorldObjects.Request()
         for obstacle, resolved in zip(obstacles, resolved_paths, strict=False):
             try:
-                pose = Pose2DMsg(
-                    x=obstacle.pose.position.x,
-                    y=obstacle.pose.position.y,
-                    theta=obstacle.pose.orientation.to_yaw(),
-                )
+                pose = self._engine_pose(obstacle.pose)
 
                 obstacle_type = ""
                 try:
@@ -848,25 +846,11 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         return obstacles
 
-    async def _sync_origin(self) -> None:
-        """Tell the engine the env reference so authored agent-type coordinates land in the realized frame."""
-        cfg = self._realizer.get_config()
-        origin = (float(cfg.x), float(cfg.y))
-        if origin == self._sent_origin:
-            return
-        request = SetParameters.Request()
-        request.parameters = [Parameter(name="origin", value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=list(origin)))]
-        response = await self._set_parameters_client.call_timeout(request)
-        if response is None or not all(r.successful for r in response.results):
-            raise RuntimeError(f"arena_humansim rejected origin {origin}")
-        self._sent_origin = origin
-
     async def _spawn_dynamic_obstacles_impl(self, obstacles: Sequence[DynamicObstacle]) -> Sequence[DynamicObstacle | None]:
         """Forward dynamic obstacles to arena_humansim AgentManager via SpawnAgents."""
         if not obstacles:
             return obstacles
 
-        await self._sync_origin()
         request = SpawnAgents.Request()
         for obstacle in obstacles:
             agent_msg = AgentStateMsg()
@@ -876,11 +860,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._agent_names[self._next_id] = obstacle.sim_path
             self._next_id += 1
 
-            agent_msg.pose = Pose2DMsg(
-                x=obstacle.pose.position.x,
-                y=obstacle.pose.position.y,
-                theta=obstacle.pose.orientation.to_yaw(),
-            )
+            agent_msg.pose = self._engine_pose(obstacle.pose)
             agent_msg.velocity = Vector3(x=0.0, y=0.0, z=0.0)
 
             parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
@@ -908,14 +888,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.agent_type = ""
                 agent_msg.handedness = ""
 
-            if parsed is not None:
-                agent_msg.waypoints = parsed.waypoints_msg
-            else:
-                wp_msg = WaypointsMsg()
-                wp_msg.mode = WaypointsMsg.MODE_REPEAT
-                for wp in obstacle.waypoints:
-                    wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wp.x, y=wp.y, theta=0.0)))
-                agent_msg.waypoints = wp_msg
+            wp_msg = WaypointsMsg()
+            wp_msg.mode = parsed.waypoint_mode if parsed is not None else WaypointsMsg.MODE_REPEAT
+            for wp in obstacle.waypoints:
+                wx, wy = self._to_engine(wp.x, wp.y)
+                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wx, y=wy, theta=0.0)))
+            agent_msg.waypoints = wp_msg
             request.agents.append(agent_msg)
 
         try:
@@ -1007,8 +985,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         request = AddWalls.Request()
         for name, wall in walls.items():
             request.names.append(name)
-            request.starts.append(Point32(x=float(wall.start.x), y=float(wall.start.y), z=0.0))
-            request.ends.append(Point32(x=float(wall.end.x), y=float(wall.end.y), z=0.0))
+            sx, sy = self._to_engine(wall.start.x, wall.start.y)
+            ex, ey = self._to_engine(wall.end.x, wall.end.y)
+            request.starts.append(Point32(x=sx, y=sy, z=0.0))
+            request.ends.append(Point32(x=ex, y=ey, z=0.0))
 
         try:
             response = await self._add_walls_client.call_timeout(request)
