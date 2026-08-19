@@ -13,9 +13,11 @@ from .generator import (
     point_at,
 )
 from .skeleton import Body, fk
+from .table import BakedPointAt, PointTable, bake
 
 __all__ = [
     "PointAtGenerator", "PointAtOptions", "PointAtClip", "HoldPose", "Template", "TEMPLATES",
     "point_at", "load_template", "direction_from_angles", "angles_from_direction",
+    "BakedPointAt", "PointTable", "bake",
     "Body", "fk",
 ]

@@ -30,7 +30,7 @@ setup(
         (os.path.join('share', package_name, 'launch', 'human', 'arena_humansim'),
          existing('launch/human/arena_humansim/*.launch.py')),
         (os.path.join('share', package_name, 'simulators', 'human', 'animations'),
-         existing('task_generator/simulators/human/animations/*.npy')),
+         existing('task_generator/simulators/human/animations/*.npy', 'task_generator/simulators/human/animations/*.npz')),
         (os.path.join('share', package_name, 'config', 'auditory'),
         existing('config/auditory/*.yaml')),
         (os.path.join('share', package_name, 'sounds'),

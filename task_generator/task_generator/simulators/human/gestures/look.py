@@ -32,9 +32,8 @@ def _ease(n: int) -> list[float]:
 class LookGesture:
     """Head triple only. The aim anchor is the rest-pose eye point (torso assumed upright, spine pose ignored)."""
 
-    slot = "head"
-    REACH_IN = 1.05
-    REACH_OUT = 1.22
+    REACH_IN = math.radians(60.0)
+    REACH_OUT = math.radians(70.0)
 
     def __init__(self, height: float = BODY_HEIGHT) -> None:
         pos, _ = S.fk(dict.fromkeys(ROS_JOINT_ORDER, 0.0), S.Body(height))
@@ -47,8 +46,8 @@ class LookGesture:
         d = np.asarray(local, dtype=float) - self.anchor
         return abs(math.atan2(d[1], d[0]))
 
-    def companions(self) -> list[tuple[str, str]]:
-        return []
+    def bind(self, slot: str, local: np.ndarray, opts: dict) -> dict:
+        return dict(opts)
 
     def breathing(self, side: str) -> dict[str, float]:
         return {}

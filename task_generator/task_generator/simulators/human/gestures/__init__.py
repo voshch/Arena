@@ -1,4 +1,4 @@
-"""Gesture layer: turns world-frame gesture intents on the bus into upper-body overlay slots on the AnimationManager."""
+"""Gesture layer: turns world-frame attention channels on the bus into upper-body overlay slots on the AnimationManager."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 
 import attrs
 import numpy as np
+from arena_humansim.core.behavior.reach import ARM_IN, ARM_OUT, HEAD_IN, HEAD_OUT
 from arena_rclpy_mixins.registry import ClassRegistry
 
 if typing.TYPE_CHECKING:
@@ -23,14 +24,16 @@ RETARGET_EPS_M = 0.15
 FADE_S = 0.25
 HOLD_MIN_S = 0.6
 TRANSITION_S = 0.4
-GAZE_LEAD_S = 0.15  # companions install this long before the primary
-COMPANION_RELEASE_LAG_S = 0.3
 OMEGA_RAD_S = 3.5  # arm/head sweep rate that sets ramp and transition durations
 MOVE_MIN_S = 0.3
 MOVE_MAX_S = 0.9
 RELEASE_STRETCH = 1.25  # lowering arcs play this much slower than the recorded template
 BREATH_HZ = 0.3
 BREATH_AMP_RAD = math.radians(1.5)
+
+SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point"}
+SLOT_OVERLAY = {"head": "head", "arm": "arm", "arm_l": "arm", "arm_r": "arm"}
+OVERLAYS = ("head", "arm")
 
 
 def move_time(swept_rad: float) -> float:
@@ -56,14 +59,21 @@ def resample(frames: Sequence[dict], n: int) -> list[dict]:
 
 
 @attrs.frozen
-class GestureRequest:
-    """One tick of gesture intent for one ped, world frame."""
+class Channel:
+    """One attention channel of a ped: wire slot, world target, per-slot options."""
 
-    kind: str
+    slot: str
     at: tuple[float, float, float]
+    opts: dict = attrs.field(factory=dict)
+
+
+@attrs.frozen
+class GestureRequest:
+    """One tick of attention channels for one ped, world frame."""
+
+    channels: tuple[Channel, ...]
     pose: tuple[float, float, float]  # x, y, yaw
     moving: bool
-    opts: dict = attrs.field(factory=dict)
 
 
 @attrs.frozen
@@ -81,7 +91,6 @@ class GestureClip:
 
 
 class Gesture(typing.Protocol):
-    slot: str  # overlay slot this kind drives when it is the primary
     REACH_IN: float  # reach metric below which a new gesture starts
     REACH_OUT: float  # reach metric above which an active gesture releases
 
@@ -91,14 +100,14 @@ class Gesture(typing.Protocol):
         """Reach metric of a ped-local target (radians of azimuth for aimed kinds)."""
         ...
 
+    def bind(self, slot: str, local: np.ndarray, opts: dict) -> dict:
+        """Options frozen at slot start and reused for every retarget of that slot."""
+        ...
+
     def start(self, local: np.ndarray, opts: dict) -> GestureClip: ...
 
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         """Continue from a held pose to a new target. Raise ValueError to force a restart."""
-        ...
-
-    def companions(self) -> list[tuple[str, str]]:
-        """(slot, kind) pairs driven alongside this kind at the same target."""
         ...
 
     def breathing(self, side: str) -> dict[str, float]:
@@ -161,12 +170,14 @@ def breath_phase(agent_id: int) -> float:
 
 
 class _Slot:
-    """State of one (agent, slot): the clip it plays, its phase, and its job."""
+    """State of one (agent, overlay slot): the channel it serves, the clip it plays, its phase, and its job."""
 
     __slots__ = (
         "age",
+        "bound",
         "breath_ease_s",
         "breath_origin",
+        "channel",
         "clip",
         "hold",
         "job",
@@ -176,22 +187,19 @@ class _Slot:
         "local",
         "opts",
         "phase",
-        "primary",
-        "release_at",
         "release_frames",
         "release_pending",
-        "retarget_pending",
         "slot",
         "t",
-        "wait",
     )
 
-    def __init__(self, slot: str, kind: str, local: np.ndarray, opts: dict, *, primary: bool, wait: float = 0.0) -> None:
+    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict) -> None:
         self.slot = slot
+        self.channel = channel
         self.kind = kind
         self.local = local
         self.opts = opts
-        self.primary = primary
+        self.bound = bound
         self.phase = "requested"  # requested | ramp | hold | transition | release
         self.job: concurrent.futures.Future | None = None
         self.job_kind = "start"  # start | retarget
@@ -201,25 +209,17 @@ class _Slot:
         self.release_frames: Sequence[dict] = ()
         self.t = 0.0  # seconds since the current clip was installed
         self.age = 0.0  # seconds since the slot was requested
-        self.wait = wait  # age before the first clip may install
         self.release_pending = False
-        self.release_at: float | None = None  # companion countdown to release, set by the primary
-        self.retarget_pending: np.ndarray | None = None  # companion retarget deferred until it holds
         self.breath_origin: float | None = None  # age at which the breathing clock started
         self.breath_ease_s = 0.0
 
 
 class _Agent:
-    __slots__ = ("moving", "primary", "slots")
+    __slots__ = ("moving", "slots")
 
-    def __init__(self, primary: str) -> None:
-        self.primary = primary
+    def __init__(self) -> None:
         self.slots: dict[str, _Slot] = {}
         self.moving = False
-
-    @property
-    def main(self) -> _Slot | None:
-        return self.slots.get(self.primary)
 
 
 class GestureLayer:
@@ -233,7 +233,7 @@ class GestureLayer:
         self._gestures: dict[str, Gesture] = {}
         self._agents: dict[int, _Agent] = {}
         self._warned: dict[int, set[str]] = {}
-        self._dropped: dict[int, tuple] = {}  # last request whose primary generator failed, not resubmitted until it changes
+        self._dropped: dict[tuple[int, str], tuple] = {}  # last channel whose generator failed, not resubmitted until it changes
 
     def forget(self, agent_id: int) -> None:
         ag = self._agents.pop(agent_id, None)
@@ -242,7 +242,8 @@ class GestureLayer:
                 if st.job is not None:
                     st.job.cancel()
         self._warned.pop(agent_id, None)
-        self._dropped.pop(agent_id, None)
+        for key in [k for k in self._dropped if k[0] == agent_id]:
+            del self._dropped[key]
 
     def _warn_once(self, agent_id: int, key: str, msg: str) -> None:
         seen = self._warned.setdefault(agent_id, set())
@@ -257,16 +258,27 @@ class GestureLayer:
         return self._gestures[kind]
 
     def _reachable(self, gesture: Gesture, st: _Slot | None, local: np.ndarray) -> bool:
-        """Reach test with hysteresis: a live slot of that kind keeps going up to REACH_OUT."""
+        """Reach test with hysteresis: a live slot keeps going up to REACH_OUT."""
         limit = gesture.REACH_OUT if st is not None and st.phase != "release" else gesture.REACH_IN
         return gesture.reach(local) <= limit
 
+    def _wanted(self, agent_id: int, req: GestureRequest) -> dict[str, Channel]:
+        """Overlay slot -> channel; unknown slots warn once, a second arm channel is ignored."""
+        wanted: dict[str, Channel] = {}
+        for ch in req.channels:
+            overlay = SLOT_OVERLAY.get(ch.slot)
+            if overlay is None:
+                self._warn_once(agent_id, f"slot:{ch.slot}", f"gesture slot {ch.slot!r} for ped {agent_id} is unknown, known: {sorted(SLOT_OVERLAY)}")
+                continue
+            if overlay in wanted:
+                self._warn_once(agent_id, f"dup:{overlay}", f"ped {agent_id} publishes several {overlay} channels, keeping {wanted[overlay].slot!r}")
+                continue
+            wanted[overlay] = ch
+        return wanted
+
     def __call__(self, agent_id: int, request: object, dt: float) -> None:
         ag = self._agents.get(agent_id)
-        req = request if isinstance(request, GestureRequest) and request.kind else None
-        if req is not None and req.kind not in GESTURES:
-            self._warn_once(agent_id, f"kind:{req.kind}", f"gesture {req.kind!r} for ped {agent_id} is not registered, known: {sorted(GESTURES.keys())}")
-            req = None
+        req = request if isinstance(request, GestureRequest) else None
 
         if ag is not None:
             if req is not None and req.moving != ag.moving:
@@ -275,57 +287,59 @@ class GestureLayer:
             for st in list(ag.slots.values()):
                 st.t += dt
                 st.age += dt
-                if st.release_at is not None:
-                    st.release_at -= dt
             self._poll_all(agent_id, ag)
             ag = self._agents.get(agent_id)
 
-        if ag is not None and (ag.main is None or any(st.phase == "release" for st in ag.slots.values())):
-            return
+        wanted = self._wanted(agent_id, req) if req is not None else {}
+        for overlay in OVERLAYS:
+            st = ag.slots.get(overlay) if ag is not None else None
+            ch = wanted.get(overlay)
+            if ch is None:
+                if st is not None and st.phase != "release":
+                    self._release(agent_id, ag, st)
+                continue
+            if st is not None and st.phase == "release":
+                continue
+            assert req is not None
+            self._serve(agent_id, overlay, st, ch, req)
 
-        if req is None:
-            if ag is not None:
-                self._release_agent(agent_id, ag)
+    def _serve(self, agent_id: int, overlay: str, st: _Slot | None, ch: Channel, req: GestureRequest) -> None:
+        kind = SLOT_KIND[ch.slot]
+        gesture = self._gesture(kind)
+        local = world_to_local(ch.at, req.pose)
+        ag = self._agents.get(agent_id)
+        if not self._reachable(gesture, st, local):
+            if st is not None:
+                self._release(agent_id, ag, st)
             return
-
-        gesture = self._gesture(req.kind)
-        local = world_to_local(req.at, req.pose)
-        main = ag.main if ag is not None else None
-        if not self._reachable(gesture, main if main is not None and main.kind == req.kind else None, local):
-            if ag is not None:
-                self._release_agent(agent_id, ag)
+        if st is None:
+            if self._dropped.get((agent_id, overlay)) != self._drop_key(ch.slot, local, ch.opts):
+                self._start_slot(agent_id, overlay, ch, kind, local, req.moving)
             return
-        if ag is None:
-            if self._dropped.get(agent_id) != self._drop_key(req.kind, local, req.opts):
-                self._start_agent(agent_id, req.kind, local, req.opts, req.moving)
+        if st.channel != ch.slot or st.opts != ch.opts:
+            self._release(agent_id, ag, st, restart=True)
             return
-        assert main is not None
-        if main.kind != req.kind:
-            self._release_agent(agent_id, ag)
-            return
-        if main.opts != req.opts:
-            self._release_agent(agent_id, ag, restart=True)
-            return
-        for st in ag.slots.values():
-            st.release_pending = False
-        if main.phase == "hold" and main.job is None and float(np.linalg.norm(local - main.local)) > RETARGET_EPS_M:
-            self._retarget(agent_id, main, local)
-            if main.phase != "release":
-                self._sync_companions(agent_id, ag, local)
+        st.release_pending = False
+        if st.phase == "hold" and st.job is None and float(np.linalg.norm(local - st.local)) > RETARGET_EPS_M:
+            self._retarget(agent_id, st, local)
 
     @staticmethod
-    def _drop_key(kind: str, local: np.ndarray, opts: dict) -> tuple:
-        return (kind, tuple(np.round(local, 1).tolist()), json.dumps(opts, sort_keys=True))
+    def _drop_key(channel: str, local: np.ndarray, opts: dict) -> tuple:
+        return (channel, tuple(np.round(local, 1).tolist()), json.dumps(opts, sort_keys=True))
 
     def _rejoint(self, agent_id: int, ag: _Agent) -> None:
-        """Walking started or stopped: live overlays swap their blend set through a per-joint crossfade."""
-        for st in ag.slots.values():
+        """Walking flip: crossfade the blend set and re-solve live holds against the torso now shown."""
+        for st in list(ag.slots.values()):
             if st.clip is None or st.phase == "release":
                 continue
             joints = self._gesture(st.kind).joints(st.clip.side, ag.moving)
             if joints != st.joints:
                 st.joints = joints
                 self._manager.set_overlay_joints(agent_id, st.slot, joints, FADE_S)
+            if st.bound.get("moving") != ag.moving:
+                st.bound = {**st.bound, "moving": ag.moving}
+                if st.phase == "hold" and st.job is None:
+                    self._retarget(agent_id, st, st.local)
 
     # -- transitions ------------------------------------------------------
 
@@ -339,52 +353,29 @@ class GestureLayer:
             return fut
         return self._executor.submit(fn)
 
-    def _start_agent(self, agent_id: int, kind: str, local: np.ndarray, opts: dict, moving: bool) -> None:
+    def _start_slot(self, agent_id: int, overlay: str, ch: Channel, kind: str, local: np.ndarray, moving: bool) -> None:
+        ag = self._agents.get(agent_id)
+        if ag is None:
+            ag = _Agent()
+            ag.moving = moving
+            self._agents[agent_id] = ag
         gesture = self._gesture(kind)
-        ag = _Agent(gesture.slot)
-        ag.moving = moving
-        self._agents[agent_id] = ag
-        companions = [(slot, ckind) for slot, ckind in gesture.companions() if self._reachable(self._gesture(ckind), None, local)]
-        for slot, ckind in companions:
-            self._start_slot(agent_id, ag, slot, ckind, local, opts, primary=False)
-        self._start_slot(agent_id, ag, gesture.slot, kind, local, opts, primary=True, wait=GAZE_LEAD_S if companions else 0.0)
-
-    def _start_slot(self, agent_id: int, ag: _Agent, slot: str, kind: str, local: np.ndarray, opts: dict, *, primary: bool, wait: float = 0.0) -> None:
-        st = _Slot(slot, kind, local, opts, primary=primary, wait=wait)
-        ag.slots[slot] = st
-        gesture = self._gesture(kind)
-        st.job = self._submit(lambda: gesture.start(local, opts))
+        bound = gesture.bind(ch.slot, local, {**ch.opts, "moving": moving})
+        st = _Slot(overlay, ch.slot, kind, local, ch.opts, bound)
+        ag.slots[overlay] = st
+        st.job = self._submit(lambda: gesture.start(local, bound))
         st.job_kind = "start"
         self._poll(agent_id, ag, st)
 
     def _retarget(self, agent_id: int, st: _Slot, local: np.ndarray) -> None:
         gesture = self._gesture(st.kind)
         hold = st.hold
-        opts = st.opts
+        bound = st.bound
         st.local = local
-        st.retarget_pending = None
-        st.job = self._submit(lambda: gesture.retarget(hold, local, opts))
+        st.job = self._submit(lambda: gesture.retarget(hold, local, bound))
         st.job_kind = "retarget"
         ag = self._agents[agent_id]
         self._poll(agent_id, ag, st)
-
-    def _sync_companions(self, agent_id: int, ag: _Agent, local: np.ndarray) -> None:
-        """Companions follow the primary's new target: start, retarget, or release each on its own reach."""
-        main = ag.main
-        assert main is not None
-        for slot, kind in self._gesture(main.kind).companions():
-            st = ag.slots.get(slot)
-            gesture = self._gesture(kind)
-            if not self._reachable(gesture, st, local):
-                if st is not None and st.phase != "release":
-                    st.release_at = 0.0
-                continue
-            if st is None:
-                self._start_slot(agent_id, ag, slot, kind, local, main.opts, primary=False)
-            elif st.phase == "hold" and st.job is None:
-                self._retarget(agent_id, st, local)
-            elif st.phase != "release":
-                st.retarget_pending = local
 
     def _poll_all(self, agent_id: int, ag: _Agent) -> None:
         for st in list(ag.slots.values()):
@@ -393,17 +384,14 @@ class GestureLayer:
             self._poll(agent_id, ag, st)
 
     def _poll(self, agent_id: int, ag: _Agent, st: _Slot) -> None:
-        if st.job is not None and st.job.done() and st.age + 1e-9 >= st.wait:
+        if st.job is not None and st.job.done():
             job, st.job = st.job, None
             try:
                 clip = job.result()
             except ValueError as e:
                 if st.job_kind == "retarget":
                     self._logger.info(f"gesture {st.kind!r} for ped {agent_id}: {e}, restarting")
-                    if st.primary:
-                        self._release_agent(agent_id, ag, restart=True)
-                    else:
-                        self._release(agent_id, ag, st, restart=True)
+                    self._release(agent_id, ag, st, restart=True)
                     return
                 self._drop(agent_id, ag, st, f"gesture {st.kind!r} for ped {agent_id} rejected: {e}")
                 return
@@ -413,33 +401,19 @@ class GestureLayer:
             self._install(agent_id, ag, st, clip)
         if st.phase in ("ramp", "transition") and st.clip is not None and st.t >= st.clip.hold_start / st.clip.fps:
             st.phase = "hold"
-        if st.phase == "hold" and st.job is None and st.retarget_pending is not None:
-            self._retarget(agent_id, st, st.retarget_pending)
-            return
-        if st.release_at is not None and st.release_at <= 1e-9 and st.phase != "release":
-            self._release(agent_id, ag, st, restart=True)
-            return
         if st.release_pending and st.phase == "hold" and st.job is None and st.t >= st.clip.hold_start / st.clip.fps + HOLD_MIN_S:
             self._release(agent_id, ag, st)
 
     def _drop(self, agent_id: int, ag: _Agent, st: _Slot, msg: str) -> None:
         self._warn_once(agent_id, f"drop:{st.kind}", msg)
-        if st.primary:
-            self._dropped[agent_id] = self._drop_key(st.kind, st.local, st.opts)
-            self._agents.pop(agent_id, None)
-            for other in ag.slots.values():
-                if other.job is not None:
-                    other.job.cancel()
-                if other.clip is not None:
-                    self._manager.clear_ped_blend(agent_id, FADE_S, slot=other.slot)
-            return
-        ag.slots.pop(st.slot, None)
+        self._dropped[(agent_id, st.slot)] = self._drop_key(st.channel, st.local, st.opts)
         if st.clip is not None:
             self._manager.clear_ped_blend(agent_id, FADE_S, slot=st.slot)
+        self._end_slot(agent_id, ag, st)
 
     def _install(self, agent_id: int, ag: _Agent, st: _Slot, clip: GestureClip) -> None:
         fresh = st.clip is None
-        self._dropped.pop(agent_id, None)
+        self._dropped.pop((agent_id, st.slot), None)
         st.clip = clip
         st.hold = clip.hold
         st.t = 0.0
@@ -503,12 +477,6 @@ class GestureLayer:
             k = loop_from + (k - loop_from) % (n - loop_from)
         return anim_frames[min(k, n - 1)]["angles"]
 
-    def _release_agent(self, agent_id: int, ag: _Agent, *, restart: bool = False) -> None:
-        """Release the primary, companions follow after COMPANION_RELEASE_LAG_S once it really lowers."""
-        main = ag.main
-        if main is not None:
-            self._release(agent_id, ag, main, restart=restart)
-
     def _release(self, agent_id: int, ag: _Agent, st: _Slot, *, restart: bool = False) -> None:
         clip = st.clip
         if clip is None:
@@ -524,11 +492,6 @@ class GestureLayer:
         st.phase = "release"
         st.job = None
         st.release_pending = False
-        st.retarget_pending = None
-        if st.primary:
-            for other in ag.slots.values():
-                if other is not st and other.phase != "release":
-                    other.release_at = COMPANION_RELEASE_LAG_S
         anim_name = f"gesture:{st.kind}:{agent_id}:{st.slot}"
         current = self._manager.animations.get(anim_name)
         park_all = self._park(st, current.frames) if current is not None else clip.frames[clip.hold_end]["angles"]
@@ -554,12 +517,6 @@ class GestureLayer:
         if st.job is not None:
             st.job.cancel()
         ag.slots.pop(st.slot, None)
-        if st.primary:
-            for other in list(ag.slots.values()):
-                if other.clip is None:
-                    self._end_slot(agent_id, ag, other)
-                elif other.phase != "release":
-                    other.release_at = 0.0
         if not ag.slots:
             self._agents.pop(agent_id, None)
 
@@ -569,3 +526,15 @@ class GestureLayer:
         if rep.get("ok", True) and not flags:
             return
         self._warn_once(agent_id, f"report:{st.kind}", f"gesture {st.kind!r} for ped {agent_id} at local {np.round(st.local, 2).tolist()}: ok={rep.get('ok')} {' '.join(flags)} clearance={rep.get('clearance_m')}")
+
+
+def _assert_reach_bands() -> None:
+    """The layer's hysteresis bands must match the engine's advance rule."""
+    from .look import LookGesture
+    from .point import PointGesture
+
+    for name, band, want in (("arm", (PointGesture.REACH_IN, PointGesture.REACH_OUT), (ARM_IN, ARM_OUT)), ("head", (LookGesture.REACH_IN, LookGesture.REACH_OUT), (HEAD_IN, HEAD_OUT))):
+        assert band == want, f"{name} reach band {band} rad drifted from arena_humansim reach constants {want}"
+
+
+_assert_reach_bands()

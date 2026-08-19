@@ -62,6 +62,7 @@ from arena_humansim_msgs.srv import (
     SpawnAgents,
     UpdateRobot,
 )
+from arena_people_msgs.msg import Gesture as GestureMsg
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
@@ -356,9 +357,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.desired_velocity = curr_a.desired_velocity
             a.radius = curr_a.radius
             a.name = curr_a.name
-            a.gesture = curr_a.gesture
-            a.gesture_at = curr_a.gesture_at
-            a.gesture_opts = curr_a.gesture_opts
+            a.handedness = curr_a.handedness
+            a.gestures = curr_a.gestures
             msg.agents.append(a)
         return msg
 
@@ -618,9 +618,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 ped.animation_state = Pedestrian.WALKING
             else:
                 ped.animation_state = Pedestrian.IDLE
-            ped.gesture.kind = agent.gesture
-            ped.gesture.at = agent.gesture_at
-            ped.gesture.opts = agent.gesture_opts
+            ped.gestures = [GestureMsg(slot=g.slot, at=g.at, opts=g.opts) for g in agent.gestures]
 
             peds.pedestrians.append(ped)
         return peds
@@ -895,6 +893,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.repulsion_strength = lp.get("repulsion_strength", 0.0)
                 agent_msg.repulsion_range = lp.get("repulsion_range", 0.0)
                 agent_msg.agent_type = parsed.agent_type
+                agent_msg.handedness = params.handedness
             else:
                 agent_msg.desired_velocity = float(obstacle.velocity)
                 agent_msg.radius = 0.35
@@ -904,6 +903,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.repulsion_strength = 0.0
                 agent_msg.repulsion_range = 0.0
                 agent_msg.agent_type = ""
+                agent_msg.handedness = ""
 
             if parsed is not None:
                 agent_msg.waypoints = parsed.waypoints_msg

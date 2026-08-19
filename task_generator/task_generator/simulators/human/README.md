@@ -72,20 +72,20 @@ The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and t
 
 ## Gestures
 
-`Pedestrian.gesture` (`arena_people_msgs/Gesture`: `kind` string, `at` world-frame point, `opts` JSON string)
-is an intent, not a pose. Backends only forward it (arena_humansim copies
-`AgentState.gesture`/`gesture_at`/`gesture_opts`, the possession stream carries it as-is), and
-`publish_arena_peds` hands it per ped to the [`GestureLayer`](gestures/__init__.py) as a `GestureRequest`
-(kind, world target, ped pose, moving flag, opts dict). `opts` is parsed there: empty string = `{}`, invalid
-JSON warns once per ped and counts as `{}`. The layer resolves the target into the ped frame once per clip,
-asks the registered generator for frames, and plays them as `AnimationManager` overlay slots (`arm`, `head`,
-...) over the locomotion base. `point` also drives a `look` companion on the head slot. See
-[gestures/README.md](gestures/README.md) for slots, companions, options, timing, hysteresis, and how to add a kind.
+`Pedestrian.gestures` (`arena_people_msgs/Gesture[]`: `slot` in `head|arm|arm_l|arm_r`, `at` world-frame point,
+`opts` JSON string) are attention channels, not poses. Backends only forward them (arena_humansim copies
+`AgentState.gestures` one to one, the possession stream carries them as-is), and `publish_arena_peds`
+hands them per ped to the [`GestureLayer`](gestures/__init__.py) as a `GestureRequest` (a `Channel(slot, at, opts)`
+per entry, ped pose, moving flag). `opts` is parsed there: empty string = `{}`, invalid JSON warns once per
+ped and slot and counts as `{}`. The layer resolves each target into the ped frame once per clip, asks the
+slot's generator for frames (`head` -> `look`, `arm*` -> `point`), and plays them as independent
+`AnimationManager` overlay slots (`head`, `arm`) over the locomotion base. Nothing is synthesized: no channel
+published = that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
+timing, hysteresis, and how to add a kind.
 
-Empty `kind` releases. Unknown kinds warn once per ped and count as empty: a live gesture releases and
-nothing new starts. Clip generation runs
-on two worker threads (a few hundred ms per clip) unless a gated lockstep run is active
-(`/arena/state/lockstep`), then it runs inline so clip timing is sim-deterministic.
+An empty list releases every slot, a missing entry releases that slot. Unknown slots warn once per ped and are
+ignored. Clip generation runs on two worker threads (a few hundred ms per clip) unless a gated lockstep run
+is active (`/arena/state/lockstep`), then it runs inline so clip timing is sim-deterministic.
 
 ## Visualization topics
 

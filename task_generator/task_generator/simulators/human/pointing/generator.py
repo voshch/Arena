@@ -228,6 +228,8 @@ class PointAtOptions:
     unwrap_shoulder: bool = False     # trade the advisory shoulder window for no 2*pi steps
     root: str = "zero"            # 'zero' | 'template'
     hold_s: float | None = None   # stretch/shrink the hold plateau to this many seconds
+    collar_scale: float = 1.0     # scale of the template's own clavicle excursion (shrug), 1 = as recorded
+    upright: bool = False         # emit the shoulder against an upright spine (a walking ped does not blend the torso DOFs)
 
 
 @dataclass
@@ -1182,11 +1184,13 @@ class PointAtGenerator:
         """
         tpl = self.template
         a = tpl.frames[i]["angles"]
+        b = tpl.base[i]
         s = tpl.side
         mirror = side != s
+        k = self.opts.collar_scale
         return {
-            f"{side}_y_collar": a[f"{s}_y_collar"],
-            f"{side}_p_collar": a[f"{s}_p_collar"],
+            f"{side}_y_collar": b[f"{s}_y_collar"] + k * (a[f"{s}_y_collar"] - b[f"{s}_y_collar"]),
+            f"{side}_p_collar": b[f"{s}_p_collar"] + k * (a[f"{s}_p_collar"] - b[f"{s}_p_collar"]),
             f"{side}_y_shoulder": -a[f"{s}_y_shoulder"] if mirror else a[f"{s}_y_shoulder"],
             f"{side}_p_shoulder": a[f"{s}_p_shoulder"],
             f"{side}_r_shoulder": -a[f"{s}_r_shoulder"] if mirror else a[f"{s}_r_shoulder"],
@@ -1262,6 +1266,7 @@ class PointAtGenerator:
         return (
             [f"y_{s}" for s in C.SPINE_SEGMENTS]
             + list(C.SPINE_SEGMENTS)
+            + [f"r_{s}" for s in C.SPINE_SEGMENTS]
             + C.arm_dofs(side)
         )
 

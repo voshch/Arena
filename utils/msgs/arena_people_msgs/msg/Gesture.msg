@@ -1,10 +1,10 @@
-# Upper-body gesture intent, resolved to joints by the animation layer
+# One upper-body attention channel, resolved to joints by the animation layer
 
-# Registered gesture kind, empty = none
-string kind
+# Body part: head | arm (layer picks the side) | arm_l | arm_r
+string slot
 
-# Gesture target in world frame
+# Target in world frame
 geometry_msgs/Point at
 
-# JSON options for the kind, empty = defaults
+# JSON options for the slot ({"dominant": "l|r"}), empty = defaults
 string opts

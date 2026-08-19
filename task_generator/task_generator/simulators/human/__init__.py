@@ -31,7 +31,7 @@ from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Region, Robot, Wall
 from task_generator.simulators.human.animation_mananager import AnimationManager
-from task_generator.simulators.human.gestures import GestureLayer, GestureRequest
+from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.utils import (
     KnownObstacle,
@@ -113,7 +113,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait_prev_stamp: dict[int, float] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
-        self._gesture_opts_warned: set[int] = set()
+        self._gesture_opts_warned: set[tuple[int, str]] = set()
         self.node.create_subscription(
             Pedestrians,
             self._namespace("arena_peds"),
@@ -192,7 +192,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         for stale in sorted(set(self._gait_prev_stamp) - current_ids):
             self._gestures.forget(stale)
             self._gait.forget(stale)
-            self._gesture_opts_warned.discard(stale)
+            self._gesture_opts_warned.difference_update({k for k in self._gesture_opts_warned if k[0] == stale})
             del self._gait_prev_stamp[stale]
 
         for ped in out.pedestrians:
@@ -208,11 +208,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
             speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
             gesture = GestureRequest(
-                kind=ped.gesture.kind,
-                at=(ped.gesture.at.x, ped.gesture.at.y, ped.gesture.at.z),
+                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), opts=self._gesture_opts(ped.id, g.slot, g.opts)) for g in ped.gestures),
                 pose=(ped.pose.position.x, ped.pose.position.y, yaw),
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
-                opts=self._gesture_opts(ped.id, ped.gesture.opts),
             )
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture)
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
@@ -220,8 +218,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         self._arena_peds_publisher.publish(out)
 
-    def _gesture_opts(self, ped_id: int, raw: str) -> dict:
-        """Gesture.opts JSON as a dict, empty on empty or invalid input (warned once per ped)."""
+    def _gesture_opts(self, ped_id: int, slot: str, raw: str) -> dict:
+        """Gesture.opts JSON as a dict, empty on empty or invalid input (warned once per ped and slot)."""
         if not raw:
             return {}
         try:
@@ -229,9 +227,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         except ValueError:
             opts = None
         if not isinstance(opts, dict):
-            if ped_id not in self._gesture_opts_warned:
-                self._gesture_opts_warned.add(ped_id)
-                self._logger.warning(f"ped {ped_id}: gesture opts {raw!r} is not a JSON object, ignoring")
+            if (ped_id, slot) not in self._gesture_opts_warned:
+                self._gesture_opts_warned.add((ped_id, slot))
+                self._logger.warning(f"ped {ped_id}: gesture opts {raw!r} on slot {slot!r} is not a JSON object, ignoring")
             return {}
         return opts
 

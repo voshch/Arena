@@ -1,4 +1,4 @@
-"""``point``: PointAt clips retargeted to a ped-local target, gaze companion on the head slot."""
+"""``point``: baked PointAt clips swung onto a ped-local target, one arm per slot for the life of the slot."""
 
 from __future__ import annotations
 
@@ -6,44 +6,51 @@ import math
 
 import numpy as np
 
-from task_generator.simulators.human.pointing import HoldPose, PointAtClip, PointAtGenerator, PointAtOptions
+from task_generator.simulators.human.pointing import HoldPose, PointAtClip, PointAtOptions
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.contract import SPINE_SEGMENTS, arm_dofs
+from task_generator.simulators.human.pointing.table import BakedPointAt
 
 from . import BODY_HEIGHT, BREATH_AMP_RAD, RELEASE_STRETCH, GestureClip, ease_to_rest, move_time, resample
 
-SWIVEL_SAMPLES = 24
 FPS = 20.0
-LIGHT_RETARGET_RAD = math.radians(20.0)  # below this sweep the swivel is kept and only the aim is re-solved
 HANDS = {"auto": "auto", "left": "l", "right": "r", "l": "l", "r": "r"}
+DOMINANT = {"left": "l", "right": "r", "l": "l", "r": "r"}
+SLOT_HAND = {"arm_l": "l", "arm_r": "r"}
 
 
 class PointGesture:
-    slot = "arm"
-    REACH_IN = 1.57
-    REACH_OUT = 1.92
+    REACH_IN = math.radians(90.0)
+    REACH_OUT = math.radians(110.0)
 
     def __init__(self) -> None:
-        self._gen = PointAtGenerator(height=BODY_HEIGHT, options=PointAtOptions(swivel_samples=SWIVEL_SAMPLES))
+        self._gen = BakedPointAt(height=BODY_HEIGHT)
 
     def joints(self, side: str, moving: bool) -> set[str]:
         joints = set(arm_dofs(side))
         if not moving:
-            joints |= {f"y_{s}" for s in SPINE_SEGMENTS} | set(SPINE_SEGMENTS)
+            joints |= {f"{axis}_{s}" for s in SPINE_SEGMENTS for axis in ("y", "r")} | set(SPINE_SEGMENTS)
         return joints
 
     def reach(self, local: np.ndarray) -> float:
         return abs(math.atan2(local[1], local[0]))
-
-    def companions(self) -> list[tuple[str, str]]:
-        return [("head", "look")]
 
     def breathing(self, side: str) -> dict[str, float]:
         return {f"{side}_p_shoulder": BREATH_AMP_RAD, f"{side}_elbow": BREATH_AMP_RAD}
 
     def _options(self, opts: dict) -> PointAtOptions:
         hand = HANDS.get(str(opts.get("hand", "auto")), "auto")
-        return PointAtOptions(swivel_samples=SWIVEL_SAMPLES, hand=hand)
+        dominant = DOMINANT.get(str(opts.get("dominant", "r")), "r")
+        return PointAtOptions(hand=hand, dominant=dominant, upright=bool(opts.get("moving", False)))
+
+    def resolve_hand(self, local: np.ndarray, opts: dict) -> str:
+        """Generator rule once: the dominant hand within the midline band, else the target-side arm."""
+        return self._gen.choose_hand(self._gen.aim_of(local), self._options({**opts, "hand": "auto"}))
+
+    def bind(self, slot: str, local: np.ndarray, opts: dict) -> dict:
+        """Freeze the arm for the slot: explicit for ``arm_l``/``arm_r``, resolved once for ``arm``."""
+        hand = SLOT_HAND.get(slot) or self.resolve_hand(local, opts)
+        return {**opts, "hand": hand}
 
     def start(self, local: np.ndarray, opts: dict) -> GestureClip:
         clip = self._gen.point_at(target=local, options=self._options(opts))
@@ -60,11 +67,7 @@ class PointGesture:
         options = self._options(opts)
         aim = self._gen.aim_of(local)
         swept = math.acos(float(np.clip(np.dot(S.unit(hold.target_dir), aim), -1.0, 1.0)))
-        transition_s = move_time(swept)
-        if swept < LIGHT_RETARGET_RAD:
-            clip = self._gen.retarget_light(hold, target=local, options=options, transition_s=transition_s)
-        else:
-            clip = self._gen.retarget(hold, target=local, options=options, transition_s=transition_s)
+        clip = self._gen.retarget(hold, target=local, options=options, transition_s=move_time(swept))
         new_hold = self._gen.hold_pose(clip)
         lowered = math.acos(float(np.clip(np.dot(S.DOWN, S.unit(new_hold.target_dir)), -1.0, 1.0)))
         release = ease_to_rest(new_hold.angles, int(round(move_time(lowered) * RELEASE_STRETCH * FPS)))
