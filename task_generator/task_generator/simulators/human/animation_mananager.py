@@ -10,6 +10,7 @@ import numpy as np
 import rclpy
 import yaml
 
+from arena_humansim.core.animation_kinds import AnimationType
 from .gait import GaitGenerator
 
 JOINT_NAMES = GaitGenerator.JOINT_NAMES
@@ -65,22 +66,22 @@ class AnimationManager:
 
     # Default state to animation map matching Pedestrian.msg constants
     STATE_TO_ANIMATION_MAP: dict[int, str] = {
-        0: "idle",  # IDLE
-        1: "walk",  # WALKING
-        2: "run",  # RUNNING
-        3: "idle",  # PANIC (treated as idle/synthesis fallback for now)
-        4: "idle",  # SURPRISED (treated as idle/synthesis fallback for now)
-        5: "idle",  # CURIOUS (treated as idle/synthesis fallback for now)
-        6: "idle",  # THREATENING (treated as idle/synthesis fallback for now)
-        7: "hug",
-        8: "jump",
-        9: "point_straight",
-        10: "shake_hand",
-        11: "sit",
-        12: "talk_with_arm_gesture",
-        13: "wave",
-        14: "wave_high",
-        15: "collapse_to_ground",
+        AnimationType.IDLE: "idle",
+        AnimationType.WALKING: "walk",
+        AnimationType.RUNNING: "run",
+        AnimationType.PANIC: "idle",  # treated as idle/synthesis fallback for now
+        AnimationType.SURPRISED: "idle",  # treated as idle/synthesis fallback for now
+        AnimationType.CURIOUS: "idle",  # treated as idle/synthesis fallback for now
+        AnimationType.THREATENING: "idle",  # treated as idle/synthesis fallback for now
+        AnimationType.HUG: "hug",
+        AnimationType.JUMP: "jump",
+        AnimationType.POINT: "point_straight",
+        AnimationType.SHAKE_HAND: "shake_hand",
+        AnimationType.SIT: "sit",
+        AnimationType.TALK: "talk_with_arm_gesture",
+        AnimationType.WAVE: "wave",
+        AnimationType.WAVE_HIGH: "wave_high",
+        AnimationType.FALL: "collapse_to_ground",
     }
 
     def __init__(
@@ -335,7 +336,8 @@ class AnimationManager:
         # Determine target/next animation name
         next_anim_name = self.STATE_TO_ANIMATION_MAP[animation_state]
         next_anim = self.animations[next_anim_name]
-
+        self.logger.error(f"Got animation state {animation_state} from agent {agent_id}")
+        self.logger.error(f"Applying animation {next_anim_name} to agent {agent_id}")
         # Check if animation is changing (transition)
         cur_anim_name = self._ped_anim.get(agent_id)
 
