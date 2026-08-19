@@ -81,11 +81,11 @@ ped and slot and counts as `{}`. The layer resolves each target into the ped fra
 slot's generator for frames (`head` -> `look`, `arm*` -> `point`), and plays them as independent
 `AnimationManager` overlay slots (`head`, `arm`) over the locomotion base. Nothing is synthesized: no channel
 published = that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
-timing, hysteresis, and how to add a kind.
+timing, and how to add a kind.
 
 An empty list releases every slot, a missing entry releases that slot. Unknown slots warn once per ped and are
-ignored. Clip generation runs on two worker threads (a few hundred ms per clip) unless a gated lockstep run
-is active (`/arena/state/lockstep`), then it runs inline so clip timing is sim-deterministic.
+ignored. Clips come from the baked pointing table and are generated inline on the publishing tick, so their
+timing is sim-deterministic under lockstep without any extra plumbing.
 
 ## Visualization topics
 

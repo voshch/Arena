@@ -62,6 +62,8 @@ def _animations_dir() -> str:
 
 
 TEMPLATE_DIR = _animations_dir()
+# under-relaxed wrist-to-aim fixed point: close targets do not contract otherwise
+FIXED_POINT_DAMPING = 0.55
 
 # torso-assist distribution across the spine stack (waist, spine, chest)
 YAW_SPLIT = (0.45, 0.275, 0.275)
@@ -804,259 +806,6 @@ class PointAtGenerator:
             target_point=None if clip.target_point is None else np.asarray(clip.target_point, dtype=float),
         )
 
-    def retarget(
-        self,
-        prev: HoldPose,
-        target: Sequence[float] | np.ndarray | None = None,
-        azimuth: float | None = None,
-        elevation: float | None = None,
-        deg: bool = True,
-        options: PointAtOptions | None = None,
-        transition_s: float = 0.4,
-    ) -> PointAtClip:
-        """Move from a held point straight to a new one: no recorded ramp, no release.
-
-        An eased blend from ``prev`` to the new hold over ``transition_s``
-        (shoulder slerped as a rotation, spine/collar/elbow linear), then the
-        new hold, aim re-solved per frame as in :meth:`point_at`.  The elbow
-        swivel search is seeded from ``prev`` and re-ranked on the swept
-        transition path.  Raises ``ValueError("hand switch")`` when the new aim
-        wants the other hand.
-        """
-        opts = options or self.opts
-        tpl = self.template
-        side = prev.side
-        aim0, target_point = self._resolve_aim(target, azimuth, elevation, deg)
-        if self.choose_hand(aim0, opts) != side:
-            raise ValueError("hand switch")
-        near_target = False
-        if target_point is not None and self._near_target(target_point, side):
-            near_target, target_point = True, None
-        az, el = angles_from_direction(aim0, deg=False)
-        bend = tpl.elbow_bend if opts.elbow_bend is None else float(opts.elbow_bend)
-        d_yaw, d_pitch = self._assist_deltas(az, el, opts)
-        tri = [f"{side}_y_shoulder", f"{side}_p_shoulder", f"{side}_r_shoulder"]
-        linear = [n for n in self._blended_dofs(side) if n not in tri]
-        emit = C.UNWRAP_LIMITS if opts.unwrap_shoulder else C.EMIT_LIMITS
-
-        n_trans = max(1, int(round(transition_s / tpl.dt)))
-        h0, h1 = tpl.settled
-        n_hold = (h1 - h0) if opts.hold_s is None else max(1, int(round(opts.hold_s / tpl.dt)))
-        idx = self._plateau(n_trans + n_hold)
-        s_track = [0.5 - 0.5 * float(np.cos(np.pi * k / n_trans)) for k in range(n_trans)] + [1.0] * n_hold
-
-        prev_tri = tuple(float(prev.angles[n]) for n in tri)
-        warm = prev_tri
-        start = self._source_pose(idx[0], side)
-        start.update(prev.angles)
-        _, fr_start = S.fk(start, self.body)
-        r_prev = fr_start[f"{side}_collar"] @ S.arm_rot(*prev_tri)
-
-        def hold_frame(i: int, warm: tuple[float, float, float], phi: float | None,
-                       pref: float) -> tuple[dict, dict, np.ndarray, tuple[float, float, float]]:
-            """Posed body (shoulder still the source's), its FK frames, solved world arm rotation."""
-            src_ang = self._source_pose(i, side)
-            deltas = self._frame_deltas(i, aim0, side, d_yaw, d_pitch, bend, opts)
-            out = dict(src_ang)
-            for name, dval in deltas.items():
-                v = C.to_limits(name, float(src_ang[name] + dval))
-                out[name] = C.clamp(name, v) if opts.clamp_limits else v
-            pos_out, fr_out = S.fk(out, self.body)
-            r_solved, warm = self._steady_solve(pos_out, fr_out, side, aim0, target_point,
-                                                out[f"{side}_elbow"], warm, opts, phi, pref)
-            return out, fr_out, r_solved, warm
-
-        # the new hold on its first frame: swivel searched from prev's, then
-        # re-ranked on the collision of the swept transition it implies
-        i_end = idx[n_trans]
-        end_posed, end_sol, _ = self._solve_frame(i_end, aim0, side, d_yaw, d_pitch, bend, target_point,
-                                                  opts, warm=warm, fixed_phi=None, swivel_pref=prev.swivel)
-        path = []
-        for k in range(1, n_trans):
-            posed = self._source_pose(idx[k], side)
-            for n in linear:
-                posed[n] = (1.0 - s_track[k]) * prev.angles[n] + s_track[k] * end_posed[n]
-            pos_k, fr_k = S.fk(posed, self.body)
-            path.append({"w": s_track[k], "r_src": r_prev, "pos": pos_k,
-                         "collar": fr_k[f"{side}_collar"], "bend": float(posed[f"{side}_elbow"])})
-        pos_e, fr_e = S.fk(end_posed, self.body)
-        collar_e = fr_e[f"{side}_collar"]
-        cands = solve_arm_ik(pos_e, fr_e, side, end_sol["aim"], self.body, bend, prev.swivel, opts,
-                             warm=warm, all_candidates=True)
-        floor = cands[0]["cost"]
-        best_phi, best_total = end_sol["phi"], None
-        for cand in cands:
-            if cand["cost"] > floor + 3.0:
-                break
-            r_c = collar_e @ S.arm_rot(*(cand["angles"][n] for n in tri))
-            total = cand["cost"] + opts.collide_weight * self._path_penalty(path, side, r_c @ r_prev.T, bend)
-            if best_total is None or total < best_total - 1e-9:
-                best_total, best_phi = total, cand["phi"]
-        phi = float(best_phi)
-        if best_phi != end_sol["phi"]:
-            end_posed, end_sol, _ = self._solve_frame(i_end, aim0, side, d_yaw, d_pitch, bend, target_point,
-                                                      opts, warm=warm, fixed_phi=phi, swivel_pref=prev.swivel)
-        end_out, _, r_end, _ = hold_frame(i_end, warm, phi, prev.swivel)
-        path_pen = self._path_penalty(path, side, r_end @ r_prev.T, bend)
-
-        frames_out: list[dict] = []
-        diag = []
-        for k, (i, s) in enumerate(zip(idx, s_track, strict=True)):
-            if k < n_trans:
-                out = self._source_pose(i, side)
-                for n in linear:
-                    out[n] = (1.0 - s) * prev.angles[n] + s * end_out[n]
-                _, fr_out = S.fk(out, self.body)
-                r_world = S.slerp_rot(r_prev, r_end, s)
-                src_i = -1
-                steady = 0.0
-            else:
-                out, fr_out, r_world, warm = hold_frame(i, warm, phi, prev.swivel)
-                src_i = i
-                steady = 1.0
-            r_out = fr_out[f"{side}_collar"].T @ r_world
-            for n, v in zip(tri, _triple_in_limits(side, S.arm_rot_inverse(r_out),
-                                                   prev=prev_tri, limits=emit), strict=True):
-                out[n] = v
-            if opts.clamp_limits:
-                for name in self._blended_dofs(side):
-                    out[name] = C.clamp(name, out[name], limits=emit)
-            prev_tri = tuple(out[n] for n in tri)
-            src = tpl.frames[i]
-            root = (0.0, 0.0, 0.0) if opts.root == "zero" else tuple(src["root_xy_yaw"])
-            frames_out.append(
-                {
-                    "angles": {n: float(out[n]) for n in C.ROS_JOINT_ORDER},
-                    "root_xy_yaw": root,
-                    "animation_state": src.get("animation_state", 0),
-                    "t": float(k * tpl.dt),
-                }
-            )
-            diag.append({"w": float(s), "sol": end_sol, "src": src_i,
-                         "steady": steady, "anchor": bool(k == n_trans)})
-
-        clip = PointAtClip(
-            frames=frames_out, side=side, target_dir=aim0,
-            target_point=target_point, template=tpl.name,
-            envelope=np.asarray(s_track, dtype=float),
-        )
-        clip.report = self.analyze(clip, diag)
-        clip.report["near_target_fallback"] = near_target
-        clip.report["elbow_bend_deg"] = float(np.degrees(bend))
-        clip.report["swivel_rad"] = phi
-        clip.report["transition_frames"] = n_trans
-        clip.report["path_penalty_m"] = float(path_pen)
-        clip.report["relaxed"] = False
-        return clip
-
-    def retarget_light(
-        self,
-        prev: HoldPose,
-        target: Sequence[float] | np.ndarray | None = None,
-        azimuth: float | None = None,
-        elevation: float | None = None,
-        deg: bool = True,
-        options: PointAtOptions | None = None,
-        transition_s: float = 0.4,
-    ) -> PointAtClip:
-        """Small-delta :meth:`retarget`: the elbow swivel stays at ``prev.swivel`` (no search, no path re-ranking), the aim is re-solved closed form per frame."""
-        opts = options or self.opts
-        tpl = self.template
-        side = prev.side
-        aim0, target_point = self._resolve_aim(target, azimuth, elevation, deg)
-        if self.choose_hand(aim0, opts) != side:
-            raise ValueError("hand switch")
-        near_target = False
-        if target_point is not None and self._near_target(target_point, side):
-            near_target, target_point = True, None
-        az, el = angles_from_direction(aim0, deg=False)
-        bend = tpl.elbow_bend if opts.elbow_bend is None else float(opts.elbow_bend)
-        d_yaw, d_pitch = self._assist_deltas(az, el, opts)
-        tri = [f"{side}_y_shoulder", f"{side}_p_shoulder", f"{side}_r_shoulder"]
-        linear = [n for n in self._blended_dofs(side) if n not in tri]
-        emit = C.UNWRAP_LIMITS if opts.unwrap_shoulder else C.EMIT_LIMITS
-        phi = float(prev.swivel)
-
-        n_trans = max(1, int(round(transition_s / tpl.dt)))
-        h0, h1 = tpl.settled
-        n_hold = (h1 - h0) if opts.hold_s is None else max(1, int(round(opts.hold_s / tpl.dt)))
-        idx = self._plateau(n_trans + n_hold)
-        s_track = [0.5 - 0.5 * float(np.cos(np.pi * k / n_trans)) for k in range(n_trans)] + [1.0] * n_hold
-
-        prev_tri = tuple(float(prev.angles[n]) for n in tri)
-        warm = prev_tri
-        start = self._source_pose(idx[0], side)
-        start.update(prev.angles)
-        _, fr_start = S.fk(start, self.body)
-        r_prev = fr_start[f"{side}_collar"] @ S.arm_rot(*prev_tri)
-
-        def hold_frame(i: int, warm: tuple[float, float, float]) -> tuple[dict, dict, np.ndarray, tuple[float, float, float]]:
-            src_ang = self._source_pose(i, side)
-            deltas = self._frame_deltas(i, aim0, side, d_yaw, d_pitch, bend, opts)
-            out = dict(src_ang)
-            for name, dval in deltas.items():
-                v = C.to_limits(name, float(src_ang[name] + dval))
-                out[name] = C.clamp(name, v) if opts.clamp_limits else v
-            pos_out, fr_out = S.fk(out, self.body)
-            r_solved, warm = self._steady_solve(pos_out, fr_out, side, aim0, target_point,
-                                                out[f"{side}_elbow"], warm, opts, phi, phi)
-            return out, fr_out, r_solved, warm
-
-        i_end = idx[n_trans]
-        end_posed, end_sol, _ = self._solve_frame(i_end, aim0, side, d_yaw, d_pitch, bend, target_point,
-                                                  opts, warm=warm, fixed_phi=phi, swivel_pref=phi)
-        end_out, _, r_end, _ = hold_frame(i_end, warm)
-
-        frames_out: list[dict] = []
-        diag = []
-        for k, (i, s) in enumerate(zip(idx, s_track, strict=True)):
-            if k < n_trans:
-                out = self._source_pose(i, side)
-                for n in linear:
-                    out[n] = (1.0 - s) * prev.angles[n] + s * end_out[n]
-                _, fr_out = S.fk(out, self.body)
-                r_world = S.slerp_rot(r_prev, r_end, s)
-                src_i = -1
-                steady = 0.0
-            else:
-                out, fr_out, r_world, warm = hold_frame(i, warm)
-                src_i = i
-                steady = 1.0
-            r_out = fr_out[f"{side}_collar"].T @ r_world
-            for n, v in zip(tri, _triple_in_limits(side, S.arm_rot_inverse(r_out),
-                                                   prev=prev_tri, limits=emit), strict=True):
-                out[n] = v
-            if opts.clamp_limits:
-                for name in self._blended_dofs(side):
-                    out[name] = C.clamp(name, out[name], limits=emit)
-            prev_tri = tuple(out[n] for n in tri)
-            src = tpl.frames[i]
-            root = (0.0, 0.0, 0.0) if opts.root == "zero" else tuple(src["root_xy_yaw"])
-            frames_out.append(
-                {
-                    "angles": {n: float(out[n]) for n in C.ROS_JOINT_ORDER},
-                    "root_xy_yaw": root,
-                    "animation_state": src.get("animation_state", 0),
-                    "t": float(k * tpl.dt),
-                }
-            )
-            diag.append({"w": float(s), "sol": end_sol, "src": src_i,
-                         "steady": steady, "anchor": bool(k == n_trans)})
-
-        clip = PointAtClip(
-            frames=frames_out, side=side, target_dir=aim0,
-            target_point=target_point, template=tpl.name,
-            envelope=np.asarray(s_track, dtype=float),
-        )
-        clip.report = self.analyze(clip, diag)
-        clip.report["near_target_fallback"] = near_target
-        clip.report["elbow_bend_deg"] = float(np.degrees(bend))
-        clip.report["swivel_rad"] = phi
-        clip.report["transition_frames"] = n_trans
-        clip.report["light"] = True
-        clip.report["relaxed"] = False
-        return clip
-
     # -- helpers ----------------------------------------------------------
     def _steady_solve(self, pos_out: dict, fr_out: dict, side: str, aim0: np.ndarray, target_point: np.ndarray | None,
                       bend_i: float, warm: tuple[float, float, float], opts: PointAtOptions, phi: float | None,
@@ -1306,11 +1055,6 @@ class PointAtGenerator:
         sh = pos[f"{side}_shoulder"]
         aim = S.unit(target_point - sh)
         best, best_err = aim, np.inf
-        # Under-relaxed: turning the arm moves the wrist, which moves the
-        # required direction, and for a target only a forearm or two away that
-        # map is not a contraction -- undamped iteration oscillates and settles
-        # several degrees off.  Half steps converge.
-        damping = 0.55
         for _ in range(12):
             sol = solve_arm_ik(pos, fr, side, aim, self.body, bend,
                                pref, opts, warm=warm,
@@ -1326,7 +1070,7 @@ class PointAtGenerator:
                 return aim
             if np.dot(want, aim) < -0.5:     # target behind the wrist: keep the outward ray
                 break
-            aim = S.unit(aim + damping * (want - aim))
+            aim = S.unit(aim + FIXED_POINT_DAMPING * (want - aim))
         return best
 
     # -- diagnostics ------------------------------------------------------

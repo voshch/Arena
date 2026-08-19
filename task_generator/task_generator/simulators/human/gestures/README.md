@@ -26,13 +26,13 @@ playhead, envelope and `on_end`. Slots are applied in insertion order. `head` dr
 three arm channels share the `arm` overlay, so at most one arm points at a time. The layer keeps one `_Agent`
 per ped with a `_Slot` per (agent, overlay), and each slot runs its own phase machine, independent of the other:
 
-- start: a channel appears (or reappears) inside `REACH_IN`. `Gesture.bind(slot, local, opts)` freezes the
+- start: a channel appears (or reappears). `Gesture.bind(slot, local, opts)` freezes the
   generator options for the life of the slot: for `point` that is the hand, so a chained list keeps its arm
   across the midline and retargets never switch hands. The layer adds `moving` to the opts it binds: a walking
   ped does not blend its torso, so `point` solves its arm against an upright spine, and a `moving` flip on a
   held slot re-solves through a retarget.
 - retarget: the channel's target moved by more than `RETARGET_EPS_M` while the slot holds.
-- release: the channel disappeared, its target left `REACH_OUT`, its `opts` changed, or a different arm channel
+- release: the channel disappeared, its `opts` changed, or a different arm channel
   wants the `arm` overlay (that one starts once the tail has played). Restarts (`opts` change, arm switch,
   a `ValueError` from `retarget`) skip `HOLD_MIN_S`.
 - a generator fault drops only that slot, with one warning per (ped, kind), and the same channel is not
@@ -44,9 +44,8 @@ per ped with a `_Slot` per (agent, overlay), and each slot runs its own phase ma
 requested -> ramp -> hold -> (transition -> hold)* -> release -> gone
 ```
 
-- `requested`: the generator job is submitted (two worker threads, or inline when `sync` is set). The gait keeps playing.
-  Nothing solves at runtime: `point` swings the recorded template onto a hold interpolated from the baked
-  `pointing` table, so a job is a few milliseconds of matrix products.
+- `requested`: the clip is generated inline on the publishing tick. Nothing solves at runtime: `point` swings the
+  recorded template onto a hold interpolated from the baked `pointing` table, a few milliseconds of matrix products.
 - `ramp`, `hold`: the clip up to its park frame is an overlay that holds its park pose (or loops a breathing
   segment, see Timing) as long as the channel does.
 - `transition`: target moved: `Gesture.retarget(hold, local, opts)` continues from the held pose without
@@ -55,13 +54,11 @@ requested -> ramp -> hold -> (transition -> hold)* -> release -> gone
   with a `FADE_S` fade-out, then drops the transient clips. Never earlier than `HOLD_MIN_S` after the hold is
   reached unless it is a restart. A request for the same overlay waits until the tail has played.
 
-## Reach and hysteresis
+## Reach
 
-`Gesture.reach(local) -> float` is a metric (radians of azimuth for `point` and `look`) compared against the
-kind's `REACH_IN` / `REACH_OUT` (`point` 90 / 110 deg, `look` 60 / 70 deg): a slot starts only below
-`REACH_IN` and keeps going until the metric exceeds `REACH_OUT`. The bands are the engine's advance rule
-(`arena_humansim.core.behavior.reach`), asserted equal at import. The flag lives per (agent, slot), so the
-gaze can give up while the arm keeps pointing.
+Reach is the engine's call (`arena_humansim.core.behavior.reach`, hysteresis per channel): a channel on the bus is
+one the engine wants shown, the layer serves whatever arrives. The baked table covers the full azimuth circle,
+so an off-envelope aim yields a flagged hold, never a fault.
 
 ## Timing
 
@@ -106,10 +103,7 @@ forearm within `MAX_HOLD_AIM_DEG` of the target, the arm hanging inside every `r
 
 ```python
 class Gesture(Protocol):
-    REACH_IN: float
-    REACH_OUT: float
     def joints(self, side: str, moving: bool) -> set[str]: ...
-    def reach(self, local: np.ndarray) -> float: ...
     def bind(self, slot: str, local: np.ndarray, opts: dict) -> dict: ...
     def start(self, local: np.ndarray, opts: dict) -> GestureClip: ...
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip: ...

@@ -94,7 +94,7 @@ class _Log:
 def run(case: Case, *, agent_id: int = 1) -> Result:
     log = _Log()
     mgr = AnimationManager(ANIMATIONS, logger=log, fps=20.0)
-    layer = GestureLayer(mgr, log, sync=True)
+    layer = GestureLayer(mgr, log)
     mgr.gesture_hook = layer
     reports: list[dict] = []
     seen: list[object] = []  # clip objects kept alive so identity is stable
@@ -186,7 +186,6 @@ def default_cases() -> list[Case]:
         Case("forced_left", [Cue(0.0, [Channel("arm_l", (5.0, 0.5, 1.2))], p), Cue(2.5, [], p)], 5.0),
         Case("look_only", [Cue(0.0, [head((6.0, 4.0, 1.6))], p), Cue(2.0, [], p)], 3.5),
         Case("walking", [Cue(0.0, [arm((6.0, 3.0, 1.2))], p, moving=True), Cue(2.5, [], p)], 5.0),
-        Case("behind_then_front", [Cue(0.0, [arm((14.0, 2.5, 1.2))], p), Cue(1.5, [arm((6.0, 2.5, 1.2))], p), Cue(4.0, [], p)], 6.0),
         Case("point_and_gaze", [Cue(0.0, [arm((5.0, 0.5, 1.2)), head((6.0, 4.0, 1.6))], p), Cue(2.5, [arm((5.0, 0.5, 1.2))], p), Cue(3.5, [], p)], 6.0),
         Case("chained_across_midline", chained, 1.2 * len(chain) + 2.5),
         Case("dominant_left", [Cue(0.0, [arm((5.0, 2.5, 1.2), dominant="l")], p), Cue(2.5, [], p)], 5.0),

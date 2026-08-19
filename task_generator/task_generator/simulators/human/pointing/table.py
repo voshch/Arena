@@ -16,7 +16,7 @@ import numpy as np
 
 from . import contract as C
 from . import skeleton as S
-from .generator import TEMPLATE_DIR, HoldPose, PointAtClip, PointAtGenerator, PointAtOptions, _triple_in_limits, angles_from_direction
+from .generator import FIXED_POINT_DAMPING, TEMPLATE_DIR, HoldPose, PointAtClip, PointAtGenerator, PointAtOptions, _triple_in_limits, angles_from_direction
 
 SIDES = ("l", "r")
 AZ_STEP = 5.0
@@ -25,7 +25,6 @@ EL_MAX = 85.0  # the poles are degenerate for the (az, el) grid, clamp just shor
 COLLAR_SCALE = 0.3  # fraction of the template's clavicle shrug kept in the bake
 SEAM_RAD = math.radians(30.0)  # corner holds further apart than this are not blended, the nearest wins
 FIXED_POINT_ITERS = 12  # target-point aim refinement through the baked wrist
-FIXED_POINT_DAMPING = 0.55  # under-relaxed like PointAtGenerator._aim_for_point, close targets do not contract otherwise
 
 
 def table_path(template: str) -> str:
@@ -421,9 +420,6 @@ class BakedPointAt(PointAtGenerator):
         clip = PointAtClip(frames=frames, side=side, target_dir=aim0, target_point=target_point, template=tpl.name, envelope=np.asarray(s_track, dtype=float))
         clip.report = {**self._report(cell, aim0, near, len(frames), opts.upright), "transition_frames": n_trans}
         return clip
-
-    def retarget_light(self, *args: object, **kw: object) -> PointAtClip:
-        return self.retarget(*args, **kw)
 
     def _frame(self, out: dict, src: dict, k: int, opts: PointAtOptions) -> dict:
         root = (0.0, 0.0, 0.0) if opts.root == "zero" else tuple(src["root_xy_yaw"])

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import attrs
 import numpy as np
+import rclpy
+import yaml
 
 from .gait import GaitGenerator
 
@@ -92,6 +94,13 @@ class Overlay:
         return self.release_s > 0.0
 
 
+@attrs.define
+class _Transition:
+    anim: Animation
+    playhead: float
+    t: float = 0.0
+
+
 class AnimationManager:
     """
     Manages heterogeneous pedestrian animations with support for looping,
@@ -101,8 +110,7 @@ class AnimationManager:
     # Use GaitGenerator to systhesis poses instead of replaying animation
     USE_SYNTHESIS = ["walk", "run", "idle"]
 
-    # Automatically use GaitGenerator to synthesis poses for upper body for realistic movements
-    AUTO_BLEND_SYNTHESIS = ["wave"]
+    BASE_CROSSFADE_S = 0.5
 
     def __init__(
         self,
@@ -144,6 +152,7 @@ class AnimationManager:
 
         # Pedestrian.msg IDLE/WALKING/RUNNING/PANIC/SURPRISED/CURIOUS/THREATENING
         self.state_to_animation_map: dict[int, str] = {0: "idle", 1: "walk", 2: "run", 3: "idle", 4: "idle", 5: "idle", 6: "idle"}
+        self._transitions: dict[int, _Transition] = {}  # base crossfade in flight per agent
 
     def map_state_to_animation(self, state: int, anim_name: str) -> None:
         """
@@ -162,6 +171,22 @@ class AnimationManager:
         """
         if loop_mapping is None:
             loop_mapping = {}
+
+        # Attempt to load annotations from a database metadata/annotation file if present
+        annotations = {}
+        annotations_path = self.database_path / "annotations.yaml"
+        if annotations_path.is_file():
+            try:
+                with open(annotations_path) as f:
+                    annotations = yaml.safe_load(f) or {}
+                    self.logger.info(annotations)
+                self.logger.info(f"Loaded animation annotations from {annotations_path.name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to load annotations from {annotations_path}: {e}")
+
+        # Update one_shot_animations if defined in annotations
+        if "one_shot_animations" in annotations:
+            self.one_shot_animations.update(annotations["one_shot_animations"])
 
         if animation_name is None:
             animation_name = [f.name.split(".")[0] for f in self.database_path.iterdir() if f.suffix == ".npy"]
@@ -185,9 +210,11 @@ class AnimationManager:
             n_frames = len(anim_frames)
             duration = n_frames / self._fps
 
-            # TODO: Use annotation from dataset istead
-            # For now, use hardcoded annotation
-            is_loop = loop_mapping.get(name, name not in self.one_shot_animations)
+            # Use annotation from dataset if available, falling back to loop_mapping arg,
+            # and finally falling back to loop=False for one_shot_animations, True otherwise.
+            is_loop = annotations.get("loop_mapping", {}).get(name)
+            if is_loop is None:
+                is_loop = loop_mapping.get(name, name not in self.one_shot_animations)
 
             assert n_frames > 0, "Animation does not contain any frames"
             assert duration > 0.0, f"Animation duration is invalid, got: {duration}"
@@ -256,6 +283,7 @@ class AnimationManager:
         self._ped_blend.pop(agent_id, None)
         for name in self._transients.pop(agent_id, set()):
             self.animations.pop(name, None)
+        self._transitions.pop(agent_id, None)
         self.gait_generator.forget(agent_id)
 
     def phase(self, agent_id: int) -> float:
@@ -448,77 +476,41 @@ class AnimationManager:
         self.check_animations_cached()
         assert animation_state in self.state_to_animation_map, f"Can not map `animation_state` {animation_state} to any animation"
 
-        cur_anim = self.get_current_ped_animation(agent_id)
-        cur_playhead = self._get_playhead(agent_id)
+        next_anim = self.animations[self.state_to_animation_map[animation_state]]
+        cur_name = self._ped_anim.get(agent_id)
+        if cur_name is not None and cur_name != next_anim.name and not (cur_name in self.USE_SYNTHESIS and next_anim.name in self.USE_SYNTHESIS):
+            self._transitions[agent_id] = _Transition(anim=self.animations[cur_name], playhead=self._get_playhead(agent_id))
+        self.set_ped_anim(agent_id, next_anim.name)
 
-        # Set next animation
-        self.set_ped_anim(agent_id, self.state_to_animation_map[animation_state])
-        next_anim = self.get_current_ped_animation(agent_id)
-        assert isinstance(next_anim, Animation)
+        gait_angles: dict[str, float] | None = None
 
-        # Resolve base joint angles
-        if next_anim.name in self.USE_SYNTHESIS or next_anim.name in self.AUTO_BLEND_SYNTHESIS:
-            # Procedural high-fidelity GaitGenerator
-            base_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt)
+        def gait() -> dict[str, float]:
+            nonlocal gait_angles
+            if gait_angles is None:
+                gait_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt)
+            return gait_angles
+
+        if next_anim.name in self.USE_SYNTHESIS:
+            base_angles = gait()
         else:
-            next_playhead = self._get_playhead(agent_id) + dt
-            self._playhead[agent_id] = next_playhead
-            base_angles = self._sample(cur_playhead, next_playhead, cur_anim, next_anim)
+            playhead = self._get_playhead(agent_id) + dt
+            self._playhead[agent_id] = playhead
+            base_angles = self._sample_single_animation(playhead, next_anim)
+
+        transition = self._transitions.get(agent_id)
+        if transition is not None:
+            transition.t += dt
+            transition.playhead += dt
+            w = min(transition.t / self.BASE_CROSSFADE_S, 1.0)
+            from_angles = gait() if transition.anim.name in self.USE_SYNTHESIS else self._sample_single_animation(transition.playhead, transition.anim)
+            base_angles = {name: from_angles[name] * (1.0 - w) + base_angles[name] * w for name in JOINT_NAMES}
+            if w >= 1.0:
+                del self._transitions[agent_id]
 
         if self.gesture_hook is not None:
             self.gesture_hook(agent_id, gesture, dt)
 
-        # Apply overlay animation blending
-        if next_anim.name in self.AUTO_BLEND_SYNTHESIS:
-            self.set_ped_blend(agent_id, next_anim)
-
-        base_angles = self._sample_animation_overlay(
-            agent_id,
-            base_angles,
-            dt,
-        )
-
-        return base_angles
-
-    def _sample(self, current_playhead: float, next_playhead: float, cur_anim: Animation | None, next_anim: Animation) -> dict[str, float]:
-        """Linear-interpolated sample between the two nearest clip frames."""
-        if cur_anim is None:
-            # assert current_playhead == next_playhead == 0, f"Current animation is None, implying this pedestrian was not assigned with any animation, hence playheads should be 0, got (current_playhead, next_playhead): ({current_playhead}, {next_playhead})."
-            # pose_angles = next_anim[0]["angles"]
-            # return {name: pose_angles[name] for name in JOINT_NAMES}
-            return self._sample_single_animation(next_playhead, next_anim)
-
-        cur_pos = current_playhead * self._fps
-        next_pos = next_playhead * self._fps
-        cur_frame_indice = int(math.floor(cur_pos))
-        next_frame_indice = int(math.floor(next_pos))
-        frac = next_pos - cur_frame_indice
-
-        # Interpolate between the two nearest frames of the same animation
-        if next_anim == cur_anim:
-            return self._sample_single_animation(next_playhead, next_anim)
-
-        # Transition between two animations
-        # TODO: Enhace, use better blending mechanism
-        # For now, use linear interpolation only
-        else:
-            cur_pos = current_playhead * self._fps
-            next_pos = next_playhead * self._fps
-            cur_frame_indice = int(math.floor(cur_pos))
-            next_frame_indice = int(math.floor(next_pos))
-
-            # Safe modulo wrapping to avoid IndexError on infinite playheads
-            wrapped_cur_frame = cur_frame_indice % cur_anim.n_frames
-            wrapped_next_frame = next_frame_indice % next_anim.n_frames
-
-            if wrapped_cur_frame != len(cur_anim):
-                self.logger.warning(f"Animation {next_anim.name} interupts animation {cur_anim.name}. Animation {cur_anim.name} progress: {wrapped_cur_frame}/{cur_anim.n_frames}.")
-            if wrapped_next_frame != 0:
-                self.logger.warning(f"Animation {next_anim.name} start playing at suspicious frame indice: {wrapped_next_frame}/{next_anim.n_frames}, instead of 0.")
-            current_pose_angles = cur_anim[wrapped_cur_frame]["angles"]
-            next_pose_angles = next_anim[wrapped_next_frame]["angles"]
-
-            return {name: current_pose_angles[name] * 0.5 + next_pose_angles[name] * 0.5 for name in JOINT_NAMES}
+        return self._sample_animation_overlay(agent_id, base_angles, dt)
 
     def _sample_animation_overlay(
         self,

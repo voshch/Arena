@@ -20,7 +20,7 @@ from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim
-from arena_runtime_msgs.msg import LockstepChannel, LockstepRegistration, LockstepStatus
+from arena_runtime_msgs.msg import LockstepChannel, LockstepRegistration
 from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
@@ -119,12 +119,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._namespace("arena_peds"),
             self._on_arena_peds,
             10,
-        )
-        self.node.create_subscription(
-            LockstepStatus,
-            "/arena/state/lockstep",
-            self._on_lockstep_status,
-            rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL),
         )
 
         self._possession: PossessionTable[Pedestrian] = PossessionTable(phase=self._gait.phase)
@@ -232,10 +226,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._logger.warning(f"ped {ped_id}: gesture opts {raw!r} on slot {slot!r} is not a JSON object, ignoring")
             return {}
         return opts
-
-    def _on_lockstep_status(self, msg: LockstepStatus) -> None:
-        """Gesture clips are generated inline while a gated lockstep run is active, so their timing is sim-deterministic."""
-        self._gestures.sync = bool(msg.active and not msg.ungated)
 
     def publish_markers(self, markers: MarkerArray) -> None:
         """Publish a transient debug-overlay MarkerArray on `pedestrian_markers/extra`."""

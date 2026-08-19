@@ -20,9 +20,6 @@ SLOT_HAND = {"arm_l": "l", "arm_r": "r"}
 
 
 class PointGesture:
-    REACH_IN = math.radians(90.0)
-    REACH_OUT = math.radians(110.0)
-
     def __init__(self) -> None:
         self._gen = BakedPointAt(height=BODY_HEIGHT)
 
@@ -31,9 +28,6 @@ class PointGesture:
         if not moving:
             joints |= {f"{axis}_{s}" for s in SPINE_SEGMENTS for axis in ("y", "r")} | set(SPINE_SEGMENTS)
         return joints
-
-    def reach(self, local: np.ndarray) -> float:
-        return abs(math.atan2(local[1], local[0]))
 
     def breathing(self, side: str) -> dict[str, float]:
         return {f"{side}_p_shoulder": BREATH_AMP_RAD, f"{side}_elbow": BREATH_AMP_RAD}

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import concurrent.futures
 import math
 from pathlib import Path
 
@@ -49,15 +48,9 @@ class StubLogger:
 def rig() -> tuple[AnimationManager, GestureLayer, StubLogger]:
     log = StubLogger()
     mgr = AnimationManager(ANIMATIONS, logger=log, fps=20.0)
-    layer = GestureLayer(mgr, log, sync=True)
+    layer = GestureLayer(mgr, log)
     mgr.gesture_hook = layer
     return mgr, layer, log
-
-
-def world(local: tuple[float, float, float]) -> tuple[float, float, float]:
-    """Ped-local xyz of POSE to world."""
-    c, s = math.cos(POSE[2]), math.sin(POSE[2])
-    return (POSE[0] + c * local[0] - s * local[1], POSE[1] + s * local[0] + c * local[1], local[2])
 
 
 def req(*channels: Channel, moving: bool = False) -> GestureRequest:
@@ -74,42 +67,6 @@ def head_ch(at: tuple[float, float, float]) -> Channel:
 
 def point(at: tuple[float, float, float], moving: bool = False, **opts: str) -> GestureRequest:
     return req(arm(at, **opts), moving=moving)
-
-
-def local_point(local: tuple[float, float, float], moving: bool = False) -> GestureRequest:
-    return point(world(local), moving=moving)
-
-
-class StubExecutor:
-    """Holds submitted jobs until the test lands them."""
-
-    def __init__(self):
-        self.pending: list[tuple[concurrent.futures.Future, object]] = []
-        self.submitted = 0
-
-    def submit(self, fn):
-        fut: concurrent.futures.Future = concurrent.futures.Future()
-        self.pending.append((fut, fn))
-        self.submitted += 1
-        return fut
-
-    def land(self, n: int | None = None) -> None:
-        batch, self.pending = self.pending[:n], self.pending[n:] if n is not None else []
-        for fut, fn in batch:
-            if not fut.set_running_or_notify_cancel():
-                continue
-            try:
-                fut.set_result(fn())
-            except Exception as e:  # noqa: BLE001 - mirrors the pool, the layer classifies it
-                fut.set_exception(e)
-
-
-@pytest.fixture()
-def async_rig(rig) -> tuple[AnimationManager, GestureLayer, StubLogger, StubExecutor]:
-    mgr, layer, log = rig
-    layer.sync = False
-    layer._executor = StubExecutor()
-    return mgr, layer, log, layer._executor
 
 
 def tick(mgr: AnimationManager, agent: int, request: GestureRequest | None, n: int = 1) -> dict[str, float]:
@@ -472,17 +429,11 @@ def test_same_channel_request_waits_for_release_tail(rig):
 
 
 class BrokenGesture:
-    REACH_IN = 10.0
-    REACH_OUT = 10.0
-
     def __init__(self):
         self.starts = 0
 
     def joints(self, side: str, moving: bool) -> set[str]:
         return set()
-
-    def reach(self, local) -> float:
-        return 0.0
 
     def bind(self, slot: str, local, opts: dict) -> dict:
         return dict(opts)
@@ -527,13 +478,6 @@ def test_arm_fault_leaves_the_head_alone(rig):
     assert set(mgr._ped_blend[1]) == {"head"}
 
 
-def test_target_behind_the_ped_is_not_pointed_at(rig):
-    mgr, layer, _ = rig
-    tick(mgr, 1, point((1.0, -3.0, 1.2)), n=3)
-    assert 1 not in layer._agents
-    assert 1 not in mgr._ped_blend
-
-
 def test_channel_opts_default_empty():
     assert Channel("arm", (0.0, 0.0, 0.0)).opts == {}
 
@@ -570,14 +514,6 @@ def test_look_frames_aim_within_limits_and_release_to_zero():
     far = g.start(np.array([0.5, 3.0, 5.0]), {})
     assert far.hold.yaw <= LIMITS["y_head"][1] and far.hold.pitch <= LIMITS["p_head"][1]
     assert g.bind("head", local, {"x": 1}) == {"x": 1}
-
-
-def test_head_out_of_reach_leaves_arm_alone(rig):
-    mgr, layer, _ = rig
-    ped_local = (0.5, 1.5, 1.2)  # az ~1.25 rad: inside the arm's reach, outside the head's
-    tick(mgr, 1, req(arm(world(ped_local)), head_ch(world(ped_local))))
-    assert set(layer._agents[1].slots) == {"arm"}
-    assert arm_slot(layer, 1).clip is not None
 
 
 # -- timing ---------------------------------------------------------------
@@ -674,44 +610,6 @@ def test_breathing_phase_differs_per_agent(rig):
     assert a1[f"{side}_elbow"] != a2[f"{side}_elbow"]
 
 
-# -- hysteresis -----------------------------------------------------------
-
-
-def test_reach_hysteresis_in_and_out(rig):
-    mgr, layer, _ = rig
-    g = layer._gesture("point")
-
-    def at(az: float) -> GestureRequest:
-        return local_point((2.0 * math.cos(az), 2.0 * math.sin(az), 1.2))
-
-    tick(mgr, 1, at(g.REACH_IN + 0.05), n=3)
-    assert 1 not in layer._agents  # outside REACH_IN: never starts
-    st = to_hold(mgr, layer, 1, at(g.REACH_IN - 0.05))
-    tick(mgr, 1, at(g.REACH_OUT - 0.05))  # past REACH_IN but inside REACH_OUT: keeps going (retargets)
-    assert st.phase in ("hold", "transition")
-    tick(mgr, 1, at(g.REACH_OUT - 0.05), n=int(HOLD_MIN_S / DT) + 40)
-    tick(mgr, 1, at(g.REACH_OUT + 0.05))
-    assert st.phase == "release"
-    assert g.REACH_IN < g.REACH_OUT
-    look = layer._gesture("look")
-    assert look.REACH_IN < look.REACH_OUT < g.REACH_IN
-    assert (g.REACH_IN, g.REACH_OUT) == (math.radians(90.0), math.radians(110.0))
-    assert (look.REACH_IN, look.REACH_OUT) == (math.radians(60.0), math.radians(70.0))
-
-
-def test_head_reach_is_independent_of_the_arm(rig):
-    mgr, layer, _ = rig
-    look = layer._gesture("look")
-    inside = world((2.0 * math.cos(look.REACH_IN - 0.05), 2.0 * math.sin(look.REACH_IN - 0.05), 1.6))
-    outside = world((2.0 * math.cos(look.REACH_OUT + 0.05), 2.0 * math.sin(look.REACH_OUT + 0.05), 1.6))
-    st = to_hold(mgr, layer, 1, req(arm(inside), head_ch(inside)))
-    hd = head_slot(layer, 1)
-    settle(mgr, 1, req(arm(inside), head_ch(inside)), st)
-    tick(mgr, 1, req(arm(outside), head_ch(outside)))
-    assert hd.phase == "release"
-    assert st.phase in ("hold", "transition")
-
-
 # -- retarget mid crossfade -----------------------------------------------
 
 
@@ -739,75 +637,3 @@ def test_retarget_install_carries_the_moving_crossfade(rig):
     assert steps.max() < 0.1
     assert max(abs(seen[0][j] - seen[-1][j]) for j in spine) > 0.05
 
-
-# -- async executor -----------------------------------------------------------
-
-
-def test_head_release_survives_a_pending_arm_job(async_rig):
-    mgr, layer, _, ex = async_rig
-    a = req(arm(world((1.0, 0.5, 1.2))), head_ch(world((1.0, 0.5, 1.6))))
-    tick(mgr, 1, a)
-    ex.land()
-    tick(mgr, 1, a)
-    st = arm_slot(layer, 1)
-    tick(mgr, 1, a, n=int(st.clip.hold_start / st.clip.fps / DT) + 2)
-    hd = head_slot(layer, 1)
-    assert st.phase == "hold" and hd.phase == "hold"
-    settle(mgr, 1, a, st)
-    b = req(arm(world((0.8, 1.0, 1.0))))
-    tick(mgr, 1, b)
-    assert st.job is not None and hd.phase == "release"
-    tick(mgr, 1, b, n=2)
-    assert st.phase == "hold" and st.job is not None
-    ex.land()
-    tick(mgr, 1, b)
-    assert st.phase == "transition"
-
-
-def test_one_tick_request_never_installs_in_async(async_rig):
-    mgr, layer, _, ex = async_rig
-    r = req(arm((1.0, 5.0, 1.2)), head_ch((1.0, 5.0, 1.6)))
-    tick(mgr, 1, r)
-    assert set(layer._agents[1].slots) == {"head", "arm"}
-    assert ex.pending
-    tick(mgr, 1, None)
-    assert 1 not in layer._agents
-    assert all(fut.cancelled() for fut, _ in ex.pending)
-    ex.land()
-    tick(mgr, 1, None, n=3)
-    assert 1 not in layer._agents
-    assert 1 not in mgr._ped_blend
-    assert not any(name.startswith("gesture:") for name in mgr.animations)
-
-
-def test_one_tick_request_releases_after_min_hold_in_sync(rig):
-    mgr, layer, _ = rig
-    tick(mgr, 1, point((1.0, 5.0, 1.2)))
-    assert set(mgr._ped_blend[1]) == {"arm"}
-    st = arm_slot(layer, 1)
-    tick(mgr, 1, None)
-    assert st.release_pending
-    settle(mgr, 1, None, st)
-    assert st.phase == "release"
-    drain(mgr, 1, None, st)
-    assert 1 not in layer._agents and 1 not in mgr._ped_blend
-
-
-def test_failing_generator_is_not_resubmitted_until_the_request_changes(async_rig):
-    mgr, layer, log, ex = async_rig
-    broken = BrokenGesture()
-    layer._gestures["point"] = broken
-    r = point((1.0, 5.0, 1.2))
-    tick(mgr, 1, r)
-    ex.land()
-    tick(mgr, 1, r, n=2)
-    assert ex.submitted == 1 and broken.starts == 1
-    assert 1 not in layer._agents
-    assert sum("failed" in line for line in log.lines) == 1
-    tick(mgr, 1, point((1.0, 5.04, 1.2)), n=2)  # within the 0.1 m latch
-    assert ex.submitted == 1
-    tick(mgr, 1, point((1.0, 5.5, 1.2)))
-    assert ex.submitted == 2
-    ex.land()
-    tick(mgr, 1, point((1.0, 5.5, 1.2)), n=2)
-    assert ex.submitted == 2

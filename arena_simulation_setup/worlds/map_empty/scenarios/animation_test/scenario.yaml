@@ -1,0 +1,71 @@
+# Animation Test Scenario on map_empty
+#
+# Tests all animation states (SIT=11, TALK=12, WAVE=13, WALKING=1, RUNNING=2, IDLE=0)
+
+robots:
+  - start: [24.0, 20.0, 0.7]
+    goal: [-1.0, -1.0, 0.0]
+
+dynamic:
+  # --- TALK_TO (TALK=12) ---
+  - name: talker_1
+    model: arenian
+    pose: { x: 4.0, y: 5.0, theta: 0.0 }
+    agent: { agent_type: ./talker.yaml, desired_velocity: 1.0 }
+
+  - name: talker_2
+    model: arenian
+    pose: { x: 5.0, y: 5.0, theta: 3.14159 }
+    agent: { agent_type: ./talker.yaml, desired_velocity: 1.0 }
+
+  # --- GROUP_CONVERSATION (TALK=12) ---
+  - name: grouper_1
+    model: arenian
+    pose: { x: 6.0, y: 5.0, theta: 0.0 }
+    agent: { agent_type: ./grouper.yaml, desired_velocity: 1.0 }
+
+  - name: grouper_2
+    model: arenian
+    pose: { x: 7.0, y: 5.0, theta: 1.0 }
+    agent: { agent_type: ./grouper.yaml, desired_velocity: 1.0 }
+
+  - name: grouper_3
+    model: arenian
+    pose: { x: 8.0, y: 5.0, theta: -1.0 }
+    agent: { agent_type: ./grouper.yaml, desired_velocity: 1.0 }
+
+  # --- WAVE_AT (WAVE=13) ---
+  - name: waver_1
+    model: arenian
+    pose: { x: 9.0, y: 5.0, theta: 0.0 }
+    agent: { agent_type: ./waver.yaml, desired_velocity: 1.0 }
+
+  - name: waver_2
+    model: arenian
+    pose: { x: 10.0, y: 5.0, theta: 3.14159 }
+    agent: { agent_type: ./waver.yaml, desired_velocity: 1.0 }
+
+  # --- SIT_ON (SIT=11) ---
+  - name: sitter_1
+    model: arenian
+    pose: { x: 11.0, y: 5.0, theta: 0.0 }
+    agent: { agent_type: ./sitter.yaml, desired_velocity: 1.2 }
+
+  # --- Standard Speed Fallback (WALKING=1, RUNNING=2, IDLE=0) ---
+  - name: walker_1
+    model: arenian
+    pose: { x: 12.0, y: 5.0, theta: 0.0 }
+    agent: { agent_type: adult, desired_velocity: 1.0 }
+
+  - name: runner_1
+    model: arenian
+    pose: { x: 13.0, y: 8.0, theta: 0.0 }
+    agent: { agent_type: adult, desired_velocity: 2.0 }
+
+static:
+  - name: chair_1
+    model: SM_Chair_01a
+    pose: { x: 12.0, y: 5.0, theta: 0.0 }
+    type: SM_Chair_01a
+    capacity: 1
+    interaction_radius: 0.8

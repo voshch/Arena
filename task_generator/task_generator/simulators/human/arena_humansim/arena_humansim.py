@@ -620,13 +620,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             )
             ped.twist = Twist(linear=agent.velocity)
 
-            speed = math.hypot(agent.velocity.x, agent.velocity.y)
-            if speed > 1.5:
-                ped.animation_state = Pedestrian.RUNNING
-            elif speed > 0.05:
-                ped.animation_state = Pedestrian.WALKING
-            else:
-                ped.animation_state = Pedestrian.IDLE
+            ped.animation_state = agent.animation_state
             ped.gestures = [GestureMsg(slot=g.slot, at=g.at, opts=g.opts) for g in agent.gestures]
 
             peds.pedestrians.append(ped)
