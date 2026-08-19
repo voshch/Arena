@@ -1,6 +1,7 @@
 """Task generator adapter for arena_humansim."""
 
 import asyncio
+import copy
 import math
 import traceback
 from collections.abc import Mapping, Sequence
@@ -349,8 +350,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             if prev_a is None:
                 msg.agents.append(curr_a)
                 continue
-            a = AgentStateMsg()
-            a.agent_id = curr_a.agent_id
+            a = copy.deepcopy(curr_a)
             d_theta = math.atan2(
                 math.sin(curr_a.pose.theta - prev_a.pose.theta),
                 math.cos(curr_a.pose.theta - prev_a.pose.theta),
@@ -365,11 +365,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 y=inv * prev_a.velocity.y + alpha * curr_a.velocity.y,
                 z=0.0,
             )
-            a.desired_velocity = curr_a.desired_velocity
-            a.radius = curr_a.radius
-            a.name = curr_a.name
-            a.handedness = curr_a.handedness
-            a.gestures = curr_a.gestures
             msg.agents.append(a)
         return msg
 
