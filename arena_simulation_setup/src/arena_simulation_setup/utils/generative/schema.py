@@ -15,7 +15,9 @@ from arena_rclpy_mixins.declarations import (
     declare_float_pair,
     declare_int,
     declare_int_pair,
+    declare_sketch,
     declare_string,
+    declare_text,
 )
 
 if typing.TYPE_CHECKING:
@@ -83,6 +85,13 @@ def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls
         elif annotation is float:
             declare_double(node, name, float(default), label=label, lo=float(ge) if ge is not None else None, hi=float(le) if le is not None else None)
         elif annotation is str:
-            declare_string(node, name, str(default), label=label)
+            extra = field_info.json_schema_extra
+            widget = extra.get("widget") if isinstance(extra, dict) else None
+            if widget == "sketch":
+                declare_sketch(node, name, str(default), label=label)
+            elif widget == "text":
+                declare_text(node, name, str(default), label=label)
+            else:
+                declare_string(node, name, str(default), label=label)
         else:
             raise ValueError(f"Unsupported annotation {annotation!r} for field '{field_name}'; only bool/int/float/str and 2-tuples thereof are supported")

@@ -51,6 +51,7 @@ _SELECT = Union(Static(_names), _ALL)
 def _forward(verb: str, args: list[str]) -> int:
     import subprocess
 
+    os.environ.setdefault("GIT_SSH_COMMAND", common._git_ssh_command())
     rc = subprocess.run(["python3", _payload(), verb, *args], check=False).returncode
     if verb in ("add", "rm", "update", "uninstall"):
         complete.invalidate(common._env("ARENA_WS_DIR"))
@@ -59,13 +60,13 @@ def _forward(verb: str, args: list[str]) -> int:
 
 def add(argv: list[str]) -> None:
     rc = _forward("add", argv)
-    sys.exit(rc if rc else _deps_build())
+    sys.exit(_deps_build() or rc)
 
 
 def update(argv: list[str]) -> None:
     common._reg_require(_NAME)
     rc = _forward("update", argv)
-    sys.exit(rc if rc else _deps_build())
+    sys.exit(_deps_build() or rc)
 
 
 def rm(argv: list[str]) -> None:
@@ -86,7 +87,7 @@ def drive(argv: list[str]) -> None:
 
 def install(argv: list[str]) -> None:
     rc = _forward("add", argv)
-    sys.exit(rc if rc else _deps_build())
+    sys.exit(_deps_build() or rc)
 
 
 def uninstall(argv: list[str]) -> None:

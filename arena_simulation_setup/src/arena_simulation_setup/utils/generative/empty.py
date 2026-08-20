@@ -9,7 +9,9 @@ from .utils import to_corners, to_walls
 
 
 class WorldGeneratorEmpty(WorldGeneratorImpl):
-    class Configuration(BaseConfiguration): ...
+    class Configuration(BaseConfiguration):
+        width: float = 15.0  # m
+        height: float = 15.0  # m
 
     config: Configuration
 

@@ -23,6 +23,10 @@ def identifier_to_available(identifier: type[Identifier], **kwargs: object) -> I
     yield from (identifier.shortname for identifier in identifier.listall(**kwargs))
 
 
+async def identifier_to_available_async(identifier: type[Identifier], **kwargs: object) -> list[str]:
+    return [identifier.shortname for identifier in await identifier.listall_async(**kwargs)]
+
+
 _SchemaFn = Callable[["ROSParamServer", Namespace], None]
 
 

@@ -55,8 +55,8 @@ from arena_runtime.sim import BaseSim, SimLifecycle
 from arena_runtime.sim._control import (
     controller_spawner_node,
     effective_control_yaml,
-    effective_controllers,
     odom_relay_node,
+    robot_controllers,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import resolve_obstacle_box
@@ -340,6 +340,9 @@ class GazeboSimulator(BaseSim):
     async def pedestrian_spawn(self, pedestrians: Sequence[DynamicObstacle]) -> Sequence[bool]:
         # Ped actors are created and removed by PedSkeletonPlugin from arena_peds.
         return tuple(True for _ in pedestrians)
+
+    def robot_controllers(self, robot: Robot) -> list[str]:
+        return robot_controllers(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync(), robot.resolved_assembly)
 
     async def robot_spawn(self, robots: Sequence[Robot]) -> Sequence[bool]:
 
@@ -828,7 +831,7 @@ class GazeboSimulator(BaseSim):
         if control_spec is not None and control_spec.is_ros2_control:
             if not control_spec.controllers:
                 raise ValueError(f"control.mode=ros2_control but no controllers declared for {robot.name}")
-            for controller_name in effective_controllers(robot.resolved_assembly, control_spec.controllers, prefix=(robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_')):
+            for controller_name in robot_controllers(robot_config, robot.resolved_assembly):
                 launch_description.add_action(controller_spawner_node(controller_name))
             launch_description.add_action(
                 twist_stamper_node(

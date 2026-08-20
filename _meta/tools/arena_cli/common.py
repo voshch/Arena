@@ -54,6 +54,12 @@ def _exec(*argv: str) -> NoReturn:
         raise CLIError(f"{argv[0]}: {e}") from e
 
 
+def _git_ssh_command() -> str:
+    """ssh that fails fast on unreachable hosts and never blocks on a prompt without a tty."""
+    opts = "-o ConnectTimeout=5" if sys.stdin.isatty() else "-o ConnectTimeout=5 -o BatchMode=yes"
+    return f"ssh {opts}"
+
+
 def _run(*argv: str) -> int:
     import subprocess
 
@@ -117,10 +123,14 @@ def _reg_remove(name: str) -> None:
         f.writelines(n + "\n" for n in kept)
 
 
-def _reg_pull(name: str) -> None:
+def _reg_pull(name: str) -> int:
+    import subprocess
+
     repos = os.path.join(_env("ARENA_DIR"), "_meta", "repos", f"{name}.repos")
     if not os.path.isfile(repos):
-        return
-    rc = _run("vcs", "import", "--input", repos, "--shallow", "--recursive", "--ff", "--add-existing", os.path.join(_env("ARENA_WS_DIR"), "src"))
+        return 0
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    rc = subprocess.run(["vcs", "import", "--input", repos, "--shallow", "--recursive", "--ff", "--add-existing", os.path.join(_env("ARENA_WS_DIR"), "src")], env=env, check=False).returncode
     if rc:
         print(f"failed to pull all {name} repos, ignoring", file=sys.stderr)
+    return rc

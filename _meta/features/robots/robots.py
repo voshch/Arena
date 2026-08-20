@@ -256,17 +256,19 @@ def cmd_update(arena: Path, _args) -> int:
     subs = robot_submodules(arena)
     status = submodule_status(arena)
     installed = {r for r, paths in subs.items() if any(status.get(p) == "init" for p in paths)}
-    rc = 0
+    failed = []
     # --checkout overrides update=none
     for p in sorted({p for r in installed for p in subs[r]}):
         sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
-        code = _git(["-c", "protocol.file.allow=always",
-                     "submodule", "update", "--init", "--recursive", "--checkout", sub_path],
-                    sdk, check=False)
+        if _git(["-c", "protocol.file.allow=always",
+                 "submodule", "update", "--init", "--recursive", "--checkout", sub_path],
+                sdk, check=False):
+            failed.append(sub_path)
         _apply_sparse(arena, p)
-        rc = rc or code
     code = _git(["submodule", "update", "--recursive"], sdk, check=False)
-    return rc or code
+    if failed:
+        print(f"robots: could not update {', '.join(failed)}, keeping current checkouts", file=sys.stderr)
+    return 1 if failed else code
 
 
 def cmd_uninstall(arena: Path, _args) -> int:

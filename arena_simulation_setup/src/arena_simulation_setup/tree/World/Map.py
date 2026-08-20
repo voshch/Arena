@@ -50,10 +50,24 @@ class Map(PathView):
 
         scaling_factor = 1 / resolution
 
+        # World metres to pixels, y flipped: the three steps compose into one matrix. A whole
+        # collection goes through in one crossing into shapely, where per part the crossing costs
+        # far more than the arithmetic.
+        to_pixels = [
+            scaling_factor,
+            0.0,
+            0.0,
+            -scaling_factor,
+            -scaling_factor * min_x,
+            scaling_factor * (min_y + height),
+        ]
+
+        def to_pixel_parts(shape: shapely.Geometry) -> object:
+            return shapely.get_parts(shapely.affinity.affine_transform(shape, to_pixels))
+
         def tf(shape: shapely.Geometry) -> shapely.Geometry:
-            shape = shapely.affinity.translate(shape, -min_x, -min_y)
-            shape = shapely.affinity.scale(shape, scaling_factor, -scaling_factor, origin=(0, 0))
-            shape = shapely.affinity.translate(shape, 0, height * scaling_factor)
+            """Cleanup stays per part: snapping a whole collection at once lets neighbouring
+            zones merge back into one ring, and a filled exterior would swallow the island."""
             shape = shapely.set_precision(shape, 0.01)
             shape = shapely.make_valid(shape)
             shape = shapely.remove_repeated_points(shape)
@@ -63,27 +77,22 @@ class Map(PathView):
             return [(int(math.trunc(x) + padding), int(math.trunc(y) + padding)) for (x, y, *_) in coords]
 
         draw = PIL.ImageDraw.Draw(img)
-        for cutout in rooms.geoms:
-            poly = tf(shapely.Polygon(cutout))
+        for cutout in to_pixel_parts(rooms):
+            poly = tf(cutout)
             draw.polygon(as_int(poly.exterior.coords), fill='white')
 
-        # elevator_fill = (0, int(0.8 * 255), int(0.8 * 255))
-        # for elevator in elevators.geoms:
-        #     poly = tf(shapely.Polygon(elevator))
-        #     draw.polygon(as_int(poly.exterior.coords), fill=elevator_fill)
-
-        for wall in walls.geoms:
-            line = tf(shapely.LineString(wall))
+        for wall in to_pixel_parts(walls):
+            line = tf(wall)
             draw.line(as_int(line.coords), fill='black', width=1)
 
-        for cutout in doors.geoms:
-            poly = tf(shapely.Polygon(cutout))
+        for cutout in to_pixel_parts(doors):
+            poly = tf(cutout)
             draw.polygon(as_int(poly.exterior.coords), fill='white')
 
         if asset_color is not None:
             for name, obj in static_objects:
                 logging.debug(f"Drawing asset '{name}' with geometry: {obj} in color {asset_color}")
-                poly = tf(obj)
+                poly = tf(shapely.affinity.affine_transform(obj, to_pixels))
                 if len(poly.exterior.coords) < 3:
                     logging.warning(f"Skipping asset '{name}' because it has insufficient geometry to draw ({len(poly.exterior.coords)} coordinates).")
                     continue

@@ -7,6 +7,8 @@ import pydantic
 
 from arena_simulation_setup.tree.World import LevelDescription
 
+from .layout import Diagnostics, GridFrame, Note
+
 
 class WorldGeneratorType(enum.Enum):
     """
@@ -16,13 +18,19 @@ class WorldGeneratorType(enum.Enum):
     EMPTY = "empty"
     HALLWAY = "hallway"
     BARN = "barn"
+    SKETCH = "sketch"
+    LETTER = "letter"
 
 
 class BaseConfiguration(pydantic.BaseModel):
-    width: float = 15.0  # m
-    height: float = 15.0  # m
+    """Common to every generator. Extent is not here: a sketch or a text sizes itself from what is drawn."""
+
     resolution: float = 0.05  # m / px
     wall_gap: float = 0.05  # gap between adjacent walls
+
+
+class PedestrianConfiguration(BaseConfiguration):
+    pedestrians: int = pydantic.Field(-1, ge=-1)  # -1 leaves the episode's obstacle mode alone
 
 
 class WorldGeneratorImpl(abc.ABC):
@@ -32,11 +40,19 @@ class WorldGeneratorImpl(abc.ABC):
 
     config: BaseConfiguration
     rng: random.Random
+    diagnostics: 'Diagnostics | None'
+    warnings: list['Note']
 
     def __init__(self, configuration: dict, rng: random.Random) -> None:
         super().__init__()
         self.rng = rng
+        self.diagnostics = None
+        self.warnings = []
         self.configure(configuration)
+
+    def normalize(self, source: str) -> str:
+        """Canonical form of this generator's textual input, unchanged unless the generator defines one."""
+        return source
 
     @abc.abstractmethod
     def configure(self, configuration: dict): ...
@@ -45,8 +61,12 @@ class WorldGeneratorImpl(abc.ABC):
     def compute(self) -> LevelDescription: ...
 
     def files(self) -> dict[str, bytes]:
-        """Auxiliary artifacts packed into the world tar by relative path; none by default."""
+        """Auxiliary artifacts packed into the world tar by relative path, none by default."""
         return {}
+
+    def frame(self) -> 'GridFrame | None':
+        """Cell grid of the last compute in world metres, for generators drawn on one."""
+        return None
 
     def params(self) -> dict[str, typing.Any]:
         """Episode binding applied when this world is queued: tm_robots/tm_obstacles plus
@@ -85,6 +105,20 @@ class WorldGenerator:
     def params(self) -> dict[str, typing.Any]:
         return self._active.params()
 
+    def normalize(self, source: str) -> str:
+        return self._active.normalize(source)
+
+    def frame(self) -> GridFrame | None:
+        return self._active.frame()
+
+    @property
+    def diagnostics(self) -> Diagnostics | None:
+        return self._active.diagnostics
+
+    @property
+    def warnings(self) -> list[Note]:
+        return self._active.warnings
+
     def update_generator(self, generator: WorldGeneratorType, configuration: dict, seed: int = -1):
         if generator not in self.__registry:
             raise ValueError(f"Generator {generator} has no implementation")
@@ -93,6 +127,18 @@ class WorldGenerator:
 
     def __init__(self, generator: WorldGeneratorType, configuration: dict, seed: int = -1):
         self.update_generator(generator, configuration, seed)
+
+
+class WithPedestrians(WorldGeneratorImpl):
+    """A generator whose world carries a pedestrian count, bound as random dynamic obstacles."""
+
+    config: PedestrianConfiguration
+
+    def params(self) -> dict[str, typing.Any]:
+        count = self.config.pedestrians
+        if count < 0:
+            return {}
+        return {'tm_obstacles': 'random', 'obstacles_params': {'dynamic.n': [count, count]}}
 
 
 @WorldGenerator.register(WorldGeneratorType.EMPTY)
@@ -114,3 +160,17 @@ def lazy_Barn() -> type[WorldGeneratorImpl]:
     from .barn import WorldGeneratorBarn
 
     return WorldGeneratorBarn
+
+
+@WorldGenerator.register(WorldGeneratorType.SKETCH)
+def lazy_Sketch() -> type[WorldGeneratorImpl]:
+    from .sketch import WorldGeneratorSketch
+
+    return WorldGeneratorSketch
+
+
+@WorldGenerator.register(WorldGeneratorType.LETTER)
+def lazy_Letter() -> type[WorldGeneratorImpl]:
+    from .letter import WorldGeneratorLetter
+
+    return WorldGeneratorLetter

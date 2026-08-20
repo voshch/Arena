@@ -41,10 +41,10 @@ def test_barn_registered():
 # ---------------------------------------------------------------------------
 
 
-def test_base_configuration_custom_values():
-    cfg = BaseConfiguration(width=20.0, height=30.0)
-    assert cfg.width == pytest.approx(20.0)
-    assert cfg.height == pytest.approx(30.0)
+def test_extent_belongs_to_the_generators_that_have_one():
+    """A sketch or a text sizes itself from what is drawn, so the base carries no width or height."""
+    assert 'width' not in BaseConfiguration.model_fields
+    assert WorldGeneratorEmpty.Configuration(width=20.0, height=30.0).width == pytest.approx(20.0)
 
 
 def test_base_configuration_custom_resolution():

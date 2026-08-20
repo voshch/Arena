@@ -568,26 +568,30 @@ class RobotManager(NodeInterface):
                 await adapter.on_controllers_active(self)
 
     async def wait_controllers_active(self) -> None:
-        """Block until every spawned controller reports active, so the controller_manager can step them
-        up. Must run inside an open sim-unpause window (the caller holds one). No controller_manager
-        within the grace window (dummy sim) means there is nothing to wait for. If they do not all reach
-        active within the budget, log the laggards and proceed rather than wedging the reset."""
+        """Block until every controller the sim spawns for this robot is active. Must run inside an open
+        sim-unpause window (the caller holds one). No expected controllers (dummy sim) returns at once.
+        Past the budget, log the laggards and proceed rather than wedging the reset."""
+        expected = set(self._environment_manager.robot_controllers(self._robot))
+        if not expected:
+            return
         client = self.node.create_client_wrapper(
             controller_manager_msgs.srv.ListControllers,
             str(self.namespace("controller_manager", "list_controllers")),
             timeout=_CONTROLLER_MANAGER_GRACE,
         )
         if not await client.ensure(timeout_sec=_CONTROLLER_MANAGER_GRACE):
+            self._logger.warning(f"controller_manager not up within {_CONTROLLER_MANAGER_GRACE:.0f}s, proceeding without {sorted(expected)}")
             return
         deadline = time.monotonic() + _CONTROLLER_ACTIVE_TIMEOUT
-        resp = None
+        active: set[str] = set()
         while time.monotonic() < deadline:
             resp = await client.call_timeout(controller_manager_msgs.srv.ListControllers.Request())
-            if resp is not None and resp.controller and all(c.state == "active" for c in resp.controller):
-                return
+            if resp is not None:
+                active = {c.name for c in resp.controller if c.state == "active"}
+                if expected <= active:
+                    return
             await asyncio.sleep(_CONTROLLER_POLL)
-        laggards = [c.name for c in resp.controller if c.state != "active"] if resp is not None and resp.controller else []
-        self._logger.warning(f"controllers not active within budget, proceeding: {laggards or '<no controller_manager response>'}")
+        self._logger.warning(f"controllers not active within budget, proceeding: {sorted(expected - active)}")
 
     async def update(self):
         # TODO implement record data dir

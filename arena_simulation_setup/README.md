@@ -18,6 +18,9 @@ pedestrian agents, and environment templates through the types defined here.
   shared behavior tree library under `behavior_trees/`.
 - [Authoring a world](AUTHORING.md): end-to-end guide: create dir, author
   `world.yaml`, generate map, add scenario, validate.
+- [Generative worlds](src/arena_simulation_setup/utils/generative/README.md):
+  the generator registry, the layout IR they compile to, the sketch and letter
+  grammars, and the ROS surface the rviz panel drives.
 
 ## CLI
 

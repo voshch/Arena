@@ -145,8 +145,9 @@ class Task(NodeInterface):
         assert tm_robots in ROBOTS_MODES, f"TaskMode '{tm_robots}' for robots is not registered!"
         cls = ROBOTS_MODES.get(tm_robots)
         meta = ROBOTS_MODES.meta(tm_robots)
+        new_mode = cls(ctx=self._ctx, namespace=meta.namespace, node=self.node)
         await self._tear_down_tm_robots()
-        self.__tm_robots = cls(ctx=self._ctx, namespace=meta.namespace, node=self.node)
+        self.__tm_robots = new_mode
         self.__param_tm_robots = tm_robots
 
     async def set_tm_robots_composite(
@@ -199,10 +200,10 @@ class Task(NodeInterface):
         assert tm_obstacles in OBSTACLES_MODES, f"TaskMode '{tm_obstacles}' for obstacles is not registered!"
         cls = OBSTACLES_MODES.get(tm_obstacles)
         meta = OBSTACLES_MODES.meta(tm_obstacles)
+        new_mode = cls(ctx=self._ctx, namespace=meta.namespace, node=self.node)
         if self.__tm_obstacles is not None:
             await self.__tm_obstacles.teardown()
-            self.__tm_obstacles = None
-        self.__tm_obstacles = cls(ctx=self._ctx, namespace=meta.namespace, node=self.node)
+        self.__tm_obstacles = new_mode
         self.__param_tm_obstacles = tm_obstacles
 
     async def teardown(self) -> None:

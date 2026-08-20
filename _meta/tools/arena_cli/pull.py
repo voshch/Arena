@@ -10,7 +10,7 @@ def pull_main(argv: list[str]) -> int:
     import subprocess
 
     import features
-    from common import _cli, _env, _reg_list, _reg_pull
+    from common import _cli, _env, _git_ssh_command, _reg_list, _reg_pull
 
     arena_dir = _env("ARENA_DIR")
     arena_ws_dir = _env("ARENA_WS_DIR")
@@ -19,32 +19,36 @@ def pull_main(argv: list[str]) -> int:
     do_git = os.environ.get("GIT", "1") == "1"
     do_rosdep = os.environ.get("ROSDEP", "1") == "1"
 
+    os.environ.setdefault("GIT_SSH_COMMAND", _git_ssh_command())
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["ROSDEP_EXCLUDES"] = "libignition-gazebo6-dev gazebo_dev gazebo_ros gazebo_plugins gazebo_ros2_control flir_ptu_description"
 
+    skipped: list[str] = []
     prev_cwd = os.getcwd()
     os.chdir(arena_dir)
     try:
-        rc = subprocess.run(["sudo", "apt", "update"], env=env, check=False).returncode
-        if rc:
-            return rc
+        if subprocess.run(["sudo", "apt", "update"], env=env, check=False).returncode:
+            print("apt update failed, continuing with stale package lists", file=sys.stderr)
+            skipped.append("apt update")
 
         if do_git:
             print("updating Arena...")
             has_upstream = subprocess.run(["git", "rev-parse", "--verify", "-q", "@{u}"], env=env, check=False, capture_output=True).returncode == 0
             if has_upstream:
-                rc = subprocess.run(["git", "pull", "--ff-only", "--autostash"], env=env, check=False).returncode
-                if rc:
-                    return rc
+                if subprocess.run(["git", "pull", "--ff-only", "--autostash"], env=env, check=False).returncode:
+                    print("Arena pull failed, continuing with current checkout", file=sys.stderr)
+                    skipped.append("Arena pull")
             else:
                 print("no upstream for current branch, skipping Arena pull")
 
             if subprocess.run(["git", "submodule", "update", "--init", "--checkout", "arena_planners", "arena_robots", "humansim"], env=env, check=False).returncode:
                 print("failed to init/update arena_planners/arena_robots/humansim, ignoring")
+                skipped.append("core submodules")
 
             if subprocess.run(["git", "submodule", "update", "--checkout", "--recursive"], env=env, check=False).returncode:
                 print("submodule checkout had issues, resolve manually")
+                skipped.append("recursive submodules")
 
             foreach_script = (
                 'branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" 2>/dev/null || true)\n'
@@ -59,6 +63,7 @@ def pull_main(argv: list[str]) -> int:
             ws_src = os.path.join(arena_ws_dir, "src")
             if subprocess.run(["vcs", "import", "--input", repos_file, "--recursive", "--ff", "--add-existing", ws_src], env=env, check=False).returncode:
                 print("failed to pull all arena repos, ignoring")
+                skipped.append("arena.repos")
 
             deps_dir = os.path.join(ws_src, "deps")
             if not os.path.isdir(deps_dir) or not os.listdir(deps_dir):
@@ -68,9 +73,11 @@ def pull_main(argv: list[str]) -> int:
             for name in _reg_list():
                 if features.load(name) is None:
                     continue
-                _reg_pull(name)
+                if _reg_pull(name):
+                    skipped.append(f"{name}.repos")
                 if _cli("feature", name, "update"):
                     print(f"failed to update feature {name}, ignoring", file=sys.stderr)
+                    skipped.append(f"feature {name}")
 
         if do_rosdep:
             rosdep_ok = subprocess.run(["rosdep", "update", "--rosdistro", _env("ARENA_ROS_DISTRO")], env=env, check=False).returncode == 0
@@ -82,6 +89,7 @@ def pull_main(argv: list[str]) -> int:
             ).returncode == 0
             if not deps_ok:
                 print("rosdep failed to install all dependencies")
+                skipped.append("rosdep")
 
         if do_python:
             print("updating python deps...")
@@ -93,6 +101,11 @@ def pull_main(argv: list[str]) -> int:
         rc = subprocess.run([os.path.join(arena_dir, "_meta", "tools", "create_links")], env=env, check=False).returncode
         if rc:
             return rc
+
+        if skipped:
+            print("\033[0;33m")
+            print("update incomplete, skipped: " + ", ".join(skipped))
+            print("\033[0m")
 
         print("\033[0;31m")
         print("don't forget to rebuild!")

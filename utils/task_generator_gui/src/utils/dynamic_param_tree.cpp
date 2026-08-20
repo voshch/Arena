@@ -1,5 +1,7 @@
 #include "task_generator_gui/utils/dynamic_param_tree.hpp"
 
+#include "task_generator_gui/utils/sketch_edit.hpp"
+
 #include "Qt-MultiSelectComboBox/MultiSelectComboBox.h"
 
 #include <rcl_interfaces/msg/parameter_type.hpp>
@@ -12,12 +14,14 @@
 #include <QCheckBox>
 #include <QLineEdit>
 #include <QTextEdit>
+#include <QPlainTextEdit>
 #include <QSignalBlocker>
 #include <QMetaObject>
+#include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <limits>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -93,6 +97,12 @@ DynamicParamTree::DynamicParamTree(
 
 void DynamicParamTree::rebuild(const std::string& namespace_prefix)
 {
+    retries_ = 5;
+    retryRebuild(namespace_prefix);
+}
+
+void DynamicParamTree::retryRebuild(const std::string& namespace_prefix)
+{
     if (!params_client_ || !tree_)
         return;
 
@@ -146,76 +156,12 @@ void DynamicParamTree::rebuild(const std::string& namespace_prefix)
                     state->values      = std::move(kept_values);
                 }
 
-                std::set<std::string> needed;
-                for (const auto &desc : state->descriptors)
+                QMetaObject::invokeMethod(tree_, [this, state, this_gen]()
                 {
-                    std::string rest = desc.additional_constraints;
-                    while (!rest.empty())
-                    {
-                        size_t semi  = rest.find(';');
-                        std::string token = (semi == std::string::npos) ? rest : rest.substr(0, semi);
-                        rest = (semi == std::string::npos) ? std::string() : rest.substr(semi + 1);
-                        if (token.rfind("catalog:", 0) == 0)
-                            needed.insert(token.substr(8));
-                    }
-                }
-                {
-                    std::lock_guard<std::mutex> lk(state->mtx);
-                    state->needed_catalogs = needed;
-                }
-
-                if (needed.empty())
-                {
-                    QMetaObject::invokeMethod(tree_, [this, state, this_gen]()
-                    {
-                        if (this_gen != rebuild_gen_) return;
-                        buildTreeWidgets(state);
-                    }, Qt::QueuedConnection);
-                    return;
-                }
-
-                state->pending_catalogs.store(static_cast<int>(needed.size()));
-
-                for (const auto &cat : needed)
-                {
-                    if (catalog_fetcher_)
-                    {
-                        catalog_fetcher_(
-                            cat,
-                            [this, state, this_gen, cat](std::vector<std::string> ids)
-                            {
-                                {
-                                    std::lock_guard<std::mutex> lk(state->mtx);
-                                    state->catalog_cache[cat] = std::move(ids);
-                                }
-                                if (--state->pending_catalogs == 0)
-                                {
-                                    QMetaObject::invokeMethod(tree_,
-                                        [this, state, this_gen]()
-                                        {
-                                            if (this_gen != rebuild_gen_) return;
-                                            buildTreeWidgets(state);
-                                        }, Qt::QueuedConnection);
-                                }
-                            });
-                    }
-                    else
-                    {
-                        {
-                            std::lock_guard<std::mutex> lk(state->mtx);
-                            state->catalog_cache[cat] = {};
-                        }
-                        if (--state->pending_catalogs == 0)
-                        {
-                            QMetaObject::invokeMethod(tree_,
-                                [this, state, this_gen]()
-                                {
-                                    if (this_gen != rebuild_gen_) return;
-                                    buildTreeWidgets(state);
-                                }, Qt::QueuedConnection);
-                        }
-                    }
-                }
+                    if (this_gen != rebuild_gen_) return;
+                    buildTreeWidgets(state);
+                    fetchCatalogs(this_gen);
+                }, Qt::QueuedConnection);
             };
 
             params_client_->describe_parameters(
@@ -247,6 +193,23 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
     tree_->clear();
     widget_map_->clear();
     type_map_->clear();
+    catalog_widgets_.clear();
+
+    // A node that does not know a listed name answers describe/get with an empty list.
+    if (state->descriptors.size() != state->param_names.size()
+        || state->values.size() != state->param_names.size())
+    {
+        auto *item = new QTreeWidgetItem(tree_);
+        item->setText(0, QString::fromStdString(state->namespace_prefix));
+        item->setText(1, retries_ > 0 ? "node did not describe these parameters, retrying"
+                                      : "node did not describe these parameters");
+        if (retries_ > 0)
+        {
+            --retries_;
+            QTimer::singleShot(2000, &lifetime_, [this, prefix = state->namespace_prefix]() { retryRebuild(prefix); });
+        }
+        return;
+    }
 
     const std::string prefix = state->namespace_prefix + ".";
 
@@ -263,6 +226,8 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
 
         std::string label;
         std::string constraints;
+        bool is_sketch = false;
+        bool is_text   = false;
         {
             std::string rest = desc.additional_constraints;
             while (!rest.empty())
@@ -270,6 +235,16 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
                 size_t semi  = rest.find(';');
                 std::string token = (semi == std::string::npos) ? rest : rest.substr(0, semi);
                 rest = (semi == std::string::npos) ? std::string() : rest.substr(semi + 1);
+                if (token == "sketch")
+                {
+                    is_sketch = true;
+                    continue;
+                }
+                if (token == "text")
+                {
+                    is_text = true;
+                    continue;
+                }
                 size_t colon = token.find(':');
                 if (colon == std::string::npos) continue;
                 std::string kind  = token.substr(0, colon);
@@ -305,25 +280,31 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
         else if (constraints.rfind("catalog:", 0) == 0 && ptype == PT::PARAMETER_STRING_ARRAY)
         {
             const std::string catalog_name = constraints.substr(8);
-            const auto &items = state->catalog_cache[catalog_name];
-            auto *cb = new MultiSelectComboBox();
             const auto &selected = param.as_string_array();
-            for (const auto &entry : items)
+            auto *cb = new MultiSelectComboBox();
+            for (const auto &entry : seedCatalogItems(catalog_name, selected))
             {
                 int checked = std::find(selected.begin(), selected.end(), entry) != selected.end() ? 1 : 0;
                 cb->addItem(QString::fromStdString(entry), checked);
             }
             cb->stateChanged(1);
+            cb->setProperty("catalog", QString::fromStdString(catalog_name));
+            catalog_widgets_[catalog_name].push_back(cb);
             w = cb;
         }
         else if (constraints.rfind("catalog:", 0) == 0 && ptype == PT::PARAMETER_STRING)
         {
             const std::string catalog_name = constraints.substr(8);
-            const auto &items = state->catalog_cache[catalog_name];
+            const auto current = param.as_string();
+            std::vector<std::string> selected;
+            if (!current.empty())
+                selected.push_back(current);
             auto *cb = new QComboBox();
-            for (const auto &entry : items)
+            for (const auto &entry : seedCatalogItems(catalog_name, selected))
                 cb->addItem(QString::fromStdString(entry));
-            cb->setCurrentText(QString::fromStdString(param.as_string()));
+            cb->setCurrentText(QString::fromStdString(current));
+            cb->setProperty("catalog", QString::fromStdString(catalog_name));
+            catalog_widgets_[catalog_name].push_back(cb);
             w = cb;
         }
         else if (constraints.rfind("enum:", 0) == 0 && ptype == PT::PARAMETER_STRING)
@@ -341,6 +322,23 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
             }
             cb->setCurrentText(QString::fromStdString(param.as_string()));
             w = cb;
+        }
+        else if (is_sketch && ptype == PT::PARAMETER_STRING)
+        {
+            auto *se = new SketchEdit();
+            se->setSketch(QString::fromStdString(param.as_string()));
+            se->setMinimumHeight(160);
+            w = se;
+        }
+        else if (is_text && ptype == PT::PARAMETER_STRING)
+        {
+            auto *te = new QTextEdit();
+            te->setPlainText(QString::fromStdString(param.as_string()));
+            te->setMinimumHeight(60);
+            te->setLineWrapMode(QTextEdit::NoWrap);
+            // Connected here so the generic chain below leaves other QTextEdits on commit-only.
+            QObject::connect(te, &QTextEdit::textChanged, tree_, [this, leaf]() { on_changed_(leaf); });
+            w = te;
         }
         else if (ptype == PT::PARAMETER_INTEGER && !desc.integer_range.empty())
         {
@@ -452,6 +450,14 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
                         on_changed_(leaf);
                     });
             }
+            else if (auto *se = qobject_cast<SketchEdit *>(w))
+            {
+                QObject::connect(se, &SketchEdit::sketchEdited, tree_,
+                    [this, leaf]()
+                    {
+                        on_changed_(leaf);
+                    });
+            }
             else
             {
                 for (auto *child_sb : w->findChildren<QSpinBox *>())
@@ -475,6 +481,81 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
             tree_->setItemWidget(item, 1, w);
             (*widget_map_)[leaf] = w;
             (*type_map_)[leaf]   = ptype;
+        }
+    }
+
+    if (on_ready_)
+        on_ready_();
+}
+
+// ---------------------------------------------------------------------------
+
+std::vector<std::string> DynamicParamTree::seedCatalogItems(
+    const std::string& catalog, const std::vector<std::string>& current) const
+{
+    std::vector<std::string> items;
+    auto memo = catalog_memo_.find(catalog);
+    if (memo != catalog_memo_.end())
+        items = memo->second;
+    for (const auto &c : current)
+        if (std::find(items.begin(), items.end(), c) == items.end())
+            items.push_back(c);
+    return items;
+}
+
+void DynamicParamTree::fetchCatalogs(uint64_t gen)
+{
+    if (!catalog_fetcher_)
+        return;
+
+    for (const auto &entry : catalog_widgets_)
+    {
+        const std::string cat = entry.first;
+        catalog_fetcher_(cat, [this, gen, cat](std::vector<std::string> ids)
+        {
+            QMetaObject::invokeMethod(tree_, [this, gen, cat, ids = std::move(ids)]()
+            {
+                catalog_memo_[cat] = ids;
+                if (gen != rebuild_gen_) return;
+                fillCatalogWidgets(cat, ids);
+            }, Qt::QueuedConnection);
+        });
+    }
+}
+
+void DynamicParamTree::fillCatalogWidgets(const std::string& catalog, const std::vector<std::string>& ids)
+{
+    auto it = catalog_widgets_.find(catalog);
+    if (it == catalog_widgets_.end())
+        return;
+
+    for (QWidget *w : it->second)
+    {
+        if (auto *msc = qobject_cast<MultiSelectComboBox *>(w))
+        {
+            QSignalBlocker blk(msc);
+            const QStringList checked = msc->currentText();
+            msc->clear();
+            for (const auto &entry : ids)
+            {
+                const QString qs = QString::fromStdString(entry);
+                msc->addItem(qs, checked.contains(qs) ? 1 : 0);
+            }
+            for (const QString &c : checked)
+                if (std::find(ids.begin(), ids.end(), c.toStdString()) == ids.end())
+                    msc->addItem(c, 1);
+            msc->stateChanged(1);
+        }
+        else if (auto *combo = qobject_cast<QComboBox *>(w))
+        {
+            QSignalBlocker blk(combo);
+            const QString cur = combo->currentText();
+            combo->clear();
+            for (const auto &entry : ids)
+                combo->addItem(QString::fromStdString(entry));
+            if (!cur.isEmpty() && combo->findText(cur) < 0)
+                combo->addItem(cur);
+            combo->setCurrentText(cur);
         }
     }
 }
@@ -514,12 +595,26 @@ void DynamicParamTree::setWidgetValueFromParam(QWidget *w, const rcl_interfaces:
         if (auto *combo = qobject_cast<QComboBox *>(w))
         {
             QSignalBlocker blk(combo);
-            combo->setCurrentText(QString::fromStdString(p.value.string_value));
+            const QString text = QString::fromStdString(p.value.string_value);
+            if (!text.isEmpty() && combo->findText(text) < 0 && combo->property("catalog").isValid())
+                combo->addItem(text);
+            combo->setCurrentText(text);
         }
         else if (auto *te = qobject_cast<QTextEdit *>(w))
         {
             QSignalBlocker blk(te);
             te->setPlainText(QString::fromStdString(p.value.string_value));
+        }
+        else if (auto *se = qobject_cast<SketchEdit *>(w))
+        {
+            // Before the QPlainTextEdit branch: a SketchEdit is one, and setPlainText kills it.
+            QSignalBlocker blk(se);
+            se->setSketch(QString::fromStdString(p.value.string_value));
+        }
+        else if (auto *pte = qobject_cast<QPlainTextEdit *>(w))
+        {
+            QSignalBlocker blk(pte);
+            pte->setPlainText(QString::fromStdString(p.value.string_value));
         }
         else if (auto *le = qobject_cast<QLineEdit *>(w))
         {
@@ -606,6 +701,8 @@ std::vector<rcl_interfaces::msg::Parameter> DynamicParamTree::collectParams(
                 p.value.string_value = cb->currentText().toStdString();
             else if (auto *te = qobject_cast<QTextEdit *>(w))
                 p.value.string_value = te->toPlainText().toStdString();
+            else if (auto *pte = qobject_cast<QPlainTextEdit *>(w))
+                p.value.string_value = pte->toPlainText().toStdString();
             else if (auto *le = qobject_cast<QLineEdit *>(w))
                 p.value.string_value = le->text().toStdString();
             else

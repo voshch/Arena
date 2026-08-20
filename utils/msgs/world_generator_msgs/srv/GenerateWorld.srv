@@ -1,0 +1,49 @@
+# target world, ignored when preview_only
+string world
+# render and return without saving
+bool preview_only
+# generator name, empty keeps the node parameter
+string generator
+# candidate sketch, empty keeps the node parameter
+string sketch
+# JSON config overrides, empty keeps the node parameters
+string config
+# m/px for the returned map, 0 derives it from the pixel budget
+float32 resolution
+# include the glyph table in the response
+bool include_alphabet
+---
+# false leaves every field below at its default
+bool success
+# error text when success is false
+string message
+# rendered map
+uint8[] png
+# canonical form of the submitted sketch
+string normalized
+# connected regions of free space
+uint16 components
+# enclosed obstacles
+uint16 islands
+# zones the level was split into
+uint16 zones
+# world size in m
+float32[2] extent
+# world metres at the bottom-left pixel of the map
+float32[2] map_origin
+# m/px the map was rendered at
+float32 map_resolution
+# world metres at the bottom-left corner of the cell grid, zero pitch = generator is not drawn on one
+float32[2] grid_origin
+# cell size in m
+float32 grid_pitch
+# grid size in cells, rows then columns
+uint16[2] grid_size
+# time spent compiling and rendering
+float32 compile_ms
+# per-cell notes about the submitted sketch
+SketchWarning[] warnings
+# generator episode binding as JSON
+string episode_binding
+# glyph table, only when include_alphabet was set
+Alphabet alphabet
