@@ -240,10 +240,12 @@ are un-shifted going in, agent poses, gesture targets, flow agents and the engin
 coming out. Nothing engine-side knows the env.
 
 World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
-`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y, theta}`
-list, from the annotation or overridden per scenario entry). Seats become the cluster slots a sitter is
-placed on, so a `SIT_ON` parks the ped on the seat, not on a ring around the object. An object without
-seats keeps the ring.
+`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y}` with an
+optional `yaw`, the same grammar as `pose`, from the annotation or overridden per scenario entry, and an empty
+list clears the annotation's). Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
+ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
+the object's origin, not its seat, so an object whose seats sit outside `interaction_radius` needs that radius
+widened to cover the object or the ped never gets close enough to sit.
 
 ## HuNavSim default agent template
 
