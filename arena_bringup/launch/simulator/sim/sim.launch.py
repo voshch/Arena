@@ -23,7 +23,7 @@ def generate_launch_description():
     )
 
     physics = LaunchArgument(
-        name='isaac.physics',
+        name='sim.isaac.physics',
         default_value='physx',
         choices=['physx', 'newton'],
     )

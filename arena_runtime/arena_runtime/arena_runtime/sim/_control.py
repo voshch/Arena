@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import typing
 from collections.abc import Sequence
 
 import launch_ros.actions
@@ -9,6 +10,9 @@ import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_robots.assembly import ResolvedAssembly
 from arena_robots.catalog import Catalog, render_effective_control
+
+if typing.TYPE_CHECKING:
+    from arena_robots.Robot import RobotView
 
 
 def load_control_yaml(config_uri: str) -> dict:
@@ -96,6 +100,15 @@ def effective_controllers(
         return list(controllers)
     _, extra = render_effective_control(resolved, {}, catalog if catalog is not None else Catalog(), prefix=prefix)
     return [*controllers, *extra]
+
+
+def robot_controllers(robot_config: "RobotView", resolved: ResolvedAssembly | None) -> list[str]:
+    """Controller names the ros2_control plane spawns for this robot, empty when it is not ros2_control-driven."""
+    control_spec = robot_config.model_params.control
+    if control_spec is None or not control_spec.is_ros2_control:
+        return []
+    prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
+    return effective_controllers(resolved, control_spec.controllers, prefix=prefix)
 
 
 def controller_spawner_node(controller_name: str) -> launch_ros.actions.Node:

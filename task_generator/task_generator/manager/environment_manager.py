@@ -294,6 +294,9 @@ class EnvironmentManager(NodeInterface):
         await self._human_simulator.spawn_robot(robots=tuple(map(self.realize, robots)))
         return robots
 
+    def robot_controllers(self, robot: Robot) -> list[str]:
+        return self._simulator.robot_controllers(robot)
+
     async def move_robot(self, robots: Sequence[Robot]) -> Sequence[bool]:
         """
         Moves given robot

@@ -85,3 +85,14 @@ def test_reserve_stamps_last_heartbeat():
     record = reg.get(env_id)
     assert record is not None
     assert record.last_heartbeat.sec == 42
+
+
+def test_reserve_rejects_owned_namespace_until_freed():
+    reg = EnvRegistry()
+    env_id, ns = reg.reserve(requested_ns="arena/env_7/task_generator_node", now=_time(sec=1))
+    with pytest.raises(ValueError, match="already owned"):
+        reg.reserve(requested_ns=ns, now=_time(sec=2))
+    assert reg.get(env_id + 1) is None
+    reg.free(env_id)
+    reused, _ns = reg.reserve(requested_ns=ns, now=_time(sec=3))
+    assert reused == env_id

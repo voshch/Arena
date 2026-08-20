@@ -27,6 +27,11 @@ VIZ_MANIFEST_SUFFIX = '/state/viz_manifest'
 GRACE_INT_S = float(os.environ.get('ARENA_SHUTDOWN_TIMEOUT', '30'))
 GRACE_TERM_S = 3.0
 GRACE_KILL_S = 5.0
+_DEPRECATED_KNOBS = {'env_n': 'env.n'}
+
+
+def _warn_deprecated(old: str, new: str) -> None:
+    sys.stderr.write(f"\033[33marena launch: '{old}' is deprecated, use '{new}'\033[0m\n")
 
 
 class Supervisor:
@@ -119,10 +124,11 @@ class Supervisor:
 
 from arena_bringup import viz_backends
 from arena_bringup.defaults import default_human
+from arena_bringup.substitutions import DEPRECATED_LAUNCH_ARGS, resolve_deprecated_args
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    """Forward every k:=v to both runtime and env. Supervisor-only knobs: env_n / viz / viz.* / human.steering."""
+    """Forward every k:=v to both runtime and env. Supervisor-only knobs: env.n / viz / viz.* / human.steering."""
     env_n = 1
     headless = False
     viz = True
@@ -134,12 +140,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     env_args: list[str] = []
     viz_args: dict[str, str] = {}
 
+    kv: dict[str, str] = {}
     for arg in argv:
         if ':=' not in arg:
             env_args.append(arg)
             continue
         key, _, value = arg.partition(':=')
-        if key == 'env_n':
+        kv[key] = value
+    resolve_deprecated_args(kv, _warn_deprecated, {**_DEPRECATED_KNOBS, **DEPRECATED_LAUNCH_ARGS})
+
+    for key, value in kv.items():
+        arg = f'{key}:={value}'
+        if key == 'env.n':
             env_n = int(value)
             continue
         if key == 'viz':

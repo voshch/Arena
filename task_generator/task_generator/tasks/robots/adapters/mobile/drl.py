@@ -54,7 +54,7 @@ class DrlAdapter(MobileAdapter):
 
         resolved = resolve(planner)
         if resolved.source != "registry":
-            raise ResolverError(f"DrlAdapter requires a registry planner; '{planner}' resolved as source={resolved.source!r}. Use mobile:=rosnav_rl or mobile:=nav2 for that planner.")
+            raise ResolverError(f"DrlAdapter requires a registry planner; '{planner}' resolved as source={resolved.source!r}. Use robot.mobile:=rosnav_rl or robot.mobile:=nav2 for that planner.")
         if not resolved.package_name:
             raise ResolverError(f"DrlAdapter: planner '{planner}' has no package.xml <name> entry; cannot resolve ros2 run target.")
 
@@ -175,6 +175,7 @@ class DrlAdapter(MobileAdapter):
     ) -> None:
         import asyncio  # noqa: PLC0415
 
+        import rclpy  # noqa: PLC0415
         from arena_planners.bridge.edge_node import PlannerEdgeNode  # noqa: PLC0415
 
         node_name = "edge_node"
@@ -221,6 +222,7 @@ class DrlAdapter(MobileAdapter):
             is_holonomic=is_holonomic,
             simulation_namespace=robot.node.get_namespace(),
             velocity_limits=_limits,
+            parameter_overrides=[rclpy.Parameter("planner_rate_hz", value=float(self._rate))],
         )
         robot.node.executor.add_node(edge_node)
 

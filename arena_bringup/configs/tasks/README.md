@@ -1,7 +1,7 @@
 # Task mode configs
 
 Configs under this directory are passed to the task-generator fleet manager
-via the `task_config` launch argument.
+via the `task.config` launch argument.
 
 ## Schema
 
@@ -43,18 +43,18 @@ for the full description. Summary:
 
 ## Legacy shorthand
 
-When `task_config` is empty (the default), `task_generator.launch.py` synthesizes a
-single-entry config from the `tm_robots` arg:
+When `task.config` is empty (the default), `task_generator.launch.py` synthesizes a
+single-entry config from the `task.robots` arg:
 
 ```yaml
 task_modes:
-  - kind: <tm_robots value>
+  - kind: <task.robots value>
     produces: GOTO_POSE
     assignments: []
     config: {}
 ```
 
-If both `task_config` and `tm_robots` are set explicitly, `task_config` wins.
+If both `task.config` and `task.robots` are set explicitly, `task.config` wins.
 
 ## Shipped configs
 

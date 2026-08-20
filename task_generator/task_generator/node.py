@@ -39,7 +39,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.parameter import Parameter
-from std_msgs.msg import Int16, String
+from std_msgs.msg import Bool, Int16, String
 from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest
 
 from task_generator.constants import Constants
@@ -52,7 +52,7 @@ from task_generator.manager.world_manager.world_manager_ros import (
 )
 from task_generator.shared import Orientation, Pose, Position
 from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorRegistry
-from task_generator.tasks import identifier_to_available
+from task_generator.tasks import identifier_to_available, identifier_to_available_async
 from task_generator.tasks.obstacles import ObstacleKind
 from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES
 from task_generator.tasks.task import Task
@@ -132,7 +132,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     _world_manager: WorldManager
     _human_simulator: BaseHumanSimulator
     _environment_manager: EnvironmentManager
-    _robots_manager: RobotsManager
+    _robots_manager: RobotsManager | None = None
     _simulator: BaseSim
     _realizer: Realizer
     _arena_hold_client: ClientWrapper
@@ -205,7 +205,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         self._reset_lock: asyncio.Lock = asyncio.Lock()
         self._start_time = self.time
-        self._task: Task
+        self._task: Task | None = None
 
         self._staged_obstacles_params: dict[str, ParameterValue] = {}
         self._staged_robots_params: dict[str, ParameterValue] = {}
@@ -233,6 +233,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             self.service_namespace("state", "world"),
             _LATCHED,
         )
+
+        self._pub_state_resetting = self.create_publisher(
+            Bool,
+            self.service_namespace("state", "resetting"),
+            _LATCHED,
+        )
+        self._pub_state_resetting.publish(Bool(data=False))
 
         self._pub_state_episode = self.create_publisher(
             task_generator_msgs.msg.EpisodeRecord,
@@ -426,10 +433,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     async def teardown(self) -> None:
         self._heartbeat_timer.cancel()
-        if self._tick_loop_task is not None and not self._tick_loop_task.done():
-            self._tick_loop_task.cancel()
-        await self._task.teardown()
-        await self._robots_manager.teardown()
+        for t in (self._tick_loop_task, self._check_status_task, self._episode_task):
+            if t is not None and not t.done():
+                t.cancel()
+        if self._task is not None:
+            await self._task.teardown()
+        if self._robots_manager is not None:
+            await self._robots_manager.teardown()
 
     async def hold(self, reason: str) -> None:
         req = arena_runtime_msgs.srv.LifecycleHold.Request()
@@ -869,6 +879,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         }
 
         env_ns = self.get_namespace()
+        auditory_ns = self.get_fully_qualified_name()
 
         env_displays: list[AdapterDisplay] = [
             AdapterDisplay(
@@ -936,7 +947,39 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     group="Static",
                 )
             )
-
+        for name, topic in (
+            (
+                "Microphones",
+                f"{auditory_ns}/microphone_markers",
+            ),
+            (
+                "Environment Audio Sources",
+                f"{auditory_ns}/environment_audio_source_markers",
+            ),
+            (
+                "Pedestrian Heard Sound",
+                f"{auditory_ns}/pedestrian_sound_propagation_markers",
+            ),
+            (
+                "Robot Heard Sound",
+                f"{auditory_ns}/robot_sound_propagation_markers",
+            ),
+        ):
+            env_displays.append(
+                AdapterDisplay(
+                    name=name,
+                    topic=topic,
+                    topic_type="visualization_msgs/MarkerArray",
+                    kind=DisplayKind.MARKER_ARRAY,
+                    style_json=(
+                        latched
+                        if name == "Microphones"
+                        else StyleSpec(enabled=True).to_json()
+                    ),
+                    topic_must_exist=False,
+                    group="Sound Propagation",
+                )
+            )
         entries: list[AdapterEntry] = []
         for mgr in self._robots_manager.managers.values():
             ns_value = str(mgr.namespace)
@@ -966,6 +1009,25 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         displays=sensor_displays,
                     )
                 )
+            entries.append(
+                AdapterEntry(
+                    robot_ns=ns_value,
+                    adapter_kind="_auditory",
+                    displays=[
+                        AdapterDisplay(
+                            name="Motor Sound",
+                            topic=(
+                                f"{auditory_ns}/{robot_value}/"
+                                "motor_sound_markers"
+                            ),
+                            topic_type="visualization_msgs/MarkerArray",
+                            kind=DisplayKind.MARKER_ARRAY,
+                            style_json=StyleSpec(enabled=True).to_json(),
+                            topic_must_exist=False,
+                        )
+                    ],
+                )
+            )
 
             for adapter in mgr._adapter_instances:
 
@@ -1100,6 +1162,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         async with self._reset_lock:
             self._start_time = self.sim_time
             self.get_logger().info("resetting")
+            self._pub_state_resetting.publish(Bool(data=True))
 
             record = self._episodes.current
             await self.hold("reset")
@@ -1109,6 +1172,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 await self._task.reset(world=record.world, seed=record.seed)
             finally:
                 await self.release("reset")
+                self._pub_state_resetting.publish(Bool(data=False))
             record.robots = [m.model_name for m in self._robots_manager.managers.values()]
 
             self._pub_task_reset.publish(Int16(data=record.episode_id - 1))
@@ -1241,7 +1305,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.QueryStaticObstacles.Request,
         response: task_generator_msgs.srv.QueryStaticObstacles.Response,
     ) -> task_generator_msgs.srv.QueryStaticObstacles.Response:
-        response.ids = list(identifier_to_available(arena_simulation_setup.tree.assets.Object.ObjectIdentifier, network=True))
+        response.ids = await identifier_to_available_async(arena_simulation_setup.tree.assets.Object.ObjectIdentifier, network=True)
         return response
 
     async def _cb_query_dynamic_obstacles(
@@ -1249,11 +1313,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.QueryDynamicObstacles.Request,
         response: task_generator_msgs.srv.QueryDynamicObstacles.Response,
     ) -> task_generator_msgs.srv.QueryDynamicObstacles.Response:
-        response.ids = list(
-            identifier_to_available(
-                arena_simulation_setup.tree.assets.Human.HumanIdentifier,
-                network=True,
-            )
+        response.ids = await identifier_to_available_async(
+            arena_simulation_setup.tree.assets.Human.HumanIdentifier,
+            network=True,
         )
         return response
 

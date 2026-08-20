@@ -271,6 +271,13 @@ def generate_launch_description():
         }],
     )
 
+    clock_relay = Node(
+        package='arena_runtime',
+        executable='clock_relay',
+        output='screen',
+        parameters=[{'use_sim_time': False}],
+    )
+
     # Point gz-sim at <install>/lib so it can load PedSkeletonPlugin.
     try:
         arena_gz_plugins_lib = os.path.join(
@@ -324,6 +331,7 @@ def generate_launch_description():
             #     condition=IfCondition(random_spawn_test),
             # ),
             clock_bridge,
+            clock_relay,
         ]
     )
 

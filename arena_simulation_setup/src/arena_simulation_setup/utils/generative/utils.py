@@ -14,6 +14,9 @@ def line_pairs(geom: MultiLineString | LineString | Polygon):
     Yields:
         tuple[Point, Point]: A tuple of start and end points for each line segment.
     """
+    if geom.is_empty:
+        return
+
     if isinstance(geom, Polygon):
         yield from line_pairs(geom.exterior)
         for interior_ring in geom.interiors:

@@ -69,8 +69,8 @@ from arena_runtime.sim import BaseSim, SimLifecycle
 from arena_runtime.sim._control import (
     controller_spawner_node,
     effective_control_yaml,
-    effective_controllers,
     odom_relay_node,
+    robot_controllers,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import resolve_obstacle_box
@@ -280,6 +280,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
             args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
         return args
 
+    def robot_controllers(self, robot: Robot) -> list[str]:
+        return robot_controllers(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync(), robot.resolved_assembly)
+
     async def robot_spawn(self, robots: Sequence[Robot]) -> Sequence[bool]:
         async def impl(robot: Robot) -> bool:
             try:
@@ -427,7 +430,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     )
                 )
             )
-            for controller_name in effective_controllers(robot.resolved_assembly, control_spec.controllers, prefix=control_prefix):
+            for controller_name in robot_controllers(robot_config, robot.resolved_assembly):
                 ld.add_action(controller_spawner_node(controller_name))
             ld.add_action(
                 twist_stamper_node(

@@ -4,7 +4,7 @@ import pytest
 
 from arena_simulation_setup.shared.world import Door
 from arena_simulation_setup.shared.walls import Wall
-from arena_simulation_setup.tree.World.World import LevelDescription as WorldDescription
+from arena_simulation_setup.tree.World.World import LevelDescription as WorldDescription, WorldMicrophone
 from arena_simulation_setup.tree.World.World import Schedule, Signal
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Position
@@ -325,3 +325,113 @@ def test_zone_material_defaults_nonempty():
     assert zone.material.name
     assert zone.ceiling_material.name
     assert zone.wall_material.name
+
+
+def test_world_microphones_validate_zone_position_and_indices():
+    world = WorldDescription(
+        zones=[
+            WorldDescription.Zone(
+                name="reception",
+                corners=_square_corners(10.0),
+                ceiling_height=2.9,
+            )
+        ],
+        microphones=[
+            WorldMicrophone(
+                zone="reception",
+                placement="ceiling",
+                position=Position(2.0, 2.0, 2.9),
+                index=1,
+            ),
+            WorldMicrophone(
+                zone="reception",
+                placement="ceiling",
+                position=Position(4.0, 2.0, 2.9),
+                index=2,
+            ),
+        ],
+    )
+
+    world.validate_microphones()
+    assert [
+        microphone.listener_id for microphone in world.microphones
+    ] == [
+        "microphone:zone:reception:ceiling:1",
+        "microphone:zone:reception:ceiling:2",
+    ]
+
+
+def test_world_microphones_structure_from_world_yaml_shape():
+    from arena_simulation_setup.utils.cattrs import converter
+
+    world = converter.structure(
+        {
+            "zones": [
+                {
+                    "name": "reception",
+                    "corners": [[0, 0], [5, 0], [5, 5], [0, 5]],
+                    "ceiling_height": 2.9,
+                }
+            ],
+            "microphones": [
+                {
+                    "zone": "reception",
+                    "placement": "ceiling",
+                    "position": [2, 2, 2.9],
+                    "index": 1,
+                }
+            ],
+        },
+        WorldDescription,
+    )
+
+    world.validate_microphones()
+    assert world.microphones[0].position == Position(2, 2, 2.9)
+
+
+@pytest.mark.parametrize(
+    ("microphone", "message"),
+    [
+        (
+            WorldMicrophone(
+                zone="missing",
+                placement="ceiling",
+                position=Position(2.0, 2.0, 2.9),
+            ),
+            "unknown zone",
+        ),
+        (
+            WorldMicrophone(
+                zone="reception",
+                placement="ceiling",
+                position=Position(20.0, 2.0, 2.9),
+            ),
+            "outside zone",
+        ),
+        (
+            WorldMicrophone(
+                zone="reception",
+                placement="ceiling",
+                position=Position(2.0, 2.0, 2.0),
+            ),
+            "does not match ceiling height",
+        ),
+    ],
+)
+def test_world_microphones_reject_invalid_construction(
+    microphone,
+    message,
+):
+    world = WorldDescription(
+        zones=[
+            WorldDescription.Zone(
+                name="reception",
+                corners=_square_corners(10.0),
+                ceiling_height=2.9,
+            )
+        ],
+        microphones=[microphone],
+    )
+
+    with pytest.raises(ValueError, match=message):
+        world.validate_microphones()

@@ -63,7 +63,7 @@ class IsolatedIncludeLaunchDescription(launch.Action):
 class IncludeLaunchDescriptionForward(launch.Action):
     """IncludeLaunchDescription that forwards every parent launch configuration to the child.
 
-    `overrides` pin specific args (e.g. {'env_n': '0'}); they win over forwarded values.
+    `overrides` pin specific args (e.g. {'env.n': '0'}); they win over forwarded values.
     """
 
     def __init__(

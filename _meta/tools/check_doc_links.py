@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
-"""Fail if any markdown doc contains a dead or absolute local link."""
+"""Fail if any tracked markdown doc contains a dead or absolute local link."""
 
 from __future__ import annotations
 
 import pathlib
 import re
+import subprocess
 import sys
 
-SKIP_DIRS = {
-    ".git",
-    ".old",
-    ".venv",
-    ".pytest_cache",
-    "__pycache__",
-    "node_modules",
-    "deps",
-    "build",
-    "install",
-    "log",
-}
+VENDORED = {"deps"}
 
 MD_LINK = re.compile(r"\[[^\]]*\]\(\s*([^)\s]+?)(?:\s+\"[^\"]*\")?\s*\)")
 HTML_REF = re.compile(r"(?:src|href)=\"([^\"]+)\"")
@@ -44,18 +34,24 @@ def unverifiable(resolved: pathlib.Path, root: pathlib.Path) -> bool:
     return root not in resolved.parents
 
 
+def tracked_docs(root: pathlib.Path) -> list[pathlib.Path]:
+    """Every .md git tracks under root, including initialized submodules."""
+    listing = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z", "--recurse-submodules", "--", "*.md"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    return [
+        root / name
+        for name in listing.decode().split("\0")
+        if name and VENDORED.isdisjoint(pathlib.PurePosixPath(name).parts)
+    ]
+
+
 def check(root: pathlib.Path) -> list[str]:
     errors = []
-    queue = [root]
-    while queue:
-        directory = queue.pop()
-        for entry in sorted(directory.iterdir()):
-            if entry.is_dir():
-                if entry.name not in SKIP_DIRS:
-                    queue.append(entry)
-                continue
-            if entry.suffix != ".md":
-                continue
+    for entry in tracked_docs(root):
+        if entry.is_file():
             for lineno, line in enumerate(entry.read_text(errors="replace").splitlines(), 1):
                 for target in iter_targets(line):
                     if is_external(target):

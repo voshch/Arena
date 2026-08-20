@@ -89,7 +89,7 @@ Declared directly on `TaskGenerator` at construction time, not via `Configuratio
 | `run_seed` | random uuid hex | Hex string for per-episode blake2b seed derivation |
 | `episode_history_size` | `10` | Bounded history length for `state/episode` |
 
-`train_mode` is declared at the launch level and exposed on the task_generator node's param store for robot adapters (`rosnav_rl`, `nav2`) to read, the node itself does not branch on it. For managed (external-controller-driven) resets pass `auto_reset:=false` explicitly, there is no auto-derivation from `train_config`.
+`train_mode` is declared at the launch level (`robot.train`) and exposed on the task_generator node's param store for robot adapters (`rosnav_rl`, `nav2`) to read, the node itself does not branch on it. For managed (external-controller-driven) resets pass `task.auto_reset:=false` explicitly, there is no auto-derivation from `train_config`.
 
 ### `Config.TaskMode`
 

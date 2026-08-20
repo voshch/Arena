@@ -165,6 +165,4 @@ class CustomDynamicObstacle(DynamicObstacle):
 
         obj = converter.structure_attrs_fromdict(known_values, cls)
         obj.extra.update(custom_fields)
-        value = obj.asdict(True)
-
-        return converter.structure(value, cls)
+        return obj

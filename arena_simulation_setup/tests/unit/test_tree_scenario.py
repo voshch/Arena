@@ -3,6 +3,7 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 
+import cattrs
 import pytest
 import yaml
 
@@ -143,6 +144,78 @@ def test_scenario_view_included_from_propagated(tmp_path):
     scenario = view.load()
     assert len(scenario.static) >= 1
     assert scenario.static[0].included_from == scenario_dir
+
+
+def test_scenario_view_load_audio_systems(tmp_path):
+    scenario_dir = tmp_path / "sc_audio"
+    scenario_dir.mkdir()
+    data = {
+        "audio": {
+            "systems": [
+                {
+                    "name": "radio",
+                    "sound_type": "music",
+                    "asset_id": "radio_loop",
+                    "loop": True,
+                    "initially_active": True,
+                    "emitters": [
+                        {
+                            "name": "lobby",
+                            "entity_ref": "lobby_radio",
+                            "offset": [0.0, 0.0, 0.8],
+                            "source_volume_db": 62.0,
+                        }
+                    ],
+                },
+                {
+                    "name": "alarm",
+                    "sound_type": "alarm",
+                    "asset_id": "alarm_loop",
+                    "emitters": [
+                        {
+                            "name": "floor_1",
+                            "position": [2.0, 3.0, 2.6],
+                            "level": "level_1",
+                            "source_volume_db": 88.0,
+                        },
+                        {
+                            "name": "floor_2",
+                            "position": [4.0, 5.0, 2.6],
+                            "level": "level_2",
+                        },
+                    ],
+                },
+            ]
+        }
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    audio = ScenarioView(scenario_dir).load_audio()
+
+    assert [system.name for system in audio.systems] == ["radio", "alarm"]
+    assert audio.systems[0].initially_active is True
+    assert audio.systems[0].emitters[0].entity_ref == "lobby_radio"
+    assert audio.systems[0].emitters[0].offset.z == pytest.approx(0.8)
+    assert len(audio.systems[1].emitters) == 2
+    assert audio.systems[1].emitters[0].level == "level_1"
+    assert audio.systems[1].emitters[0].position.x == pytest.approx(2.0)
+
+
+def test_scenario_view_rejects_duplicate_audio_system_names(tmp_path):
+    scenario_dir = tmp_path / "sc_duplicate_audio"
+    scenario_dir.mkdir()
+    system = {
+        "name": "alarm",
+        "sound_type": "alarm",
+        "asset_id": "alarm_loop",
+        "emitters": [{"name": "speaker", "position": [1.0, 2.0]}],
+    }
+    data = {"audio": {"systems": [system, system]}}
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    with pytest.raises(cattrs.errors.ClassValidationError) as excinfo:
+        ScenarioView(scenario_dir).load_audio()
+    assert excinfo.group_contains(ValueError, match="duplicate audio system names")
 
 
 # ---------------------------------------------------------------------------

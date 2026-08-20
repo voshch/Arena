@@ -66,9 +66,27 @@ joint angles are committed to the `arena_peds` bus.  For each `Pedestrian` in
 the outgoing message it checks `ped.joint_state.name`:
 
 - **non-empty**: upstream backend supplied its own joint state, published unchanged (override path: an upstream producer that already computes joint angles).
-- **empty**: `publish_arena_peds` calls `GaitGenerator.compute` + `GaitGenerator.joint_state` and fills the field with bare semantic joint names (20 DOF, ~9 active per gait mode, no body suffix).
+- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (36 DOF, no body suffix).
 
-The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer`.  The 3D engines do not read it: Isaac animates pedestrians with its native omni.anim.people AnimGraph and Gazebo clip-scrubs `walk.dae`, both driven by pedestrian pose and twist.  So `GaitGenerator` is the ROS-side articulation ground truth, while the in-engine meshes play plausible locomotion that is not bone-for-bone identical to it.
+The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac and Gazebo pedestrian rigs.
+
+## Gestures
+
+`Pedestrian.gestures` (`arena_people_msgs/Gesture[]`: `slot` in `head|arm|arm_l|arm_r|body`, `at` world-frame
+point for the aimed slots, `clip` name on `body`, `hand` on `arm`) are attention channels, not poses. Backends
+only forward them (arena_humansim copies `AgentState.gestures` one to one, the possession stream carries them
+as-is), and `publish_arena_peds` hands them per ped to the [`GestureLayer`](gestures/__init__.py) as a
+`GestureRequest` (a `Channel(slot, at, clip, hand)` per entry, ped pose, moving flag). The layer resolves each
+aimed target into the ped frame once per clip, asks the slot's generator for frames (`head` -> `look`,
+`arm*` -> `point`, `body` -> `clip`, the cached `.npy` named on the wire over the joints
+[annotations.yaml](animations/annotations.yaml) lists for it), and plays them as independent `AnimationManager`
+overlay slots (`head`, `arm`, `body`) over the locomotion base. Nothing is synthesized: no channel published =
+that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
+timing, and how to add a kind.
+
+An empty list releases every slot, a missing entry releases that slot. Unknown slots warn once per ped and are
+ignored. Clips come from the baked pointing table and are generated inline on the publishing tick, so their
+timing is sim-deterministic under lockstep without any extra plumbing.
 
 ## Visualization topics
 
@@ -215,6 +233,19 @@ fresh, and the agent resumes from right there when possession ends. Ids
 the engine does not recognize become transient external obstacles in its
 force pool instead. Either way the crowd sees and avoids a possessed ped,
 walking or parked.
+
+The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
+the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses
+are un-shifted going in, agent poses, gesture targets, flow agents and the engine's marker layers are shifted
+coming out. Nothing engine-side knows the env.
+
+World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
+`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y}` with an
+optional `yaw`, the same grammar as `pose`, from the annotation or overridden per scenario entry, and an empty
+list clears the annotation's). Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
+ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
+the object's origin, not its seat, so an object whose seats sit outside `interaction_radius` needs that radius
+widened to cover the object or the ped never gets close enough to sit.
 
 ## HuNavSim default agent template
 

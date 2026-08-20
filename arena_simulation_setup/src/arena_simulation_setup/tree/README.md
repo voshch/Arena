@@ -40,7 +40,7 @@ Register additional resolvers on a subclass at any time with
 |---|---|---|
 | `SimplePathResolver` | [tree/__init__.py:151](__init__.py#L151) | Fixed `Path`; checks `path / identifier.relpath()` |
 | `DynamicPathResolver` | [tree/__init__.py:165](__init__.py#L165) | `DynamicPath` whose value can change at runtime (e.g. `DynamicPaths.WORLD`); optional transform `fn` |
-| `NetResolver` | [tree/__init__.py:183](__init__.py#L183) | Batches same-tick requests; calls `ros2 run arena_models arena_models net <provider> fetch` |
+| `NetResolver` | [tree/__init__.py:183](__init__.py#L183) | Batches same-tick requests and calls `ros2 run arena_models arena_models net <provider> fetch`. `listall(network=True)` runs `net <provider> list` and caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` seconds (default one day). `listall_async` shares one in-flight fetch per provider |
 | `FallbackResolver` | [tree/__init__.py:306](__init__.py#L306) | Always yields `path / identifier.relpath()` without existence check; used for write targets |
 
 ### `DynamicPaths` singleton

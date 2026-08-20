@@ -15,6 +15,7 @@ find_package(rviz_common REQUIRED)
 find_package(rviz_default_plugins REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(task_generator_msgs REQUIRED)
+find_package(world_generator_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
@@ -22,9 +23,14 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets)
 set(CMAKE_AUTOMOC ON)
 qt5_wrap_cpp(MOC_FILES
   include/task_generator_gui/task_generator_panel.hpp
+  include/task_generator_gui/auditory_panel.hpp
+  include/task_generator_gui/spawn_audio_source_tool.hpp
+  include/task_generator_gui/spawn_microphone_tool.hpp
   include/task_generator_gui/spawn_pedestrian_tool.hpp
   include/task_generator_gui/world_generator_panel.hpp
   include/task_generator_gui/fleet_panel.hpp
+  include/task_generator_gui/utils/sketch_edit.hpp
+  include/task_generator_gui/utils/sketch_canvas.hpp
   include/Qt-MultiSelectComboBox/MultiSelectComboBox.h
   )
 
@@ -32,8 +38,13 @@ qt5_wrap_cpp(MOC_FILES
   src/task_generator_panel.cpp
   src/task_generator_panel_getset_params.cpp
   src/fleet_panel.cpp
+  src/auditory_panel.cpp
   src/task_generator_panel_dynamic_params.cpp
   src/utils/dynamic_param_tree.cpp
+  src/utils/sketch_edit.cpp
+  src/utils/sketch_canvas.cpp
+  src/spawn_audio_source_tool.cpp
+  src/spawn_microphone_tool.cpp
   src/spawn_pedestrian_tool.cpp
   src/world_generator_panel.cpp
   src/Qt-MultiSelectComboBox/MultiSelectComboBox.cpp
@@ -48,6 +59,7 @@ ament_target_dependencies(task_generator_panel
   rviz_default_plugins
   geometry_msgs
   task_generator_msgs
+  world_generator_msgs
   std_srvs
   rcl_interfaces
 )

@@ -143,6 +143,44 @@ def declare_string(
     )
 
 
+def declare_sketch(
+    node: "ROSParamServer",
+    name: str,
+    default: str,
+    *,
+    label: str = "",
+    description: str = "",
+) -> None:
+    node.rosparam.declare_forward(
+        name,
+        default,
+        descriptor=ParameterDescriptor(
+            type=Parameter.Type.STRING.value,
+            additional_constraints=_constraints(_label(label), "sketch"),
+            description=description,
+        ),
+    )
+
+
+def declare_text(
+    node: "ROSParamServer",
+    name: str,
+    default: str,
+    *,
+    label: str = "",
+    description: str = "",
+) -> None:
+    node.rosparam.declare_forward(
+        name,
+        default,
+        descriptor=ParameterDescriptor(
+            type=Parameter.Type.STRING.value,
+            additional_constraints=_constraints(_label(label), "text"),
+            description=description,
+        ),
+    )
+
+
 def declare_int(
     node: "ROSParamServer",
     name: str,

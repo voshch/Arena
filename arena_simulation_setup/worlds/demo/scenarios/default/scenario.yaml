@@ -1,10 +1,10 @@
 robots:
-  - start: [0.0, 0.0, 0.0]
+  - start: [1.0, 1.0, 0.0]
     phases:
       - {gesture: wave}
-      - {goto: [3.0, 0.0, 0.0]}
+      - {goto: [3.0, 1.0, 0.0]}
       - {gesture: wave}
       - {goto: [3.0, 3.0, 1.57]}
       - {gesture: random}
-      - {goto: [0.0, 0.0, 3.14]}
+      - {goto: [1.0, 1.0, 3.14]}
       - {gesture: wave}

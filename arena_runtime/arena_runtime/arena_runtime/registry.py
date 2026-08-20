@@ -64,25 +64,25 @@ class EnvRegistry:
         if requested_env_id is not None:
             if requested_env_id in self._records:
                 raise ValueError(f"env_id {requested_env_id} already in use")
-            if requested_env_id in self._free:
-                self._free.remove(requested_env_id)
-            if requested_env_id >= self._next_id:
-                self._next_id = requested_env_id + 1
             env_id = requested_env_id
         else:
             free_candidates = [i for i in self._free if not self._is_draining(i)]
-            if free_candidates:
-                env_id = free_candidates[0]
-                self._free.remove(env_id)
-            else:
-                env_id = self._next_id
-                self._next_id += 1
+            env_id = free_candidates[0] if free_candidates else self._next_id
 
         namespace = requested_ns.lstrip("/") if requested_ns else f"arena/env_{env_id}/task_generator_node"
+        fqn = f"/{namespace}"
+        owner = next((r.env_id for r in self._records.values() if r.fqn == fqn), None)
+        if owner is not None:
+            raise ValueError(f"namespace {fqn!r} is already owned by env_id {owner}")
+
+        if env_id in self._free:
+            self._free.remove(env_id)
+        if env_id >= self._next_id:
+            self._next_id = env_id + 1
 
         self._records[env_id] = EnvRecord(
             env_id=env_id,
-            fqn=f"/{namespace}",
+            fqn=fqn,
             last_heartbeat=now,
         )
         return env_id, namespace

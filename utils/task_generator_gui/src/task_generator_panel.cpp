@@ -33,7 +33,7 @@ namespace task_generator_gui
         else
             task_generator_node = "/task_generator_node";
 
-        // All clients go on `node` — rviz spins it continuously.
+        // All clients go on `node` and rviz spins it continuously.
         query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
             task_generator_node + "/query/environments");
         query_parametrizeds_client = node->create_client<task_generator_msgs::srv::QueryParametrizeds>(
@@ -77,7 +77,7 @@ namespace task_generator_gui
                 });
         }
 
-        // Latched state/episode subscription — deduped into history_buffer_.
+        // Latched state/episode subscription deduped into history_buffer_.
         {
             rclcpp::QoS qos(rclcpp::KeepLast(20));
             qos.transient_local();
@@ -116,7 +116,7 @@ namespace task_generator_gui
                 });
         }
 
-        // Latched state/queue subscription — populates widgets when a new queued record arrives.
+        // Latched state/queue subscription populates widgets when a new queued record arrives.
         {
             rclcpp::QoS qos(rclcpp::KeepLast(1));
             qos.transient_local();
@@ -138,7 +138,7 @@ namespace task_generator_gui
                 });
         }
 
-        // Build empty UI shell immediately — dropdowns populated as responses arrive.
+        // Build empty UI shell immediately and populate dropdowns as responses arrive.
         setupUi();
 
         // Bootstrap queries are gated on service readiness so they survive the
@@ -274,7 +274,7 @@ namespace task_generator_gui
 
     void TaskGeneratorPanel::setupUi()
     {
-        // World combobox — disabled until worlds arrive.
+        // World combobox is disabled until worlds arrive.
         world_combobox = setupComboBoxWithLabel(this->root_layout, QStringList{"Loading..."}, QString("World"));
         world_combobox->setEnabled(false);
         connect(world_combobox, &QComboBox::currentTextChanged, this, &TaskGeneratorPanel::onWorldChanged);

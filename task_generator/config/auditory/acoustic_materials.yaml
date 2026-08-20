@@ -1,0 +1,624 @@
+octave_bands_hz:
+  - 125
+  - 250
+  - 500
+  - 1000
+  - 2000
+  - 4000
+
+
+source_profiles:
+
+  hard_surface:
+    source_key: hard_surface
+    description: >
+      Walls and hard surfaces average, including brick walls, plaster,
+      and hard floors.
+    absorption: &abs_hard_surface
+      - 0.02
+      - 0.02
+      - 0.03
+      - 0.03
+      - 0.04
+      - 0.05
+
+  unpainted_concrete:
+    source_key: unpainted_concrete
+    description: Smooth unpainted concrete.
+    absorption: &abs_unpainted_concrete
+      - 0.01
+      - 0.01
+      - 0.02
+      - 0.02
+      - 0.02
+      - 0.05
+
+  concrete_floor:
+    source_key: concrete_floor
+    description: Concrete floor.
+    absorption: &abs_concrete_floor
+      - 0.01
+      - 0.03
+      - 0.05
+      - 0.02
+      - 0.02
+      - 0.02
+
+  ceramic_tiles:
+    source_key: ceramic_tiles
+    description: Ceramic tiles with a smooth surface.
+    absorption: &abs_ceramic_tiles
+      - 0.01
+      - 0.01
+      - 0.01
+      - 0.02
+      - 0.02
+      - 0.02
+
+  marble_floor:
+    source_key: marble_floor
+    description: Marble floor.
+    absorption: &abs_marble_floor
+      - 0.01
+      - 0.01
+      - 0.01
+      - 0.02
+      - 0.02
+      - 0.02
+
+  wood_1_6cm:
+    source_key: wood_1.6cm
+    description: Wood 1.6 cm thick on 4 cm wooden planks.
+    absorption: &abs_wood_1_6cm
+      - 0.18
+      - 0.12
+      - 0.10
+      - 0.09
+      - 0.08
+      - 0.07
+
+  carpet_thin:
+    source_key: carpet_thin
+    description: Thin carpet cemented to concrete.
+    absorption: &abs_carpet_thin
+      - 0.02
+      - 0.04
+      - 0.08
+      - 0.20
+      - 0.35
+      - 0.40
+
+  plasterboard:
+    source_key: plasterboard
+    description: >
+      Two 13 mm plasterboard layers on a steel frame with 50 mm mineral
+      wool in the cavity and a painted surface.
+    absorption: &abs_plasterboard
+      - 0.15
+      - 0.10
+      - 0.06
+      - 0.04
+      - 0.04
+      - 0.05
+
+  ceiling_plasterboard:
+    source_key: ceiling_plasterboard
+    description: Plasterboard ceiling on battens with a large airspace above.
+    absorption: &abs_ceiling_plasterboard
+      - 0.20
+      - 0.15
+      - 0.10
+      - 0.08
+      - 0.04
+      - 0.02
+
+
+# Temporary model-wide fallbacks
+
+model_fallbacks:
+
+  # This is not a measured material-specific transmission-loss curve.
+  # It preserves the previous Arena broadband occlusion assumption until
+  # wall and door construction assemblies are added.
+  unknown_assembly_transmission_loss_db:
+    &unknown_assembly_tl
+    - 20.0
+    - 20.0
+    - 20.0
+    - 20.0
+    - 20.0
+    - 20.0
+
+  # Scattering is intentionally disabled. This is preferable to presenting
+  # unsupported per-surface guesses as physical measurements.
+  disabled_scattering: &disabled_scattering 0.0
+
+
+# Unknown-material fallback
+
+defaults:
+  canonical_name: unknown_hard_surface
+  absorption: *abs_hard_surface
+  transmission_loss_db: *unknown_assembly_tl
+  scattering: *disabled_scattering
+
+  provenance:
+    absorption:
+      provider: pyroomacoustics
+      version: "0.10.0"
+      source_key: hard_surface
+      mapping_status: generic_fallback
+
+    transmission_loss:
+      source: arena_previous_default
+      mapping_status: assumed_generic_fallback
+      warning: >
+        This value is not derived from the visible material or a wall
+        construction assembly.
+
+    scattering:
+      mapping_status: disabled_until_calibrated
+
+
+materials:
+
+  # Synthetic auditory materials
+
+  Acoustic_Default_Wall:
+    canonical_name: default_wall_hard_surface
+    absorption: *abs_hard_surface
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: hard_surface
+        mapping_status: generic_fallback
+
+      transmission_loss:
+        source: arena_previous_default
+        mapping_status: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  # Arena's default floor visual material is Porcelain_Tile_4, so the
+  # synthetic fallback uses the ceramic-tile acoustic profile.
+  Acoustic_Default_Floor:
+    canonical_name: default_ceramic_floor
+    absorption: *abs_ceramic_tiles
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: ceramic_tiles
+        mapping_status: aligned_with_arena_default_floor
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  # Arena currently has no ceiling material in WorldDescription.
+  Acoustic_Default_Ceiling:
+    canonical_name: assumed_plasterboard_ceiling
+    absorption: *abs_ceiling_plasterboard
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: ceiling_plasterboard
+        mapping_status: assumed
+        warning: >
+          Arena worlds currently do not specify ceiling material.
+          This profile must be overridden by per-world acoustic metadata
+          when the actual ceiling construction is known.
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  # Modeling construct for doorway gaps and open zone boundaries.
+  Acoustic_Open:
+    canonical_name: open_boundary_model
+    absorption:
+      - 0.99
+      - 0.99
+      - 0.99
+      - 0.99
+      - 0.99
+      - 0.99
+    transmission_loss_db:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+    scattering: 0.0
+
+    provenance:
+      absorption:
+        source: modeling_construct
+        mapping_status: assumed
+        warning: >
+          Pyroomacoustics still creates a geometric boundary. High
+          absorption minimizes reflection but does not transmit sound
+          into an adjacent room.
+
+      transmission_loss:
+        source: modeling_construct
+        mapping_status: open_boundary
+
+      scattering:
+        source: modeling_construct
+        mapping_status: disabled
+
+
+  # Arena floor materials
+
+  Carpet_Beige:
+    canonical_name: carpet_beige_thin_proxy
+    absorption: *abs_carpet_thin
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: carpet_thin
+        mapping_status: assumed_proxy
+        warning: >
+          Arena specifies carpet color but not pile height, backing,
+          underlay, density, or mounting method.
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Carpet_Cream:
+    canonical_name: carpet_cream_thin_proxy
+    absorption: *abs_carpet_thin
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: carpet_thin
+        mapping_status: assumed_proxy
+        warning: >
+          Arena specifies carpet color but not pile height, backing,
+          underlay, density, or mounting method.
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Ceramic_Tile_6:
+    canonical_name: ceramic_tile_smooth
+    absorption: *abs_ceramic_tiles
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: ceramic_tiles
+        mapping_status: direct_material_class
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Ceramic_Tile_12:
+    canonical_name: ceramic_tile_smooth
+    absorption: *abs_ceramic_tiles
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: ceramic_tiles
+        mapping_status: direct_material_class
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Ceramic_Tile_18:
+    canonical_name: ceramic_tile_smooth
+    absorption: *abs_ceramic_tiles
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: ceramic_tiles
+        mapping_status: direct_material_class
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Concrete_Smooth:
+    canonical_name: concrete_floor_smooth
+    absorption: *abs_concrete_floor
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: concrete_floor
+        mapping_status: direct_material_class
+        note: >
+          Concrete_Smooth is currently used as a floor material in the
+          inspected Arena worlds. If it is later used as a wall, resolve
+          it to unpainted_concrete by surface role instead.
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Marble_Tile_18:
+    canonical_name: marble_floor
+    absorption: *abs_marble_floor
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: marble_floor
+        mapping_status: direct_material_class
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Oak_Planks:
+    canonical_name: oak_planks_wood_proxy
+    absorption: *abs_wood_1_6cm
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: wood_1.6cm
+        mapping_status: close_proxy
+        warning: >
+          Arena identifies the wood species but not plank thickness,
+          subfloor, cavity, or mounting construction.
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Porcelain_Tile_4:
+    canonical_name: porcelain_tile_ceramic_proxy
+    absorption: *abs_ceramic_tiles
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: ceramic_tiles
+        mapping_status: close_proxy
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Walnut_Planks:
+    canonical_name: walnut_planks_wood_proxy
+    absorption: *abs_wood_1_6cm
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: wood_1.6cm
+        mapping_status: close_proxy
+        warning: >
+          Arena identifies the wood species but not plank thickness,
+          subfloor, cavity, or mounting construction.
+
+      transmission_loss:
+        mapping_status: unused_for_same_zone_rir
+        source: assumed_generic_fallback
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+
+  # Arena wall materials
+
+  Marble:
+    canonical_name: marble_wall_hard_surface_proxy
+    absorption: *abs_hard_surface
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: hard_surface
+        mapping_status: close_proxy
+        warning: >
+          The visual material name does not specify slab thickness,
+          backing, joints, or wall assembly.
+
+      transmission_loss:
+        source: arena_previous_default
+        mapping_status: assumed_generic_fallback
+        warning: >
+          Transmission loss cannot be derived from the marble surface
+          texture.
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Paint_Gloss:
+    canonical_name: gloss_painted_hard_surface_proxy
+    absorption: *abs_hard_surface
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: hard_surface
+        mapping_status: proxy
+        warning: >
+          Paint finish does not identify the underlying wall substrate
+          or construction.
+
+      transmission_loss:
+        source: arena_previous_default
+        mapping_status: assumed_generic_fallback
+        warning: >
+          Transmission loss must later be resolved from a wall assembly,
+          not paint finish.
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Paint_Satin:
+    canonical_name: satin_painted_hard_surface_proxy
+    absorption: *abs_hard_surface
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: hard_surface
+        mapping_status: proxy
+        warning: >
+          Paint finish does not identify the underlying wall substrate
+          or construction.
+
+      transmission_loss:
+        source: arena_previous_default
+        mapping_status: assumed_generic_fallback
+        warning: >
+          Transmission loss must later be resolved from a wall assembly,
+          not paint finish.
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+  Plaster_Wall:
+    canonical_name: plasterboard_partition_proxy
+    absorption: *abs_plasterboard
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: plasterboard
+        mapping_status: assumed_construction_proxy
+        warning: >
+          This mapping assumes painted plasterboard on a frame. Arena's
+          material name does not prove the wall has that construction.
+
+      transmission_loss:
+        source: arena_previous_default
+        mapping_status: assumed_generic_fallback
+        warning: >
+          The plasterboard absorption profile must not be interpreted as
+          a transmission-loss description.
+
+      scattering:
+        mapping_status: disabled_until_calibrated
+
+
+  # Arena door and metal-wall material
+
+  Aluminum_Anodized:
+    canonical_name: anodized_aluminum_hard_surface_proxy
+    absorption: *abs_hard_surface
+    transmission_loss_db: *unknown_assembly_tl
+    scattering: *disabled_scattering
+
+    provenance:
+      absorption:
+        provider: pyroomacoustics
+        version: "0.10.0"
+        source_key: hard_surface
+        mapping_status: proxy
+        warning: >
+          Pyroomacoustics does not provide a directly matching anodized
+          aluminum surface profile in its standard material database.
+
+      transmission_loss:
+        source: arena_previous_default
+        mapping_status: assumed_generic_fallback
+        warning: >
+          Arena uses this material for doors and some walls. Door leaf
+          thickness, hollow/solid construction, seals, glazing, and open
+          state are not represented by the visual material ID.
+
+      scattering:
+        mapping_status: disabled_until_calibrated

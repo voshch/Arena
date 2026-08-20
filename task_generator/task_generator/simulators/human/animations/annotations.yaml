@@ -1,0 +1,38 @@
+# Per clip: loop (else one-shot, parks on the last frame) and the joints it drives (omitted = whole body).
+# Masks are authored by body group: capture noise and twist wraps make per-joint motion a poor guide.
+
+_upper_body: &upper_body
+  - r_waist
+  - y_waist
+  - waist
+  - r_spine
+  - y_spine
+  - spine
+  - r_chest
+  - y_chest
+  - chest
+  - r_head
+  - y_head
+  - p_head
+  - l_y_collar
+  - l_p_collar
+  - l_y_shoulder
+  - l_p_shoulder
+  - l_r_shoulder
+  - l_elbow
+  - r_y_collar
+  - r_p_collar
+  - r_y_shoulder
+  - r_p_shoulder
+  - r_r_shoulder
+  - r_elbow
+
+collapse_to_ground: {loop: false}
+hug: {loop: true, joints: *upper_body}
+jump: {loop: false}
+shake_hand: {loop: true, joints: *upper_body}
+sit: {loop: false}
+t-pose: {loop: false}
+talk_with_arm_gesture: {loop: true, joints: *upper_body}
+wave: {loop: true, joints: *upper_body}
+wave_high: {loop: true, joints: *upper_body}

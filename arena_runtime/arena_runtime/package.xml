@@ -18,6 +18,7 @@
   <exec_depend>joint_state_topic_hardware_interface</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>arena_runtime_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
   <exec_depend>viewport_control_msgs</exec_depend>
   <exec_depend>arena_people_msgs</exec_depend>
   <exec_depend>isaacsim_msgs</exec_depend>

@@ -4,9 +4,7 @@ import attrs
 import numpy as np
 from arena_humansim.core.agents import BUILTIN_AGENTS, SampledParams, sample_agent_type
 from arena_humansim.core.agents.loader import load_agent_type_from_file
-from arena_humansim_msgs.msg import Waypoint as WaypointMsg
 from arena_humansim_msgs.msg import Waypoints as WaypointsMsg
-from geometry_msgs.msg import Pose2D as Pose2DMsg
 
 from task_generator.shared import DynamicObstacle
 
@@ -82,14 +80,6 @@ class ArenaHumanDynamicObstacle:
     def _parse_waypoint_mode(extra: dict) -> int:
         raw = extra.get("waypoint_mode", "repeat")
         return _WAYPOINT_MODE_MAP.get(str(raw).lower(), WaypointsMsg.MODE_REPEAT)
-
-    @property
-    def waypoints_msg(self) -> WaypointsMsg:
-        msg = WaypointsMsg()
-        msg.mode = self.waypoint_mode
-        for wp in self._waypoints:
-            msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wp.x, y=wp.y, theta=0.0)))
-        return msg
 
     def sample_params(self, rng: np.random.Generator) -> SampledParams | None:
         if _is_path_agent_type(self.agent_type):

@@ -805,9 +805,9 @@ sys.exit(ls.run())
             "task_generator.launch.py",
         )
         per_spawn_fixed: dict[str, str] = {
-            "managed": "true",
-            "env_id": str(env_id),
-            "ns": namespace,
+            "env.managed": "true",
+            "env.id": str(env_id),
+            "env.ns": namespace,
             "sim": sim_name,
         }
 

@@ -187,3 +187,9 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
     export PROMPT="(Arena) $PROMPT"
     echo 'sourced Arena environment'
 fi
+
+if [ "$shell" = 'zsh' ]; then
+    . "$TOOLS_DIR/completion.zsh"
+else
+    . "$TOOLS_DIR/completion.bash"
+fi

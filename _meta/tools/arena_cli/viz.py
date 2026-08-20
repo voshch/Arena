@@ -5,6 +5,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from common import make_verb
+from complete import Flags, Kv, Static, Union
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -186,4 +187,14 @@ def cmd(argv: list[str]) -> None:
     sys.exit(_main(list(argv)))
 
 
-VERB = make_verb("viz", cmd, passthrough=True)
+VIZ_KV = Kv(
+    {
+        "backend": Static(["rviz", "rerun"]),
+        "view": Static(["map", "robot", "robot3p"]),
+        "robot": Static(["all"]),
+        "web_port": None,
+        "grpc_port": None,
+    }
+)
+
+VERB = make_verb("viz", cmd, passthrough=True, complete=Union(Flags({"--all": "attach to every running env", "--ns": "explicit env namespace"}, valued=("--ns",)), VIZ_KV))

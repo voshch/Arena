@@ -1,6 +1,7 @@
 """Task generator adapter for arena_humansim."""
 
 import asyncio
+import copy
 import math
 import traceback
 from collections.abc import Mapping, Sequence
@@ -62,6 +63,7 @@ from arena_humansim_msgs.srv import (
     SpawnAgents,
     UpdateRobot,
 )
+from arena_people_msgs.msg import Gesture as GestureMsg
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
@@ -90,7 +92,7 @@ from visualization_msgs.msg import MarkerArray
 
 from task_generator.constants import Constants
 from task_generator.constants.rng import stable_int
-from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, resolve_agent_type_path
 
@@ -201,6 +203,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             Feedback,
             self.node.service_namespace(self.SERVICE_FEEDBACK),
         )
+        self._publish_pending = False
 
         self._next_id: int = 1
 
@@ -268,27 +271,42 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self.node.create_subscription(
             MarkerArray,
             self.node.service_namespace("viz_static", "walls"),
-            self._static_walls_pub.publish,
+            lambda msg: self._static_walls_pub.publish(self._markers_from_engine(msg)),
             static_qos,
         )
         self.node.create_subscription(
             MarkerArray,
             self.node.service_namespace("viz_static", "objects"),
-            self._static_objects_pub.publish,
+            lambda msg: self._static_objects_pub.publish(self._markers_from_engine(msg)),
             static_qos,
         )
 
     def _forward_debug_markers(self, msg: MarkerArray):
-        self.publish_markers(msg)
+        self.publish_markers(self._markers_from_engine(msg))
+
+    def _markers_from_engine(self, msg: MarkerArray) -> MarkerArray:
+        """Engine markers into the env frame: marker poses shift, points are pose-relative and stay."""
+        cfg = self._realizer.get_config()
+        for marker in msg.markers:
+            marker.pose.position.x += cfg.x
+            marker.pose.position.y += cfg.y
+        return msg
 
     def _agent_states_callback(self, msg: AgentStatesMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
         self._prev_agent_states = self._curr_agent_states
         self._curr_agent_states = msg
-        # publish on receipt too: the rate loop emits once per stepped clock burst and
-        # can race this batch, leaving lockstep consumers gating on a pre-burst stamp
+        # publish on receipt (the rate loop can race a stepped clock burst), but
+        # coalesced: one roster compute per burst, not per engine tick
+        if self._publish_pending:
+            return
+        self._publish_pending = True
         loop = self.node.event_loop
-        loop.call_soon_threadsafe(lambda: loop.create_task(self._publish_interpolated()))
+        loop.call_soon_threadsafe(lambda: loop.create_task(self._publish_on_receipt()))
+
+    async def _publish_on_receipt(self) -> None:
+        self._publish_pending = False
+        await self._publish_interpolated()
 
     async def _publish_interpolated(self) -> None:
         """Interpolate at the current sim time and publish the roster."""
@@ -332,8 +350,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             if prev_a is None:
                 msg.agents.append(curr_a)
                 continue
-            a = AgentStateMsg()
-            a.agent_id = curr_a.agent_id
+            a = copy.deepcopy(curr_a)
             d_theta = math.atan2(
                 math.sin(curr_a.pose.theta - prev_a.pose.theta),
                 math.cos(curr_a.pose.theta - prev_a.pose.theta),
@@ -348,8 +365,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 y=inv * prev_a.velocity.y + alpha * curr_a.velocity.y,
                 z=0.0,
             )
-            a.desired_velocity = curr_a.desired_velocity
-            a.radius = curr_a.radius
             msg.agents.append(a)
         return msg
 
@@ -412,12 +427,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     period_s=engine_dt,
                     hard=True,
                 ),
+                # hard: a starved roster makes consumers dead-reckon and snap, a slow one should pace the sim down
                 LockstepChannel(
                     name="peds",
                     topic=str(self._namespace("arena_peds")),
                     type="arena_people_msgs/msg/Pedestrians",
                     period_s=engine_dt,
-                    hard=False,
+                    hard=True,
                 ),
             ]
         )
@@ -486,9 +502,45 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Create a DynamicObstacle for a source-spawned agent using a default model."""
         return self._runtime_obstacle(
             name=f"flow_{agent.agent_id}",
-            pose=Pose(Position(agent.pose.x, agent.pose.y)),
+            pose=Pose(Position(*self._from_engine(agent.pose.x, agent.pose.y))),
             velocity=agent.desired_velocity,
         )
+
+    # The engine runs in the world frame (authored coordinates, levels laid out), this adapter owns the env offset:
+    # everything sent in is un-shifted, everything coming out is shifted back.
+    def _to_engine(self, x: float, y: float) -> tuple[float, float]:
+        cfg = self._realizer.get_config()
+        return float(x - cfg.x), float(y - cfg.y)
+
+    def _from_engine(self, x: float, y: float) -> tuple[float, float]:
+        cfg = self._realizer.get_config()
+        return float(x + cfg.x), float(y + cfg.y)
+
+    def _engine_pose(self, pose: Pose) -> Pose2DMsg:
+        x, y = self._to_engine(pose.position.x, pose.position.y)
+        return Pose2DMsg(x=x, y=y, theta=pose.orientation.to_yaw())
+
+    def _seat_pose(self, object_pose: Pose, seat: Mapping[str, float]) -> Pose2DMsg:
+        """An object-local seat (``{x, y[, yaw]}``, the pose grammar) from the model annotation or the scenario, in the engine frame."""
+        keys = set(seat)
+        if not {"x", "y"} <= keys or not keys <= {"x", "y", "yaw"}:
+            raise ValueError(f"seat must have keys x, y[, yaw], got {dict(seat)}")
+        yaw = object_pose.orientation.to_yaw()
+        sx, sy, syaw = float(seat["x"]), float(seat["y"]), float(seat.get("yaw", 0.0))
+        wx = object_pose.position.x + math.cos(yaw) * sx - math.sin(yaw) * sy
+        wy = object_pose.position.y + math.sin(yaw) * sx + math.cos(yaw) * sy
+        x, y = self._to_engine(wx, wy)
+        return Pose2DMsg(x=x, y=y, theta=yaw + syaw)
+
+    def _seat_poses(self, obstacle: Obstacle, annotated: Sequence[Mapping[str, float]]) -> list[Pose2DMsg]:
+        """Scenario seats override the annotation's, including an empty list. A bad seat costs the seats, not the object."""
+        extra = obstacle.extra
+        raw = extra["seats"] if "seats" in extra else annotated
+        try:
+            return [self._seat_pose(obstacle.pose, seat) for seat in raw]
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            self._logger.warning(f"Ignoring seats of '{obstacle.sim_path}': {e}")
+            return []
 
     async def _pedestrian_update_loop(self):
         """Spawn an actor for each flow agent a source creates, delete it when a
@@ -557,12 +609,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         for robot in self._dirty_robots.values():
             a = AgentStateMsg()
             a.agent_id = stable_int(robot.name) & 0x7FFFFFFF
-            yaw = robot.pose.orientation.to_yaw()
-            a.pose = Pose2DMsg(
-                x=robot.pose.position.x,
-                y=robot.pose.position.y,
-                theta=yaw,
-            )
+            a.name = robot.name
+            a.pose = self._engine_pose(robot.pose)
             a.radius = 0.3
             msg.agents.append(a)
         name_to_aid = {agent_name: aid for aid, agent_name in self._agent_names.items()}
@@ -570,11 +618,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a = AgentStateMsg()
             aid = name_to_aid.get(name)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
-            a.pose = Pose2DMsg(
-                x=ped.pose.position.x,
-                y=ped.pose.position.y,
-                theta=Orientation.from_msg(ped.pose.orientation).to_yaw(),
-            )
+            a.name = name
+            a.pose = self._engine_pose(Pose.from_msg(ped.pose))
             a.velocity = ped.twist.linear
             a.radius = 0.35
             msg.agents.append(a)
@@ -590,8 +635,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.name = self._agent_names.get(agent.agent_id, str(agent.agent_id))
 
             yaw = agent.pose.theta
+            x, y = self._from_engine(agent.pose.x, agent.pose.y)
             ped.pose = PoseMsg(
-                position=Point(x=agent.pose.x, y=agent.pose.y, z=0.0),
+                position=Point(x=x, y=y, z=0.0),
                 orientation=Quaternion(
                     z=math.sin(yaw / 2.0),
                     w=math.cos(yaw / 2.0),
@@ -599,17 +645,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             )
             ped.twist = Twist(linear=agent.velocity)
 
-            anim_state = getattr(agent, "animation_state", None)
-            if anim_state is not None:
-                ped.animation_state = anim_state
-            else:
-                speed = math.hypot(agent.velocity.x, agent.velocity.y)
-                if speed > 1.5:
-                    ped.animation_state = Pedestrian.RUNNING
-                elif speed > 0.05:
-                    ped.animation_state = Pedestrian.WALKING
-                else:
-                    ped.animation_state = Pedestrian.IDLE
+            ped.animation_state = agent.animation_state
+            ped.gestures = [GestureMsg(slot=g.slot, at=Point(x=gx, y=gy, z=g.at.z), clip=g.clip, hand=g.hand) for g in agent.gestures for gx, gy in (self._from_engine(g.at.x, g.at.y),)]
 
             peds.pedestrians.append(ped)
         return peds
@@ -655,7 +692,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         src_msg = SourceConfigMsg()
         src_msg.name = region.name
         centroid = self._polygon_centroid(region.polygon)
-        src_msg.pose = Pose2DMsg(x=centroid[0], y=centroid[1], theta=0.0)
+        cx, cy = self._to_engine(*centroid)
+        src_msg.pose = Pose2DMsg(x=cx, y=cy, theta=0.0)
         src_msg.shape = self._polygon_to_shape_msg(region.polygon, centroid)
 
         cfg = region.config
@@ -692,7 +730,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         sink_msg = SinkConfigMsg()
         sink_msg.name = region.name
         centroid = self._polygon_centroid(region.polygon)
-        sink_msg.pose = Pose2DMsg(x=centroid[0], y=centroid[1], theta=0.0)
+        cx, cy = self._to_engine(*centroid)
+        sink_msg.pose = Pose2DMsg(x=cx, y=cy, theta=0.0)
         sink_msg.shape = self._polygon_to_shape_msg(region.polygon, centroid)
 
         cfg = region.config
@@ -765,18 +804,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         world_objects_request = AddWorldObjects.Request()
         for obstacle, resolved in zip(obstacles, resolved_paths, strict=False):
             try:
-                pose = Pose2DMsg(
-                    x=obstacle.pose.position.x,
-                    y=obstacle.pose.position.y,
-                    theta=obstacle.pose.orientation.to_yaw(),
-                )
+                pose = self._engine_pose(obstacle.pose)
 
                 obstacle_type = ""
+                seats: list = []
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
                         annotation: dict = yaml.safe_load(f.read())
+                    seats = list(annotation.get("seats") or [])
                     (x_min, x_max), (y_min, y_max), (z_min, z_max) = annotation["bounding_box"]
                     obstacle_type = annotation.get("name", "") or annotation.get("desc", "")
                     msg = ObstacleConfigMsg()
@@ -805,6 +842,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 info.satisfies_values = [float(v) for v in satisfies.values()]
                 interaction_radius = extra.get("interaction_radius")
                 info.interaction_radius = float(interaction_radius) if interaction_radius is not None else 0.0
+                info.seats = self._seat_poses(obstacle, seats)
                 formation: dict = extra.get("formation") or {}
                 formation_type = formation.get("type", "")
                 if formation_type:
@@ -845,15 +883,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         for obstacle in obstacles:
             agent_msg = AgentStateMsg()
             agent_msg.agent_id = self._next_id
+            agent_msg.name = obstacle.sim_path
             self._bridge_agent_ids.add(self._next_id)
             self._agent_names[self._next_id] = obstacle.sim_path
             self._next_id += 1
 
-            agent_msg.pose = Pose2DMsg(
-                x=obstacle.pose.position.x,
-                y=obstacle.pose.position.y,
-                theta=obstacle.pose.orientation.to_yaw(),
-            )
+            agent_msg.pose = self._engine_pose(obstacle.pose)
             agent_msg.velocity = Vector3(x=0.0, y=0.0, z=0.0)
 
             parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
@@ -869,6 +904,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.repulsion_strength = lp.get("repulsion_strength", 0.0)
                 agent_msg.repulsion_range = lp.get("repulsion_range", 0.0)
                 agent_msg.agent_type = parsed.agent_type
+                agent_msg.handedness = params.handedness
             else:
                 agent_msg.desired_velocity = float(obstacle.velocity)
                 agent_msg.radius = 0.35
@@ -878,15 +914,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.repulsion_strength = 0.0
                 agent_msg.repulsion_range = 0.0
                 agent_msg.agent_type = ""
+                agent_msg.handedness = ""
 
-            if parsed is not None:
-                agent_msg.waypoints = parsed.waypoints_msg
-            else:
-                wp_msg = WaypointsMsg()
-                wp_msg.mode = WaypointsMsg.MODE_REPEAT
-                for wp in obstacle.waypoints:
-                    wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wp.x, y=wp.y, theta=0.0)))
-                agent_msg.waypoints = wp_msg
+            wp_msg = WaypointsMsg()
+            wp_msg.mode = parsed.waypoint_mode if parsed is not None else WaypointsMsg.MODE_REPEAT
+            for wp in obstacle.waypoints:
+                wx, wy = self._to_engine(wp.x, wp.y)
+                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wx, y=wy, theta=0.0)))
+            agent_msg.waypoints = wp_msg
             request.agents.append(agent_msg)
 
         try:
@@ -978,8 +1013,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         request = AddWalls.Request()
         for name, wall in walls.items():
             request.names.append(name)
-            request.starts.append(Point32(x=float(wall.start.x), y=float(wall.start.y), z=0.0))
-            request.ends.append(Point32(x=float(wall.end.x), y=float(wall.end.y), z=0.0))
+            sx, sy = self._to_engine(wall.start.x, wall.start.y)
+            ex, ey = self._to_engine(wall.end.x, wall.end.y)
+            request.starts.append(Point32(x=sx, y=sy, z=0.0))
+            request.ends.append(Point32(x=ex, y=ey, z=0.0))
 
         try:
             response = await self._add_walls_client.call_timeout(request)

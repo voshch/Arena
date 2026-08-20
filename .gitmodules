@@ -33,5 +33,5 @@
 [submodule "humansim"]
 	path = humansim
 	url = https://github.com/voshch/humansim.git
-	branch = jazzy
+	branch = feature/audio
 	update = checkout

@@ -138,6 +138,11 @@ class PedestrianITF(abc.ABC):
 class RobotITF(abc.ABC):
     """Abstract base class for robot management in simulators."""
 
+    def robot_controllers(self, robot: Robot) -> list[str]:
+        """ros2_control controllers this simulator spawns for `robot`. Empty when it runs no control plane."""
+        del robot
+        return []
+
     @abc.abstractmethod
     async def robot_spawn(self, robots: Sequence[Robot]) -> Sequence[bool]:
         """Spawn robots."""
