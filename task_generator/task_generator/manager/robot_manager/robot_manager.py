@@ -465,7 +465,6 @@ class RobotManager(NodeInterface):
     async def _launch_robot(self, node_paths: set[str]):
         """Launch the robot's navstack via the bound adapters."""
         if Utils.get_arena_type() != Constants.ArenaType.TRAINING:
-            await asyncio.gather(*(a.ensure_services() for a in self._adapter_instances))
             launch_description = launch.LaunchDescription()
             current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
             launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level))
@@ -561,6 +560,7 @@ class RobotManager(NodeInterface):
 
             async with self.node.unpause_window():
                 await self.node.await_sim_step()
+                await asyncio.gather(*(a.ensure_services() for a in self._adapter_instances))
                 self._launch_handle = await self.node.do_launch_tracked(launch_description)
                 await asyncio.gather(*(a.wait_until_ready(self, node_paths) for a in self._adapter_instances))
                 await self.wait_controllers_active()
