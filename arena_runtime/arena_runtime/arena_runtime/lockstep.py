@@ -147,6 +147,8 @@ class LockstepScheduler:
             self._registrations[caller] = _Registration(env=env, channels=tuple(channels))
         else:
             self._registrations.pop(caller, None)
+        names = [f"{c.name}{'' if c.hard else '(soft)'}" for c in channels]
+        self._node.get_logger().info(f"lockstep register {caller}: {names or 'cleared'}")
         self._registry_version += 1
         self._publish_status()
 

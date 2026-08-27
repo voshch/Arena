@@ -479,14 +479,18 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         """Acquire a hold, pausing the sim on the empty->nonempty edge if no window is open."""
         was_empty = self._holds.is_empty()
         count = self._holds.acquire(caller, reason)
+        self.get_logger().info(f"hold + {caller}/{reason} (holds={count} windows={self._windows.total_count()})")
         if was_empty and self._windows.is_empty():
+            self.get_logger().warning("sim pause (first hold)")
             await self._lifecycle.pause()
         return count
 
     async def _release_hold(self, caller: str, reason: str) -> int:
         """Release a hold, unpausing the sim on the nonempty->empty edge if no window is open."""
         count = self._holds.release(caller, reason)
+        self.get_logger().info(f"hold - {caller}/{reason} (holds={count} windows={self._windows.total_count()})")
         if self._holds.is_empty() and self._windows.is_empty():
+            self.get_logger().warning("sim unpause (last hold)")
             await self._lifecycle.unpause()
         return count
 
@@ -519,8 +523,10 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     ) -> arena_runtime_msgs.srv.LifecycleUnpauseWindow.Response:
         if request.action == arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request.ACQUIRE:
             was_empty = self._windows.is_empty()
-            self._windows.acquire(request.caller_id, _WINDOW_REASON)
+            count = self._windows.acquire(request.caller_id, _WINDOW_REASON)
+            self.get_logger().info(f"window + {request.caller_id} (windows={count} holds={self._holds.total_count()})")
             if was_empty:
+                self.get_logger().warning("sim unpause (first window)")
                 try:
                     unpaused = await self._lifecycle.unpause()
                 except Exception as e:
@@ -542,8 +548,10 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
                 response.success = False
                 response.error_msg = f"caller {request.caller_id} does not hold a window"
                 return response
-            self._windows.release(request.caller_id, _WINDOW_REASON)
+            count = self._windows.release(request.caller_id, _WINDOW_REASON)
+            self.get_logger().info(f"window - {request.caller_id} (windows={count} holds={self._holds.total_count()})")
             if self._windows.is_empty() and not self._holds.is_empty():
+                self.get_logger().warning("sim pause (last window, holds remain)")
                 await self._lifecycle.pause()
             response.success = True
             response.error_msg = ""
