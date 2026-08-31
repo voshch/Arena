@@ -1,0 +1,16 @@
+asa: 1
+bounding_box:
+- - -0.3806
+  - 0.3859
+- - -0.4004
+  - 0.3343
+- - 0.0
+  - 1.0608
+desc: A piece of furniture for sitting.
+face: -y
+name: SM_Chair_01a
+note: Generated with Gemini-2.5
+path: Object/SM_Chair_01a
+tags:
+- domain::hospital
+- kind::chair

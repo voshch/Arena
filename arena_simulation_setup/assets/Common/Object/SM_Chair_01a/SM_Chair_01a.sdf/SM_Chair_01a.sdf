@@ -1,0 +1,15 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="SM_Chair_01a">
+    <static>true</static>
+    <link name="link">
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>SM_Chair_01a.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,11 @@
+robots:
+  - start: [10.0, 2.0, 1.5708]
+    goal: [10.0, 30.0, 1.5708]
+
+dynamic:
+  - name: headon_pointer
+    model: male_adult_construction_01
+    pose: [10.0, 17.0, -1.5708]
+    agent: { agent_type: ./pointer.yaml }
+    waypoints:
+      - [10.0, 17.0]

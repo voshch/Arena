@@ -1,0 +1,18 @@
+robots:
+  - start: [10.0, 2.0, 1.5708]
+    goal: [10.0, 30.0, 1.5708]
+
+dynamic:
+  - name: talker_1
+    model: female_adult_business_02
+    pose: [9.2, 17.0, 0.0]
+    agent: { agent_type: ./talker_1.yaml }
+    waypoints:
+      - [9.2, 17.0]
+
+  - name: talker_2
+    model: male_adult_construction_01
+    pose: [10.8, 17.0, 3.14159]
+    agent: { agent_type: ./talker_2.yaml }
+    waypoints:
+      - [10.8, 17.0]

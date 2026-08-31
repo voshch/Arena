@@ -1,0 +1,18 @@
+robots:
+  - start: [10.0, 2.0, 1.5708]
+    goal: [10.0, 30.0, 1.5708]
+
+dynamic:
+  - name: pointer
+    model: male_adult_construction_01
+    pose: [9.0, 17.0, 0.0]
+    agent: { agent_type: ./pointer.yaml }
+    waypoints:
+      - [9.0, 17.0]
+
+  - name: other_person
+    model: female_adult_business_02
+    pose: [11.0, 17.0, 3.14159]
+    agent: { agent_type: ./other_person.yaml }
+    waypoints:
+      - [11.0, 17.0]

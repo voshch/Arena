@@ -1,0 +1,15 @@
+name: talker_1
+mode: behavior_tree
+extends: adult
+
+initial_sequence: talk_seq
+
+sequences:
+  talk_seq:
+    steps:
+      do_talk:
+        attention:
+          clip: talk_with_arm_gesture
+          gaze: talker_2
+        duration: {mean: 1000.0, std: 0.0}
+    then: talk_seq

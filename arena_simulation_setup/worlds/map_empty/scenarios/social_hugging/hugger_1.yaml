@@ -1,0 +1,15 @@
+name: hugger_1
+mode: behavior_tree
+extends: adult
+
+initial_sequence: hug_seq
+
+sequences:
+  hug_seq:
+    steps:
+      do_hug:
+        attention:
+          clip: hug
+          gaze: hugger_2
+        duration: {mean: 1000.0, std: 0.0}
+    then: hug_seq

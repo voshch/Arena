@@ -177,7 +177,7 @@ class AnimationManager:
                 annotations = yaml.safe_load(f) or {}
 
         if animation_name is None:
-            animation_name = [f.name.split(".")[0] for f in self.database_path.iterdir() if f.suffix == ".npy"]
+            animation_name = [f.stem for f in self.database_path.glob("*.npy")]
 
         for name in self.USE_SYNTHESIS:
             self.animations[name] = Animation(name=name, frames=[], n_frames=0, duration=0.0, loop=True, fps=self._fps)

@@ -1,0 +1,13 @@
+name: animator_sit
+mode: behavior_tree
+extends: adult
+
+initial_sequence: anim_seq
+
+sequences:
+  anim_seq:
+    steps:
+      do_anim:
+        attention: {clip: sit, posture: seated}
+        duration: {mean: 5.0, std: 0.0}
+    then: anim_seq

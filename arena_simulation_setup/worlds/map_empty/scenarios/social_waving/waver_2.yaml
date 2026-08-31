@@ -1,0 +1,23 @@
+name: waver_2
+mode: behavior_tree
+extends: adult
+
+initial_sequence: wave_seq
+
+sequences:
+  wave_seq:
+    steps:
+      do_wave:
+        attention:
+          clip: wave
+          gaze: waver_1
+        duration: {mean: 6.0, std: 0.0}
+      walk_to_meet:
+        kind: go_to
+        target_pose: {x: 14.0, y: 10.0}
+      do_talk:
+        attention:
+          clip: talk_with_arm_gesture
+          gaze: waver_1
+        duration: {mean: 1000.0, std: 0.0}
+    then: wave_seq
