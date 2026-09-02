@@ -7,9 +7,12 @@ initial_sequence: hug_seq
 sequences:
   hug_seq:
     steps:
+      walk_to_meet:
+        kind: go_to
+        target_pose: {x: 13.9, y: 10.0}
       do_hug:
+        interaction: HUG
         attention:
-          clip: hug
-          gaze: hugger_1
+          gaze: partner
         duration: {mean: 1000.0, std: 0.0}
     then: hug_seq

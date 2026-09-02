@@ -7,9 +7,12 @@ initial_sequence: talk_seq
 sequences:
   talk_seq:
     steps:
+      walk_to_meet:
+        kind: go_to
+        target_pose: {x: 9.5, y: 17.0}
       do_talk:
+        interaction: TALK_TO
         attention:
-          clip: talk_with_arm_gesture
-          gaze: talker_2
+          gaze: partner
         duration: {mean: 1000.0, std: 0.0}
     then: talk_seq

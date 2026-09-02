@@ -14,10 +14,10 @@ sequences:
         duration: {mean: 6.0, std: 0.0}
       walk_to_meet:
         kind: go_to
-        target_pose: {x: 10.0, y: 16.0}
+        target_pose: {x: 9.5, y: 17.0}
       do_talk:
+        interaction: TALK_TO
         attention:
-          clip: talk_with_arm_gesture
-          gaze: waver_2
+          gaze: partner
         duration: {mean: 1000.0, std: 0.0}
     then: wave_seq

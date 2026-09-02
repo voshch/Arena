@@ -636,6 +636,23 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
             yaw = agent.pose.theta
             x, y = self._from_engine(agent.pose.x, agent.pose.y)
+
+            gestures = [
+                GestureMsg(slot=g.slot, at=Point(x=gx, y=gy, z=g.at.z), clip=g.clip, hand=g.hand, render_pose_override=g.render_pose_override)
+                for g in agent.gestures
+                for gx, gy in (self._from_engine(g.at.x, g.at.y),)
+            ]
+
+            # A render-pose-override gesture (e.g. an active HUG) substitutes the interaction's
+            # formation slot for the physics pose here: no local planner's own repulsion would
+            # ever let two agents' true simulated positions alone reach a formation tighter than
+            # their combined agent_radius, so display uses the formation target instead. Physics
+            # (collision avoidance, other agents' avoidance, robot planning) is untouched - this
+            # is purely what gets drawn/sensed downstream of arena_peds.
+            override = next((g for g in gestures if g.slot == "body" and g.render_pose_override), None)
+            if override is not None:
+                x, y = override.at.x, override.at.y
+
             ped.pose = PoseMsg(
                 position=Point(x=x, y=y, z=0.0),
                 orientation=Quaternion(
@@ -646,7 +663,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.twist = Twist(linear=agent.velocity)
 
             ped.animation_state = agent.animation_state
-            ped.gestures = [GestureMsg(slot=g.slot, at=Point(x=gx, y=gy, z=g.at.z), clip=g.clip, hand=g.hand) for g in agent.gestures for gx, gy in (self._from_engine(g.at.x, g.at.y),)]
+            ped.gestures = gestures
 
             peds.pedestrians.append(ped)
         return peds

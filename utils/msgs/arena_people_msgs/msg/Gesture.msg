@@ -11,3 +11,6 @@ string clip
 
 # arm: dominant hand l | r, empty = default
 string hand
+
+# body: `at` is a render-only position override (xy), not a gaze/point target
+bool render_pose_override

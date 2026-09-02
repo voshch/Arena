@@ -5,14 +5,10 @@ robots:
 dynamic:
   - name: hugger_1
     model: female_adult_business_02
-    pose: [13.0, 10.0, 0.0]
+    pose: [3.0, 10.0, 0.0]
     agent: { agent_type: ./hugger_1.yaml }
-    waypoints:
-      - [13.0, 10.0]
 
   - name: hugger_2
     model: male_adult_construction_01
-    pose: [13.8, 10.0, 3.14159]
+    pose: [22.0, 11.0, 3.14159]
     agent: { agent_type: ./hugger_2.yaml }
-    waypoints:
-      - [12.9, 10.0]
