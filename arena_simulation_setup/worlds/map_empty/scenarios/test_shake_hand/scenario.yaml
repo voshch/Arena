@@ -1,0 +1,6 @@
+robots: []
+dynamic:
+  - name: shake_hand_tester
+    model: arenian
+    pose: [15.0, 10.0, 0.0]
+    agent: { agent_type: ./animator.yaml }

@@ -1,0 +1,20 @@
+name: guidance_pointer
+mode: behavior_tree
+extends: adult
+
+initial_sequence: guidance_seq
+
+sequences:
+  guidance_seq:
+    steps:
+      point_at_robot:
+        attention:
+          point: [robot:robot_0, robot:robot, robot]
+          gaze: [robot:robot_0, robot:robot, robot]
+        duration: {mean: 5.0, std: 0.0}
+      point_direction:
+        attention:
+          point: {x: 14.0, y: 17.0, z: 1.0}
+          gaze: {x: 14.0, y: 17.0, z: 1.0}
+        duration: {mean: 1000.0, std: 0.0}
+    then: guidance_seq

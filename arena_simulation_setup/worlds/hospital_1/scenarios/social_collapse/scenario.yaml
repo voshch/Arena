@@ -1,0 +1,11 @@
+robots:
+  - start: [10.0, 2.0, 1.5708]
+    goal: [10.0, 30.0, 1.5708]
+
+dynamic:
+  - name: collapser
+    model: female_adult_business_02
+    pose: [10.0, 17.0, 1.5708]
+    agent: { agent_type: ./collapser.yaml }
+    waypoints:
+      - [10.0, 17.0]
