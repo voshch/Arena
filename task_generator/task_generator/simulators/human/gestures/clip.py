@@ -37,8 +37,16 @@ class ClipGesture:
         if anim is None or anim.n_frames == 0:
             raise ValueError(f"unknown clip {name!r}")
         last = anim.n_frames - 1
+        # A looping clip (wave, talk_with_arm_gesture, ...) has no one-shot wind-up to protect -
+        # it's already mid-cycle from frame 0, so it's safe to release as soon as the driving
+        # gesture disappears (modulo the regular HOLD_MIN_S flicker debounce in GestureLayer).
+        # Gating a full loop length behind hold_start (as for genuine one-shot clips) made
+        # GestureLayer._release()'s min_t = hold_start/fps + HOLD_MIN_S measure from the END of
+        # the whole clip, which could outlast a short interaction duration and leave the clip
+        # visibly playing well after the BT step that requested it had already moved on.
+        hold_start = 0 if anim.loop else last
         joints = frozenset(anim.joints) if anim.joints else None
-        return GestureClip(frames=list(anim.frames), fps=anim.fps, hold_start=last, hold_end=last, side="", hold=name, report={}, joints=joints, loop=anim.loop)
+        return GestureClip(frames=list(anim.frames), fps=anim.fps, hold_start=hold_start, hold_end=last, side="", hold=name, report={}, joints=joints, loop=anim.loop)
 
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         del hold
