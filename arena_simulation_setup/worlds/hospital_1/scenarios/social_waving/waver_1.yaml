@@ -8,10 +8,16 @@ sequences:
   wave_seq:
     steps:
       do_wave:
+        interaction: WAVE_AT
         attention:
-          clip: wave
-          gaze: waver_2
+          clip: {name: wave, when: always}
+          gaze: partner
         duration: {mean: 6.0, std: 0.0}
+      do_point:
+        attention:
+          point: {at: {x: 10.0, y: 17.0, z: 0.3}}
+          gaze: partner
+        duration: {mean: 1.5, std: 0.2}
       walk_to_meet:
         kind: go_to
         target_pose: {x: 9.5, y: 17.0}

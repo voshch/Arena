@@ -7,14 +7,24 @@ initial_sequence: wave_seq
 sequences:
   wave_seq:
     steps:
+      notice_delay:
+        duration: {mean: 1.5, std: 0.3}
       do_wave:
+        interaction: WAVE_AT
         attention:
-          clip: wave
-          gaze: waver_2
-        duration: {mean: 6.0, std: 0.0}
+          clip: {name: wave, when: always}
+          gaze: partner
+        duration: {mean: 3.0, std: 0.0}
+      do_point:
+        attention:
+          point: {at: {x: 13.0, y: 10.0, z: 0.3}}
+          gaze: partner
+        duration: {mean: 1.5, std: 0.2}
       walk_to_meet:
         kind: go_to
         target_pose: {x: 12.5, y: 10.0}
+      settle_before_talk:
+        duration: {mean: 1.5, std: 0.3}
       do_talk:
         interaction: TALK_TO
         attention:

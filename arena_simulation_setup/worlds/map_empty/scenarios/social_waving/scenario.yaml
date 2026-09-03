@@ -5,10 +5,10 @@ robots:
 dynamic:
   - name: waver_1
     model: female_adult_business_02
-    pose: [8.0, 6.0, 0.78539]
+    pose: [18.0, 9.1, 1.57]
     agent: { agent_type: ./waver_1.yaml }
 
   - name: waver_2
     model: male_adult_construction_01
-    pose: [18.0, 14.0, -2.35619]
+    pose: [18.0, 13.1, -1.57]
     agent: { agent_type: ./waver_2.yaml }
