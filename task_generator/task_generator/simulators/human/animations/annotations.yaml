@@ -27,6 +27,7 @@ _upper_body: &upper_body
   - r_r_shoulder
   - r_elbow
 
+beckon: {loop: true, joints: *upper_body}
 collapse_to_ground: {loop: false}
 hug: {loop: true, joints: *upper_body}
 jump: {loop: false}

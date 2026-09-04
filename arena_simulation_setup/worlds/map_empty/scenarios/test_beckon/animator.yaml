@@ -1,0 +1,18 @@
+name: animator_sit
+mode: behavior_tree
+extends: adult
+
+initial_sequence: anim_seq
+
+sequences:
+  anim_seq:
+    steps:
+      do_anim:
+        attention: {clip: beckon}
+        duration: {mean: 5.0, std: 0.0}
+      do_point:
+        attention:
+          point: {at: {x: 15.0, y: 10.2, z: 0.0}}
+          # gaze: partner
+        duration: {mean: 1.5, std: 0.2}
+    then: anim_seq
