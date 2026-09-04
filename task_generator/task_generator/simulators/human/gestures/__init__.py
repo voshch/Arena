@@ -29,10 +29,10 @@ RELEASE_STRETCH = 1.25  # lowering arcs play this much slower than the recorded 
 BREATH_HZ = 0.3
 BREATH_AMP_RAD = math.radians(1.5)
 
-SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point", "body": "clip"}
-SLOT_OVERLAY = {"head": "head", "arm": "arm", "arm_l": "arm", "arm_r": "arm", "body": "body"}
+SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point", "halt": "halt", "halt_l": "halt", "halt_r": "halt", "body": "clip"}
+SLOT_OVERLAY = {"head": "head", "arm": "arm", "arm_l": "arm", "arm_r": "arm", "halt": "arm", "halt_l": "arm", "halt_r": "arm", "body": "body"}
 OVERLAYS = ("head", "arm", "body")
-AIMED_SLOTS = ("head", "arm", "arm_l", "arm_r")
+AIMED_SLOTS = ("head", "arm", "arm_l", "arm_r", "halt", "halt_l", "halt_r")
 ZERO3 = np.zeros(3)
 
 
@@ -129,6 +129,13 @@ def _load_point() -> Callable[[AnimationManager], Gesture]:
     from .point import PointGesture
 
     return lambda _manager: PointGesture()
+
+ 
+@GESTURES.register("halt")
+def _load_halt() -> Callable[[AnimationManager], Gesture]:
+    from .halt import HaltGesture
+
+    return lambda _manager: HaltGesture()
 
 
 @GESTURES.register("look")

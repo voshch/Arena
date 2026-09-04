@@ -163,6 +163,8 @@ def _pose(x: float, y: float, yaw_deg: float) -> tuple[float, float, float]:
 def arm(at: tuple[float, float, float], **opts: str) -> Channel:
     return Channel("arm", at, hand=opts.get("dominant", ""))
 
+def halt(at: tuple[float, float, float], **opts: str) -> Channel:
+    return Channel("halt", at, hand=opts.get("dominant", ""))
 
 def head(at: tuple[float, float, float]) -> Channel:
     return Channel("head", at)
@@ -191,6 +193,8 @@ def default_cases() -> list[Case]:
         Case("dominant_left", [Cue(0.0, [arm((5.0, 2.5, 1.2), dominant="l")], p), Cue(2.5, [], p)], 5.0),
         Case("grid_rest_between", grid, 3.0 * len(cells) + 2.0, min_clips=len(cells), rest_windows=[(3.0 * i + 2.0, 3.0 * i + 4.5) for i in range(len(cells))]),
         Case("walker_tracks", walk, 10.0 + 2.0, min_clips=8),
+        Case("halt_level", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.5, [], p)], 5.0),
+        Case("halt_switch", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.0, [Channel("halt_r", (5.0, 4.5, 1.2))], p), Cue(4.0, [], p)], 6.5),
     ]
 
 
