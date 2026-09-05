@@ -67,9 +67,27 @@ joint angles are committed to the `arena_peds` bus.  For each `Pedestrian` in
 the outgoing message it checks `ped.joint_state.name`:
 
 - **non-empty**: upstream backend supplied its own joint state, published unchanged (override path: an upstream producer that already computes joint angles).
-- **empty**: `publish_arena_peds` calls `GaitGenerator.compute` + `GaitGenerator.joint_state` and fills the field with bare semantic joint names (20 DOF, ~9 active per gait mode, no body suffix).
+- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (36 DOF, no body suffix).
 
-The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer`.  The 3D engines do not read it: Isaac animates pedestrians with its native omni.anim.people AnimGraph and Gazebo clip-scrubs `walk.dae`, both driven by pedestrian pose and twist.  So `GaitGenerator` is the ROS-side articulation ground truth, while the in-engine meshes play plausible locomotion that is not bone-for-bone identical to it.
+The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac and Gazebo pedestrian rigs.
+
+## Gestures
+
+`Pedestrian.gestures` (`arena_people_msgs/Gesture[]`: `slot` in `head|arm|arm_l|arm_r|body`, `at` world-frame
+point for the aimed slots, `clip` name on `body`, `hand` on `arm`) are attention channels, not poses. Backends
+only forward them (arena_humansim copies `AgentState.gestures` one to one, the possession stream carries them
+as-is), and `publish_arena_peds` hands them per ped to the [`GestureLayer`](gestures/__init__.py) as a
+`GestureRequest` (a `Channel(slot, at, clip, hand)` per entry, ped pose, moving flag). The layer resolves each
+aimed target into the ped frame once per clip, asks the slot's generator for frames (`head` -> `look`,
+`arm*` -> `point`, `body` -> `clip`, the cached `.npy` named on the wire over the joints
+[annotations.yaml](animations/annotations.yaml) lists for it), and plays them as independent `AnimationManager`
+overlay slots (`head`, `arm`, `body`) over the locomotion base. Nothing is synthesized: no channel published =
+that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
+timing, and how to add a kind.
+
+An empty list releases every slot, a missing entry releases that slot. Unknown slots warn once per ped and are
+ignored. Clips come from the baked pointing table and are generated inline on the publishing tick, so their
+timing is sim-deterministic under lockstep without any extra plumbing.
 
 ## Visualization topics
 
@@ -193,6 +211,109 @@ static:
     interaction_radius: 1.0
     formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}
 ```
+
+## Possession
+
+Every backend supports upstream override through the possession layer in
+`BaseHumanSimulator`, with the pure logic in
+[`possession.py`](possession.py).
+
+`human/stream` (`Pedestrians`, env-level, reliable/volatile depth 1) carries
+full pedestrian state, and each batch is the publisher's complete claim set:
+a validated entry claims or renews its ped (deep copy stored), a possessed
+name absent from a valid batch is released instantly, and silence past
+`POSSESSION_TIMEOUT_S` (1 s) releases everything as the crash fallback,
+evaluated lazily on sim time with no timers. Batches are dropped while the
+reset gate is closed and when their header stamp predates the gate-open
+stamp (ped names persist across episodes). Unknown names and non-bare joint
+names drop per entry (suffixing stays `hri_producer`'s job), positions pass
+through unclamped (`gait.LIMITS` is advisory and generator-side), `model_uri`
+is ignored.
+
+Enforcement is substitution at the two outbound funnels: `publish_arena_peds`
+(the bus) and `relay_pedestrian_update` (the sim). Substitution is
+copy-on-write: possessed entries swap to deep copies of the stored state,
+everything else passes through untouched, and the caller's message is never
+mutated (hunav hands a persistent container to both funnels). Substituted
+entries get `gait_phase` re-stamped from the base's own `GaitGenerator`
+phase table, engines never see the publisher's zero.
+
+`human/move` (`srv/MovePedestrians`, env-level) is a teleport served by the
+base, only `name` and `pose` are read. Known peds are moved in place (no
+`forget()` round-trip, that would reset spawn bookkeeping) and relayed via
+`pedestrian_move`, everything else returns `NOT_FOUND` per item. A move does
+not claim possession.
+
+The reset gate opens at the end of `spawn_dynamic_obstacles` (which also
+indexes each ped under both its name and its sim_path, the bus name differs
+per backend) and closes in `unuse_obstacles` and the `remove_obstacles`
+dynamic purge, which clear the table without release hooks (those peds cease
+to exist). Backends observe possession through synchronous no-op hooks
+(`_on_stream_merged`, `_on_ped_released`, `_on_ped_moved`) and the
+`possessed_peds()` accessor.
+
+## Dummy adapter (`human:=dummy`)
+
+`DummyHumanSimulator` ([`dummy.py`](dummy.py)) has no locomotion engine,
+the possession stream is the sole source of motion. It seeds a roster cache
+at spawn (sim_path names, IDLE poses) and republishes it through
+`publish_arena_peds` at 2 Hz so the topic never goes stale, letting the
+possession substitution overlay driven peds on the way out.
+
+Its hooks keep the cache honest: a merge publishes the full roster, a
+release adopts the last driven pose with an empty `joint_state` so the
+synthesized gait eases the ped back to idle, a move adopts the teleport pose
+and publishes. Nothing moves on its own: without a publisher peds hold
+position with idle gait, and closing the GUI freezes them, it does not
+despawn them. Reset closes the gate and clears the cache, respawn reseeds it
+at the spawn poses and reopens the gate. Walls and static obstacles have no
+engine to live in, so they go out as latched
+`pedestrian_markers/static_walls` / `static_objects` MarkerArrays (ns
+`dummy_walls` / `dummy_objects`), each led by a `DELETEALL` so removals
+clear stale markers.
+
+## Arena adapter (`human:=arena`)
+
+`ArenaHumanSimulator` feeds possession back to the engine: a loop at the
+possession stream rate (20 Hz) publishes every possessed ped (plus dirty
+robot poses) on the engine's `world_state` topic, pose and world-frame
+velocity both. Possessed peds that are known engine agents go out under
+the engine's own agent id, so the engine keeps its internal copy in full
+sync: pose slaved to the feed, velocity carried through so neighboring
+agents anticipate the motion, autonomy suspended while the lease is
+fresh, and the agent resumes from right there when possession ends. Ids
+the engine does not recognize become transient external obstacles in its
+force pool instead. Either way the crowd sees and avoids a possessed ped,
+walking or parked.
+
+The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
+the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses
+are un-shifted going in, agent poses, gesture targets, flow agents and the engine's marker layers are shifted
+coming out. Nothing engine-side knows the env.
+
+World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
+`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y}` with an
+optional `yaw`, the same grammar as `pose`, from the annotation or overridden per scenario entry, and an empty
+list clears the annotation's). Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
+ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
+the object's origin, not its seat, so an object whose seats sit outside `interaction_radius` needs that radius
+widened to cover the object or the ped never gets close enough to sit.
+
+## HuNavSim default agent template
+
+`HunavHumanSimulator` derives pedestrian parameters from a `HunavDynamicObstacle`
+instance. At module import time
+([`hunav/__init__.py:326`](hunav/__init__.py#L326)), the class-level default is
+loaded from:
+
+```
+arena_simulation_setup/configs/hunav/default.yaml
+```
+
+via `_load_config()`. This file sets the default behavior parameters
+(`behavior`, `desired_velocity`, `radius`, `behavior_tree`, etc.) for every
+pedestrian not otherwise configured. The path is resolved via
+`get_package_share_directory("arena_simulation_setup")` at startup.
 
 ## Adding a new BaseHumanSimulator
 

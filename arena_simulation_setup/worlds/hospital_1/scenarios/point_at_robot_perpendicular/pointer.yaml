@@ -1,0 +1,15 @@
+name: perpendicular_pointer
+mode: behavior_tree
+extends: adult
+
+initial_sequence: point_seq
+
+sequences:
+  point_seq:
+    steps:
+      point_at_robot:
+        attention:
+          point: [robot:robot_0, robot:robot, robot]
+          gaze: [robot:robot_0, robot:robot, robot]
+        duration: {mean: 1000.0, std: 0.0}
+    then: point_seq

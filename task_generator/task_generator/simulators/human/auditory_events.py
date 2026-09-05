@@ -4,6 +4,7 @@ import math
 from collections.abc import Callable
 
 from arena_people_msgs.msg import Pedestrian, Pedestrians
+from arena_simulation_setup.utils.geometry import Orientation
 
 
 class AuditoryEventDetector:
@@ -27,6 +28,7 @@ class AuditoryEventDetector:
         self._greeting_cooldown_sec = greeting_cooldown_sec
 
         self._last_footstep_by_ped: dict[int, float] = {}
+        self._last_half_step_by_ped: dict[int, int] = {}
         self._last_greeting_by_pair: dict[tuple[int, int], float] = {}
         self._last_pose_by_ped: dict[int, tuple[float, float, float]] = {}
 
@@ -46,6 +48,7 @@ class AuditoryEventDetector:
         for stale_id in set(self._last_pose_by_ped) - current_ids:
             self._last_pose_by_ped.pop(stale_id, None)
             self._last_footstep_by_ped.pop(stale_id, None)
+            self._last_half_step_by_ped.pop(stale_id, None)
 
         for index, ped_a in enumerate(peds):
             for ped_b in peds[index + 1 :]:
@@ -71,10 +74,18 @@ class AuditoryEventDetector:
         return math.hypot(x - previous_x, y - previous_y) / elapsed
 
     def _maybe_emit_footstep(self, ped: Pedestrian, now_sec: float) -> None:
-        last = self._last_footstep_by_ped.get(ped.id, -math.inf)
-        if now_sec - last < self._footstep_interval_sec:
-            return
-        self._last_footstep_by_ped[ped.id] = now_sec
+        """One step per half gait cycle when the producer reports ``gait_phase``, else a fixed interval."""
+        if ped.gait_phase > 0.0:
+            half_step = int(ped.gait_phase // math.pi)
+            previous = self._last_half_step_by_ped.get(ped.id)
+            self._last_half_step_by_ped[ped.id] = half_step
+            if previous is None or previous == half_step:
+                return
+        else:
+            last = self._last_footstep_by_ped.get(ped.id, -math.inf)
+            if now_sec - last < self._footstep_interval_sec:
+                return
+            self._last_footstep_by_ped[ped.id] = now_sec
         self._emit("footstep", ped)
 
     def _maybe_emit_greeting(
@@ -107,7 +118,7 @@ class AuditoryEventDetector:
             return False
 
         target_angle = math.atan2(dy, dx)
-        observer_yaw = self._yaw_from_quaternion(observer.pose.orientation)
+        observer_yaw = Orientation.from_msg(observer.pose.orientation).to_yaw()
         angle_error = math.atan2(
             math.sin(target_angle - observer_yaw),
             math.cos(target_angle - observer_yaw),

@@ -1,0 +1,14 @@
+robots:
+  - start: [2.0, 10.0, 0.0]
+    goal: [24.0, 10.0, 0.0]
+
+dynamic:
+  - name: shaker_1
+    model: female_adult_business_02
+    pose: [3.0, 10.0, 0.0]
+    agent: { agent_type: ./shaker_1.yaml }
+
+  - name: shaker_2
+    model: male_adult_construction_01
+    pose: [22.0, 11.0, 3.14159]
+    agent: { agent_type: ./shaker_2.yaml }
