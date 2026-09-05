@@ -104,6 +104,25 @@ def declare_catalog_array(
     )
 
 
+def declare_double_array(
+    node: "ROSParamServer",
+    name: str,
+    default: Sequence[float],
+    *,
+    label: str = "",
+    description: str = "",
+) -> None:
+    node.rosparam.declare_forward(
+        name,
+        list(default),
+        descriptor=ParameterDescriptor(
+            type=Parameter.Type.DOUBLE_ARRAY.value,
+            additional_constraints=_label(label),
+            description=description,
+        ),
+    )
+
+
 def declare_enum(
     node: "ROSParamServer",
     name: str,

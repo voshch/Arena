@@ -1,0 +1,28 @@
+name: evacuee
+extends: adult
+mode: behavior_tree
+
+needs:
+  alarm:
+    initial: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+    decay_rate: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+
+sequences:
+  default:
+    steps:
+      idle:
+        duration: {mean: 3600.0}
+    then: default
+    transitions:
+      - when: {alarm: {above: 50.0}}
+        goto: evacuate
+  evacuate:
+    steps:
+      leave:
+        kind: go_to
+        target: exit
+      stay:
+        duration: {mean: 3600.0}
+    then: evacuate
+
+initial_sequence: default

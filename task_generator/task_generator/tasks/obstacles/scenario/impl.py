@@ -1,17 +1,18 @@
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
+from arena_simulation_setup.tree.World.Scenario import Scenario
 from arena_simulation_setup.utils.geometry import Position
 
 from task_generator.manager.world_manager.utils import WorldOccupancy
 from task_generator.shared import PositionRadius, Region
-from task_generator.tasks import identifier_to_available
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
+from task_generator.tasks.registry import default_scenario
 
 
 class TM_Scenario(TM_Obstacles):
     _config: ROSParamT[str]
 
-    async def reset(self, **kwargs: object) -> Obstacles:
+    async def reset(self, *, seed: int) -> Obstacles:
         scenario_name = self._config.value
         world_description = self._ctx.world_manager.world_compacted()
 
@@ -42,6 +43,7 @@ class TM_Scenario(TM_Obstacles):
 
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(scenario_name).resolve_sync()
         scenario = scenario_view.load(converter=zone_conv)
+        self.scenario = scenario
 
         regions = [
             Region(
@@ -55,21 +57,16 @@ class TM_Scenario(TM_Obstacles):
         ]
         await self._ctx.environment_manager.setup_regions(regions)
 
-        self.node.register_timeline(scenario.timeline, int(kwargs.get("seed", -1)))
+        self.node.register_timeline(scenario.timeline, seed)
         self.node.register_conditions(scenario.conditions)
 
         return scenario.static, scenario.dynamic
 
     def __init__(self, **kwargs: object) -> None:
         TM_Obstacles.__init__(self, **kwargs)
-
-        default_scenario: str | None = 'default'
-        if default_scenario not in (scenarios := list(identifier_to_available(WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario))):
-            default_scenario = next(iter(scenarios), None)
-        if default_scenario is None:
-            raise ValueError(f"No scenarios found in world {self._ctx.world_manager.loaded_world}")
+        self.scenario: Scenario | None = None
 
         self._config = self.node.ROSParam[str](
             self.namespace("file"),
-            default_scenario,
+            default_scenario(self._ctx.world_manager.loaded_world),
         )

@@ -49,14 +49,14 @@ def generate_launch_description():
         SimSimulator.GAZEBO.value,
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c', [
-                launch.substitutions.TextSubstitution(text='arena feature gazebo launch use_sim_time:='),
+                launch.substitutions.TextSubstitution(text='exec python3 "${ARENA_DIR:?run source arena first}/_meta/tools/arena_cli/__main__.py" feature gazebo launch use_sim_time:='),
                 use_sim_time.substitution,
                 launch.substitutions.TextSubstitution(text=' headless:='),
                 headless.substitution,
                 launch.substitutions.TextSubstitution(text=' world:='),
                 world.substitution,
             ]],
-            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='5'),
+            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='20'),
             sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
             on_exit=[launch.actions.Shutdown()],
             output='log',
@@ -67,14 +67,14 @@ def generate_launch_description():
         SimSimulator.ISAAC.value,
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c', [
-                launch.substitutions.TextSubstitution(text='arena feature isaac launch headless:='),
+                launch.substitutions.TextSubstitution(text='exec python3 "${ARENA_DIR:?run source arena first}/_meta/tools/arena_cli/__main__.py" feature isaac launch headless:='),
                 headless.substitution,
                 launch.substitutions.TextSubstitution(text=' log_level:='),
                 launch.substitutions.LaunchConfiguration('log_level', default='debug'),
                 launch.substitutions.TextSubstitution(text=' physics:='),
                 physics.substitution,
             ]],
-            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='5'),
+            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='20'),
             sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
             on_exit=[launch.actions.Shutdown()],
             output='log',

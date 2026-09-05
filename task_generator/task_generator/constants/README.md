@@ -13,7 +13,7 @@ maps them to live ROS parameters.
 | `TASK_GENERATOR_SERVER_NODE` | `Namespace` | `"task_generator_server"` |
 | `SimSimulator` | `Enum` | `dummy`, `flatland`, `gazebo`, `unity`, `isaac` |
 | `ArenaType` | `Enum` | `training`, `deployment` |
-| `HumanSimulator` | `Enum` | `dummy`, `none`, `hunav`, `arena` |
+| `HumanSimulator` | `Enum` | `dummy`, `none`, `isaac`, `hunav`, `arena` |
 | `TaskMode.TM_Obstacles` | `Enum` | `parametrized`, `random`, `scenario`, `environment`, `prompt` |
 | `TaskMode.TM_Robots` | `Enum` | `guided`, `explore`, `random`, `scenario`, `demo`, `stationary` |
 | `TaskMode.TM_Module` | `Enum` | `staged`, `dynamic_map`, `clear_forbidden_zones`, `rviz_ui` |
@@ -72,8 +72,7 @@ label, so draw order and concurrency cannot affect a given stream.
 | `GOAL_TOLERANCE_RADIUS` | `goal_tolerance_radius` | `1.0` | metres |
 | `GOAL_TOLERANCE_ANGLE` | `goal_tolerance_angle` | 30 degrees (in radians) | |
 | `SPAWN_ROBOT_SAFE_DIST` | `robot_safe_dist` | `0.25` | metres |
-| `TIMEOUT` | `timeout` | `-1` | parsed to `inf` when negative |
-| `RECORD_DATA_DIR` | `record_data_dir` | `''` | `None` when empty |
+| `TIMEOUT` | `timeout` | `-1` | parsed to `inf` when negative; sim seconds since episode reset, past which the episode ends FAILED with info `"timeout"` |
 | `MOBILE_ADAPTER` | `robot.mobile_adapter` | `'nav2'` | default mobile-cap adapter kind, overridden per robot via scenario `mobile:` |
 | `ARM_ADAPTER` | `robot.arm_adapter` | `'moveit'` | default arm-cap adapter kind, overridden per robot via scenario `arm:` |
 

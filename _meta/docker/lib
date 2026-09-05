@@ -5,9 +5,37 @@ export ARENA_PROJECT_NAME
 export ARENA_IMAGE_TAG="$ARENA_PROJECT_NAME"
 export ARENA_IMAGE="arena:${ARENA_IMAGE_TAG}"
 
+export ARENA_ENV_FILE="${ARENA_WS_DIR:-$HOST_ARENA_WS_DIR}/.env"
+
+[ -n "${ARENA_GPU+x}" ] && export ARENA_GPU
+
+# prints "<value>\t<source>\t<on|off|invalid>", exits 0 when passthrough is on
+arena_gpu(){
+    local raw source state
+    raw=$(sed -n 's/^[[:space:]]*ARENA_GPU=//p' "$ARENA_ENV_FILE" 2>/dev/null | tail -n1)
+    if [ -n "$raw" ]; then
+        source=$ARENA_ENV_FILE
+    elif [ -n "${ARENA_GPU+x}" ]; then
+        raw=$ARENA_GPU
+        source=environment
+    else
+        source=unset
+    fi
+    raw=${raw%%[[:space:]]#*}
+    raw=${raw//[\"\'[:space:]$'\r']/}
+    case "$raw" in
+        1|true|yes|on) state=on ;;
+        ''|0|false|no|off) state=off ;;
+        *) state=invalid ;;
+    esac
+    printf '%s\t%s\t%s\n' "$raw" "$source" "$state"
+    [ "$state" = on ]
+}
+
 arena_docker_compose(){
     local files="$ARENA_DIR/_meta/docker/docker-compose.yaml"
     [ -d /dev/dri ] && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.dri.yaml"
+    arena_gpu > /dev/null && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.gpu.yaml"
     if [ -f "$ARENA_DIR/.installed" ]; then
         local feature ov
         while read -r feature; do
@@ -21,4 +49,4 @@ arena_docker_compose(){
         --project-name "$ARENA_PROJECT_NAME" \
         "$@"
 }
-export -f arena_docker_compose 2>/dev/null || true
+export -f arena_docker_compose arena_gpu 2>/dev/null || true

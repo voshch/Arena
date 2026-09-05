@@ -15,9 +15,7 @@ def _identifier(value: object, field: str) -> str:
         raise ValueError(f"microphone {field} must be a string")
     result = value.strip()
     if not result or ":" in result:
-        raise ValueError(
-            f"microphone {field} must be non-empty and contain no ':'"
-        )
+        raise ValueError(f"microphone {field} must be non-empty and contain no ':'")
     return result
 
 
@@ -30,9 +28,7 @@ class RobotMicrophoneSpec:
 
     @property
     def listener_id(self) -> str:
-        return (
-            f"microphone:robot:{self.robot}:{self.placement}:{self.index}"
-        )
+        return f"microphone:robot:{self.robot}:{self.placement}:{self.index}"
 
     def resolve_frame(self, robot_frame_prefix: str) -> str:
         prefix = robot_frame_prefix.strip("/")
@@ -74,9 +70,7 @@ def parse_robot_microphones(raw: str) -> tuple[RobotMicrophoneSpec, ...]:
         ).lower()
         frame = item.get("frame")
         if not isinstance(frame, str) or not frame.strip().strip("/"):
-            raise ValueError(
-                f"robot microphone {robot!r}/{placement!r} requires a TF frame"
-            )
+            raise ValueError(f"robot microphone {robot!r}/{placement!r} requires a TF frame")
         index = item.get("index", 1)
         if isinstance(index, bool) or not isinstance(index, int) or index < 1:
             raise ValueError("microphone index must be a positive integer")
@@ -105,31 +99,16 @@ def world_microphones(
         for microphone in levels[level_id].microphones:
             zone = zones[microphone.zone]
             frame = microphone.frame.strip().strip("/")
-            offset = (
-                level_origins.get(str(level_id), (0.0, 0.0))
-                if level_origins is not None and frame == "map"
-                else (0.0, 0.0)
-            )
+            offset = level_origins.get(str(level_id), (0.0, 0.0)) if level_origins is not None and frame == "map" else (0.0, 0.0)
             ceiling_height = None
             if microphone.placement == "ceiling":
-                ceiling_height = (
-                    float(zone.ceiling_height)
-                    if zone.ceiling_height is not None
-                    else float(default_ceiling_height_m)
-                )
-                if (
-                    microphone.frame.strip().strip("/") == "map"
-                    and not math.isclose(
-                        float(microphone.position.z),
-                        ceiling_height,
-                        abs_tol=MICROPHONE_PLACEMENT_TOLERANCE_M,
-                    )
+                ceiling_height = float(zone.ceiling_height) if zone.ceiling_height is not None else float(default_ceiling_height_m)
+                if microphone.frame.strip().strip("/") == "map" and not math.isclose(
+                    float(microphone.position.z),
+                    ceiling_height,
+                    abs_tol=MICROPHONE_PLACEMENT_TOLERANCE_M,
                 ):
-                    raise ValueError(
-                        f"microphone {microphone.listener_id!r} "
-                        f"z={microphone.position.z} does not match ceiling "
-                        f"height {ceiling_height}"
-                    )
+                    raise ValueError(f"microphone {microphone.listener_id!r} z={microphone.position.z} does not match ceiling height {ceiling_height}")
             specs.append(
                 WorldMicrophoneSpec(
                     listener_id=microphone.listener_id,

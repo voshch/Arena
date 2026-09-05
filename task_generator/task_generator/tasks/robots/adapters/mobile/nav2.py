@@ -129,6 +129,14 @@ class Nav2Adapter(MobileAdapter):
         await super().on_reset(robot, ctx)
         await self._clear_costmap(robot, "local")
 
+    async def before_move(
+        self,
+        pose: Pose,
+        robot: RobotManager,
+    ) -> None:
+        if self.client.is_done() is False:
+            self.client.cancel()
+
     async def on_move(
         self,
         pose: Pose,

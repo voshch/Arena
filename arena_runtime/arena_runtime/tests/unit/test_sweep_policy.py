@@ -25,10 +25,18 @@ def _time(sec: int = 0) -> builtin_interfaces.msg.Time:
     return t
 
 
-def _verdict(record: EnvRecord, elapsed: float, *, has_reset_hold: bool = False, process_alive: bool | None = None) -> str | None:
+def _verdict(
+    record: EnvRecord,
+    elapsed: float,
+    *,
+    age: float | None = None,
+    has_reset_hold: bool = False,
+    process_alive: bool | None = None,
+) -> str | None:
     return sweep_verdict(
         record,
         elapsed=elapsed,
+        age=age if age is not None else elapsed,
         has_reset_hold=has_reset_hold,
         process_alive=process_alive,
         heartbeat_timeout=5.0,
@@ -79,12 +87,28 @@ def test_process_alive_true_pre_ready_still_uses_bootstrap_budget():
     assert _verdict(_record(ready=False), 600.1, process_alive=True) == "bootstrap_timeout"
 
 
+def test_pre_ready_fresh_heartbeat_over_age_budget_evicts():
+    assert _verdict(_record(ready=False), 0.1, age=600.1) == "bootstrap_timeout"
+
+
+def test_pre_ready_stale_heartbeat_under_age_budget_returns_none():
+    assert _verdict(_record(ready=False), 9999.0, age=599.9) is None
+
+
 def test_reserve_stamps_last_heartbeat():
     reg = EnvRegistry()
     env_id, _ns = reg.reserve(now=_time(sec=42))
     record = reg.get(env_id)
     assert record is not None
     assert record.last_heartbeat.sec == 42
+
+
+def test_reserve_stamps_reserved_at():
+    reg = EnvRegistry()
+    env_id, _ns = reg.reserve(now=_time(sec=42))
+    record = reg.get(env_id)
+    assert record is not None
+    assert record.reserved_at.sec == 42
 
 
 def test_reserve_rejects_owned_namespace_until_freed():
@@ -95,4 +119,28 @@ def test_reserve_rejects_owned_namespace_until_freed():
     assert reg.get(env_id + 1) is None
     reg.free(env_id)
     reused, _ns = reg.reserve(requested_ns=ns, now=_time(sec=3))
-    assert reused == env_id
+    assert reused != env_id
+
+
+def test_reserve_ids_are_monotonic_after_free():
+    reg = EnvRegistry()
+    first, _ns = reg.reserve(now=_time(sec=1))
+    reg.free(first)
+    second, _ns = reg.reserve(now=_time(sec=2))
+    assert second == first + 1
+
+
+def test_pre_ready_bootstrap_timeout_zero_never_evicts():
+    assert (
+        sweep_verdict(
+            _record(ready=False),
+            elapsed=9999.0,
+            age=9999.0,
+            has_reset_hold=False,
+            process_alive=True,
+            heartbeat_timeout=5.0,
+            reset_timeout=30.0,
+            bootstrap_timeout=0.0,
+        )
+        is None
+    )

@@ -55,12 +55,24 @@ Key public surface:
 | `robot` | the `Robot` config (model, name, initial pose) |
 | `pose` | current `Pose` in the map frame; `None` during reset/respawn windows |
 | `start_pos` / `goal_pos` | last set start and goal positions |
+| `goal` | pose of the first `GoToPhase` in the current `TaskRequest`, or `None` |
 | `submit_task(request)` | hand a typed `TaskRequest` to the adapter |
 | `move(pose)` | teleport the robot via `EnvironmentManager.move_robot` |
 | `is_done` | whether the current task request is satisfied |
 | `accepts` | `frozenset[TaskKind]`: the set of task kinds this robot's adapter handles |
 | `set_up_robot(node_paths)` | async; spawn robot, bind adapter, start navigation stack |
+| `bring_up_controllers()` | async; drive the robot's ros2_control controllers to active, raises on an explicit controller_manager refusal |
 | `destroy()` | tear down adapter and remove robot from sim |
+
+`_launch_robot` order: unpause window, one sim step, tracked launch, adapter
+readiness, `bring_up_controllers()`, window close, `adapter.on_controllers_active`.
+Controllers are driven here, not by `controller_manager/spawner`: each round
+reads `list_controllers` and issues the one call the snapshot needs (load an
+absent one, configure an unconfigured one, one grouped STRICT switch for all
+inactive ones, nothing during a transient state), so a lost or slow reply costs
+a re-read rather than a failure. The wait is unbounded, switches go out in
+10 s bursts retried on controller_manager-side timeout, and only an explicit
+refusal or a finalized controller raises.
 
 ## `WorldManager`
 
@@ -99,7 +111,8 @@ All obstacle/robot operations go through here.
 
 | Method | Purpose |
 | --- | --- |
-| `spawn_world_obstacles(world, detected_walls=None)` | spawn floors, walls, doors, static WORLD entities; under debug.map_source:=disk, per-level occupancy-derived walls in detected_walls are fed to the human-sim as collision-only geometry |
+| `spawn_world_obstacles(world, detected_walls=None, world_map=None)` | spawn floors, walls, doors, static WORLD entities; under debug.map_source:=disk, per-level occupancy-derived walls in detected_walls are fed to the human-sim as collision-only geometry; `world_map` seeds `collision_grid` |
+| `collision_grid` | per-world labelled occupancy ([collision_grid.py](collision_grid.py)): the map's walls layer as MAP, doors/elevators cleared, authored walls rasterized as WALL, every spawned static footprint stamped as STATIC; the robot collision tracker reads it |
 | `spawn_obstacles(setups)` | spawn episode-scoped static obstacles (`INUSE`) |
 | `spawn_dynamic_obstacles(setups)` | spawn episode-scoped dynamic obstacles (`INUSE`) |
 | `spawn_robot(robots)` | spawn robots in both sim and human-sim layers |

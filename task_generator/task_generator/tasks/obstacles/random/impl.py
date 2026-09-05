@@ -41,33 +41,12 @@ class TM_Random(TM_Obstacles):
 
     _config: _Config
 
-    async def reset(self, **kwargs: object) -> Obstacles:
-        """
-        Args:
-            **kwargs: Additional keyword arguments for customizing the obstacle generation.
-                N_STATIC_OBSTACLES (int): Number of static obstacles.
-                N_INTERACTIVE_OBSTACLES (int): Number of interactive obstacles.
-                N_DYNAMIC_OBSTACLES (int): Number of dynamic obstacles.
-                MODELS_STATIC_OBSTACLES (dict[str, float]): dictionary of static obstacle models and their weights.
-                MODELS_INTERACTIVE_OBSTACLES (dict[str, float]): dictionary of interactive obstacle models and their weights.
-                MODELS_DYNAMIC_OBSTACLES (dict[str, float]): dictionary of dynamic obstacle models and their weights.
-        """
-
+    async def reset(self, *, seed: int) -> Obstacles:
         rng = self.node.conf.General.RNG.stream("obstacles", "random")
 
-        N_STATIC_OBSTACLES: int = kwargs.get(
-            "N_STATIC_OBSTACLES",
-            rng.integers(*self._config.N_STATIC_OBSTACLES.value, endpoint=True),
-        )
-        N_INTERACTIVE_OBSTACLES: int = kwargs.get(
-            "N_INTERACTIVE_OBSTACLES",
-            rng.integers(*self._config.N_INTERACTIVE_OBSTACLES.value, endpoint=True),
-        )
-
-        N_DYNAMIC_OBSTACLES: int = kwargs.get(
-            "N_DYNAMIC_OBSTACLES",
-            rng.integers(*self._config.N_DYNAMIC_OBSTACLES.value, endpoint=True),
-        )
+        N_STATIC_OBSTACLES = int(rng.integers(*self._config.N_STATIC_OBSTACLES.value, endpoint=True))
+        N_INTERACTIVE_OBSTACLES = int(rng.integers(*self._config.N_INTERACTIVE_OBSTACLES.value, endpoint=True))
+        N_DYNAMIC_OBSTACLES = int(rng.integers(*self._config.N_DYNAMIC_OBSTACLES.value, endpoint=True))
 
         class ModelList(dict[str, float]):
             @classmethod
@@ -91,21 +70,9 @@ class TM_Random(TM_Obstacles):
             def __init__(self, *args: object, **kwargs: object) -> None:
                 super().__init__(*args, **kwargs)
 
-        MODELS_STATIC_OBSTACLES = ModelList.fromkeys(
-            kwargs.get("MODELS_STATIC_OBSTACLES", self._config.MODELS_STATIC_OBSTACLES.value),
-            1,
-        )
-        MODELS_INTERACTIVE_OBSTACLES = ModelList.fromkeys(
-            kwargs.get("MODELS_INTERACTIVE_OBSTACLES", self._config.MODELS_INTERACTIVE_OBSTACLES.value),
-            1,
-        )
-
-        MODELS_DYNAMIC_OBSTACLES = ModelList.fromkeys(
-            kwargs.get("MODELS_DYNAMIC_OBSTACLES", self._config.MODELS_DYNAMIC_OBSTACLES.value),
-            1,
-        )
-
-        # rospy.logwarn(f"{MODELS_DYNAMIC_OBSTACLES}")
+        MODELS_STATIC_OBSTACLES = ModelList.fromkeys(self._config.MODELS_STATIC_OBSTACLES.value, 1)
+        MODELS_INTERACTIVE_OBSTACLES = ModelList.fromkeys(self._config.MODELS_INTERACTIVE_OBSTACLES.value, 1)
+        MODELS_DYNAMIC_OBSTACLES = ModelList.fromkeys(self._config.MODELS_DYNAMIC_OBSTACLES.value, 1)
 
         def indexer() -> Callable[..., int]:
             indices: dict[str, Iterator[int]] = dict()

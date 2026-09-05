@@ -38,7 +38,7 @@ Parameters live under `task.<mode>.<leaf>`.
 | Enum value | Class | File | `before_reset` | `after_reset` |
 | --- | --- | --- | --- | --- |
 | `clear_forbidden_zones` | `Mod_ClearForbiddenZones` | [`clear_forbidden_zones/`](clear_forbidden_zones/) | calls `world_manager.forbid_clear()` | - |
-| `audio_systems` | `Mod_AudioSystems` | [`audio_systems/`](audio_systems/) | - | loads and publishes scenario radio and alarm emitters |
+| `sounds` | `Mod_Sounds` | [`sounds/`](sounds/) | - | renders world-, scenario- and launch-declared `sound` semantic entities |
 | `rviz_ui` | `Mod_OverrideRobot` | [`rviz_ui/`](rviz_ui/) | - | - |
 | `staged` | `Mod_Staged` | [`staged/`](staged/) | loads new stage config when stage index changes; publishes `goal_radius` and obstacle counts | - |
 
@@ -55,16 +55,19 @@ accumulate across resets and are not cleared by this module. This is a known gap
 multi-level worlds; a follow-up should extend `forbid_clear()` to accept `level_id="*"`
 semantics that clears all per-level forbidden zones.
 
-### `Mod_AudioSystems`
+### `Mod_Sounds`
 
-[`audio_systems/impl.py:57`](audio_systems/impl.py#L57)
+[`sounds/impl.py:149`](sounds/impl.py#L149)
 
-Loads the selected scenario's top-level `audio.systems` section and the
-world-independent `static_audio_devices` launch configuration after each
-reset. It resolves fixed emitters through the task generator realizer,
-publishes `ContinuousAudioSourceState` for propagation, publishes
-`AudioSystemState` for control feedback, and serves
-`runtime/set_audio_system` to start or stop every emitter in a logical system.
+A pure renderer, not an owner of state. After each reset it resolves every
+`sound` entity from the loaded world, the active scenario's episode-scoped
+`sounds:` and the world-independent `static_sounds` launch configuration
+through the task generator realizer, and publishes
+`ContinuousAudioSourceState` for propagation from the live
+`sounding`/`volume_db` semantics the engine already tracks. It serves
+`runtime/spawn_sound` and `runtime/remove_sound` for
+RViz-driven runtime sources. Toggling a declared sound is a `SetSemantic`
+write, not a module service.
 
 ### `Mod_OverrideRobot`
 

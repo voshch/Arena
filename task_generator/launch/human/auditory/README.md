@@ -22,10 +22,10 @@ enabled by default when the Arena human simulator is selected. Set
   an RViz text marker when a robot hears a configured sound type.
 - Human audio playback: `human_sound_playback` plays human sound assets from
   `config/auditory/acoustic_assets.yaml`.
-- Environment audio: scenarios can define a looping radio or one logical
-  alarm system backed by any number of fixed speakers. Each speaker keeps its
-  own propagation route, delay, attenuation, and RIR while sharing the same
-  playback position in the WAV.
+- Environment audio: worlds (or `auditory.static_sounds`) declare standalone
+  `sound` semantic entities such as a looping radio or an alarm. Several
+  sounds sharing one `sound_on` regime move together as one logical alarm
+  while each keeps its own propagation route, delay, attenuation, and RIR.
 - Robot motor sound: `robot_sound_node` can publish robot motor `SoundEvent`
   messages from robot odometry. In the default `auditory.motor:=procedural`,
   Jackals instead publish continuous signed left/right drivetrain state;
@@ -49,7 +49,8 @@ Expected nodes when enabled include:
 - `heard_sound_events`: propagated `HeardSoundEvent` stream.
 - `continuous_audio_sources`: persistent procedural source state.
 - `continuous_heard_sounds`: listener-specific propagated procedural state.
-- `audio_system_states`: transient-local radio and alarm control state.
+- `state/semantics`: latched `SemanticSnapshot` carrying every sound's live
+  `sounding`/`volume_db` state, alongside every other semantic kind.
 - `microphone_listeners`: transient-local JSON registry of active microphone
   listener IDs.
 - `microphone_markers`: persistent RViz cones and listener ID labels.
@@ -71,7 +72,7 @@ portals are shown through `Arena/Debug/Sound Propagation`. Heard-sound text is
 not added as a separate RViz display.
 
 The Auditory RViz panel provides an `Auditory Runtime` group, an
-`Audio Playback Microphone` group, an `Environment Audio Sources` table, `Play robot motor
+`Audio Playback Microphone` group, a `Sound Entities` table, `Play robot motor
 audio on this workstation`, and a live `Motor Sound Tuning` group. The runtime
 group independently controls propagation and local radio/alarm playback. The
 listener group follows the transient microphone registry and updates human,
@@ -94,62 +95,122 @@ driven by signed left and right wheel velocity. The live controls are:
 - `motor_speed_exponent`
 - `motor_velocity_smoothing_sec`
 
-## Scenario radio and alarm systems
+## World and launch-defined sounds
 
-The static-audio Task Generator module is enabled by default and automatically
-adds `audio_systems` to `task.modules`. Set
-leave `auditory.static_devices` empty to disable it. The selected scenario may
-contain a top-level `audio` section:
+The `sounds` Task Generator module is added to `task.modules` whenever
+`auditory` is not `none`, or `auditory.static_sounds` is non-empty. It renders
+every `sound` entity declared in the loaded world, the active scenario, and
+the launch configuration.
+
+A static or environment sound is a standalone `sound` semantic entity, not a
+container object with sub-emitters. The semantics engine, not the audio
+module, owns whether it is playing (`sounding`) and how loud (`volume_db`).
+The audio module is a pure renderer: it resolves each sound's placement,
+publishes its live state as `ContinuousAudioSourceState` for propagation, and
+serves the runtime spawn/remove services.
+
+A `sound` entry takes:
+
+- `name`: unique among all world-, scenario- and launch-defined sounds.
+- `asset_id`: a catalog entry from `acoustic_assets.yaml`.
+- `position`, `entity_ref` or `frame`, exactly one. `entity_ref` must name
+  one unique static world entity, and `offset` then rotates with that
+  entity's yaw. A direct `position` is level-local. `level` is required for
+  it in a multi-level world and only allowed with it. `frame` names a TF
+  frame (env prefix optional, added when missing) and `offset` is local to
+  that frame: the renderer publishes the frame, not a map point, and
+  propagation re-localizes the source on every update, so a sound on
+  `jackal/base_link` moves with the robot. While the frame is not yet in TF
+  the source is skipped with a warning, never placed at the origin.
+  Pedestrians publish no per-agent TF frame, so `frame` targets robots and
+  static frames.
+- `loop` (default `true`).
+- `reference_distance_m` (default `1.0`), must be positive.
+- `semantics`: a `semantics:` list carrying the `sound` preset, which expands
+  to a `sounding` predicate and a `volume_db` state.
+
+World sounds are authored per zone, as a sibling list to `schedules:` and
+`signals:`:
 
 ```yaml
-audio:
-  systems:
-    - name: lobby_radio
-      sound_type: music
-      asset_id: radio_loop
-      loop: true
-      initially_active: true
-      reference_distance_m: 1.0
-      semantic_tags: [radio, background]
-      emitters:
-        - name: receiver
-          entity_ref: lobby_radio_cabinet
-          offset: [0.0, 0.0, 0.8]
-          source_volume_db: 62.0
-
-    - name: building_alarm
-      sound_type: alarm
-      asset_id: alarm_loop
-      loop: true
-      initially_active: false
-      semantic_tags: [alarm, emergency]
-      emitters:
-        - name: east
-          position: [3.0, 4.0, 2.6]
-          level: level_1
-          source_volume_db: 88.0
-        - name: west
-          position: [12.0, 4.0, 2.6]
-          level: level_1
-          source_volume_db: 88.0
-        - name: upper
-          position: [6.0, 8.0, 2.6]
-          level: level_2
-          source_volume_db: 88.0
+zones:
+- name: hallway
+  corners: [...]
+  sounds:
+  - name: hall_siren
+    asset_id: alarm_loop
+    position: [4.0, 2.3]
+    semantics:
+    - {preset: sound, params: {sound_on: alarm}}
 ```
 
-An emitter uses either `entity_ref` or `position`. `entity_ref` must name one
-unique static world entity and its `offset` rotates with that entity. A direct
-`position` is level-local. `level` is required for direct positions in a
-multi-level world. The Task Generator realizer applies the map origin and the
-same multi-level flattening offset used by robots and obstacles before it
-publishes the source.
+`sound_on` names a regime consulted from another scripted kind, exactly like
+a gate's `unlock_on` or a pressure plate's `press_on` (see
+[AUTHORING.md](../../../../arena_simulation_setup/AUTHORING.md)). `hall_siren`
+stays silent until something asserts the `alarm` regime, for example a
+`schedule` entry (`{preset: schedule, params: {windows: [], regime: alarm}}`)
+whose `active` predicate a scenario timeline flips. Several `sound` entries
+that share one `sound_on` name toggle together as one logical alarm: the
+renderer groups them under the same wire `group_id`, so grouped sirens also
+share deterministic WAV-variant selection. They stay separate physical
+sources, so propagation still computes one independent speaker-to-listener
+path per sound and playback uses one independent RIR convolver each. A wall,
+doorway, or extra distance can therefore delay and attenuate each speaker
+differently.
 
-All emitters in one system use one `program_start_time`. This makes the three
-alarm speakers play the same point in the alarm WAV. They are still separate
-physical sources, so propagation computes three independent speaker-to-listener
-paths and playback uses three independent RIR convolvers. A wall, doorway, or
-extra distance can therefore delay and attenuate each speaker differently.
+A sound with no `sound_on` plays only when told to. An always-on device like
+a radio is authored with an initial value in its preset params,
+`{preset: sound, params: {sounding: true, volume_db: 62.0}}` (`sounding:` and
+`sound_on:` are exclusive). Anything can be toggled later, either from a
+scenario timeline entry:
+
+```yaml
+timeline:
+- at: 0.0
+  set:
+  - entity: lobby_radio
+    field: sounding
+    value: "true"
+```
+
+or live, through the `SetSemantic` service:
+
+```bash
+ros2 service call \
+  /arena/env_0/task_generator_node/semantics/set \
+  task_generator_msgs/srv/SetSemantic \
+  "{entity: env_0/lobby_radio/1, field: sounding, value: 'true'}"
+```
+
+Unlike timeline entries, the external service does no bare-name resolution:
+`entity` is the realized instance name exactly as published on
+`state/semantics` (the bare name wrapped in the env namespace and, for
+world-embedded sounds, the level id). Read it off the snapshot topic when in
+doubt. Replace `env_0` when the runtime allocated a different environment. The same
+service writes `volume_db` (a float literal in `value`). An override on
+`sounding` is cleared automatically the next time the sound's natural
+(regime-consulted) value changes, matching every other scripted kind. A sound
+with no `sound_on` never has a natural transition, so a one-time override
+holds for the rest of the episode. Toggling a multi-speaker group this way
+needs one `SetSemantic` call per sound name, since each is an independent
+entity. Driving a shared `sound_on` regime instead moves the whole group with
+one write.
+
+Initial volume defaults to `80.0` dB. To author a different starting volume,
+add a separate `volume_db` entry, never a `value:` on the `sound` preset item
+itself (a preset-level `value` broadcasts onto every primitive the preset
+expands to, which would corrupt the `sounding` predicate too):
+
+```yaml
+sounds:
+- name: lobby_radio
+  asset_id: radio_loop
+  entity_ref: lobby_radio_cabinet
+  offset: [0.0, 0.0, 0.8]
+  semantics:
+  - {preset: sound}
+  - {state: volume_db, value: 62.0}
+```
 
 The bundled catalog registers `radio_loop.wav` and `alarm_loop.wav`. Custom
 looping files should have matching waveform and level at their beginning and
@@ -171,21 +232,32 @@ assets:
         octave_band_levels_db: auto
 ```
 
-For a radio or alarm that should be available in any scenario without editing
-that scenario, pass the same system schema through `auditory.static_devices`:
+Runtime spawns follow the same rule: `SpawnSound.attach_to_frame` keeps the
+request pose in its own frame instead of transforming it to `map` once.
+
+A scenario carries episode-scoped sounds in its own `sounds:` list, same
+schema, attached at reset and gone at the next one. Positions may be zone
+references like any other scenario placement, and `entity_ref` may name one
+of the scenario's `static:` obstacles. The `fire_alarm` scenario of
+`three_storied_residential` ships a `bedroom_radio` that plays until the
+alarm fires.
+
+For a sound that should be available in any scenario without editing a world,
+pass the same schema, as a flat list, through `auditory.static_sounds`:
 
 ```bash
 arena launch \
   world:=demo \
   auditory:=arena \
-  auditory.static_devices:='[{name: room_radio, sound_type: music, asset_id: radio_loop, loop: true, initially_active: false, emitters: [{name: speaker, position: [5.0, 5.0, 1.2], source_volume_db: 62.0}]}]'
+  auditory.static_sounds:='[{name: room_radio, asset_id: radio_loop, position: [5.0, 5.0, 1.2], level: level_1, semantics: [{preset: sound}]}]'
 ```
 
-Direct positions are local to the named level. Add `level: <level_id>` for
-multi-level worlds. Several radios are several list entries. A multi-speaker
-alarm is one list entry with several emitters. Scenario and launch-defined
-system names must be unique. To keep custom WAV files outside the package,
-pass `auditory.assets:=/path/to/acoustic_assets.yaml` and
+Direct positions in `auditory.static_sounds` need `level` in a multi-level
+world, same as a world-authored direct `position`. Several radios are several
+list entries. A multi-speaker alarm is several list entries sharing one
+`sound_on`. World- and launch-defined sound names must be unique. To keep
+custom WAV files outside the package, pass
+`auditory.assets:=/path/to/acoustic_assets.yaml` and
 `auditory.sound_dir:=/path/to/wavs`.
 
 A custom catalog replaces the bundled catalog for every playback node. Keep
@@ -193,39 +265,35 @@ the bundled `footstep`, `greeting`, and motor entries in it, and keep their WAV
 files in the selected sound directory, alongside the new radio and alarm
 assets.
 
-Start or stop one logical system, including all of its emitters, with:
+`sound_type` and `semantic_tags` on the wire are derived from the asset
+catalog's `category` and `semantic_tags` fields for the sound's `asset_id`,
+falling back to the bare `asset_id` with no extra tags when it is not in the
+catalog.
 
-```bash
-ros2 service call \
-  /arena/env_0/task_generator_node/runtime/set_audio_system \
-  task_generator_msgs/srv/SetAudioSystem \
-  "{system_id: building_alarm, active: true}"
-```
-
-Replace `env_0` when the runtime allocated a different environment.
-
-`initially_active` sets the episode-reset state. The service changes simulated
-emission. The launch argument and live `enable_environment_playback` parameter on
-`environment_sound_playback` only mutes or unmutes local workstation output,
-so propagation and robot hearing continue while it is muted.
+`sounding` and `SetSemantic` control simulated emission. The launch argument
+and live `enable_environment_playback` parameter on `environment_sound_playback`
+only mutes or unmutes local workstation output, so propagation and robot
+hearing continue while it is muted.
 
 The default `auditory.block_size` is 2048 frames. If the host still reports
 repeated PulseAudio underflows under a heavy RIR workload, increase it to 4096.
 An occasional recovered underrun does not stop propagation or playback.
 
-RViz lists fixed emitters in `Arena/Sound Propagation/Environment Audio
-Sources`. Alarm markers are red, other active systems are cyan, and inactive
-systems are gray. Emitters use a box marker oriented by the placement drag.
-The **Spawn Radio** toolbar tool creates a source at runtime. Set its `Mode`
-property to `Music` or `Alarm`, set `Height`, then click and drag in the map.
-By default the source starts the corresponding bundled loop immediately.
-Enable `Custom Playback` to choose another catalog asset ID, source volume,
-loop behavior, or an initially stopped state. The runtime transforms the RViz
-Fixed Frame pose into the global map, so placement also works in allocated
-environment frames. Use the `Environment Audio Sources` checkbox to start or stop
-emission and playback. Select a `runtime_*` row and use `Remove selected runtime
-source` to delete it. Runtime sources are cleared on the next episode reset.
-The existing robot or pedestrian heard-sound display shows each active
+RViz lists rendered sounds in `Arena/Sound Propagation/Environment Audio
+Sources`. Alarm-tagged sounds are red, other active sounds are cyan, and
+inactive sounds are gray. Sounds use a box marker oriented by the placement
+drag. The **Spawn Radio** toolbar tool creates a source at runtime through
+`spawn_sound`. Set its `Mode` property to `Music` or `Alarm`, set
+`Height`, then click and drag in the map. By default the source starts the
+corresponding bundled loop immediately. Enable `Custom Playback` to choose
+another catalog asset ID, source volume, loop behavior, or an initially
+stopped state. The runtime transforms the RViz Fixed Frame pose into the
+global map, so placement also works in allocated environment frames. Use the
+`Sound Entities` row toggle to start or stop emission and playback
+(a `SetSemantic` write on `sounding`, same as any other sound). Select a
+`runtime_*` row and use `Remove selected runtime source` to delete it
+(`remove_sound`). Runtime sources are cleared on the next episode
+reset. The existing robot or pedestrian heard-sound display shows each active
 source-to-listener path, portal route, and delay. Set the
 visualizer's `continuous_listener_id` parameter when a specific microphone
 should own the path display. If it is empty, the first continuous listener is
@@ -351,13 +419,14 @@ rooms, then portal-to-listener in the listener room. Routes with no connected
 portal path use the explicit Level-3/dry fallback. Room and portal-route RIRs
 are quantized and cached.
 
-With `pyroom_robot_listeners_only=true` (the default), propagation creates
-`HeardSoundEvent` messages only for robot listeners and configured TF
-microphones. Pedestrians are not listeners, so pedestrian-to-pedestrian
-propagation is not calculated or published and the RViz propagation visualizer
-has no corresponding blue paths to draw. Set it to `false` to add every
-non-source pedestrian as an `agent:<id>` listener. Robot and microphone
-listener events receive the complete route metadata. Human events are rendered
+With `ped_hearing=true` (the launch default via `auditory.ped_hearing`),
+every non-source pedestrian is an `agent:<id>` listener whose
+`continuous_heard_sounds` states feed `BaseHumanSimulator.notify_stimulus`,
+edge-triggered on the `audible` bit with the catalog `sound_type` as the
+stimulus name. With `false`, pedestrian-to-pedestrian propagation is not
+calculated or published and the RViz propagation visualizer has no
+corresponding blue paths to draw. Robot and microphone listener events
+receive the complete route metadata. Human events are rendered
 by `human_sound_playback`, and robot events are rendered by
 `robot_sound_node`. The launch default sets
 `auditory.rir_in_propagation:=true`, so the propagation node
@@ -420,7 +489,8 @@ analysis. The current bundled assets contain precomputed values.
 
 Docker playback uses the host PulseAudio/PipeWire compatibility socket. The
 image installs `libasound2-plugins`, Compose forwards the socket as
-`/tmp/pulse/native`, and the launch selects the `pulse` device. This avoids
+`/tmp/pulse/native`, and `auditory.playback:=auto` prefers the `pulse` device
+(then `pipewire`, `default`, and the PortAudio default). This avoids
 opening raw `hw:0,0`, which is exclusive and unavailable while the host sound
 server owns the analog card. Rebuild/recreate the Arena container after a
 Docker audio configuration change.
@@ -465,7 +535,7 @@ Main routing controls are:
 - `route_distance_loss_db_per_m` (default `0.05`)
 - `portal_source_early_window_sec` (default `0.08`)
 - `portal_max_rir_duration_sec` (default `2.0`)
-- `pyroom_robot_listeners_only` (default `true`)
+- `ped_hearing` (default `false`, launch sets `true`)
 - `compute_rir_in_propagation` (default `true`)
 - `pyroom_cache_position_quantization_m` (default `0.25`)
 

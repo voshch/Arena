@@ -1,5 +1,0 @@
-string system_id
-bool active
----
-bool success
-string error_msg

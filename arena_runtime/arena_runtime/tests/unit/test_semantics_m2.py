@@ -27,6 +27,7 @@ from arena_runtime.sim._semantics import (  # noqa: E402
     SemanticEntitySnapshot,
     SemanticsManager,
     SignalSemantics,
+    SoundSemantics,
     _diff,
     _in_polygon,
 )
@@ -52,9 +53,13 @@ class _MCfg:
 class _Logger:
     def __init__(self):
         self.infos = []
+        self.warnings = []
 
     def info(self, msg):
         self.infos.append(msg)
+
+    def warning(self, msg):
+        self.warnings.append(msg)
 
     def get_child(self, _name):
         return self
@@ -165,6 +170,18 @@ def _plate_cfgs(position, radius, drives=None, latch=0.0, press_on=None, regime=
     if regime is not None:
         params["regime"] = regime
     return [_MCfg("predicate", "pressed", params=params)]
+
+
+def _sound_cfgs(sound_on=None, regime=None, volume=None):
+    params = {}
+    if sound_on is not None:
+        params["sound_on"] = sound_on
+    if regime is not None:
+        params["regime"] = regime
+    return [
+        _MCfg("predicate", "sounding", params=params),
+        _MCfg("state", "volume_db", value=volume),
+    ]
 
 
 def _occupancy_cfgs(cap):
@@ -296,6 +313,13 @@ def test_schedule_override_persists_until_boundary():
     assert inst.snapshot().predicates["active"] is True  # natural now true anyway
     inst.step(25.0)  # natural false again
     assert inst.snapshot().predicates["active"] is False
+
+
+def test_schedule_asserts_regime_live_before_first_step():
+    """asserts_regime must not depend on self._active being step()-populated."""
+    inst = _attach_schedule(_Mech(), _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="alarm"))
+    assert inst.asserts_regime("alarm") is True
+    assert inst.asserts_regime("other") is False
 
 
 def test_schedule_reset_clears_override_and_t0():
@@ -465,6 +489,195 @@ def test_plate_asserts_regime_while_pressed():
     plate.step(0.0)
     assert plate.asserts_regime("zone_hot") is True
     assert plate.asserts_regime("nope") is False
+
+
+def test_plate_self_latch_raises():
+    mech = _Mech()
+    with pytest.raises(ValueError, match="self-latch"):
+        PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="alarm", regime="alarm"))
+
+
+# ---------------------------------------------------------------------------
+# sound
+# ---------------------------------------------------------------------------
+
+
+def _attach_sound(mech, cfgs, entity="snd"):
+    return SoundSemantics.attach(mech, entity, cfgs)
+
+
+def test_sound_attach_defaults_silent_and_volume_80():
+    mech = _Mech()
+    _manager(mech)
+    inst = _attach_sound(mech, _sound_cfgs())
+    snap = inst.snapshot()
+    assert snap.kind == "sound"
+    assert snap.predicates["sounding"] is False
+    assert snap.continuous["volume_db"] == pytest.approx(80.0)
+
+
+def test_sound_initial_sounding_value_plays_and_survives_reset():
+    mech = _Mech()
+    _manager(mech)
+    cfgs = [_MCfg("predicate", "sounding", value=True), _MCfg("state", "volume_db", value=62.0)]
+    inst = _attach_sound(mech, cfgs)
+    assert inst.snapshot().predicates["sounding"] is True
+    inst.set_value("sounding", "false")
+    assert inst.snapshot().predicates["sounding"] is False
+    inst.reset()
+    assert inst.snapshot().predicates["sounding"] is True
+    assert inst.snapshot().continuous["volume_db"] == pytest.approx(62.0)
+
+
+def test_sound_initial_sounding_with_sound_on_raises():
+    mech = _Mech()
+    _manager(mech)
+    cfgs = [_MCfg("predicate", "sounding", value=True, params={"sound_on": "alarm"}), _MCfg("state", "volume_db")]
+    with pytest.raises(ValueError):
+        _attach_sound(mech, cfgs)
+
+
+def test_sound_regime_consult_live_before_any_step():
+    """The engine consults sound_on's regime purely from snapshot(), no step() anywhere in this test."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
+    mgr._instances["fire"] = [sched]
+    snd = _attach_sound(mech, _sound_cfgs(sound_on="alarm"), entity="siren")
+    mgr._instances["siren"] = [snd]
+    assert snd.snapshot().predicates["sounding"] is True
+    assert sched.snapshot().predicates["active"] is True
+
+
+def test_sound_override_set_and_clear_on_natural_edge():
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="alarm"), entity="fire")
+    mgr._instances["fire"] = [sched]
+    snd = _attach_sound(mech, _sound_cfgs(sound_on="alarm"), entity="siren")
+    mgr._instances["siren"] = [snd]
+    mgr.step(0.0)
+    assert snd.snapshot().predicates["sounding"] is False
+    snd.set_value("sounding", "true")
+    assert snd.snapshot().predicates["sounding"] is True
+    mgr.step(2.0)  # natural still false, no edge crossed: override holds
+    assert snd.snapshot().predicates["sounding"] is True
+    mgr.step(15.0)  # natural becomes true: edge crossed, override cleared
+    assert snd.snapshot().predicates["sounding"] is True  # natural now true anyway
+    mgr.step(25.0)  # natural false again, override already cleared
+    assert snd.snapshot().predicates["sounding"] is False
+
+
+def test_sound_volume_write_and_reset():
+    mech = _Mech()
+    _manager(mech)
+    inst = _attach_sound(mech, _sound_cfgs(volume=65.0))
+    assert inst.snapshot().continuous["volume_db"] == pytest.approx(65.0)
+    inst.set_value("volume_db", "50")
+    assert inst.snapshot().continuous["volume_db"] == pytest.approx(50.0)
+    inst.reset()
+    assert inst.snapshot().continuous["volume_db"] == pytest.approx(65.0)
+
+
+def test_sound_asserts_regime():
+    mech = _Mech()
+    _manager(mech)
+    inst = _attach_sound(mech, _sound_cfgs(regime="siren_on"))
+    assert inst.asserts_regime("siren_on") is False
+    inst.set_value("sounding", "true")
+    assert inst.asserts_regime("siren_on") is True
+    assert inst.asserts_regime("other") is False
+
+
+def test_sound_self_latch_raises():
+    mech = _Mech()
+    with pytest.raises(ValueError, match="self-latch"):
+        SoundSemantics.attach(mech, "snd", _sound_cfgs(sound_on="alarm", regime="alarm"))
+
+
+def test_regime_consult_cycle_resolves_false():
+    """A cross-consult cycle between asserting instances must not recurse."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    a = _attach_sound(mech, _sound_cfgs(sound_on="y", regime="x"), entity="a")
+    b = _attach_sound(mech, _sound_cfgs(sound_on="x", regime="y"), entity="b")
+    mgr._instances["a"] = [a]
+    mgr._instances["b"] = [b]
+    assert mgr.regime("x") is False
+    assert mgr.regime("y") is False
+
+
+def test_regime_consult_chain_still_propagates():
+    """schedule asserts alarm, sound consumes alarm and asserts siren: a chain, not a cycle."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
+    snd = _attach_sound(mech, _sound_cfgs(sound_on="alarm", regime="siren"), entity="horn")
+    mgr._instances["fire"] = [sched]
+    mgr._instances["horn"] = [snd]
+    assert mgr.regime("siren") is True
+
+
+def test_regime_consult_diamond_not_suppressed():
+    """A asserts x, two sounds consume x and assert their own regimes, a third consumes both."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="x"), entity="a")
+    b = _attach_sound(mech, _sound_cfgs(sound_on="x", regime="bx"), entity="b")
+    c = _attach_sound(mech, _sound_cfgs(sound_on="x", regime="cx"), entity="c")
+    d = _attach_sound(mech, _sound_cfgs(sound_on="bx"), entity="d")
+    mgr._instances.update({"a": [sched], "b": [b], "c": [c], "d": [d]})
+    assert mgr.regime("bx") is True
+    assert mgr.regime("cx") is True
+    assert d.snapshot().predicates["sounding"] is True
+
+
+def test_step_emits_causally_linked_changes_in_one_batch():
+    """The sound's sounding edge lands in the same change batch as its driving schedule's
+    active edge, even with the sound attached (and stepped) first."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    snd = _attach_sound(mech, _sound_cfgs(sound_on="alarm"), entity="siren")
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
+    mgr._instances["siren"] = [snd]
+    mgr._instances["fire"] = [sched]
+    batches: list[list] = []
+    mgr.set_change_callback(lambda b: batches.append(list(b)))
+    mgr.step(0.0)
+    mgr.step(15.0)
+    edge_batches = [
+        {(c.entity, c.field) for c in batch}
+        for batch in batches
+        if any(c.field in ("active", "sounding") for c in batch)
+    ]
+    assert any({("fire", "active"), ("siren", "sounding")} <= fields for fields in edge_batches)
+
+
+def test_sound_override_clear_not_lagged_by_attach_order():
+    """Silencing after the regime rose must hold even with the sound stepped first."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    snd = _attach_sound(mech, _sound_cfgs(sound_on="alarm"), entity="siren")
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 1.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
+    mgr._instances["siren"] = [snd]
+    mgr._instances["fire"] = [sched]
+    mgr.step(0.0)
+    mgr.step(1.0)
+    assert snd.snapshot().predicates["sounding"] is True
+    snd.set_value("sounding", "false")
+    mgr.step(2.0)
+    assert snd.snapshot().predicates["sounding"] is False
+
+
+def test_plate_snapshot_pressed_live_via_press_on():
+    """press_on pressed state is visible in snapshot() without the plate ever stepping."""
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
+    mgr._instances["fire"] = [sched]
+    plate = PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.0, press_on="alarm"))
+    mgr._instances["p"] = [plate]
+    assert plate.snapshot().predicates["pressed"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +902,17 @@ def test_manager_set_value_malformed():
         mgr.set_value("lobby", "cap", "not_a_number")
 
 
+def test_manager_attach_rejects_duplicate_kind():
+    mech = _Mech()
+    mgr = _manager(mech)
+    ok1 = mgr.attach("signal", "sig", _signal_cfgs([{"name": "a", "duration": 1.0}]))
+    ok2 = mgr.attach("signal", "sig", _signal_cfgs([{"name": "a", "duration": 1.0}]))
+    assert ok1 is True
+    assert ok2 is False
+    assert len(mgr._instances["sig"]) == 1
+    assert any("already attached" in msg for msg in mech.node.get_logger().warnings)
+
+
 def test_manager_set_value_applies_and_fires_callback():
     mech = _Mech(robots=[])
     mgr = _manager(mech)
@@ -734,13 +958,16 @@ def test_elevator_recalled_registers_and_consults_regime():
     mgr = _manager(mech)
     mgr.attach("elevator", "e")
     mgr.set_recall("e", "alarm")
-    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 100.0, "value": "v"}], regime="alarm"), entity="fire")
     mgr._instances["fire"] = [sched]
-    assert mgr.elevator_recalled("e", 5.0) is False  # regime not yet stepped true
+    assert mgr.elevator_recalled("e", 5.0) is False  # regime not yet asserted
+    mgr.step(0.0)  # t0 anchors the episode
     mgr.step(5.0)
+    assert mgr.regime("alarm") is False  # still before the window
+    mgr.step(15.0)
     assert mgr.regime("alarm") is True
-    assert mgr.elevator_recalled("e", 5.0) is True
-    assert mgr.elevator_recalled("other", 5.0) is False
+    assert mgr.elevator_recalled("e", 15.0) is True
+    assert mgr.elevator_recalled("other", 15.0) is False
 
 
 def test_elevator_recall_not_registered_without_set_recall():
@@ -801,6 +1028,7 @@ def test_support_matrix_new_kinds():
     assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
     assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
     assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
+    assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy"})
 
 
 def test_signal_schedule_attach_on_dummy():
@@ -825,5 +1053,6 @@ def test_writable_sets_per_kind():
     assert GateSemantics.WRITABLE == frozenset({"locked"})
     assert PressurePlateSemantics.WRITABLE == frozenset({"pressed"})
     assert OccupancyCapSemantics.WRITABLE == frozenset({"cap"})
+    assert SoundSemantics.WRITABLE == frozenset({"sounding", "volume_db"})
     assert DoorSemantics.WRITABLE == frozenset()
     assert ElevatorSemantics.WRITABLE == frozenset()

@@ -130,7 +130,7 @@ def _load_point() -> Callable[[AnimationManager], Gesture]:
 
     return lambda _manager: PointGesture()
 
- 
+
 @GESTURES.register("halt")
 def _load_halt() -> Callable[[AnimationManager], Gesture]:
     from .halt import HaltGesture

@@ -18,6 +18,8 @@ from task_generator.tasks.robots.adapters.mobile import MobileAdapter
 from task_generator.tasks.robots.request import GoToPhase, TaskPhase
 
 if TYPE_CHECKING:
+    import asyncio
+
     import geometry_msgs.msg
     from rclpy.impl.rcutils_logger import RcutilsLogger
 
@@ -45,7 +47,8 @@ class DrlAdapter(MobileAdapter):
         *,
         planner: str,
         observations: dict | None = None,
-        rate: float = 10.0,
+        rate: float | None = None,
+        deadline: float | None = None,
         **bringup_kwargs: object,
     ) -> None:
         super().__init__(robot_manager, **bringup_kwargs)
@@ -59,7 +62,6 @@ class DrlAdapter(MobileAdapter):
             raise ResolverError(f"DrlAdapter: planner '{planner}' has no package.xml <name> entry; cannot resolve ros2 run target.")
 
         self._planner_name = planner
-        self._rate = rate
         self._observations_override: dict = dict(observations) if observations else {}
 
         sub_path: Path = planner_dir(planner)
@@ -76,6 +78,8 @@ class DrlAdapter(MobileAdapter):
             manifest_dict.setdefault("observations", {})
             _deep_merge(manifest_dict["observations"], self._observations_override)
         self._manifest: dict = manifest_dict
+        self._rate: float = float(rate if rate is not None else manifest_dict.get("rate_hz", 10.0))
+        self._deadline_s: float = float(deadline) if deadline is not None else 0.0
 
         depends = manifest_dict.get("depends") or {}
         self._depends_global_plan: bool = bool(depends.get("global_plan", False))
@@ -99,7 +103,7 @@ class DrlAdapter(MobileAdapter):
             _launch_path, self._handler_metadata = resolve_global_planner(family)
 
         self._edge_node: object = None
-        self._run_loop_task: object = None
+        self._run_loop_task: asyncio.Task | None = None
         self._current_phase: TaskPhase | None = None
 
     # ------------------------------------------------------------------
@@ -222,6 +226,7 @@ class DrlAdapter(MobileAdapter):
             is_holonomic=is_holonomic,
             simulation_namespace=robot.node.get_namespace(),
             velocity_limits=_limits,
+            deadline_s=self._deadline_s,
             parameter_overrides=[rclpy.Parameter("planner_rate_hz", value=float(self._rate))],
         )
         robot.node.executor.add_node(edge_node)
@@ -283,6 +288,10 @@ class DrlAdapter(MobileAdapter):
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
         self._current_phase = phase
 
+        task = self._run_loop_task
+        if task is not None and task.done() and not task.cancelled():
+            raise RuntimeError(f"DRL run_loop for {robot.robot.name!r} is dead: {task.exception()!r}")
+
         if self._edge_node is not None:
             x, y, theta = phase.pose.to_2d()
             await self._edge_node.request_reset(
@@ -329,7 +338,7 @@ class DrlAdapter(MobileAdapter):
                 initial_state=None,
             )
 
-    async def on_move(
+    async def before_move(
         self,
         pose: Pose,
         robot: RobotManager,
@@ -337,6 +346,11 @@ class DrlAdapter(MobileAdapter):
         if self._edge_node is not None:
             await self._edge_node.request_cancel()
 
+    async def on_move(
+        self,
+        pose: Pose,
+        robot: RobotManager,
+    ) -> None:
         request = robot._current_request  # pylint: disable=protected-access
         if request is None or robot._phase_index >= len(request.phases):  # pylint: disable=protected-access
             return

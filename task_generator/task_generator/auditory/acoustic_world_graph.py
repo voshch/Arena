@@ -112,17 +112,11 @@ class AcousticWorldGraph:
             raise ValueError("minimum_opening_width_m must be positive")
 
         zones = world_zones(world)
-        zone_levels = {
-            str(zone.name): level_id
-            for level_id, level_zones in world_zone_groups(world)
-            for zone in level_zones
-        }
+        zone_levels = {str(zone.name): level_id for level_id, level_zones in world_zone_groups(world) for zone in level_zones}
         polygons = tuple(
             (
                 str(zone.name),
-                Polygon(
-                    [(float(corner.x), float(corner.y)) for corner in zone.corners]
-                ),
+                Polygon([(float(corner.x), float(corner.y)) for corner in zone.corners]),
             )
             for zone in zones
         )
@@ -146,9 +140,7 @@ class AcousticWorldGraph:
                         continue
                     if zone_levels.get(candidate_name) != zone_levels.get(owner):
                         continue
-                    overlap = line.intersection(
-                        polygon.boundary.buffer(adjacency_tolerance_m)
-                    ).length
+                    overlap = line.intersection(polygon.boundary.buffer(adjacency_tolerance_m)).length
                     distance = polygon.boundary.distance(midpoint)
                     if overlap > 0.5 * line.length or distance <= adjacency_tolerance_m:
                         candidates.append((overlap - distance, candidate_name))
@@ -189,18 +181,14 @@ class AcousticWorldGraph:
 
                 portals.append(
                     AcousticPortal(
-                        portal_id=_safe_id(
-                            f"door:{name}:{ordered_zones[0]}:{ordered_zones[1]}"
-                        ),
+                        portal_id=_safe_id(f"door:{name}:{ordered_zones[0]}:{ordered_zones[1]}"),
                         door_name=name,
                         zone_a=owner,
                         zone_b=neighbour,
                         start=start,
                         end=end,
                         height_m=max(float(door.height), 0.1),
-                        material_id=_material_name(
-                            door.material, default_door_material_id
-                        ),
+                        material_id=_material_name(door.material, default_door_material_id),
                         portal_kind="door",
                         loss_db=door_portal_loss_db,
                     )
@@ -212,51 +200,29 @@ class AcousticWorldGraph:
                 room_a = room_by_name.get(zone_a)
                 if room_a is None:
                     continue
-                openings_a = [
-                    LineString((boundary.start, boundary.end))
-                    for boundary in room_a.boundary
-                    if boundary.kind == "opening"
-                ]
-                for zone_b, polygon_b in polygons[index + 1:]:
+                openings_a = [LineString((boundary.start, boundary.end)) for boundary in room_a.boundary if boundary.kind == "opening"]
+                for zone_b, polygon_b in polygons[index + 1 :]:
                     if zone_levels.get(zone_b) != zone_levels.get(zone_a):
                         continue
-                    if (
-                        polygon_a.boundary.distance(polygon_b.boundary)
-                        > adjacency_tolerance_m
-                    ):
+                    if polygon_a.boundary.distance(polygon_b.boundary) > adjacency_tolerance_m:
                         continue
                     room_b = room_by_name.get(zone_b)
                     if room_b is None:
                         continue
-                    openings_b = [
-                        LineString((boundary.start, boundary.end))
-                        for boundary in room_b.boundary
-                        if boundary.kind == "opening"
-                    ]
+                    openings_b = [LineString((boundary.start, boundary.end)) for boundary in room_b.boundary if boundary.kind == "opening"]
                     for opening_a in openings_a:
                         for opening_b in openings_b:
                             shared = opening_a.intersection(opening_b)
-                            lines = (
-                                list(shared.geoms)
-                                if isinstance(shared, BaseMultipartGeometry)
-                                else [shared]
-                            )
+                            lines = list(shared.geoms) if isinstance(shared, BaseMultipartGeometry) else [shared]
                             for line in lines:
-                                if (
-                                    line.geom_type != "LineString"
-                                    or line.length < minimum_opening_width_m
-                                ):
+                                if line.geom_type != "LineString" or line.length < minimum_opening_width_m:
                                     continue
                                 coordinates = list(line.coords)
                                 start = tuple(map(float, coordinates[0]))
                                 end = tuple(map(float, coordinates[-1]))
                                 ordered_zones = tuple(sorted((zone_a, zone_b)))
                                 endpoints = sorted((start, end))
-                                geometry_key = tuple(
-                                    round(value, 4)
-                                    for point in endpoints
-                                    for value in point
-                                )
+                                geometry_key = tuple(round(value, 4) for point in endpoints for value in point)
                                 key = (
                                     ordered_zones[0],
                                     ordered_zones[1],
@@ -266,31 +232,12 @@ class AcousticWorldGraph:
                                     continue
                                 # An authored door on the same shared span wins.
                                 candidate_line = LineString((start, end))
-                                if any(
-                                    portal.connects(zone_a, zone_b)
-                                    and LineString(
-                                        (portal.start, portal.end)
-                                    ).distance(candidate_line)
-                                    <= adjacency_tolerance_m
-                                    and LineString(
-                                        (portal.start, portal.end)
-                                    ).intersection(candidate_line).length
-                                    > 0.5 * candidate_line.length
-                                    for portal in portals
-                                ):
+                                if any(portal.connects(zone_a, zone_b) and LineString((portal.start, portal.end)).distance(candidate_line) <= adjacency_tolerance_m and LineString((portal.start, portal.end)).intersection(candidate_line).length > 0.5 * candidate_line.length for portal in portals):
                                     continue
                                 seen.add(key)
                                 portals.append(
                                     AcousticPortal(
-                                        portal_id=_safe_id(
-                                            "opening:"
-                                            f"{ordered_zones[0]}:"
-                                            f"{ordered_zones[1]}:"
-                                            + ":".join(
-                                                f"{value:.3f}"
-                                                for value in geometry_key
-                                            )
-                                        ),
+                                        portal_id=_safe_id(f"opening:{ordered_zones[0]}:{ordered_zones[1]}:" + ":".join(f"{value:.3f}" for value in geometry_key)),
                                         door_name="",
                                         zone_a=zone_a,
                                         zone_b=zone_b,
@@ -331,21 +278,14 @@ class AcousticWorldGraph:
         source_xy: Point2D | None = None,
         listener_xy: Point2D | None = None,
     ) -> AcousticPortal | None:
-        matches = [
-            portal
-            for portal in self.portals
-            if portal.connects(source_zone, listener_zone)
-        ]
+        matches = [portal for portal in self.portals if portal.connects(source_zone, listener_zone)]
         if not matches:
             return None
         if len(matches) == 1 or source_xy is None or listener_xy is None:
             return matches[0]
         return min(
             matches,
-            key=lambda portal: (
-                math.dist(source_xy, portal.center_xy)
-                + math.dist(listener_xy, portal.center_xy)
-            ),
+            key=lambda portal: math.dist(source_xy, portal.center_xy) + math.dist(listener_xy, portal.center_xy),
         )
 
     def find_portal_route(
@@ -406,9 +346,7 @@ class AcousticWorldGraph:
             ) = heapq.heappop(queue)
             if zone == listener_zone and route:
                 final_distance = distance + math.dist(anchor, listener_xy)
-                final_cost = cost + (
-                    distance_loss_db_per_m * math.dist(anchor, listener_xy)
-                )
+                final_cost = cost + (distance_loss_db_per_m * math.dist(anchor, listener_xy))
                 return AcousticPortalRoute(
                     zones=zones,
                     portals=route,
@@ -423,24 +361,9 @@ class AcousticWorldGraph:
                     continue
                 center = portal.center_xy
                 segment_distance = math.dist(anchor, center)
-                portal_loss = (
-                    portal.loss_db
-                    if portal.loss_db is not None
-                    else (
-                        default_opening_loss_db
-                        if portal.portal_kind == "opening"
-                        else default_door_loss_db
-                    )
-                )
-                next_cost = (
-                    cost
-                    + portal_loss
-                    + distance_loss_db_per_m * segment_distance
-                )
-                heuristic = (
-                    distance_loss_db_per_m
-                    * math.dist(center, listener_xy)
-                )
+                portal_loss = portal.loss_db if portal.loss_db is not None else (default_opening_loss_db if portal.portal_kind == "opening" else default_door_loss_db)
+                next_cost = cost + portal_loss + distance_loss_db_per_m * segment_distance
+                heuristic = distance_loss_db_per_m * math.dist(center, listener_xy)
                 heapq.heappush(
                     queue,
                     (
@@ -494,11 +417,7 @@ class AcousticWorldGraph:
 
         center = Point(portal.center_xy)
         inner = polygon.buffer(-max(inset_m, 1e-4))
-        xy = (
-            polygon.representative_point()
-            if inner.is_empty
-            else nearest_points(center, inner)[1]
-        )
+        xy = polygon.representative_point() if inner.is_empty else nearest_points(center, inner)[1]
         room = self.room(zone_name)
         if room is None:
             raise KeyError(f"no acoustic room for zone {zone_name!r}")

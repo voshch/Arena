@@ -68,8 +68,54 @@ def test_route_semantics_unknown_field_raises() -> None:
     from task_generator.manager.environment_manager import _route_semantics
 
     cfgs = parse_semantics([{"state": "not_a_real_field"}])
-    with pytest.raises(ValueError, match="matches no scripted kind"):
+    with pytest.raises(ValueError, match="is not attachable to a door host"):
         _route_semantics(cfgs, "door")
+
+
+# ---------------------------------------------------------------------------
+# sound semantics write path (M2 engine dispatch through the real chain)
+# ---------------------------------------------------------------------------
+
+
+def test_fire_timeline_entry_writes_sound_sounding_predicate() -> None:
+    from arena_runtime.sim._semantics import SemanticsManager
+    from arena_simulation_setup.shared.semantics import parse_semantics
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    from task_generator.manager.realizer import Realizer
+    from task_generator.node import TaskGenerator
+
+    mech = type("Mech", (), {})()
+    manager = SemanticsManager(mech)
+    manager.set_sim("dummy")
+    cfgs = parse_semantics([{"preset": "sound"}])
+    assert manager.attach("sound", "env_0/alarm_sound", cfgs)
+
+    simulator = type("Simulator", (), {})()
+    simulator.set_semantic_value = manager.set_value
+
+    class _Logger:
+        def warning(self, msg: str) -> None:
+            raise AssertionError(msg)
+
+    stub = type("Stub", (), {})()
+    stub._semantic_names = {"alarm_sound": "env_0/alarm_sound"}
+    stub._realizer = Realizer()
+    stub._simulator = simulator
+    stub.get_logger = lambda: _Logger()
+    stub._resolve_semantic_entity = TaskGenerator._resolve_semantic_entity.__get__(stub)
+    stub._apply_semantic_checked = TaskGenerator._apply_semantic_checked.__get__(stub)
+    stub._set_semantic = TaskGenerator._set_semantic.__get__(stub)
+    stub._norm_token = TaskGenerator._norm_token
+    stub._resolve_timeline_value = TaskGenerator._resolve_timeline_value.__get__(stub)
+    stub._timeline_state = [{"rng": random.Random("7:0")}]
+
+    entry = TimelineEntry(set=[{"entity": "alarm_sound", "field": "sounding", "value": "true"}], at=0.0)
+    TaskGenerator._fire_timeline_entry(stub, 0, entry)
+
+    snap = manager.snapshot()[0]
+    assert snap.entity == "env_0/alarm_sound"
+    assert snap.predicates["sounding"] is True
 
 
 # ---------------------------------------------------------------------------

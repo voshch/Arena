@@ -1,0 +1,12 @@
+geometry_msgs/PoseStamped pose
+string mode
+bool customize_playback
+string asset_id
+float32 source_volume_db
+bool loop
+bool initially_active
+bool attach_to_frame         # keep pose in its own frame and re-localize it every tick
+---
+string entity                # realized entity name, the removal handle for RemoveSound
+bool success
+string error_msg

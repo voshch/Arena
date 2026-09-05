@@ -19,8 +19,6 @@ def stub_manager():
 
     class _FakeConf:
         class Robot:
-            class RECORD_DATA_DIR:
-                value = None
             class TIMEOUT:
                 value = 60
         class Arena:

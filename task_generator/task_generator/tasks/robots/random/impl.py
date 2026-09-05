@@ -1,6 +1,6 @@
 import math
 
-from task_generator.shared import Orientation, Pose, PositionRadius
+from task_generator.shared import Orientation, Pose
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, ReachPhase, TaskPhase, TaskRequest
 
@@ -8,36 +8,23 @@ from task_generator.tasks.robots.request import GoToPhase, ReachPhase, TaskPhase
 class TM_Random(TM_Robots):
     """Cap-blind random-action task mode."""
 
-    async def reset(self, **kwargs: object) -> None:
-        await super().reset(**kwargs)
+    async def reset(self) -> None:
+        await super().reset()
 
-        ROBOT_POSITIONS: list[tuple[Pose, Pose]] = kwargs.get("ROBOT_POSITIONS", [])
         biggest_robot = max((robot.safe_distance for robot in self._ctx.robots.values()), default=0)
+        rng = self.node.conf.General.RNG.stream("robots", "random")
+        n = len(self._ctx.robots)
 
-        for robot_start, robot_goal in ROBOT_POSITIONS:
-            self._ctx.world_manager.forbid(
-                [
-                    PositionRadius(robot_start.position.x, robot_start.position.y, biggest_robot),
-                    PositionRadius(robot_goal.position.x, robot_goal.position.y, biggest_robot),
-                ],
-            )
+        goal_positions = self._ctx.world_manager.get_positions_on_map(n=n, safe_dist=0)
+        start_positions = self._ctx.world_manager.get_positions_on_map(n=n, safe_dist=biggest_robot)
 
-        if len(ROBOT_POSITIONS) < len(self._ctx.robots):
-            n_missing = len(self._ctx.robots) - len(ROBOT_POSITIONS)
-            rng = self.node.conf.General.RNG.stream("robots", "random")
+        starts = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in start_positions]
+        goals = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in goal_positions]
 
-            goal_positions = self._ctx.world_manager.get_positions_on_map(n=n_missing, safe_dist=0)
-            start_positions = self._ctx.world_manager.get_positions_on_map(n=n_missing, safe_dist=biggest_robot)
-
-            starts = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in start_positions]
-            goals = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in goal_positions]
-
-            ROBOT_POSITIONS += list(zip(starts, goals, strict=False))
-
-        for robot, pos in zip(self._ctx.robots.values(), ROBOT_POSITIONS, strict=False):
-            self._start_poses[robot.name] = pos[0]
+        for robot, start, goal in zip(self._ctx.robots.values(), starts, goals, strict=True):
+            self._start_poses[robot.name] = start
             phases: list[TaskPhase] = [
-                GoToPhase(pose=pos[1]),
+                GoToPhase(pose=goal),
                 ReachPhase(named_target="ready", planning_time=2.0),
                 ReachPhase(random=True, planning_time=2.0),
                 ReachPhase(named_target="stow", planning_time=2.0),

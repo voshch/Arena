@@ -238,6 +238,8 @@ def generate_launch_description():
         gz_args = resolved_world + f" -r --render-engine {engine}"
         if headless_val.lower() in ("true", "1"):
             gz_args += " -s"
+            if engine == "ogre2":
+                gz_args += " --headless-rendering"
         else:
             gz_args += f" --gui-config {_render_gui_config(engine)}"
         include = IncludeLaunchDescription(

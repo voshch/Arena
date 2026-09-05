@@ -12,8 +12,8 @@ class TM_Explore(TM_Random):
 
     _timeouts: dict[str, Time]
 
-    async def reset(self, **kwargs: object) -> None:
-        await super().reset(**kwargs)
+    async def reset(self) -> None:
+        await super().reset()
         self._timeouts = {}
         for name in self._ctx.robots.keys():
             self._reset_timeout(name)

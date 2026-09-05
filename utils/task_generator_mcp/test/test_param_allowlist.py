@@ -60,14 +60,6 @@ def test_bool_param_type():
     assert p.value.bool_value is False
 
 
-def test_string_param_type():
-    req = _build_set_request({"record_data_dir": "/tmp/data"})
-    p = req.parameters[0]
-    assert p.name == "record_data_dir"
-    assert p.value.type == rclpy.parameter.Parameter.Type.STRING.value
-    assert p.value.string_value == "/tmp/data"
-
-
 def test_allowlist_does_not_contain_train_mode():
     assert "train_mode" not in EPISODE_PARAMS
 

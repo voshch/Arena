@@ -462,7 +462,7 @@ class TM_Environment(TM_Obstacles):
         print(dynamic_obstacles)
         return _ParsedConfig(static=static_obstacles, dynamic=dynamic_obstacles)
 
-    async def reset(self, **kwargs: object) -> Obstacles:
+    async def reset(self, *, seed: int) -> Obstacles:
         return self._config.value.static, self._config.value.dynamic
 
     def __init__(self, **kwargs: object) -> None:
@@ -470,6 +470,6 @@ class TM_Environment(TM_Obstacles):
 
         self._config = self.node.ROSParam[_ParsedConfig](
             self.namespace('file'),
-            'default.json',
+            'default',
             parse=self._parse_environment,
         )

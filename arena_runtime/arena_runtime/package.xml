@@ -14,6 +14,7 @@
 
   <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_robots</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
   <exec_depend>controller_manager_msgs</exec_depend>
   <exec_depend>joint_state_topic_hardware_interface</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>

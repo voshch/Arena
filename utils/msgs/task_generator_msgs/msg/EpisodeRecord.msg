@@ -17,6 +17,10 @@ uint8 FATAL   = 5
 uint8 outcome_state
 string outcome_info
 string goal_uuid
+# Goal progress of the robot that closed the least of its start distance, metres. Zero when no GoTo goal was active.
+float32 goal_dist_start
+float32 goal_dist_min
+float32 path_length
 builtin_interfaces/Time start_time
 # False = manually mutated mid-episode.
 bool integrity

@@ -77,7 +77,7 @@ class HunavDynamicObstacle:
             behavior_msg.once = self.once
             behavior_msg.vel = self.vel
             behavior_msg.dist = self.dist
-            behavior_msg.goal_force_factor = 5.0  # hunav_obstacle.behavior.goal_force_factor
+            behavior_msg.goal_force_factor = self.goal_force_factor
             behavior_msg.obstacle_force_factor = self.obstacle_force_factor
             behavior_msg.social_force_factor = self.social_force_factor
             behavior_msg.other_force_factor = self.other_force_factor

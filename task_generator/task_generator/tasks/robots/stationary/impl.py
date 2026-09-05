@@ -20,8 +20,8 @@ class TM_Stationary(TM_Robots):
         self._pos_y = self.node.ROSParam[float](self.namespace('pos_y'), math.nan)
         self._pos_theta = self.node.ROSParam[float](self.namespace('pos_theta'), 0.0)
 
-    async def reset(self, **kwargs: object) -> None:
-        await super().reset(**kwargs)
+    async def reset(self) -> None:
+        await super().reset()
 
         pos_x, pos_y = self._pos_x.value, self._pos_y.value
 
@@ -37,8 +37,6 @@ class TM_Stationary(TM_Robots):
 
     @property
     async def done(self) -> bool:
-        if (self.node.sim_time.sec - self._last_reset) > self.node.conf.Robot.TIMEOUT.value:
-            return True
         return False
 
     async def set_position(self, pose: Pose):

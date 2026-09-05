@@ -24,20 +24,21 @@ human-sim `_*_impl` methods:
 
 | Public method | Purpose |
 | --- | --- |
-| `spawn_obstacles(obstacles, layer)` | spawn or move static obstacles; layer defaults to `INUSE` |
+| `spawn_obstacles(obstacles, layer)` | spawn or move static obstacles, layer defaults to `INUSE` |
 | `spawn_dynamic_obstacles(obstacles)` | spawn or move dynamic obstacles (`INUSE`) |
-| `spawn_world(walls, doors, collision_walls=())` | spawn world geometry in both sim and human-sim layers; `collision_walls` register in the human-sim layer only (avoidance), never spawned visually |
+| `spawn_world(walls, doors, collision_walls=())` | spawn world geometry in both sim and human-sim layers. `collision_walls` register in the human-sim layer only (avoidance), never spawned visually |
 | `unuse_obstacles()` | call `_remove_obstacles_impl`, then flip all `INUSE` layers to `UNUSED` |
-| `remove_obstacles(purge)` | remove all obstacles at or below `purge` layer from both layers; `WORLD` survives unless `purge >= WORLD` |
+| `remove_obstacles(purge)` | remove all obstacles at or below `purge` layer from both layers. `WORLD` survives unless `purge >= WORLD` |
 | `spawn_robot(robots)` | spawn in physics sim, then call `_spawn_robot_impl` |
 | `remove_robot(robots)` | remove from physics sim, then call `_remove_robot_impl` |
 | `move_robot(robots)` | move in physics sim, then call `_move_robot_impl` |
+| `notify_stimulus(agent_id, stimulus, intensity)` | stimulus seam, no-op by default, fed edge-triggered from `continuous_heard_sounds` for `agent:<id>` listeners |
 
 ### `HumanSimulator` Protocol surface
 
 `BaseHumanSimulator` satisfies the Protocol the mechanism shim reads from.
-Inherited defaults work for all current subclasses; override only for
-specialized teleport semantics (e.g. resetting an internal hunav agent list).
+Inherited defaults work for all current subclasses, override only for
+specialized teleport semantics (e.g. resetting an internal agent list).
 
 | Method | Signature |
 | --- | --- |
@@ -117,7 +118,7 @@ publishes them directly.  The producer's own `GaitGenerator` instance is a **fal
 - `PEDESTRIANS`: the canonical `hri_rviz/Skeletons3D` skeleton display, keyed on the env `humans/`
   namespace. Note: the upstream display uses absolute `/humans` paths via libhri, so per-env namespacing
   is a known limitation.
-- `MARKER_ARRAY`: generic MarkerArray passthrough, no namespace assumptions; used for `extra` and all
+- `MARKER_ARRAY`: generic MarkerArray passthrough, no namespace assumptions, used for `extra` and all
   `static*` layers.
 
 The auto-rviz manifest ([`node.py` `_publish_viz_manifest`](../../node.py)) groups these into a
@@ -129,7 +130,6 @@ Current adapters:
 
 | Adapter | Static topics published |
 | --- | --- |
-| `hunav` | `pedestrian_markers/static` (single combined topic) |
 | `arena_humansim` | `pedestrian_markers/static_walls`, `pedestrian_markers/static_objects` |
 | `dummy` | `pedestrian_markers/static_walls`, `pedestrian_markers/static_objects` |
 
@@ -151,14 +151,66 @@ with the simulator that will animate the resulting agents.
 
 | Key | Class | File | Notes |
 | --- | --- | --- | --- |
-| `dummy` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | no locomotion engine, motion streams in via possession |
-| `none` | `NoopHumanSimulator` | [`noop.py`](noop.py) | pure no-op, suppresses the human backend entirely |
-| `hunav` | `HunavHumanSimulator` | [`hunav/hunav.py`](hunav/hunav.py) | integrates with the HuNavSim pedestrian simulator |
-| `arena` | `ArenaHumanSimulator` | [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py) | in-process arena_humansim engine |
+| `dummy` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | no-op stubs, used in test/offline contexts |
+| `none` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | `human.launch.py` starts no node, backed by the same no-op stubs for registry lookups |
+| `arena` | `ArenaHumanSimulator` | [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py) | integrates with the arena_humansim pedestrian simulator (subsystem mode) |
+| `hunav` | `HunavHumanSimulator` | [`hunav/hunav.py`](hunav/hunav.py) | integrates with HuNav, see [configs/hunav/README.md](../../../../arena_simulation_setup/configs/hunav/README.md) for the per-agent schema. `hunav_msgs` is imported lazily so the registry entry loads without it installed |
 
-`noop.py`'s `NoopHumanSimulator` doubles as the shared no-op base that
-`DummyHumanSimulator` and `HunavHumanSimulator` extend and as the
-registered `human:=none` backend.
+## arena_humansim agent types
+
+`ArenaHumanSimulator` derives pedestrian parameters from the `agent:` block of
+each `dynamic:` scenario entry (`ArenaHumanDynamicObstacle`,
+[`arena_humansim/__init__.py`](arena_humansim/__init__.py)). `agent:` accepts
+either a bare string or a dict:
+
+```yaml
+dynamic:
+  - name: nurse_1
+    ...
+    agent: adult                 # shorthand for {agent_type: adult}
+  - name: doctor_1
+    ...
+    agent: {agent_type: ./doctor.yaml, desired_velocity: 1.4, radius: 0.32}
+  - name: source_ped
+    ...
+    agent: {agent_type: adult, desired_velocity: {min: 1.0, max: 1.5}}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `agent_type` | Built-in arena_humansim type name (`adult`, `elder`, `robot`, shipped under `arena_humansim/config/agent_types/`) or a scenario-local YAML path resolved relative to the scenario (`./doctor.yaml`). Default `adult`. See [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md) for the file schema. |
+| `desired_velocity` | Either a scalar (m/s), or `{min, max}`: a uniform range this instance's velocity is drawn from. Overrides (does not compose with) the sampled `AgentType.desired_velocity`. Default `{min: 1.0, max: 1.5}`. |
+| `radius` | Agent collision radius (m), overrides the sampled `AgentType.agent_radius`. Default `0.35`. |
+
+`waypoint_mode` is a sibling key of `agent:` (not nested inside it), one of `repeat` (default), `reverse`, `once`, `random`: it controls how the entry's `waypoints:` list is replayed once exhausted.
+
+A `regions:` source entry's `config.agent:` block uses a different, wider schema for continuously spawning pedestrians: `agent_type`, `desired_velocity: {min, max}`, `agent_radius` (note: `agent_radius`, not `radius`, here), `behavior_tree`, and `sink_affinity: [{sink, weight}]`. See `_add_source_region` in [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py).
+
+### Static world objects
+
+A `static:` scenario entry that pedestrians can interact with (a bench, a
+reception desk) is registered as a `WorldObject` by `_spawn_obstacles_impl` in
+[`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py). The
+keys below are written directly on the entry, as siblings of `name:`/`model:`/`pose:`
+(they land on `Obstacle.extra`, a copy of the entry's full raw dict):
+
+| Key | Meaning |
+| --- | --- |
+| `type` | Object type string, matched against a behavior-tree step/action `target:` (falls back to the model's `annotation.yaml` name/desc if omitted). |
+| `capacity` | Max simultaneous occupants. Default `1`. |
+| `satisfies` | `{need: amount}` applied to an agent that completes an interaction here, same shape as an agent-type step's `satisfies:`. |
+| `interaction_radius` | Overrides the interaction kind's default approach radius for this object. |
+| `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
+
+```yaml
+static:
+  - name: reception_desk
+    ...
+    type: desk
+    capacity: 3
+    interaction_radius: 1.0
+    formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}
+```
 
 ## Possession
 
@@ -266,7 +318,7 @@ pedestrian not otherwise configured. The path is resolved via
 ## Adding a new BaseHumanSimulator
 
 1. Create `simulators/human/<name>.py` with a class extending
-   `BaseHumanSimulator`; implement all eight `_*_impl` abstract methods.
+   `BaseHumanSimulator`, implement all eight `_*_impl` abstract methods.
 2. Add `<NAME> = "<name>"` to `Constants.HumanSimulator` in
    [`constants/__init__.py`](../../constants/__init__.py).
 3. Register a lazy async factory in [`simulators/human/__init__.py`](__init__.py):

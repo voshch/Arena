@@ -15,15 +15,16 @@ Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`are
 | `QueryWorlds.srv` / `QueryScenarios.srv` / `QueryEnvironments.srv` / `QueryParametrizeds.srv` / `QueryRobots.srv` / `QueryStaticObstacles.srv` / `QueryDynamicObstacles.srv` / `QueryTaskModes.srv` | Listing of available shortnames for the corresponding asset class. |
 | `SpawnStatic.srv` / `SpawnDynamic.srv` / `SpawnRobot.srv` | Inject a static obstacle / dynamic pedestrian / additional robot into the running episode via `TM_Obstacles.extend` / `TM_Robots.extend`. `SpawnRobot` accepts an optional `args` (`diagnostic_msgs/KeyValue[]`) forwarded to `Robot.parse` (e.g. `mobile`, `mobile.local_planner`, `mobile.agent`), and an `immediate` flag that provisions the robot into the live world now (idle) instead of committing on the next reset. |
 | `SpawnMicrophone.srv` | Place an episode-local acoustic listener at a stamped point. The auditory runtime derives and validates its authored world zone and returns its stable listener ID. |
-| `SetAudioSystem.srv` | Start or stop one scenario- or launch-defined radio or multi-speaker alarm system. |
 | `DespawnRobot.srv` | Single fleet-removal surface: stages a live robot for teardown on the next reset, un-stages a queued despawn, or cancels a queued spawn (toggles `state/robots/pending`). |
 | `SetSemantic.srv` | Write one semantic field value on an entity via `semantics/set`; one of three writer paths into semantics state (timeline, modules, external). |
+| `SpawnSound.srv` | Place a runtime `sound` source at a stamped pose (music or alarm mode, optional custom playback fields, `attach_to_frame` to ride the pose's frame). Returns its generated `entity`. |
+| `RemoveSound.srv` | Remove a runtime-spawned `sound` source by `entity`. World- and launch-declared sounds cannot be removed this way. |
 
 ## Messages (`msg/`)
 
 | File | Purpose |
 |---|---|
-| `EpisodeRecord.msg` | One episode: id, world, seed, task modes, `robots[]`, `outcome_state` (`QUEUED` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED` / `FATAL`), `outcome_info` (live status string, may be republished mid-episode via `Task.set_info`), integrity flag, plus `obstacles_params` / `robots_params` (effective per-mode params, with staged dict overlay for queued records). Published latched on `state/episode` and `state/queue`. `conditions` is a JSON list of `{op, p, q, text}` episode conditions, empty when none. |
+| `EpisodeRecord.msg` | One episode: id, world, seed, task modes, `robots[]`, `outcome_state` (`QUEUED` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED` / `FATAL`), `outcome_info` (live status string, may be republished mid-episode via `Task.set_info`), integrity flag, plus `obstacles_params` / `robots_params` (effective per-mode params, with staged dict overlay for queued records). Published latched on `state/episode` and `state/queue`. `conditions` is a JSON list of `{op, p, q, text}` episode conditions, empty when none. `goal_dist_start` / `goal_dist_min` / `path_length` track the robot that closed the least of its start-to-goal distance, sampled every 0.5s; zero when no GoTo goal was active. |
 | `RobotDescriptor.msg` | Lean per-robot identity (name, model, ns, frame); shared with `RobotQueue`, whose pending entries have no resolved caps. |
 | `RobotCap.msg` | One resolved, effective cap on a live robot: cap name, bound adapter kind, mount instance, morphology variant. |
 | `RobotState.msg` | A resolved, live fleet member: `RobotDescriptor` + resolved `RobotCap[]` + resolved morphology `params`. |
@@ -31,9 +32,8 @@ Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`are
 | `RobotQueue.msg` | Robots staged for spawn/despawn (the pending fleet delta, as lean `RobotDescriptor`s), applied on the next reset. Published latched on `state/robots/pending`. |
 | `SemanticSnapshot.msg` | Full latched semantic state of the env: stamp, world, `SemanticEntityState[]`. Published on `state/semantics` (`TRANSIENT_LOCAL`), republished on any quantum-passing change (attach/detach/reset/write). |
 | `SemanticEntityState.msg` | One semantic entity: `kind`, index-aligned discrete/continuous/predicate name-value arrays, `members` (committed occupant ids). |
-| `ContinuousAudioSourceState.msg` | Persistent source state for robot drivetrains and scenario-defined WAV emitters. Environment fields identify the logical system, asset, loop behavior, and shared program epoch. |
+| `ContinuousAudioSourceState.msg` | Persistent source state for robot drivetrains and world- or launch-defined `sound` entities. Environment fields identify the logical group, asset, loop behavior, and shared program epoch. |
 | `ContinuousHeardSoundState.msg` | Listener-specific propagation result for a persistent source, including its route, delay, received level, and environment playback metadata. |
-| `AudioSystemState.msg` | Transient-local active state and emitter membership for one scenario- or launch-defined radio or alarm system. An empty emitter list removes a system from live controls. |
 
 ## Actions (`action/`)
 

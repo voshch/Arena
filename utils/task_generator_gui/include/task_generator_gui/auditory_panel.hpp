@@ -7,11 +7,11 @@
 #include <rviz_common/panel.hpp>
 #include <rviz_common/ros_integration/ros_node_abstraction_iface.hpp>
 
-#include "task_generator_msgs/msg/audio_system_state.hpp"
 #include "task_generator_msgs/msg/episode_record.hpp"
-#include "task_generator_msgs/srv/remove_audio_system.hpp"
+#include "task_generator_msgs/msg/semantic_snapshot.hpp"
+#include "task_generator_msgs/srv/remove_sound.hpp"
 #include "task_generator_msgs/srv/remove_microphone.hpp"
-#include "task_generator_msgs/srv/set_audio_system.hpp"
+#include "task_generator_msgs/srv/set_semantic.hpp"
 
 #include <std_msgs/msg/string.hpp>
 #include <rcl_interfaces/msg/parameter_event.hpp>
@@ -75,8 +75,8 @@ public:
         bool playback_enabled,
         bool propagation_available,
         bool playback_available);
-    void setAudioSystemActive(const std::string &system_id, bool active);
-    void removeSelectedAudioSystem();
+    void setSoundSounding(const std::string &entity, bool sounding);
+    void removeSelectedSound();
 
 protected:
     std::shared_ptr<rviz_common::ros_integration::RosNodeAbstractionIface> node_ptr;
@@ -92,12 +92,12 @@ protected:
     std::shared_ptr<rclcpp::AsyncParametersClient> human_playback_parameters_client;
     std::shared_ptr<rclcpp::AsyncParametersClient> environment_playback_parameters_client;
     std::shared_ptr<rclcpp::AsyncParametersClient> propagation_parameters_client;
-    rclcpp::Client<task_generator_msgs::srv::SetAudioSystem>::SharedPtr set_audio_system_client;
+    rclcpp::Client<task_generator_msgs::srv::SetSemantic>::SharedPtr set_semantic_client;
     rclcpp::Client<task_generator_msgs::srv::RemoveMicrophone>::SharedPtr remove_microphone_client;
-    rclcpp::Client<task_generator_msgs::srv::RemoveAudioSystem>::SharedPtr remove_audio_system_client;
+    rclcpp::Client<task_generator_msgs::srv::RemoveSound>::SharedPtr remove_sound_client;
 
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr microphone_listeners_sub;
-    rclcpp::Subscription<task_generator_msgs::msg::AudioSystemState>::SharedPtr audio_system_states_sub;
+    rclcpp::Subscription<task_generator_msgs::msg::SemanticSnapshot>::SharedPtr semantic_snapshot_sub;
     rclcpp::Subscription<task_generator_msgs::msg::EpisodeRecord>::SharedPtr episode_sub;
     rclcpp::Subscription<rcl_interfaces::msg::ParameterEvent>::SharedPtr param_events_sub;
     std::string microphone_listener_registry_;
@@ -110,9 +110,9 @@ protected:
     bool audio_listener_selection_pending_{false};
     QCheckBox *propagation_checkbox{nullptr};
     QCheckBox *environment_playback_checkbox{nullptr};
-    QGroupBox *audio_systems_group{nullptr};
-    QTreeWidget *audio_systems_tree{nullptr};
-    QPushButton *remove_audio_system_button{nullptr};
+    QGroupBox *sounds_group{nullptr};
+    QTreeWidget *sounds_tree{nullptr};
+    QPushButton *remove_sound_button{nullptr};
     std::unordered_map<std::string, QDoubleSpinBox *> motor_tuning_spinboxes;
 
     void setupUi();

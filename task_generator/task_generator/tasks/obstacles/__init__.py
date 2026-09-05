@@ -18,7 +18,7 @@ class ObstacleKind(enum.Enum):
 
 
 class TM_Obstacles(TaskMode):
-    async def reset(self, **kwargs: object) -> Obstacles:
+    async def reset(self, *, seed: int) -> Obstacles:
         return [], []
 
     async def teardown(self) -> None:

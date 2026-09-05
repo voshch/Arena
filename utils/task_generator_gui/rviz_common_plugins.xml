@@ -8,8 +8,8 @@
     <class type="task_generator_gui::SpawnMicrophoneTool" base_class_type="rviz_common::Tool">
       <description>Click to spawn an indexed acoustic microphone via runtime/spawn_microphone.</description>
     </class>
-    <class type="task_generator_gui::SpawnAudioSourceTool" base_class_type="rviz_common::Tool">
-      <description>Click and drag to spawn a playing radio or alarm via runtime/spawn_audio_source.</description>
+    <class type="task_generator_gui::SpawnSoundTool" base_class_type="rviz_common::Tool">
+      <description>Click and drag to spawn a playing radio or alarm via runtime/spawn_sound.</description>
     </class>
     <class type="task_generator_gui::WorldGeneratorPanel" base_class_type="rviz_common::Panel">
       <description>Panel for generating worlds: pick algorithm, set seed and world name, edit per-algorithm parameters, then generate and stage the result.</description>

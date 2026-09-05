@@ -83,11 +83,7 @@ class AuditoryBenchmarkNode(Node):
             self._cb_heard_event,
             transient_event_qos(),
         )
-        self._publisher = (
-            self.create_publisher(SoundEvent, sound_events_topic, transient_event_qos())
-            if publish_events
-            else None
-        )
+        self._publisher = self.create_publisher(SoundEvent, sound_events_topic, transient_event_qos()) if publish_events else None
 
     def publish_synthetic_event(self) -> None:
         if self._publisher is None:
@@ -169,9 +165,7 @@ def run_once(
     try:
         while time.monotonic() < deadline:
             if process is not None and process.poll() is not None:
-                raise RuntimeError(
-                    f"{label} command exited during benchmark with code {process.returncode}"
-                )
+                raise RuntimeError(f"{label} command exited during benchmark with code {process.returncode}")
 
             now = time.monotonic()
             if now >= next_publish_wall:
@@ -209,12 +203,7 @@ def run_once(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Compare CPU and auditory event latency for the same scenario with "
-            "and without the auditory module."
-        )
-    )
+    parser = argparse.ArgumentParser(description=("Compare CPU and auditory event latency for the same scenario with and without the auditory module."))
     parser.add_argument("--baseline-cmd", help="Command that launches the scenario without auditory nodes.")
     parser.add_argument("--auditory-cmd", help="Command that launches the same scenario with auditory nodes.")
     parser.add_argument("--pid", type=int, help="Observe an already-running process tree instead of launching commands.")
@@ -360,9 +349,7 @@ def _wait_for_startup(process: subprocess.Popen[bytes], startup_delay_sec: float
 
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(
-                f"{label} command exited during startup with code {process.returncode}"
-            )
+            raise RuntimeError(f"{label} command exited during startup with code {process.returncode}")
         time.sleep(0.2)
 
 

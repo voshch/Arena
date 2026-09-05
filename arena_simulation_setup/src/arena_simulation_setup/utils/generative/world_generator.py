@@ -10,7 +10,7 @@ __all__ = ['WorldGenerator', 'WorldGeneratorType']
 
 def test_generate(out: str, name: str, config: dict) -> Path:
     gen = WorldGenerator(WorldGeneratorType(name), config)
-    return WorldIdentifier(out).resolve_sync().save(WorldDescription.from_levels(gen.compute()))
+    return WorldIdentifier(out).resolve_write_sync().save(WorldDescription.from_levels(gen.compute()))
 
 
 def main(argv: list[str] = sys.argv) -> None:

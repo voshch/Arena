@@ -45,6 +45,7 @@ class AcousticRoomSpec:
     def boundary_material_ids(self) -> tuple[str, ...]:
         return tuple(segment.material_id for segment in self.boundary)
 
+
 @attrs.frozen
 class AcousticRoomSpecConfig:
     ceiling_height_m: float = 3.0
@@ -55,48 +56,35 @@ class AcousticRoomSpecConfig:
     door_mode: Literal["closed", "open"] = "closed"
     geometry_tolerance_m: float = 1e-5
 
+
 def _is_finite_point(point: Point2D) -> bool:
     return math.isfinite(point[0]) and math.isfinite(point[1])
+
 
 def _normalize_polygon(zone: LevelDescription.Zone) -> Polygon:
     """Validate and orient an Arena zone polygon counter-clockwise."""
 
-    coordinates = [
-        (float(corner.x), float(corner.y))
-        for corner in zone.corners
-    ]
+    coordinates = [(float(corner.x), float(corner.y)) for corner in zone.corners]
 
     if len(coordinates) < 3:
-        raise ValueError(
-            f"zone {zone.name!r} has fewer than three corners"
-        )
+        raise ValueError(f"zone {zone.name!r} has fewer than three corners")
 
-    if any(
-        not _is_finite_point(coordinate)
-        for coordinate in coordinates
-    ):
-        raise ValueError(
-            f"zone {zone.name!r} contains non-finite coordinates"
-        )
+    if any(not _is_finite_point(coordinate) for coordinate in coordinates):
+        raise ValueError(f"zone {zone.name!r} contains non-finite coordinates")
 
     polygon = Polygon(coordinates)
 
     if polygon.is_empty:
-        raise ValueError(
-            f"zone {zone.name!r} has an empty polygon"
-        )
+        raise ValueError(f"zone {zone.name!r} has an empty polygon")
 
     if not polygon.is_valid:
-        raise ValueError(
-            f"zone {zone.name!r} has invalid polygon geometry"
-        )
+        raise ValueError(f"zone {zone.name!r} has invalid polygon geometry")
 
     if polygon.area <= 1e-8:
-        raise ValueError(
-            f"zone {zone.name!r} has zero or negligible area"
-        )
+        raise ValueError(f"zone {zone.name!r} has zero or negligible area")
 
     return orient(polygon, sign=1.0)
+
 
 @attrs.frozen
 class _SourceSegment:
@@ -105,6 +93,7 @@ class _SourceSegment:
     material_id: str
     kind: BoundaryKind
     height_m: float | None = None
+
 
 def _projection_parameter(
     point: Point2D,
@@ -122,9 +111,8 @@ def _projection_parameter(
     if length_squared <= 1e-12:
         raise ValueError("cannot project onto a zero-length edge")
 
-    return (
-        (px - ax) * dx + (py - ay) * dy
-    ) / length_squared
+    return ((px - ax) * dx + (py - ay) * dy) / length_squared
+
 
 def _point_on_edge(
     point: Point2D,
@@ -143,11 +131,8 @@ def _point_on_edge(
         edge_end,
     )
 
-    return (
-        -tolerance
-        <= parameter
-        <= 1.0 + tolerance
-    )
+    return -tolerance <= parameter <= 1.0 + tolerance
+
 
 def _interpolate(
     start: Point2D,
@@ -158,6 +143,7 @@ def _interpolate(
         start[0] + parameter * (end[0] - start[0]),
         start[1] + parameter * (end[1] - start[1]),
     )
+
 
 def _points_close(
     first: Point2D,
@@ -172,6 +158,7 @@ def _points_close(
         <= tolerance
     )
 
+
 def _material_name(
     identifier: MaterialIdentifier | None,
     fallback: str,
@@ -181,6 +168,7 @@ def _material_name(
 
     name = str(identifier.name).strip()
     return name or fallback
+
 
 def _segment_covers_point(
     segment: _SourceSegment,
@@ -193,6 +181,7 @@ def _segment_covers_point(
         segment.end,
         tolerance,
     )
+
 
 def _classify_subsegment(
     midpoint: Point2D,
@@ -239,6 +228,7 @@ def _classify_subsegment(
 
     return config.opening_material_id, "opening", None
 
+
 def _split_polygon_edge(
     *,
     edge_start: Point2D,
@@ -266,9 +256,7 @@ def _split_polygon_edge(
                 edge_end,
             )
 
-            breakpoints.add(
-                min(max(parameter, 0.0), 1.0)
-            )
+            breakpoints.add(min(max(parameter, 0.0), 1.0))
 
     ordered = sorted(breakpoints)
     output: list[AcousticBoundarySpec] = []
@@ -297,13 +285,11 @@ def _split_polygon_edge(
             (start_parameter + end_parameter) / 2.0,
         )
 
-        material_id, kind, height_m = (
-            _classify_subsegment(
-                midpoint,
-                doors,
-                walls,
-                config,
-            )
+        material_id, kind, height_m = _classify_subsegment(
+            midpoint,
+            doors,
+            walls,
+            config,
         )
 
         output.append(
@@ -318,22 +304,17 @@ def _split_polygon_edge(
 
     return output
 
+
 def _validate_spec(
     spec: AcousticRoomSpec,
     *,
     tolerance: float,
 ) -> None:
     if len(spec.boundary) < 3:
-        raise ValueError(
-            f"room {spec.zone_name!r} has fewer than "
-            "three boundary segments"
-        )
+        raise ValueError(f"room {spec.zone_name!r} has fewer than three boundary segments")
 
     if spec.ceiling_height_m <= 0.0:
-        raise ValueError(
-            f"room {spec.zone_name!r} has a non-positive "
-            "ceiling height"
-        )
+        raise ValueError(f"room {spec.zone_name!r} has a non-positive ceiling height")
 
     if not spec.floor_material_id:
         raise ValueError("floor material ID cannot be empty")
@@ -342,35 +323,25 @@ def _validate_spec(
         raise ValueError("ceiling material ID cannot be empty")
 
     for index, segment in enumerate(spec.boundary):
-        following = spec.boundary[
-            (index + 1) % len(spec.boundary)
-        ]
+        following = spec.boundary[(index + 1) % len(spec.boundary)]
 
         if _points_close(
             segment.start,
             segment.end,
             tolerance,
         ):
-            raise ValueError(
-                f"room {spec.zone_name!r} contains "
-                "a zero-length boundary segment"
-            )
+            raise ValueError(f"room {spec.zone_name!r} contains a zero-length boundary segment")
 
         if not _points_close(
             segment.end,
             following.start,
             tolerance,
         ):
-            raise ValueError(
-                f"room {spec.zone_name!r} has a "
-                "discontinuous boundary"
-            )
+            raise ValueError(f"room {spec.zone_name!r} has a discontinuous boundary")
 
         if not segment.material_id:
-            raise ValueError(
-                f"room {spec.zone_name!r} contains "
-                "an empty material ID"
-            )
+            raise ValueError(f"room {spec.zone_name!r} contains an empty material ID")
+
 
 class AcousticRoomSpecBuilder:
     def __init__(
@@ -383,10 +354,7 @@ class AcousticRoomSpecBuilder:
         self,
         world: WorldDescription,
     ) -> tuple[AcousticRoomSpec, ...]:
-        return tuple(
-            self._from_zone(zone)
-            for zone in world_zones(world)
-        )
+        return tuple(self._from_zone(zone) for zone in world_zones(world))
 
     def _normalize_walls(self, zone: LevelDescription.Zone) -> list[_SourceSegment]:
         return [
@@ -461,12 +429,8 @@ class AcousticRoomSpecBuilder:
             zone_name=str(zone.name),
             boundary=tuple(boundary),
             floor_material_id=floor_material_id,
-            ceiling_material_id=(
-                self._config.default_ceiling_material_id
-            ),
-            ceiling_height_m=(
-                self._config.ceiling_height_m
-            ),
+            ceiling_material_id=(self._config.default_ceiling_material_id),
+            ceiling_height_m=(self._config.ceiling_height_m),
         )
 
         _validate_spec(

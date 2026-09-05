@@ -126,16 +126,12 @@ class MultiPortalRirCoupler:
             source_xy=source_position_m[:2],
             listener_xy=listener_position_m[:2],
             max_portals=self._config.max_portal_hops,
-            distance_loss_db_per_m=(
-                self._config.route_distance_loss_db_per_m
-            ),
+            distance_loss_db_per_m=(self._config.route_distance_loss_db_per_m),
             default_door_loss_db=self._config.portal_loss_db,
             default_opening_loss_db=self._config.opening_portal_loss_db,
         )
         if route is None or not route.portals:
-            raise LookupError(
-                f"no portal route connects {source_zone!r} and {listener_zone!r}"
-            )
+            raise LookupError(f"no portal route connects {source_zone!r} and {listener_zone!r}")
         route_key = self._route_cache_key(
             route,
             source_position_m,
@@ -182,9 +178,7 @@ class MultiPortalRirCoupler:
             flat_positions.append(before)
 
         room_rirs: list[RoomImpulseResponse] = []
-        room_rirs.append(
-            self._cached_room_rir(source_zone, source_position_m, endpoints[0][0])
-        )
+        room_rirs.append(self._cached_room_rir(source_zone, source_position_m, endpoints[0][0]))
         for index, zone_name in enumerate(route.zones[1:-1], start=1):
             room_rirs.append(
                 self._cached_room_rir(
@@ -204,9 +198,7 @@ class MultiPortalRirCoupler:
         if len(sample_rates) != 1:
             raise ValueError("portal route RIR sample rates differ")
         sample_rate = room_rirs[0].sample_rate_hz
-        early_count = int(
-            math.ceil(self._config.source_room_early_window_sec * sample_rate)
-        )
+        early_count = int(math.ceil(self._config.source_room_early_window_sec * sample_rate))
         segments: list[np.ndarray] = []
         for index, rir in enumerate(room_rirs):
             samples = np.asarray(rir.samples, dtype=np.float64)
@@ -214,44 +206,23 @@ class MultiPortalRirCoupler:
                 raise ValueError("portal route contains an empty room RIR")
             if index < len(room_rirs) - 1:
                 peak = int(np.argmax(np.abs(samples)))
-                samples = samples[
-                    : min(samples.size, max(peak + 1, early_count))
-                ]
+                samples = samples[: min(samples.size, max(peak + 1, early_count))]
             segments.append(samples)
 
         coupled = segments[0]
-        maximum_count = int(
-            self._config.maximum_rir_duration_sec * sample_rate
-        )
+        maximum_count = int(self._config.maximum_rir_duration_sec * sample_rate)
         for segment in segments[1:]:
             coupled = fftconvolve(coupled, segment, mode="full")
             coupled = coupled[:maximum_count]
-        applied_loss = sum(
-            (
-                portal.loss_db
-                if portal.loss_db is not None
-                else (
-                    self._config.opening_portal_loss_db
-                    if portal.portal_kind == "opening"
-                    else self._config.portal_loss_db
-                )
-            )
-            for portal in route.portals
-        )
+        applied_loss = sum((portal.loss_db if portal.loss_db is not None else (self._config.opening_portal_loss_db if portal.portal_kind == "opening" else self._config.portal_loss_db)) for portal in route.portals)
         coupled *= 10.0 ** (-applied_loss / 20.0)
         coupled = np.asarray(coupled[:maximum_count], dtype=np.float64)
-        fallback_ids = tuple(dict.fromkeys(
-            material_id
-            for rir in room_rirs
-            for material_id in rir.fallback_material_ids
-        ))
+        fallback_ids = tuple(dict.fromkeys(material_id for rir in room_rirs for material_id in rir.fallback_material_ids))
         result = PortalCouplingResult(
             rir=RoomImpulseResponse(
                 samples=coupled,
                 sample_rate_hz=sample_rate,
-                global_delay_samples=sum(
-                    rir.global_delay_samples for rir in room_rirs
-                ),
+                global_delay_samples=sum(rir.global_delay_samples for rir in room_rirs),
                 fallback_material_ids=fallback_ids,
             ),
             portal=route.portals[0],
@@ -277,10 +248,7 @@ class MultiPortalRirCoupler:
         quantization = self._config.position_quantization_m
 
         def quantize(position: Position3D) -> tuple[int, int, int]:
-            return tuple(
-                int(round(value / quantization))
-                for value in position
-            )
+            return tuple(int(round(value / quantization)) for value in position)
 
         return (
             self._world_name,
@@ -343,17 +311,13 @@ class OneDoorRirCoupler(MultiPortalRirCoupler):
             effective = PortalCouplingConfig(
                 portal_inset_m=effective.portal_inset_m,
                 portal_loss_db=effective.portal_loss_db,
-                source_room_early_window_sec=(
-                    effective.source_room_early_window_sec
-                ),
+                source_room_early_window_sec=(effective.source_room_early_window_sec),
                 maximum_rir_duration_sec=effective.maximum_rir_duration_sec,
                 position_quantization_m=effective.position_quantization_m,
                 cache_size=effective.cache_size,
                 opening_portal_loss_db=effective.opening_portal_loss_db,
                 max_portal_hops=1,
-                route_distance_loss_db_per_m=(
-                    effective.route_distance_loss_db_per_m
-                ),
+                route_distance_loss_db_per_m=(effective.route_distance_loss_db_per_m),
             )
         super().__init__(
             adapter,

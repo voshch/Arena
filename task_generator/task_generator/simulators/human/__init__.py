@@ -24,8 +24,10 @@ from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Pose as PoseMsg
+from task_generator_msgs.msg import ContinuousHeardSoundState
 from visualization_msgs.msg import MarkerArray
 
+from task_generator.auditory.qos_profiles import continuous_audio_qos
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Region, Robot, Wall
@@ -36,7 +38,10 @@ from task_generator.simulators.human.utils import (
     KnownObstacle,
     KnownObstacles,
     ObstacleLayer,
+    stimulus_edge,
 )
+
+TOPIC_CONTINUOUS_HEARD_SOUNDS = "continuous_heard_sounds"
 
 PED_RADIUS = 0.3
 
@@ -136,6 +141,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             MovePedestrians,
             self._namespace("human", "move"),
             self._cb_human_move,
+        )
+
+        self._heard: dict[tuple[int, str], bool] = {}
+        self.node.create_subscription(
+            ContinuousHeardSoundState,
+            self.node.service_namespace(TOPIC_CONTINUOUS_HEARD_SOUNDS),
+            self._on_heard_sound,
+            continuous_audio_qos(),
         )
 
         self._lockstep_register_client: ClientWrapper = self.node.create_client_wrapper(
@@ -240,6 +253,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._ped_positions_xy[name] = (x, y)
         results = await self.relay_pedestrian_update(peds_msg)
         return all(results)
+
+    # hearing
+
+    async def _on_heard_sound(self, msg: ContinuousHeardSoundState) -> None:
+        if not msg.listener_id.startswith("agent:"):
+            return
+        agent_id = int(msg.listener_id.partition(":")[2])
+        audible = bool(msg.audible)
+        key = (agent_id, msg.sound_type)
+        if stimulus_edge(self._heard.get(key), audible):
+            await self.notify_stimulus(agent_id, msg.sound_type, 1.0 if audible else 0.0)
+        self._heard[key] = audible
 
     # possession
 
@@ -585,6 +610,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """
         self._logger.debug("unusing obstacles")
         self._close_stream_gate()
+        self._heard.clear()
 
         obstacle_names = [name for name, known in self._known_obstacles.items() if not isinstance(known.obstacle, DynamicObstacle) and known.layer == ObstacleLayer.UNUSED]
 
@@ -825,6 +851,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def unpause(self):
         pass
 
+    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
+        pass
+
     @abc.abstractmethod
     async def _spawn_obstacles_impl(
         self,
@@ -908,14 +937,25 @@ async def dummy(**kwargs: object) -> BaseHumanSimulator:
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.NONE)
-async def noop(**kwargs: object) -> BaseHumanSimulator:
-    from .noop import NoopHumanSimulator
+async def none(**kwargs: object) -> BaseHumanSimulator:
+    # 'none' launches no human-sim node (empty GroupAction in human.launch.py);
+    # the node still needs a no-op backend for the registry lookup.
+    from .dummy import DummyHumanSimulator
 
-    return NoopHumanSimulator(**kwargs)
+    return DummyHumanSimulator(**kwargs)
+
+
+@HumanSimulatorRegistry.register(Constants.HumanSimulator.ISAAC)
+async def isaacsim(**kwargs: object) -> BaseHumanSimulator:
+    from .isaac import IsaacHumanSimulator
+
+    return IsaacHumanSimulator(**kwargs)
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.HUNAV)
 async def lazy_hunavsim(**kwargs: object) -> BaseHumanSimulator:
+    # Imported lazily: hunav_msgs / hunav_sim are optional deps, so registering the
+    # backend must not require them to be installed. Only selecting human:=hunav does.
     from .hunav.hunav import HunavHumanSimulator
 
     return await HunavHumanSimulator.create(**kwargs)

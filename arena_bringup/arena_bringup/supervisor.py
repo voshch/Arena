@@ -211,6 +211,17 @@ def wait_until(
     return True
 
 
+def preload_world(args: argparse.Namespace) -> None:
+    """Warm the asset cache once, before N envs race the same cold fetch."""
+    world = next((a.split(':=', 1)[1] for a in (*args.runtime_args, *args.env_args) if a.startswith('world:=')), None)
+    if world is None:
+        return
+    world = world.partition('[')[0]
+    result = subprocess.run(['ros2', 'run', 'arena_simulation_setup', 'preload_world', world], check=False)
+    if result.returncode != 0:
+        sys.stderr.write(f'arena launch: preload of world {world!r} incomplete, continuing\n')
+
+
 def run(args: argparse.Namespace, sup: Supervisor) -> int:
     if sup.has_service(REGISTER_ENV_SERVICE):
         if args.sim is not None:
@@ -241,6 +252,8 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
 
     existing_ns = sup.viz_namespaces()
     target_count = len(existing_ns) + args.env_n
+
+    preload_world(args)
 
     for i in range(args.env_n):
         sup.spawn(

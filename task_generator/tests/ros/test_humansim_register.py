@@ -29,10 +29,3 @@ def test_arena_humansim_register_task_modes():
     )
 
     _assert_register_modes_works(ArenaHumanSimulator)
-
-
-def test_hunav_humansim_register_task_modes():
-    pytest.importorskip("hunav_msgs.msg")
-    from task_generator.simulators.human.hunav.hunav import HunavHumanSimulator
-
-    _assert_register_modes_works(HunavHumanSimulator)

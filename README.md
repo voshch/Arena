@@ -29,9 +29,15 @@ arena feature isaac install # optional
 arena feature gazebo install # optional
 arena feature training install # optional
 arena feature vllm install # optional: local LLM backend
+arena feature docker gpu on # optional: NVIDIA GPU passthrough, needed for training
+arena settings net lan # optional: let ROS 2 traffic leave this host
 ```
 
 We recommend installing at least one simulator.
+
+GPU passthrough takes effect on the next `source arena`, which recreates the container.
+
+ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted.
 
 #### vllm
 

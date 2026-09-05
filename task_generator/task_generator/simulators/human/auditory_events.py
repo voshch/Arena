@@ -124,3 +124,9 @@ class AuditoryEventDetector:
             math.cos(target_angle - observer_yaw),
         )
         return abs(angle_error) <= self._greeting_fov_rad / 2.0
+
+    @staticmethod
+    def _yaw_from_quaternion(quaternion: object) -> float:
+        siny_cosp = 2.0 * (quaternion.w * quaternion.z + quaternion.x * quaternion.y)
+        cosy_cosp = 1.0 - 2.0 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z)
+        return math.atan2(siny_cosp, cosy_cosp)

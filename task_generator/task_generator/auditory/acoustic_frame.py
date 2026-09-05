@@ -49,17 +49,9 @@ def realize_acoustic_geometry(
     realized_graph = attrs.evolve(
         graph,
         rooms=realized_rooms,
-        portals=tuple(
-            _translate_portal(portal, dx, dy) for portal in graph.portals
-        ),
-        zone_polygons=tuple(
-            (name, translate(polygon, xoff=dx, yoff=dy))
-            for name, polygon in graph.zone_polygons
-        ),
-        unpaired_doors=tuple(
-            _translate_unpaired_door(door, dx, dy)
-            for door in graph.unpaired_doors
-        ),
+        portals=tuple(_translate_portal(portal, dx, dy) for portal in graph.portals),
+        zone_polygons=tuple((name, translate(polygon, xoff=dx, yoff=dy)) for name, polygon in graph.zone_polygons),
+        unpaired_doors=tuple(_translate_unpaired_door(door, dx, dy) for door in graph.unpaired_doors),
     )
     return realized_scene, realized_rooms, realized_graph
 
@@ -75,17 +67,9 @@ def realize_rooms_and_graph(
     return realized_rooms, attrs.evolve(
         graph,
         rooms=realized_rooms,
-        portals=tuple(
-            _translate_portal(portal, dx, dy) for portal in graph.portals
-        ),
-        zone_polygons=tuple(
-            (name, translate(polygon, xoff=dx, yoff=dy))
-            for name, polygon in graph.zone_polygons
-        ),
-        unpaired_doors=tuple(
-            _translate_unpaired_door(door, dx, dy)
-            for door in graph.unpaired_doors
-        ),
+        portals=tuple(_translate_portal(portal, dx, dy) for portal in graph.portals),
+        zone_polygons=tuple((name, translate(polygon, xoff=dx, yoff=dy)) for name, polygon in graph.zone_polygons),
+        unpaired_doors=tuple(_translate_unpaired_door(door, dx, dy) for door in graph.unpaired_doors),
     )
 
 

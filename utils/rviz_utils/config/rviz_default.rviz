@@ -91,7 +91,7 @@ Visualization Manager:
       Target: {task_generator_node}
       Height: 1.5
       Attach TF Frame: ""
-    - Class: task_generator_gui::SpawnAudioSourceTool
+    - Class: task_generator_gui::SpawnSoundTool
       Target: {task_generator_node}
       Mode: Music
       Height: 1.2

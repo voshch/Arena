@@ -63,11 +63,7 @@ class RobotHearingNode(Node):
 
         self.create_timer(0.01, self._publish_due_events)
 
-        self.get_logger().info(
-            "robot hearing node listening on "
-            f"{self.get_parameter('heard_sound_events_topic').value!r}; "
-            "waiting for robot fleet"
-        )
+        self.get_logger().info(f"robot hearing node listening on {self.get_parameter('heard_sound_events_topic').value!r}; waiting for robot fleet")
 
     def _cb_heard_sound(self, msg: HeardSoundEvent) -> None:
         if not msg.listener_id.startswith("robot:"):
@@ -89,9 +85,7 @@ class RobotHearingNode(Node):
             return
 
         if bool(self.get_parameter("honor_propagation_delay").value):
-            release_time = Time.from_msg(msg.header.stamp) + rclpy.duration.Duration(
-                seconds=float(msg.direct_delay_sec)
-            )
+            release_time = Time.from_msg(msg.header.stamp) + rclpy.duration.Duration(seconds=float(msg.direct_delay_sec))
         else:
             release_time = self.get_clock().now()
 
@@ -133,10 +127,7 @@ class RobotHearingNode(Node):
                     10,
                 )
 
-            self.get_logger().info(
-                f"registered robot hearing outputs for {robot_name!r} in "
-                f"frame {self._robot_frames[robot_name]!r}"
-            )
+            self.get_logger().info(f"registered robot hearing outputs for {robot_name!r} in frame {self._robot_frames[robot_name]!r}")
 
     def _publish_due_events(self) -> None:
         if not self._pending:
@@ -157,11 +148,7 @@ class RobotHearingNode(Node):
             self._publish_heard_marker(item.robot_name, item.msg)
 
     def _publish_heard_marker(self, robot_name: str, msg: HeardSoundEvent) -> None:
-        marker_sound_types = {
-            str(value).strip().lower()
-            for value in self.get_parameter("marker_sound_types").value
-            if str(value).strip()
-        }
+        marker_sound_types = {str(value).strip().lower() for value in self.get_parameter("marker_sound_types").value if str(value).strip()}
         sound_type = str(msg.sound_type).strip().lower() or "sound"
         if marker_sound_types and sound_type not in marker_sound_types:
             return
@@ -186,28 +173,19 @@ class RobotHearingNode(Node):
 
         marker.pose.position.x = 0.0
         marker.pose.position.y = 0.0
-        marker.pose.position.z = float(
-            self.get_parameter("marker_z_offset").value
-        )
+        marker.pose.position.z = float(self.get_parameter("marker_z_offset").value)
         marker.pose.orientation.w = 1.0
 
-        marker.scale.z = float(
-            self.get_parameter("marker_text_height_m").value
-        )
+        marker.scale.z = float(self.get_parameter("marker_text_height_m").value)
         marker.color = self._marker_color(sound_type)
-        marker.text = (
-            f"HEARD {sound_type.upper()}\n"
-            f"{msg.received_volume_db:.1f} dB"
-        )
+        marker.text = f"HEARD {sound_type.upper()}\n{msg.received_volume_db:.1f} dB"
 
         lifetime = max(
             float(self.get_parameter("marker_lifetime_sec").value),
             0.0,
         )
         marker.lifetime.sec = int(lifetime)
-        marker.lifetime.nanosec = int(
-            (lifetime % 1.0) * 1_000_000_000
-        )
+        marker.lifetime.nanosec = int((lifetime % 1.0) * 1_000_000_000)
         marker.frame_locked = True
 
         pub.publish(marker)
@@ -215,18 +193,10 @@ class RobotHearingNode(Node):
     def _robot_base_frame(self, model_name: str, frame_prefix: str) -> str:
         prefix = frame_prefix.strip("/")
         try:
-            base_frame = (
-                RobotIdentifier(model_name)
-                .resolve_sync()
-                .model_params.base_frame
-                .strip("/")
-            )
+            base_frame = RobotIdentifier(model_name).resolve_sync().model_params.base_frame.strip("/")
         except Exception as exc:
             base_frame = "base_link"
-            self.get_logger().warning(
-                f"could not resolve base frame for robot model {model_name!r}: "
-                f"{exc}; using {base_frame!r}"
-            )
+            self.get_logger().warning(f"could not resolve base frame for robot model {model_name!r}: {exc}; using {base_frame!r}")
         return "/".join(part for part in (prefix, base_frame) if part)
 
     @staticmethod

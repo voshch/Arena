@@ -106,3 +106,36 @@ class Signal(Named):
     """Standalone cycling-phase semantic entity (kind = signal), no geometry."""
 
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+
+def _optional_position(value: object) -> Position | None:
+    if value is None:
+        return None
+    return Position.instance_or(Position.parse)(value)
+
+
+@attrs.define
+class Sound(Named):
+    """Standalone audible semantic entity (kind = sound), placed in the world."""
+
+    asset_id: str = attrs.field(converter=lambda value: str(value).strip())
+    position: Position | None = attrs.field(converter=_optional_position, default=None)
+    entity_ref: str = attrs.field(converter=lambda value: str(value).strip(), default='')
+    frame: str = attrs.field(converter=lambda value: str(value).strip().strip('/'), default='')
+    offset: Position = attrs.field(converter=Position.converter, factory=lambda: Position(0.0, 0.0, 0.0))
+    level: str = attrs.field(converter=lambda value: str(value).strip(), default='')
+    loop: bool = True
+    reference_distance_m: float = attrs.field(converter=float, default=1.0)
+    semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+    def __attrs_post_init__(self) -> None:
+        if not self.name or ':' in self.name:
+            raise ValueError("sound name must be non-empty and contain no ':'")
+        if not self.asset_id or ':' in self.asset_id:
+            raise ValueError(f"sound {self.name!r} asset_id must be non-empty and contain no ':'")
+        if sum((bool(self.entity_ref), self.position is not None, bool(self.frame))) != 1:
+            raise ValueError(f"sound {self.name!r} requires exactly one of position, entity_ref or frame")
+        if self.level and self.position is None:
+            raise ValueError(f"sound {self.name!r} takes level only with a direct position")
+        if self.reference_distance_m <= 0.0:
+            raise ValueError(f"sound {self.name!r} reference_distance_m must be positive")

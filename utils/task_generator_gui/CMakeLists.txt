@@ -24,7 +24,7 @@ set(CMAKE_AUTOMOC ON)
 qt5_wrap_cpp(MOC_FILES
   include/task_generator_gui/task_generator_panel.hpp
   include/task_generator_gui/auditory_panel.hpp
-  include/task_generator_gui/spawn_audio_source_tool.hpp
+  include/task_generator_gui/spawn_sound_tool.hpp
   include/task_generator_gui/spawn_microphone_tool.hpp
   include/task_generator_gui/spawn_pedestrian_tool.hpp
   include/task_generator_gui/world_generator_panel.hpp
@@ -43,7 +43,7 @@ qt5_wrap_cpp(MOC_FILES
   src/utils/dynamic_param_tree.cpp
   src/utils/sketch_edit.cpp
   src/utils/sketch_canvas.cpp
-  src/spawn_audio_source_tool.cpp
+  src/spawn_sound_tool.cpp
   src/spawn_microphone_tool.cpp
   src/spawn_pedestrian_tool.cpp
   src/world_generator_panel.cpp

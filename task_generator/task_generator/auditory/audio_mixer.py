@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import threading
-from typing import Protocol
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Protocol
 
 import attrs
 import numpy as np
-import sounddevice as sd
 
 from task_generator.auditory.asset_lib import CachedSample
+
+if TYPE_CHECKING:
+    import sounddevice as sd
 
 
 class RenderSource(Protocol):
@@ -40,6 +43,37 @@ class RenderVoice:
     bus: str = "main"
 
 
+AUTO_OUTPUT_CHAIN = ("pulse", "pipewire", "default")
+
+
+def auto_output_candidates(devices: Sequence[Mapping[str, Any]], default_index: int) -> list[int]:
+    """Output indices to try for device=auto: the named chain in order, then PortAudio's default."""
+    candidates = [index for name in AUTO_OUTPUT_CHAIN for index, description in enumerate(devices) if description["name"] == name and int(description["max_output_channels"]) > 0]
+    if 0 <= default_index < len(devices) and default_index not in candidates and int(devices[default_index]["max_output_channels"]) > 0:
+        candidates.append(default_index)
+    return candidates
+
+
+def _available_outputs() -> list[str]:
+    import sounddevice as sd
+
+    outputs = [f"{index}: {description['name']}" for index, description in enumerate(sd.query_devices()) if int(description["max_output_channels"]) > 0]
+    return outputs or ["none"]
+
+
+def _open_stream(device: str | int, **kwargs: Any) -> sd.OutputStream:
+    import sounddevice as sd
+
+    sd.query_devices(device, "output")
+    stream = sd.OutputStream(dtype="float32", device=device, **kwargs)
+    try:
+        stream.start()
+    except sd.PortAudioError:
+        stream.close()
+        raise
+    return stream
+
+
 class AudioMixer:
     def __init__(self, *, channels: int = 2, master_gain_db: float = 0.0, output: sd.OutputStream | None = None) -> None:
         self._channels = channels
@@ -53,35 +87,35 @@ class AudioMixer:
         self._last_status = ""
         self._status_count = 0
         self._stream = output
+        self.skipped_outputs: tuple[str, ...] = ()
         if self._stream is not None:
             self._stream.start()
 
     @classmethod
     def open(cls, *, sample_rate: int = 44100, channels: int = 2, block_size: int = 2048, device: str | int | None = None, master_gain_db: float = 0.0) -> AudioMixer:
+        import sounddevice as sd
+
         mixer = cls(channels=channels, master_gain_db=master_gain_db)
-        try:
-            sd.query_devices(device, "output")
-            stream = sd.OutputStream(
-                samplerate=sample_rate,
-                channels=channels,
-                dtype="float32",
-                blocksize=block_size,
-                device=device,
-                callback=mixer._callback,
-            )
-        except (ValueError, sd.PortAudioError) as exc:
-            available = [
-                f"{index}: {description['name']}"
-                for index, description in enumerate(sd.query_devices())
-                if int(description["max_output_channels"]) > 0
-            ]
-            requested = "default" if device is None else repr(device)
-            raise RuntimeError(
-                f"cannot open requested audio output {requested}: {exc}; "
-                f"available outputs={available or ['none']}"
-            ) from exc
+        kwargs = {"samplerate": sample_rate, "channels": channels, "blocksize": block_size, "callback": mixer._callback}
+        if device is not None:
+            try:
+                stream = _open_stream(device, **kwargs)
+            except (ValueError, sd.PortAudioError) as exc:
+                raise RuntimeError(f"cannot open requested audio output {device!r}: {exc}; available outputs={_available_outputs()}") from exc
+        else:
+            devices = sd.query_devices()
+            skipped: list[str] = []
+            stream = None
+            for index in auto_output_candidates(devices, sd.default.device[1]):
+                try:
+                    stream = _open_stream(index, **kwargs)
+                    break
+                except (ValueError, sd.PortAudioError) as exc:
+                    skipped.append(f"{index}: {devices[index]['name']}: {exc}")
+            if stream is None:
+                raise RuntimeError(f"cannot open any auto audio output: tried={skipped or ['none']}; available outputs={_available_outputs()}")
+            mixer.skipped_outputs = tuple(skipped)
         mixer._stream = stream
-        stream.start()
         return mixer
 
     @property
@@ -91,6 +125,14 @@ class AudioMixer:
     @property
     def device(self) -> int | None:
         return None if self._stream is None else self._stream.device
+
+    @property
+    def device_name(self) -> str | None:
+        if self._stream is None:
+            return None
+        import sounddevice as sd
+
+        return str(sd.query_devices(self._stream.device)["name"])
 
     @property
     def voice_count(self) -> int:
@@ -123,23 +165,13 @@ class AudioMixer:
         )
         with self._lock:
             if voice_id is not None:
-                self._voices = [
-                    active
-                    for active in self._voices
-                    if active.voice_id != voice_id
-                ]
+                self._voices = [active for active in self._voices if active.voice_id != voice_id]
             self._voices.append(voice)
 
     def add_render_source(self, source: RenderSource, *, voice_id: str, bus: str = "main") -> None:
         with self._lock:
-            self._render_voices = [
-                active
-                for active in self._render_voices
-                if active.voice_id != voice_id
-            ]
-            self._render_voices.append(
-                RenderVoice(source=source, voice_id=voice_id, bus=bus)
-            )
+            self._render_voices = [active for active in self._render_voices if active.voice_id != voice_id]
+            self._render_voices.append(RenderVoice(source=source, voice_id=voice_id, bus=bus))
 
     def play_looping_sequence(
         self,
@@ -164,10 +196,7 @@ class AudioMixer:
         with self._lock:
             # A duplicate start event replaces the previous motor voice rather
             # than adding another permanent loop to the mix.
-            self._voices = [
-                active for active in self._voices
-                if active.voice_id != voice_id
-            ]
+            self._voices = [active for active in self._voices if active.voice_id != voice_id]
             self._voices.append(voice)
 
     def stop(self, voice_id: str) -> bool:
@@ -216,12 +245,7 @@ class AudioMixer:
                     count = min(frames - written, remaining)
 
                     if count > 0 and bus_enabled:
-                        outdata[written:written + count] += (
-                            voice.sample.samples[
-                                voice.position:voice.position + count
-                            ]
-                            * voice.gain
-                        )
+                        outdata[written : written + count] += voice.sample.samples[voice.position : voice.position + count] * voice.gain
                     voice.position += count
                     written += count
 
@@ -236,14 +260,9 @@ class AudioMixer:
 
             active_renderers: list[RenderVoice] = []
             for voice in self._render_voices:
-                rendered = np.asarray(
-                    voice.source.render(frames), dtype=np.float32
-                )
+                rendered = np.asarray(voice.source.render(frames), dtype=np.float32)
                 if rendered.shape != outdata.shape:
-                    raise ValueError(
-                        f"render source {voice.voice_id!r} returned "
-                        f"{rendered.shape}, expected {outdata.shape}"
-                    )
+                    raise ValueError(f"render source {voice.voice_id!r} returned {rendered.shape}, expected {outdata.shape}")
                 if self._bus_enabled.get(voice.bus, True):
                     outdata += rendered
                 if not bool(voice.source.finished):
@@ -258,10 +277,7 @@ class AudioMixer:
     def _advance_voice(voice: Voice) -> bool:
         """Move a voice to its next segment after its current sample ends."""
         if voice.stage == "intro":
-            next_sample = (
-                voice.outro_sample
-                if voice.stop_requested else voice.loop_sample
-            )
+            next_sample = voice.outro_sample if voice.stop_requested else voice.loop_sample
             if next_sample is None:
                 return False
             voice.sample = next_sample
@@ -292,10 +308,6 @@ class AudioMixer:
     def _voice_is_active(voice: Voice) -> bool:
         if voice.position < len(voice.sample.samples):
             return True
-        if (
-            voice.stage == "single"
-            and voice.loop
-            and voice.stop_requested
-        ):
+        if voice.stage == "single" and voice.loop and voice.stop_requested:
             return False
         return voice.stage in {"intro", "loop"} or voice.loop

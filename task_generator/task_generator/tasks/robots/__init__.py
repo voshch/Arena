@@ -17,15 +17,13 @@ class TM_Robots(TaskMode):
         _ctx (TaskContext): Shared task context.
     """
 
-    _last_reset: int
     _start_poses: dict[str, Pose]
 
     @property
     def start_poses(self) -> dict[str, Pose]:
         return self._start_poses
 
-    async def reset(self, **kwargs: object) -> None:
-        self._last_reset = self.node.sim_time.sec
+    async def reset(self) -> None:
         self._start_poses = {}
 
     async def teardown(self) -> None:
@@ -64,9 +62,6 @@ class TM_Robots(TaskMode):
 
     @property
     async def done(self) -> bool:
-        if (self.node.sim_time.sec - self._last_reset) > self.node.conf.Robot.TIMEOUT.value:
-            return True
-
         if not self._ctx.robots:
             return False
         if not all(await asyncio.gather(*(robot_manager.is_done for robot_manager in self._ctx.robots.values()))):

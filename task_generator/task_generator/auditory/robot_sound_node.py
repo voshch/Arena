@@ -76,7 +76,7 @@ class RobotSoundNode(SoundPlaybackNode):
         self.declare_parameter("motor_marker_range_m", 1.25)
 
         self._robots: dict[str, RobotSoundSource] = {}
-        self._odom_qos = QoSProfile( history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT )
+        self._odom_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self._odom_subs = []
         self._last_speed: dict[str, float] = {}
         self._event_counter = 0
@@ -90,16 +90,10 @@ class RobotSoundNode(SoundPlaybackNode):
         )
         self._continuous_pub = self.create_publisher(
             ContinuousAudioSourceState,
-            str(
-                self.get_parameter(
-                    "continuous_audio_sources_topic"
-                ).value
-            ),
+            str(self.get_parameter("continuous_audio_sources_topic").value),
             continuous_audio_qos(),
         )
-        shared_marker_topic = str(
-            self.get_parameter("motor_marker_topic").value
-        ).strip()
+        shared_marker_topic = str(self.get_parameter("motor_marker_topic").value).strip()
         self._marker_pub = (
             self.create_publisher(
                 MarkerArray,
@@ -138,15 +132,11 @@ class RobotSoundNode(SoundPlaybackNode):
                 name=name,
                 namespace=namespace,
                 model=model,
-                effective_wheel_separation_m=(
-                    self._effective_wheel_separation(model)
-                ),
+                effective_wheel_separation_m=(self._effective_wheel_separation(model)),
                 base_frame_id=base_frame_id,
             )
             if self._marker_pub is None:
-                suffix = str(
-                    self.get_parameter("motor_marker_topic_suffix").value
-                ).strip("/")
+                suffix = str(self.get_parameter("motor_marker_topic_suffix").value).strip("/")
                 self._marker_pubs[name] = self.create_publisher(
                     MarkerArray,
                     f"{name}/{suffix}",
@@ -158,10 +148,7 @@ class RobotSoundNode(SoundPlaybackNode):
                 namespace=namespace,
                 robot_name=name,
             )
-            self.get_logger().info(
-                f"robot {name!r} motor motion sources: "
-                f"{', '.join(odom_topics)}"
-            )
+            self.get_logger().info(f"robot {name!r} motor motion sources: {', '.join(odom_topics)}")
             for odom_topic in odom_topics:
                 self._odom_subs.append(
                     self.create_subscription(
@@ -191,20 +178,12 @@ class RobotSoundNode(SoundPlaybackNode):
             f"{namespace}/odom",
         ]
         try:
-            control = (
-                RobotIdentifier(model_name)
-                .resolve_sync()
-                .model_params.control
-            )
-            model_odom = (
-                control.odom_topic.strip("/") if control is not None else ""
-            )
+            control = RobotIdentifier(model_name).resolve_sync().model_params.control
+            model_odom = control.odom_topic.strip("/") if control is not None else ""
             if model_odom:
                 topics.append(f"{namespace}/{model_odom}")
         except Exception as exc:
-            self.get_logger().warning(
-                f"could not resolve odometry topic for {model_name!r}: {exc}"
-            )
+            self.get_logger().warning(f"could not resolve odometry topic for {model_name!r}: {exc}")
         return tuple(dict.fromkeys(topic for topic in topics if topic))
 
     def _cb_odom(self, robot_name: str, msg: Odometry) -> None:
@@ -223,12 +202,8 @@ class RobotSoundNode(SoundPlaybackNode):
         half_separation = source.effective_wheel_separation_m * 0.5
         source.linear_velocity_mps = linear_velocity
         source.angular_velocity_radps = angular_velocity
-        source.left_velocity_mps = (
-            linear_velocity - angular_velocity * half_separation
-        )
-        source.right_velocity_mps = (
-            linear_velocity + angular_velocity * half_separation
-        )
+        source.left_velocity_mps = linear_velocity - angular_velocity * half_separation
+        source.right_velocity_mps = linear_velocity + angular_velocity * half_separation
         angular_scale = max(
             float(self.get_parameter("angular_speed_scale_m").value),
             0.0,
@@ -250,9 +225,7 @@ class RobotSoundNode(SoundPlaybackNode):
             if source.position is None:
                 continue
 
-            if not bool(
-                self.get_parameter("enable_robot_sound").value
-            ):
+            if not bool(self.get_parameter("enable_robot_sound").value):
                 if self._uses_procedural_audio(source):
                     self._publish_continuous_state(source, active=False)
                 if source.moving:
@@ -262,24 +235,16 @@ class RobotSoundNode(SoundPlaybackNode):
                     )
                     source.moving = False
                     if self._uses_procedural_audio(source):
-                        self.get_logger().info(
-                            f"robot {robot_name!r} procedural motor sound disabled"
-                        )
+                        self.get_logger().info(f"robot {robot_name!r} procedural motor sound disabled")
                         continue
-                    asset_id = str(
-                        self.get_parameter(
-                            "motor_stop_asset_id"
-                        ).value
-                    )
+                    asset_id = str(self.get_parameter("motor_stop_asset_id").value)
                     self._sound_pub.publish(
                         self._make_sound_event(
                             source,
                             asset_id,
                         )
                     )
-                    self.get_logger().info(
-                        f"robot {robot_name!r} motor sound disabled"
-                    )
+                    self.get_logger().info(f"robot {robot_name!r} motor sound disabled")
                 continue
 
             speed = self._last_speed.get(robot_name, 0.0)
@@ -295,14 +260,7 @@ class RobotSoundNode(SoundPlaybackNode):
             if self._uses_procedural_audio(source):
                 self._publish_continuous_state(
                     source,
-                    active=(
-                        bool(
-                            self.get_parameter(
-                                "enable_robot_sound"
-                            ).value
-                        )
-                        and moving
-                    ),
+                    active=(bool(self.get_parameter("enable_robot_sound").value) and moving),
                 )
             state_changed = moving != source.moving
             if moving:
@@ -315,29 +273,15 @@ class RobotSoundNode(SoundPlaybackNode):
 
             source.moving = moving
             if self._uses_procedural_audio(source):
-                self.get_logger().info(
-                    f"robot {robot_name!r} procedural motor "
-                    f"{'started' if moving else 'stopped'} "
-                    f"at {speed:.3f} m/s"
-                )
+                self.get_logger().info(f"robot {robot_name!r} procedural motor {'started' if moving else 'stopped'} at {speed:.3f} m/s")
                 continue
-            parameter = (
-                "motor_start_asset_id" if moving else "motor_stop_asset_id"
-            )
+            parameter = "motor_start_asset_id" if moving else "motor_stop_asset_id"
             asset_id = str(self.get_parameter(parameter).value)
-            self._sound_pub.publish(
-                self._make_sound_event(source, asset_id)
-            )
-            self.get_logger().info(
-                f"robot {robot_name!r} motor "
-                f"{'started' if moving else 'stopped'} "
-                f"at {speed:.3f} m/s"
-            )
+            self._sound_pub.publish(self._make_sound_event(source, asset_id))
+            self.get_logger().info(f"robot {robot_name!r} motor {'started' if moving else 'stopped'} at {speed:.3f} m/s")
 
     def _uses_procedural_audio(self, source: RobotSoundSource) -> bool:
-        mode = str(
-            self.get_parameter("motor_audio_mode").value
-        ).strip().lower()
+        mode = str(self.get_parameter("motor_audio_mode").value).strip().lower()
         return mode == "procedural" and source.model.lower() == "jackal"
 
     def _publish_continuous_state(
@@ -363,9 +307,7 @@ class RobotSoundNode(SoundPlaybackNode):
         msg.angular_velocity_radps = source.angular_velocity_radps
         msg.left_velocity_mps = source.left_velocity_mps
         msg.right_velocity_mps = source.right_velocity_mps
-        msg.source_volume_db = float(
-            self.get_parameter("source_volume_db").value
-        )
+        msg.source_volume_db = float(self.get_parameter("source_volume_db").value)
         msg.reference_distance_m = 1.0
         msg.active = active
         msg.deterministic_seed = self._source_seed(source.name)
@@ -383,36 +325,22 @@ class RobotSoundNode(SoundPlaybackNode):
 
     def _effective_wheel_separation(self, model_name: str) -> float:
         fallback = max(
-            2.0 * float(
-                self.get_parameter("angular_speed_scale_m").value
-            ),
+            2.0 * float(self.get_parameter("angular_speed_scale_m").value),
             1e-3,
         )
         try:
             view = RobotIdentifier(model_name).resolve_sync()
             controllers = view.control
-            controller = next(
-                value
-                for name, value in controllers.items()
-                if name != "controller_manager"
-                and isinstance(value, dict)
-                and isinstance(value.get("ros__parameters"), dict)
-                and "wheel_separation" in value["ros__parameters"]
-            )
+            controller = next(value for name, value in controllers.items() if name != "controller_manager" and isinstance(value, dict) and isinstance(value.get("ros__parameters"), dict) and "wheel_separation" in value["ros__parameters"])
             params = controller["ros__parameters"]
             separation = float(params["wheel_separation"])
-            multiplier = float(
-                params.get("wheel_separation_multiplier", 1.0)
-            )
+            multiplier = float(params.get("wheel_separation_multiplier", 1.0))
             effective = separation * multiplier
             if effective <= 0.0 or not math.isfinite(effective):
                 raise ValueError(f"invalid effective separation {effective}")
             return effective
         except Exception as exc:
-            self.get_logger().warning(
-                f"could not resolve wheel separation for {model_name!r}: "
-                f"{exc}; using {fallback:.5f} m"
-            )
+            self.get_logger().warning(f"could not resolve wheel separation for {model_name!r}: {exc}; using {fallback:.5f} m")
             return fallback
 
     def _publish_motor_cone_markers(
@@ -420,19 +348,12 @@ class RobotSoundNode(SoundPlaybackNode):
         robot_name: str,
         source: RobotSoundSource,
     ) -> None:
-        if (
-            not bool(self.get_parameter("publish_motor_markers").value)
-            or source.position is None
-        ):
+        if not bool(self.get_parameter("publish_motor_markers").value) or source.position is None:
             return
 
         cone_degrees = min(
             max(
-                float(
-                    self.get_parameter(
-                        "motor_marker_cone_degrees"
-                    ).value
-                ),
+                float(self.get_parameter("motor_marker_cone_degrees").value),
                 10.0,
             ),
             180.0,
@@ -543,18 +464,10 @@ class RobotSoundNode(SoundPlaybackNode):
     def _robot_base_frame(self, model_name: str, frame_prefix: str) -> str:
         prefix = frame_prefix.strip("/")
         try:
-            base_frame = (
-                RobotIdentifier(model_name)
-                .resolve_sync()
-                .model_params.base_frame
-                .strip("/")
-            )
+            base_frame = RobotIdentifier(model_name).resolve_sync().model_params.base_frame.strip("/")
         except Exception as exc:
             base_frame = "base_link"
-            self.get_logger().warning(
-                f"could not resolve base frame for robot model {model_name!r}: "
-                f"{exc}; using {base_frame!r}"
-            )
+            self.get_logger().warning(f"could not resolve base frame for robot model {model_name!r}: {exc}; using {base_frame!r}")
         return "/".join(part for part in (prefix, base_frame) if part)
 
     def _make_sound_event(
@@ -571,10 +484,7 @@ class RobotSoundNode(SoundPlaybackNode):
         msg = SoundEvent()
         msg.header.stamp = source.position_header.stamp
         msg.header.frame_id = source.position_header.frame_id
-        msg.event_id = (
-            f"robot:{source.name}:{stamp.sec}:{stamp.nanosec}:"
-            f"{self._event_counter}"
-        )
+        msg.event_id = f"robot:{source.name}:{stamp.sec}:{stamp.nanosec}:{self._event_counter}"
         self._event_counter += 1
 
         msg.source_agent_id = self._robot_numeric_id(source.name)

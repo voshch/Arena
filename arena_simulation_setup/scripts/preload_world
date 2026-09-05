@@ -1,118 +1,20 @@
 #! /usr/bin/env python
 """Preload all assets referenced by a world via the standard arena_models resolvers.
 
-Resolves every Material/Object/Human/Wall identifier that appears in the
-world description and its scenarios. The normal resolver chain
-(world-local → shared local → network provider) downloads any missing assets
-to disk under ``ARENA_ASSETS_DIR/<provider>``.
+Resolves every identifier that the world description and its scenarios reference.
+The normal resolver chain (world-local → shared local → network provider) downloads
+any missing assets to disk under ``ARENA_ASSETS_DIR/<provider>``.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 import traceback
 from pathlib import Path
 
-import yaml
-from arena_simulation_setup.tree import DynamicPaths, Identifier
-from arena_simulation_setup.tree.assets.Human import HumanIdentifier
-from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
-from arena_simulation_setup.tree.Wall import WallIdentifier
-from arena_simulation_setup.tree.World import (
-    MultiLevelWorldView,
-    WorldDescription,
-    WorldIdentifier,
-)
-
-
-def _world_identifiers(world_desc: WorldDescription) -> list[Identifier]:
-    out: list[Identifier] = []
-    for level in world_desc.all_levels:
-        for zone in level.zones:
-            out.append(zone.material)
-            out.append(zone.ceiling_material)
-            for wall in zone.walls:
-                if wall.material is not None:
-                    out.append(wall.material)
-                if wall.kind:
-                    out.append(WallIdentifier(wall.kind))
-            for door in zone.doors:
-                out.append(door.material)
-            for elev in zone.elevators:
-                out.append(elev.material)
-            for entity in zone.entities.static:
-                out.append(entity.model)
-            for entity in zone.entities.dynamic:
-                out.append(entity.model)
-    return out
-
-
-def _scenario_identifiers(scenario_path: Path) -> list[Identifier]:
-    out: list[Identifier] = []
-    try:
-        with open(scenario_path) as f:
-            data = yaml.safe_load(f)
-    except Exception as exc:
-        print(f'  skip {scenario_path}: {exc}', file=sys.stderr)
-        return out
-
-    if not isinstance(data, dict):
-        return out
-
-    static_entries = list(data.get('static') or [])
-    dynamic_entries = list(data.get('dynamic') or [])
-
-    legacy = data.get('obstacles')
-    if isinstance(legacy, dict):
-        static_entries.extend(legacy.get('static') or [])
-        static_entries.extend(legacy.get('interactive') or [])
-        dynamic_entries.extend(legacy.get('dynamic') or [])
-
-    for entry in static_entries:
-        if isinstance(entry, dict) and 'model' in entry:
-            try:
-                out.append(ObjectIdentifier.parse(entry['model']))
-            except Exception as exc:
-                print(f'  skip static model {entry.get("model")!r}: {exc}', file=sys.stderr)
-
-    for entry in dynamic_entries:
-        if isinstance(entry, dict) and 'model' in entry:
-            try:
-                out.append(HumanIdentifier.parse(entry['model']))
-            except Exception as exc:
-                print(f'  skip dynamic model {entry.get("model")!r}: {exc}', file=sys.stderr)
-
-    return out
-
-
-def _walk_scenarios(world_path: Path) -> list[Path]:
-    scenarios_dir = world_path / 'scenarios'
-    if not scenarios_dir.is_dir():
-        return []
-    paths: list[Path] = []
-    for entry in os.scandir(scenarios_dir):
-        if not entry.is_dir():
-            continue
-        for filename in ('scenario.yaml', 'scenario.json'):
-            candidate = Path(entry.path) / filename
-            if candidate.is_file():
-                paths.append(candidate)
-                break
-    return paths
-
-
-def _dedupe(identifiers: list[Identifier]) -> list[Identifier]:
-    seen: set[tuple[str, str]] = set()
-    unique: list[Identifier] = []
-    for ident in identifiers:
-        key = (type(ident).__name__, ident.shortname)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(ident)
-    return unique
+from arena_simulation_setup.tree import DynamicPaths, Identifier, Verdict
+from arena_simulation_setup.tree.World import MultiLevelWorldView, WorldIdentifier
 
 
 async def _resolve_all(identifiers: list[Identifier]) -> tuple[int, int]:
@@ -141,30 +43,29 @@ async def _resolve_all(identifiers: list[Identifier]) -> tuple[int, int]:
     return n_ok, total
 
 
-def _resolve_world(world_name: str) -> MultiLevelWorldView:
-    """Locate a world directory, preferring the resolver chain and falling back to ARENA_DIR."""
-    try:
-        return WorldIdentifier(world_name).resolve_sync()
-    except FileNotFoundError:
-        pass
-
-    arena_dir = os.environ.get('ARENA_DIR')
-    if arena_dir is None:
-        raise
-    candidate = Path(arena_dir) / 'arena_simulation_setup' / 'worlds' / world_name
-    if not (candidate / 'world.yaml').is_file():
-        raise FileNotFoundError(f'world {world_name!r} not found at {candidate}')
-    return MultiLevelWorldView(candidate)
+async def _probe_all(identifiers: list[Identifier]) -> tuple[int, int]:
+    total = len(identifiers)
+    width = len(str(total))
+    n_ok = 0
+    for n_done, ident in enumerate(identifiers, start=1):
+        hit = next((v for v in await ident.probe() if v.verdict is Verdict.HIT), None)
+        if hit is None:
+            print(f'[{n_done:>{width}d}/{total}] MISS {ident.shortname}', flush=True)
+        else:
+            print(f'[{n_done:>{width}d}/{total}] OK   {ident.shortname} -> {hit.path}', flush=True)
+            n_ok += 1
+    return n_ok, total
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('world_name', help='Name of the world to preload.')
     parser.add_argument('--no-scenarios', action='store_true', help='Skip scenario assets.')
+    parser.add_argument('--dry-run', action='store_true', help='Report what is missing without downloading.')
     args = parser.parse_args()
 
     try:
-        world = _resolve_world(args.world_name)
+        world: MultiLevelWorldView = WorldIdentifier(args.world_name).resolve_sync()
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -172,26 +73,15 @@ def main() -> int:
     DynamicPaths.WORLD.path = world.path
 
     try:
-        world_desc = world.load(validate=False)
+        identifiers = list(world.identifiers(scenarios=not args.no_scenarios))
     except Exception:
-        print(f'failed to load {world.world_path}:', file=sys.stderr)
+        print(f'failed to load {world.path}:', file=sys.stderr)
         traceback.print_exc()
         return 1
 
-    identifiers = _world_identifiers(world_desc)
-    print(f'world {args.world_name}: {len(identifiers)} identifier(s) from world.yaml')
+    print(f'world {args.world_name}: {len(identifiers)} unique asset(s)')
 
-    if not args.no_scenarios:
-        for scenario_path in _walk_scenarios(world.path):
-            entries = _scenario_identifiers(scenario_path)
-            if entries:
-                print(f'  + {len(entries)} from {scenario_path.relative_to(world.path)}')
-            identifiers.extend(entries)
-
-    identifiers = _dedupe(identifiers)
-    print(f'preloading {len(identifiers)} unique asset(s)...')
-
-    n_ok, n_total = asyncio.run(_resolve_all(identifiers))
+    n_ok, n_total = asyncio.run(_probe_all(identifiers) if args.dry_run else _resolve_all(identifiers))
     print(f'resolved {n_ok}/{n_total}')
     return 0 if n_ok == n_total else 1
 

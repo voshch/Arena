@@ -362,9 +362,7 @@ class CamNode(ArenaMixinNode):
                 break
             await asyncio.sleep(period)
 
-    async def capture(
-        self, endpoint: _Endpoint, position: Vec3, quat: Quat, world_orientation: bool, fov: float, min_sim_time: RosTime | None = None
-    ) -> object | None:
+    async def capture(self, endpoint: _Endpoint, position: Vec3, quat: Quat, world_orientation: bool, fov: float, min_sim_time: RosTime | None = None) -> object | None:
         req = ViewportCapture.Request()
         req.pose = surfaces.ros_pose(self._local(endpoint, position), quat)
         req.world_orientation = bool(world_orientation)

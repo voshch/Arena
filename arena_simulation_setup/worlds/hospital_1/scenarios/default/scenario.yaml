@@ -5,7 +5,7 @@ robots:
 
 dynamic:
   - name: doctor_1
-    model: male_adult_medical_01
+    model: Hospital/doctor_male_caucasian_middleage
     pose: exam_room_1
     agent: {agent_type: adult, desired_velocity: 1.4}
     waypoints:
@@ -15,7 +15,7 @@ dynamic:
       - exam_room_1
 
   - name: doctor_2
-    model: female_adult_medical_01
+    model: Hospital/nurse_female_caucasian_young
     pose: patient_ward
     agent: {agent_type: adult, desired_velocity: 1.5}
     waypoints:
@@ -25,7 +25,7 @@ dynamic:
       - patient_ward
 
   - name: doctor_3
-    model: male_adult_medical_01
+    model: Hospital/doctor_male_caucasian_middleage
     pose: laboratory
     agent: {agent_type: adult, desired_velocity: 1.3}
     waypoints:

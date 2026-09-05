@@ -41,7 +41,6 @@ class Robot(Entity):
     adapters: dict[str, str] = attrs.field(factory=dict)
     parts: dict[str, list] = attrs.field(factory=dict)
     frames: dict[str, str] = attrs.field(factory=dict, eq=False)
-    record_data_dir: str | None = None
     # resolved morphology (assembler output), None for robots without an assembly.
     # Excluded from compatible()/__eq__: it is derived from parts+model, not identity.
     resolved_assembly: object | None = attrs.field(default=None, eq=False)
@@ -53,7 +52,7 @@ class Robot(Entity):
         if not isinstance(value, Robot):
             return False
 
-        return self.compatible(value) and self.name == value.name and self.record_data_dir == value.record_data_dir
+        return self.compatible(value) and self.name == value.name
 
     @property
     def frame(self) -> FrameNamespace:
@@ -146,8 +145,6 @@ class Robot(Entity):
         elif directives or frames:
             raise RuntimeError(f"robot {name!r}: morphology/frames parametrization requires an assembly.yaml, and {model!r} has none")
 
-        record_data = value.get("record_data_dir", node.conf.Robot.RECORD_DATA_DIR.value)
-
         value['frames'] = frames
         return cls(
             name=name,
@@ -156,7 +153,6 @@ class Robot(Entity):
             adapters=adapters,
             parts=directives,
             frames=frames,
-            record_data_dir=record_data,
             resolved_assembly=resolved_assembly,
             extra=value,
         )

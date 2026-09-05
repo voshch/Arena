@@ -1,57 +1,56 @@
 robots:
-  - start: [10.0, 0.5, 1.5708]
-    goal: [4.0, 17.6, 0.0]
+  - start: [27.0, -1.5, 1.5708]
+    goal: [33.0, 20.0, 0.0]
 
 dynamic:
-  - name: nurse_1
-    model: female_adult_medical_01
-    pose: central_hallway
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.5}
+  - name: receptionist
+    model: Office/office_female_caucasian_young
+    pose: reception
+    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.2}
 
-  - name: escort_patient
-    model: male_adult_construction_01
-    pose: patient_ward
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 0.9}
+  - name: analyst
+    model: Office/office_male_asian_middleage
+    pose: main_office
+    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
 
-  - name: doctor_1
-    model: male_adult_medical_01
-    pose: exam_room_1
+  - name: manager
+    model: Office/office_male_caucasian_middleage
+    pose: executive_office_1
     agent: {agent_type: ./colleague.yaml, desired_velocity: 1.4}
 
-  - name: consult_patient
-    model: female_adult_business_02
-    pose: waiting_area
+  - name: cafeteria_regular
+    model: Office/office_female_african_young
+    pose: cafeteria
     agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
 
-  - name: queue_patient_1
-    model: male_adult_construction_02
-    pose: {x: 9.5, y: 0.5}
+  - name: visitor_1
+    model: Office/office_male_african_young
+    pose: {x: 31.5, y: -2.0}
     agent: {agent_type: ./colleague.yaml, desired_velocity: 1.1}
 
-  - name: queue_patient_2
-    model: female_adult_business_02
-    pose: {x: 10.0, y: 0.8}
+  - name: visitor_2
+    model: Office/office_female_asian_young
+    pose: {x: 32.0, y: -1.5}
     agent: {agent_type: ./colleague.yaml, desired_velocity: 0.9}
 
-  - name: queue_patient_3
-    model: male_adult_construction_03
-    pose: {x: 10.5, y: 0.5}
+  - name: visitor_3
+    model: Office/office_male_caucasian_young
+    pose: {x: 32.5, y: -2.0}
     agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
 
-  # --- Background flow ---
-  - name: doctor_2
-    model: female_adult_medical_01
-    pose: laboratory
+  - name: courier
+    model: Office/office_male_african_middleage
+    pose: storage
     agent: {agent_type: adult, desired_velocity: 1.3}
     waypoints:
-      - central_hallway
-      - operating_room
-      - central_hallway
-      - laboratory
+      - main_hallway
+      - reception
+      - main_hallway
+      - storage
 
 static:
   - name: reception_desk
-    model: desk
+    model: Office/SM_ReceptionStandA
     pose: reception
     type: desk
     capacity: 3
@@ -59,38 +58,38 @@ static:
     formation:
       type: line
       params: {base_step: 0.8, front_offset: 0.6}
-  
+
   - name: gathering_area
     type: gathering_area
-    model: chair
-    pose: [15.0, 6.0, 0.0]
+    model: Office/Sofa
+    pose: [6.0, 5.0, 0.0]
     capacity: 0
     formation:
       type: f_formation
       anchor: {kind: object, ref: gathering_area}
       params: {base_radius: 0.8, radius_per_member: 0.12}
-  
+
   - name: fountain
     type: fountain
-    model: chair
-    pose: [11.0, 10.0, 1.57]
+    model: Office/Water_Cooler
+    pose: [10.5, 5.0, 3.1416]
     capacity: 1
     satisfies: {thirst: 100.0}
     formation:
       type: line
       params: {base_step: 1.0, front_offset: 0.8}
 
-  - name: exam_chair_1
-    model: chair
-    pose: exam_room_1
+  - name: meeting_chair_1
+    model: Office/Chair_Office
+    pose: meeting_room_1
     type: chair
     capacity: 1
     interaction_radius: 0.8
 
-  - name: patient_bed_1
-    model: patient_bed
-    pose: patient_ward
-    type: patient_bed
+  - name: workstation_1
+    model: Office/Stand_Table_Work
+    pose: main_office
+    type: desk
     capacity: 1
     interaction_radius: 1.2
 
@@ -98,10 +97,10 @@ regions:
   visitor_entrance:
     type: source
     polygon:
-      - {x: 9.25, y: 0.2}
-      - {x: 10.75, y: 0.2}
-      - {x: 10.75, y: 1.2}
-      - {x: 9.25, y: 1.2}
+      - {x: 29.0, y: -2.5}
+      - {x: 32.0, y: -2.5}
+      - {x: 32.0, y: -1.5}
+      - {x: 29.0, y: -1.5}
     config:
       rate_profile:
         - {t: 0.0, rate: 0.1}
@@ -112,5 +111,14 @@ regions:
         agent_type: ./colleague.yaml
         desired_velocity: {min: 1.0, max: 1.5}
         sink_affinity:
-          - {sink: pharmacy_sink, weight: 1.0}
+          - {sink: cafeteria_sink, weight: 1.0}
 
+  cafeteria_sink:
+    type: sink
+    polygon:
+      - {x: 1.0, y: 1.0}
+      - {x: 4.0, y: 1.0}
+      - {x: 4.0, y: 4.0}
+      - {x: 1.0, y: 4.0}
+    config:
+      capacity: 8

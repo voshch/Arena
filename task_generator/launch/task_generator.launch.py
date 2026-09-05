@@ -115,7 +115,7 @@ def generate_launch_description():
     )
     # human/mobile defaults derive from arena's authoritative `sim` (the RegisterEnv
     # response, or the sim arg arena passes for managed envs). Empty here means
-    # "use arena_sim". User can still override by passing e.g. human:=hunav explicitly.
+    # "use arena_sim". User can still override by passing e.g. human:=dummy explicitly.
     human = LaunchArgument(
         name="human",
         default_value="",
@@ -135,7 +135,7 @@ def generate_launch_description():
     auditory_playback = LaunchArgument(
         name="auditory.playback",
         default_value="auto",
-        description="PortAudio output device for workstation playback; auto = system default, none = no playback nodes.",
+        description="PortAudio output device for workstation playback; auto = pulse, pipewire, default, then the PortAudio default, none = no playback nodes.",
     )
     auditory_block_size = LaunchArgument(
         name="auditory.block_size",
@@ -174,6 +174,11 @@ def generate_launch_description():
         default_value="true",
         description="Compute RIR metadata in the propagation node instead of deferring to playback.",
     )
+    auditory_ped_hearing = LaunchArgument(
+        name="auditory.ped_hearing",
+        default_value="true",
+        description="Pedestrians are propagation listeners and receive sound stimuli through the human simulator.",
+    )
     auditory_robot_sound = LaunchArgument(
         name="auditory.robot_sound",
         default_value="true",
@@ -196,10 +201,10 @@ def generate_launch_description():
         default_value="true",
         description="Play propagated environment audio locally; emission and robot hearing continue when false.",
     )
-    auditory_static_devices = LaunchArgument(
-        name="auditory.static_devices",
+    auditory_static_sounds = LaunchArgument(
+        name="auditory.static_sounds",
         default_value="[]",
-        description="YAML list of world-independent environment audio systems (radios, alarms); non-empty enables the audio_systems module.",
+        description="YAML list of world-independent sound entities (radios, alarms), same Sound schema as world.yaml sounds; non-empty enables the sounds module even with auditory:=none.",
     )
     auditory_listener = LaunchArgument(
         name="auditory.listener",
@@ -218,7 +223,11 @@ def generate_launch_description():
     )
     robot = LaunchArgument(name="robot", default_value="auto")
     tm_robots = LaunchArgument(name="task.robots", default_value="explore")
-    LaunchArgument(name="task.config", default_value="")
+    tm_config = LaunchArgument(
+        name="task.config",
+        default_value="",
+        description="Task config file (task_modes list). Overrides task.robots. Bare names resolve under arena_bringup/configs/tasks.",
+    )
     episodes = LaunchArgument(
         name='task.episodes',
         default_value='-1',
@@ -263,7 +272,6 @@ def generate_launch_description():
         default_value="",
         description="comma list of debug tokens (e.g. aiomonitor,map_server); also debug.<token>:=true",
     )
-    debug = LaunchArgument(name="debug", default_value="False")
     auto_reset = LaunchArgument(
         name="task.auto_reset",
         default_value="true",
@@ -314,15 +322,19 @@ def generate_launch_description():
             for value in tm_modules_val.split(",")
             if value.strip()
         ]
-        static_devices_val = launch.utilities.perform_substitutions(
+        static_sounds_val = launch.utilities.perform_substitutions(
             context,
             launch.utilities.normalize_to_list_of_substitutions(
-                auditory_static_devices.substitution
+                auditory_static_sounds.substitution
             ),
         ).strip()
-        static_audio_enabled = static_devices_val not in ("", "[]")
-        if static_audio_enabled and "audio_systems" not in configured_modules:
-            configured_modules.append("audio_systems")
+        auditory_val = launch.utilities.perform_substitutions(
+            context,
+            launch.utilities.normalize_to_list_of_substitutions(auditory.substitution),
+        ).strip()
+        sounds_enabled = auditory_val != "none" or static_sounds_val not in ("", "[]")
+        if sounds_enabled and "sounds" not in configured_modules:
+            configured_modules.append("sounds")
         tm_modules_val = ",".join(configured_modules)
 
         planner_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(planner.substitution))
@@ -370,6 +382,7 @@ def generate_launch_description():
                 **auditory_propagation.dict,
                 **auditory_multi_portal.dict,
                 **auditory_rir_in_propagation.dict,
+                **auditory_ped_hearing.dict,
                 **auditory_robot_sound.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
@@ -397,7 +410,7 @@ def generate_launch_description():
         for k, v in context.launch_configurations.items():
             if k in declared:
                 continue
-            if k.startswith("task.") or k.startswith("robot.mobile.") or k.startswith("robot.arm."):
+            if k.startswith(("task.", "robot.")):
                 # `robot.<cap>.<key>:=<val>` lands as a kwarg in
                 # RobotManager._adapter_kwargs_for, overlaying the cap-file
                 # YAML for the bound adapter.
@@ -407,6 +420,21 @@ def generate_launch_description():
             param_key = f"robot.mobile.{sel_key}"
             if param_key not in dotted_overrides:
                 dotted_overrides[param_key] = sel_val
+
+        scenario_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(scenario_file.substitution)).strip()
+        if scenario_val:
+            dotted_overrides["task.scenario.file"] = scenario_val
+
+        tm_config_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(tm_config.substitution)).strip()
+        if tm_config_val:
+            if os.sep in tm_config_val:
+                tm_config_val = os.path.abspath(tm_config_val)
+            else:
+                if not tm_config_val.endswith((".yaml", ".yml")):
+                    tm_config_val += ".yaml"
+                tm_config_val = os.path.join(bringup_dir, "configs", "tasks", tm_config_val)
+            if not os.path.isfile(tm_config_val):
+                raise FileNotFoundError(f"task.config: {tm_config_val} does not exist")
 
         dotted_overrides.update(expand_flag_namespace(context, "optim", launch_str_to_value))
         debug_flags = expand_flag_namespace(context, "debug", launch_str_to_value)
@@ -442,10 +470,10 @@ def generate_launch_description():
                     **robot.str_param,
                     "tm_robots": tm_robots.param_value(str),
                     "tm_obstacles": tm_obstacles.param_value(str),
+                    "tm_config": tm_config_val,
                     "tm_modules": tm_modules_val,
                     **world.str_param,
-                    "static_audio_devices": auditory_static_devices.param_value(str),
-                    "record_data_dir": record_dir.param_value(str),
+                    "static_sounds": auditory_static_sounds.param_value(str),
                     "auto_reset": auto_reset.param_value(bool),
                     "fail_on_collision": fail_on_collision.param_value(bool),
                     "train_mode": train_mode.param_value(bool),
@@ -453,10 +481,7 @@ def generate_launch_description():
                     "prefix": prefix_val,
                 },
                 parameter_file.substitution,
-                {
-                    "episodes": episodes.param_value(int),
-                    'task.scenario.file': scenario_file.substitution,
-                },
+                {"episodes": episodes.param_value(int)},
                 *overrides_files,
             ],
         )

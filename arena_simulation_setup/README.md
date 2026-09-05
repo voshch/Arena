@@ -14,9 +14,7 @@ pedestrian agents, and environment templates through the types defined here.
   YAML binds; obstacle group schema; `EnvironmentIdentifier` resolution.
 - [Wall presets](configs/walls/README.md): `WallDescription` YAML schema;
   sub-wall types; how `world.yaml` references a wall preset by `kind:`.
-- [HuNav configs](configs/hunav/README.md): `default.yaml` agent template;
-  shared behavior tree library under `behavior_trees/`.
-- [Authoring a world](AUTHORING.md): end-to-end guide: create dir, author
+- [Authoring a world](AUTHORING.md) — end-to-end guide: create dir, author
   `world.yaml`, generate map, add scenario, validate.
 - [Generative worlds](src/arena_simulation_setup/utils/generative/README.md):
   the generator registry, the layout IR they compile to, the sketch and letter
@@ -26,22 +24,21 @@ pedestrian agents, and environment templates through the types defined here.
 
 | Script | Usage | Effect |
 |---|---|---|
-| `download_assets` | `download_assets [provider] [relpath]` | Fetches assets from a named network provider via `ros2 run arena_models arena_models net <provider> fetch` |
 | `generate_world` | `generate_world "<prompt>" [-e endpoint] [-o outdir]` | Posts a natural-language prompt to a generation server; extracts the returned zip into `worlds/<outdir>/` |
 | `model_staging` | `model_staging <install_dir>` | Creates symlinks in `<install_dir>` for all known robot models and writes a `deps` file |
+| `preload_world` | `preload_world <world_name> [--no-scenarios] [--dry-run]` | Resolves every identifier the world and its scenarios reference, downloading what is missing. `--dry-run` reports without transferring. Reached from the CLI as `arena preload`. |
 | `touch_world` | `touch_world <world_name> [--all] [--resolution N] [--assets color] ...` | Renders a preview `map.png` + `map.yaml` into the world dir for inspection; `--all` regenerates canonical per-level `world.yaml` + maps. The runtime renders its own map in-process, so this is an authoring aid, not required after editing. |
 
-Scripts live under [scripts/](scripts).
+Scripts live under [scripts/](scripts). To fetch a single asset by identifier, use `arena asset pull <kind> <name>`.
 
 ## Human assets and skeletal articulation
 
 ### arenian actor
 
-`assets/Common/Human/arenian/arenian.sdf` defines the default Gazebo
-pedestrian as an SDF `<actor>` with a `walk.dae` skin (Mingfei/Fuel) and a named
-`walk` animation clip. The actor form is
-required so Gazebo registers the skinned mesh and the clip that `PedSkeletonPlugin`
-scrubs.
+`arenian` is the default pedestrian. Like every other human it is an `arena_humans`
+bundle (MakeHuman skin, CMU clips, `cmu_mb` rig) fetched from the asset bucket, not
+shipped in the repo. The SDF `<actor>` form is required so Gazebo registers the skinned
+mesh and the clips that `PedSkeletonPlugin` scrubs.
 
 **gpu_lidar implication.** Arena's lidar sensor is `gpu_lidar`, a rendering
 sensor that forces a server-side render scene even in headless mode.  Because

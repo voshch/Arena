@@ -434,6 +434,14 @@ void DynamicParamTree::buildTreeWidgets(const std::shared_ptr<RebuildState>& sta
                         on_changed_(leaf);
                     });
             }
+            else if (auto *te = qobject_cast<QTextEdit *>(w))
+            {
+                QObject::connect(te, &QTextEdit::textChanged, tree_,
+                    [this, leaf]()
+                    {
+                        on_changed_(leaf);
+                    });
+            }
             else if (auto *cb = qobject_cast<QCheckBox *>(w))
             {
                 QObject::connect(cb, &QCheckBox::toggled, tree_,

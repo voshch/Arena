@@ -120,15 +120,15 @@ namespace task_generator_gui
             std::make_shared<rclcpp::AsyncParametersClient>(
                 node,
                 propagation_node);
-        set_audio_system_client =
-            node->create_client<task_generator_msgs::srv::SetAudioSystem>(
-                task_generator_node + "/runtime/set_audio_system");
+        set_semantic_client =
+            node->create_client<task_generator_msgs::srv::SetSemantic>(
+                task_generator_node + "/semantics/set");
         remove_microphone_client =
             node->create_client<task_generator_msgs::srv::RemoveMicrophone>(
                 task_generator_node + "/runtime/remove_microphone");
-        remove_audio_system_client =
-            node->create_client<task_generator_msgs::srv::RemoveAudioSystem>(
-                task_generator_node + "/runtime/remove_audio_system");
+        remove_sound_client =
+            node->create_client<task_generator_msgs::srv::RemoveSound>(
+                task_generator_node + "/runtime/remove_sound");
         {
             rclcpp::QoS qos(rclcpp::KeepLast(1));
             qos.transient_local();
@@ -146,69 +146,77 @@ namespace task_generator_gui
         }
 
         {
-            rclcpp::QoS qos(rclcpp::KeepLast(32));
+            rclcpp::QoS qos(rclcpp::KeepLast(1));
             qos.transient_local();
-            audio_system_states_sub = node->create_subscription<
-                task_generator_msgs::msg::AudioSystemState>(
-                task_generator_node + "/audio_system_states",
+            semantic_snapshot_sub = node->create_subscription<
+                task_generator_msgs::msg::SemanticSnapshot>(
+                task_generator_node + "/state/semantics",
                 qos,
                 [this](
-                    const task_generator_msgs::msg::AudioSystemState::SharedPtr msg)
+                    const task_generator_msgs::msg::SemanticSnapshot::SharedPtr msg)
                 {
                     QMetaObject::invokeMethod(
                         this,
                         [this, msg]()
                         {
-                            if (!audio_systems_tree || !audio_systems_group)
+                            if (!sounds_tree || !sounds_group)
                                 return;
-                            QSignalBlocker blocker(audio_systems_tree);
-                            QTreeWidgetItem *item = nullptr;
-                            for (int index = 0;
-                                 index < audio_systems_tree->topLevelItemCount();
-                                 ++index)
+                            QSignalBlocker blocker(sounds_tree);
+                            QString selected_entity;
+                            if (!sounds_tree->selectedItems().isEmpty())
+                                selected_entity = sounds_tree->selectedItems()
+                                                      .front()
+                                                      ->data(0, Qt::UserRole)
+                                                      .toString();
+                            sounds_tree->clear();
+                            for (const auto &entity : msg->entities)
                             {
-                                auto candidate =
-                                    audio_systems_tree->topLevelItem(index);
-                                if (candidate->data(0, Qt::UserRole).toString()
-                                    == QString::fromStdString(msg->system_id))
+                                if (entity.kind != "sound")
+                                    continue;
+                                bool sounding = false;
+                                for (size_t index = 0;
+                                     index < entity.predicate_names.size();
+                                     ++index)
                                 {
-                                    item = candidate;
-                                    break;
+                                    if (entity.predicate_names[index] == "sounding")
+                                    {
+                                        sounding = entity.predicate_values[index];
+                                        break;
+                                    }
                                 }
-                            }
-                            if (msg->emitter_ids.empty())
-                            {
-                                if (item)
-                                    delete item;
-                                audio_systems_group->setEnabled(
-                                    audio_systems_tree->topLevelItemCount() > 0);
-                                return;
-                            }
-                            if (!item)
-                            {
-                                item = new QTreeWidgetItem(audio_systems_tree);
+                                double volume_db = 0.0;
+                                for (size_t index = 0;
+                                     index < entity.continuous_names.size();
+                                     ++index)
+                                {
+                                    if (entity.continuous_names[index] == "volume_db")
+                                    {
+                                        volume_db = entity.continuous_values[index];
+                                        break;
+                                    }
+                                }
+                                auto *item = new QTreeWidgetItem(sounds_tree);
                                 item->setData(
                                     0,
                                     Qt::UserRole,
-                                    QString::fromStdString(msg->system_id));
+                                    QString::fromStdString(entity.entity));
                                 item->setFlags(
                                     item->flags() | Qt::ItemIsUserCheckable);
+                                item->setText(
+                                    0,
+                                    QString::fromStdString(entity.entity));
+                                item->setText(
+                                    1,
+                                    QString::number(volume_db, 'f', 1) + " dB");
+                                item->setCheckState(
+                                    0,
+                                    sounding ? Qt::Checked : Qt::Unchecked);
+                                if (!selected_entity.isEmpty() &&
+                                    item->data(0, Qt::UserRole).toString() == selected_entity)
+                                    item->setSelected(true);
                             }
-                            item->setText(
-                                0,
-                                QString::fromStdString(msg->system_id));
-                            item->setText(
-                                1,
-                                QString::fromStdString(
-                                    msg->sound_type + " / " + msg->asset_id));
-                            item->setText(
-                                2,
-                                QString::number(
-                                    static_cast<int>(msg->emitter_ids.size())));
-                            item->setCheckState(
-                                0,
-                                msg->active ? Qt::Checked : Qt::Unchecked);
-                            audio_systems_group->setEnabled(true);
+                            sounds_group->setEnabled(
+                                sounds_tree->topLevelItemCount() > 0);
                         },
                         Qt::QueuedConnection);
                 });
@@ -884,23 +892,23 @@ namespace task_generator_gui
         }
     }
 
-    void AuditoryPanel::removeSelectedAudioSystem()
+    void AuditoryPanel::removeSelectedSound()
     {
-        if (!audio_systems_tree
-            || !remove_audio_system_client
-            || !remove_audio_system_client->service_is_ready())
+        if (!sounds_tree
+            || !remove_sound_client
+            || !remove_sound_client->service_is_ready())
             return;
-        const auto items = audio_systems_tree->selectedItems();
+        const auto items = sounds_tree->selectedItems();
         if (items.isEmpty())
             return;
-        const std::string system_id =
+        const std::string entity =
             items.front()->data(0, Qt::UserRole).toString().toStdString();
         auto request = std::make_shared<
-            task_generator_msgs::srv::RemoveAudioSystem::Request>();
-        request->system_id = system_id;
-        remove_audio_system_client->async_send_request(
+            task_generator_msgs::srv::RemoveSound::Request>();
+        request->entity = entity;
+        remove_sound_client->async_send_request(
             request,
-            [this, system_id]( rclcpp::Client<task_generator_msgs::srv::RemoveAudioSystem>::SharedFuture future)
+            [this, entity]( rclcpp::Client<task_generator_msgs::srv::RemoveSound>::SharedFuture future)
             {
                 try
                 {
@@ -908,43 +916,42 @@ namespace task_generator_gui
                     if (!response->success)
                         RCLCPP_WARN(
                             node->get_logger(),
-                            "removing audio source %s failed: %s",
-                            system_id.c_str(), response->error_msg.c_str());
+                            "removing sound %s failed: %s",
+                            entity.c_str(), response->error_msg.c_str());
                 }
                 catch (const std::exception &exception)
                 {
                     RCLCPP_WARN(
                         node->get_logger(),
-                        "removing audio source %s failed: %s",
-                        system_id.c_str(), exception.what());
+                        "removing sound %s failed: %s",
+                        entity.c_str(), exception.what());
                 }
             });
     }
 
-    void AuditoryPanel::setAudioSystemActive(
-        const std::string &system_id,
-        bool active)
+    void AuditoryPanel::setSoundSounding(
+        const std::string &entity,
+        bool sounding)
     {
-        if (system_id.empty()
-            || !set_audio_system_client
-            || !set_audio_system_client->service_is_ready())
+        if (entity.empty()
+            || !set_semantic_client
+            || !set_semantic_client->service_is_ready())
         {
-            if (audio_systems_group)
-                audio_systems_group->setEnabled(false);
             RCLCPP_WARN(
                 node->get_logger(),
-                "environment audio control is unavailable. Launch with "
-                "auditory.static_devices:=[...]");
+                "semantics service is unavailable, cannot set sounding for %s",
+                entity.c_str());
             return;
         }
         auto request =
-            std::make_shared<task_generator_msgs::srv::SetAudioSystem::Request>();
-        request->system_id = system_id;
-        request->active = active;
-        set_audio_system_client->async_send_request(
+            std::make_shared<task_generator_msgs::srv::SetSemantic::Request>();
+        request->entity = entity;
+        request->field = "sounding";
+        request->value = sounding ? "true" : "false";
+        set_semantic_client->async_send_request(
             request,
-            [this, system_id](
-                rclcpp::Client<task_generator_msgs::srv::SetAudioSystem>::SharedFuture
+            [this, entity](
+                rclcpp::Client<task_generator_msgs::srv::SetSemantic>::SharedFuture
                     future)
             {
                 try
@@ -954,8 +961,8 @@ namespace task_generator_gui
                     {
                         RCLCPP_WARN(
                             node->get_logger(),
-                            "setting environment audio system %s failed: %s",
-                            system_id.c_str(),
+                            "setting sounding on %s failed: %s",
+                            entity.c_str(),
                             response->error_msg.c_str());
                     }
                 }
@@ -963,8 +970,8 @@ namespace task_generator_gui
                 {
                     RCLCPP_WARN(
                         node->get_logger(),
-                        "setting environment audio system %s failed: %s",
-                        system_id.c_str(),
+                        "setting sounding on %s failed: %s",
+                        entity.c_str(),
                         exception.what());
                 }
             });
@@ -1019,53 +1026,50 @@ namespace task_generator_gui
         audio_listener_group->setLayout(audio_listener_layout);
         root_layout->addWidget(audio_listener_group);
 
-        audio_systems_group = new QGroupBox("Environment Audio Sources");
-        audio_systems_group->setEnabled(false);
-        auto audio_systems_layout = new QVBoxLayout();
-        audio_systems_tree = new QTreeWidget();
-        audio_systems_tree->setColumnCount(3);
-        audio_systems_tree->setHeaderLabels(
-            QStringList{"Active / system", "Type / asset", "Speakers"});
-        audio_systems_tree->setRootIsDecorated(false);
-        audio_systems_tree->setToolTip(
-            "Check a source to start it. Each row may drive several "
-            "independent speaker positions.");
+        sounds_group = new QGroupBox("Sound Entities");
+        sounds_group->setEnabled(false);
+        auto sounds_layout = new QVBoxLayout();
+        sounds_tree = new QTreeWidget();
+        sounds_tree->setColumnCount(2);
+        sounds_tree->setHeaderLabels(
+            QStringList{"Active / entity", "Volume"});
+        sounds_tree->setRootIsDecorated(false);
+        sounds_tree->setToolTip(
+            "Check a sound to start it. Volume reflects the current "
+            "semantic volume_db.");
         connect(
-            audio_systems_tree,
+            sounds_tree,
             &QTreeWidget::itemChanged,
             this,
             [this](QTreeWidgetItem *item, int column)
             {
                 if (column != 0)
                     return;
-                setAudioSystemActive(
+                setSoundSounding(
                     item->data(0, Qt::UserRole).toString().toStdString(),
                     item->checkState(0) == Qt::Checked);
             });
-        audio_systems_layout->addWidget(audio_systems_tree);
-        remove_audio_system_button = new QPushButton(
+        sounds_layout->addWidget(sounds_tree);
+        remove_sound_button = new QPushButton(
             "Remove selected runtime source");
-        remove_audio_system_button->setEnabled(false);
+        remove_sound_button->setEnabled(false);
         connect(
-            remove_audio_system_button,
+            remove_sound_button,
             &QPushButton::clicked,
             this,
-            &AuditoryPanel::removeSelectedAudioSystem);
+            &AuditoryPanel::removeSelectedSound);
         connect(
-            audio_systems_tree,
+            sounds_tree,
             &QTreeWidget::itemSelectionChanged,
             this,
             [this]()
             {
-                const auto items = audio_systems_tree->selectedItems();
-                remove_audio_system_button->setEnabled(
-                    !items.isEmpty()
-                    && items.front()->data(0, Qt::UserRole).toString()
-                        .startsWith("runtime_"));
+                remove_sound_button->setEnabled(
+                    !sounds_tree->selectedItems().isEmpty());
             });
-        audio_systems_layout->addWidget(remove_audio_system_button);
-        audio_systems_group->setLayout(audio_systems_layout);
-        root_layout->addWidget(audio_systems_group);
+        sounds_layout->addWidget(remove_sound_button);
+        sounds_group->setLayout(sounds_layout);
+        root_layout->addWidget(sounds_group);
 
         motor_playback_checkbox = new QCheckBox(
             "Play robot motor audio on this workstation");

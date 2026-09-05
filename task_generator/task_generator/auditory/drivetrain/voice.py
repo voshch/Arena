@@ -15,6 +15,7 @@ drive from a control loop whose tick rate wobbles.
 Requires numpy. Nothing else — `stream.py` is standard library only and can be
 lifted out on its own.
 """
+
 import math
 from collections.abc import Mapping
 from typing import Any
@@ -24,8 +25,7 @@ from numpy.typing import ArrayLike, DTypeLike, NDArray
 
 from .spec import JACKAL, DrivetrainSpec
 
-__all__ = ["DrivetrainVoice", "TransferFilter", "design_transfer_fir",
-           "prewarm", "clear_cache", "cache_bytes", "OUTPUT_GAIN"]
+__all__ = ["DrivetrainVoice", "TransferFilter", "design_transfer_fir", "prewarm", "clear_cache", "cache_bytes", "OUTPUT_GAIN"]
 
 #: Default output scaling. The model works in its own units, where a two-voice
 #: mix at the Jackal's 2 m/s top speed runs an rms of 3.3 and a crest factor of
@@ -40,9 +40,9 @@ OUTPUT_GAIN = 0.04
 
 TWO_PI = 2.0 * math.pi
 Q32 = 1 << 32
-ORDER_DEN = 1024                  # orders are carried as integer m / ORDER_DEN
-_MOD = ORDER_DEN * Q32            # phase modulus; see the note on exactness below
-_CHUNK = 4096                     # internal subdivision, bounds peak memory only
+ORDER_DEN = 1024  # orders are carried as integer m / ORDER_DEN
+_MOD = ORDER_DEN * Q32  # phase modulus; see the note on exactness below
+_CHUNK = 4096  # internal subdivision, bounds peak memory only
 
 
 # ----------------------------------------------------------------------------
@@ -68,8 +68,7 @@ def design_transfer_fir(spec: DrivetrainSpec) -> NDArray[np.float64] | None:
     fh = np.asarray(spec.transfer_hz, float)
     hd = np.asarray(spec.transfer_db, float)
     grid = np.concatenate([[0.0], np.geomspace(20.0, ny * 0.999, 400), [ny]])
-    g = np.interp(np.log(np.maximum(grid, 1e-9)), np.log(fh), hd,
-                  left=hd[0], right=hd[-1])
+    g = np.interp(np.log(np.maximum(grid, 1e-9)), np.log(fh), hd, left=hd[0], right=hd[-1])
     amp = 10.0 ** ((g - g.max()) / 20.0)
     amp[0] = amp[1]
     return _firwin2(spec.transfer_taps, grid / ny, amp)
@@ -97,7 +96,7 @@ class TransferFilter:
 
     def __call__(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
         z = np.concatenate([self._tail, x])
-        self._tail = z[len(z) - (len(self.taps) - 1):].copy()
+        self._tail = z[len(z) - (len(self.taps) - 1) :].copy()
         return np.convolve(z, self.taps, mode="valid")
 
 
@@ -158,7 +157,7 @@ def _build(spec: DrivetrainSpec, seed: int, dtype: np.dtype) -> _Tables:
         lo = np.log(og)
         sl_hi = (qd[-1] - qd[-2]) / (lo[-1] - lo[-2])
         sl_lo = (qd[1] - qd[0]) / (lo[1] - lo[0])
-        nu_max = spec.order_max * spec.K / TWO_PI          # cycles per metre
+        nu_max = spec.order_max * spec.K / TWO_PI  # cycles per metre
         t.dx0 = 1.0 / (2.0 * nu_max)
         n = int(spec.field_metres / t.dx0) // 2 * 2
         if spec.field_smooth:
@@ -188,7 +187,7 @@ def _build(spec: DrivetrainSpec, seed: int, dtype: np.dtype) -> _Tables:
             if len(cur) < 64:
                 break
             cf = np.fft.rfft(cur)
-            cf[len(cf) // 2:] = 0.0
+            cf[len(cf) // 2 :] = 0.0
             cur = np.fft.irfft(cf, n=len(cur))[::2].copy()
     t.nbytes = sum(lv.nbytes for lv in t.levels)
     return t
@@ -253,8 +252,7 @@ class DrivetrainVoice:
     a consumer thread.
     """
 
-    def __init__(self, spec: DrivetrainSpec | Mapping[str, Any] = JACKAL, index: int = 0, count: int | None = None, seed: int = 0, k: float | None = None,
-                 transfer: bool = True, gain: float | None = None, field_dtype: DTypeLike = "float32") -> None:
+    def __init__(self, spec: DrivetrainSpec | Mapping[str, Any] = JACKAL, index: int = 0, count: int | None = None, seed: int = 0, k: float | None = None, transfer: bool = True, gain: float | None = None, field_dtype: DTypeLike = "float32") -> None:
         if not isinstance(spec, DrivetrainSpec):
             spec = DrivetrainSpec.from_dict(dict(spec))
         self.spec = spec
@@ -344,11 +342,7 @@ class DrivetrainVoice:
         frequency_scale = float(frequency_scale)
         tonal_scale = 10.0 ** (float(tonal_gain_db) / 20.0)
         broadband_scale = 10.0 ** (float(broadband_gain_db) / 20.0)
-        velocity_exponent = (
-            self.spec.speed_exponent
-            if speed_exponent is None
-            else float(speed_exponent)
-        )
+        velocity_exponent = self.spec.speed_exponent if speed_exponent is None else float(speed_exponent)
 
         dt = 1.0 / self.sample_rate
         out = np.empty(n)
@@ -420,8 +414,7 @@ class DrivetrainVoice:
             if np.any(cand):
                 m = self._m[cand]
                 ang = (m[:, None] * psi_q[None, :]) % _MOD
-                side = self._a[cand][:, None] * np.sin(
-                    ang * (TWO_PI / _MOD) + self._ph[cand][:, None])
+                side = self._a[cand][:, None] * np.sin(ang * (TWO_PI / _MOD) + self._ph[cand][:, None])
                 # taper into the limit rather than switching: a hard switch
                 # clicks, and the click is broadband
                 fk = self._order[cand][:, None] * f_mesh[None, :]
@@ -430,18 +423,13 @@ class DrivetrainVoice:
 
         # ---- broadband: mipmapped distance field, read at dx/dt ----
         if self._levels:
-            dxq = np.rint(
-                pitch_v * dt / self.field_metres * Q32
-            ).astype(np.int64)
+            dxq = np.rint(pitch_v * dt / self.field_metres * Q32).astype(np.int64)
             x_q = (self._x_q + np.cumsum(dxq)) % Q32
             self._x_q = int(x_q[-1])
             pos0 = x_q * (self.field_metres / Q32) / self._dx0  # level-0 samples
             # choose the level so the read rate stays below 1/headroom, i.e.
             # always interpolating, never decimating
-            lf = np.log2(
-                np.maximum(pitch_av * dt / self._dx0, 1e-12)
-                * s.field_headroom
-            )
+            lf = np.log2(np.maximum(pitch_av * dt / self._dx0, 1e-12) * s.field_headroom)
             lf = np.clip(lf, 0.0, len(self._levels) - 1.000001)
             l0 = np.floor(lf).astype(np.int64)
             fr = lf - l0
@@ -454,11 +442,7 @@ class DrivetrainVoice:
                     continue
                 wgt = np.where(l0[sel] == lv, 1.0 - fr[sel], fr[sel])
                 bb[sel] += wgt * self._read(int(lv), pos0[sel])
-            acc += (
-                bb
-                * 10.0 ** (s.broadband_gain_db / 20.0)
-                * broadband_scale
-            )
+            acc += bb * 10.0 ** (s.broadband_gain_db / 20.0) * broadband_scale
 
         # the 1/count mix scaling lives in self.gain, applied once in render()
         g = (av / max(s.v_ref, 1e-9)) ** speed_exponent

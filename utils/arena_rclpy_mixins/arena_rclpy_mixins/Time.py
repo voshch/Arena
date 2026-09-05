@@ -3,6 +3,7 @@ import contextlib
 import datetime
 import functools
 import math
+import threading
 import typing
 
 import attrs
@@ -155,6 +156,11 @@ class Time:
         return self.sec * _NANOSECONDS_PER_SECOND + self.nanosec
 
 
+def _resolve(future: asyncio.Future[None]) -> None:
+    if not future.done():
+        future.set_result(None)
+
+
 class TimeNode(rclpy.node.Node):
     """Mixin class to provide clock utilities for rclpy nodes."""
 
@@ -168,6 +174,9 @@ class TimeNode(rclpy.node.Node):
         )
         self.__sim_time: Time = Time()
         self.__wall_clock: rclpy.clock.Clock | None = None
+        self.__clock_waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = []
+        self.__clock_listeners: list[typing.Callable[[Time], None]] = []
+        self.__clock_lock = threading.Lock()
 
     def __clock_callback(self, msg: rosgraph_msgs.msg.Clock):
         """Callback for /clock topic to update node clock when using simulated time.
@@ -175,7 +184,34 @@ class TimeNode(rclpy.node.Node):
         Args:
             msg (rosgraph_msgs.msg.Clock): Clock message
         """
-        self.__sim_time = Time.from_rosgraph_msg(msg)
+        now = Time.from_rosgraph_msg(msg)
+        self.__sim_time = now
+        with self.__clock_lock:
+            listeners = list(self.__clock_listeners)
+            waiters, self.__clock_waiters = self.__clock_waiters, []
+        for listener in listeners:
+            listener(now)
+        for loop, future in waiters:
+            loop.call_soon_threadsafe(_resolve, future)
+
+    def next_clock(self) -> asyncio.Future[None]:
+        """Future resolved by the next /clock message."""
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[None] = loop.create_future()
+        with self.__clock_lock:
+            self.__clock_waiters.append((loop, future))
+        return future
+
+    async def await_sim_time(self, target: Time, freeze_timeout: float | None = None) -> bool:
+        """Wait until sim time reaches target. False once /clock stays silent for freeze_timeout."""
+        while True:
+            future = self.next_clock()
+            if self.sim_time >= target:
+                return True
+            try:
+                await asyncio.wait_for(future, timeout=freeze_timeout)
+            except TimeoutError:
+                return False
 
     @property
     def sim_time(self) -> Time:
@@ -337,27 +373,28 @@ class TimeNode(rclpy.node.Node):
         interval = 1.0 / rate
         last_time = self.sim_time
         finish_time = last_time + Time.from_float(lifetime) if lifetime is not None else None
+        loop = asyncio.get_running_loop()
 
         done = asyncio.Event()
-        events: asyncio.Queue[float] = asyncio.Queue(maxsize=1000)
+        events: asyncio.Queue[float] = asyncio.Queue()
 
-        async def _rate_loop():
+        def _on_clock(now: Time) -> None:
             nonlocal last_time
-            while not done.is_set():
-                await asyncio.sleep(0.01)
-                now = self.sim_time
-                if is_put := (dt := (now - last_time).to_seconds()) >= interval - _RATE_EPS_S:
-                    last_time = now
-                    await events.put(dt)
-                if finish_time is not None and now >= finish_time:
-                    done.set()
-                    if not is_put:
-                        await events.put(dt)
-                    break
+            if done.is_set():
+                return
+            if is_put := (dt := (now - last_time).to_seconds()) >= interval - _RATE_EPS_S:
+                last_time = now
+                loop.call_soon_threadsafe(events.put_nowait, dt)
+            if finish_time is not None and now >= finish_time:
+                loop.call_soon_threadsafe(done.set)
+                if not is_put:
+                    loop.call_soon_threadsafe(events.put_nowait, dt)
 
         events.put_nowait(0.0)
-        loop_task = asyncio.create_task(_rate_loop())
+        with self.__clock_lock:
+            self.__clock_listeners.append(_on_clock)
         try:
             yield done, events
         finally:
-            loop_task.cancel()
+            with self.__clock_lock:
+                self.__clock_listeners.remove(_on_clock)

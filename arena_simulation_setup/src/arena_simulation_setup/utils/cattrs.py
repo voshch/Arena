@@ -215,6 +215,10 @@ class Parseable:
 
     @classmethod
     def parse(cls, value: object) -> typing.Self:
+        if isinstance(value, Mapping):
+            unknown = set(value) - {f.name for f in attrs.fields(cls)}
+            if unknown:
+                raise ValueError(f'unknown keys {sorted(unknown)} for {cls}')
         return converter.structure_attrs_fromdict(deepcopy(value), cls)
 
 

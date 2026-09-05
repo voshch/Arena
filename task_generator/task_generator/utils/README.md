@@ -15,6 +15,18 @@ Two small utilities:
 - `update_freespace_indices_maze(map_)`: marks hardcoded wall regions as
   occupied; left from a specific evaluation map, not for general use.
 
+## `goal_progress.py`
+
+[`goal_progress.py`](goal_progress.py)
+
+ROS-independent per-robot goal progress tracking. `GoalProgress` holds a
+robot's start distance, running-minimum distance, and accumulated path
+length toward its goal. `closed_fraction` is `(start - min) / start`, `1.0`
+when start distance was zero. `GoalProgressTracker` keys `GoalProgress` by
+robot name and exposes `least_progress()`, the tracked robot with the lowest
+`closed_fraction`. Sampled by `TaskGenerator._sample_goal_progress` in
+`node.py` and reset once per episode in `_build_next_record`.
+
 ## `gpt.py`
 
 [`gpt.py`](gpt.py)

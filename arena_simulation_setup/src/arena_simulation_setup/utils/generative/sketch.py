@@ -174,9 +174,7 @@ class WorldGeneratorSketch(WithPedestrians):
                 back = other.arms[alphabet.DIRECTIONS.index(alphabet.OPPOSITE[direction])]
                 if back == alphabet.NONE:
                     if other.declares:
-                        self.warnings.append(
-                            Note(row=cell.row, col=cell.col, text=f'{direction} link is declared on one side only')
-                        )
+                        self.warnings.append(Note(row=cell.row, col=cell.col, text=f'{direction} link is declared on one side only'))
                 else:
                     width = max(width, self._width(other, back))
                 links[other_key, alphabet.OPPOSITE[direction]] = width
@@ -224,9 +222,7 @@ class WorldGeneratorSketch(WithPedestrians):
         if vertical > 0.0 or horizontal > 0.0:
             vertical = vertical or horizontal
             horizontal = horizontal or vertical
-            parts.append(
-                shapely.box(centre[0] - vertical / 2, centre[1] - horizontal / 2, centre[0] + vertical / 2, centre[1] + horizontal / 2)
-            )
+            parts.append(shapely.box(centre[0] - vertical / 2, centre[1] - horizontal / 2, centre[0] + vertical / 2, centre[1] + horizontal / 2))
         if diagonal > 0.0:
             reach = diagonal / 2**0.5  # the largest diamond that stays inside a band of this width
             parts.append(
@@ -310,14 +306,7 @@ class WorldGeneratorSketch(WithPedestrians):
         centres = {key: self._centre(cell, drawn, left) for key, cell in cells.items()}
         # A full arm's box already reaches every corner of its cell, so a diagonal quad or diamond
         # of that width could only jut past it. Full cells meet diagonally through their neighbours.
-        widths = {
-            key: {
-                direction: links[key, direction]
-                for index, direction in enumerate(alphabet.DIRECTIONS)
-                if (key, direction) in links and not (index % 2 == 1 and cell.arms[index] == alphabet.FULL)
-            }
-            for key, cell in cells.items()
-        }
+        widths = {key: {direction: links[key, direction] for index, direction in enumerate(alphabet.DIRECTIONS) if (key, direction) in links and not (index % 2 == 1 and cell.arms[index] == alphabet.FULL)} for key, cell in cells.items()}
         footprints = {key: self._footprint(cells[key], centres[key], widths[key]) for key in cells}
 
         areas = [Area(polygon=polygon) for polygon in footprints.values()]

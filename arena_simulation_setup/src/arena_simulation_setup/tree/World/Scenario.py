@@ -10,8 +10,8 @@ from collections.abc import Iterable
 import attrs
 import yaml
 
-from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Obstacle, Pose, Position
-from arena_simulation_setup.tree import PathView
+from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Obstacle, Pose, Position, Sound
+from arena_simulation_setup.tree import Identifier, PathView
 from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, converter
 
 
@@ -91,94 +91,6 @@ class RegionAssignment:
     config: dict = attrs.Factory(dict)  # type-specific params
 
 
-def _optional_position(value: object) -> Position | None:
-    if value is None:
-        return None
-    return Position.instance_or(Position.parse)(value)
-
-
-@attrs.define
-class AudioEmitter:
-    name: str = attrs.field(converter=lambda value: str(value).strip())
-    entity_ref: str = attrs.field(
-        converter=lambda value: str(value).strip(),
-        default="",
-    )
-    position: Position | None = attrs.field(
-        converter=_optional_position,
-        default=None,
-    )
-    level: str = attrs.field(
-        converter=lambda value: str(value).strip(),
-        default="",
-    )
-    offset: Position = attrs.field(
-        converter=Position.converter,
-        factory=lambda: Position(0.0, 0.0, 0.0),
-    )
-    source_volume_db: float = attrs.field(converter=float, default=80.0)
-
-    def __attrs_post_init__(self) -> None:
-        if not self.name or ':' in self.name:
-            raise ValueError(
-                "audio emitter name must be non-empty and contain no ':'"
-            )
-        if bool(self.entity_ref) == (self.position is not None):
-            raise ValueError(
-                f"audio emitter {self.name!r} requires exactly one of "
-                "entity_ref or position"
-            )
-        if self.entity_ref and self.level:
-            raise ValueError(
-                f"audio emitter {self.name!r} derives its level from "
-                "entity_ref and cannot also set level"
-            )
-
-
-@attrs.define
-class AudioSystem:
-    name: str = attrs.field(converter=lambda value: str(value).strip())
-    sound_type: str = attrs.field(converter=lambda value: str(value).strip())
-    asset_id: str = attrs.field(converter=lambda value: str(value).strip())
-    emitters: list[AudioEmitter] = attrs.field(factory=list)
-    loop: bool = attrs.field(default=True)
-    initially_active: bool = attrs.field(default=False)
-    reference_distance_m: float = attrs.field(converter=float, default=1.0)
-    semantic_tags: list[str] = attrs.field(factory=list)
-
-    def __attrs_post_init__(self) -> None:
-        if not self.name or ':' in self.name:
-            raise ValueError(
-                "audio system name must be non-empty and contain no ':'"
-            )
-        if not self.sound_type:
-            raise ValueError(f"audio system {self.name!r} requires sound_type")
-        if not self.asset_id:
-            raise ValueError(f"audio system {self.name!r} requires asset_id")
-        if not self.emitters:
-            raise ValueError(f"audio system {self.name!r} requires emitters")
-        emitter_names = [emitter.name for emitter in self.emitters]
-        if len(emitter_names) != len(set(emitter_names)):
-            raise ValueError(
-                f"audio system {self.name!r} has duplicate emitter names"
-            )
-        if self.reference_distance_m <= 0.0:
-            raise ValueError(
-                f"audio system {self.name!r} reference_distance_m must be "
-                "positive"
-            )
-
-
-@attrs.define
-class ScenarioAudio:
-    systems: list[AudioSystem] = attrs.field(factory=list)
-
-    def __attrs_post_init__(self) -> None:
-        names = [system.name for system in self.systems]
-        if len(names) != len(set(names)):
-            raise ValueError("scenario has duplicate audio system names")
-
-
 @attrs.define
 class TimelineEntry(Parseable):
     """One scenario timeline entry: exactly one trigger (at/every/when) plus a set action list."""
@@ -190,12 +102,10 @@ class TimelineEntry(Parseable):
     until: float | None = None
     when: dict | None = None
 
-    @classmethod
-    def parse(cls, value: dict) -> "TimelineEntry":
-        triggers = [key for key in ("at", "every", "when") if value.get(key) is not None]
+    def __attrs_post_init__(self) -> None:
+        triggers = [name for name, value in (("at", self.at), ("every", self.every), ("when", self.when)) if value is not None]
         if len(triggers) != 1:
             raise ValueError(f"timeline entry must set exactly one of 'at', 'every', 'when'; got {triggers}")
-        return converter.structure_attrs_fromdict(dict(value), cls)
 
 
 _MODERN_ONLY_KEYS: frozenset[str] = frozenset({"conditions", "timeline", "regions"})
@@ -205,11 +115,11 @@ _MODERN_ONLY_KEYS: frozenset[str] = frozenset({"conditions", "timeline", "region
 class Scenario:
     static: list[Obstacle] = attrs.field(factory=list)
     dynamic: list[DynamicObstacle] = attrs.field(factory=list)
+    sounds: list[Sound] = attrs.field(factory=list)
     robots: list[RobotGoal] = attrs.field(factory=list)
     regions: dict[str, RegionAssignment] = attrs.field(factory=dict)
     timeline: list[TimelineEntry] = attrs.field(factory=list)
     conditions: list[EpisodeCondition] = attrs.field(factory=list)
-    audio: ScenarioAudio = attrs.field(factory=ScenarioAudio)
 
 
 class ScenarioView(PathView):
@@ -240,18 +150,12 @@ class ScenarioView(PathView):
             robots=[RobotGoal.parse(robot) for robot in scenario.get("robots", [])],
         )
 
-    def load_audio(
-        self,
-        converter: ArenaConverter = converter,
-    ) -> ScenarioAudio:
-        with open(self.scenario_path) as f:
-            raw = yaml.safe_load(f)
-        if not isinstance(raw, dict):
-            raise ValueError(
-                f"Scenario file {self.scenario_path} must contain a "
-                "dictionary at the top level."
-            )
-        return converter.structure(raw.get("audio") or {}, ScenarioAudio)
+    def identifiers(self, converter: ArenaConverter = converter) -> Iterable[Identifier]:
+        """Every asset this scenario references. Pass the world's zone converter to read a
+        scenario that addresses zones by name."""
+        scenario = self.load(converter=converter)
+        for obstacle in itertools.chain(scenario.static, scenario.dynamic):
+            yield obstacle.model
 
     def load(self, converter: ArenaConverter = converter) -> Scenario:
         raw: object = None

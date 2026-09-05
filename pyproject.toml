@@ -64,6 +64,7 @@ dependencies = [
     "plotly",
     "mcap",
     "mcap-ros2-support",
+    "mcp>=2.0.0",
     "sounddevice>=0.5.5",
     "pyroomacoustics>=0.10.1",
 ]

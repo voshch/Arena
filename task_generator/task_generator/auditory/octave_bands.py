@@ -6,7 +6,7 @@ import numpy as np
 from scipy.integrate import trapezoid
 from scipy.signal import welch
 
-DEFAULT_OCTAVE_CENTERS_HZ = (63, 125, 250, 500, 1000, 2000,4000, 8000)
+DEFAULT_OCTAVE_CENTERS_HZ = (63, 125, 250, 500, 1000, 2000, 4000, 8000)
 
 
 def calculate_octave_band_levels_db(samples: np.ndarray, sample_rate: int, *, centers_hz: tuple[int, ...] = DEFAULT_OCTAVE_CENTERS_HZ, floor_db: float = -120.0) -> dict[int, float]:
@@ -29,7 +29,7 @@ def calculate_octave_band_levels_db(samples: np.ndarray, sample_rate: int, *, ce
     if nperseg < 32:
         return {}
 
-    frequencies, psd = welch(mono,fs=sample_rate, window="hann", nperseg=nperseg, noverlap=nperseg // 2, detrend="constant", scaling="density")
+    frequencies, psd = welch(mono, fs=sample_rate, window="hann", nperseg=nperseg, noverlap=nperseg // 2, detrend="constant", scaling="density")
     nyquist = sample_rate / 2.0
     band_powers: dict[int, float] = {}
 
@@ -55,7 +55,4 @@ def calculate_octave_band_levels_db(samples: np.ndarray, sample_rate: int, *, ce
 
     minimum_ratio = 10.0 ** (floor_db / 10.0)
 
-    return {
-        center: float(10.0 * math.log10(max(power / total_power, minimum_ratio)))
-        for center, power in band_powers.items()
-    }
+    return {center: float(10.0 * math.log10(max(power / total_power, minimum_ratio))) for center, power in band_powers.items()}

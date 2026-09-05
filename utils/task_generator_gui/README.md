@@ -4,9 +4,9 @@ RViz2 plugins for the Arena-Rosnav task generator. Ships:
 
 - **`TaskGeneratorPanel`** (`rviz_common::Panel`): episode management, task-mode selection, world/robot configuration, live episode history playlist.
 - **`SpawnPedestrianTool`** (`rviz_common::Tool`): toolbar tool that click+drags a pose and calls `runtime/spawn_dynamic` to spawn a dynamic obstacle (pedestrian).
-- **`AuditoryPanel`** (`rviz_common::Panel`): propagation and workstation playback switches, microphone routing, motor playback and tuning, environment audio sources.
+- **`AuditoryPanel`** (`rviz_common::Panel`): propagation and workstation playback switches, microphone routing, motor playback and tuning, sound entities.
 - **`SpawnMicrophoneTool`** (`rviz_common::Tool`): toolbar tool that places a fixed or TF-attached acoustic listener.
-- **`SpawnAudioSourceTool`** (`rviz_common::Tool`): toolbar tool that places a configurable radio or alarm.
+- **`SpawnSoundTool`** (`rviz_common::Tool`): toolbar tool that places a configurable radio or alarm.
 
 ## Service contract
 
@@ -30,9 +30,9 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `runtime/spawn_dynamic` | `task_generator_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
 | `runtime/spawn_microphone` | `task_generator_msgs::srv::SpawnMicrophone` | Spawn microphone tool (clicked position and configured height) |
 | `runtime/remove_microphone` | `task_generator_msgs::srv::RemoveMicrophone` | Remove a runtime-spawned microphone |
-| `runtime/spawn_audio_source` | `task_generator_msgs::srv::SpawnAudioSource` | Spawn a radio, alarm, or custom catalog asset |
-| `runtime/set_audio_system` | `task_generator_msgs::srv::SetAudioSystem` | Start or stop a static radio or multi-speaker alarm |
-| `runtime/remove_audio_system` | `task_generator_msgs::srv::RemoveAudioSystem` | Remove a runtime-spawned radio or alarm |
+| `runtime/spawn_sound` | `task_generator_msgs::srv::SpawnSound` | Spawn a radio, alarm, or custom catalog asset |
+| `semantics/set` | `task_generator_msgs::srv::SetSemantic` | Toggle a `sound` entity's `sounding` predicate from the Auditory panel |
+| `runtime/remove_sound` | `task_generator_msgs::srv::RemoveSound` | Remove a runtime-spawned radio or alarm |
 | `runtime/spawn_robot` | `task_generator_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
 
 ### Latched topics consumed
@@ -43,6 +43,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `state/queue` | `task_generator_msgs::msg::EpisodeRecord` | Queued (next) episode. On arrival the panel populates widgets via `populateFromQueue` (signal-blocked) and clears dirty flags. Drives the "Next:" preview row when it differs from current. |
 | `state/paused` | `std_msgs::msg::Bool` | Drives the pause button label authoritatively. The pause button is fire-and-forget; UI reflects the published state, not the service-call return. |
 | `state/resetting` | `std_msgs::msg::Bool` | True while `_run_reset_cycle` holds the reset lock. The world generator panel disables "+Deploy" while it is set. |
+| `state/semantics` | `task_generator_msgs::msg::SemanticSnapshot` | Consumed by the Auditory panel: entities with `kind == "sound"` populate the Sound Entities table (`sounding` predicate, `volume_db`). |
 | `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == task_generator_node`; if any changed/new/deleted parameter starts with `task.<active_mode>.`, rebuilds the matching family's param tree on the Qt thread. |
 
 ## AuditoryPanel
@@ -90,17 +91,19 @@ through that microphone only. Runtime-spawned microphones are cleared on an
 episode or world change. Every live robot also contributes
 `<robot_name>_mic`, attached to its base TF frame.
 
-The **Spawn Radio** toolbar button places an environment source (radio or alarm). The Auditory panel's
-**Environment Audio Sources** table lists every scenario- or
-launch-defined source. Check a row to start the whole system and
-uncheck it to stop it. A system can contain several speakers. The listener
-routing control is applied to human, robot, and environment playback, so the
-selected microphone also applies to radios and alarms.
+The **Spawn Radio** toolbar button places an environment source (radio or alarm), which
+attaches as a `sound` semantic entity. The Auditory panel's **Sound Entities**
+table is a live view over `state/semantics`, listing every entity of
+`kind == "sound"` (world, launch, and runtime-spawned) with its current
+`volume_db`. Check a row to set its `sounding` predicate via `semantics/set`
+and uncheck it to clear it. The listener routing control is applied to human,
+robot, and environment playback, so the selected microphone also applies to
+radios and alarms.
 
 The Auditory panel's **Auditory Runtime** controls independently enable simulated
 propagation and local environment playback. Disabling local playback does
 not stop propagation or robot hearing. Runtime sources can be selected and
-removed from the environment-sources table.
+removed from the Sound Entities table.
 
 `Spawn Radio` defaults to the bundled looping music or alarm asset and starts
 immediately. `Custom Playback` exposes the catalog asset ID, source volume,

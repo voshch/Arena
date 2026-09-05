@@ -97,6 +97,12 @@ def plot(argv: list[str]) -> None:
     common._exec("ros2", "run", "arena_evaluation", "evaluation", "plot", *argv)
 
 
+def kill(argv: list[str]) -> None:
+    """terminate running arena processes (ros2 run arena_evaluation evaluation_cli kill)"""
+    common._reg_require(NAME)
+    common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "kill", *argv)
+
+
 COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
@@ -106,6 +112,7 @@ COMMANDS: dict[str, Verb] = {
         make_verb("status", status, passthrough=True),
         make_verb("tail", tail, passthrough=True),
         make_verb("ps", ps_, passthrough=True),
+        make_verb("kill", kill, passthrough=True),
         make_verb("console", console, passthrough=True),
         make_verb("extract", extract, passthrough=True),
         make_verb("run", run, passthrough=True),

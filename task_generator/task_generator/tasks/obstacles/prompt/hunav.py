@@ -61,7 +61,7 @@ from .prompt_utils import (
     process_json_doc,
 )
 
-DEBUG: bool = bool(os.environ.get("ARENA_DEBUG", True))  # TODO change to false
+DEBUG: bool = os.environ.get("ARENA_DEBUG", "0").lower() in ("1", "true")
 
 
 @attrs.define()
@@ -533,7 +533,7 @@ class TM_Prompt(TM_Obstacles):
 
         return result
 
-    async def reset(self, **kwargs: object) -> tuple[list[Obstacle], list[DynamicObstacle]]:
+    async def reset(self, *, seed: int) -> tuple[list[Obstacle], list[DynamicObstacle]]:
         parsed_config = await self._parse_prompt(
             self._config.user_prompt.value,
             self._config.top_p.value,

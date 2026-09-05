@@ -238,8 +238,10 @@ class ClientWrapper(typing.Generic[ServiceT]):
     ) -> ServiceT.Response | None:
         if timeout_sec is None:
             timeout_sec = self._timeout
-        res = await AsyncUtil.timeout(self._node.await_ros(self._client.call_async(request)), timeout_sec=timeout_sec)
+        ros_future = self._client.call_async(request)
+        res = await AsyncUtil.timeout(self._node.await_ros(ros_future), timeout_sec=timeout_sec)
         if res is None:
+            self._client.remove_pending_request(ros_future)
             self._node.get_logger().warning(f"Service call to {self._client.srv_name} timed out after {timeout_sec} seconds")
         return res
 

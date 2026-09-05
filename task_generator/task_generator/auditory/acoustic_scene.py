@@ -40,11 +40,11 @@ class AcousticScene:
 
         for zone in world_zones(world):
             polygon = shapely.Polygon([(corner.x, corner.y) for corner in zone.corners])
-            zones.append(AcousticZone( name=zone.name, polygon=polygon, floor_material_id=zone.material.name))
+            zones.append(AcousticZone(name=zone.name, polygon=polygon, floor_material_id=zone.material.name))
 
             for wall in zone.walls:
-                material_id = (wall.material.name if wall.material is not None else "default")
-                walls.append(AcousticWall(start=(wall.start.x, wall.start.y), end=(wall.end.x, wall.end.y),material_id=material_id))
+                material_id = wall.material.name if wall.material is not None else "default"
+                walls.append(AcousticWall(start=(wall.start.x, wall.start.y), end=(wall.end.x, wall.end.y), material_id=material_id))
 
         return cls(zones=tuple(zones), walls=tuple(walls))
 
@@ -55,11 +55,7 @@ class AcousticScene:
         candidate = shapely.Point(float(x), float(y))
         tolerance = max(float(self.zone_lookup_tolerance_m), 0.0)
         return next(
-            (
-                zone
-                for zone in self.zones
-                if zone.polygon.buffer(tolerance).covers(candidate)
-            ),
+            (zone for zone in self.zones if zone.polygon.buffer(tolerance).covers(candidate)),
             None,
         )
 

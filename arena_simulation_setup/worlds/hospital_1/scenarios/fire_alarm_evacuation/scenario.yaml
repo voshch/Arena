@@ -1,0 +1,40 @@
+# Pedestrian stimulus reference: the hall_siren in central_hallway sounds once
+# the fire_alarm schedule's `active` flips at t=12s, evacuees head for `exit`,
+# see AUTHORING.md
+robots:
+  - start: [4.0, 17.6, -1.5708]
+    goal: [10.0, 2.0, -1.5708]
+
+dynamic:
+  - name: evacuee_1
+    model: male_adult_medical_01
+    pose: [3.0, 6.5, 0.0]
+    agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
+
+  - name: evacuee_2
+    model: female_adult_medical_01
+    pose: [5.5, 8.5, 0.0]
+    agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
+
+  - name: evacuee_3
+    model: male_adult_medical_01
+    pose: [3.0, 12.5, 0.0]
+    agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
+
+  - name: evacuee_4
+    model: female_adult_medical_01
+    pose: [5.5, 15.5, 0.0]
+    agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
+
+static:
+  - name: exit
+    model: Common/Object/painting_1
+    pose: [10.0, 0.8, -1.5708]
+    type: exit
+
+timeline:
+- at: 12.0
+  set:
+  - entity: fire_alarm
+    field: active
+    value: "true"

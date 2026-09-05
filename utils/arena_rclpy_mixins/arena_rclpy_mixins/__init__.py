@@ -29,6 +29,7 @@ _EXPORTS = {
     'run_main': '.spin',
     'spin_context': '.spin',
     'spin_node': '.spin',
+    'start_loop_watchdog': '.spin',
     'Time': '.Time',
     'TimeNode': '.Time',
     'YAMLReplacer': '.yaml_replace',
@@ -93,6 +94,7 @@ if typing.TYPE_CHECKING:
     from .spin import run_main as run_main
     from .spin import spin_context as spin_context
     from .spin import spin_node as spin_node
+    from .spin import start_loop_watchdog as start_loop_watchdog
     from .Time import Time as Time
     from .Time import TimeNode as TimeNode
     from .yaml_replace import YAMLReplacer as YAMLReplacer

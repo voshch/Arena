@@ -24,7 +24,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/SemanticEntityState.msg
   msg/SemanticSnapshot.msg
   msg/AcousticPath.msg
-  msg/AudioSystemState.msg
   msg/ContinuousAudioSourceState.msg
   msg/ContinuousHeardSoundState.msg
   msg/HeardSoundEvent.msg
@@ -41,12 +40,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/QueryTaskModes.srv
   srv/QueryWorlds.srv
   srv/QueueEpisode.srv
-  srv/RemoveAudioSystem.srv
+  srv/RemoveSound.srv
   srv/RemoveMicrophone.srv
   srv/ResetEpisode.srv
   srv/SetSemantic.srv
-  srv/SetAudioSystem.srv
-  srv/SpawnAudioSource.srv
+  srv/SpawnSound.srv
   srv/SpawnDynamic.srv
   srv/SpawnMicrophone.srv
   srv/SpawnRobot.srv

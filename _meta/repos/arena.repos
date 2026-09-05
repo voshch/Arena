@@ -34,7 +34,7 @@ repositories:
   deps/arena_models:
     type: git
     url: https://github.com/voshch/arena-models
-    version: master@8de4ef7
+    version: master@5fdaf1d
 
   # AAAAAAAA WHY IS #118 NOT VENDORED
   deps/topic_based_hardware_interfaces:
@@ -88,14 +88,15 @@ repositories:
     type: git
     url: https://github.com/voshch/hunav_sim.git
     version: jazzy
-  deps/hunav/people_msgs:
-    type: git
-    url: https://github.com/wg-perception/people.git
-    version: ros2
   deps/hunav/arena_hunav_sim_bridge:
     type: git
     url: https://github.com/ductaingn/arena_hunav_sim_bridge.git
     version: humble
+  # people_msgs is a hard dep of hunav_agent_manager
+  deps/people_msgs:
+    type: git
+    url: https://github.com/wg-perception/people.git
+    version: ros2
   deps/arena_text_crowd:
     type: git
     url: https://github.com/ductaingn/arena_text_crowd.git

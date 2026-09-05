@@ -3,20 +3,20 @@ robots:
   goal: [4.0, 26.8, 0.0]
 
 dynamic:
-- model: female_adult_business_02
+- model: Office/office_female_caucasian_young
   name: ped_1
   pose: [20.0, 1.0, 0.7854]
   waypoints:
   - [22.0, 5.0, 0.7854]
   - [20.0, 1.0, 0.7854]
 
-- model: male_adult_construction_01
+- model: worker_male_caucasian_young
   name: ped_2
   pose: [22.5, 7.5, 0.7854]
   waypoints:
   - [22.5, 7.5, 0.7854]
 
-- model: female_adult_medical_01
+- model: Hospital/nurse_female_caucasian_young
   name: ped_3
   pose: [4.0, 20.0, 0.0]
   waypoints:

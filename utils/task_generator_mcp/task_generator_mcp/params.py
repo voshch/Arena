@@ -4,7 +4,6 @@ EPISODE_PARAMS: tuple[str, ...] = (
     "robot_safe_dist",
     "auto_reset",
     "episodes",
-    "record_data_dir",
 )
 
 STATIC_CONFIG_PARAMS: tuple[str, ...] = (

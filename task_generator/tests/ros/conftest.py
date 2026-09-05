@@ -20,9 +20,6 @@ class _FakeConf:
         class AGENT:
             value = "rosnav"
 
-        class RECORD_DATA_DIR:
-            value = None
-
         class TIMEOUT:
             value = 60
 

@@ -22,6 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/LockstepRegistration.msg
   msg/LockstepStatus.msg
   msg/ShutdownRequest.msg
+  msg/SimState.msg
   msg/WorldExtent.msg
   srv/CleanupEnv.srv
   srv/ConfirmWorld.srv

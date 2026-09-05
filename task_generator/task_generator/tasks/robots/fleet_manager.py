@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import attrs
+import yaml
 
 from task_generator.tasks.robots.request import TaskKind
 
@@ -13,17 +15,47 @@ if TYPE_CHECKING:
     from task_generator.manager.robot_manager.robot_manager import RobotManager
 
 
-@attrs.define
+def _task_kind(value: TaskKind | str) -> TaskKind:
+    if isinstance(value, TaskKind):
+        return value
+    return TaskKind[str(value).upper()]
+
+
+def _produces(value: object) -> frozenset[TaskKind]:
+    if isinstance(value, (TaskKind, str)):
+        return frozenset({_task_kind(value)})
+    return frozenset(_task_kind(v) for v in value)  # type: ignore[union-attr]
+
+
+@attrs.define(eq=False)
 class TaskModeSpec:
     """A single entry in the episode-level task_modes list."""
 
     kind: str
-    produces: frozenset[TaskKind] = attrs.field(
-        default=frozenset({TaskKind.GOTO_POSE}),
-        converter=lambda v: v if isinstance(v, frozenset) else frozenset({v}) if isinstance(v, TaskKind) else frozenset(v),
-    )
+    produces: frozenset[TaskKind] = attrs.field(default=frozenset({TaskKind.GOTO_POSE}), converter=_produces)
     assignments: list[str] = attrs.field(factory=list)
     config: dict = attrs.field(factory=dict)
+
+    @classmethod
+    def parse(cls, obj: dict) -> TaskModeSpec:
+        if not isinstance(obj, dict) or "kind" not in obj:
+            raise ValueError(f"task_modes entry must be a mapping with 'kind', got {obj!r}")
+        kind = obj["kind"]
+        return cls(
+            kind="null" if kind is None else str(kind),
+            produces=obj.get("produces") or TaskKind.GOTO_POSE,
+            assignments=[str(a) for a in obj.get("assignments") or []],
+            config=dict(obj.get("config") or {}),
+        )
+
+
+def load_task_config(path: str | Path) -> list[TaskModeSpec]:
+    """Read a task config file into its `task_modes` specs."""
+    with open(path) as f:
+        obj = yaml.safe_load(f)
+    if not isinstance(obj, dict) or not isinstance(obj.get("task_modes"), list):
+        raise ValueError(f"task config {path} must contain a top-level 'task_modes' list")
+    return [TaskModeSpec.parse(entry) for entry in obj["task_modes"]]
 
 
 class FleetManager:
@@ -74,7 +106,10 @@ class FleetManager:
                 allocation[null_spec].append(robot)
                 used.add(robot.name)
 
+        if unallocated := sorted(set(by_name) - used):
+            raise AssertionError(f"robots {unallocated} match no task_mode; add a 'null' sink or a spec they can accept")
+
         return allocation
 
 
-__all__ = ["TaskModeSpec", "FleetManager"]
+__all__ = ["TaskModeSpec", "FleetManager", "load_task_config"]

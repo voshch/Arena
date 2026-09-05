@@ -64,23 +64,16 @@ class Level3Propagation:
                 source_zone.floor_material_id,
                 "floor",
             )
-        if listener_zone is not None and (
-            source_zone is None or source_zone.name != listener_zone.name
-        ):
+        if listener_zone is not None and (source_zone is None or source_zone.name != listener_zone.name):
             floor_loss_db += self._materials.surface_damping_db(
                 listener_zone.floor_material_id,
                 "floor",
             )
 
         crossed = scene.intersecting_walls(source, listener)
-        transmission_loss = sum(
-            self._materials.surface_damping_db(wall.material_id, "wall")
-            for wall in crossed
-        )
+        transmission_loss = sum(self._materials.surface_damping_db(wall.material_id, "wall") for wall in crossed)
 
-        direct_level = (
-            source_level_db - direct_loss - floor_loss_db - transmission_loss
-        )
+        direct_level = source_level_db - direct_loss - floor_loss_db - transmission_loss
 
         paths = [
             PropagationPath(
@@ -92,22 +85,14 @@ class Level3Propagation:
             )
         ]
 
-        reflections = self._first_order_reflections(
-            scene, source, listener, source_level_db
-        )
+        reflections = self._first_order_reflections(scene, source, listener, source_level_db)
         paths.extend(reflections[: self._max_reflections])
 
-        combined_level = self._sum_decibels(
-            [source_level_db + path.gain_db for path in paths]
-        )
+        combined_level = self._sum_decibels([source_level_db + path.gain_db for path in paths])
 
         reverb_zone = listener_zone or source_zone
 
-        rt60 = (
-            self._estimate_rt60(scene, reverb_zone)
-            if reverb_zone is not None
-            else 0.0
-        )
+        rt60 = self._estimate_rt60(scene, reverb_zone) if reverb_zone is not None else 0.0
 
         return PropagationResult(
             received_volume_db=combined_level,
@@ -125,9 +110,7 @@ class Level3Propagation:
 
         for wall in scene.walls:
             image = self._reflect_point(source, wall)
-            ray = shapely.LineString(
-                [(image.x, image.y), (listener.x, listener.y)]
-            )
+            ray = shapely.LineString([(image.x, image.y), (listener.x, listener.y)])
             intersection = ray.intersection(wall.geometry)
 
             if intersection.is_empty or intersection.geom_type != "Point":
@@ -147,13 +130,8 @@ class Level3Propagation:
             absorption = sum(material.absorption) / len(material.absorption)
             reflection_coefficient = math.sqrt(max(1.0 - absorption, 1e-6))
 
-            reflection_loss = -20.0 * math.log10(
-                max(reflection_coefficient, 1e-6)
-            )
-            gain_db = (
-                -20.0 * math.log10(total_distance)
-                - reflection_loss
-            )
+            reflection_loss = -20.0 * math.log10(max(reflection_coefficient, 1e-6))
+            gain_db = -20.0 * math.log10(total_distance) - reflection_loss
 
             if source_level_db + gain_db < self._reflection_floor_db:
                 continue
@@ -182,12 +160,12 @@ class Level3Propagation:
         if length_squared <= 1e-12:
             return Point(x=point.x, y=point.y, z=point.z)
 
-        projection = (((point.x - x1) * dx + (point.y - y1) * dy) / length_squared )
+        projection = ((point.x - x1) * dx + (point.y - y1) * dy) / length_squared
 
         projected_x = x1 + projection * dx
         projected_y = y1 + projection * dy
 
-        return Point( x=2.0 * projected_x - point.x, y=2.0 * projected_y - point.y, z=point.z)
+        return Point(x=2.0 * projected_x - point.x, y=2.0 * projected_y - point.y, z=point.z)
 
     @staticmethod
     def _distance(a: Point, b: Point) -> float:
@@ -196,32 +174,22 @@ class Level3Propagation:
         dz = float(a.z - b.z)
         return math.sqrt(dx * dx + dy * dy + dz * dz)
 
-
     @staticmethod
     def _bearing(source: Point, listener: Point) -> float:
         dx = float(source.x - listener.x)
         dy = float(source.y - listener.y)
         return math.atan2(dy, dx)
 
-
     def _broadband_transmission_loss(self, wall: AcousticWall) -> float:
         material = self._materials.get(wall.material_id)
         if not material.transmission_loss_db:
             return 0.0
 
-        return float(
-            sum(material.transmission_loss_db)
-            / len(material.transmission_loss_db)
-        )
-
+        return float(sum(material.transmission_loss_db) / len(material.transmission_loss_db))
 
     @staticmethod
     def _sum_decibels(levels_db: list[float]) -> float:
-        powers = [
-            10.0 ** (level / 10.0)
-            for level in levels_db
-            if math.isfinite(level)
-        ]
+        powers = [10.0 ** (level / 10.0) for level in levels_db if math.isfinite(level)]
 
         if not powers:
             return -math.inf
@@ -236,11 +204,7 @@ class Level3Propagation:
         volume = floor_area * height
         floor_material = self._materials.get(zone.floor_material_id)
 
-        floor_absorption = (
-            floor_area
-            * sum(floor_material.absorption)
-            / len(floor_material.absorption)
-        )
+        floor_absorption = floor_area * sum(floor_material.absorption) / len(floor_material.absorption)
 
         wall_absorption = perimeter * height * 0.10
         ceiling_absorption = floor_area * 0.10

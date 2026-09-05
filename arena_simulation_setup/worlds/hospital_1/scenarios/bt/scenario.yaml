@@ -5,8 +5,8 @@ robots:
 dynamic:
 - name: agent1
   model: arenian
-  pose: [5,5,0]
+  pose: [5, 4.4, 0]
+  agent: {agent_type: adult, desired_velocity: 1.2}
   waypoints:
-    - [10,10,0]
-    - [15,5,0]
-  behavior_tree: ./bt1.xml
+    - [10, 10, 0]
+    - [15, 5, 0]

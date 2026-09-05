@@ -111,33 +111,6 @@ def robot_controllers(robot_config: "RobotView", resolved: ResolvedAssembly | No
     return effective_controllers(resolved, control_spec.controllers, prefix=prefix)
 
 
-def controller_spawner_node(controller_name: str) -> launch_ros.actions.Node:
-    """Spawn one controller into the namespace-local controller_manager.
-
-    `--controller-manager-timeout 0` is the spawner's wait-forever sentinel.
-    `--switch-timeout 600` is a large finite (CM rejects 0 and uses 1s); covers
-    the sim-paused-during-reset window without masking real hangs forever.
-    """
-    return launch_ros.actions.Node(
-        package='controller_manager',
-        executable='spawner',
-        name=f'spawner_{controller_name}',
-        output='screen',
-        arguments=[
-            controller_name,
-            '--controller-manager',
-            'controller_manager',
-            '--controller-manager-timeout',
-            '0',
-            '--switch-timeout',
-            '600',
-            '--service-call-timeout',
-            '600',
-        ],
-        parameters=[{'use_sim_time': True}],
-    )
-
-
 def odom_relay_node(odom_topic: str) -> launch_ros.actions.Node:
     """Relay `<odom_topic>` (controller-specific) -> `odom` for the Arena convention."""
     return launch_ros.actions.Node(

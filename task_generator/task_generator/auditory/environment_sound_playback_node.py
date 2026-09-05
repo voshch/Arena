@@ -19,16 +19,10 @@ from task_generator.auditory.procedural_audio import LoopingSampleRenderSource
 
 class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
     def __init__(self, **kwargs: object) -> None:
-        self._environment_sources: dict[
-            tuple[str, str], LoopingSampleRenderSource
-        ] = {}
+        self._environment_sources: dict[tuple[str, str], LoopingSampleRenderSource] = {}
         self._environment_assets: dict[tuple[str, str], AcousticAsset] = {}
-        self._environment_rir_signatures: dict[
-            tuple[str, str], tuple[Hashable, ...]
-        ] = {}
-        self._environment_programs: dict[
-            tuple[str, str], tuple[str, str, int, int]
-        ] = {}
+        self._environment_rir_signatures: dict[tuple[str, str], tuple[Hashable, ...]] = {}
+        self._environment_programs: dict[tuple[str, str], tuple[str, str, int, int]] = {}
         self._environment_pending: dict[
             tuple[str, str],
             tuple[
@@ -54,10 +48,7 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
         self,
         parameters: list[Parameter],
     ) -> SetParametersResult:
-        routing_changed = any(
-            parameter.name == "listener_id"
-            for parameter in parameters
-        )
+        routing_changed = any(parameter.name == "listener_id" for parameter in parameters)
         result = super()._on_set_parameters(parameters)
         if not result.successful:
             return result
@@ -105,10 +96,7 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
         source_key = (str(msg.listener_id), str(msg.source_id))
         program_key = self._program_key(msg)
         source = self._environment_sources.get(source_key)
-        if (
-            source is not None
-            and self._environment_programs.get(source_key) != program_key
-        ):
+        if source is not None and self._environment_programs.get(source_key) != program_key:
             self._environment_sources.pop(source_key, None)
             self._environment_assets.pop(source_key, None)
             self._environment_rir_signatures.pop(source_key, None)
@@ -139,13 +127,11 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
             selected = self._catalog.select(
                 asset_id,
                 episode_seed=self._episode_seed,
-                agent_id=self._system_numeric_id(msg.system_id),
+                agent_id=self._group_numeric_id(msg.group_id),
                 occurrence=0,
             )
             if selected is None:
-                self.get_logger().warning(
-                    f"no environment acoustic asset for {asset_id!r}"
-                )
+                self.get_logger().warning(f"no environment acoustic asset for {asset_id!r}")
                 return
             asset, sample_spec = selected
             future = self._asset_loader.submit(self._catalog.load, sample_spec)
@@ -168,8 +154,7 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
             try:
                 sample = future.result()
                 elapsed_ns = max(
-                    self.get_clock().now().nanoseconds
-                    - self._time_nanoseconds(msg.program_start_time),
+                    self.get_clock().now().nanoseconds - self._time_nanoseconds(msg.program_start_time),
                     0,
                 )
                 start_frame = int(elapsed_ns * sample.sample_rate / 1e9)
@@ -181,11 +166,7 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
                     block_size=int(self.get_parameter("block_size").value),
                     loop=bool(msg.loop),
                     start_frame=start_frame,
-                    rir_crossfade_seconds=float(
-                        self.get_parameter(
-                            "environment_rir_crossfade_sec"
-                        ).value
-                    ),
+                    rir_crossfade_seconds=float(self.get_parameter("environment_rir_crossfade_sec").value),
                 )
                 self._environment_sources[source_key] = source
                 self._environment_assets[source_key] = asset
@@ -203,10 +184,7 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
                 )
                 self._played_events += 1
             except Exception:
-                self.get_logger().error(
-                    "environment acoustic asset load failed:\n"
-                    f"{traceback.format_exc()}"
-                )
+                self.get_logger().error(f"environment acoustic asset load failed:\n{traceback.format_exc()}")
 
     def _update_environment_source(
         self,
@@ -218,37 +196,15 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
         signature = self._continuous_rir_signature(msg)
         impulse = None
         active = bool(msg.active and msg.audible)
-        if (
-            active
-            and self._use_rir
-            and signature != self._environment_rir_signatures.get(source_key)
-        ):
+        if active and self._use_rir and signature != self._environment_rir_signatures.get(source_key):
             try:
                 impulse, _ = self._compute_normalized_rir(msg)
                 self._environment_rir_signatures[source_key] = signature
             except Exception as exc:
-                self.get_logger().warning(
-                    f"environment RIR unavailable for {msg.source_id!r}: "
-                    f"{exc}"
-                )
-        has_rir = (
-            impulse is not None
-            or source_key in self._environment_rir_signatures
-        )
-        gain_db = (
-            float(msg.received_volume_db)
-            - float(asset.reference_level_db)
-            + float(asset.playback_gain_db)
-        )
-        active = bool(
-            active
-            and gain_db >= self._minimum_playback_gain_db
-            and (
-                has_rir
-                or not self._use_rir
-                or self._rir_dry_fallback
-            )
-        )
+                self.get_logger().warning(f"environment RIR unavailable for {msg.source_id!r}: {exc}")
+        has_rir = impulse is not None or source_key in self._environment_rir_signatures
+        gain_db = float(msg.received_volume_db) - float(asset.reference_level_db) + float(asset.playback_gain_db)
+        active = bool(active and gain_db >= self._minimum_playback_gain_db and (has_rir or not self._use_rir or self._rir_dry_fallback))
         source.update(
             gain_db=gain_db,
             active=active,
@@ -273,8 +229,8 @@ class EnvironmentSoundPlaybackNode(SoundPlaybackNode):
         )
 
     @staticmethod
-    def _system_numeric_id(system_id: str) -> int:
-        digest = hashlib.blake2b(system_id.encode(), digest_size=4).digest()
+    def _group_numeric_id(group_id: str) -> int:
+        digest = hashlib.blake2b(group_id.encode(), digest_size=4).digest()
         return int.from_bytes(digest, "little") & 0x7FFFFFFF
 
 

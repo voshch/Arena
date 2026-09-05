@@ -14,7 +14,7 @@ robots:
 dynamic:
   # --- Use case 1: nurse escort ---
   - name: nurse_1
-    model: female_adult_medical_01
+    model: Hospital/nurse_female_caucasian_young
     pose: central_hallway
     agent: {agent_type: ./nurse.yaml, desired_velocity: 1.5}
     waypoints:
@@ -22,7 +22,7 @@ dynamic:
       - central_hallway
 
   - name: escort_patient
-    model: male_adult_construction_01
+    model: worker_male_caucasian_young
     pose: patient_ward
     agent: {agent_type: ./escort_patient.yaml, desired_velocity: 0.9}
     waypoints:
@@ -30,7 +30,7 @@ dynamic:
 
   # --- Use case 2: doctor consultation ---
   - name: doctor_1
-    model: male_adult_medical_01
+    model: Hospital/doctor_male_caucasian_middleage
     pose: exam_room_1
     agent: {agent_type: ./doctor.yaml, desired_velocity: 1.4}
     waypoints:
@@ -39,7 +39,7 @@ dynamic:
       - exam_room_1
 
   - name: consult_patient
-    model: female_adult_business_02
+    model: Office/office_female_caucasian_young
     pose: waiting_area
     agent: {agent_type: ./patient.yaml, desired_velocity: 1.0}
     waypoints:
@@ -48,21 +48,21 @@ dynamic:
 
   # --- Use case 3: reception queue ---
   - name: queue_patient_1
-    model: male_adult_construction_02
+    model: worker_male_asian_middleage
     pose: {x: 9.5, y: 0.5}
     agent: {agent_type: ./queue_patient.yaml, desired_velocity: 1.1}
     waypoints:
       - {x: 4.0, y: 1.0}
 
   - name: queue_patient_2
-    model: female_adult_business_02
+    model: Office/office_female_caucasian_young
     pose: {x: 10.0, y: 0.8}
     agent: {agent_type: ./queue_patient.yaml, desired_velocity: 0.9}
     waypoints:
       - {x: 4.0, y: 1.0}
 
   - name: queue_patient_3
-    model: male_adult_construction_03
+    model: worker_male_african_young
     pose: {x: 10.5, y: 0.5}
     agent: {agent_type: ./queue_patient.yaml, desired_velocity: 1.0}
     waypoints:
@@ -70,7 +70,7 @@ dynamic:
 
   # --- Background flow ---
   - name: doctor_2
-    model: female_adult_medical_01
+    model: Hospital/nurse_female_caucasian_young
     pose: laboratory
     agent: {agent_type: adult, desired_velocity: 1.3}
     waypoints:
@@ -81,7 +81,7 @@ dynamic:
 
 static:
   - name: reception_desk
-    model: desk
+    model: Hospital/Reception_Counter
     pose: reception
     type: desk
     capacity: 3
@@ -91,14 +91,14 @@ static:
       params: {base_step: 0.8, front_offset: 0.6}
 
   - name: exam_chair_1
-    model: chair
+    model: Hospital/Patient_Armchair
     pose: exam_room_1
     type: chair
     capacity: 1
     interaction_radius: 0.8
 
   - name: patient_bed_1
-    model: patient_bed
+    model: Hospital/Isolation_Bed
     pose: patient_ward
     type: patient_bed
     capacity: 1

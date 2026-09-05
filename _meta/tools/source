@@ -37,11 +37,13 @@ export ARENA_VENV_DIR="${ARENA_VENV_DIR:-$ARENA_DIR/.venv}"
 
 export ARENA_ROS_DISTRO="${ARENA_ROS_DISTRO:-jazzy}"
 
-export FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-~/.ros/fastdds.xml}
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-1}
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+export GZ_IP=127.0.0.1
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/ros/${ARENA_ROS_DISTRO}/lib/"
-export ASSET_BUCKETS=${ARENA_ASSET_BUCKETS:-"default"}
+export ASSET_BUCKETS=${ARENA_ASSET_BUCKETS:-}
+export WORLD_BUCKETS=${ARENA_WORLD_BUCKETS:-}
+export BENCHMARK_BUCKETS=${ARENA_BENCHMARK_BUCKETS:-}
 
 export ARENA_MODELS_FORMATS="yaml,png,jpg,mdl"
 
@@ -68,6 +70,14 @@ if [ -f "$ARENA_WS_DIR/.env" ] ; then
     . "$ARENA_WS_DIR/.env"
     set +a
 fi
+
+# ARENA_NET scopes ROS 2 discovery: local = loopback only, lan = every interface
+case "${ARENA_NET:-local}" in
+    lan|local) export ARENA_NET="${ARENA_NET:-local}" ;;
+    *) echo "arena: ARENA_NET=${ARENA_NET} is neither local nor lan, using local" >&2; export ARENA_NET=local ;;
+esac
+export FASTRTPS_DEFAULT_PROFILES_FILE="$ARENA_DIR/_meta/docker/fastdds.${ARENA_NET}.xml"
+export CYCLONEDDS_URI="file://$ARENA_DIR/_meta/docker/cyclonedds.${ARENA_NET}.xml"
 
 _arena_venv_provision(){
     [ -f "$ARENA_VENV_DIR/.installed" ] && return 0

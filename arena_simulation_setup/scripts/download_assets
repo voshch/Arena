@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-
-net="${1:-default}"
-
-ros2 run arena_models arena_models net "$net" fetch -o "$ARENA_ASSETS_DIR/$(basename "$net")" "$2"

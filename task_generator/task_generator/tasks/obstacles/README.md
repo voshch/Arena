@@ -9,7 +9,7 @@
 
 ```python
 class TM_Obstacles(TaskMode):
-    async def reset(self, **kwargs) -> Obstacles:
+    async def reset(self, *, seed: int) -> Obstacles:
         return [], []
 ```
 
@@ -87,7 +87,7 @@ Declared under `task.environment.*`:
 
 | Param | Default | Description |
 | --- | --- | --- |
-| `environment.file` | `'default.json'` | `EnvironmentIdentifier` name to resolve |
+| `environment.file` | `'default'` | `EnvironmentIdentifier` name to resolve |
 
 Groups from the environment config are placed into rooms. Rooms are either
 taken from `world_manager.world.zones` (explicit zone declarations) or
@@ -96,16 +96,31 @@ detected from wall geometry via `_create_rooms_from_walls`.
 ## Zone references
 
 `TM_Scenario` delegates zone-ref resolution to the `Scenario` loader in
-`arena_simulation_setup`. `pose_ref` and `waypoint_refs` declared in a
-scenario file are resolved against named zones at load time using a seeded
+`arena_simulation_setup`. A `pose:` or `waypoints:` entry given as a bare
+zone name in a scenario file is resolved to a point in that zone at load time using a seeded
 RNG (the seed comes from `node.conf.General.RNG`), so replaying with the same
 seed produces identical placements.
 
 ## `obstacles/prompt/`
 
-`TM_Prompt` ([`prompt/arena.py`](prompt/arena.py), [`prompt/hunav.py`](prompt/hunav.py)) generates obstacle lists
-via an LLM. PROMPT registration is per-`BaseHumanSimulator` subclass, see
-[PROMPT registration](../../simulators/human/README.md#prompt-registration).
+`TM_Prompt` generates obstacle lists via an LLM. PROMPT registration is
+per-`BaseHumanSimulator` subclass, see
+[PROMPT registration](../../simulators/human/README.md#prompt-registration),
+so which implementation you get follows the `human` arg:
+
+| `human:=` | Implementation | `generation_mode` |
+|---|---|---|
+| `arena` | [`prompt/arena.py`](prompt/arena.py) | `arena`, `behavior` |
+| `hunav` | [`prompt/hunav.py`](prompt/hunav.py) | `behavior_tree`, `crowded_behavior_tree` |
+
+The hunav path needs the optional `arena_hunav_sim_bridge` (BT reference doc
+and Chroma DB) and `chromadb`. [`prompt_utils`](prompt/prompt_utils/__init__.py)
+serves those names through a module `__getattr__` so importing the package
+never requires them — only touching a hunav-only name does, and that raises an
+`AttributeError` naming the missing dep rather than an import traceback.
+Behaviour-tree prompt context lives in
+[`prompt_utils/context_bt.py`](prompt/prompt_utils/context_bt.py), separate from
+`context.py`, which carries the arena_humansim schema.
 
 ## Adding a new TM_Obstacles mode
 

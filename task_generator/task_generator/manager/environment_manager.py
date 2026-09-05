@@ -4,14 +4,16 @@ from collections.abc import Callable, Collection, Sequence
 from typing import Any
 
 import shapely
-import shapely.affinity
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim
 from arena_runtime.sim._semantics import _SEMANTIC_KINDS
 from arena_simulation_setup.shared import Ceiling
 from arena_simulation_setup.tree.World import LevelDescription, WorldDescription
+from arena_simulation_setup.tree.World.World import _render_door_polygons, _render_elevator_polygons
 
+from task_generator.manager.collision_grid import CollisionGrid
 from task_generator.manager.realizer import Realizer
+from task_generator.manager.world_manager.utils import WorldMap
 from task_generator.shared import (
     Door,
     DynamicObstacle,
@@ -33,20 +35,23 @@ def _kind_vocab(kind_cls: type) -> frozenset[str]:
     return frozenset((*kind_cls.DISCRETE, *kind_cls.CONTINUOUS, *kind_cls.PREDICATES))
 
 
+_ATTACHABLE_TO_HOST = frozenset({'gate', 'pressure_plate'})
+
+
 def _route_semantics(cfgs: Sequence[SemanticCfg], host_kind: str) -> dict[str, list[SemanticCfg]]:
     """Route a mechanism entry's cfgs to their owning scripted kind, raising on
-    host-vocabulary or unknown names (mechanism state publishes intrinsically)."""
+    host-vocabulary or unattachable names (mechanism state publishes intrinsically)."""
     host_vocab = _kind_vocab(_SEMANTIC_KINDS[host_kind])
     extras: dict[str, list[SemanticCfg]] = {}
     for cfg in cfgs:
         if cfg.name in host_vocab:
             raise ValueError(f"semantics: every {host_kind} publishes {cfg.name!r} intrinsically, remove the annotation")
-        for kname, kcls in _SEMANTIC_KINDS.items():
-            if kname != host_kind and cfg.name in _kind_vocab(kcls):
+        for kname in _ATTACHABLE_TO_HOST:
+            if cfg.name in _kind_vocab(_SEMANTIC_KINDS[kname]):
                 extras.setdefault(kname, []).append(cfg)
                 break
         else:
-            raise ValueError(f"semantics: {cfg.name!r} matches no scripted kind's vocabulary")
+            raise ValueError(f"semantics: {cfg.name!r} is not attachable to a {host_kind} host")
     return extras
 
 
@@ -58,7 +63,7 @@ class EnvironmentManager(NodeInterface):
     _simulator: BaseSim
     _realizer: Realizer
 
-    _walls_geometry: shapely.MultiLineString
+    _collision_grid: CollisionGrid | None
     _static_polygons: dict[str, shapely.Polygon]
 
     def __init__(
@@ -75,7 +80,7 @@ class EnvironmentManager(NodeInterface):
         self._human_simulator = human_simulator
         self._realizer = realizer
 
-        self._walls_geometry = shapely.MultiLineString()
+        self._collision_grid = None
         self._static_polygons = {}
         self._attached_semantic_entities: set[str] = set()
 
@@ -97,9 +102,9 @@ class EnvironmentManager(NodeInterface):
         return self._realizer.ezilear(target)
 
     @property
-    def walls_geometry(self) -> shapely.MultiLineString:
-        """Map-frame line geometry of all world walls and doors."""
-        return self._walls_geometry
+    def collision_grid(self) -> CollisionGrid | None:
+        """Map-frame labelled occupancy of the loaded world plus every spawned static, None until a world is loaded."""
+        return self._collision_grid
 
     @property
     def static_polygons(self) -> dict[str, shapely.Polygon]:
@@ -109,34 +114,28 @@ class EnvironmentManager(NodeInterface):
         read those from the `arena_peds` topic."""
         return self._static_polygons
 
-    async def _resolve_polygon(self, obstacle: Obstacle) -> shapely.Polygon | None:
-        try:
-            view = await obstacle.model.resolve()
-        except FileNotFoundError:
-            return None
-        bounds = view.bounds
-        if bounds is None:
-            return None
-        poly = shapely.Polygon(bounds)
-        poly = shapely.affinity.rotate(poly, obstacle.pose.orientation.to_yaw(), origin=(0, 0), use_radians=True)
-        return shapely.affinity.translate(poly, xoff=obstacle.pose.position.x, yoff=obstacle.pose.position.y)
-
     async def _cache_polygons(self, obstacles: Sequence[Obstacle]) -> None:
-        polys = await asyncio.gather(*(self._resolve_polygon(o) for o in obstacles))
+        polys = await asyncio.gather(*(o.footprint() for o in obstacles))
         for obstacle, poly in zip(obstacles, polys, strict=True):
-            if poly is not None:
-                self._static_polygons[obstacle.name] = poly
+            if poly is None:
+                continue
+            self._static_polygons[obstacle.name] = poly
+            if self._collision_grid is not None:
+                self._collision_grid.stamp(obstacle.name, poly)
 
     def _sync_static_polygons(self) -> None:
         """Drop polygons whose obstacle is no longer registered in the human simulator."""
         alive = set(self._human_simulator._known_obstacles.keys())
         self._static_polygons = {n: p for n, p in self._static_polygons.items() if n in alive}
+        if self._collision_grid is not None:
+            self._collision_grid.sync(self._static_polygons.keys())
 
     async def spawn_world_obstacles(
         self,
         world: WorldDescription | LevelDescription,
         level_id: str = "",
         detected_walls: dict[str, Sequence[Wall]] | None = None,
+        world_map: WorldMap | None = None,
     ):
         """
         Loads given obstacles into the simulator,
@@ -144,14 +143,16 @@ class EnvironmentManager(NodeInterface):
 
         Args:
             detected_walls: per-level occupancy-derived walls fed to the human-sim as collision geometry (populated only under debug.map_source:=disk).
+            world_map: the loaded occupancy map, seeds `collision_grid`.
         """
-        await self._spawn_world_obstacles(world, level_id, detected_walls)
+        await self._spawn_world_obstacles(world, level_id, detected_walls, world_map)
 
     async def _spawn_world_obstacles(
         self,
         world: WorldDescription | LevelDescription,
         level_id: str = "",
         detected_walls: dict[str, Sequence[Wall]] | None = None,
+        world_map: WorldMap | None = None,
     ) -> None:
 
         def _match_level_id(fid: str | None) -> bool:
@@ -218,6 +219,11 @@ class EnvironmentManager(NodeInterface):
                 self.node._register_semantic_entity(sig.name, realized_sig.name)
                 if realized_sig.semantics:
                     pending.append(("signal", realized_sig.name, list(realized_sig.semantics), None))
+            for snd in level.all_sounds:
+                realized_snd = self._realizer.realize(snd, fid)
+                self.node._register_semantic_entity(snd.name, realized_snd.name)
+                if realized_snd.semantics:
+                    pending.append(("sound", realized_snd.name, list(realized_snd.semantics), None))
             for zone in level.zones:
                 if not zone.semantics:
                     continue
@@ -231,22 +237,9 @@ class EnvironmentManager(NodeInterface):
         if self._skip_obstacles:
             statics = ()
 
-        line_strings: list[shapely.LineString] = []
-        for w in walls:
-            line_strings.append(shapely.LineString([(w.start.x, w.start.y), (w.end.x, w.end.y)]))
-        for d in doors:
-            line_strings.append(shapely.LineString([(d.start.x, d.start.y), (d.end.x, d.end.y)]))
-        if line_strings:
-            floor_walls = shapely.MultiLineString(line_strings)
-            if self._walls_geometry.is_empty:
-                self._walls_geometry = floor_walls
-            else:
-                self._walls_geometry = shapely.MultiLineString(
-                    [
-                        *self._walls_geometry.geoms,
-                        *floor_walls.geoms,
-                    ]
-                )
+        if world_map is not None:
+            cutouts = [p for d in doors for p in _render_door_polygons(d)] + [p for e in elevators for p in _render_elevator_polygons(e)]
+            self._collision_grid = CollisionGrid.build(world_map, origin=self._realizer.realize(world_map.origin), walls=walls, cutouts=cutouts)
 
         await self._cache_polygons(statics)
 
@@ -350,7 +343,7 @@ class EnvironmentManager(NodeInterface):
         await self._human_simulator.remove_obstacles(purge=purge)
         self._sync_static_polygons()
         if purge >= ObstacleLayer.WORLD:
-            self._walls_geometry = shapely.MultiLineString()
+            self._collision_grid = None
 
     async def step(self, n: int = 1) -> bool:
         return await self._simulator.step(n)

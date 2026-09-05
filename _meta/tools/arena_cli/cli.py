@@ -3,10 +3,12 @@
 import os
 import sys
 
+import asset as _asset_mod
 import complete as _complete
 import features as _features
 import human as _human_mod
 import robot as _robot_mod
+import settings as _settings_mod
 import viz as _viz_mod
 from common import (
     CLIError,
@@ -32,7 +34,8 @@ the underlying launch file or tool."""
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
     "Attach": ["human", "robot", "cam"],
-    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall"],
+    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall", "settings"],
+    "Data": ["asset"],
     "Features": ["feature", "registry"],
     "Shell": ["deactivate", "resource", "repair"],
 }
@@ -97,8 +100,11 @@ def _root_help() -> str:
     return "\n".join(out)
 
 
-def _verb_help(v: Verb) -> str:
-    out = [f"Usage: arena {v.name} [ARGS]..."]
+def _verb_help(v: Verb, prefix: str = "arena") -> str:
+    args = "[ARGS]..."
+    if isinstance(v.complete, Static) and isinstance(v.complete.values, dict):
+        args = f"[{'|'.join(v.complete.values)}]"
+    out = [f"Usage: {prefix} {v.name} {args}"]
     if v.help:
         out += ["", _indent(v.help)]
     return "\n".join(out)
@@ -196,6 +202,24 @@ def env_(args: list[str]) -> None:
     _exec("ros2", "launch", "task_generator", "task_generator.launch.py", *args)
 
 
+_register(
+    make_verb(
+        "asset",
+        lambda args: _group_cmd("arena asset", _asset_mod.DESCRIPTION, _asset_mod.COMMANDS, args),
+        passthrough=True,
+        help_text=f"{_asset_mod.DESCRIPTION}\n\nCommands:\n{_listing([(v.name, v.short) for v in _asset_mod.COMMANDS.values()])}",
+        complete=Sub(_asset_mod.COMMANDS),
+    )
+)
+_register(
+    make_verb(
+        "settings",
+        lambda args: _group_cmd("arena settings", _settings_mod.DESCRIPTION, _settings_mod.COMMANDS, args),
+        passthrough=True,
+        help_text=f"{_settings_mod.DESCRIPTION}\n\nCommands:\n{_listing([(v.name, v.short) for v in _settings_mod.COMMANDS.values()])}",
+        complete=Sub(_settings_mod.COMMANDS),
+    )
+)
 _register(_viz_mod.VERB)
 _register(_human_mod.VERB)
 _register(_robot_mod.VERB)
@@ -349,11 +373,11 @@ def lockstep(args: list[str]) -> None:
     )
 
 
-@verb("preload", passthrough=True, complete=Union(Manifest("world"), Flags({"--no-scenarios": "skip scenario assets"})))
+@verb("preload", passthrough=True, complete=Union(Manifest("world"), Flags({"--no-scenarios": "skip scenario assets", "--dry-run": "report what is missing without downloading"})))
 def preload(args: list[str]) -> None:
-    """Preload a world's assets ahead of launch.
+    """Preload a world's assets ahead of launch. `arena launch` does this for you.
 
-    `arena preload <world_name> [--no-scenarios]`.
+    `arena preload <world_name> [--no-scenarios] [--dry-run]`.
     """
     if not args:
         raise CLIError("missing argument WORLD")
@@ -428,14 +452,15 @@ def test(args: list[str]) -> None:
     argv = _select_args(args)
     if not any(re.match(r"^--packages-(select|select-regex|up-to|above|ignore)", a) for a in argv):
         argv = [*TEST_DEFAULT_SELECT, *argv]
+    src_dir = os.path.join(_env("ARENA_WS_DIR"), "src")
     listing = subprocess.run(
-        ["colcon", "list", "--names-only", "--base-paths", os.path.join(_env("ARENA_WS_DIR"), "src"), *argv],
+        ["colcon", "list", "--names-only", "--base-paths", src_dir, *argv],
         capture_output=True,
         text=True,
         check=False,
     )
     pkgs = [line.strip() for line in listing.stdout.splitlines() if line.strip()] if listing.returncode == 0 else []
-    test_rc = _run("colcon", "test", "--event-handlers", "console_direct+", *argv)
+    test_rc = _run("colcon", "test", "--base-paths", src_dir, "--event-handlers", "console_direct+", *argv)
     from testsum import summarize
 
     summary = [os.path.join(_env("ARENA_WS_DIR"), "build")]
@@ -493,12 +518,26 @@ def _feature_group_help() -> str:
     return "\n".join(out)
 
 
-def _feature_module_help(name: str, mod) -> str:
-    out = [f"Usage: arena feature {name} COMMAND [ARGS]...", "", _indent(_feature_desc(mod))]
-    rows = [(v.name, v.short) for v in mod.COMMANDS.values() if not v.hidden]
+def _group_help(prefix: str, description: str, commands: dict[str, Verb]) -> str:
+    out = [f"Usage: {prefix} COMMAND [ARGS]...", "", _indent(description)]
+    rows = [(v.name, v.short) for v in commands.values() if not v.hidden]
     if rows:
         out += ["", "Commands:", _listing(rows)]
     return "\n".join(out)
+
+
+def _group_cmd(prefix: str, description: str, commands: dict[str, Verb], args: list[str]) -> int:
+    """Dispatch into a COMMANDS table the way `arena feature <name>` does."""
+    if not args or args[0] in ("-h", "--help"):
+        print(_group_help(prefix, description, commands))
+        return 0
+    v = commands.get(args[0])
+    if v is None:
+        raise CLIError(f"No such command '{args[0]}'. Commands: {', '.join(n for n, c in commands.items() if not c.hidden)}")
+    if _wants_help(args[1:], v.passthrough):
+        print(_verb_help(v, prefix))
+        return 0
+    return v.run(args[1:]) or 0
 
 
 def _feature_cmd(args: list[str]) -> int:
@@ -509,16 +548,7 @@ def _feature_cmd(args: list[str]) -> int:
     mod = _features.load(name)
     if mod is None:
         raise CLIError(f"No such feature '{name}'.")
-    if not sub or sub[0] in ("-h", "--help"):
-        print(_feature_module_help(name, mod))
-        return 0
-    v = mod.COMMANDS.get(sub[0])
-    if v is None:
-        raise CLIError(f"No such command '{sub[0]}' for feature '{name}'.")
-    if _wants_help(sub[1:], v.passthrough):
-        print(_verb_help(v))
-        return 0
-    return v.run(sub[1:]) or 0
+    return _group_cmd(f"arena feature {name}", _feature_desc(mod), mod.COMMANDS, sub)
 
 
 def _feature_subs() -> dict[str, Sub]:
@@ -527,8 +557,8 @@ def _feature_subs() -> dict[str, Sub]:
 
 FEATURE_SPEC = Sub(_feature_subs)
 
-_register(make_verb("feature", _feature_cmd, help_text=FEATURE_HELP, complete=FEATURE_SPEC))
-_register(make_verb("ft", _feature_cmd, hidden=True, help_text="Alias for feature.", complete=FEATURE_SPEC))
+_register(make_verb("feature", _feature_cmd, passthrough=True, help_text=FEATURE_HELP, complete=FEATURE_SPEC))
+_register(make_verb("ft", _feature_cmd, passthrough=True, hidden=True, help_text="Alias for feature.", complete=FEATURE_SPEC))
 
 
 @verb("shellinit", hidden=True)
@@ -560,6 +590,12 @@ def train(args: list[str]) -> None:
 def evaluation(args: list[str]) -> None:
     """Alias for feature evaluation."""
     sys.exit(_feature_cmd(["evaluation", *args]))
+
+
+@verb("planners", hidden=True, passthrough=True, complete=Sub(lambda: _features.load("planners").COMMANDS))
+def planners(args: list[str]) -> None:
+    """Alias for feature planners."""
+    sys.exit(_feature_cmd(["planners", *args]))
 
 
 REGISTRY_VERBS = ("has", "require", "add", "remove", "list", "pull")

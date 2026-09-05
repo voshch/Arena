@@ -28,6 +28,7 @@ class EnvRecord:
     ready: bool = False
     draining: bool = False
     last_heartbeat: builtin_interfaces.msg.Time = attrs.Factory(builtin_interfaces.msg.Time)
+    reserved_at: builtin_interfaces.msg.Time = attrs.Factory(builtin_interfaces.msg.Time)
 
 
 @attrs.define
@@ -66,8 +67,7 @@ class EnvRegistry:
                 raise ValueError(f"env_id {requested_env_id} already in use")
             env_id = requested_env_id
         else:
-            free_candidates = [i for i in self._free if not self._is_draining(i)]
-            env_id = free_candidates[0] if free_candidates else self._next_id
+            env_id = self._next_id
 
         namespace = requested_ns.lstrip("/") if requested_ns else f"arena/env_{env_id}/task_generator_node"
         fqn = f"/{namespace}"
@@ -84,6 +84,7 @@ class EnvRegistry:
             env_id=env_id,
             fqn=fqn,
             last_heartbeat=now,
+            reserved_at=now,
         )
         return env_id, namespace
 
@@ -194,10 +195,6 @@ class EnvRegistry:
         total_height = sum(s.height for s in self._shelves) or shelf.height
         return max(total_height, shelf.cursor + shelf.height)
 
-    def _is_draining(self, env_id: int) -> bool:
-        record = self._records.get(env_id)
-        return record is not None and record.draining
-
     def start_eviction(self, env_id: int) -> bool:
         """Mark slot as DRAINING. Returns False if already draining or not found."""
         record = self._records.get(env_id)
@@ -260,18 +257,20 @@ def sweep_verdict(
     record: EnvRecord,
     *,
     elapsed: float,
+    age: float,
     has_reset_hold: bool,
     process_alive: bool | None,
     heartbeat_timeout: float,
     reset_timeout: float,
     bootstrap_timeout: float,
 ) -> str | None:
-    """Return the eviction reason, or None to keep the env alive."""
+    """Return the eviction reason, or None to keep the env alive. Pre-ready envs age from
+    reservation, bootstrap_timeout 0 never evicts them."""
     if record.draining:
         return None
     if process_alive is False:
         return "process_exited"
     if not record.ready:
-        return "bootstrap_timeout" if elapsed > bootstrap_timeout else None
+        return "bootstrap_timeout" if 0 < bootstrap_timeout < age else None
     budget = reset_timeout if has_reset_hold else heartbeat_timeout
     return "heartbeat_timeout" if elapsed > budget else None

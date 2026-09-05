@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING, Iterable, TypeVar
 import attrs
 import numpy as np
 import scipy.interpolate
+import shapely
 import yaml
 from arena_rclpy_mixins.Time import Time
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from task_generator.shared import Position, PositionRadius, Wall
 
@@ -96,6 +97,9 @@ class WorldOccupancy:
         cols = np.clip(np.array([lo[1], hi[1]]), 0, self._grid.shape[1] - 1)
         self._grid[int(rows.min()) : int(rows.max()), int(cols.min()) : int(cols.max())] = WorldOccupancy.FULL
 
+    def occupy_mask(self, mask: np.ndarray):
+        self._grid[mask] = WorldOccupancy.FULL
+
 
 class WorldLayers:
     _walls: WorldOccupancy  # walls
@@ -129,6 +133,10 @@ class WorldLayers:
     def shape(self) -> tuple[int, ...]:
         return self._walls.grid.shape
 
+    @property
+    def walls(self) -> np.ndarray:
+        return self._walls.grid
+
     def detect_walls(
         self,
         transform: Callable[[tuple[float, float]], Position] | None = None,
@@ -136,9 +144,9 @@ class WorldLayers:
         return occupancy_to_walls(self._walls.grid, transform)
 
     # obstacle interface
-    def obstacle_occupy(self, lo: tuple[int, int], hi: tuple[int, int]):
-        self._obstacle.occupy(lo, hi)
-        self._combined.occupy(lo, hi)
+    def obstacle_occupy(self, mask: np.ndarray):
+        self._obstacle.occupy_mask(mask)
+        self._combined.occupy_mask(mask)
 
     def obstacle_clear(self):
         self._obstacle.clear()
@@ -174,6 +182,49 @@ class WorldLayers:
 
     def fork(self) -> "WorldLayers.WorldLayersFork":
         return WorldLayers.WorldLayersFork(self)
+
+
+@attrs.define(frozen=True)
+class GridFrame:
+    """Row/col <-> map-frame transform of a north-up grid (row 0 is the top edge)."""
+
+    shape: tuple[int, ...]
+    origin: Position
+    resolution: float
+
+    def pos2grid(self, position: Position) -> tuple[int, int]:
+        return np.round(self.shape[0] - (position.y - self.origin.y) / self.resolution), np.round((position.x - self.origin.x) / self.resolution)
+
+    def grid2pos(self, grid_pos: tuple[float, float]) -> Position:
+        return Position(x=grid_pos[1] * self.resolution + self.origin.x, y=(self.shape[0] - grid_pos[0]) * self.resolution + self.origin.y)
+
+    def grid2xy(self, rows: np.ndarray, cols: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized grid2pos."""
+        return cols * self.resolution + self.origin.x, (self.shape[0] - rows) * self.resolution + self.origin.y
+
+    def poly_window(self, poly: shapely.Polygon, offset: float = 0.5) -> tuple[slice, slice, np.ndarray] | None:
+        """Bbox-clipped (rows, cols, inside) of cells whose sample point (row + offset, col + offset) lies inside poly, None when off-grid."""
+        min_x, min_y, max_x, max_y = poly.bounds
+        r_lo, c_lo = self.pos2grid(Position(x=min_x, y=max_y))
+        r_hi, c_hi = self.pos2grid(Position(x=max_x, y=min_y))
+        r0, r1 = max(int(r_lo) - 1, 0), min(int(r_hi) + 2, self.shape[0])
+        c0, c1 = max(int(c_lo) - 1, 0), min(int(c_hi) + 2, self.shape[1])
+        if r0 >= r1 or c0 >= c1:
+            return None
+        rows, cols = np.mgrid[r0:r1, c0:c1]
+        inside = shapely.contains_xy(poly, *self.grid2xy(rows + offset, cols + offset))
+        return slice(r0, r1), slice(c0, c1), inside
+
+    def lines_mask(self, segments: Iterable[tuple[tuple[float, float], tuple[float, float]]]) -> np.ndarray:
+        """Cells touched by the segments rasterized one cell wide."""
+        img = Image.new('1', (int(self.shape[1]), int(self.shape[0])), 0)
+        draw = ImageDraw.Draw(img)
+        for (x0, y0), (x1, y1) in segments:
+            draw.line([self._pixel(x0, y0), self._pixel(x1, y1)], fill=1, width=1)
+        return np.array(img, dtype=bool)
+
+    def _pixel(self, x: float, y: float) -> tuple[int, int]:
+        return int((x - self.origin.x) / self.resolution), int(self.shape[0] - (y - self.origin.y) / self.resolution)
 
 
 @attrs.define()
@@ -254,11 +305,19 @@ class WorldMap:
     def shape(self) -> tuple[int, ...]:
         return self.occupancy.shape
 
+    @property
+    def frame(self) -> GridFrame:
+        return GridFrame(shape=self.shape, origin=self.origin, resolution=self.resolution)
+
     def tf_pos2grid(self, position: Position) -> tuple[int, int]:
-        return np.round(self.shape[0] - (position.y - self.origin.y) / self.resolution), np.round((position.x - self.origin.x) / self.resolution)
+        return self.frame.pos2grid(position)
 
     def tf_grid2pos(self, grid_pos: tuple[float, float]) -> Position:
-        return Position(x=grid_pos[1] * self.resolution + self.origin.x, y=(self.shape[0] - grid_pos[0]) * self.resolution + self.origin.y)
+        return self.frame.grid2pos(grid_pos)
+
+    def tf_grid2xy(self, rows: np.ndarray, cols: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized tf_grid2pos."""
+        return self.frame.grid2xy(rows, cols)
 
     def tf_posr2rect(self, posr: PositionRadius) -> tuple[tuple[int, int], tuple[int, int]]:
         lo = self.tf_pos2grid(
@@ -274,6 +333,15 @@ class WorldMap:
             )
         )
         return (lo, hi)
+
+    def tf_poly2mask(self, poly: shapely.Polygon, offset: float = 0.5) -> np.ndarray:
+        """Cells whose sample point (row + offset, col + offset) lies inside poly, default cell centers."""
+        mask = np.zeros(self.shape[:2], dtype=bool)
+        window = self.frame.poly_window(poly, offset)
+        if window is not None:
+            rows, cols, inside = window
+            mask[rows, cols] = inside
+        return mask
 
     def detect_walls(self) -> WorldWalls:
         return self.occupancy.detect_walls(self.tf_grid2pos)

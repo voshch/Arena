@@ -81,10 +81,10 @@ def Configuration(server: ROSParamServer) -> type:
                 parse=_positive_or_inf,
             )
 
-            RECORD_DATA_DIR = server.ROSParam[str | None](
-                'record_data_dir',
-                '',
-                parse=lambda x: x if bool(x) else None,
+            READY_TIMEOUT = server.ROSParam[float](
+                'robot.ready_timeout',
+                -1,
+                parse=_positive_or_inf,
             )
 
             MOBILE_ADAPTER = server.ROSParam[str](
@@ -109,6 +109,8 @@ def Configuration(server: ROSParamServer) -> type:
                 Constants.TaskMode.TM_Obstacles.default().value,
                 parse=Constants.TaskMode.TM_Obstacles,
             )
+
+            TM_CONFIG = server.ROSParam[str]('tm_config', '')
 
             TM_MODULES = server.ROSParam[set[Constants.TaskMode.TM_Module]]('tm_modules', ','.join([m.value for m in Constants.TaskMode.TM_Module.default()]), parse=lambda x: {Constants.TaskMode.TM_Module(m) for m in x.split(',') if m != ''})
 
@@ -138,12 +140,3 @@ def Configuration(server: ROSParamServer) -> type:
 #         gen = new_gen
 
 #     return lambda x: x if x is not None else gen()
-
-
-# class Hunavsim:
-#     VMAX = lp("VMAX", 0.3)
-#     WAYPOINT_MODE = lp("WAYPOINT_MODE", 0)
-#     FORCE_FACTOR_DESIRED = lp("FORCE_FACTOR_DESIRED", 1.0)
-#     FORCE_FACTOR_OBSTACLE = lp("FORCE_FACTOR_OBSTACLE", 1.0)
-#     FORCE_FACTOR_SOCIAL = lp("FORCE_FACTOR_SOCIAL", 5.0)
-#     FORCE_FACTOR_ROBOT = lp("FORCE_FACTOR_ROBOT", 0.0)

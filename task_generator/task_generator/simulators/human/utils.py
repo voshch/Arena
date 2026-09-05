@@ -13,6 +13,11 @@ class ObstacleLayer(int, enum.Enum):
 ObstacleT = typing.TypeVar('ObstacleT')
 
 
+def stimulus_edge(prev: bool | None, audible: bool) -> bool:
+    """True when the audible bit changed, an unseen source only fires on onset."""
+    return audible if prev is None else prev != audible
+
+
 @attrs.define()
 class KnownObstacle[ObstacleT]:
     obstacle: ObstacleT

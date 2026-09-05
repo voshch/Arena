@@ -29,6 +29,7 @@ from arena_people_msgs.srv import (
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Obstacle as ObstacleDefinition
 from arena_simulation_setup.tree.Wall import WallSegment
 from isaacsim_msgs.msg import (
@@ -67,7 +68,6 @@ from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim, SimLifecycle
 from arena_runtime.sim._control import (
-    controller_spawner_node,
     effective_control_yaml,
     odom_relay_node,
     robot_controllers,
@@ -201,10 +201,9 @@ class IsaacHost(SimLifecycle):
         res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
         if not res.success:
             raise RuntimeError(res.error_msg)
-        await self._node.poll(
-            lambda: self._node.sim_time.to_seconds() >= res.target_sim_time,
-            f"isaac sim clock >= {res.target_sim_time:.3f}s",
-        )
+        target = Time.from_float(res.target_sim_time)
+        while not await self._node.await_sim_time(target, freeze_timeout=10.0):
+            self._node.get_logger().warning(f"waiting on isaac sim clock >= {res.target_sim_time:.3f}s")
         return n / _ISAAC_PHYSICS_HZ
 
 
@@ -361,7 +360,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         robot_params: arena_robots.Robot.ModelParams,
         urdf_path: str,
     ) -> None:
-        """Launch RSP, and (if ros2_control) controller_manager + spawners + twist_stamper."""
+        """Launch RSP, and (if ros2_control) controller_manager + twist_stamper."""
         ns = str(self.node.service_namespace(robot.name))
         with open(urdf_path) as f:
             description = f.read()
@@ -430,8 +429,6 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     )
                 )
             )
-            for controller_name in robot_controllers(robot_config, robot.resolved_assembly):
-                ld.add_action(controller_spawner_node(controller_name))
             ld.add_action(
                 twist_stamper_node(
                     control_spec.cmd_vel_topic,

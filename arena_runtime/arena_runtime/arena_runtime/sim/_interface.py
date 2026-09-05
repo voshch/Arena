@@ -63,6 +63,10 @@ class HumanSimulator(typing.Protocol):
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool: ...
 
 
+class SimUnavailable(RuntimeError):
+    """Sim service call timed out or the sim transport is gone."""
+
+
 class SimLifecycle(abc.ABC):
     """Process-singleton hooks for sim-wide pause/unpause and namespace cleanup."""
 
@@ -358,11 +362,13 @@ class MechanismITF:
     def set_semantics_callback(self, cb: "Callable[[Sequence[SemanticChange]], None]") -> None:
         self._semantics.set_change_callback(cb)
 
-    def attach_semantics(self, kind: str, entity: str, cfgs: "Sequence[SemanticCfg]", *, polygon: "Sequence[tuple[float, float]] | None" = None) -> None:
+    def attach_semantics(self, kind: str, entity: str, cfgs: "Sequence[SemanticCfg]", *, polygon: "Sequence[tuple[float, float]] | None" = None) -> bool:
         from ._mechanism_shim import _ensure_loop
 
         if self._semantics.attach(kind, entity, cfgs, polygon=polygon):
             _ensure_loop(self)
+            return True
+        return False
 
     def detach_semantics(self, entity: str) -> None:
         self._semantics.detach(entity)

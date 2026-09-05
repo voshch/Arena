@@ -18,6 +18,7 @@ ROBOTS_PREFIX = "arena_robots/arena_robots/robots"
 COMPONENTS_PREFIX = "arena_robots/arena_robots/components"
 
 VARIANTS_RE = re.compile(r"^variants:\s*\[([^\]]*)\]", re.MULTILINE)
+DEFAULT_VARIANT_RE = re.compile(r"\bvariant:\s*([\w.-]+)")
 
 
 MESH_URI_RE = re.compile(r'package://arena_robots/([^\s"\'<>\)\}\$]+)')
@@ -57,7 +58,8 @@ def robot_submodules(arena: Path) -> dict[str, list[str]]:
     and `component = <type>/<name>` tags (component refs keep the slash, so the two
     namespaces cannot collide). Paths in the SDK's gitmodules are relative to the SDK;
     we prepend `arena_robots/` for callers. Both tags may list multiple
-    whitespace-separated names (shared upstream dep)."""
+    whitespace-separated names (shared upstream dep). Robots additionally inherit the
+    paths of every component their assembly.yaml mounts by default."""
     sdk_gitmodules = arena / _SDK_SUBDIR / ".gitmodules"
     if not sdk_gitmodules.is_file():
         return {}
@@ -79,6 +81,7 @@ def robot_submodules(arena: Path) -> dict[str, list[str]]:
             names = [rel.split("/", 1)[0]]
         for name in names:
             out.setdefault(name, []).append(path)
+    _inherit_assembly_defaults(arena, out)
     return out
 
 
@@ -130,6 +133,55 @@ def resolve_component_ref(arena: Path, ref: str) -> str | None:
         if match and variant in {v.strip() for v in match.group(1).split(",")}:
             return fam
     return None
+
+
+def assembly_defaults(robot_dir: Path) -> set[str]:
+    """{'<type>/<variant>'} from the `defaults:` block of a robot's assembly.yaml."""
+    path = robot_dir / "assembly.yaml"
+    if not path.is_file():
+        return set()
+    out: set[str] = set()
+    ctype: str | None = None
+    base: int | None = None
+    in_defaults = False
+    for line in path.read_text(errors="ignore").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent == 0:
+            in_defaults = stripped == "defaults:"
+            ctype, base = None, None
+            continue
+        if not in_defaults:
+            continue
+        if base is None:
+            base = indent
+        if indent == base and stripped.endswith(":"):
+            ctype = stripped[:-1]
+        elif ctype and (match := DEFAULT_VARIANT_RE.search(stripped)):
+            out.add(f"{ctype}/{match.group(1)}")
+    return out
+
+
+def _inherit_assembly_defaults(arena: Path, subs: dict[str, list[str]]) -> None:
+    """Append each robot's default components' submodule paths to its own entry."""
+    root = arena / ROBOTS_PREFIX
+    if not root.is_dir():
+        return
+    families = component_families(arena)
+    for robot_dir in sorted(root.iterdir()):
+        if not robot_dir.is_dir():
+            continue
+        for ref in sorted(assembly_defaults(robot_dir)):
+            family = ref if ref in families else resolve_component_ref(arena, ref)
+            if family is None:
+                continue
+            paths = subs.get(family, [])
+            if not paths:
+                continue
+            entry = subs.setdefault(robot_dir.name, [])
+            entry.extend(path for path in paths if path not in entry)
 
 
 def _path_robots(arena: Path) -> dict[str, set[str]]:
@@ -283,29 +335,41 @@ def cmd_uninstall(arena: Path, _args) -> int:
 
 
 def _uninit_mesh_paths(arena: Path) -> dict[str, set[Path]]:
-    """Robots whose mesh submodule(s) under ROBOTS_PREFIX are uninitialized,
-    with paths rewritten relative to arena_robots/arena_robots (matching URI layout)."""
+    """Robots and component refs whose mesh submodule(s) are uninitialized, with paths
+    rewritten relative to arena_robots/arena_robots (matching URI layout)."""
     subs = robot_submodules(arena)
     status = submodule_status(arena)
+    prefixes = (f"{ROBOTS_PREFIX}/", f"{COMPONENTS_PREFIX}/")
     out: dict[str, set[Path]] = {}
-    for robot, paths in subs.items():
+    for owner, paths in subs.items():
         for p in paths:
-            if status.get(p) != "uninit" or not p.startswith(f"{ROBOTS_PREFIX}/"):
+            if status.get(p) != "uninit" or not p.startswith(prefixes):
                 continue
-            out.setdefault(robot, set()).add(Path(p).relative_to("arena_robots/arena_robots"))
+            out.setdefault(owner, set()).add(Path(p).relative_to("arena_robots/arena_robots"))
     return out
 
 
+def _uri_owner(rel: str) -> str | None:
+    """Owner of a `package://arena_robots/<rel>` path: robot name, or `<type>/<name>` component ref."""
+    parts = rel.split("/")
+    if parts[0] == "robots" and len(parts) > 2:
+        return parts[1]
+    if parts[0] == "components" and len(parts) > 3:
+        return f"{parts[1]}/{parts[2]}"
+    return None
+
+
 def cmd_check(arena: Path, args) -> int:
-    root = arena / "arena_robots" / "arena_robots" / "robots"
-    if not root.is_dir():
-        print(f"error: {root} not found", file=sys.stderr)
+    sdk = arena / "arena_robots" / "arena_robots"
+    roots = [sdk / "robots", sdk / "components"]
+    if not roots[0].is_dir():
+        print(f"error: {roots[0]} not found", file=sys.stderr)
         return 1
     uninit = {} if args.all else _uninit_mesh_paths(arena)
 
     misses: dict[str, dict[str, set[str]]] = {}
     dynamic: set[str] = set()
-    files = [p for p in root.rglob("*")
+    files = [p for root in roots if root.is_dir() for p in root.rglob("*")
              if p.is_file() and (p.suffix.lower() in SCAN_EXTS or ".urdf." in p.name)]
     for f in files:
         try:
@@ -322,20 +386,16 @@ def cmd_check(arena: Path, args) -> int:
                 if line_dynamic:
                     dynamic.add(rel)
                     continue
-                mesh_rest = rel.removeprefix("robots/")
-                robot = (mesh_rest.split("/", 1)[0]
-                         if mesh_rest != rel and "/" in mesh_rest else None)
-                rel_path = Path(rel)
-                if robot and any(rel_path.is_relative_to(sm) for sm in uninit.get(robot, ())):
+                owner = _uri_owner(rel)
+                if owner and any(Path(rel).is_relative_to(sm) for sm in uninit.get(owner, ())):
                     continue
-                if not (root.parent / rel).is_file():
-                    owner = robot or "<other>"
-                    src = str(f.relative_to(root.parent.parent))
-                    misses.setdefault(owner, {}).setdefault(rel, set()).add(src)
+                if not (sdk / rel).is_file():
+                    src = str(f.relative_to(sdk.parent))
+                    misses.setdefault(owner or "<other>", {}).setdefault(rel, set()).add(src)
 
     if not args.quiet:
         if uninit:
-            print(f"skipping uninitialized robots: {', '.join(sorted(uninit))}")
+            print(f"skipping uninitialized: {', '.join(sorted(uninit))}")
         print(f"dynamic refs: {len(dynamic)}, not statically checkable")
 
     total = sum(len(v) for v in misses.values())
@@ -344,12 +404,12 @@ def cmd_check(arena: Path, args) -> int:
             print("OK: every concrete package://arena_robots/... URI resolves")
         return 0
 
-    print(f"\nFAIL: {total} unresolved path(s) in {len(misses)} robot(s):")
-    for robot in sorted(misses):
-        print(f"\n  [{robot}]")
-        for rel in sorted(misses[robot]):
+    print(f"\nFAIL: {total} unresolved path(s) in {len(misses)} owner(s):")
+    for owner in sorted(misses):
+        print(f"\n  [{owner}]")
+        for rel in sorted(misses[owner]):
             print(f"    {rel}")
-            for src in sorted(misses[robot][rel]):
+            for src in sorted(misses[owner][rel]):
                 print(f"      ← {src}")
     return 1
 
@@ -507,7 +567,9 @@ def main() -> int:
     sub.add_parser("update")
     sub.add_parser("uninstall")
     p_add = sub.add_parser("add")
-    p_add.add_argument("names", nargs="*", help="robot names and/or component refs (<type>/<name>)")
+    p_add.add_argument("names", nargs="*",
+                       help="robot names and/or component refs (<type>/<name>); "
+                            "a robot also pulls the components its assembly mounts by default")
     p_add.add_argument("--all", action="store_true", help="fetch every robot and component")
     p_rm = sub.add_parser("rm")
     p_rm.add_argument("names", nargs="*", help="robot names and/or component refs (<type>/<name>)")

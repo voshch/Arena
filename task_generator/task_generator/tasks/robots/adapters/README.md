@@ -101,36 +101,32 @@ for the rare per-viz nudge.
 
 `CollisionTrackerNode` (in
 [`manager/robot_manager/collision_tracker.py`](../../../manager/robot_manager/collision_tracker.py))
-is a shim for adapters that don't run nav2's own `collision_monitor` (RL, bare
-cmd_vel, research stacks). It takes the mobile cap's `polygons_dict` and
-publishes two topics under the robot namespace each tick (sim-time gated):
+is mounted by `MobileAdapter` whenever the mobile cap declares a `footprint`
+or a `polygons_dict`. It publishes two topics under the robot namespace each
+tick (sim-time gated):
 
 | Topic | Type | Content |
 |---|---|---|
 | `<robot_ns>/collision_monitor_state` | `nav2_msgs/CollisionMonitorState` | Scalar `polygon_name` + `action_type` for the most severe active polygon. Drop-in for the same observation nav2's `collision_monitor` emits, training consumers don't care which produced it. |
-| `<robot_ns>/collision_events` | `arena_robots_msgs/CollisionEvents` | Per-obstacle attribution: one `CollisionEvent` per (cap polygon × hit entity). `obstacle_id` is the entity name (`<wall>` for world walls/doors), `polygon_name` is the cap polygon. `distance` is reserved for future signed-clearance reporting; v1 is intersect-only and always emits `0.0`. |
+| `<robot_ns>/collision_events` | `arena_robots_msgs/CollisionEvents` | Footprint contacts, the single definition of a collision: at most one `CollisionEvent` for the top-ranked grid cell under the footprint plus one per pedestrian disc it intersects. `kind` is one of the `KIND_*` constants; `obstacle_id` is the static name, `<wall>` for an authored wall, `<map>` for map occupancy with nothing authored behind it, or the pedestrian name. `distance` is reserved for future signed-clearance reporting; v1 is intersect-only and always emits `0.0`. Under `fail_on_collision` a non-empty message ends the episode with outcome `collision`, so that outcome implies a non-empty message in the bag. Without a `footprint` the topic is not published. |
 
-Geometry comes from `EnvironmentManager.walls_geometry` (MultiLineString) and
-`EnvironmentManager.static_polygons` (name-keyed footprint dict); both are kept
-in sync by the spawn/respawn pipeline, so the tracker needs no per-episode
-refresh hook. Pedestrians are read from the `arena_peds` topic.
+Static geometry is one window read on `EnvironmentManager.collision_grid`
+(see [manager/README.md](../../../manager/README.md)), kept in sync by the
+spawn/respawn pipeline, so the tracker needs no per-episode refresh hook.
+`EnvironmentManager.static_polygons` only supplies the reported centroid.
+Pedestrians are read from the `arena_peds` topic.
 
-Opt in by mounting the node in `__init__` and adding it to the task_generator's
-executor:
+An adapter that does not subclass `MobileAdapter` mounts the node in
+`__init__` and adds it to the task_generator's executor:
 
 ```python
 class MyMobileAdapter(Adapter):
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self._collision: CollisionTrackerNode | None = None
-        polys = self.rm.robot.model.resolve_sync().caps.mobile.polygons_dict
-        if not polys:
-            return
-        self._collision = CollisionTrackerNode(self.rm, polys)
+        mobile = self.rm.robot.model.resolve_sync().caps.mobile
+        self._collision = CollisionTrackerNode(self.rm, mobile.polygons_dict, footprint=mobile.footprint)
         self.rm.node.executor.add_node(self._collision)
 ```
 
-See [`mobile/test_collision.py`](mobile/test_collision.py) for a working example, a debug
-adapter that mounts the tracker and drives a constant forward cmd_vel. The
-`nav2` adapter deliberately does not mount it: nav2's own `collision_monitor`
-already publishes `collision_monitor_state` on the same topic.
+[`mobile/test_collision.py`](mobile/test_collision.py) is a `MobileAdapter`
+subclass that drives a constant forward cmd_vel, for exercising the tracker.

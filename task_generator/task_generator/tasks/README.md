@@ -16,7 +16,7 @@ zero-or-more `TM_Module` instances into a single episode loop. Entry points:
 | Method | Purpose |
 | --- | --- |
 | `Task.create(...)` | async factory; calls `robots_manager.set_up()` before returning |
-| `reset(**kwargs)` | run one full episode reset (see sequence below) |
+| `reset(seed=...)` | run one full episode reset under one seed (see sequence below) |
 | `set_tm_robots(enum)` | swap the active `TM_Robots` mode |
 | `set_tm_robots_composite(specs)` | bind a multi-TM composite via `FleetManager` |
 | `set_tm_obstacles(enum)` | swap the active `TM_Obstacles` mode |

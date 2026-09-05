@@ -13,6 +13,7 @@ from arena_simulation_setup.shared.entities import Obstacle
 from arena_simulation_setup.tree import (
     DomainAssetIdentifier,
     DynamicPaths,
+    Identifier,
     NetResolver,
 )
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
@@ -70,6 +71,10 @@ class SubWall(abc.ABC):
     def realize(self, start: Position, end: Position) -> WallRealization:
         pass
 
+    def identifiers(self) -> Iterable[Identifier]:
+        """Assets this sub-wall references. Groups recurse into their members."""
+        return ()
+
 
 @attrs.define(kw_only=True)
 class TilingAsset(SubWall):
@@ -80,6 +85,9 @@ class TilingAsset(SubWall):
     tile: list[SubWallT]
     every: float  # place every N meters
     width: float = attrs.field(converter=float, default=0.0)  # width of the tile [m]
+
+    def identifiers(self) -> Iterable[Identifier]:
+        return itertools.chain.from_iterable(asset.identifiers() for asset in self.tile)
 
     def realize(self, start: Position, end: Position) -> WallRealization:
         start, end = self._shift(start, end)
@@ -112,6 +120,9 @@ class FillAsset(SubWall):
     start: PositionalNumber = PositionalNumber.parse(0.0)  # start at N meters along the wall
     end: PositionalNumber = PositionalNumber.parse(-0.0)  # end at N meters along the wall
 
+    def identifiers(self) -> Iterable[Identifier]:
+        return itertools.chain.from_iterable(asset.identifiers() for asset in self.fill)
+
     def realize(self, start: Position, end: Position) -> WallRealization:
         start, end = self._shift(start, end)
 
@@ -133,6 +144,9 @@ class PlaceObstacleAsset(SubWall):
     orientation: Orientation = attrs.field(factory=Orientation.identity)  # interior orientation
 
     name: str = ""  # asset name, defaults to model name
+
+    def identifiers(self) -> Iterable[Identifier]:
+        return (self.model,)
 
     def realize(self, start: Position, end: Position) -> WallRealization:
 
@@ -164,6 +178,9 @@ class PlaceWallSegmentAsset(SubWall):
     height: float = attrs.field(converter=float, default=2.0)
     width: float = attrs.field(converter=float, default=0.05)
     name: str = ""
+
+    def identifiers(self) -> Iterable[Identifier]:
+        return (self.material,)
 
     def realize(self, start: Position, end: Position) -> WallRealization:
         start, end = self._shift(start, end)
@@ -207,6 +224,10 @@ WallRealization = tuple[Iterable[WallSegment], Iterable[Obstacle]]
 class WallDescription:
     main: list[SubWallT]
 
+    def identifiers(self) -> Iterable[Identifier]:
+        """Every asset this wall kind references, through nested tiling and fill groups."""
+        return itertools.chain.from_iterable(subwall.identifiers() for subwall in self.main)
+
     def realize(self, start: Position, end: Position) -> WallRealization:
         r_walls, r_obstacles = itertools.chain(()), itertools.chain(())
         for subwall in self.main:
@@ -231,6 +252,7 @@ class WallDescription:
 
 class WallIdentifier(DomainAssetIdentifier[WallDescription]):
     _asset_type = 'Wall'
+    NESTS = True
 
     def load(self, path: Path, /, **kwargs: object) -> WallDescription:
         del kwargs  # unused

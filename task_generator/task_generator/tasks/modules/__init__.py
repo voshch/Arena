@@ -2,7 +2,7 @@ import typing
 
 from task_generator.tasks.mode import TaskMode
 
-from . import audio_systems, clear_forbidden_zones, rviz_ui, staged
+from . import clear_forbidden_zones, rviz_ui, sounds, staged
 
 if typing.TYPE_CHECKING:
     from task_generator.tasks.task import Task
@@ -22,8 +22,8 @@ class TM_Module(TaskMode):
 
 __all__ = [
     "TM_Module",
-    "audio_systems",
     "clear_forbidden_zones",
     "rviz_ui",
+    "sounds",
     "staged",
 ]

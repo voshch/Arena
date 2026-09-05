@@ -102,6 +102,7 @@ def paint(character: str) -> shapely.Polygon | shapely.MultiPolygon | None:
             return ink
     return None
 
+
 GLYPHS: dict[str, str] = {
     ' ': '',
     '-': 'g1 g2',

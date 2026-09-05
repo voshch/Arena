@@ -204,28 +204,28 @@ robots:
 static: []
 dynamic:
 - name: ped_1
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [3.125, 11.5, 3.142]
   agent: {agent_type: adult, desired_velocity: 1.2}
   waypoints:
   - [1.5, 11.5, 0.0]
   - [4.75, 11.5, 0.0]
 - name: ped_2
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [6.875, 11.5, 3.142]
   agent: {agent_type: adult, desired_velocity: 1.0}
   waypoints:
   - [5.25, 11.5, 0.0]
   - [8.5, 11.5, 0.0]
 - name: ped_3
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [3.125, 6.5, 3.142]
   agent: {agent_type: adult, desired_velocity: 1.4}
   waypoints:
   - [1.5, 6.5, 0.0]
   - [4.75, 6.5, 0.0]
 - name: ped_4
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [6.875, 6.5, 3.142]
   agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:

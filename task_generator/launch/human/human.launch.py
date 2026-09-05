@@ -35,7 +35,7 @@ def generate_launch_description():
     auditory_playback = LaunchArgument(
         name="auditory.playback",
         default_value="auto",
-        description="PortAudio output device for local playback; auto = system default, none = no playback nodes",
+        description="PortAudio output device for local playback; auto = pulse, pipewire, default, then the PortAudio default, none = no playback nodes",
     )
     auditory_block_size = LaunchArgument(
         name="auditory.block_size",
@@ -66,6 +66,10 @@ def generate_launch_description():
     )
     auditory_rir_in_propagation = LaunchArgument(
         name="auditory.rir_in_propagation",
+        default_value="true",
+    )
+    auditory_ped_hearing = LaunchArgument(
+        name="auditory.ped_hearing",
         default_value="true",
     )
     auditory_robot_sound = LaunchArgument(
@@ -195,7 +199,6 @@ def generate_launch_description():
             ]),
             launch_arguments={
                 'use_sim_time': 'true',
-                'world_file': '',
                 **namespace.dict
             }.items(),
         )
@@ -286,7 +289,7 @@ def generate_launch_description():
                     "pyroom_ceiling_height_m": 3.0,
                     "pyroom_cache_position_quantization_m": 0.10,
                     "pyroom_cache_size": 512,
-                    "pyroom_robot_listeners_only": True,
+                    "ped_hearing": auditory_ped_hearing.param_value(bool),
                     "compute_rir_in_propagation": auditory_rir_in_propagation.param_value(bool),
                     "propagation_backend": auditory_propagation.substitution,
                     "portal_adjacency_tolerance_m": 0.2,

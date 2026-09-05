@@ -69,78 +69,37 @@ class PyroomacousticsConfig:
     cache_size: int = 512
 
     def __attrs_post_init__(self) -> None:
-        if (
-            isinstance(self.sample_rate_hz, bool)
-            or not isinstance(self.sample_rate_hz, int)
-            or self.sample_rate_hz <= 0
-        ):
-            raise ValueError(
-                "sample_rate_hz must be a positive integer"
-            )
+        if isinstance(self.sample_rate_hz, bool) or not isinstance(self.sample_rate_hz, int) or self.sample_rate_hz <= 0:
+            raise ValueError("sample_rate_hz must be a positive integer")
 
-        if (
-            isinstance(self.max_order, bool)
-            or not isinstance(self.max_order, int)
-            or self.max_order < -1
-        ):
-            raise ValueError(
-                "max_order must be an integer greater than or equal to -1"
-            )
+        if isinstance(self.max_order, bool) or not isinstance(self.max_order, int) or self.max_order < -1:
+            raise ValueError("max_order must be an integer greater than or equal to -1")
 
         if self.max_order == -1 and not self.ray_tracing:
-            raise ValueError(
-                "max_order=-1 disables the image-source method; "
-                "ray_tracing must then be enabled"
-            )
+            raise ValueError("max_order=-1 disables the image-source method; ray_tracing must then be enabled")
 
         if not math.isfinite(self.temperature_c):
             raise ValueError("temperature_c must be finite")
 
         if self.temperature_c <= -273.15:
-            raise ValueError(
-                "temperature_c must be above absolute zero"
-            )
+            raise ValueError("temperature_c must be above absolute zero")
 
-        if not math.isfinite(
-            self.relative_humidity_percent
-        ):
-            raise ValueError(
-                "relative_humidity_percent must be finite"
-            )
+        if not math.isfinite(self.relative_humidity_percent):
+            raise ValueError("relative_humidity_percent must be finite")
 
-        if not (
-            0.0
-            <= self.relative_humidity_percent
-            <= 100.0
-        ):
-            raise ValueError(
-                "relative_humidity_percent must be between 0 and 100"
-            )
+        if not (0.0 <= self.relative_humidity_percent <= 100.0):
+            raise ValueError("relative_humidity_percent must be between 0 and 100")
 
-        if (
-            not math.isfinite(
-                self.max_random_displacement_m
-            )
-            or self.max_random_displacement_m < 0.0
-        ):
-            raise ValueError(
-                "max_random_displacement_m must be finite "
-                "and non-negative"
-            )
+        if not math.isfinite(self.max_random_displacement_m) or self.max_random_displacement_m < 0.0:
+            raise ValueError("max_random_displacement_m must be finite and non-negative")
 
         if self.minimum_phase and self.ray_tracing:
-            raise ValueError(
-                "minimum_phase cannot be combined with ray_tracing"
-            )
+            raise ValueError("minimum_phase cannot be combined with ray_tracing")
 
         if self.use_randomized_ism and self.max_order < 0:
-            raise ValueError(
-                "randomized ISM requires max_order >= 0"
-            )
+            raise ValueError("randomized ISM requires max_order >= 0")
         if self.cache_position_quantization_m <= 0.0:
-            raise ValueError(
-                "cache_position_quantization_m must be positive"
-            )
+            raise ValueError("cache_position_quantization_m must be positive")
         if self.cache_size <= 0:
             raise ValueError("cache_size must be positive")
 
@@ -181,27 +140,16 @@ def _load_pyroomacoustics() -> ModuleType:
     try:
         return import_module("pyroomacoustics")
     except ImportError as exc:
-        raise PyroomacousticsUnavailableError(
-            "pyroomacoustics is required for acoustic RIR rendering "
-            "but is not installed in the current Python environment"
-        ) from exc
+        raise PyroomacousticsUnavailableError("pyroomacoustics is required for acoustic RIR rendering but is not installed in the current Python environment") from exc
 
 
 def _coefficient_description(
     material: AcousticMaterial,
     property_name: str,
 ) -> str:
-    fallback_note = (
-        "; resolved through catalog default"
-        if material.used_default
-        else ""
-    )
+    fallback_note = "; resolved through catalog default" if material.used_default else ""
 
-    return (
-        f"Arena material {material.material_id}: "
-        f"{material.canonical_name}; {property_name}"
-        f"{fallback_note}"
-    )
+    return f"Arena material {material.material_id}: {material.canonical_name}; {property_name}{fallback_note}"
 
 
 class PyroomMaterialAdapter:
@@ -248,15 +196,9 @@ class PyroomMaterialAdapter:
         else:
             material = self.resolve(material_or_id)
 
-        pra = (
-            pyroomacoustics_module
-            if pyroomacoustics_module is not None
-            else _load_pyroomacoustics()
-        )
+        pra = pyroomacoustics_module if pyroomacoustics_module is not None else _load_pyroomacoustics()
 
-        frequencies = list(
-            material.center_frequencies_hz
-        )
+        frequencies = list(material.center_frequencies_hz)
 
         energy_absorption = {
             "description": _coefficient_description(
@@ -291,9 +233,7 @@ class PyroomacousticsAdapter:
         config: PyroomacousticsConfig | None = None,
     ) -> None:
         self._config = config or PyroomacousticsConfig()
-        self._materials = PyroomMaterialAdapter(
-            material_catalog
-        )
+        self._materials = PyroomMaterialAdapter(material_catalog)
         self._rir_cache: OrderedDict[
             tuple[Hashable, ...],
             RoomImpulseResponse,
@@ -336,11 +276,7 @@ class PyroomacousticsAdapter:
             dtype=np.float64,
         ).T
 
-        resolved_boundary_materials = [
-            self._materials.resolve(material_id)
-            for material_id
-            in specification.boundary_material_ids
-        ]
+        resolved_boundary_materials = [self._materials.resolve(material_id) for material_id in specification.boundary_material_ids]
 
         boundary_materials = [
             self._materials.convert(
@@ -350,12 +286,8 @@ class PyroomacousticsAdapter:
             for material in resolved_boundary_materials
         ]
 
-        floor_material = self._materials.resolve(
-            specification.floor_material_id
-        )
-        ceiling_material = self._materials.resolve(
-            specification.ceiling_material_id
-        )
+        floor_material = self._materials.resolve(specification.floor_material_id)
+        ceiling_material = self._materials.resolve(specification.ceiling_material_id)
 
         room = pra.Room.from_corners(
             corners,
@@ -363,17 +295,11 @@ class PyroomacousticsAdapter:
             max_order=self._config.max_order,
             materials=boundary_materials,
             temperature=self._config.temperature_c,
-            humidity=(
-                self._config.relative_humidity_percent
-            ),
+            humidity=(self._config.relative_humidity_percent),
             air_absorption=self._config.air_absorption,
             ray_tracing=self._config.ray_tracing,
-            use_rand_ism=(
-                self._config.use_randomized_ism
-            ),
-            max_rand_disp=(
-                self._config.max_random_displacement_m
-            ),
+            use_rand_ism=(self._config.use_randomized_ism),
+            max_rand_disp=(self._config.max_random_displacement_m),
             min_phase=self._config.minimum_phase,
         )
 
@@ -397,20 +323,12 @@ class PyroomacousticsAdapter:
             ceiling_material,
         ]
 
-        fallback_material_ids = tuple(
-            dict.fromkeys(
-                material.material_id
-                for material in all_resolved_materials
-                if material.used_default
-            )
-        )
+        fallback_material_ids = tuple(dict.fromkeys(material.material_id for material in all_resolved_materials if material.used_default))
 
         return BuiltPyroom(
             room=room,
             specification=specification,
-            fallback_material_ids=(
-                fallback_material_ids
-            ),
+            fallback_material_ids=(fallback_material_ids),
         )
 
     def compute_rir(
@@ -440,16 +358,12 @@ class PyroomacousticsAdapter:
         self._validate_vertical_position(
             source,
             name="source_position_m",
-            ceiling_height_m=(
-                specification.ceiling_height_m
-            ),
+            ceiling_height_m=(specification.ceiling_height_m),
         )
         self._validate_vertical_position(
             listener,
             name="listener_position_m",
-            ceiling_height_m=(
-                specification.ceiling_height_m
-            ),
+            ceiling_height_m=(specification.ceiling_height_m),
         )
 
         quantization = self._config.cache_position_quantization_m
@@ -470,20 +384,12 @@ class PyroomacousticsAdapter:
 
         # pyroomacoustics checks whether both points lie inside the room.
         room.add_source(np.asarray(source, dtype=np.float64))
-        room.add_microphone(
-            np.asarray(listener, dtype=np.float64)
-        )
+        room.add_microphone(np.asarray(listener, dtype=np.float64))
 
         room.compute_rir()
 
-        if (
-            room.rir is None
-            or not room.rir
-            or not room.rir[0]
-        ):
-            raise RuntimeError(
-                "pyroomacoustics did not produce an RIR"
-            )
+        if room.rir is None or not room.rir or not room.rir[0]:
+            raise RuntimeError("pyroomacoustics did not produce an RIR")
 
         samples = np.asarray(
             room.rir[0][0],
@@ -491,19 +397,13 @@ class PyroomacousticsAdapter:
         ).copy()
 
         pra = _load_pyroomacoustics()
-        fractional_delay_length = int(
-            pra.constants.get("frac_delay_length")
-        )
+        fractional_delay_length = int(pra.constants.get("frac_delay_length"))
 
         result = RoomImpulseResponse(
             samples=samples,
             sample_rate_hz=self._config.sample_rate_hz,
-            global_delay_samples=(
-                fractional_delay_length // 2
-            ),
-            fallback_material_ids=(
-                built.fallback_material_ids
-            ),
+            global_delay_samples=(fractional_delay_length // 2),
+            fallback_material_ids=(built.fallback_material_ids),
         )
         self._rir_cache[key] = result
         while len(self._rir_cache) > self._config.cache_size:
@@ -526,15 +426,10 @@ class PyroomacousticsAdapter:
             try:
                 raw = tuple(value)
             except TypeError as exc:
-                raise TypeError(
-                    f"{name} must be a 3-element sequence or "
-                    "an object with x, y, and z attributes"
-                ) from exc
+                raise TypeError(f"{name} must be a 3-element sequence or an object with x, y, and z attributes") from exc
 
         if len(raw) != 3:
-            raise ValueError(
-                f"{name} must contain exactly three coordinates"
-            )
+            raise ValueError(f"{name} must contain exactly three coordinates")
 
         try:
             position = (
@@ -543,14 +438,10 @@ class PyroomacousticsAdapter:
                 float(raw[2]),
             )
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{name} contains a non-numeric coordinate"
-            ) from exc
+            raise ValueError(f"{name} contains a non-numeric coordinate") from exc
 
         if not all(math.isfinite(value) for value in position):
-            raise ValueError(
-                f"{name} contains a non-finite coordinate"
-            )
+            raise ValueError(f"{name} contains a non-finite coordinate")
 
         return position
 
@@ -566,10 +457,7 @@ class PyroomacousticsAdapter:
         # Points directly on a boundary are invalid/ambiguous for the
         # image-source visibility calculations.
         if not 0.0 < z < ceiling_height_m:
-            raise ValueError(
-                f"{name} z={z} must be strictly between "
-                f"0 and the ceiling height {ceiling_height_m}"
-            )
+            raise ValueError(f"{name} z={z} must be strictly between 0 and the ceiling height {ceiling_height_m}")
 
     @staticmethod
     def _validate_room_specification(
@@ -581,51 +469,26 @@ class PyroomacousticsAdapter:
         )
 
         if corners.ndim != 2 or corners.shape[1] != 2:
-            raise ValueError(
-                "room corners must form an N-by-2 array"
-            )
+            raise ValueError("room corners must form an N-by-2 array")
 
         if len(corners) < 3:
-            raise ValueError(
-                "a room requires at least three corners"
-            )
+            raise ValueError("a room requires at least three corners")
 
         if not np.isfinite(corners).all():
-            raise ValueError(
-                "room corners contain non-finite coordinates"
-            )
+            raise ValueError("room corners contain non-finite coordinates")
 
-        if (
-            len(specification.boundary_material_ids)
-            != len(corners)
-        ):
-            raise ValueError(
-                "one boundary material is required per room edge"
-            )
+        if len(specification.boundary_material_ids) != len(corners):
+            raise ValueError("one boundary material is required per room edge")
 
         # Prevent pyroomacoustics from reversing a clockwise polygon,
         # which would break the association between edges and materials.
         x = corners[:, 0]
         y = corners[:, 1]
 
-        signed_double_area = float(
-            np.sum(
-                x * np.roll(y, -1)
-                - np.roll(x, -1) * y
-            )
-        )
+        signed_double_area = float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
 
         if signed_double_area <= 0.0:
-            raise ValueError(
-                "room corners must be ordered counter-clockwise"
-            )
+            raise ValueError("room corners must be ordered counter-clockwise")
 
-        if (
-            not math.isfinite(
-                specification.ceiling_height_m
-            )
-            or specification.ceiling_height_m <= 0.0
-        ):
-            raise ValueError(
-                "ceiling height must be finite and positive"
-            )
+        if not math.isfinite(specification.ceiling_height_m) or specification.ceiling_height_m <= 0.0:
+            raise ValueError("ceiling height must be finite and positive")

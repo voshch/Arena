@@ -25,10 +25,19 @@ from arena_simulation_setup.shared import (
     Schedule,
     SemanticCfg,
     Signal,
+    Sound,
     Wall,
 )
 from arena_simulation_setup.shared.semantics import parse_semantics
-from arena_simulation_setup.tree import FallbackResolver, Identifier, PathView, SimplePathResolver
+from arena_simulation_setup.tree import (
+    WORLD_PROVIDERS,
+    FallbackResolver,
+    Identifier,
+    NetResolver,
+    PathView,
+    References,
+    SimplePathResolver,
+)
 from arena_simulation_setup.tree.assets.Material import (
     Material,
     MaterialIdentifier,
@@ -45,9 +54,7 @@ MICROPHONE_PLACEMENT_TOLERANCE_M = 0.05
 @attrs.define
 class WorldMicrophone:
     zone: str = attrs.field(converter=lambda value: str(value).strip())
-    placement: str = attrs.field(
-        converter=lambda value: str(value).strip().lower()
-    )
+    placement: str = attrs.field(converter=lambda value: str(value).strip().lower())
     position: Position = attrs.field(converter=Position.converter)
     frame: str = attrs.field(
         converter=lambda value: str(value).strip().strip('/'),
@@ -57,9 +64,7 @@ class WorldMicrophone:
 
     @property
     def listener_id(self) -> str:
-        return (
-            f'microphone:zone:{self.zone}:{self.placement}:{self.index}'
-        )
+        return f'microphone:zone:{self.zone}:{self.placement}:{self.index}'
 
 
 @attrs.define
@@ -95,6 +100,7 @@ class LevelDescription:
         elevators: list[Elevator] = attrs.field(factory=list)
         schedules: list[Schedule] = attrs.field(factory=list)
         signals: list[Signal] = attrs.field(factory=list)
+        sounds: list[Sound] = attrs.field(factory=list)
         entities: WorldEntities = attrs.field(factory=WorldEntities)
         ceiling: bool = attrs.field(default=True)
         ceiling_height: float | None = attrs.field(default=None)
@@ -142,6 +148,10 @@ class LevelDescription:
     @property
     def all_signals(self) -> typing.Iterable[Signal]:
         return (signal for zone in self.zones for signal in zone.signals)
+
+    @property
+    def all_sounds(self) -> typing.Iterable[Sound]:
+        return (sound for zone in self.zones for sound in zone.sounds)
 
     @property
     def all_floors(self) -> typing.Iterable[Floor]:
@@ -211,6 +221,9 @@ class LevelDescription:
             dynamic_entity.pose.position = dynamic_entity.pose.position + diff
             for idx, wp in enumerate(dynamic_entity.waypoints):
                 dynamic_entity.waypoints[idx] = wp + diff
+        for sound in self.all_sounds:
+            if sound.position is not None:
+                sound.position = sound.position + diff
         for microphone in self.microphones:
             if microphone.frame.strip('/') == 'map':
                 microphone.position = microphone.position + diff
@@ -223,51 +236,33 @@ class LevelDescription:
             placement = microphone.placement.strip()
             frame = microphone.frame.strip().strip('/')
             if not zone_name or ':' in zone_name:
-                raise ValueError(
-                    f'invalid microphone zone {microphone.zone!r}'
-                )
+                raise ValueError(f'invalid microphone zone {microphone.zone!r}')
             if not placement or ':' in placement:
-                raise ValueError(
-                    f'invalid microphone placement {microphone.placement!r}'
-                )
+                raise ValueError(f'invalid microphone placement {microphone.placement!r}')
             if not frame:
-                raise ValueError(
-                    f'microphone in zone {zone_name!r} requires a TF frame'
-                )
+                raise ValueError(f'microphone in zone {zone_name!r} requires a TF frame')
             if microphone.index < 1:
                 raise ValueError('microphone index must be at least 1')
             zone = zones.get(zone_name)
             if zone is None:
-                raise ValueError(
-                    f'microphone references unknown zone {zone_name!r}'
-                )
+                raise ValueError(f'microphone references unknown zone {zone_name!r}')
             listener_id = microphone.listener_id
             if listener_id in listener_ids:
                 raise ValueError(f'duplicate microphone {listener_id!r}')
             listener_ids.add(listener_id)
-            if placement == 'ceiling' and (
-                not zone.ceiling or not zone.ceiling_material.name
-            ):
-                raise ValueError(
-                    f'ceiling microphone {listener_id!r} is in a zone '
-                    'without a ceiling'
-                )
+            if placement == 'ceiling' and (not zone.ceiling or not zone.ceiling_material.name):
+                raise ValueError(f'ceiling microphone {listener_id!r} is in a zone without a ceiling')
             if frame != 'map':
                 continue
             import shapely
 
-            polygon = shapely.Polygon(
-                [(corner.x, corner.y) for corner in zone.corners]
-            )
+            polygon = shapely.Polygon([(corner.x, corner.y) for corner in zone.corners])
             point = shapely.Point(
                 microphone.position.x,
                 microphone.position.y,
             )
             if not polygon.covers(point):
-                raise ValueError(
-                    f'microphone {listener_id!r} is outside zone '
-                    f'{zone_name!r}'
-                )
+                raise ValueError(f'microphone {listener_id!r} is outside zone {zone_name!r}')
             if (
                 placement == 'ceiling'
                 and zone.ceiling_height is not None
@@ -277,10 +272,7 @@ class LevelDescription:
                     abs_tol=MICROPHONE_PLACEMENT_TOLERANCE_M,
                 )
             ):
-                raise ValueError(
-                    f'microphone {listener_id!r} z={microphone.position.z} '
-                    f'does not match ceiling height {zone.ceiling_height}'
-                )
+                raise ValueError(f'microphone {listener_id!r} z={microphone.position.z} does not match ceiling height {zone.ceiling_height}')
 
     def lookup_zone_polygon(self, name: str) -> list[Position] | None:
         """Look up a zone, door, or elevator by name and return its polygon vertices."""
@@ -574,6 +566,29 @@ class WorldDescription:
     def get_level(self, level_id: str) -> Level | None:
         return self.levels.get(level_id, None)
 
+    def identifiers(self) -> typing.Iterable[Identifier]:
+        """Every asset this world references, for preloading and publish preflight."""
+        from arena_simulation_setup.tree.Wall import WallIdentifier
+
+        for level in self.all_levels:
+            for zone in level.zones:
+                yield zone.material
+                yield zone.ceiling_material
+                yield zone.wall_material
+                for wall in zone.walls:
+                    if wall.material is not None:
+                        yield wall.material
+                    if wall.kind:
+                        yield WallIdentifier(wall.kind)
+                for door in zone.doors:
+                    yield door.material
+                for elevator in zone.elevators:
+                    yield elevator.material
+                for entity in zone.entities.static:
+                    yield entity.model
+                for entity in zone.entities.dynamic:
+                    yield entity.model
+
     def compact_world(self, origins: dict[str, tuple[float, float]]) -> LevelDescription:
         """Return a single LevelDescription that has all the levels but with shifted origins so that they don't stack with each other."""
         out = LevelDescription()
@@ -600,10 +615,7 @@ class WorldDescription:
             level.validate_microphones()
             for microphone in level.microphones:
                 if microphone.listener_id in microphone_ids:
-                    raise RuntimeError(
-                        f'microphone {microphone.listener_id!r} appears in '
-                        'multiple levels'
-                    )
+                    raise RuntimeError(f'microphone {microphone.listener_id!r} appears in multiple levels')
                 microphone_ids.add(microphone.listener_id)
             for elevator in level.all_elevators:
                 if elevator.name in elevator_levels:
@@ -978,12 +990,78 @@ class MultiLevelWorldView(PathView):
                 del kwargs
                 return ScenarioView(path)
 
+        ScenarioIdentifier.use(SimplePathResolver(ScenarioIdentifier, self.path / 'scenarios'))
         ScenarioIdentifier.use(FallbackResolver(ScenarioIdentifier, self.path / 'scenarios'))
         return ScenarioIdentifier
 
     @property
     def world_path(self) -> Path:
         return self.path / 'world.yaml'
+
+    def identifiers(self, scenarios: bool = True, strict: bool = False) -> Iterator[Identifier]:
+        """Every asset this world and its scenarios reference, deduplicated.
+
+        A scenario that will not load is skipped, or raises when *strict*. Callers
+        validating a world before publishing it want strict, so an unreadable
+        scenario cannot pass as having no references.
+        """
+        seen: set[tuple[str, str]] = set()
+        description = self.load(validate=False)
+
+        def _fresh(identifier: Identifier) -> bool:
+            key = (type(identifier).__name__, identifier.shortname)
+            if key in seen:
+                return False
+            seen.add(key)
+            return True
+
+        def _expand(identifier: Identifier) -> Iterator[Identifier]:
+            """Yield an identifier, then anything the asset it names references in turn."""
+            # an unset optional field parses to a nameless identifier, which references nothing
+            if not identifier.name or not _fresh(identifier):
+                return
+            yield identifier
+            if not type(identifier).NESTS:
+                return
+            try:
+                loaded = identifier.resolve_sync()
+            except Exception:
+                return
+            if not isinstance(loaded, References):
+                return
+            try:
+                nested = list(loaded.identifiers())
+            except Exception:
+                if strict:
+                    raise
+                logging.warning('skipping references of %s', identifier.shortname, exc_info=True)
+                return
+            for entry in nested:
+                yield from _expand(entry)
+
+        for identifier in description.identifiers():
+            yield from _expand(identifier)
+
+        if not scenarios:
+            return
+
+        # a scenario may address zones by name, which only resolves through a converter
+        # bound to this world. Level origins are irrelevant here: the closure needs the
+        # names a scenario references, not where the points land.
+        compacted = description.compact_world(dict.fromkeys(description.level_ids, (0.0, 0.0)))
+        zone_converter = compacted.zone_converter(np.random.default_rng(0))
+
+        for scenario in self.scenario.listall():
+            view = scenario.resolve_sync()
+            try:
+                entries = list(view.identifiers(converter=zone_converter))
+            except Exception:
+                if strict:
+                    raise
+                logging.warning('skipping scenario %s', view.path, exc_info=True)
+                continue
+            for entry in entries:
+                yield from _expand(entry)
 
     def load(self, validate: bool = True, level_filter: set[str] | None = None) -> WorldDescription:
         """Load the WorldDescription from disk.
@@ -1105,21 +1183,11 @@ class MultiLevelWorldView(PathView):
 
 
 class WorldIdentifier(Identifier[MultiLevelWorldView]):
-    @classmethod
-    async def listall_async(cls, **kwargs: object) -> list[Self]:
-        return list(cls.listall(**kwargs))
+    def __hash__(self) -> int:
+        return hash(self.name)
 
-    @classmethod
-    def listall(cls, **kwargs: object) -> Iterator[Self]:
-        del kwargs
-        seen: set[str] = set()
-        for root in [*_world_search_roots(), ASS_DIR / 'worlds']:
-            if not root.is_dir():
-                continue
-            for name in os.listdir(root):
-                if (root / name).is_dir() and name not in seen:
-                    seen.add(name)
-                    yield WorldIdentifier(name)
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, WorldIdentifier) and self.name == other.name
 
     def load(self, path: Path, /, **kwargs: object) -> MultiLevelWorldView:
         del kwargs
@@ -1145,4 +1213,6 @@ def _world_search_roots() -> list[Path]:
 
 
 WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _world_search_roots()))
+WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
+WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))
 WorldIdentifier.use(FallbackResolver(WorldIdentifier, ASS_DIR / 'worlds'))

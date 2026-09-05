@@ -3,182 +3,142 @@ robots:
   goal: [15.0, 17.35, 0.0]
 
 dynamic:
-- behavior_tree: ./hunav_1_behavior_tree.xml
-  model: female_adult_medical_01
-  name: hunav_1
+- name: hunav_1
+  model: Hospital/nurse_female_caucasian_young
   pose: [4.0, 2.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [4.0, 2.0, 0.0]
+    - [4.0, 2.0, 0.0]
 
-- behavior_tree: ./hunav_2_behavior_tree.xml
-  model: male_adult_medical_01
-  name: hunav_2
+- name: hunav_2
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [2.0, 3.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [2.0, 3.0, 0.0]
+    - [2.0, 3.0, 0.0]
 
-- behavior_tree: ./hunav_3_behavior_tree.xml
-  model: female_adult_business_02
-  name: hunav_3
+- name: hunav_3
+  model: Office/office_female_caucasian_young
   pose: [6.0, 3.5, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [6.0, 3.5, 0.0]
+    - [6.0, 3.5, 0.0]
 
-- behavior_tree: ./hunav_4_behavior_tree.xml
-  model: male_adult_construction_01
-  name: hunav_4
+- name: hunav_4
+  model: worker_male_caucasian_young
   pose: [3.0, 6.5, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.4}
   waypoints:
-  - [2.0, 7.0, 0.0]
+    - [2.0, 7.0, 0.0]
 
-- behavior_tree: ./hunav_5_behavior_tree.xml
-  model: female_adult_police_01
-  name: hunav_5
+- name: hunav_5
+  model: casual_female_caucasian_young
   pose: [6.0, 8.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.8}
   waypoints:
-  - [6.0, 8.0, 0.0]
+    - [6.0, 8.0, 0.0]
 
-- behavior_tree: ./hunav_6_behavior_tree.xml
-  model: male_adult_construction_02
-  name: hunav_6
+- name: hunav_6
+  model: worker_male_asian_middleage
   pose: [4.0, 16.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.4}
   waypoints:
-  - [4.0, 16.0, 0.0]
+    - [4.0, 16.0, 0.0]
 
-- behavior_tree: ./hunav_7_behavior_tree.xml
-  model: female_adult_police_02
-  name: hunav_7
+- name: hunav_7
+  model: casual_female_asian_middleage
   pose: [6.0, 22.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.8}
   waypoints:
-  - [6.0, 22.0, 0.0]
+    - [6.0, 22.0, 0.0]
 
-- behavior_tree: ./hunav_8_behavior_tree.xml
-  model: male_adult_construction_03
-  name: hunav_8
+- name: hunav_8
+  model: worker_male_african_young
   pose: [2.0, 20.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.4}
   waypoints:
-  - [2.0, 20.0, 0.0]
+    - [2.0, 20.0, 0.0]
 
-- behavior_tree: ./hunav_9_behavior_tree.xml
-  model: female_adult_medical_01
-  name: hunav_9
+- name: hunav_9
+  model: Hospital/nurse_female_caucasian_young
   pose: [2.0, 27.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [2.0, 27.0, 0.0]
+    - [2.0, 27.0, 0.0]
 
-- behavior_tree: ./hunav_10_behavior_tree.xml
-  model: male_adult_medical_01
-  name: hunav_10
+- name: hunav_10
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [7.0, 28.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [6.0, 28.0, 0.0]
+    - [6.0, 28.0, 0.0]
 
-- behavior_tree: ./hunav_11_behavior_tree.xml
-  model: female_adult_police_03
-  name: hunav_11
+- name: hunav_11
+  model: casual_female_african_young
   pose: [14.0, 5.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.8}
   waypoints:
-  - [14.0, 5.0, 0.0]
+    - [14.0, 5.0, 0.0]
 
-- behavior_tree: ./hunav_12_behavior_tree.xml
-  model: male_adult_construction_05
-  name: hunav_12
+- name: hunav_12
+  model: worker_male_caucasian_middleage
   pose: [16.0, 7.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.4}
   waypoints:
-  - [16.0, 7.0, 0.0]
+    - [16.0, 7.0, 0.0]
 
-- behavior_tree: ./hunav_13_behavior_tree.xml
-  model: female_adult_business_02
-  name: hunav_13
+- name: hunav_13
+  model: Office/office_female_caucasian_young
   pose: [21.0, 3.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [21.0, 3.0, 0.0]
+    - [21.0, 3.0, 0.0]
 
-- behavior_tree: ./hunav_14_behavior_tree.xml
-  model: male_adult_police_04
-  name: hunav_14
+- name: hunav_14
+  model: casual_male_caucasian_middleage
   pose: [23.0, 7.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.8}
   waypoints:
-  - [23.0, 7.0, 0.0]
+    - [23.0, 7.0, 0.0]
 
-- behavior_tree: ./hunav_15_behavior_tree.xml
-  model: female_adult_medical_01
-  name: hunav_15
-  pose: [14.0, 15.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+- name: hunav_15
+  model: Hospital/nurse_female_caucasian_young
+  pose: [14.0, 14.7, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [14.0, 15.0, 0.0]
+    - [14.0, 14.7, 0.0]
 
-- behavior_tree: ./hunav_16_behavior_tree.xml
-  model: male_adult_medical_01
-  name: hunav_16
-  pose: [16.0, 19.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+- name: hunav_16
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [16.3, 19.0, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [16.0, 19.0, 0.0]
+    - [16.3, 19.0, 0.0]
 
-- behavior_tree: ./hunav_17_behavior_tree.xml
-  model: female_adult_police_01
-  name: hunav_17
+- name: hunav_17
+  model: casual_female_caucasian_young
   pose: [14.0, 24.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.8}
   waypoints:
-  - [14.0, 24.0, 0.0]
+    - [14.0, 24.0, 0.0]
 
-- behavior_tree: ./hunav_18_behavior_tree.xml
-  model: male_adult_construction_01
-  name: hunav_18
-  pose: [16.0, 28.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+- name: hunav_18
+  model: worker_male_caucasian_young
+  pose: [16.0, 27.4, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.4}
   waypoints:
-  - [16.0, 28.0, 0.0]
+    - [16.0, 27.4, 0.0]
 
-- behavior_tree: ./hunav_19_behavior_tree.xml
-  model: female_adult_business_02
-  name: hunav_19
+- name: hunav_19
+  model: Office/office_female_caucasian_young
   pose: [14.0, 32.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.5}
   waypoints:
-  - [14.0, 32.0, 0.0]
+    - [14.0, 32.0, 0.0]
 
-- behavior_tree: ./hunav_20_behavior_tree.xml
-  model: male_adult_police_04
-  name: hunav_20
+- name: hunav_20
+  model: casual_male_caucasian_middleage
   pose: [16.0, 33.0, 0.0]
-  velocity: 2.5
-  desired_velocity: 2.5
+  agent: {agent_type: adult, desired_velocity: 1.8}
   waypoints:
-  - [16.0, 33.0, 0.0]
+    - [16.0, 33.0, 0.0]

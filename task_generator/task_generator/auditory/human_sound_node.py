@@ -65,21 +65,11 @@ class HumanSoundNode(Node):
         )
         self._detector = AuditoryEventDetector(
             self._publish_sound_event,
-            walking_speed_threshold=float(
-                self.get_parameter("walking_speed_threshold").value
-            ),
-            footstep_interval_sec=float(
-                self.get_parameter("footstep_interval_sec").value
-            ),
-            greeting_distance_m=float(
-                self.get_parameter("greeting_distance_m").value
-            ),
-            greeting_fov_deg=float(
-                self.get_parameter("greeting_fov_deg").value
-            ),
-            greeting_cooldown_sec=float(
-                self.get_parameter("greeting_cooldown_sec").value
-            ),
+            walking_speed_threshold=float(self.get_parameter("walking_speed_threshold").value),
+            footstep_interval_sec=float(self.get_parameter("footstep_interval_sec").value),
+            greeting_distance_m=float(self.get_parameter("greeting_distance_m").value),
+            greeting_fov_deg=float(self.get_parameter("greeting_fov_deg").value),
+            greeting_cooldown_sec=float(self.get_parameter("greeting_cooldown_sec").value),
         )
         self._pedestrian_subscription = self.create_subscription(
             Pedestrians,
@@ -106,10 +96,7 @@ class HumanSoundNode(Node):
             world = WorldIdentifier(world_name).resolve_sync().load()
             self._acoustic_scene = AcousticScene.from_world(world)
         except Exception as exc:
-            self.get_logger().warning(
-                "failed to load acoustic scene for footstep material mapping: "
-                f"{exc!r}"
-            )
+            self.get_logger().warning(f"failed to load acoustic scene for footstep material mapping: {exc!r}")
             self._acoustic_scene = None
 
     def _floor_tag(self, ped: Pedestrian) -> str:
@@ -118,12 +105,7 @@ class HumanSoundNode(Node):
         zone = self._acoustic_scene.zone_at(ped.pose.position)
         if zone is None:
             return "default"
-        tag = (
-            zone.floor_material_id.strip()
-            .lower()
-            .replace(" ", "_")
-            .replace("-", "_")
-        )
+        tag = zone.floor_material_id.strip().lower().replace(" ", "_").replace("-", "_")
         supported = {
             "walnut_planks",
             "oak_planks",
@@ -145,10 +127,7 @@ class HumanSoundNode(Node):
         msg = SoundEvent()
         msg.header.stamp = stamp
         msg.header.frame_id = "map"
-        msg.event_id = (
-            f"human:{ped.id}:{stamp.sec}:{stamp.nanosec}:"
-            f"{next(self._event_counter)}"
-        )
+        msg.event_id = f"human:{ped.id}:{stamp.sec}:{stamp.nanosec}:{next(self._event_counter)}"
         msg.source_agent_id = int(ped.id)
         msg.source_agent_name = ped.name
         msg.sound_type = sound_type
@@ -156,11 +135,7 @@ class HumanSoundNode(Node):
         msg.asset_id = sound_type
         msg.source_position = ped.pose.position
         msg.source_yaw = self._yaw(ped.pose.orientation)
-        msg.semantic_tags = (
-            ["walk", self._floor_tag(ped)]
-            if sound_type == "footstep"
-            else ["human", sound_type]
-        )
+        msg.semantic_tags = ["walk", self._floor_tag(ped)] if sound_type == "footstep" else ["human", sound_type]
         msg.loop = False
         source_volume_db, duration_sec = {
             "footstep": (45.0, 0.2),
@@ -168,9 +143,7 @@ class HumanSoundNode(Node):
         }.get(sound_type, (60.0, 1.0))
         msg.source_volume_db = source_volume_db
         msg.duration.sec = int(duration_sec)
-        msg.duration.nanosec = int(
-            (duration_sec % 1.0) * 1_000_000_000
-        )
+        msg.duration.nanosec = int((duration_sec % 1.0) * 1_000_000_000)
         self._sound_publisher.publish(msg)
         self._publish_cone(sound_type, ped, stamp)
 
@@ -231,9 +204,7 @@ class HumanSoundNode(Node):
             a=0.95,
         )
         outline.points = [apex, *arc_points, apex]
-        self._marker_publisher.publish(
-            MarkerArray(markers=[marker, outline])
-        )
+        self._marker_publisher.publish(MarkerArray(markers=[marker, outline]))
 
     @staticmethod
     def _color(sound_type: str) -> ColorRGBA:
@@ -245,12 +216,8 @@ class HumanSoundNode(Node):
 
     @staticmethod
     def _yaw(quaternion: Quaternion) -> float:
-        siny_cosp = 2.0 * (
-            quaternion.w * quaternion.z + quaternion.x * quaternion.y
-        )
-        cosy_cosp = 1.0 - 2.0 * (
-            quaternion.y * quaternion.y + quaternion.z * quaternion.z
-        )
+        siny_cosp = 2.0 * (quaternion.w * quaternion.z + quaternion.x * quaternion.y)
+        cosy_cosp = 1.0 - 2.0 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z)
         return math.atan2(siny_cosp, cosy_cosp)
 
 

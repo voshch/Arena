@@ -8,15 +8,19 @@ import numpy as np
 import pytest
 
 try:
+    import shapely
+    import shapely.affinity
     from arena_rclpy_mixins.Time import Time
-    from arena_simulation_setup.tree.World.World import LevelDescription
+    from arena_simulation_setup.shared.entities import Obstacle
+    from arena_simulation_setup.tree.World.World import Level, LevelDescription, WorldDescription
+    from arena_simulation_setup.utils.geometry import Pose
     from arena_simulation_setup.utils.geometry import Position as GeoPosition
-    from task_generator.manager.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
+    from task_generator.manager.world_manager.utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
     from task_generator.manager.world_manager.world_manager import (
         WorldManager,
-        _disc_kernel,
         _occupancy_to_available,
         _sample_grid_positions,
+        _zone_mask,
     )
     from task_generator.constants.rng import EpisodeRng
     from task_generator.shared import Position, PositionRadius
@@ -42,25 +46,6 @@ def grid_distance_to_occupied(occupancy: np.ndarray, row: int, col: int) -> floa
     if len(occ) == 0:
         return float("inf")
     return float(np.min(np.linalg.norm(occ - np.array([row, col]), axis=1)))
-
-
-class TestDiscKernel:
-    def test_normalised_to_unit_sum(self):
-        for r in (1.0, 2.5, 4.0, 10.0):
-            k = _disc_kernel(r)
-            assert k.shape[0] == k.shape[1]
-            assert k.sum() == pytest.approx(1.0, abs=1e-6)
-
-    def test_disc_geometry(self):
-        k = _disc_kernel(3.0)
-        # Kernel size = 2*ceil(3)+1 = 7
-        assert k.shape == (7, 7)
-        # Corner (-3,-3) is at L2 distance sqrt(18) > 3 -> outside disc, zero.
-        assert k[0, 0] == 0.0
-        # Centre is inside.
-        assert k[3, 3] > 0.0
-        # Axial cell (-3, 0) at L2 = 3 -> inside disc.
-        assert k[0, 3] > 0.0
 
 
 class TestOccupancyToAvailable:
@@ -225,12 +210,27 @@ class TestCoordinateTransforms:
         assert tuple(int(v) for v in wm.tf_pos2grid(Position(x=ox, y=oy))) == (h, 0)
 
 
+class TestZoneMask:
+    def test_matches_pointwise_contains(self):
+        wmap = make_map(empty_grid(60, 80), resolution=0.1, origin=(-1.0, 0.5))
+        polys = [shapely.Polygon([(0.0, 1.0), (3.0, 1.0), (3.0, 2.5), (0.0, 2.5)]), shapely.Polygon([(4.0, 3.0), (6.0, 3.0), (5.0, 5.0)])]
+        mask = _zone_mask(wmap, polys)
+        rows, cols = np.mgrid[0:60, 0:80]
+        expected = np.zeros((60, 80), dtype=bool)
+        for r, c in zip(rows.ravel(), cols.ravel(), strict=True):
+            p = wmap.tf_grid2pos((int(r), int(c)))
+            expected[r, c] = any(poly.contains(shapely.Point(p.x, p.y)) for poly in polys)
+        assert np.array_equal(mask, expected)
+        assert mask.sum() > 0
+
+
 class TestRenderedSampling:
     @staticmethod
     def make_wm_from_level(level: LevelDescription, seed: int = 0) -> WorldManager:
         wm = WorldManager.__new__(WorldManager)
         wm._map = WorldMap.from_world_description(level, resolution=0.05, time=Time())
         wm._multi_map = None
+        wm._zone_masks = {}
         episode_rng = EpisodeRng()
         episode_rng.reseed(seed)
         wm._NodeInterface__node = SimpleNamespace(conf=SimpleNamespace(General=SimpleNamespace(RNG=episode_rng)))
@@ -245,3 +245,104 @@ class TestRenderedSampling:
         for p in out:
             assert 10 <= p.x <= 30, f"x={p.x} outside rendered zone [10,30]"
             assert 5 <= p.y <= 15, f"y={p.y} outside rendered zone [5,15]"
+
+
+class TestStaticFootprints:
+    """update_world rasterizes static entity footprints, or a fixed square when unannotated."""
+
+    RES = 0.05
+
+    @staticmethod
+    def make_obstacle(x: float, y: float) -> Obstacle:
+        return Obstacle(name="thing", model="box", pose=Pose(position=GeoPosition(x, y)))
+
+    def make_wm(self, h: int = 100, w: int = 100, level_origins: dict | None = None) -> WorldManager:
+        wm = WorldManager.__new__(WorldManager)
+        wm._map = make_map(empty_grid(h, w), resolution=self.RES)
+        wm._map.level_origins = level_origins or {}
+        wm._multi_map = None
+        return wm
+
+    @staticmethod
+    def world_with(*obstacles: Obstacle, level_id: str = "0") -> WorldDescription:
+        zone = LevelDescription.Zone(name="z", corners=[], entities=LevelDescription.Zone.WorldEntities(static=list(obstacles)))
+        return WorldDescription(levels={level_id: Level(zones=[zone])})
+
+    @staticmethod
+    def occupied_bbox(grid: np.ndarray) -> tuple[int, int, int, int]:
+        rows, cols = np.nonzero(~WorldOccupancy.not_full(grid))
+        return int(rows.min()), int(rows.max()) + 1, int(cols.min()), int(cols.max()) + 1
+
+    def test_poly2mask_matches_rect_cells(self):
+        wm = self.make_wm()
+        mask = wm._map.tf_poly2mask(shapely.box(1.0, 1.0, 2.0, 1.5))
+        rows, cols = np.nonzero(mask)
+        assert (int(rows.min()), int(rows.max()) + 1) == (100 - 30, 100 - 20)
+        assert (int(cols.min()), int(cols.max()) + 1) == (20, 40)
+        assert int(mask.sum()) == 10 * 20
+
+    def test_diagonal_footprint_is_not_its_envelope(self):
+        wm = self.make_wm()
+        poly = shapely.affinity.rotate(shapely.box(1.5, 2.25, 3.5, 2.75), 45)
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(2.5, 2.5)), static_footprints=[poly])
+        occupied = int((~WorldOccupancy.not_full(wm._map.occupancy.grid)).sum())
+        area_cells = 1.0 / (self.RES**2)
+        assert 0.85 * area_cells <= occupied <= 1.2 * area_cells
+
+    def test_unannotated_keeps_unit_radius_square(self):
+        wm = self.make_wm()
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(2.5, 2.5)), static_footprints=[None])
+        r0, r1, c0, c1 = self.occupied_bbox(wm._map.occupancy.grid)
+        assert (r1 - r0, c1 - c0) == (40, 40)
+        assert (c0, c1) == (30, 70)
+
+    def test_rect_footprint_keeps_aspect(self):
+        wm = self.make_wm()
+        poly = shapely.box(1.0, 2.0, 3.0, 2.5)
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(2.0, 2.25)), static_footprints=[poly])
+        r0, r1, c0, c1 = self.occupied_bbox(wm._map.occupancy.grid)
+        assert (c0, c1) == (20, 60)
+        assert (r1 - r0) == 10
+
+    def test_rotated_footprint_swaps_axes(self):
+        wm = self.make_wm()
+        poly = shapely.affinity.rotate(shapely.box(1.0, 2.0, 3.0, 2.5), 90)
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(2.0, 2.25)), static_footprints=[poly])
+        r0, r1, c0, c1 = self.occupied_bbox(wm._map.occupancy.grid)
+        assert (c1 - c0) == 10
+        assert (r1 - r0) == 40
+
+    def test_missing_footprints_fall_back(self):
+        wm = self.make_wm()
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(2.5, 2.5), self.make_obstacle(1.0, 1.0)), static_footprints=[shapely.box(2.0, 2.0, 3.0, 3.0), None])
+        grid = wm._map.occupancy.grid
+        assert not WorldOccupancy.not_full(grid)[100 - 30, 30]
+        assert not WorldOccupancy.not_full(grid)[100 - 25, 25]
+        assert WorldOccupancy.not_full(grid)[100 - 70, 70]
+
+    def test_footprint_count_mismatch_raises(self):
+        wm = self.make_wm()
+        with pytest.raises(ValueError):
+            wm.update_world(wm._map, self.world_with(self.make_obstacle(1.0, 1.0)), static_footprints=[])
+
+    def test_no_footprints_marks_every_entity(self):
+        wm = self.make_wm()
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(1.0, 1.0)))
+        assert not WorldOccupancy.not_full(wm._map.occupancy.grid)[100 - 20, 20]
+
+    def test_level_origin_shifts_combined_map_only(self):
+        wm = self.make_wm(level_origins={"1": (2.0, 0.0)})
+        level_map = make_map(empty_grid(100, 100), resolution=self.RES)
+        wm._multi_map = MultiLevelMap({"1": level_map})
+        poly = shapely.box(0.5, 0.5, 1.0, 1.0)
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(0.75, 0.75), level_id="1"), multi_level_map=wm._multi_map, static_footprints=[poly])
+        _, _, c0, c1 = self.occupied_bbox(wm._map.occupancy.grid)
+        assert (c0, c1) == (50, 60)
+        _, _, lc0, lc1 = self.occupied_bbox(level_map.occupancy.grid)
+        assert (lc0, lc1) == (10, 20)
+
+    def test_single_frame_map_has_no_level_offset(self):
+        wm = self.make_wm()
+        wm.update_world(wm._map, self.world_with(self.make_obstacle(0.75, 0.75)), static_footprints=[shapely.box(0.5, 0.5, 1.0, 1.0)])
+        _, _, c0, c1 = self.occupied_bbox(wm._map.occupancy.grid)
+        assert (c0, c1) == (10, 20)

@@ -72,9 +72,7 @@ class AcousticPlotDashboard:
         self._energy_bin_ms = max(float(energy_bin_ms), 0.1)
         self._early_window_sec = max(float(early_window_sec), 0.0)
         self._figure = plt.figure(figsize=(14.0, 8.5))
-        self._figure.canvas.manager.set_window_title(
-            "Arena pyroomacoustics diagnostics"
-        )
+        self._figure.canvas.manager.set_window_title("Arena pyroomacoustics diagnostics")
         self._figure.suptitle("Waiting for an acoustic RIR")
         plt.show(block=False)
 
@@ -132,16 +130,8 @@ class AcousticPlotDashboard:
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
         selected_zones = set(snapshot.traversed_zones)
-        selected_zones.update(
-            zone
-            for zone in (snapshot.source_zone, snapshot.listener_zone)
-            if zone
-        )
-        rooms = tuple(
-            room
-            for room in snapshot.room_specs
-            if not selected_zones or room.zone_name in selected_zones
-        )
+        selected_zones.update(zone for zone in (snapshot.source_zone, snapshot.listener_zone) if zone)
+        rooms = tuple(room for room in snapshot.room_specs if not selected_zones or room.zone_name in selected_zones)
         if not rooms:
             rooms = snapshot.room_specs
 
@@ -245,11 +235,7 @@ class AcousticPlotDashboard:
             raise ValueError("RIR has no non-zero samples")
         peak_index = int(np.argmax(np.abs(samples)))
         delay = int(snapshot.rir.global_delay_samples)
-        physical_time_ms = (
-            (np.arange(samples.size, dtype=np.float64) - delay)
-            / float(snapshot.rir.sample_rate_hz)
-            * 1000.0
-        )
+        physical_time_ms = (np.arange(samples.size, dtype=np.float64) - delay) / float(snapshot.rir.sample_rate_hz) * 1000.0
         normalized = samples / peak_amplitude
         dominant_time_ms = float(physical_time_ms[peak_index])
         axis.plot(physical_time_ms, normalized, color="#6a1b9a", linewidth=0.8)
@@ -261,10 +247,7 @@ class AcousticPlotDashboard:
             label=f"dominant arrival {dominant_time_ms:.2f} ms",
         )
         gain_db = 20.0 * math.log10(max(peak_amplitude, 1e-15))
-        axis.set_title(
-            "RIR waveform "
-            f"(peak transfer {gain_db:.1f} dB, filter delay {delay} samples)"
-        )
+        axis.set_title(f"RIR waveform (peak transfer {gain_db:.1f} dB, filter delay {delay} samples)")
         axis.set_xlabel("physical time [ms]")
         axis.set_ylabel("peak-normalized amplitude")
         axis.grid(alpha=0.25)
@@ -306,28 +289,10 @@ class AcousticPlotDashboard:
         energy = np.add.reduceat(samples * samples, starts)
         maximum = max(float(np.max(energy)), 1e-30)
         energy_db = 10.0 * np.log10(np.maximum(energy / maximum, 1e-12))
-        centers = np.asarray(
-            [
-                physical_time_ms[
-                    min(int(start + bin_samples // 2), samples.size - 1)
-                ]
-                for start in starts
-            ]
-        )
+        centers = np.asarray([physical_time_ms[min(int(start + bin_samples // 2), samples.size - 1)] for start in starts])
         peak_time_ms = float(physical_time_ms[peak_index])
         early_end_ms = peak_time_ms + self._early_window_sec * 1000.0
-        colors = [
-            (
-                "#e63946"
-                if abs(center - peak_time_ms) <= 0.5 * self._energy_bin_ms
-                else "#f4a261"
-                if peak_time_ms < center <= early_end_ms
-                else "#457b9d"
-                if center > early_end_ms
-                else "#adb5bd"
-            )
-            for center in centers
-        ]
+        colors = [("#e63946" if abs(center - peak_time_ms) <= 0.5 * self._energy_bin_ms else "#f4a261" if peak_time_ms < center <= early_end_ms else "#457b9d" if center > early_end_ms else "#adb5bd") for center in centers]
         axis.bar(
             centers,
             energy_db,
@@ -335,9 +300,7 @@ class AcousticPlotDashboard:
             color=colors,
         )
         axis.set_ylim(-80.0, 2.0)
-        axis.set_title(
-            f"RIR energy in {self._energy_bin_ms:g} ms bins"
-        )
+        axis.set_title(f"RIR energy in {self._energy_bin_ms:g} ms bins")
         axis.set_xlabel("physical time [ms]")
         axis.set_ylabel("relative energy [dB]")
         axis.grid(axis="y", alpha=0.25)

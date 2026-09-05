@@ -3,6 +3,7 @@
 `DrivetrainSpec` is frozen and hashable so that voices sharing a spec also share
 their (large) generated noise field — see `voice._tables`.
 """
+
 import json
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -39,37 +40,37 @@ class DrivetrainSpec:
     """
 
     # --- phase clock ---------------------------------------------------
-    K: float = 2720.0                 # rad/m; lumped gear teeth * ratio / wheel radius
+    K: float = 2720.0  # rad/m; lumped gear teeth * ratio / wheel radius
     # --- order-domain source: the gear-mesh comb -----------------------
     partials_db: tuple[float, ...] = attrs.field(converter=_t, default=())  # S_k at integer orders k = 1, 2, 3, ...
     tonal_gain_db: float = 0.0
     # --- order-domain source: the broadband ----------------------------
     order_grid: tuple[float, ...] = attrs.field(converter=_t, default=())  # order axis for the broadband PSD
     order_db: tuple[float, ...] = attrs.field(converter=_t, default=())  # broadband PSD, dB, at those orders
-    order_max: float = 200.0          # highest order the noise field resolves
-    field_metres: float = 24.0        # noise field length; also its loop period
-    field_levels: int = 6             # mipmap depth
-    field_headroom: float = 2.0       # keep the field read rate under 1/this
-    field_smooth: bool = True         # see note below
+    order_max: float = 200.0  # highest order the noise field resolves
+    field_metres: float = 24.0  # noise field length; also its loop period
+    field_levels: int = 6  # mipmap depth
+    field_headroom: float = 2.0  # keep the field read rate under 1/this
+    field_smooth: bool = True  # see note below
     broadband_gain_db: float = 0.0
     # --- fixed transfer -------------------------------------------------
     transfer_hz: tuple[float, ...] = attrs.field(converter=_t, default=())
     transfer_db: tuple[float, ...] = attrs.field(converter=_t, default=())
-    transfer_taps: int = 513          # linear-phase FIR length
+    transfer_taps: int = 513  # linear-phase FIR length
     # --- level ----------------------------------------------------------
     speed_exponent: float = 1.0
     v_ref: float = 1.0
-    load_depth: float = 0.0           # fractional level change per unit torque
+    load_depth: float = 0.0  # fractional level change per unit torque
     # --- two drivetrains ------------------------------------------------
-    n_drivetrains: int = 2            # only sets the default per-voice gain and K
-    lr_mismatch: float = 0.006        # fractional K spread between sides
+    n_drivetrains: int = 2  # only sets the default per-voice gain and K
+    lr_mismatch: float = 0.006  # fractional K spread between sides
     # --- regimes ---------------------------------------------------------
-    v_static: float = 0.02            # below this the drivetrain is silent
+    v_static: float = 0.02  # below this the drivetrain is silent
     hysteresis: float = 0.15
-    crossfade_s: float = 0.040        # static <-> driving fade time constant
+    crossfade_s: float = 0.040  # static <-> driving fade time constant
     # --- housekeeping -----------------------------------------------------
     sample_rate: int = 44100
-    alias_limit: float = 0.45         # comb partials are faded out below this * fs
+    alias_limit: float = 0.45  # comb partials are faded out below this * fs
 
     def __attrs_post_init__(self) -> None:
         if len(self.order_grid) != len(self.order_db):

@@ -49,7 +49,6 @@ setup(
     description='arena_simulation_setup.',
     license='MIT',
     scripts=[
-        'scripts/download_assets',
         'scripts/model_staging',
         'scripts/preload_world',
         'scripts/touch_world',

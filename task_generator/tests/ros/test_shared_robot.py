@@ -19,8 +19,6 @@ def stub_node():
 
     class _FakeConf:
         class Robot:
-            class RECORD_DATA_DIR:
-                value = None
             class TIMEOUT:
                 value = 60
         class Arena:
@@ -99,7 +97,6 @@ def test_parse_minimal_value(stub_node):
     value = {"name": "bot1", "model": "turtlebot3_burger"}
     robot = Robot.parse(value, node=stub_node)
     assert "mobile" not in robot.adapters
-    assert robot.record_data_dir is None
 
 
 def test_parse_adapters_block_sets_adapters(stub_node):
@@ -222,28 +219,6 @@ def test_eq_not_equal_when_name_differs():
 def test_eq_not_equal_when_model_differs():
     r1 = _make_robot("bot", "turtlebot3_burger")
     r2 = _make_robot("bot", "jackal")
-    assert r1 != r2
-
-
-def test_eq_not_equal_when_record_data_dir_differs():
-    from arena_robots.Robot import RobotIdentifier
-    from task_generator.shared import Pose, Robot
-    r1 = Robot(
-        name="bot",
-        pose=Pose(),
-        model=RobotIdentifier.parse("turtlebot3_burger"),
-        adapters={"mobile": "nav2"},
-        extra={},
-        record_data_dir="/tmp/a",
-    )
-    r2 = Robot(
-        name="bot",
-        pose=Pose(),
-        model=RobotIdentifier.parse("turtlebot3_burger"),
-        adapters={"mobile": "nav2"},
-        extra={},
-        record_data_dir="/tmp/b",
-    )
     assert r1 != r2
 
 

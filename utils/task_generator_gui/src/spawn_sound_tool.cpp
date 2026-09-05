@@ -1,4 +1,4 @@
-#include "task_generator_gui/spawn_audio_source_tool.hpp"
+#include "task_generator_gui/spawn_sound_tool.hpp"
 
 #include <cmath>
 #include <exception>
@@ -15,13 +15,13 @@
 
 namespace task_generator_gui
 {
-SpawnAudioSourceTool::SpawnAudioSourceTool()
+SpawnSoundTool::SpawnSoundTool()
 {
   shortcut_key_ = 'r';
 
   target_node_property_ = new rviz_common::properties::StringProperty(
     "Target", "/task_generator_node",
-    "Node providing runtime/spawn_audio_source.",
+    "Node providing runtime/spawn_sound.",
     getPropertyContainer(), SLOT(updateClient()), this);
 
   mode_property_ = new rviz_common::properties::EnumProperty(
@@ -58,9 +58,9 @@ SpawnAudioSourceTool::SpawnAudioSourceTool()
     getPropertyContainer());
 }
 
-SpawnAudioSourceTool::~SpawnAudioSourceTool() = default;
+SpawnSoundTool::~SpawnSoundTool() = default;
 
-void SpawnAudioSourceTool::onInitialize()
+void SpawnSoundTool::onInitialize()
 {
   PoseTool::onInitialize();
   setName("Spawn Radio");
@@ -70,16 +70,16 @@ void SpawnAudioSourceTool::onInitialize()
   updateClient();
 }
 
-void SpawnAudioSourceTool::updateClient()
+void SpawnSoundTool::updateClient()
 {
   if (!service_node_) {
     return;
   }
-  client_ = service_node_->create_client<task_generator_msgs::srv::SpawnAudioSource>(
-    target_node_property_->getStdString() + "/runtime/spawn_audio_source");
+  client_ = service_node_->create_client<task_generator_msgs::srv::SpawnSound>(
+    target_node_property_->getStdString() + "/runtime/spawn_sound");
 }
 
-void SpawnAudioSourceTool::updateModeDefaults()
+void SpawnSoundTool::updateModeDefaults()
 {
   if (!volume_property_ || !customize_property_
     || customize_property_->getBool())
@@ -89,13 +89,13 @@ void SpawnAudioSourceTool::updateModeDefaults()
   volume_property_->setFloat(mode_property_->getOptionInt() == 0 ? 62.0 : 88.0);
 }
 
-void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
+void SpawnSoundTool::onPoseSet(double x, double y, double theta)
 {
   if (!client_) {
     updateClient();
   }
 
-  auto request = std::make_shared<task_generator_msgs::srv::SpawnAudioSource::Request>();
+  auto request = std::make_shared<task_generator_msgs::srv::SpawnSound::Request>();
   request->pose.header.frame_id = context_->getFixedFrame().toStdString();
   request->pose.header.stamp = service_node_->now();
   request->pose.pose.position.x = x;
@@ -113,7 +113,7 @@ void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
   if (!client_->service_is_ready()) {
     RCLCPP_WARN(
       service_node_->get_logger(),
-      "spawn_audio_source service not available at %s",
+      "spawn_sound service not available at %s",
       client_->get_service_name());
     return;
   }
@@ -122,24 +122,24 @@ void SpawnAudioSourceTool::onPoseSet(double x, double y, double theta)
   client_->async_send_request(
     request,
     [logger, mode = request->mode](
-      rclcpp::Client<task_generator_msgs::srv::SpawnAudioSource>::SharedFuture future)
+      rclcpp::Client<task_generator_msgs::srv::SpawnSound>::SharedFuture future)
     {
       try {
         const auto response = future.get();
         if (!response->success) {
           RCLCPP_WARN(
-            logger, "spawn_audio_source rejected: %s",
+            logger, "spawn_sound rejected: %s",
             response->error_msg.c_str());
           return;
         }
         RCLCPP_INFO(
           logger, "spawned %s source %s",
-          mode.c_str(), response->system_id.c_str());
+          mode.c_str(), response->entity.c_str());
       } catch (const std::exception & exception) {
-        RCLCPP_ERROR(logger, "spawn_audio_source failed: %s", exception.what());
+        RCLCPP_ERROR(logger, "spawn_sound failed: %s", exception.what());
       }
     });
 }
 }  // namespace task_generator_gui
 
-PLUGINLIB_EXPORT_CLASS(task_generator_gui::SpawnAudioSourceTool, rviz_common::Tool)
+PLUGINLIB_EXPORT_CLASS(task_generator_gui::SpawnSoundTool, rviz_common::Tool)

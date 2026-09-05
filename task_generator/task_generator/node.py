@@ -57,6 +57,7 @@ from task_generator.tasks.obstacles import ObstacleKind
 from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES
 from task_generator.tasks.task import Task
 from task_generator.utils.flags import flag_enabled
+from task_generator.utils.goal_progress import GoalProgressTracker
 
 from . import SafeCallbackNode
 
@@ -92,6 +93,9 @@ class EpisodeRecord:
     outcome_state: int = 0
     outcome_info: str = ""
     goal_uuid: str = ""
+    goal_dist_start: float = 0.0
+    goal_dist_min: float = 0.0
+    path_length: float = 0.0
     integrity: bool = True
 
 
@@ -139,6 +143,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     _arena_unpause_window_client: ClientWrapper
 
     _episodes: EpisodeRuntime
+    _goal_progress: GoalProgressTracker
     _env_id: int
     _reference: tuple[float, float]
     _prespawn_offset: tuple[float, float]
@@ -202,6 +207,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._episodes = EpisodeRuntime(
             run_seed=run_seed or uuid.uuid4().hex,
         )
+        self._goal_progress = GoalProgressTracker()
 
         self._reset_lock: asyncio.Lock = asyncio.Lock()
         self._start_time = self.time
@@ -398,7 +404,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             self._publish_queue_state()
         except Exception as e:
             self._logger.error(f"configure failed: {e!r}\n{traceback.format_exc()}")
-            return
+            raise
         self.trigger_configure()
 
     def on_configure(self, state: rclpy.lifecycle.State) -> TransitionCallbackReturn:
@@ -549,6 +555,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.outcome_state = record.outcome_state
         msg.outcome_info = record.outcome_info
         msg.goal_uuid = record.goal_uuid
+        msg.goal_dist_start = record.goal_dist_start
+        msg.goal_dist_min = record.goal_dist_min
+        msg.path_length = record.path_length
         msg.integrity = record.integrity
         msg.conditions = json.dumps([c.serialize() for c in self._episode_conditions])
         return msg
@@ -749,7 +758,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         response: task_generator_msgs.srv.SetSemantic.Response,
     ) -> task_generator_msgs.srv.SetSemantic.Response:
         """External untrusted write: full validation, structured error_msg, no bare-name resolution."""
-        reason = self._apply_semantic_checked(request.entity, request.field, request.value)
+
+        async def _apply() -> str:
+            return self._apply_semantic_checked(request.entity, request.field, request.value)
+
+        reason = self.wait_for(_apply())
         response.success = not reason
         response.error_msg = reason
         return response
@@ -899,54 +912,59 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 topic_must_exist=False,
             ),
         ]
-        latched = StyleSpec(extra={"rviz": {"Reliability Policy": "Reliable", "Durability Policy": "Transient Local"}}).to_json()
-        env_displays.append(
-            AdapterDisplay(
-                name="Pedestrians",
-                topic=f"{env_ns}/humans",
-                topic_type="",
-                kind=DisplayKind.PEDESTRIANS,
-                style_json=StyleSpec().to_json(),
-                topic_must_exist=False,
-                group="Pedestrians",
-            )
-        )
-        # Backend-internal debug overlay, off by default.
-        env_displays.append(
-            AdapterDisplay(
-                name="Extra",
-                topic=f"{env_ns}/pedestrian_markers/extra",
-                topic_type="visualization_msgs/MarkerArray",
-                kind=DisplayKind.MARKER_ARRAY,
-                style_json=StyleSpec(enabled=False).to_json(),
-                topic_must_exist=False,
-                group="Pedestrians",
-            )
-        )
-        # Static environment geometry: not pedestrians, own group.
-        env_displays.append(
-            AdapterDisplay(
-                name="Static",
-                topic=f"{env_ns}/pedestrian_markers/static",
-                topic_type="visualization_msgs/MarkerArray",
-                kind=DisplayKind.MARKER_ARRAY,
-                style_json=latched,
-                topic_must_exist=False,
-                group="Static",
-            )
-        )
-        for leaf in ("static_walls", "static_objects"):
+        human_sim = self.conf.Arena.HUMAN.value
+        if human_sim not in (Constants.HumanSimulator.DUMMY, Constants.HumanSimulator.NONE):
+            latched = StyleSpec(extra={"rviz": {"Reliability Policy": "Reliable", "Durability Policy": "Transient Local"}}).to_json()
             env_displays.append(
                 AdapterDisplay(
-                    name=leaf.replace("_", " ").title(),
-                    topic=f"{env_ns}/pedestrian_markers/{leaf}",
+                    name="Pedestrians",
+                    topic=f"{env_ns}/humans",
+                    topic_type="",
+                    kind=DisplayKind.PEDESTRIANS,
+                    style_json=StyleSpec().to_json(),
+                    topic_must_exist=False,
+                    group="Pedestrians",
+                )
+            )
+            # Backend marker overlay. On by default: the canonical Skeletons3D
+            # display cannot render namespaced envs (upstream hri_rviz reads
+            # absolute /humans paths), so this is the working pedestrian view.
+            env_displays.append(
+                AdapterDisplay(
+                    name="Extra",
+                    topic=f"{env_ns}/pedestrian_markers/extra",
+                    topic_type="visualization_msgs/MarkerArray",
+                    kind=DisplayKind.MARKER_ARRAY,
+                    style_json=StyleSpec().to_json(),
+                    topic_must_exist=False,
+                    group="Pedestrians",
+                )
+            )
+            # Static environment geometry: not pedestrians, own group.
+            env_displays.append(
+                AdapterDisplay(
+                    name="Static",
+                    topic=f"{env_ns}/pedestrian_markers/static",
                     topic_type="visualization_msgs/MarkerArray",
                     kind=DisplayKind.MARKER_ARRAY,
                     style_json=latched,
-                    topic_must_exist=True,
+                    topic_must_exist=False,
                     group="Static",
                 )
             )
+            for leaf in ("static_walls", "static_objects"):
+                env_displays.append(
+                    AdapterDisplay(
+                        name=leaf.replace("_", " ").title(),
+                        topic=f"{env_ns}/pedestrian_markers/{leaf}",
+                        topic_type="visualization_msgs/MarkerArray",
+                        kind=DisplayKind.MARKER_ARRAY,
+                        style_json=latched,
+                        topic_must_exist=True,
+                        group="Static",
+                    )
+                )
+
         for name, topic in (
             (
                 "Microphones",
@@ -971,11 +989,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     topic=topic,
                     topic_type="visualization_msgs/MarkerArray",
                     kind=DisplayKind.MARKER_ARRAY,
-                    style_json=(
-                        latched
-                        if name == "Microphones"
-                        else StyleSpec(enabled=True).to_json()
-                    ),
+                    style_json=(latched if name == "Microphones" else StyleSpec(enabled=True).to_json()),
                     topic_must_exist=False,
                     group="Sound Propagation",
                 )
@@ -1016,10 +1030,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     displays=[
                         AdapterDisplay(
                             name="Motor Sound",
-                            topic=(
-                                f"{auditory_ns}/{robot_value}/"
-                                "motor_sound_markers"
-                            ),
+                            topic=(f"{auditory_ns}/{robot_value}/motor_sound_markers"),
                             topic_type="visualization_msgs/MarkerArray",
                             kind=DisplayKind.MARKER_ARRAY,
                             style_json=StyleSpec(enabled=True).to_json(),
@@ -1155,6 +1166,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             tm_modules=tm_modules,
             integrity=True,
         )
+        self._goal_progress.reset()
 
         self._publish_queue_state()
 
@@ -1169,7 +1181,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             try:
                 if record.world:
                     await self._world_manager.apply_world(record.world)
-                await self._task.reset(world=record.world, seed=record.seed)
+                await self._task.reset(seed=record.seed)
             finally:
                 await self.release("reset")
                 self._pub_state_resetting.publish(Bool(data=False))
@@ -1208,6 +1220,25 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 for p in robots_params:
                     log.info(f"    {p.name}: {_fmt(Parameter.from_parameter_msg(p).value)}")
 
+    def _sample_goal_progress(self) -> None:
+        for manager in self._robots_manager.managers.values():
+            pose = manager.pose
+            goal = manager.goal
+            if pose is None or goal is None:
+                continue
+            self._goal_progress.sample(
+                manager.name,
+                (pose.position.x, pose.position.y),
+                (goal.position.x, goal.position.y),
+            )
+        best = self._goal_progress.least_progress()
+        if best is None:
+            return
+        record = self._episodes.current
+        record.goal_dist_start = best.start_dist
+        record.goal_dist_min = best.min_dist
+        record.path_length = best.path_length
+
     async def _termination_watcher(self) -> None:
         try:
             while True:
@@ -1216,6 +1247,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 fut = self._episodes.pending_outcomes.get(episode_id)
                 if fut is None or fut.done():
                     continue
+                self._sample_goal_progress()
                 if not await self._task.is_done:
                     continue
                 if self._task.abort_reason is not None:
@@ -1289,7 +1321,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         response: task_generator_msgs.srv.QueryScenarios.Response,
     ) -> task_generator_msgs.srv.QueryScenarios.Response:
         world_name = request.world or self._episodes.current.world
-        response.ids = list(identifier_to_available(World.WorldIdentifier(world_name).resolve_sync().scenario))
+        try:
+            world_view = World.WorldIdentifier(world_name).resolve_sync()
+        except FileNotFoundError:
+            self.get_logger().warning(f'no scenarios: world {world_name!r} not found')
+            return response
+        response.ids = list(identifier_to_available(world_view.scenario))
         return response
 
     async def _cb_query_robots(

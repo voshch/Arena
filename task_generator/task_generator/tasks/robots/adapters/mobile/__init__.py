@@ -21,6 +21,8 @@ class MobileAdapter(Adapter):
         mobile = self.rm.robot.model.resolve_sync().caps.mobile
         polys = mobile.polygons_dict
         footprint = mobile.footprint
+        if footprint is None:
+            self.rm.node.get_logger().warning(f'{self.rm.namespace}: caps/mobile.yaml has no footprint, collisions are not tracked')
         if not polys and footprint is None:
             return
         self._collision = CollisionTrackerNode(self.rm, polys or {}, footprint=footprint)
@@ -68,16 +70,21 @@ class MobileAdapter(Adapter):
         """Republish `<ns>/goal_pose` at 1Hz until the goal object changes. Override to noop if the adapter has its own goal transport."""
         rm = self.rm
         target = rm._goal_pos  # noqa: SLF001
+
+        def publish() -> None:
+            msg = geometry_msgs.msg.PoseStamped()
+            msg.header.frame_id = "map"
+            msg.header.stamp = rm.node.sim_time.to_msg()
+            msg.pose = target.to_msg()
+            rm._goal_pub.publish(msg)  # noqa: SLF001
+
+        publish()
         with rm.node.sim_time_rate(1.0, 60) as (done, rate):
             while not done.is_set():
                 await rate.get()
                 if rm._goal_pos is not target:  # noqa: SLF001
                     break
-                msg = geometry_msgs.msg.PoseStamped()
-                msg.header.frame_id = "map"
-                msg.header.stamp = rm.node.sim_time.to_msg()
-                msg.pose = rm._goal_pos.to_msg()  # noqa: SLF001
-                rm._goal_pub.publish(msg)  # noqa: SLF001
+                publish()
 
 
 @ADAPTERS["mobile"].register("nav2")

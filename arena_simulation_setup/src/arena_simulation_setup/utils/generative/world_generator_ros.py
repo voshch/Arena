@@ -36,7 +36,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
     def _cb_generate(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         try:
             self.update_generator(*self._get_parameters())
-            WorldIdentifier(self.get_parameter('world').value).resolve_sync().save(WorldDescription.from_levels(self.compute()), extra_files=self.files())
+            WorldIdentifier(self.get_parameter('world').value).resolve_write_sync().save(WorldDescription.from_levels(self.compute()), extra_files=self.files())
             response.success = True
             response.message = json.dumps(self.params())  # episode binding for the panel to apply on queue
         except Exception as e:
@@ -68,9 +68,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
             diagnostics = diagnostics_of(level)
 
             if not request.preview_only:
-                WorldIdentifier(request.world or self.get_parameter('world').value).resolve_sync().save(
-                    WorldDescription.from_levels(level), extra_files=self.files()
-                )
+                WorldIdentifier(request.world or self.get_parameter('world').value).resolve_sync().save(WorldDescription.from_levels(level), extra_files=self.files())
 
             resolution = request.resolution or max(0.05, max(diagnostics.extent) / PREVIEW_PIXEL_BUDGET)
             response.png, map_origin = level.render(resolution=resolution)
@@ -87,9 +85,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
             response.islands = diagnostics.islands
             response.zones = diagnostics.zones
             response.extent = [float(diagnostics.extent[0]), float(diagnostics.extent[1])]
-            response.warnings = [
-                world_generator_msgs.msg.SketchWarning(row=note.row, col=note.col, text=note.text) for note in self.warnings
-            ]
+            response.warnings = [world_generator_msgs.msg.SketchWarning(row=note.row, col=note.col, text=note.text) for note in self.warnings]
             response.success = True
         except Exception as error:
             response.success = False
@@ -116,10 +112,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
 
         self._alphabet = world_generator_msgs.msg.Alphabet(
             entries=[world_generator_msgs.msg.AlphabetEntry(glyph=glyph, arms=list(arms)) for glyph, arms in alphabet.entries()],
-            aliases=[
-                world_generator_msgs.msg.AlphabetEntry(glyph=char, arms=list(alphabet.arms_of(char) or alphabet.VOID))
-                for char in (*alphabet.ASCII_ALIASES, *alphabet.FILL_ALIASES)
-            ],
+            aliases=[world_generator_msgs.msg.AlphabetEntry(glyph=char, arms=list(alphabet.arms_of(char) or alphabet.VOID)) for char in (*alphabet.ASCII_ALIASES, *alphabet.FILL_ALIASES)],
             void_chars=''.join(alphabet.VOID_CHARS),
         )
 

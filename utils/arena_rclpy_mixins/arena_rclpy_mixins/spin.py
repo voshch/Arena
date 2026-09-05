@@ -6,8 +6,11 @@ import asyncio
 import asyncio.base_subprocess
 import contextlib
 import errno
+import faulthandler
 import gc
 import signal
+import threading
+import time
 import traceback
 import typing
 from collections.abc import Callable, Iterator
@@ -17,10 +20,14 @@ import rclpy.executors
 import rclpy.node
 from rclpy.exceptions import InvalidHandle
 from rclpy.executors import ExternalShutdownException
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.signals import SignalHandlerOptions
 
 if typing.TYPE_CHECKING:
     from arena_rclpy_mixins import ArenaMixinNode
+
+_LOOP_STALL_S = 10.0
+_LOOP_BEAT_S = 1.0
 
 
 @contextlib.contextmanager
@@ -28,11 +35,14 @@ def spin_context(
     *,
     executor: rclpy.executors.Executor | None = None,
 ) -> Iterator[None]:
-    """Wrap a custom mainloop: swallow SIGINT/ExternalShutdown, shut down executor + rclpy on exit."""
+    """Wrap a custom mainloop: swallow shutdown-time exceptions, shut down executor + rclpy on exit."""
     try:
         yield
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:
+        if rclpy.ok():
+            raise
     finally:
         with contextlib.suppress(KeyboardInterrupt):
             if executor is not None:
@@ -65,11 +75,67 @@ def _suppress_shutdown_noise(loop: asyncio.AbstractEventLoop, context: dict) -> 
     if isinstance(exc, asyncio.InvalidStateError):
         return
     if not rclpy.ok():
-        if isinstance(exc, AssertionError):
+        if isinstance(exc, AssertionError | InvalidHandle | _rclpy.RCLError):
             return
         if isinstance(exc, OSError) and exc.errno == errno.EBADF:
             return
     loop.default_exception_handler(context)
+
+
+def _watch_loop(
+    loop: asyncio.AbstractEventLoop,
+    node: ArenaMixinNode,
+    stop: threading.Event,
+    *,
+    deadline_s: float | None = None,
+    on_deadline: Callable[[], None] | None = None,
+) -> None:
+    """Dump all threads once when the loop stops beating for _LOOP_STALL_S; past deadline_s, dump again and call on_deadline once."""
+    last_beat = time.monotonic()
+    dumped = False
+    deadline_fired = False
+
+    def _beat() -> None:
+        nonlocal last_beat
+        last_beat = time.monotonic()
+
+    while not stop.wait(_LOOP_BEAT_S):
+        with contextlib.suppress(RuntimeError):
+            loop.call_soon_threadsafe(_beat)
+        stalled = time.monotonic() - last_beat
+        if stalled < _LOOP_STALL_S:
+            dumped = False
+        elif not dumped:
+            dumped = True
+            faulthandler.dump_traceback(all_threads=True)
+            if not stop.is_set():
+                node.get_logger().warning(f"event loop stalled for {stalled:.0f}s, dumping threads")
+        if deadline_s is not None and not deadline_fired and stalled >= deadline_s:
+            deadline_fired = True
+            faulthandler.dump_traceback(all_threads=True)
+            with contextlib.suppress(Exception):
+                node.get_logger().warning(f"event loop stalled for {stalled:.0f}s past deadline {deadline_s:.0f}s")
+            if on_deadline is not None:
+                on_deadline()
+
+
+def start_loop_watchdog(
+    loop: asyncio.AbstractEventLoop,
+    node: ArenaMixinNode,
+    *,
+    deadline_s: float | None = None,
+    on_deadline: Callable[[], None] | None = None,
+) -> threading.Event:
+    """Start the loop-stall watchdog thread; returns its stop event."""
+    stop = threading.Event()
+    threading.Thread(
+        target=_watch_loop,
+        args=(loop, node, stop),
+        kwargs={"deadline_s": deadline_s, "on_deadline": on_deadline},
+        name="loop_watchdog",
+        daemon=True,
+    ).start()
+    return stop
 
 
 async def async_main(
@@ -87,6 +153,8 @@ async def async_main(
     node.event_loop = loop
     executor.add_node(node)
 
+    watchdog_stop = start_loop_watchdog(loop, node)
+
     def _spin() -> None:
         while rclpy.ok():
             try:
@@ -96,6 +164,10 @@ async def async_main(
                 return
             except InvalidHandle:
                 continue
+            except _rclpy.RCLError:
+                if rclpy.ok():
+                    raise
+                return
 
     spin_future = loop.run_in_executor(None, _spin)
 
@@ -116,7 +188,7 @@ async def async_main(
             await asyncio.wait_for(node.teardown(), timeout=5.0)
         except Exception as e:
             node.get_logger().warning(f"teardown raised: {e!r}")
-        rclpy.try_shutdown()
+        app_task.cancel()
 
     def _c_sig_handler(signum: int, _frame: object) -> None:
         name = signal.Signals(signum).name
@@ -170,6 +242,7 @@ async def async_main(
         with contextlib.suppress(Exception):
             await spin_future
 
+        watchdog_stop.set()
         executor.remove_node(node)
         node.destroy_node()
         _close_subprocess_transports()

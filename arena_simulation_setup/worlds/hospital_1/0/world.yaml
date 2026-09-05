@@ -71,6 +71,19 @@ zones:
     - Aluminum_Anodized
     - {}
   elevators: []
+  schedules:
+  - name: fire_alarm
+    semantics:
+    - preset: schedule
+      params:
+        windows: []
+        regime: alarm
+  sounds:
+  - name: hall_siren
+    asset_id: alarm_loop
+    position: [10.0, 17.0]
+    semantics:
+    - {preset: sound, params: {sound_on: alarm, volume_db: 88.0}}
   semantics:
   - state: max_speed
     value: 1.0

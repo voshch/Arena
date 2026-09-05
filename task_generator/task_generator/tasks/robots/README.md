@@ -121,8 +121,10 @@ allocation and:
    [`TM_Composite`](composite.py), whose `done` is `all(sub.done)` and
    whose `set_position` / `set_goal` fan out.
 
-The parent `TaskMode` enum slot is set to `None` after composite bind, so
-the "new_tm != current" check in `_reset_episode` does not retrigger a rebind.
+Entry point: the `tm_config` node param (launch arg `task.config`), read by
+`Task.create` and at every reset. A set config takes precedence over
+`tm_robots`. The composite is rebound when the config path changes or the
+fleet's robot names differ from the last allocation.
 
 ## Integration points
 

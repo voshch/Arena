@@ -242,7 +242,6 @@ def build_tools_list() -> list[Tool]:
                     "robot_safe_dist": {"type": "number", "description": "Minimum safe distance between robot and obstacles."},
                     "auto_reset": {"type": "boolean", "description": "When true the node auto-advances on episode terminal."},
                     "episodes": {"type": "integer", "description": "Number of episodes to run before shutdown. -1 = unlimited."},
-                    "record_data_dir": {"type": "string", "description": "Directory for episode recording; empty disables recording."},
                 },
             },
         ),

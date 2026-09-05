@@ -65,7 +65,7 @@ main:
 
 In `world.yaml`, a `walls:` list entry can carry a `kind:` field naming a
 `WallIdentifier`. At simulation time,
-[shared/walls.py:25](../../src/arena_simulation_setup/shared/walls.py#L25)
+[shared/walls.py:30](../../src/arena_simulation_setup/shared/walls.py#L30)
 calls `WallIdentifier(kind).resolve()`, which searches
 `DynamicPaths.WORLD / 'assets'` then `DynamicPaths.ARENA` then network
 providers. The `configs/walls/` directory in this package is **not** on that

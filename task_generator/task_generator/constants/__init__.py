@@ -15,6 +15,7 @@ class Constants:
     class HumanSimulator(Enum):
         DUMMY = "dummy"
         NONE = "none"
+        ISAAC = "isaac"
         HUNAV = "hunav"
         ARENA = "arena"
 
@@ -59,7 +60,7 @@ class Constants:
             DYNAMIC_MAP = "dynamic_map"
             CLEAR_FORBIDDEN_ZONES = "clear_forbidden_zones"
             RVIZ_UI = "rviz_ui"
-            AUDIO_SYSTEMS = "audio_systems"
+            SOUNDS = "sounds"
 
             @classmethod
             def prefix(cls, *args: object) -> Namespace:

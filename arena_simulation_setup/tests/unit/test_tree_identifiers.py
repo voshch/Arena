@@ -307,14 +307,14 @@ def test_simple_path_resolver_listall_skips_invalid_paths(tmp_path):
     assert all(isinstance(r, _DomainFoo) for r in results)
 
 
-def test_fallback_resolver_always_returns_path():
+def test_fallback_resolver_is_write_only():
     import asyncio
 
     base = Path('/some/base')
     resolver = FallbackResolver(_DomainFoo, path=base)
     ident = _DomainFoo(name='mymodel', domain='D')
-    result = asyncio.run(resolver.resolve(ident))
-    assert result == base / ident.relpath()
+    assert resolver.destination(ident) == base / ident.relpath()
+    assert asyncio.run(resolver.resolve(ident)) is None
 
 
 def test_fallback_resolver_repr():

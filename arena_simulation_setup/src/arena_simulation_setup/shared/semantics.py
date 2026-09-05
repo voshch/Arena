@@ -19,6 +19,12 @@ class SemanticCfg(Parseable, Serializable):
     distance: float = -1.0
     params: dict = attrs.field(factory=dict)
 
+    def __attrs_post_init__(self) -> None:
+        if self.binding == 'joint':
+            raise ValueError('binding: joint is reserved and not supported in v1')
+        if self.trigger == 'contact':
+            raise ValueError('trigger: contact is reserved and not supported in v1')
+
     @classmethod
     def parse(cls, value: dict) -> 'SemanticCfg':
         """Parse a single state/predicate primitive, not a preset."""
@@ -33,11 +39,7 @@ class SemanticCfg(Parseable, Serializable):
             raise ValueError(f'semantics primitive must have a state or predicate key: {value}')
 
         binding = value.pop('binding', 'kinematic')
-        if binding == 'joint':
-            raise ValueError('binding: joint is reserved and not supported in v1')
         trigger = value.pop('trigger', 'proximity')
-        if trigger == 'contact':
-            raise ValueError('trigger: contact is reserved and not supported in v1')
         cfg_value = value.pop('value', None)
         distance = float(value.pop('distance', -1.0))
         params = dict(value.pop('params', {}))
@@ -85,6 +87,10 @@ _PRESETS: dict[str, list[dict]] = {
         {'state': 'cap'},
         {'predicate': 'over_cap'},
     ],
+    'sound': [
+        {'predicate': 'sounding'},
+        {'state': 'volume_db'},
+    ],
 }
 
 
@@ -100,11 +106,18 @@ def parse_semantics(value: list) -> list[SemanticCfg]:
             preset_name = item.pop('preset')
             if preset_name not in _PRESETS:
                 raise ValueError(f'unknown semantics preset: {preset_name}')
-            item_params = item.pop('params', {})
-            for primitive in _PRESETS[preset_name]:
+            item_params = dict(item.pop('params', {}))
+            primitives = _PRESETS[preset_name]
+            if 'value' in item and len(primitives) > 1:
+                raise ValueError(f'preset {preset_name} expands to several primitives, set value via params.<name>')
+            names = [p.get('state') or p.get('predicate') for p in primitives]
+            values = {name: item_params.pop(name) for name in names if name in item_params}
+            for primitive, name in zip(primitives, names, strict=True):
                 primitive = dict(primitive)
                 primitive_params = primitive.pop('params', {})
                 merged = {**primitive, **item}
+                if name in values:
+                    merged['value'] = values[name]
                 merged_params = {**primitive_params, **item_params}
                 if merged_params:
                     merged['params'] = merged_params

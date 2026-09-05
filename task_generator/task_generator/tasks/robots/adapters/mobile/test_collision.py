@@ -1,4 +1,4 @@
-"""Debug adapter that drives a constant cmd_vel and mounts the collision tracker.
+"""Debug adapter that drives a constant cmd_vel.
 
 No planner, no goal dispatch: the robot moves forward at a fixed linear
 velocity until something stops it. Intended for validating the collision

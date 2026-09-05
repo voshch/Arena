@@ -45,7 +45,7 @@ Transport: stdio (v0). Works with `mcp-cli` and any stdio-MCP client.
 |---|---|---|---|
 | `config_queue_episode` | `tm_robots`, `tm_obstacles`, `tm_modules`, `keep_modules`, `world`, `robots` | `{success, error_msg}` | Queue overrides for the next episode. Per-field merge (action=MERGE): empty scalar fields preserve previously-queued values; `robots` unions with prior queued set (dedup, insertion order). Applied at next `lifecycle/reset_episode`. |
 | `config_get_task_modes` | - | `{tm_robots, tm_obstacles, tm_modules}` | Read current task mode `.value` strings. |
-| `config_set_episode_params` | `timeout`, `goal_tolerance_radius`, `robot_safe_dist`, `auto_reset`, `episodes`, `record_data_dir` | `{results: [...]}` | Write only the supplied (non-null) episode params via `SetParameters`. |
+| `config_set_episode_params` | `timeout`, `goal_tolerance_radius`, `robot_safe_dist`, `auto_reset`, `episodes` | `{results: [...]}` | Write only the supplied (non-null) episode params via `SetParameters`. |
 | `config_get_episode_params` | - | `{timeout, goal_tolerance_radius, ...}` | Read current episode-shaping params. |
 | `config_get_static_config` | - | `{sim, human, robot.mobile_adapter, robot.arm_adapter}` | Read read-only startup configuration params. |
 

@@ -6,7 +6,7 @@ import attrs
 import yaml
 
 from arena_simulation_setup import ASS_DIR
-from arena_simulation_setup.tree import FallbackResolver, Identifier
+from arena_simulation_setup.tree import FallbackResolver, Identifier, SimplePathResolver
 from arena_simulation_setup.utils.cattrs import Parseable
 
 
@@ -40,4 +40,5 @@ class GestureIdentifier(Identifier[GestureSpec]):
         return GestureSpec.parse(data)
 
 
+GestureIdentifier.use(SimplePathResolver(GestureIdentifier, ASS_DIR / "configs" / "gestures"))
 GestureIdentifier.use(FallbackResolver(GestureIdentifier, ASS_DIR / "configs" / "gestures"))

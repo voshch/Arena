@@ -14,7 +14,7 @@ _NS = _REGISTRY_NAMESPACE("environment")
 
 
 def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:
-    declare_catalog(node, ns("file"), "default.json", catalog="environments", label="Environment file", description="Environment config file name.")
+    declare_catalog(node, ns("file"), "default", catalog="environments", label="Environment file", description="Environment config file name.")
 
 
 @OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.ENVIRONMENT, namespace=_NS, schema=_declare_schema)

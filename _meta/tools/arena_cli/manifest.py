@@ -67,6 +67,24 @@ def _enum_names(keys: object) -> list[str]:
     return sorted(k.value for k in list(keys))
 
 
+def _asset_names() -> tuple[dict[str, list[str]], list[str]]:
+    """Per-kind asset names for completion: local names plus bucket listings already cached on disk."""
+    import asset
+    from arena_simulation_setup.tree import NetResolver
+
+    values: dict[str, list[str]] = {}
+    deps: list[str] = []
+    for kind in asset.KINDS:
+        identifier_t = asset._identifier_type(kind)
+        names = {identifier.shortname for identifier in identifier_t.listall()}
+        for resolver in identifier_t._resolvers:
+            if isinstance(resolver, NetResolver):
+                names.update(identifier.shortname for identifier in resolver._parse_listing(resolver._cached_listing() or []))
+                deps.append(str(resolver._listing_path))
+        values[f"asset.{kind}"] = sorted(names)
+    return values, deps
+
+
 def _values() -> tuple[dict[str, list[str]], list[str]]:
     import task_generator.tasks.modules
     import task_generator.tasks.obstacles
@@ -94,6 +112,9 @@ def _values() -> tuple[dict[str, list[str]], list[str]]:
         if m.__file__
     ]
     deps += [str(arena / "arena_robots" / ".gitmodules"), str(arena / "arena_planners" / ".gitmodules")]
+    asset_values, asset_deps = _asset_names()
+    values.update(asset_values)
+    deps += [*asset_deps, os.environ["ARENA_ASSETS_DIR_LOCAL"], str(arena / "arena_simulation_setup" / "worlds")]
     return values, deps
 
 

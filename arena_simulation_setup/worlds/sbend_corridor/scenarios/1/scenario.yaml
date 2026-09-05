@@ -204,7 +204,7 @@ robots:
 static: []
 dynamic:
 - name: ped_1
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [5.0, 11.5, 3.142]
   agent: {agent_type: adult, desired_velocity: 1.2}
   waypoints:

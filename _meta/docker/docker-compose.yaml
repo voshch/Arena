@@ -46,8 +46,9 @@ services:
       - HF_HOME=/opt/arena_ws/data/hf
       - LLM_API_ENDPOINT
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-      - CYCLONEDDS_URI=file:///opt/arena_ws/src/Arena/_meta/docker/cyclonedds.xml
-      - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.xml
+      - GZ_IP=127.0.0.1
+      - CYCLONEDDS_URI=file:///opt/arena_ws/src/Arena/_meta/docker/cyclonedds.${ARENA_NET:-local}.xml
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.${ARENA_NET:-local}.xml
     env_file:
       - .env
     user: "${HOST_UID}"

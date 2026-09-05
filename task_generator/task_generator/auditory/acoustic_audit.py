@@ -32,11 +32,7 @@ class AcousticWorldAudit:
 
     @property
     def complete(self) -> bool:
-        return (
-            self.uncovered_traversable_cells == 0
-            and not self.overlapping_zone_pairs
-            and not self.map_issues
-        )
+        return self.uncovered_traversable_cells == 0 and not self.overlapping_zone_pairs and not self.map_issues
 
 
 def audit_world(
@@ -57,34 +53,22 @@ def audit_world(
         level_zones = [
             (
                 str(zone.name),
-                Polygon(
-                    [(float(c.x), float(c.y)) for c in zone.corners]
-                ),
+                Polygon([(float(c.x), float(c.y)) for c in zone.corners]),
             )
             for zone in level.zones
         ]
         for index, (first_name, first) in enumerate(level_zones):
-            for second_name, second in level_zones[index + 1:]:
+            for second_name, second in level_zones[index + 1 :]:
                 if first.intersection(second).area > 1e-6:
                     overlaps.append((first_name, second_name))
 
-    root = worlds_root or (
-        Path(get_package_share_directory("arena_simulation_setup")) / "worlds"
-    )
+    root = worlds_root or (Path(get_package_share_directory("arena_simulation_setup")) / "worlds")
     traversable = 0
     uncovered = 0
     examples: list[tuple[float, float]] = []
     map_issues: list[str] = []
     for level_id in sorted(world.levels):
-        level_zone_polygons = tuple(
-            Polygon(
-                [
-                    (float(corner.x), float(corner.y))
-                    for corner in level_zone.corners
-                ]
-            )
-            for level_zone in world.levels[level_id].zones
-        )
+        level_zone_polygons = tuple(Polygon([(float(corner.x), float(corner.y)) for corner in level_zone.corners]) for level_zone in world.levels[level_id].zones)
         level_root = root / world_name / str(level_id)
         map_yaml = level_root / "map.yaml"
         if not map_yaml.exists():
@@ -93,9 +77,7 @@ def audit_world(
         config = yaml.safe_load(map_yaml.read_text(encoding="utf-8"))
         image_path = level_root / str(config["image"])
         if not image_path.exists():
-            map_issues.append(
-                f"level {level_id}: missing map image {image_path.name!r}"
-            )
+            map_issues.append(f"level {level_id}: missing map image {image_path.name!r}")
             continue
         opened = Image.open(image_path)
         alpha: np.ndarray | None = None
@@ -118,15 +100,9 @@ def audit_world(
                 if occupancy >= free_threshold:
                     continue
                 x = origin_x + (column + 0.5) * resolution
-                y = (
-                    origin_y
-                    + (image.shape[0] - row - 0.5) * resolution
-                )
+                y = origin_y + (image.shape[0] - row - 0.5) * resolution
                 traversable += 1
-                if not any(
-                    polygon.covers(Point(x, y))
-                    for polygon in level_zone_polygons
-                ):
+                if not any(polygon.covers(Point(x, y)) for polygon in level_zone_polygons):
                     uncovered += 1
                     if len(examples) < 8:
                         examples.append((x, y))
@@ -135,9 +111,7 @@ def audit_world(
         world_name=world_name,
         rooms=len(rooms),
         door_portals=sum(p.portal_kind == "door" for p in graph.portals),
-        opening_portals=sum(
-            p.portal_kind == "opening" for p in graph.portals
-        ),
+        opening_portals=sum(p.portal_kind == "opening" for p in graph.portals),
         connected_components=len(graph.connected_components()),
         unpaired_doors=len(graph.unpaired_doors),
         overlapping_zone_pairs=tuple(overlaps),
@@ -149,20 +123,12 @@ def audit_world(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Audit Arena worlds for acoustic coverage and connectivity"
-    )
+    parser = argparse.ArgumentParser(description="Audit Arena worlds for acoustic coverage and connectivity")
     parser.add_argument("worlds", nargs="*", help="world names; default: all")
     parser.add_argument("--stride-cells", type=int, default=10)
     args = parser.parse_args()
-    root = (
-        Path(get_package_share_directory("arena_simulation_setup")) / "worlds"
-    )
-    names = args.worlds or sorted(
-        path.name
-        for path in root.iterdir()
-        if path.is_dir() and not path.name.startswith(".")
-    )
+    root = Path(get_package_share_directory("arena_simulation_setup")) / "worlds"
+    names = args.worlds or sorted(path.name for path in root.iterdir() if path.is_dir() and not path.name.startswith("."))
     failed = False
     for name in names:
         report = audit_world(
@@ -172,15 +138,7 @@ def main() -> None:
         )
         status = "PASS" if report.complete else "INCOMPLETE"
         failed |= not report.complete
-        print(
-            f"{status:10} {name:28} rooms={report.rooms:3} "
-            f"doors={report.door_portals:3} "
-            f"openings={report.opening_portals:3} "
-            f"components={report.connected_components:2} "
-            f"unpaired={report.unpaired_doors:3} "
-            f"uncovered={report.uncovered_traversable_cells}/"
-            f"{report.sampled_traversable_cells}"
-        )
+        print(f"{status:10} {name:28} rooms={report.rooms:3} doors={report.door_portals:3} openings={report.opening_portals:3} components={report.connected_components:2} unpaired={report.unpaired_doors:3} uncovered={report.uncovered_traversable_cells}/{report.sampled_traversable_cells}")
         if report.uncovered_examples:
             print(f"  uncovered examples: {report.uncovered_examples}")
         if report.overlapping_zone_pairs:

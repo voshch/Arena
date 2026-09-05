@@ -16,7 +16,7 @@ setup(
         (os.path.join('share', package_name, 'launch'),
          glob(os.path.join('launch', '*.launch.py'))),
     ],
-    install_requires=['setuptools', 'mcp>=1.0'],
+    install_requires=['setuptools', 'mcp>=2.0'],
     zip_safe=True,
     author='voshch',
     author_email='voshch@arena-rosnav.org',

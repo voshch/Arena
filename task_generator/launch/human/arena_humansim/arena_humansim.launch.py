@@ -18,6 +18,7 @@ def generate_launch_description():
             args={
                 'mode': 'subsystem',
                 'use_sim_time': 'true',
+                'rviz': 'false',
                 'markers': markers,
                 'namespace': namespace,
             },

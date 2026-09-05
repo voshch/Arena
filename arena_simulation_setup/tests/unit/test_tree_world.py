@@ -5,7 +5,7 @@ import pytest
 from arena_simulation_setup.shared.world import Door
 from arena_simulation_setup.shared.walls import Wall
 from arena_simulation_setup.tree.World.World import LevelDescription as WorldDescription, WorldMicrophone
-from arena_simulation_setup.tree.World.World import Schedule, Signal
+from arena_simulation_setup.tree.World.World import Schedule, Signal, Sound
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Position
 
@@ -191,6 +191,92 @@ def test_all_signals_populated():
     zone.signals = [signal]
     wd = WorldDescription(zones=[zone])
     assert list(wd.all_signals) == [signal]
+
+
+# ---------------------------------------------------------------------------
+# Sound (standalone audible semantic entity)
+# ---------------------------------------------------------------------------
+
+
+def test_sound_round_trip():
+    raw = {
+        'name': 'hall_siren',
+        'asset_id': 'alarm_loop',
+        'position': [4.0, 2.3],
+        'semantics': [{'preset': 'sound', 'params': {'sound_on': 'alarm'}}],
+    }
+    sound = converter.structure(raw, Sound)
+    assert sound.name == 'hall_siren'
+    assert sound.asset_id == 'alarm_loop'
+    assert sound.position.x == pytest.approx(4.0)
+    assert [(c.role, c.name) for c in sound.semantics] == [
+        ('predicate', 'sounding'),
+        ('state', 'volume_db'),
+    ]
+    unstructured = converter.unstructure(sound)
+    reparsed = converter.structure(unstructured, Sound)
+    assert reparsed.name == sound.name
+    assert reparsed.semantics == sound.semantics
+
+
+@pytest.mark.parametrize(
+    'raw',
+    [
+        {'name': '', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0]},
+        {'name': 'a:b', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0]},
+        {'name': 'siren', 'asset_id': '', 'position': [0.0, 0.0]},
+        {'name': 'siren', 'asset_id': 'alarm_loop'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0], 'entity_ref': 'cabinet'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'entity_ref': 'cabinet', 'level': '1'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0], 'reference_distance_m': 0.0},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'position': [0.0, 0.0]},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'entity_ref': 'cabinet'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'level': '1'},
+    ],
+)
+def test_sound_rejects_invalid(raw):
+    with pytest.raises(Exception):
+        converter.structure(raw, Sound)
+
+
+def test_sound_frame_round_trip():
+    raw = {
+        'name': 'horn',
+        'asset_id': 'alarm_loop',
+        'frame': '/jackal/base_link',
+        'offset': [0.3, 0.0, 0.8],
+        'semantics': [{'preset': 'sound'}],
+    }
+    sound = converter.structure(raw, Sound)
+    assert sound.frame == 'jackal/base_link'
+    assert sound.position is None
+    assert sound.offset.z == pytest.approx(0.8)
+    reparsed = converter.structure(converter.unstructure(sound), Sound)
+    assert reparsed.frame == sound.frame
+
+
+def test_sound_rejects_unknown_semantics_key():
+    raw = {
+        'name': 'hall_siren',
+        'asset_id': 'alarm_loop',
+        'position': [4.0, 2.3],
+        'semantics': [{'state': 'volume_db', 'bogus': 1}],
+    }
+    with pytest.raises(Exception):
+        converter.structure(raw, Sound)
+
+
+def test_zone_sounds_default_empty():
+    zone = _make_zone()
+    assert zone.sounds == []
+
+
+def test_all_sounds_populated():
+    sound = Sound(name='hall_siren', asset_id='alarm_loop', position=Position(4.0, 2.3))
+    zone = _make_zone()
+    zone.sounds = [sound]
+    wd = WorldDescription(zones=[zone])
+    assert list(wd.all_sounds) == [sound]
 
 
 def test_all_floors_count():

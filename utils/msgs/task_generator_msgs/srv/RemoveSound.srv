@@ -1,0 +1,4 @@
+string entity                # realized entity name of a runtime-spawned sound, not the wire grouping key
+---
+bool success
+string error_msg

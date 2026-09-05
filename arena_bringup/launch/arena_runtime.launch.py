@@ -7,7 +7,7 @@ from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
-_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'sim.isaac.physics', 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused'})
+_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'sim.isaac.physics', 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused', 'env.bootstrap_timeout'})
 
 
 def generate_launch_description():
@@ -76,6 +76,12 @@ def generate_launch_description():
         description='Bring the lockstep scheduler up paused (resume via arena lockstep resume); false = start stepping immediately.',
     )
 
+    LaunchArgument(
+        name='env.bootstrap_timeout',
+        default_value='',
+        description='Seconds an env may spend never-ACTIVE before eviction, measured from reservation, empty = node default (never).',
+    )
+
     launch_sim = launch.actions.IncludeLaunchDescription(
         PathJoinSubstitution(
             [
@@ -120,6 +126,8 @@ def generate_launch_description():
         if rtf := context.launch_configurations.get('lockstep.rtf', ''):
             params['lockstep.target_rtf'] = float(rtf)
         params['lockstep.paused'] = context.launch_configurations.get('lockstep.paused', 'true').lower() in ('true', '1')
+        if bootstrap_timeout := context.launch_configurations.get('env.bootstrap_timeout', ''):
+            params['bootstrap_timeout_sec'] = float(bootstrap_timeout)
         arena_node = launch_ros.actions.LifecycleNode(
             package='arena_runtime',
             executable='arena_node',

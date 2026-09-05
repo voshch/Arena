@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import xacro
 import yaml
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from urdf_parser_py import urdf as urdf_parser
 
 if TYPE_CHECKING:
@@ -106,6 +106,7 @@ class BodyPool:
         self._urdf: dict[str, str] = {}
         self._foot_offset: dict[str, float] = {}
         self._hd_share: str = get_package_share_directory("human_description")
+        self._rsp_bin: str = f"{get_package_prefix('robot_state_publisher')}/lib/robot_state_publisher/robot_state_publisher"
 
     def _generate_urdf(self, body_id: str, height: float) -> str:
         xacro_path = f"{self._hd_share}/urdf/human-tpl.xacro"
@@ -135,10 +136,7 @@ class BodyPool:
         joint_states_topic = f"{self._humans_ns}/bodies/{body_id}/joint_states"
         params_file = self._write_params(body_id, urdf)
         cmd = [
-            "ros2",
-            "run",
-            "robot_state_publisher",
-            "robot_state_publisher",
+            self._rsp_bin,
             "--ros-args",
             "--log-level",
             "warn",

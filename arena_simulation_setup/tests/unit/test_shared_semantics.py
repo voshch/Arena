@@ -110,6 +110,16 @@ def test_structure_list_of_semanticcfg_rejects_joint_binding():
         converter.structure([{'state': 'state', 'binding': 'joint'}], list[SemanticCfg])
 
 
+def test_structure_field_form_rejects_joint_binding():
+    with pytest.raises(ValueError):
+        converter.structure({'role': 'state', 'name': 'state', 'binding': 'joint'}, SemanticCfg)
+
+
+def test_structure_field_form_rejects_contact_trigger():
+    with pytest.raises(ValueError):
+        converter.structure({'role': 'predicate', 'name': 'open', 'trigger': 'contact'}, SemanticCfg)
+
+
 def test_unstructure_semanticcfg_round_trip():
     cfgs = parse_semantics([{'preset': 'gate', 'distance': 2.0}])
     raw = converter.unstructure(cfgs)
@@ -194,6 +204,14 @@ def test_parse_semantics_occupancy_cap_preset_expands():
     ]
 
 
+def test_parse_semantics_sound_preset_expands():
+    cfgs = parse_semantics([{'preset': 'sound'}])
+    assert [(c.role, c.name) for c in cfgs] == [
+        ('predicate', 'sounding'),
+        ('state', 'volume_db'),
+    ]
+
+
 def test_parse_semantics_elevator_full_preset_removed():
     with pytest.raises(ValueError):
         parse_semantics([{'preset': 'elevator_full'}])
@@ -202,6 +220,33 @@ def test_parse_semantics_elevator_full_preset_removed():
 def test_parse_semantics_preset_params_applied_to_every_primitive():
     cfgs = parse_semantics([{'preset': 'schedule', 'params': {'windows': [], 'regime': 'alarm'}}])
     assert all(c.params == {'windows': [], 'regime': 'alarm'} for c in cfgs)
+
+
+def test_parse_semantics_preset_param_named_after_primitive_becomes_its_value():
+    cfgs = parse_semantics([{'preset': 'sound', 'params': {'sound_on': 'alarm', 'volume_db': 88.0}}])
+    by_name = {c.name: c for c in cfgs}
+    assert by_name['volume_db'].value == 88.0
+    assert by_name['sounding'].value is None
+    assert all(c.params == {'sound_on': 'alarm'} for c in cfgs)
+
+
+def test_parse_semantics_gate_locked_via_params():
+    cfgs = parse_semantics([{'preset': 'gate', 'params': {'authorized': [], 'locked': False}}])
+    by_name = {c.name: c for c in cfgs}
+    assert by_name['locked'].value is False
+    assert by_name['blocked'].value is None
+    assert by_name['blocked'].params == {'authorized': []}
+
+
+def test_parse_semantics_preset_value_rejected_on_multi_primitive_preset():
+    with pytest.raises(ValueError):
+        parse_semantics([{'preset': 'sound', 'value': 88.0}])
+
+
+def test_parse_semantics_preset_value_allowed_on_single_primitive_preset():
+    cfgs = parse_semantics([{'preset': 'pressure_plate', 'value': True, 'params': {'position': [0.0, 0.0]}}])
+    assert len(cfgs) == 1
+    assert cfgs[0].value is True
 
 
 def test_parse_semantics_pressure_plate_params_and_distance_override():

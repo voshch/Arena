@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import typing
 from collections.abc import Sequence
 
@@ -18,15 +19,45 @@ T = typing.TypeVar('T')
 
 
 class DummyHost(SimLifecycle):
-    paused: bool = False
+    """Sim clock = wall time minus paused time plus stepped time. arena_node publishes
+    `now()` on /clock every CLOCK_PERIOD, so a step is visible on the wire one period later."""
+
+    CLOCK_PERIOD = 0.01
+
+    def __init__(self, physics_dt: float) -> None:
+        self._dt = physics_dt
+        self.paused = False
+        self._start = time.monotonic()
+        self._paused_total = 0.0
+        self._pause_start: float | None = None
+        self._stepped = 0.0
+
+    def now(self) -> float:
+        frozen = time.monotonic() if self._pause_start is None else self._pause_start
+        return frozen - self._start - self._paused_total + self._stepped
 
     async def pause(self) -> bool:
-        self.paused = True
+        if not self.paused:
+            self.paused = True
+            self._pause_start = time.monotonic()
         return True
 
     async def unpause(self) -> bool:
-        self.paused = False
+        if self.paused:
+            self.paused = False
+            self._paused_total += time.monotonic() - self._pause_start
+            self._pause_start = None
         return True
+
+    async def step_seconds(self, seconds: float) -> float:
+        n = round(seconds / self._dt)
+        if seconds > 0:
+            n = max(1, n)
+        if n <= 0:
+            return 0.0
+        self._stepped += n * self._dt
+        await asyncio.sleep(self.CLOCK_PERIOD)
+        return n * self._dt
 
     async def cleanup_namespace(self, prefix: str) -> int:
         del prefix

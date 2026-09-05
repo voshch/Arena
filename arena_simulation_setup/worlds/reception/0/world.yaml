@@ -34,10 +34,10 @@ zones:
         end: { x: 15.0, y: 23.0 }
       - start: { x: 15.0, y: 0.0 }
         end: { x: 30.0, y: 0.0 }
-        kind: painting.yaml
+        kind: painting
       - start: { x: 15.0, y: 0.0 }
         end: { x: 30.0, y: 0.0 }
-        kind: painting.yaml
+        kind: painting
 
       - start: { x: 30.0, y: 0.0 }
         end: { x: 30.0, y: 23.0 }

@@ -49,10 +49,7 @@ class AcousticMaterial:
     def mean_transmission_loss_db(self) -> float:
         if not self.transmission_loss_db:
             return 0.0
-        return (
-            sum(self.transmission_loss_db)
-            / len(self.transmission_loss_db)
-        )
+        return sum(self.transmission_loss_db) / len(self.transmission_loss_db)
 
     @property
     def mean_scattering(self) -> float:
@@ -91,20 +88,16 @@ class AcousticMaterialCatalog:
 
         raw = self._load_yaml(self._path)
 
-        self._center_frequencies_hz = (
-            self._parse_center_frequencies(
-                raw.get(
-                    "octave_bands_hz",
-                    DEFAULT_OCTAVE_BANDS_HZ,
-                )
+        self._center_frequencies_hz = self._parse_center_frequencies(
+            raw.get(
+                "octave_bands_hz",
+                DEFAULT_OCTAVE_BANDS_HZ,
             )
         )
 
         default_entry = raw.get("defaults")
         if not isinstance(default_entry, Mapping):
-            raise ValueError(
-                f"{self._path}: expected 'defaults' to be a mapping"
-            )
+            raise ValueError(f"{self._path}: expected 'defaults' to be a mapping")
 
         self._default_material = self._parse_material(
             material_id="default",
@@ -117,9 +110,7 @@ class AcousticMaterialCatalog:
             raw_materials = {}
 
         if not isinstance(raw_materials, Mapping):
-            raise ValueError(
-                f"{self._path}: expected 'materials' to be a mapping"
-            )
+            raise ValueError(f"{self._path}: expected 'materials' to be a mapping")
 
         materials: dict[str, AcousticMaterial] = {}
 
@@ -127,21 +118,13 @@ class AcousticMaterialCatalog:
             material_id = str(raw_material_id).strip()
 
             if not material_id:
-                raise ValueError(
-                    f"{self._path}: material ID cannot be empty"
-                )
+                raise ValueError(f"{self._path}: material ID cannot be empty")
 
             if material_id in materials:
-                raise ValueError(
-                    f"{self._path}: duplicate material "
-                    f"{material_id!r}"
-                )
+                raise ValueError(f"{self._path}: duplicate material {material_id!r}")
 
             if not isinstance(raw_entry, Mapping):
-                raise ValueError(
-                    f"{self._path}: material {material_id!r} "
-                    "must be a mapping"
-                )
+                raise ValueError(f"{self._path}: material {material_id!r} must be a mapping")
 
             materials[material_id] = self._parse_material(
                 material_id=material_id,
@@ -205,10 +188,7 @@ class AcousticMaterialCatalog:
             return self._materials[requested_id]
         except KeyError:
             known = ", ".join(sorted(self._materials))
-            raise KeyError(
-                f"unknown acoustic material {requested_id!r}; "
-                f"known materials: {known or '<none>'}"
-            ) from None
+            raise KeyError(f"unknown acoustic material {requested_id!r}; known materials: {known or '<none>'}") from None
 
     def surface_damping_db(
         self,
@@ -249,26 +229,18 @@ class AcousticMaterialCatalog:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise OSError(
-                f"failed to read acoustic material catalog {path}"
-            ) from exc
+            raise OSError(f"failed to read acoustic material catalog {path}") from exc
 
         try:
             raw = yaml.safe_load(text)
         except yaml.YAMLError as exc:
-            raise ValueError(
-                f"failed to parse acoustic material catalog {path}"
-            ) from exc
+            raise ValueError(f"failed to parse acoustic material catalog {path}") from exc
 
         if raw is None:
-            raise ValueError(
-                f"acoustic material catalog {path} is empty"
-            )
+            raise ValueError(f"acoustic material catalog {path} is empty")
 
         if not isinstance(raw, Mapping):
-            raise ValueError(
-                f"{path}: catalog root must be a mapping"
-            )
+            raise ValueError(f"{path}: catalog root must be a mapping")
 
         return raw
 
@@ -277,52 +249,32 @@ class AcousticMaterialCatalog:
         raw_frequencies: object,
     ) -> tuple[int, ...]:
         if not self._is_sequence(raw_frequencies):
-            raise ValueError(
-                f"{self._path}: 'octave_bands_hz' must be a sequence"
-            )
+            raise ValueError(f"{self._path}: 'octave_bands_hz' must be a sequence")
 
         frequencies: list[int] = []
 
         for index, raw_value in enumerate(raw_frequencies):
             if isinstance(raw_value, bool):
-                raise ValueError(
-                    f"{self._path}: octave-band frequency at "
-                    f"index {index} cannot be boolean"
-                )
+                raise ValueError(f"{self._path}: octave-band frequency at index {index} cannot be boolean")
 
             try:
                 frequency = int(raw_value)
             except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"{self._path}: invalid octave-band frequency "
-                    f"at index {index}: {raw_value!r}"
-                ) from exc
+                raise ValueError(f"{self._path}: invalid octave-band frequency at index {index}: {raw_value!r}") from exc
 
             if frequency <= 0:
-                raise ValueError(
-                    f"{self._path}: octave-band frequencies "
-                    "must be positive"
-                )
+                raise ValueError(f"{self._path}: octave-band frequencies must be positive")
 
             frequencies.append(frequency)
 
         if not frequencies:
-            raise ValueError(
-                f"{self._path}: at least one octave-band "
-                "frequency is required"
-            )
+            raise ValueError(f"{self._path}: at least one octave-band frequency is required")
 
         if len(set(frequencies)) != len(frequencies):
-            raise ValueError(
-                f"{self._path}: octave-band frequencies "
-                "must be unique"
-            )
+            raise ValueError(f"{self._path}: octave-band frequencies must be unique")
 
         if frequencies != sorted(frequencies):
-            raise ValueError(
-                f"{self._path}: octave-band frequencies "
-                "must be strictly increasing"
-            )
+            raise ValueError(f"{self._path}: octave-band frequencies must be strictly increasing")
 
         return tuple(frequencies)
 
@@ -333,9 +285,7 @@ class AcousticMaterialCatalog:
         entry: Mapping[str, Any],
         used_default: bool,
     ) -> AcousticMaterial:
-        canonical_name = str(
-            entry.get("canonical_name", material_id)
-        ).strip()
+        canonical_name = str(entry.get("canonical_name", material_id)).strip()
 
         if not canonical_name:
             canonical_name = material_id
@@ -387,65 +337,35 @@ class AcousticMaterialCatalog:
         maximum: float | None,
     ) -> tuple[float, ...]:
         if raw_values is None:
-            raise ValueError(
-                f"{self._path}: material {material_id!r} "
-                f"is missing {field_name!r}"
-            )
+            raise ValueError(f"{self._path}: material {material_id!r} is missing {field_name!r}")
 
         if self._is_number(raw_values):
-            values = [
-                float(raw_values)
-                for _ in self._center_frequencies_hz
-            ]
+            values = [float(raw_values) for _ in self._center_frequencies_hz]
         elif self._is_sequence(raw_values):
             values = []
 
             for index, raw_value in enumerate(raw_values):
                 if not self._is_number(raw_value):
-                    raise ValueError(
-                        f"{self._path}: material {material_id!r} "
-                        f"has a non-numeric {field_name} value "
-                        f"at index {index}: {raw_value!r}"
-                    )
+                    raise ValueError(f"{self._path}: material {material_id!r} has a non-numeric {field_name} value at index {index}: {raw_value!r}")
 
                 values.append(float(raw_value))
         else:
-            raise ValueError(
-                f"{self._path}: material {material_id!r} "
-                f"field {field_name!r} must be a number "
-                "or a sequence of numbers"
-            )
+            raise ValueError(f"{self._path}: material {material_id!r} field {field_name!r} must be a number or a sequence of numbers")
 
         expected_count = len(self._center_frequencies_hz)
 
         if len(values) != expected_count:
-            raise ValueError(
-                f"{self._path}: material {material_id!r} "
-                f"field {field_name!r} has {len(values)} values; "
-                f"expected {expected_count}"
-            )
+            raise ValueError(f"{self._path}: material {material_id!r} field {field_name!r} has {len(values)} values; expected {expected_count}")
 
         for index, value in enumerate(values):
             if not self._is_finite(value):
-                raise ValueError(
-                    f"{self._path}: material {material_id!r} "
-                    f"field {field_name!r} contains a non-finite "
-                    f"value at index {index}"
-                )
+                raise ValueError(f"{self._path}: material {material_id!r} field {field_name!r} contains a non-finite value at index {index}")
 
             if minimum is not None and value < minimum:
-                raise ValueError(
-                    f"{self._path}: material {material_id!r} "
-                    f"field {field_name!r} contains {value} below "
-                    f"the minimum {minimum}"
-                )
+                raise ValueError(f"{self._path}: material {material_id!r} field {field_name!r} contains {value} below the minimum {minimum}")
 
             if maximum is not None and value > maximum:
-                raise ValueError(
-                    f"{self._path}: material {material_id!r} "
-                    f"field {field_name!r} contains {value} above "
-                    f"the maximum {maximum}"
-                )
+                raise ValueError(f"{self._path}: material {material_id!r} field {field_name!r} contains {value} above the maximum {maximum}")
 
         return tuple(values)
 
@@ -457,20 +377,13 @@ class AcousticMaterialCatalog:
 
         fields = {
             "absorption": material.absorption,
-            "transmission_loss_db": (
-                material.transmission_loss_db
-            ),
+            "transmission_loss_db": (material.transmission_loss_db),
             "scattering": material.scattering,
         }
 
         for field_name, values in fields.items():
             if len(values) != expected_count:
-                raise ValueError(
-                    f"{self._path}: material "
-                    f"{material.material_id!r} field "
-                    f"{field_name!r} has {len(values)} values; "
-                    f"expected {expected_count}"
-                )
+                raise ValueError(f"{self._path}: material {material.material_id!r} field {field_name!r} has {len(values)} values; expected {expected_count}")
 
     @staticmethod
     def _is_sequence(value: object) -> bool:

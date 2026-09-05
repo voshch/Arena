@@ -33,6 +33,7 @@ Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live
 | `LockstepRegistration.msg` | One caller's channel set: `caller`, `env`, `channels[]` (`LockstepChannel`). |
 | `LockstepStatus.msg` | Scheduler state: run flags, target/measured RTF, gated tick, registrations, stall lists. Published latched on `state/lockstep`. |
 | `ShutdownRequest.msg` | Broadcast asking `env_id` to shut down (reason carried as a string). |
+| `SimState.msg` | Sim lifecycle liveness: `alive`, `reason`, wall-time `header.stamp` of the transition. Published latched on `state/sim`. |
 | `WorldExtent.msg` | World bounding box submitted with `ConfirmWorld`. |
 
 ## Actions (`action/`)

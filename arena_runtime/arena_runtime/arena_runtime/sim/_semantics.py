@@ -147,6 +147,9 @@ class SemanticKind(abc.ABC):
     def step(self, now: float) -> None:
         self._now = now
 
+    def settle(self) -> None:  # noqa: B027 (deliberate no-op default, not abstract)
+        """Post-step hook for logic that consults other instances, run once all clocks advanced."""
+
     @abc.abstractmethod
     def reset(self) -> None: ...
 
@@ -479,11 +482,17 @@ class ScheduleSemantics(SemanticKind):
         else:
             self._override_state = str(coerced)
 
+    def _effective_now(self) -> float:
+        return self._now if math.isfinite(self._now) else 0.0
+
     def asserts_regime(self, name: str) -> bool:
-        return self._regime == name and self._active
+        if self._regime != name:
+            return False
+        natural_active, _, _ = self._natural(self._effective_now())
+        return self._override_active if self._override_active is not None else natural_active
 
     def snapshot(self) -> SemanticEntitySnapshot:
-        natural_active, natural_state, remaining = self._natural(self._now)
+        natural_active, natural_state, remaining = self._natural(self._effective_now())
         active = self._override_active if self._override_active is not None else natural_active
         state = self._override_state if self._override_state is not None else natural_state
         discrete: dict[str, str] = {}
@@ -618,6 +627,10 @@ class PressurePlateSemantics(SemanticKind):
         params = _merge_params(cfgs)
         pos = params.get('position', [0.0, 0.0])
         position = (float(pos[0]), float(pos[1]))
+        press_on = params.get('press_on')
+        regime = params.get('regime')
+        if press_on is not None and press_on == regime:
+            raise ValueError(f"pressure_plate {entity!r}: press_on cannot equal regime (self-latch)")
         return cls(
             mech,
             entity,
@@ -625,8 +638,8 @@ class PressurePlateSemantics(SemanticKind):
             float(params.get('radius', 0.0)),
             params.get('drives'),
             float(params.get('latch', 0.0)),
-            params.get('press_on'),
-            params.get('regime'),
+            press_on,
+            regime,
             discrete,
             continuous,
             predicates,
@@ -672,12 +685,111 @@ class PressurePlateSemantics(SemanticKind):
         self._forced = bool(_coerce(self, field, value))
         self._pressed = self._pressed or self._forced
 
+    def _live_pressed(self) -> bool:
+        """Forced and press_on evaluate live, the contact/latch component stays step-cached."""
+        if self._forced:
+            return True
+        if self._press_on is not None and self._mech._semantics.regime(self._press_on):
+            return True
+        return self._pressed
+
     def asserts_regime(self, name: str) -> bool:
-        return self._regime == name and self._pressed
+        return self._regime == name and self._live_pressed()
 
     def snapshot(self) -> SemanticEntitySnapshot:
-        predicates = {'pressed': self._pressed} if 'pressed' in self._predicates else {}
+        predicates = {'pressed': self._live_pressed()} if 'pressed' in self._predicates else {}
         return SemanticEntitySnapshot(self._entity, self.KIND, {}, {}, predicates)
+
+
+@semantic_kind('sound')
+class SoundSemantics(SemanticKind):
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+
+    CONTINUOUS = ('volume_db',)
+    PREDICATES = ('sounding',)
+    QUANTA = {'volume_db': 1.0}
+    WRITABLE = frozenset({'sounding', 'volume_db'})
+
+    def __init__(
+        self,
+        mech: MechanismITF,
+        entity: str,
+        sound_on: str | None,
+        regime: str | None,
+        initial_sounding: bool,
+        initial_volume: float,
+        discrete: tuple[str, ...],
+        continuous: tuple[str, ...],
+        predicates: tuple[str, ...],
+    ) -> None:
+        super().__init__(entity, discrete, continuous, predicates)
+        self._mech = mech
+        self._sound_on = sound_on
+        self._regime = regime
+        self._initial_sounding = initial_sounding
+        self._initial_volume = initial_volume
+        self._volume = initial_volume
+        self._override_sounding: bool | None = None
+        self._last_natural_sounding = self._natural()
+
+    @classmethod
+    def attach(cls, mech: MechanismITF, entity: str, cfgs: Sequence[SemanticCfg], *, polygon: Sequence[tuple[float, float]] | None = None) -> SemanticKind:
+        discrete, continuous, predicates = cls._classify(cfgs)
+        params = _merge_params(cfgs)
+        sound_on = params.get('sound_on')
+        regime = params.get('regime')
+        if sound_on is not None and sound_on == regime:
+            raise ValueError(f"sound {entity!r}: sound_on cannot equal regime (self-latch)")
+        initial_sounding = False
+        initial_volume = 80.0
+        for cfg in cfgs:
+            if cfg.value is None:
+                continue
+            if cfg.name == 'volume_db':
+                initial_volume = float(cfg.value)
+            elif cfg.name == 'sounding':
+                if sound_on is not None:
+                    raise ValueError(f"sound {entity!r}: sounding value and sound_on are exclusive")
+                initial_sounding = bool(cfg.value)
+        return cls(mech, entity, sound_on, regime, initial_sounding, initial_volume, discrete, continuous, predicates)
+
+    def _natural(self) -> bool:
+        return self._mech._semantics.regime(self._sound_on) if self._sound_on is not None else self._initial_sounding
+
+    def _live_sounding(self) -> bool:
+        return self._override_sounding if self._override_sounding is not None else self._natural()
+
+    def settle(self) -> None:
+        natural = self._natural()
+        if natural != self._last_natural_sounding:
+            self._override_sounding = None
+        self._last_natural_sounding = natural
+
+    def reset(self) -> None:
+        self._override_sounding = None
+        self._last_natural_sounding = self._natural()
+        self._volume = self._initial_volume
+
+    def set_value(self, field: str, value: str) -> None:
+        if field not in self.WRITABLE:
+            raise ValueError('field not writable')
+        coerced = _coerce(self, field, value)
+        if field == 'sounding':
+            self._override_sounding = bool(coerced)
+        else:
+            self._volume = float(coerced)
+
+    def asserts_regime(self, name: str) -> bool:
+        return self._regime == name and self._live_sounding()
+
+    def snapshot(self) -> SemanticEntitySnapshot:
+        continuous: dict[str, float] = {}
+        predicates: dict[str, bool] = {}
+        if 'sounding' in self._predicates:
+            predicates['sounding'] = self._live_sounding()
+        if 'volume_db' in self._continuous:
+            continuous['volume_db'] = self._volume
+        return SemanticEntitySnapshot(self._entity, self.KIND, {}, continuous, predicates)
 
 
 @semantic_kind('occupancy_cap')
@@ -768,6 +880,7 @@ class SemanticsManager:
         self._recall: dict[str, str] = {}
         self._now = -math.inf
         self._callback: Callable[[Sequence[SemanticChange]], None] | None = None
+        self._regime_stack: set[str] = set()
 
     def set_sim(self, name: str) -> None:
         self._sim = name
@@ -777,6 +890,9 @@ class SemanticsManager:
         kind_cls = _SEMANTIC_KINDS.get(kind)
         if kind_cls is None:
             self._mech.node.get_logger().info(f"semantics: unknown kind {kind!r} for {entity!r}, skipping")
+            return False
+        if any(instance.KIND == kind for instance in self._instances.get(entity, [])):
+            self._mech.node.get_logger().warning(f"semantics: {kind!r} already attached to {entity!r}, skipping duplicate")
             return False
         if self._sim not in kind_cls.SUPPORTED_SIMS:
             self._mech.node.get_logger().info(f"semantics: kind {kind!r} unsupported on sim {self._sim!r}, skipping {entity!r}")
@@ -803,12 +919,18 @@ class SemanticsManager:
             del self._last[key]
 
     def step(self, now: float) -> None:
-        """Step every instance, diff against the last snapshot, emit changes as one batch."""
+        """Step, settle, then diff and batch changes: separate passes, so cross-instance
+        regime consults see this tick's state regardless of attach order."""
         self._now = now
         changes: list[SemanticChange] = []
-        for entity, instances in self._instances.items():
+        for instances in self._instances.values():
             for instance in instances:
                 instance.step(now)
+        for instances in self._instances.values():
+            for instance in instances:
+                instance.settle()
+        for entity, instances in self._instances.items():
+            for instance in instances:
                 snap = instance.snapshot()
                 key = (entity, instance.KIND)
                 changes.extend(_diff(self._last.get(key), snap, instance.quantum))
@@ -851,8 +973,14 @@ class SemanticsManager:
         return True
 
     def regime(self, name: str) -> bool:
-        """OR of every scripted instance currently asserting the named regime."""
-        return any(instance.asserts_regime(name) for instances in self._instances.values() for instance in instances)
+        """OR of every scripted instance currently asserting the named regime. A consult cycle resolves to False."""
+        if name in self._regime_stack:
+            return False
+        self._regime_stack.add(name)
+        try:
+            return any(instance.asserts_regime(name) for instances in self._instances.values() for instance in instances)
+        finally:
+            self._regime_stack.discard(name)
 
     def trigger_allowed(self, door_name: str, now: float) -> bool:
         """HOOK-A: True with no gate on this door, else gate clearance."""

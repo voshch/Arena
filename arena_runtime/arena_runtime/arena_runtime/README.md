@@ -16,7 +16,7 @@ Launched by `arena_runtime.launch.py` (namespace `/arena`, node name `arena`).
 
 Allocates integer env IDs and translates world extents into non-overlapping
 simulator slots. State per record: `env_id`, `fqn`, `placed`, `reference`,
-`slot_extent`, `prespawn`, `ready`, `draining`, `last_heartbeat`.
+`slot_extent`, `prespawn`, `ready`, `draining`, `last_heartbeat`, `reserved_at`.
 
 Two-phase allocation:
 
@@ -72,19 +72,29 @@ Namespace prefix for all names below: `/arena/`.
 | `state/paused` | `std_msgs/Bool` | `true` when `hold_count > 0` |
 | `state/holders` | [`HoldRegistry.msg`](../../arena_runtime_msgs/msg/HoldRegistry.msg) | All active `(caller_id, reason, count)` entries |
 | `state/envs` | [`EnvRegistry.msg`](../../arena_runtime_msgs/msg/EnvRegistry.msg) | Snapshot of all non-draining env records |
+| `state/sim` | [`SimState.msg`](../../arena_runtime_msgs/msg/SimState.msg) | `alive`/`reason` for the sim lifecycle (`_lifecycle` pause/unpause/step), `header.stamp` is the wall time of the transition |
 | `shutdown_request` | [`ShutdownRequest.msg`](../../arena_runtime_msgs/msg/ShutdownRequest.msg) | Broadcast asking `env_id` to shut down |
 
 `ArenaNode` also subscribes per env to `/<ns>/transition_event` (to track
 ACTIVE/INACTIVE/FINALIZED state) and `/<ns>/state/heartbeat` (to detect
 stale envs). A periodic timer applies `sweep_verdict` per record: a managed env
 whose wrapper process exited is evicted immediately, a pre-ready env (still
-bootstrapping, e.g. loading its world) is only evicted after
-`bootstrap_timeout_sec` (default 600 s) of heartbeat silence, and a ready env
-is evicted after `heartbeat_timeout_sec` (default 5 s), stretched to
-`reset_hold_timeout_sec` (default 30 s) while it holds a "reset" hold.
+bootstrapping, e.g. loading its world) is evicted after `bootstrap_timeout_sec`
+when one is set (`env.bootstrap_timeout:=<s>` at launch, default 0 = never),
+measured from `reserve()` time rather than heartbeat silence, so an env that
+keeps heartbeating while stuck in setup is still evicted. A ready env is evicted after
+`heartbeat_timeout_sec` (default 5 s), stretched to `reset_hold_timeout_sec`
+(default 30 s) while it holds a "reset" hold. Evicting a still-spawning env
+fails its pending `spawn_env` call, since `dispose` cancels `spawn_ready`.
 
 When `env_n > 0` at startup the node self-orchestrates an initial fleet via
 `_spawn_initial_envs`; each spawned env has `headless=false` (stdout visible).
+
+`state/sim` flips to `alive=false` after two consecutive lifecycle failures
+(pause/unpause returning `False` or raising, a step raising, or a
+`cleanup_namespace` raising `SimUnavailable`) and stays there: `arena_node`
+never self-heals a dead sim, it just fails every pending `spawn_env` and stops
+the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
 
 ## Env lifecycle sequence
 

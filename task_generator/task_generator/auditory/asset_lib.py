@@ -67,13 +67,9 @@ class AcousticAssetCatalog:
         sound_dir = Path(sound_dir)
 
         if not config_path.is_file():
-            raise FileNotFoundError(
-                f"acoustic asset catalog does not exist: {config_path}"
-            )
+            raise FileNotFoundError(f"acoustic asset catalog does not exist: {config_path}")
         if not sound_dir.is_dir():
-            raise FileNotFoundError(
-                f"acoustic sound directory does not exist: {sound_dir}"
-            )
+            raise FileNotFoundError(f"acoustic sound directory does not exist: {sound_dir}")
 
         self._target_rate = int(output_sample_rate)
         self._target_channels = int(output_channels)
@@ -94,25 +90,17 @@ class AcousticAssetCatalog:
             for variant in variant_entries:
                 sample_id = str(variant["sample_id"])
                 if sample_id in known_sample_ids:
-                    raise ValueError(
-                        f"duplicate acoustic sample_id={sample_id!r}"
-                    )
+                    raise ValueError(f"duplicate acoustic sample_id={sample_id!r}")
                 known_sample_ids.add(sample_id)
 
                 path = sound_dir / str(variant["file"])
                 if not path.is_file():
-                    raise FileNotFoundError(
-                        f"acoustic asset {asset_id!r} references missing "
-                        f"WAV file: {path}"
-                    )
+                    raise FileNotFoundError(f"acoustic asset {asset_id!r} references missing WAV file: {path}")
 
                 raw_bands = variant.get("octave_band_levels_db", "auto")
                 bands: dict[int, float] | str | None
                 if isinstance(raw_bands, dict):
-                    bands = {
-                        int(frequency): float(level)
-                        for frequency, level in raw_bands.items()
-                    }
+                    bands = {int(frequency): float(level) for frequency, level in raw_bands.items()}
                 else:
                     bands = raw_bands
 
@@ -121,9 +109,7 @@ class AcousticAssetCatalog:
                         sample_id=sample_id,
                         path=path,
                         normalization_dbfs=normalization_dbfs,
-                        tags=frozenset(
-                            map(str, variant.get("tags", []))
-                        ),
+                        tags=frozenset(map(str, variant.get("tags", []))),
                         octave_band_levels_db=bands,
                     )
                 )
@@ -134,13 +120,9 @@ class AcousticAssetCatalog:
             self._assets[asset_id] = AcousticAsset(
                 asset_id=asset_id,
                 category=str(entry["category"]),
-                semantic_tags=frozenset(
-                    map(str, entry.get("semantic_tags", []))
-                ),
+                semantic_tags=frozenset(map(str, entry.get("semantic_tags", []))),
                 reference_level_db=float(entry["reference_level_db"]),
-                reference_distance_m=float(
-                    entry.get("reference_distance_m", 1.0)
-                ),
+                reference_distance_m=float(entry.get("reference_distance_m", 1.0)),
                 playback_gain_db=float(entry.get("playback_gain_db", 0.0)),
                 loop=bool(entry.get("loop", False)),
                 variants=tuple(variants),
@@ -184,11 +166,7 @@ class AcousticAssetCatalog:
         if asset is None:
             return None
 
-        candidates = tuple(
-            sample
-            for sample in asset.variants
-            if required_tags.issubset(sample.tags)
-        ) or asset.variants
+        candidates = tuple(sample for sample in asset.variants if required_tags.issubset(sample.tags)) or asset.variants
 
         key = f"{episode_seed}:{agent_id}:{asset_id}:{occurrence}"
         digest = hashlib.blake2b(key.encode(), digest_size=8).digest()
@@ -278,10 +256,7 @@ class AcousticAssetCatalog:
                 target_rate,
             )
         else:
-            measured_bands = {
-                int(frequency): float(level)
-                for frequency, level in octave_band_levels_db.items()
-            }
+            measured_bands = {int(frequency): float(level) for frequency, level in octave_band_levels_db.items()}
 
         return CachedSample(
             sample_id=sample_id,

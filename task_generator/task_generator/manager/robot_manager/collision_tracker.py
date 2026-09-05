@@ -17,6 +17,8 @@ from arena_rclpy_mixins.shared import Namespace
 from arena_robots.caps import PolygonSpec
 from rclpy.parameter import Parameter
 
+from task_generator.manager.collision_grid import Cell
+
 if TYPE_CHECKING:
     from task_generator.manager.environment_manager import EnvironmentManager
     from task_generator.manager.robot_manager.robot_manager import RobotManager
@@ -29,12 +31,20 @@ _ACTION_CODES: dict[str | None, int] = {
     'limit': 4,
 }
 
+_CELL_KINDS: dict[Cell, str] = {
+    Cell.MAP: arena_robots_msgs.msg.CollisionEvent.KIND_STATIC,
+    Cell.WALL: arena_robots_msgs.msg.CollisionEvent.KIND_WALL,
+    Cell.STATIC: arena_robots_msgs.msg.CollisionEvent.KIND_STATIC,
+}
+
 
 class CollisionTrackerNode(rclpy.node.Node):
     """Separate Node, same process, same executor as the task_generator.
 
-    Reads RobotManager.pose + EnvironmentManager geometry caches and publishes
-    collision topics. Tick timer uses sim time → automatically gated during
+    Reads RobotManager.pose + EnvironmentManager.collision_grid. The footprint
+    defines a collision: it feeds `collision_events` and, under
+    `fail_on_collision`, the episode outcome. The cap polygons only feed
+    `collision_monitor_state`. Tick timer uses sim time, so it is gated during
     pauses.
     """
 
@@ -44,7 +54,6 @@ class CollisionTrackerNode(rclpy.node.Node):
         polygons: dict[str, PolygonSpec],
         *,
         rate_hz: float = 10.0,
-        near_miss_margin: float = 0.0,
         default_pedestrian_radius: float = 0.3,
         footprint: list[list[float]] | None = None,
     ):
@@ -57,7 +66,6 @@ class CollisionTrackerNode(rclpy.node.Node):
 
         self._rm = robot_manager
         self._env: EnvironmentManager = robot_manager._environment_manager
-        self._near_miss_margin = near_miss_margin
         self._default_peds_radius = default_pedestrian_radius
         self._peds_msg: arena_people_msgs.msg.Pedestrians | None = None
 
@@ -87,7 +95,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         self._valid_after: rclpy.time.Time | None = None
 
         self._pub_state = self.create_publisher(nav2_msgs.msg.CollisionMonitorState, 'collision_monitor_state', 10)
-        self._pub_events = self.create_publisher(arena_robots_msgs.msg.CollisionEvents, 'collision_events', 10)
+        self._pub_events = None if self._footprint_base is None else self.create_publisher(arena_robots_msgs.msg.CollisionEvents, 'collision_events', 10)
         env_ns = Namespace(robot_manager.node.get_namespace())
         self._sub_peds = self.create_subscription(
             arena_people_msgs.msg.Pedestrians,
@@ -125,51 +133,14 @@ class CollisionTrackerNode(rclpy.node.Node):
 
         rx, ry, rth = pose.to_2d()
 
-        walls = self._env.walls_geometry
+        grid = self._env.collision_grid
         statics = self._env.static_polygons
 
-        events: list[arena_robots_msgs.msg.CollisionEvent] = []
         polygons_hit: dict[str, int] = {}
-
         for name, entry in self._poly_cache.items():
             robot_poly = self._robot_polygon(entry, rx, ry, rth)
-
-            if not walls.is_empty and robot_poly.intersects(walls):
-                ev = arena_robots_msgs.msg.CollisionEvent()
-                ev.obstacle_id = '<wall>'
-                ev.polygon_name = name
-                ev.distance = 0.0
-                ev.obstacle_position = geometry_msgs.msg.Point(x=rx, y=ry, z=0.0)
-                events.append(ev)
+            if (grid is not None and grid.hit(robot_poly) is not None) or self._hits_pedestrian(robot_poly):
                 polygons_hit[name] = entry['action_code']
-
-            for obs_name, poly in statics.items():
-                if not robot_poly.intersects(poly):
-                    continue
-                centroid = poly.centroid
-                ev = arena_robots_msgs.msg.CollisionEvent()
-                ev.obstacle_id = obs_name
-                ev.polygon_name = name
-                ev.distance = 0.0
-                ev.obstacle_position = geometry_msgs.msg.Point(x=float(centroid.x), y=float(centroid.y), z=0.0)
-                events.append(ev)
-                polygons_hit[name] = entry['action_code']
-
-            if self._peds_msg is not None:
-                for p in self._peds_msg.pedestrians:
-                    px, py = p.pose.position.x, p.pose.position.y
-                    if math.isnan(px) or math.isnan(py):
-                        continue
-                    ped_disc = shapely.Point(px, py).buffer(self._default_peds_radius)
-                    if not robot_poly.intersects(ped_disc):
-                        continue
-                    ev = arena_robots_msgs.msg.CollisionEvent()
-                    ev.obstacle_id = p.name
-                    ev.polygon_name = name
-                    ev.distance = 0.0
-                    ev.obstacle_position = geometry_msgs.msg.Point(x=px, y=py, z=0.0)
-                    events.append(ev)
-                    polygons_hit[name] = entry['action_code']
 
         state = nav2_msgs.msg.CollisionMonitorState()
         if polygons_hit:
@@ -181,29 +152,59 @@ class CollisionTrackerNode(rclpy.node.Node):
             state.action_type = 0
         self._pub_state.publish(state)
 
+        if self._footprint_base is None or self._pub_events is None:
+            return
+
+        footprint = shapely.affinity.translate(
+            shapely.affinity.rotate(self._footprint_base, rth, origin=(0, 0), use_radians=True),
+            xoff=rx,
+            yoff=ry,
+        )
+        events: list[arena_robots_msgs.msg.CollisionEvent] = []
+
+        hit = grid.hit(footprint) if grid is not None else None
+        if hit is not None:
+            cell, obstacle_id = hit
+            static = statics.get(obstacle_id)
+            ev = arena_robots_msgs.msg.CollisionEvent()
+            ev.kind = _CELL_KINDS[cell]
+            ev.obstacle_id = obstacle_id
+            ev.distance = 0.0
+            ev.obstacle_position = geometry_msgs.msg.Point(x=rx, y=ry, z=0.0) if static is None else geometry_msgs.msg.Point(x=float(static.centroid.x), y=float(static.centroid.y), z=0.0)
+            events.append(ev)
+
+        for p, px, py in self._pedestrians():
+            if not footprint.intersects(shapely.Point(px, py).buffer(self._default_peds_radius)):
+                continue
+            ev = arena_robots_msgs.msg.CollisionEvent()
+            ev.kind = arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN
+            ev.obstacle_id = p.name
+            ev.distance = 0.0
+            ev.obstacle_position = geometry_msgs.msg.Point(x=px, y=py, z=0.0)
+            events.append(ev)
+
         evmsg = arena_robots_msgs.msg.CollisionEvents()
         evmsg.header.stamp = self.get_clock().now().to_msg()
         evmsg.header.frame_id = 'map'
         evmsg.events = events
         self._pub_events.publish(evmsg)
 
-        if self._footprint_base is not None and self._rm.node.rosparam[bool].get_unsafe('fail_on_collision'):
-            footprint = shapely.affinity.translate(
-                shapely.affinity.rotate(self._footprint_base, rth, origin=(0, 0), use_radians=True),
-                xoff=rx,
-                yoff=ry,
-            )
-            hit = (not walls.is_empty and footprint.intersects(walls)) or any(footprint.intersects(p) for p in statics.values())
-            if not hit and self._peds_msg is not None:
-                for p in self._peds_msg.pedestrians:
-                    px, py = p.pose.position.x, p.pose.position.y
-                    if math.isnan(px) or math.isnan(py):
-                        continue
-                    if footprint.intersects(shapely.Point(px, py).buffer(self._default_peds_radius)):
-                        hit = True
-                        break
-            if hit:
-                self._rm.node.fail_episode('collision')
+        if events and self._rm.node.rosparam[bool].get_unsafe('fail_on_collision'):
+            self._rm.node.fail_episode('collision')
+
+    def _pedestrians(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, float, float]]:
+        if self._peds_msg is None:
+            return []
+        out: list[tuple[arena_people_msgs.msg.Pedestrian, float, float]] = []
+        for p in self._peds_msg.pedestrians:
+            px, py = p.pose.position.x, p.pose.position.y
+            if math.isnan(px) or math.isnan(py):
+                continue
+            out.append((p, px, py))
+        return out
+
+    def _hits_pedestrian(self, poly: shapely.Polygon) -> bool:
+        return any(poly.intersects(shapely.Point(px, py).buffer(self._default_peds_radius)) for _, px, py in self._pedestrians())
 
     def shutdown(self):
         self.destroy_node()

@@ -11,8 +11,8 @@ class TM_Guided(TM_Random):
 
     _waypoints: list[Pose]
 
-    async def reset(self, **kwargs: object) -> None:
-        await super().reset(**kwargs)
+    async def reset(self) -> None:
+        await super().reset()
         await self._reset_waypoints()
 
     async def set_position(self, pose: Pose):

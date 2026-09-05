@@ -44,4 +44,4 @@ class HumanIdentifier(DomainAssetIdentifier[HumanView]):
 
 
 HumanIdentifier.use(*DynamicPaths.as_resolvers(HumanIdentifier))
-HumanIdentifier.use(*NetResolver.all(HumanIdentifier))
+HumanIdentifier.use(*NetResolver.all(HumanIdentifier, formats=()))

@@ -19,35 +19,6 @@ _FORMATS_SOURCE = 'case "$ARENA_MODELS_FORMATS" in *usd*) ;; *) export ARENA_MOD
 
 _HOST_SOURCE = f'if [ -z ${{ISAAC_PATH+x}} ] ; then\n    . "$HOME/isaacsim-{ISAAC_VERSION}/setup.sh"\nfi\n{_FORMATS_SOURCE}'
 
-_FASTDDS_XML = """<?xml version="1.0" encoding="UTF-8" ?>
-
-    <license>Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
-    NVIDIA CORPORATION and its licensors retain all intellectual property
-    and proprietary rights in and to this software, related documentation
-    and any modifications thereto.  Any use, reproduction, disclosure or
-    distribution of this software and related documentation without an express
-    license agreement from NVIDIA CORPORATION is strictly prohibited.</license>
-
-
-    <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles" >
-        <transport_descriptors>
-            <transport_descriptor>
-                <transport_id>UdpTransport</transport_id>
-                <type>UDPv4</type>
-            </transport_descriptor>
-        </transport_descriptors>
-
-        <participant profile_name="udp_transport_profile" is_default_profile="true">
-            <rtps>
-                <userTransports>
-                    <transport_id>UdpTransport</transport_id>
-                </userTransports>
-                <useBuiltinTransports>false</useBuiltinTransports>
-            </rtps>
-        </participant>
-    </profiles>
-"""
-
 _SETUP_SH = f"""#!/bin/sh
 MY_DIR="$HOME/isaacsim-{ISAAC_VERSION}"
 export CARB_APP_PATH="$MY_DIR/kit"
@@ -101,13 +72,6 @@ def _update_host() -> int:
     rc = subprocess.run(["python", "-m", "pip", "install", "typeguard"], check=False).returncode
     if rc:
         return rc
-
-    fastdds_path = os.path.expanduser("~/.ros/fastdds.xml")
-    rc = subprocess.run(["touch", fastdds_path], check=False).returncode
-    if rc:
-        return rc
-    with open(fastdds_path, "w") as f:
-        f.write(_FASTDDS_XML)
 
     virt = subprocess.run(["systemd-detect-virt"], capture_output=True, text=True, check=False).stdout.strip()
     if virt == "wsl":
@@ -167,10 +131,13 @@ def launch_host(argv: list[str]) -> None:
 
 def launch_container(argv: list[str]) -> None:
     """Launch Isaac Sim in its container."""
+    import signal
+
     common._reg_require(NAME)
     rc = features.compose(["up", "-d", "--remove-orphans", "isaac"])
     if rc:
         sys.exit(rc)
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(143))
     try:
         rc = features.compose(
             [
@@ -185,6 +152,8 @@ def launch_container(argv: list[str]) -> None:
             ]
         )
     finally:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         features.compose(["stop", "isaac"])
     sys.exit(rc)
 

@@ -29,20 +29,21 @@ from lifecycle_msgs.msg import Transition, TransitionEvent
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy import Parameter
 from rclpy.callback_groups import ReentrantCallbackGroup
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Header
 from std_srvs.srv import Trigger
 
 from arena_runtime.constants import SimSimulator
 from arena_runtime.holds import HoldRegistry
-from arena_runtime.lockstep import ChannelSpec, LockstepConfig, LockstepScheduler, _parse_channel_spec
+from arena_runtime.lockstep import LockstepConfig, LockstepScheduler, _parse_channel_spec, spec_from_msg
 from arena_runtime.registry import EnvRegistry, _extent_eq, sweep_verdict
-from arena_runtime.sim import LifecycleRegistry, SimLifecycle
+from arena_runtime.sim import LifecycleRegistry, SimLifecycle, SimUnavailable
 from arena_runtime.sim.dummy_simulator import DummyHost
 
 _LATCHED = rclpy.qos.QoSProfile(
     depth=1,
     durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
 )
+_ENV_DISPOSE_GRACE_S = 15.0
 
 
 def _tee_subprocess_output(
@@ -89,10 +90,58 @@ class ManagedEnv:
 
 
 _WINDOW_REASON = "unpause_window"
+_LIFECYCLE_FAILURE_LIMIT = 2
+
+
+class _LifecycleLiveness(SimLifecycle):
+    """Lifecycle proxy: two consecutive failures mark the sim dead, step callers report explicitly."""
+
+    def __init__(self, node: ArenaNode, inner: SimLifecycle) -> None:
+        self._node = node
+        self._inner = inner
+        self._failures = 0
+
+    async def ensure_ready(self) -> None:
+        await self._inner.ensure_ready()
+
+    async def pause(self) -> bool:
+        return await self._guard("pause", self._inner.pause())
+
+    async def unpause(self) -> bool:
+        return await self._guard("unpause", self._inner.unpause())
+
+    async def cleanup_namespace(self, prefix: str) -> int:
+        return await self._inner.cleanup_namespace(prefix)
+
+    def env_prefix(self, env_id: int) -> str:
+        return self._inner.env_prefix(env_id)
+
+    async def step_seconds(self, seconds: float) -> float:
+        return await self._inner.step_seconds(seconds)
+
+    def record_success(self) -> None:
+        self._failures = 0
+
+    async def record_failure(self, detail: str) -> None:
+        self._failures += 1
+        if self._failures >= _LIFECYCLE_FAILURE_LIMIT:
+            await self._node._mark_sim_dead(detail)
+
+    async def _guard(self, name: str, call: typing.Awaitable[bool]) -> bool:
+        try:
+            ok = await call
+        except Exception as e:
+            await self.record_failure(f"{name}: {e!r}")
+            raise
+        if ok:
+            self.record_success()
+        else:
+            await self.record_failure(f"{name} returned False")
+        return ok
 
 
 class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
-    _lifecycle: SimLifecycle
+    _lifecycle: _LifecycleLiveness
     _holds: HoldRegistry
     _env_registry: EnvRegistry
     _envs: dict[int, ManagedEnv]
@@ -100,6 +149,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     _clock_task: asyncio.Task | None
     _windows: HoldRegistry
     _lockstep: LockstepScheduler
+    _sim_dead: bool
+    _sim_dead_reason: str
 
     def __init__(self) -> None:
         super().__init__("arena")
@@ -107,6 +158,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self._heartbeat_timer = None
         self._clock_task = None
         self._windows = HoldRegistry()
+        self._sim_dead = False
+        self._sim_dead_reason = ""
 
     def on_configure(self, state: rclpy.lifecycle.State) -> rclpy.lifecycle.TransitionCallbackReturn:
         return rclpy.lifecycle.TransitionCallbackReturn.SUCCESS
@@ -120,18 +173,20 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         sim_key = SimSimulator(sim_name)
         physics_dt = self.rosparam[float].get("physics_dt", 0.0333)
 
-        self._lifecycle = await LifecycleRegistry.get(sim_key, node=self, physics_dt=physics_dt)
+        raw_lifecycle = await LifecycleRegistry.get(sim_key, node=self, physics_dt=physics_dt)
         self._holds = HoldRegistry()
         self._lockstep = LockstepScheduler(self)
 
-        if isinstance(self._lifecycle, DummyHost):
+        if isinstance(raw_lifecycle, DummyHost):
             self._clock_publisher = self.create_publisher(rosgraph_msgs.msg.Clock, '/clock', 10)
-            self._clock_task = asyncio.create_task(self._publish_clock_loop(self._lifecycle))
+            self._clock_task = asyncio.create_task(self._publish_clock_loop(raw_lifecycle))
+
+        self._lifecycle = _LifecycleLiveness(self, raw_lifecycle)
 
         period = self.rosparam[float].get("heartbeat_period_sec", 1.0)
         self.rosparam[float].get("heartbeat_timeout_sec", 5.0)
         self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
-        self.rosparam[float].get("bootstrap_timeout_sec", 600.0)
+        self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
         slot_buffer = self.rosparam[float].get("slot_buffer", 5.0)
 
         self._env_registry = EnvRegistry(slot_buffer=slot_buffer)
@@ -149,6 +204,11 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self._pub_envs = self.create_publisher(
             arena_runtime_msgs.msg.EnvRegistry,
             self.service_namespace("state", "envs"),
+            _LATCHED,
+        )
+        self._pub_sim_state = self.create_publisher(
+            arena_runtime_msgs.msg.SimState,
+            self.service_namespace("state", "sim"),
             _LATCHED,
         )
         self._pub_shutdown_request = self.create_publisher(
@@ -248,6 +308,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
 
         self._publish_state()
         self._publish_envs()
+        self._publish_sim_state(True, "")
 
         self._heartbeat_timer = self.wall_timer(period, self._cb_heartbeat_check)
 
@@ -318,25 +379,10 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         await asyncio.gather(*(_spawn_one(i) for i in range(n)))
 
     async def _publish_clock_loop(self, lifecycle: DummyHost) -> None:
-        """Publish simulated clock at ~100Hz using wall time, only when sim is dummy."""
-        start = self.wall_time
-        paused_duration = Time()
-        pause_start: Time | None = None
         try:
             while True:
-                if lifecycle.paused:
-                    if pause_start is None:
-                        pause_start = self.wall_time
-                    await asyncio.sleep(0.01)
-                    continue
-
-                if pause_start is not None:
-                    paused_duration += self.wall_time - pause_start
-                    pause_start = None
-
-                elapsed = self.wall_time - start - paused_duration
-                self._clock_publisher.publish(elapsed.to_rosgraph_msg())
-                await asyncio.sleep(0.01)
+                self._clock_publisher.publish(Time.from_float(lifecycle.now()).to_rosgraph_msg())
+                await asyncio.sleep(DummyHost.CLOCK_PERIOD)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -348,6 +394,23 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
 
     def _publish_envs(self) -> None:
         self._pub_envs.publish(arena_runtime_msgs.msg.EnvRegistry(envs=self._env_registry.snapshot()))
+
+    def _publish_sim_state(self, alive: bool, reason: str) -> None:
+        self._pub_sim_state.publish(arena_runtime_msgs.msg.SimState(header=Header(stamp=self.wall_time.to_msg()), alive=alive, reason=reason))
+
+    async def _mark_sim_dead(self, reason: str) -> None:
+        """Sim death is terminal: publish it and fail everything waiting on the sim, no recovery."""
+        if self._sim_dead:
+            return
+        self._sim_dead = True
+        self._sim_dead_reason = reason
+        self.get_logger().error(f"sim marked dead: {reason}")
+        self._publish_sim_state(False, reason)
+        for env in self._envs.values():
+            if env.spawn_ready is not None and not env.spawn_ready.done():
+                env.spawn_ready.set_exception(RuntimeError(f"sim dead: {reason}"))
+        if self._lockstep.running and not self._lockstep.owns_current_task():
+            await self._lockstep.stop()
 
     def _make_managed_env(self, env_id: int, namespace: str) -> ManagedEnv:
         transition_topic = f"/{namespace}/transition_event"
@@ -420,16 +483,18 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     async def _check_heartbeats(self) -> None:
         timeout = self.rosparam[float].get("heartbeat_timeout_sec", 5.0)
         reset_timeout = self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
-        bootstrap_timeout = self.rosparam[float].get("bootstrap_timeout_sec", 600.0)
+        bootstrap_timeout = self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
         now = self.wall_time
         for env_id, record in self._env_registry.items():
             elapsed = (now - Time.from_msg(record.last_heartbeat)).to_seconds()
+            age = (now - Time.from_msg(record.reserved_at)).to_seconds()
             env = self._envs.get(env_id)
             process_alive = env.popen.poll() is None if env is not None and env.popen is not None else None
             # an env mid-reset blocks its loop for seconds; tolerate longer while it holds "reset", but still cap it
             reason = sweep_verdict(
                 record,
                 elapsed=elapsed,
+                age=age,
                 has_reset_hold=self._holds.has(record.fqn, "reset"),
                 process_alive=process_alive,
                 heartbeat_timeout=timeout,
@@ -463,12 +528,16 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         env = self._envs.pop(env_id, None)
         if env is not None:
             if env.popen is not None:
-                await env.dispose(self, grace_seconds=15.0)
+                await env.dispose(self, grace_seconds=_ENV_DISPOSE_GRACE_S)
             else:
                 await env.dispose(self, grace_seconds=0.0)
                 await asyncio.sleep(2.0)  # give external env time to observe shutdown_request
 
-        await self._lifecycle.cleanup_namespace(self._lifecycle.env_prefix(env_id))
+        try:
+            await self._lifecycle.cleanup_namespace(self._lifecycle.env_prefix(env_id))
+        except SimUnavailable as e:
+            self.get_logger().warning(f"cleanup_namespace env_{env_id} failed: {e!r}")
+            await self._lifecycle.record_failure(f"cleanup_namespace: {e!r}")
 
         self._env_registry.complete_eviction(env_id)
         self._publish_envs()
@@ -573,11 +642,13 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             response.error_msg = "unsupported for this simulator"
             return response
         except RuntimeError as e:
+            await self._lifecycle.record_failure(f"step_seconds: {e}")
             response.success = False
             response.advanced = 0.0
             response.error_msg = str(e)
             return response
 
+        self._lifecycle.record_success()
         response.success = True
         response.error_msg = ""
         return response
@@ -608,7 +679,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             self._lockstep.register(
                 registration.caller,
                 registration.env,
-                [ChannelSpec.from_msg(ch) for ch in registration.channels],
+                [spec_from_msg(ch) for ch in registration.channels],
             )
         except ValueError as e:
             response.success = False
@@ -751,7 +822,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             with contextlib.suppress(Exception):
                 self._publish_shutdown_request(env.env_id, "arena_node_teardown")
         await asyncio.gather(
-            *(env.dispose(self, grace_seconds=2.0) for env in envs),
+            *(env.dispose(self, grace_seconds=_ENV_DISPOSE_GRACE_S) for env in envs),
             return_exceptions=True,
         )
 
@@ -781,6 +852,11 @@ sys.exit(ls.run())
         request: arena_runtime_msgs.srv.SpawnEnv.Request,
         response: arena_runtime_msgs.srv.SpawnEnv.Response,
     ) -> arena_runtime_msgs.srv.SpawnEnv.Response:
+        if self._sim_dead:
+            response.success = False
+            response.error_msg = f"sim dead: {self._sim_dead_reason}"
+            return response
+
         sim_name = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
         requested_ns = request.ns or None
 

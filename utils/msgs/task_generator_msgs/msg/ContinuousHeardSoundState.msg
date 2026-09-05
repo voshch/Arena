@@ -7,7 +7,7 @@ string source_agent_name
 string source_model
 string sound_type
 string source_backend
-string system_id
+string group_id             # shared sound_on regime name, else the entity name
 string asset_id
 string label
 bool loop

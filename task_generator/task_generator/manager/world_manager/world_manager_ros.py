@@ -251,7 +251,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 compacted_description = world.compact_world(origins={fid: (0.0, 0.0) for fid in world.level_ids})
             world_map = WorldMap.from_world_description(compacted_description, resolution=_DEFAULT_RESOLUTION, time=self.node.sim_time, _level_origins=level_origins)
         DynamicPaths.WORLD.path = world_view.path
-        self.update_world(world_map=world_map, world_description=world, multi_level_map=multi_level_map)
+        static_footprints = await asyncio.gather(*(o.footprint() for o in world.all_static_entities))
+        self.update_world(world_map=world_map, world_description=world, multi_level_map=multi_level_map, static_footprints=static_footprints)
 
         self._world_name = world_name
         self._world_mtime = mtime
@@ -269,7 +270,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             zones = [zone for level in world.all_levels for zone in level.zones]
             if not zones or any(zone.wall_material.name for zone in zones):
                 detected_walls = {disk_level: tuple(disk_map.detect_walls())}
-        await self._environment_manager.spawn_world_obstacles(self._world, detected_walls=detected_walls)
+        await self._environment_manager.spawn_world_obstacles(self._world, detected_walls=detected_walls, world_map=world_map)
         self.node._publish_semantics_snapshot()
 
         return True

@@ -81,7 +81,7 @@ arena launch \
 
 | Arg | Implication |
 |---|---|
-| `sim:=gazebo` | Starts gz-sim 8 (dart physics, ogre renderer). `human` defaults to `arena` |
+| `sim:=gazebo` | Starts gz-sim 8 (dart physics, ogre renderer). `human` defaults to `arena` (arena_humansim) |
 | `world:=map_empty` | Resolved to `arena_simulation_setup/worlds/map_empty/worlds/map_empty.world`; falls back to `configs/gazebo/empty.sdf` if absent |
 | `robot.mobile.local_planner:=teb` | TEB local planner; `mobile` adapter defaults to `nav2` for gazebo, the override lands as ROS param `robot.mobile.local_planner` and is forwarded to nav2's bringup |
 | `headless` | Omitted → `false` (sim GUI visible, rviz shown). Pass `headless:=true` to hide the sim GUI (viz also suppressed unless `viz:=true` is set explicitly) |
@@ -89,27 +89,29 @@ arena launch \
 | `lockstep.paused:=false` | Autostarted lockstep begins stepping immediately instead of waiting for `arena lockstep resume` |
 | `lockstep.channels:="a;b"` | Semicolon-separated `name\|topic\|type\|period_s\|hard-or-soft` entries registered under caller `launch`, extra channels, producers self-register their own. `{env}` expands per env |
 | `lockstep.rtf:=N` | Target real-time factor for the lockstep scheduler, 0 or empty = unpaced |
+| `env.bootstrap_timeout:=N` | Seconds an env may spend never-ACTIVE before eviction, measured from reservation, empty = node default (never) |
 
-To suppress the human-simulation backend (`arena` by default for gazebo)
-when no human obstacles are needed, add `human:=none` to the command above.
+To suppress the arena_humansim node when no human obstacles are needed,
+add `human:=dummy` to the command above.
 
 ---
 
-### 3. Gazebo + jackal + HuNavSim
+### 3. Gazebo + jackal + HumanSim
 
 ```bash
 arena launch \
     sim:=gazebo \
     world:=map_empty \
     robot:=jackal \
-    human:=hunav \
-    task.robots:=explore \
-    task.obstacles:=random
+    human:=arena \
+    tm_robots:=explore \
+    tm_obstacles:=random
 ```
 
-`human:=hunav` starts `hunav_agent_manager` in the task-generator namespace.
-Human pedestrian models are managed by the HuNavSim plugin; the
-`task.obstacles` mode controls non-human obstacles separately.
+`human:=arena` starts the `arena_humansim` node (subsystem mode) in the
+task-generator namespace. Human pedestrian models are managed by the
+arena_humansim adapter; the `tm_obstacles` mode controls non-human obstacles
+separately.
 
 ---
 
@@ -348,7 +350,7 @@ Default is `gazebo`. Valid values:
 
 | Value | Meaning |
 |---|---|
-| `gazebo` (default) | gz-sim 8, dart physics, ogre renderer. `human` defaults to `arena`. |
+| `gazebo` (default) | gz-sim 8, dart physics, ogre renderer. `human` defaults to `arena` (arena_humansim). |
 | `isaac` | Isaac Sim via `arena feature isaac launch`. `mobile` defaults to `nav2`. |
 | `dummy` | No physics engine; a static `map->dummy` TF is published. For plumbing-only checks (no GPU, no controllers). Must be passed explicitly. |
 
@@ -364,7 +366,7 @@ testing knobs, not a supported experiment surface.
 |---|---|
 | `debug:=aiomonitor` | Open an aiomonitor console on the env's asyncio loop (port `20101 + env_id*10`). |
 | `debug:=map_server` | Force-launch the map server even when no adapter requested it. |
-| `debug.map_source:=disk` | Treat the world's on-disk `<level>/map.png` as the single occupancy truth (nav2, spawn sampling, and pedestrian collision walls) instead of rasterizing `world.yaml`. Single-level worlds with an on-disk map only; errors otherwise. Default `compute` rasterizes from `world.yaml`. |
+| `debug.map_source:=disk` | Treat the world's on-disk `<level>/map.png` as the single occupancy truth (nav2, spawn sampling, pedestrian collision walls, and robot collision events) instead of rasterizing `world.yaml`. Single-level worlds with an on-disk map only; errors otherwise. Default `compute` rasterizes from `world.yaml`. |
 | `optim.obstacles:=bbox` | Spawn static obstacles as bounding-box primitives (read from each asset's `annotation.yaml`) instead of full meshes; assets without a `bounding_box` annotation fall back to the mesh. |
 | `optim.obstacles:=none` | Silently skip all static obstacle spawns (world + episode). Pedestrians, walls, and floors are kept. |
 
@@ -387,6 +389,9 @@ shapes of argument:
 | `robot.<cap>:=<kind>` | `robot.mobile:=rosnav_rl`, `robot.mobile:=drl` | `robot.<cap>_adapter` | Pick which `Bringup` runs for the cap. |
 | `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from `caps/<cap>.yaml`. |
 | `<adapter-kwarg>:=<val>` | `global_planner:=smac`, `global_planner:=nav2/navfn` | `robot.<cap>.<key>` (via the adapter's launch file) | Adapter-internal launch kwargs (nav2 planner names, or the `<family>/<kind>` form consumed by the `drl` adapter). |
+
+One robot-level timeout also takes the `robot.` prefix: `robot.ready_timeout`
+(adapter readiness, default unbounded, `-1` means unbounded).
 
 The cap-scoped form is the recommended style because it's self-documenting and
 maps unambiguously to a single cap. To discover what `<key>`s a cap accepts,

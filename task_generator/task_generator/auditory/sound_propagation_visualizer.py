@@ -186,11 +186,7 @@ class SoundPropagationVisualizer(Node):
         )
         self._environment_source_publisher = self.create_publisher(
             MarkerArray,
-            str(
-                self.get_parameter(
-                    "environment_source_marker_topic"
-                ).value
-            ),
+            str(self.get_parameter("environment_source_marker_topic").value),
             acoustic_metadata_qos(depth=32),
         )
         self.create_subscription(
@@ -224,12 +220,8 @@ class SoundPropagationVisualizer(Node):
         self._dashboard: AcousticPlotDashboard | None = None
         if self._plot_mode != "off":
             self._dashboard = AcousticPlotDashboard(
-                energy_bin_ms=float(
-                    self.get_parameter("plot_energy_bin_ms").value
-                ),
-                early_window_sec=float(
-                    self.get_parameter("plot_early_window_sec").value
-                ),
+                energy_bin_ms=float(self.get_parameter("plot_energy_bin_ms").value),
+                early_window_sec=float(self.get_parameter("plot_early_window_sec").value),
             )
 
         self._world_loader = ThreadPoolExecutor(
@@ -261,26 +253,17 @@ class SoundPropagationVisualizer(Node):
             self._start_static_plot()
 
     def _callback(self, msg: HeardSoundEvent) -> None:
-        if (
-            bool(msg.used_backend_fallback)
-            and str(msg.backend_fallback_reason).strip()
-            == "acoustic_scene_not_loaded"
-        ):
+        if bool(msg.used_backend_fallback) and str(msg.backend_fallback_reason).strip() == "acoustic_scene_not_loaded":
             return
         backend = str(msg.propagation_backend).strip() or "unknown"
         output = self._listener_output(str(msg.listener_id))
         if output is None:
-            self.get_logger().warning(
-                f"cannot visualize sound for unknown listener "
-                f"{msg.listener_id!r}"
-            )
+            self.get_logger().warning(f"cannot visualize sound for unknown listener {msg.listener_id!r}")
             return
         publisher, listener_kind, color = output
         frame = str(msg.header.frame_id).strip()
         if not frame:
-            self.get_logger().warning(
-                "cannot visualize sound without the odometry frame ID"
-            )
+            self.get_logger().warning("cannot visualize sound without the odometry frame ID")
             return
         self._last_frame = frame
         self._publish_room_geometry(frame)
@@ -347,10 +330,7 @@ class SoundPropagationVisualizer(Node):
         if not portal_ids and msg.portal_id:
             portal_ids = [msg.portal_id]
         if portal_ids:
-            text.text += (
-                f"\n{len(portal_ids)} portal(s), "
-                f"loss={float(msg.portal_route_loss_db):.1f} dB"
-            )
+            text.text += f"\n{len(portal_ids)} portal(s), loss={float(msg.portal_route_loss_db):.1f} dB"
             text.text += "\n" + " -> ".join(portal_ids)
         if msg.used_backend_fallback:
             text.text += f"\nfallback: {msg.backend_fallback_reason}"
@@ -399,9 +379,7 @@ class SoundPropagationVisualizer(Node):
         frame = str(msg.header.frame_id).strip()
         if not frame:
             return
-        lifetime = float(
-            self.get_parameter("continuous_marker_lifetime_sec").value
-        )
+        lifetime = float(self.get_parameter("continuous_marker_lifetime_sec").value)
         base_id = self._stable_marker_base(msg.source_id, 2)
         sound_type = str(msg.sound_type).lower()
         if not msg.active:
@@ -440,18 +418,14 @@ class SoundPropagationVisualizer(Node):
         label.scale.z = 0.22
         label.color = color
         state = "ACTIVE" if msg.active else "OFF"
-        label.text = f"{msg.label or msg.system_id} / {msg.source_agent_name} [{state}]"
-        self._environment_source_publisher.publish(
-            MarkerArray(markers=[source, label])
-        )
+        label.text = f"{msg.label or msg.group_id} / {msg.source_agent_name} [{state}]"
+        self._environment_source_publisher.publish(MarkerArray(markers=[source, label]))
 
     def _publish_continuous_path(
         self,
         msg: ContinuousHeardSoundState,
     ) -> None:
-        configured = str(
-            self.get_parameter("continuous_listener_id").value
-        ).strip()
+        configured = str(self.get_parameter("continuous_listener_id").value).strip()
         listener_id = str(msg.listener_id)
         if configured:
             if listener_id != configured:
@@ -468,9 +442,7 @@ class SoundPropagationVisualizer(Node):
         frame = str(msg.header.frame_id).strip()
         if not frame:
             return
-        lifetime = float(
-            self.get_parameter("continuous_marker_lifetime_sec").value
-        )
+        lifetime = float(self.get_parameter("continuous_marker_lifetime_sec").value)
         base_id = self._stable_marker_base(
             f"{msg.source_id}|{listener_id}",
             4 + len(msg.portal_positions),
@@ -488,10 +460,7 @@ class SoundPropagationVisualizer(Node):
                 float(msg.listener_position.z),
             ),
         )
-        portals = [
-            Point(x=float(point.x), y=float(point.y), z=float(point.z))
-            for point in msg.portal_positions
-        ]
+        portals = [Point(x=float(point.x), y=float(point.y), z=float(point.z)) for point in msg.portal_positions]
 
         path = self._marker(frame, base_id, Marker.LINE_STRIP, lifetime)
         path.ns = f"{listener_kind}_continuous_audio_paths"
@@ -536,11 +505,7 @@ class SoundPropagationVisualizer(Node):
         label.pose.position.z += 0.35
         label.scale.z = 0.22
         label.color = color
-        label.text = (
-            f"{msg.label or msg.sound_type}: {msg.propagation_backend}\n"
-            f"{float(msg.direct_delay_sec) * 1000.0:.1f} ms, "
-            f"{len(portals)} portal(s)"
-        )
+        label.text = f"{msg.label or msg.sound_type}: {msg.propagation_backend}\n{float(msg.direct_delay_sec) * 1000.0:.1f} ms, {len(portals)} portal(s)"
 
         markers = [path, source_marker, listener_marker, label]
         for index, point in enumerate(portals):
@@ -573,9 +538,7 @@ class SoundPropagationVisualizer(Node):
         self._start_world_load(world_name)
 
     def _start_world_load(self, world_name: str) -> None:
-        self.get_logger().info(
-            f"loading acoustic geometry for visualization of {world_name!r}"
-        )
+        self.get_logger().info(f"loading acoustic geometry for visualization of {world_name!r}")
         self._world_future = self._world_loader.submit(
             self._load_world,
             world_name,
@@ -610,9 +573,7 @@ class SoundPropagationVisualizer(Node):
         level_origins = world_view.level_origins()
         if level_origins is not None:
             world = world.compact_world(level_origins)
-        room_specs = AcousticRoomSpecBuilder(
-            AcousticRoomSpecConfig(ceiling_height_m=ceiling_height_m)
-        ).from_world(world)
+        room_specs = AcousticRoomSpecBuilder(AcousticRoomSpecConfig(ceiling_height_m=ceiling_height_m)).from_world(world)
         graph = AcousticWorldGraph.from_world(
             world,
             room_specs,
@@ -663,9 +624,7 @@ class SoundPropagationVisualizer(Node):
         try:
             loaded_world = future.result()
         except Exception as exc:
-            self.get_logger().error(
-                f"failed to load acoustic visualization geometry: {exc!r}"
-            )
+            self.get_logger().error(f"failed to load acoustic visualization geometry: {exc!r}")
             return
         if self._room_marker_frame:
             self._clear_room_geometry(self._room_marker_frame)
@@ -673,14 +632,8 @@ class SoundPropagationVisualizer(Node):
         self._room_marker_frame = ""
         if self._last_frame:
             self._publish_room_geometry(self._last_frame)
-        self.get_logger().info(
-            f"loaded {len(self._loaded_world.room_specs)} acoustic rooms for "
-            f"visualization of {self._loaded_world.name!r}"
-        )
-        if (
-            self._pending_world_name
-            and self._pending_world_name != self._loaded_world.name
-        ):
+        self.get_logger().info(f"loaded {len(self._loaded_world.room_specs)} acoustic rooms for visualization of {self._loaded_world.name!r}")
+        if self._pending_world_name and self._pending_world_name != self._loaded_world.name:
             self._start_world_load(self._pending_world_name)
 
     def _poll_rir(self) -> None:
@@ -704,15 +657,10 @@ class SoundPropagationVisualizer(Node):
             return
         if not str(msg.header.frame_id).strip():
             return
-        if (
-            self._pending_world_name
-            and self._pending_world_name != self._loaded_world.name
-        ):
+        if self._pending_world_name and self._pending_world_name != self._loaded_world.name:
             return
         listener_id = str(msg.listener_id)
-        configured_listener = str(
-            self.get_parameter("plot_listener_id").value
-        ).strip()
+        configured_listener = str(self.get_parameter("plot_listener_id").value).strip()
         if configured_listener:
             if listener_id != configured_listener:
                 return
@@ -721,9 +669,7 @@ class SoundPropagationVisualizer(Node):
                 return
             if not self._selected_listener_id:
                 self._selected_listener_id = listener_id
-                self.get_logger().info(
-                    f"live RIR plot selected listener {listener_id!r}"
-                )
+                self.get_logger().info(f"live RIR plot selected listener {listener_id!r}")
             if listener_id != self._selected_listener_id:
                 return
 
@@ -732,9 +678,7 @@ class SoundPropagationVisualizer(Node):
             key = f"fallback:{reason}"
             if key not in self._reported_plot_errors:
                 self._reported_plot_errors.add(key)
-                self.get_logger().warning(
-                    f"live RIR plot skipped propagation fallback: {reason}"
-                )
+                self.get_logger().warning(f"live RIR plot skipped propagation fallback: {reason}")
             return
 
         graph = self._loaded_world.graph
@@ -742,20 +686,13 @@ class SoundPropagationVisualizer(Node):
         source_y = float(msg.source_position.y)
         listener_x = float(msg.listener_position.x)
         listener_y = float(msg.listener_position.y)
-        source_zone = str(msg.source_zone).strip() or (
-            graph.zone_at_xy(source_x, source_y) or ""
-        )
-        listener_zone = str(msg.listener_zone).strip() or (
-            graph.zone_at_xy(listener_x, listener_y) or ""
-        )
+        source_zone = str(msg.source_zone).strip() or (graph.zone_at_xy(source_x, source_y) or "")
+        listener_zone = str(msg.listener_zone).strip() or (graph.zone_at_xy(listener_x, listener_y) or "")
         if not source_zone or not listener_zone:
             key = "source_or_listener_outside_acoustic_zones"
             if key not in self._reported_plot_errors:
                 self._reported_plot_errors.add(key)
-                self.get_logger().warning(
-                    "live RIR plot skipped because the source or listener "
-                    "is outside the acoustic zones"
-                )
+                self.get_logger().warning("live RIR plot skipped because the source or listener is outside the acoustic zones")
             return
 
         source = (source_x, source_y, self._source_height(msg))
@@ -767,10 +704,7 @@ class SoundPropagationVisualizer(Node):
                 float(msg.listener_position.z),
             ),
         )
-        portal_positions = tuple(
-            (float(point.x), float(point.y), float(point.z))
-            for point in msg.portal_positions
-        )
+        portal_positions = tuple((float(point.x), float(point.y), float(point.z)) for point in msg.portal_positions)
         request = _PlotRequest(
             world=self._loaded_world,
             source_position_m=source,
@@ -827,9 +761,7 @@ class SoundPropagationVisualizer(Node):
         if request.source_zone == request.listener_zone:
             room = request.world.graph.room(request.source_zone)
             if room is None:
-                raise LookupError(
-                    f"no acoustic room for zone {request.source_zone!r}"
-                )
+                raise LookupError(f"no acoustic room for zone {request.source_zone!r}")
             rir = adapter.compute_rir(
                 room,
                 source_position_m=request.source_position_m,
@@ -851,11 +783,7 @@ class SoundPropagationVisualizer(Node):
             rir = result.rir
             if result.route is not None:
                 traversed_zones = result.route.zones
-                backend = (
-                    "pyroomacoustics_one_door"
-                    if result.route.hop_count == 1
-                    else "pyroomacoustics_multi_portal"
-                )
+                backend = "pyroomacoustics_one_door" if result.route.hop_count == 1 else "pyroomacoustics_multi_portal"
             portal_positions = result.portal_positions
         return AcousticPlotSnapshot(
             room_specs=request.world.room_specs,
@@ -871,36 +799,21 @@ class SoundPropagationVisualizer(Node):
         )
 
     def _start_static_plot(self) -> None:
-        corners = tuple(
-            float(value)
-            for value in self.get_parameter("static_room_corners_xy").value
-        )
+        corners = tuple(float(value) for value in self.get_parameter("static_room_corners_xy").value)
         if len(corners) < 6 or len(corners) % 2:
-            raise ValueError(
-                "static_room_corners_xy must contain at least three x,y pairs"
-            )
+            raise ValueError("static_room_corners_xy must contain at least three x,y pairs")
         corner_pairs = tuple(zip(corners[::2], corners[1::2], strict=True))
         specification = make_static_room_spec(
             corner_pairs,
-            ceiling_height_m=float(
-                self.get_parameter("static_room_height_m").value
-            ),
-            wall_material_id=str(
-                self.get_parameter("static_wall_material_id").value
-            ),
-            floor_material_id=str(
-                self.get_parameter("static_floor_material_id").value
-            ),
-            ceiling_material_id=str(
-                self.get_parameter("static_ceiling_material_id").value
-            ),
+            ceiling_height_m=float(self.get_parameter("static_room_height_m").value),
+            wall_material_id=str(self.get_parameter("static_wall_material_id").value),
+            floor_material_id=str(self.get_parameter("static_floor_material_id").value),
+            ceiling_material_id=str(self.get_parameter("static_ceiling_material_id").value),
         )
         source = self._position_parameter("static_source_position_m")
         listener = self._position_parameter("static_listener_position_m")
         adapter = PyroomacousticsAdapter(
-            AcousticMaterialCatalog(
-                Path(str(self.get_parameter("material_catalog").value))
-            ),
+            AcousticMaterialCatalog(Path(str(self.get_parameter("material_catalog").value))),
             self._rir_config(),
         )
         self._rir_future = self._rir_worker.submit(
@@ -936,11 +849,7 @@ class SoundPropagationVisualizer(Node):
         )
 
     def _publish_room_geometry(self, frame: str) -> None:
-        if (
-            self._loaded_world is None
-            or not frame
-            or frame == self._room_marker_frame
-        ):
+        if self._loaded_world is None or not frame or frame == self._room_marker_frame:
             return
         markers: list[Marker] = []
         marker_id = 0
@@ -950,10 +859,7 @@ class SoundPropagationVisualizer(Node):
             floor.ns = "acoustic_zone_floor"
             floor.scale.x = 0.045
             floor.color = ColorRGBA(r=0.15, g=0.55, b=0.85, a=0.75)
-            floor.points = [
-                Point(x=float(x), y=float(y), z=0.02)
-                for x, y in (*room.corners_xy, room.corners_xy[0])
-            ]
+            floor.points = [Point(x=float(x), y=float(y), z=0.02) for x, y in (*room.corners_xy, room.corners_xy[0])]
             markers.append(floor)
 
             walls = self._marker(frame, marker_id, Marker.LINE_LIST, 0.0)
@@ -1002,15 +908,9 @@ class SoundPropagationVisualizer(Node):
         return PyroomacousticsConfig(
             sample_rate_hz=int(self.get_parameter("rir_sample_rate_hz").value),
             max_order=int(self.get_parameter("rir_max_order").value),
-            temperature_c=float(
-                self.get_parameter("rir_temperature_c").value
-            ),
-            relative_humidity_percent=float(
-                self.get_parameter("rir_relative_humidity_percent").value
-            ),
-            cache_position_quantization_m=float(
-                self.get_parameter("rir_cache_position_quantization_m").value
-            ),
+            temperature_c=float(self.get_parameter("rir_temperature_c").value),
+            relative_humidity_percent=float(self.get_parameter("rir_relative_humidity_percent").value),
+            cache_position_quantization_m=float(self.get_parameter("rir_cache_position_quantization_m").value),
             cache_size=int(self.get_parameter("rir_cache_size").value),
         )
 
@@ -1018,29 +918,13 @@ class SoundPropagationVisualizer(Node):
         return PortalCouplingConfig(
             portal_inset_m=float(self.get_parameter("portal_inset_m").value),
             portal_loss_db=float(self.get_parameter("portal_loss_db").value),
-            source_room_early_window_sec=float(
-                self.get_parameter("portal_source_early_window_sec").value
-            ),
-            maximum_rir_duration_sec=float(
-                self.get_parameter("portal_max_rir_duration_sec").value
-            ),
-            position_quantization_m=float(
-                self.get_parameter("portal_position_quantization_m").value
-            ),
-            cache_size=int(
-                self.get_parameter("portal_rir_cache_size").value
-            ),
-            opening_portal_loss_db=float(
-                self.get_parameter("opening_portal_loss_db").value
-            ),
-            max_portal_hops=(
-                int(self.get_parameter("max_portal_hops").value)
-                if bool(self.get_parameter("enable_multi_portal_rir").value)
-                else 1
-            ),
-            route_distance_loss_db_per_m=float(
-                self.get_parameter("route_distance_loss_db_per_m").value
-            ),
+            source_room_early_window_sec=float(self.get_parameter("portal_source_early_window_sec").value),
+            maximum_rir_duration_sec=float(self.get_parameter("portal_max_rir_duration_sec").value),
+            position_quantization_m=float(self.get_parameter("portal_position_quantization_m").value),
+            cache_size=int(self.get_parameter("portal_rir_cache_size").value),
+            opening_portal_loss_db=float(self.get_parameter("opening_portal_loss_db").value),
+            max_portal_hops=(int(self.get_parameter("max_portal_hops").value) if bool(self.get_parameter("enable_multi_portal_rir").value) else 1),
+            route_distance_loss_db_per_m=float(self.get_parameter("route_distance_loss_db_per_m").value),
         )
 
     def _position_parameter(self, name: str) -> Position3D:
@@ -1051,10 +935,7 @@ class SoundPropagationVisualizer(Node):
 
     @staticmethod
     def _source_height(msg: HeardEventMsg) -> float:
-        if (
-            isinstance(msg, ContinuousHeardSoundState)
-            and str(msg.source_backend) == "wav_loop"
-        ):
+        if isinstance(msg, ContinuousHeardSoundState) and str(msg.source_backend) == "wav_loop":
             return float(msg.source_position.z)
         sound_type = str(msg.sound_type).lower()
         if "foot" in sound_type or "step" in sound_type:

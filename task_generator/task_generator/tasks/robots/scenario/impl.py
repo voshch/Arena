@@ -1,22 +1,22 @@
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
-from arena_simulation_setup.tree.World.Scenario import RobotGoal, ScenarioGesturePhase, ScenarioGotoPhase
+from arena_simulation_setup.tree.World.Scenario import ScenarioGesturePhase, ScenarioGotoPhase
 
 from task_generator.shared import Pose, Position, PositionRadius
+from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, PlayGesturePhase, TaskRequest
 
 
 class TM_Scenario(TM_Robots):
-    _config: ROSParamT[list[RobotGoal]]
+    _config: ROSParamT[str]
 
-    def _parse_scenario(self, scenario: str) -> list[RobotGoal]:
-        return WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(scenario).resolve_sync().load().robots
+    async def reset(self) -> None:
+        await super().reset()
 
-    async def reset(self, **kwargs: object) -> None:
-        await super().reset(**kwargs)
-
-        SCENARIO_ROBOTS = self._config.value
+        zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self.node.conf.General.RNG.stream("robots", "scenario"))
+        scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(self._config.value).resolve_sync()
+        SCENARIO_ROBOTS = scenario_view.load(converter=zone_conv).robots
 
         managed_robots = list(self._ctx.robots.values())
 
@@ -65,8 +65,7 @@ class TM_Scenario(TM_Robots):
     def __init__(self, **kwargs: object) -> None:
         TM_Robots.__init__(self, **kwargs)
 
-        self._config = self.node.ROSParam[list[RobotGoal]](
+        self._config = self.node.ROSParam[str](
             self.namespace('file'),
-            'default.json',
-            parse=self._parse_scenario,
+            default_scenario(self._ctx.world_manager.loaded_world),
         )

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import os
+import subprocess
 from typing import TYPE_CHECKING
 
 from python_qt_binding.QtCore import QEvent, Qt
@@ -722,7 +723,7 @@ class Panel(QWidget):
             return
         try:
             front, side = fk.preview(angles)
-        except (RuntimeError, OSError):
+        except (RuntimeError, OSError, subprocess.CalledProcessError):
             return
         self.fk_preview.set_segments(front, side)
 

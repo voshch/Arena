@@ -4,43 +4,43 @@ robots:
 
 dynamic:
 - name: hunav_1
-  model: male_adult_construction_01
-  pose: [8.5, 5.0 ,0]
+  model: worker_male_caucasian_young
+  pose: [8.5, 5.0, 0]
+  agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:
-    - [10,10,0]
-  behavior_tree: ./hunav_1_behavior_tree.xml
+    - [9.5, 9.5, 0]
 
 - name: hunav_2
-  model: male_adult_construction_01
-  pose: [8.5, 6.0 ,0]
+  model: worker_male_caucasian_young
+  pose: [8.5, 6.0, 0]
+  agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:
-    - [10,10,0]
-  behavior_tree: ./hunav_2_behavior_tree.xml
+    - [10.5, 9.5, 0]
 
 - name: hunav_3
-  model: male_adult_construction_01
-  pose: [8.5, 7.0 ,0]
+  model: worker_male_caucasian_young
+  pose: [8.5, 7.0, 0]
+  agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:
-    - [10,10,0]
-  behavior_tree: ./hunav_3_behavior_tree.xml
+    - [9.5, 10.5, 0]
 
 - name: hunav_4
-  model: male_adult_construction_01
-  pose: [8.5, 8.0 ,0]
+  model: worker_male_caucasian_young
+  pose: [8.5, 8.0, 0]
+  agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:
-    - [10,10,0]
-  behavior_tree: ./hunav_4_behavior_tree.xml
+    - [10.5, 10.5, 0]
 
 - name: hunav_5
-  model: male_adult_construction_01
-  pose: [8.5, 9.0 ,0]
+  model: worker_male_caucasian_young
+  pose: [8.5, 9.0, 0]
+  agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:
-    - [10,10,0]
-  behavior_tree: ./hunav_5_behavior_tree.xml
+    - [11.0, 10.0, 0]
 
 - name: hunav_6
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [3.5, 1.5, 0]
+  agent: {agent_type: adult, desired_velocity: 0.9}
   waypoints:
-    - [10,10,0]
-  behavior_tree: ./hunav_6_behavior_tree.xml
+    - [9.0, 10.0, 0]

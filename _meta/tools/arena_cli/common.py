@@ -45,6 +45,34 @@ def _env(name: str) -> str:
     return value
 
 
+def _env_file() -> str:
+    """The workspace .env, bind-mounted into the container as a single file."""
+    return os.environ.get("ARENA_ENV_FILE") or os.path.join(_env("ARENA_WS_DIR"), ".env")
+
+
+def _env_set(key: str, value: str) -> None:
+    """Rewrite key in the workspace .env, truncating in place."""
+    path = _env_file()
+    kept = ""
+    if os.path.exists(path):
+        with open(path) as f:
+            kept = "".join(line for line in f if not line.lstrip().startswith(f"{key}="))
+    if kept and not kept.endswith("\n"):
+        kept += "\n"
+    with open(path, "w") as f:
+        f.write(f"{kept}{key}={value}\n")
+
+
+def _host_path(path: str) -> str:
+    """Rewrite a container path to the host path the user knows it by."""
+    ws, host = os.environ.get("ARENA_WS_DIR", ""), os.environ.get("HOST_ARENA_WS_DIR", "")
+    return host + path[len(ws) :] if ws and host and path.startswith(ws) else path
+
+
+def _row(label: str, text: str) -> None:
+    print(f"{label + ':':<11}{text}")
+
+
 def _exec(*argv: str) -> NoReturn:
     sys.stdout.flush()
     sys.stderr.flush()

@@ -30,10 +30,11 @@ from arena_simulation_setup.utils.material import MdlUtil
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from geometry_msgs.msg import Pose as RosPose
 from launch import LaunchDescription
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from ros_gz_interfaces.msg import Entity as EntityMsg
 from ros_gz_interfaces.msg import EntityFactory, WorldControl
 from ros_gz_interfaces.srv import ControlWorld, DeleteEntity, SetEntityPose, SpawnEntity
+from std_msgs.msg import Bool
 from task_generator.shared import (
     DynamicObstacle,
     Entity,
@@ -51,9 +52,9 @@ from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
-from arena_runtime.sim import BaseSim, SimLifecycle
+from arena_runtime.gz_scene import parse_scene_models
+from arena_runtime.sim import BaseSim, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import (
-    controller_spawner_node,
     effective_control_yaml,
     odom_relay_node,
     robot_controllers,
@@ -68,6 +69,22 @@ _VIEWPORT_STREAM_QOS = QoSProfile(
     depth=1,
     history=HistoryPolicy.KEEP_LAST,
     reliability=ReliabilityPolicy.BEST_EFFORT,
+)
+
+# gz resolves set_pose and remove by name, first match wins, so a stale entity under a
+# robot's sim_path swallows every later teleport while still acking success
+_SPAWN_SWEEP_ROUNDS = 5
+_SPAWN_SWEEP_INTERVAL = 0.05
+_SPAWN_SWEEP_DRAIN_TIMEOUT = 2.0
+_ENTITY_ID_TIMEOUT = 5.0
+_ENTITY_ID_POLL = 0.25
+_RTF_BOOST = 1e6
+_SET_PHYSICS_TIMEOUT_MS = 5000
+_SET_PHYSICS_ATTEMPTS = 3
+
+_LATCHED_QOS = QoSProfile(
+    depth=1,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
 
 
@@ -132,28 +149,40 @@ class GazeboHost(SimLifecycle):
                 traceback.print_exc()
                 return False
 
-    async def _set_physics_rtf(self, value: float) -> None:
-        # gz applies the FULL Physics message: unset fields land as zeros, and a
-        # sparse request zeroes gravity (models levitate), so send world defaults
-        req = (
-            f'real_time_factor: {value}'
-            ', gravity: {x: 0, y: 0, z: -9.8}'
-            ', magnetic_field: {x: 5.5645e-06, y: 2.28758e-05, z: -4.23884e-05}'
-        )
-        process = await asyncio.create_subprocess_exec(
-            'gz', 'service', '-s', '/world/default/set_physics',
-            '--reqtype', 'gz.msgs.Physics', '--reptype', 'gz.msgs.Boolean',
-            '--timeout', '3000', '--req', req,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await process.wait()
+    async def _set_physics_rtf(self, value: float) -> bool:
+        # a sparse request zeroes gravity (models levitate), so send the world defaults
+        req = f'real_time_factor: {value}, gravity: {{x: 0, y: 0, z: -9.8}}, magnetic_field: {{x: 5.5645e-06, y: 2.28758e-05, z: -4.23884e-05}}'
+        for attempt in range(1, _SET_PHYSICS_ATTEMPTS + 1):
+            started = time.monotonic()
+            process = await asyncio.create_subprocess_exec(
+                'gz',
+                'service',
+                '-s',
+                '/world/default/set_physics',
+                '--reqtype',
+                'gz.msgs.Physics',
+                '--reptype',
+                'gz.msgs.Boolean',
+                '--timeout',
+                str(_SET_PHYSICS_TIMEOUT_MS),
+                '--req',
+                req,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await process.communicate()
+            reply = out.decode(errors='replace').strip()
+            # the CLI exits 0 on a timed-out call, only the echoed reply proves delivery
+            if process.returncode == 0 and 'data: true' in reply:
+                self._logger.info(f"gz real_time_factor set to {value:g} in {time.monotonic() - started:.2f}s")
+                return True
+            self._logger.warning(f"set_physics real_time_factor={value:g} attempt {attempt}/{_SET_PHYSICS_ATTEMPTS} failed: {reply or f'rc={process.returncode}'}")
+        return False
 
     async def unpause(self) -> bool:
         # returning to free-run: restore gz's realtime pacing
         if self._rtf_boosted:
-            await self._set_physics_rtf(1.0)
-            self._rtf_boosted = False
+            self._rtf_boosted = not await self._set_physics_rtf(1.0)
         async with self._semaphore:
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
@@ -181,8 +210,7 @@ class GazeboHost(SimLifecycle):
         # gz throttles stepped iterations to real_time_factor x wall clock, so
         # lift the limiter while stepping drives the sim, unpause() restores it
         if not self._rtf_boosted:
-            await self._set_physics_rtf(1e6)
-            self._rtf_boosted = True
+            self._rtf_boosted = await self._set_physics_rtf(_RTF_BOOST)
         # gz acks multi_step on acceptance and completion is observed via /clock, so
         # record the target before sending (half-tick slack for float vs ns rounding)
         target = self._node.sim_time + Time.from_float((n - 0.5) * self._dt)
@@ -198,15 +226,7 @@ class GazeboHost(SimLifecycle):
             chunk = min(max_chunk, remaining)
             chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
             await self._send_multi_step(chunk, seconds)
-            last = start_sim
-            stall = 0.0
-            while self._node.sim_time < chunk_target and stall < 1.0:
-                await asyncio.sleep(0.002)
-                if self._node.sim_time > last:
-                    last = self._node.sim_time
-                    stall = 0.0
-                else:
-                    stall += 0.002
+            await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
         return n * self._dt
 
     async def _send_multi_step(self, n: int, seconds: float) -> None:
@@ -255,8 +275,7 @@ class GazeboHost(SimLifecycle):
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            self._logger.warning(f"gz model --list failed: {stderr.decode().strip()}")
-            return []
+            raise SimUnavailable(f"gz model --list failed: {stderr.decode().strip()}")
         names: list[str] = []
         for line in stdout.decode().splitlines():
             stripped = line.strip()
@@ -285,6 +304,13 @@ class GazeboSimulator(BaseSim):
         self._wall_counter = itertools.count()
         self._material_texture_cache: dict[str, dict[str, str]] = {}
         self._spawned_names: set[str] = set()
+        self._entity_ids: dict[str, int] = {}
+        self._id_wanted: set[str] = set()
+
+        # gz leaves a model unactuated after a SetEntityPose issued while the
+        # world is paused; re-issuing the same pose once it runs wakes it.
+        self._repin: dict[str, Robot] = {}
+        self._paused: bool | None = None
 
         self._viewport_camera_pose: Pose | None = None
 
@@ -347,12 +373,18 @@ class GazeboSimulator(BaseSim):
     async def robot_spawn(self, robots: Sequence[Robot]) -> Sequence[bool]:
 
         async def impl(robot: Robot) -> bool:
+            await self._sweep_entity_name(robot.sim_path)
             if not await self._spawn_entity(robot):
                 return False
             _loader_args = self._robot_loader_args(robot)
             model = await (await robot.model.resolve()).model.get(ModelType.URDF, loader_args=_loader_args)
             if model.type is ModelType.UNKNOWN:
+                self._logger.error(f"robot {robot.name!r} resolved to an unknown model type after spawning; removing the entity again")
+                await self._delete_entity(robot.sim_path)
                 return False
+            self._id_wanted.add(robot.sim_path)
+            if await self._resolve_entity_id(robot.sim_path, timeout=_ENTITY_ID_TIMEOUT) is None:
+                self._logger.warning(f"entity id of {robot.sim_path!r} not in scene/info within {_ENTITY_ID_TIMEOUT}s, will retry at the first teleport")
             model_description = model.description
             self._robot_initialpose(robot)
             await self._robot_bridge(robot, model_description)
@@ -372,11 +404,23 @@ class GazeboSimulator(BaseSim):
 
     async def robot_move(self, robots: Sequence[Robot]) -> Sequence[bool]:
         async def impl(robot: Robot) -> bool:
-            return (await self._move_entity(robot)) and (await self._robot_move(robot))
+            if not await self._move_entity(robot):
+                return False
+            if self._paused:
+                self._repin[robot.sim_path] = robot
+            return await self._robot_move(robot)
 
         async with self.node.unpause_window():
             result = await asyncio.gather(*map(impl, robots))
         return result
+
+    async def _on_paused(self, msg: Bool) -> None:
+        was_paused, self._paused = self._paused, msg.data
+        if not was_paused or msg.data or not self._repin:
+            return
+        robots = list(self._repin.values())
+        self._repin.clear()
+        await asyncio.gather(*map(self._move_entity, robots))
 
     async def obstacle_delete(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         return await asyncio.gather(*(self._delete_entity(o.sim_path) for o in obstacles))
@@ -541,11 +585,14 @@ class GazeboSimulator(BaseSim):
 
     async def _move_entity(self, entity: Entity, entity_type: int = EntityMsg.MODEL) -> bool:
         async with self._semaphore:
+            if entity.sim_path in self._id_wanted and entity.sim_path not in self._entity_ids:
+                await self._resolve_entity_id(entity.sim_path, timeout=0.0)
             self._logger.debug(f"Attempting to move entity: {entity.sim_path}")
             self._logger.debug(f"Moving entity {entity.sim_path} to position: {entity.pose}")
 
             request = SetEntityPose.Request()
             request.entity = EntityMsg(
+                id=self._entity_ids.get(entity.sim_path, 0),
                 name=entity.sim_path,
                 type=entity_type,
             )
@@ -591,6 +638,8 @@ class GazeboSimulator(BaseSim):
                     self.entities[entity.name] = entity
                 return ok
 
+            except SimUnavailable:
+                raise
             except Exception as e:
                 self._logger.error(f"Error spawning entity {entity.name}: {str(e)}")
                 traceback.print_exc()
@@ -648,13 +697,14 @@ class GazeboSimulator(BaseSim):
 
         try:
             result = await self._service_spawn_entity.call_timeout(request)
+        except SimUnavailable:
+            raise
         except Exception as e:
             self._logger.error(f"Spawn service call raised for {name}: {e}")
             return False
 
         if result is None:
-            self._logger.error(f"Spawn service call failed for {name}")
-            return False
+            raise SimUnavailable(f"spawn_sdf({name}) timed out")
 
         if result.success:
             self._spawned_names.add(name)
@@ -666,29 +716,78 @@ class GazeboSimulator(BaseSim):
 
             request = DeleteEntity.Request()
             request.entity = EntityMsg(
+                id=self._entity_ids.get(sim_path, 0),
                 name=sim_path,
                 type=entity_type,
             )
 
             try:
                 result = await self._service_delete_entity.call_timeout(request)
-
-                if result is None:
-                    self._logger.error(f"Delete service call failed for {sim_path}")
-                    return False
-
-                self._logger.debug(f"Delete result for {sim_path}: {result.success}")
-
-                if result.success:
-                    self.entities.pop(sim_path, None)
-                    self._spawned_names.discard(sim_path)
-
-                return result.success
-
+            except SimUnavailable:
+                raise
             except Exception as e:
                 self._logger.error(f"Error deleting entity {sim_path}: {str(e)}")
                 traceback.print_exc()
                 return False
+
+            if result is None:
+                raise SimUnavailable(f"delete_entity({sim_path}) timed out")
+
+            self._logger.debug(f"Delete result for {sim_path}: {result.success}")
+
+            if result.success:
+                self.entities.pop(sim_path, None)
+                self._spawned_names.discard(sim_path)
+                self._entity_ids.pop(sim_path, None)
+                self._id_wanted.discard(sim_path)
+
+            return result.success
+
+    async def _sweep_entity_name(self, sim_path: str) -> None:
+        """Bounded delete-by-name of whatever holds ``sim_path``, drained by one sim step before the spawn that follows."""
+        for _ in range(_SPAWN_SWEEP_ROUNDS):
+            await self._delete_entity(sim_path)
+            await asyncio.sleep(_SPAWN_SWEEP_INTERVAL)
+        await self.node.await_sim_step(_SPAWN_SWEEP_DRAIN_TIMEOUT)
+
+    async def _scene_model_ids(self) -> dict[str, int]:
+        proc = await asyncio.create_subprocess_exec(
+            'gz',
+            'service',
+            '-s',
+            '/world/default/scene/info',
+            '--reqtype',
+            'gz.msgs.Empty',
+            '--reptype',
+            'gz.msgs.Scene',
+            '--timeout',
+            str(int(_ENTITY_ID_TIMEOUT * 1000)),
+            '--req',
+            '',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            self._logger.warning(f"gz scene/info failed: {stderr.decode().strip()}")
+            return {}
+        return parse_scene_models(stdout.decode())
+
+    async def _resolve_entity_id(self, sim_path: str, *, timeout: float) -> int | None:
+        """Cache the gz entity id behind ``sim_path``, polling scene/info for up to ``timeout``."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            models = await self._scene_model_ids()
+            entity_id = models.get(sim_path)
+            if entity_id is not None:
+                self._entity_ids[sim_path] = entity_id
+                self._logger.info(f"entity id of {sim_path!r} is {entity_id} ({len(models)} models listed)")
+                return entity_id
+            if loop.time() >= deadline:
+                self._logger.debug(f"entity id of {sim_path!r} not in scene/info ({len(models)} models listed)")
+                return None
+            await asyncio.sleep(_ENTITY_ID_POLL)
 
     async def step(self, n: int = 1) -> bool:
         async with self._semaphore:
@@ -831,8 +930,6 @@ class GazeboSimulator(BaseSim):
         if control_spec is not None and control_spec.is_ros2_control:
             if not control_spec.controllers:
                 raise ValueError(f"control.mode=ros2_control but no controllers declared for {robot.name}")
-            for controller_name in robot_controllers(robot_config, robot.resolved_assembly):
-                launch_description.add_action(controller_spawner_node(controller_name))
             launch_description.add_action(
                 twist_stamper_node(
                     control_spec.cmd_vel_topic,
@@ -962,6 +1059,7 @@ class GazeboSimulator(BaseSim):
         self._service_viewport_set_projection = self.node.create_client_wrapper(ViewportSetProjection, "/arena/viewport/set_projection", timeout=3.0)
         self._publisher_viewport_view = self.node.create_publisher(ViewportView, "/arena/viewport/cmd_view", _VIEWPORT_STREAM_QOS)
         self.node.create_subscription(PoseStamped, "/arena/viewport/camera_pose", self._on_viewport_camera_pose, 10)
+        self.node.create_subscription(Bool, "/arena/state/paused", self._on_paused, _LATCHED_QOS)
 
     async def shutdown(self) -> None:
         await self.stop_mechanisms()
@@ -969,12 +1067,14 @@ class GazeboSimulator(BaseSim):
         async def _delete_one(name: str) -> None:
             async with self._semaphore:
                 req = DeleteEntity.Request()
-                req.entity = EntityMsg(name=name, type=EntityMsg.MODEL)
+                req.entity = EntityMsg(id=self._entity_ids.get(name, 0), name=name, type=EntityMsg.MODEL)
                 await self._service_delete_entity.call_timeout(req)
 
         names = list(self._spawned_names)
         await asyncio.gather(*(_delete_one(n) for n in names), return_exceptions=True)
         self._spawned_names.clear()
+        self._entity_ids.clear()
+        self._id_wanted.clear()
 
     @classmethod
     async def create(cls, *args: object, namespace: Namespace, **kwargs: object) -> "GazeboSimulator":

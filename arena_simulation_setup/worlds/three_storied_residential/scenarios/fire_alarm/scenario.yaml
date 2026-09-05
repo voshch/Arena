@@ -1,10 +1,26 @@
-# Timeline reference: flips the fire_alarm schedule's `active` at t=12s, see AUTHORING.md
+# Timeline reference: locks the gate at t=0s (the shared world spawns it unlocked),
+# then flips the fire_alarm schedule's `active` at t=12s, see AUTHORING.md
 static: []
 dynamic: []
+sounds:
+- name: bedroom_radio
+  asset_id: radio_loop
+  position: [2.0, 1.0]
+  level: "1"
+  semantics:
+  - {preset: sound, params: {sounding: true, volume_db: 62.0}}
 robots: []
 timeline:
+- at: 0.0
+  set:
+  - entity: door_edge_1_1
+    field: locked
+    value: "true"
 - at: 12.0
   set:
   - entity: fire_alarm
     field: active
     value: "true"
+  - entity: bedroom_radio
+    field: sounding
+    value: "false"

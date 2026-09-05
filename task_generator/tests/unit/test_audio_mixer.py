@@ -1,5 +1,5 @@
 from __future__ import annotations
-from task_generator.auditory.audio_mixer import AudioMixer, Voice
+from task_generator.auditory.audio_mixer import AudioMixer, Voice, auto_output_candidates
 
 from types import SimpleNamespace
 
@@ -7,11 +7,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("rclpy")
-
-try:
-    import sounddevice  # noqa: F401
-except (ImportError, OSError) as exc:
-    pytest.skip(f"sounddevice unavailable: {exc}", allow_module_level=True)
 
 
 def _sample(values: list[float]) -> SimpleNamespace:
@@ -158,3 +153,25 @@ def test_muted_render_bus_stays_synchronized() -> None:
     mixer._callback(audible_block, 4, None, None)
     np.testing.assert_allclose(audible_block[:, 0], [0.25] * 4)
     assert source.render_count == 2
+
+
+def _device(name: str, outputs: int = 2) -> dict[str, object]:
+    return {"name": name, "max_output_channels": outputs}
+
+
+@pytest.mark.parametrize(
+    ("devices", "default_index", "expected"),
+    [
+        ([_device("hw:0,0"), _device("pulse"), _device("default")], 0, [1, 2, 0]),
+        ([_device("hw:0,0"), _device("pipewire")], 0, [1, 0]),
+        ([_device("default")], 0, [0]),
+        ([_device("hw:0,0"), _device("hw:1,0")], 1, [1]),
+        ([_device("pulse")], 0, [0]),
+        ([], -1, []),
+        ([_device("hw:0,0")], -1, []),
+        ([_device("pulse", outputs=0), _device("default")], 0, [1]),
+        ([_device("mic", outputs=0)], 0, []),
+    ],
+)
+def test_auto_output_candidates(devices: list[dict[str, object]], default_index: int, expected: list[int]) -> None:
+    assert auto_output_candidates(devices, default_index) == expected

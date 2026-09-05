@@ -37,6 +37,8 @@ class ParametrizedConfig:
 
 
 class ParametrizedResolver(PathResolverBase):
+    suffixes = ('.xml',)
+
     @property
     def path(self) -> Path:
         return AB_DIR / 'configs' / 'parametrized'
@@ -45,12 +47,12 @@ class ParametrizedResolver(PathResolverBase):
 class ParametrizedIdentifier(Identifier[ParametrizedConfig]):
     @property
     def shortname(self) -> str:
-        return str(Path(self.name).with_suffix(''))
+        return self.name.removesuffix('.xml')
 
     @classmethod
     def from_relpath(cls, relpath: Path) -> Self:
-        if relpath.suffix == '.xml':
-            return cls(name=str(relpath.with_suffix('')))
+        if relpath.name.endswith('.xml'):
+            return cls(name=str(relpath).removesuffix('.xml'))
         raise FileNotFoundError(f"Invalid file {relpath} for parametrized identifier")
 
     def load(self, path: Path, /, **kwargs: object) -> ParametrizedConfig:

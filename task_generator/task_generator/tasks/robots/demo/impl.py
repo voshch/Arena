@@ -91,8 +91,8 @@ class TM_Demo(TM_Robots):
         self._gesture_p = self.node.ROSParam[str](self.namespace("gesture"), parse=_parse_gesture)
         self._orientation_p = self.node.ROSParam[_Orientation](self.namespace("orientation"), parse=_Orientation)
 
-    async def reset(self, **kwargs: object) -> None:
-        await super().reset(**kwargs)
+    async def reset(self) -> None:
+        await super().reset()
         gesture_name = self._gesture_p.value
         radius = self._radius_p.value
         orientation = self._orientation_p.value

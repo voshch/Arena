@@ -227,6 +227,18 @@ zones:
       y: 2.45
       z: 0.0
     width: 0.09999999999999964
+    semantics:
+    - predicate: locked
+      value: false
+      params:
+        authorized: []
+        unlock_on: alarm
+    - predicate: blocked
+    - preset: pressure_plate
+      params:
+        position: [4.0, 2.0]
+        drives: door_edge_1_1
+        press_on: alarm
   elevators:
   - name: 1_elevator
     position:
@@ -234,6 +246,19 @@ zones:
       y: 0.0
       z: 0.0
     destination: "2.2_elevator"
+  schedules:
+  - name: fire_alarm
+    semantics:
+    - preset: schedule
+      params:
+        windows: []
+        regime: alarm
+  sounds:
+  - name: hall_siren
+    asset_id: alarm_loop
+    position: [4.0, 2.3]
+    semantics:
+    - {preset: sound, params: {sound_on: alarm}}
   entities:
     static:
     - name: Toilet_0
