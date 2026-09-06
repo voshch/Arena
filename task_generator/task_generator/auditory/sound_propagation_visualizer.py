@@ -321,8 +321,7 @@ class SoundPropagationVisualizer(Node):
 
         text = self._marker(frame, marker_id + 3, Marker.TEXT_VIEW_FACING, lifetime)
         text.ns = f"{listener_kind}_sound_propagation_backend"
-        text.pose.position = listener
-        text.pose.position.z += 0.35
+        text.pose.position = Point(x=listener.x, y=listener.y, z=listener.z + 0.35)
         text.scale.z = 0.24
         text.color = color
         text.text = backend
@@ -628,8 +627,7 @@ class SoundPropagationVisualizer(Node):
             lifetime,
         )
         label.ns = f"{listener_kind}_continuous_audio_labels"
-        label.pose.position = listener
-        label.pose.position.z += 0.35
+        label.pose.position = Point(x=listener.x, y=listener.y, z=listener.z + 0.35)
         label.scale.z = 0.22
         label.color = color
         label.text = f"{msg.label or msg.sound_type}: {msg.propagation_backend}\n{float(msg.direct_delay_sec) * 1000.0:.1f} ms, {len(portals)} portal(s)"
