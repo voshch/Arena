@@ -14,6 +14,7 @@ from task_generator.auditory.spatial_audio import (
     headphone_stereo,
     hearing_waveform,
     monitor_amplify,
+    ramped_read,
     rectangular_array,
     streaming_fractional_delays,
     transform_array,
@@ -142,3 +143,28 @@ def test_streaming_fractional_delays_retain_history_between_blocks() -> None:
     )
     np.testing.assert_allclose(second[0], [5.0, 6.0])
     np.testing.assert_allclose(second[1], [3.5, 4.5])
+
+
+def test_ramped_read_constant_delay_is_a_plain_shift() -> None:
+    loop = np.arange(8, dtype=np.float32)
+    out = ramped_read(loop, 0.0, 3.0, 3.0, 8, loop=True)
+    np.testing.assert_allclose(out, [5, 6, 7, 0, 1, 2, 3, 4])
+    clip = ramped_read(loop, 0.0, 3.0, 3.0, 8, loop=False)
+    np.testing.assert_allclose(clip, [0, 0, 0, 0, 1, 2, 3, 4])
+
+
+def test_ramped_read_is_continuous_across_blocks_and_reaches_the_target() -> None:
+    fs = 16000
+    tone = np.sin(2.0 * np.pi * 440.0 * np.arange(fs, dtype=np.float64) / fs).astype(np.float32)
+    block = 320
+    delay, target = 100.0, 103.0
+    blocks = []
+    for index in range(3):
+        blocks.append(ramped_read(tone, index * block, delay, target, block, loop=True))
+        delay = target
+    signal = np.concatenate(blocks)
+    steps = np.abs(np.diff(signal))
+    assert steps.max() < 1.05 * np.abs(np.diff(tone[: 2 * block])).max()
+    settled = ramped_read(tone, 3 * block, target, target, block, loop=True)
+    expected = tone[(np.arange(3 * block, 4 * block) - 103) % tone.size]
+    np.testing.assert_allclose(settled, expected, atol=1e-6)

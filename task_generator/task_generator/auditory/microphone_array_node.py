@@ -63,6 +63,7 @@ from task_generator.auditory.spatial_audio import (
     hearing_waveform,
     interleave,
     monitor_amplify,
+    ramped_read,
     rectangular_array,
     rms,
     streaming_fractional_delays,
@@ -93,7 +94,9 @@ class SemanticEventGroup:
 @dataclass(slots=True)
 class ContinuousVoice:
     samples: np.ndarray
-    source_start: int
+    program_start: int
+    delay_samples: float
+    delay_target: float
     gain: float
     loop: bool
     active: bool
@@ -439,6 +442,7 @@ class MicrophoneArrayNode(Node):
                 float(msg.received_volume_db),
                 voice.samples,
             )
+            voice.delay_target = self._delay_samples(msg)
             voice.active = True
             return
         if key in self._continuous_pending:
@@ -596,24 +600,17 @@ class MicrophoneArrayNode(Node):
             except Exception as exc:
                 self.get_logger().error(f"continuous raw-array asset decode failed: {exc}")
                 continue
-            delay_samples = max(
-                float(msg.direct_delay_sec) * self.sample_rate,
-                0.0,
-            )
-            delay = int(math.floor(delay_samples))
-            fraction = delay_samples - delay
+            delay_samples = self._delay_samples(msg)
             mono = np.asarray(sample.samples[:, 0], dtype=np.float32)
-            if fraction > 1e-9:
-                # A loop is periodic, so interpolate across its boundary.
-                mono = ((1.0 - fraction) * mono + fraction * np.roll(mono, 1)).astype(np.float32)
             elapsed = max(
                 self.get_clock().now().nanoseconds - (int(msg.program_start_time.sec) * 1_000_000_000 + int(msg.program_start_time.nanosec)),
                 0,
             )
-            source_start = self._cursor - round(elapsed * self.sample_rate / 1e9) + delay
             self._continuous[key] = ContinuousVoice(
                 samples=np.ascontiguousarray(mono),
-                source_start=source_start,
+                program_start=self._cursor - round(elapsed * self.sample_rate / 1e9),
+                delay_samples=delay_samples,
+                delay_target=delay_samples,
                 gain=self._spl_gain(float(msg.received_volume_db), sample),
                 loop=bool(msg.loop),
                 active=True,
@@ -646,6 +643,10 @@ class MicrophoneArrayNode(Node):
             self._procedural[source_id] = voice
             for channel, msg in pending.messages.items():
                 self._apply_drivetrain_message(voice, msg, channel)
+
+    def _delay_samples(self, msg: ContinuousHeardSoundState) -> float:
+        delay = float(msg.direct_delay_sec) * self.sample_rate
+        return delay if math.isfinite(delay) and delay > 0.0 else 0.0
 
     def _spl_gain(self, received_spl_db: float, sample: CachedSample) -> float:
         return self._samples_spl_gain(received_spl_db, sample.samples[:, 0])
@@ -681,13 +682,18 @@ class MicrophoneArrayNode(Node):
         for (_, channel), voice in tuple(self._continuous.items()):
             if not voice.active:
                 continue
-            source_indices = np.arange(block_start, block_end) - voice.source_start
-            if voice.loop:
-                source_indices %= len(voice.samples)
-                output[channel] += voice.samples[source_indices] * voice.gain
-            else:
-                valid = (source_indices >= 0) & (source_indices < len(voice.samples))
-                output[channel, valid] += voice.samples[source_indices[valid]] * voice.gain
+            output[channel] += (
+                ramped_read(
+                    voice.samples,
+                    block_start - voice.program_start,
+                    voice.delay_samples,
+                    voice.delay_target,
+                    self.block_size,
+                    loop=voice.loop,
+                )
+                * voice.gain
+            )
+            voice.delay_samples = voice.delay_target
         for source_id, voice in tuple(self._procedural.items()):
             try:
                 mono = voice.source.render(self.block_size)[:, 0]

@@ -255,6 +255,42 @@ def streaming_fractional_delays(
     return output, np.ascontiguousarray(combined[-required:], dtype=np.float32)
 
 
+def ramped_read(
+    samples: NDArray[np.floating],
+    start_position: float,
+    delay_from: float,
+    delay_to: float,
+    frames: int,
+    *,
+    loop: bool,
+) -> NDArray[np.float32]:
+    """Read ``frames`` samples starting at ``start_position`` while the delay ramps linearly.
+
+    The read position is continuous across calls, so a changing delay becomes
+    a slight resample instead of a skipped or repeated sample.
+    """
+    source = np.asarray(samples, dtype=np.float32).reshape(-1)
+    if frames <= 0 or source.size == 0:
+        return np.zeros(max(frames, 0), dtype=np.float32)
+    steps = np.arange(frames, dtype=np.float64)
+    delay = delay_from + (delay_to - delay_from) * (steps + 1.0) / frames
+    positions = start_position + steps - delay
+    lower = np.floor(positions)
+    fraction = (positions - lower).astype(np.float32)
+    lower = lower.astype(np.int64)
+    upper = lower + 1
+    if loop:
+        lower %= source.size
+        upper %= source.size
+        return (source[lower] * (1.0 - fraction) + source[upper] * fraction).astype(np.float32)
+    output = np.zeros(frames, dtype=np.float32)
+    valid_lower = (lower >= 0) & (lower < source.size)
+    valid_upper = (upper >= 0) & (upper < source.size)
+    output[valid_lower] += source[lower[valid_lower]] * (1.0 - fraction[valid_lower])
+    output[valid_upper] += source[upper[valid_upper]] * fraction[valid_upper]
+    return output
+
+
 def gcc_phat(
     signal: NDArray[np.floating],
     reference: NDArray[np.floating],
