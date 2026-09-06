@@ -218,10 +218,12 @@ PulseAudio output over an exclusive raw ALSA device.
 The PCM renderer runs from a steady wall clock because PortAudio consumes in
 wall time even when the simulation real-time factor changes. Its small queue
 accepts arbitrary PortAudio callback frame sizes, counts underflow/overflow,
-retries a failed device every two seconds, and prints `four-mic audio
-diagnostics` every five seconds. These diagnostics report received/accepted
-events, active WAV and drivetrain voices, stream/device state, queue depth,
-callback count, peak and the last PortAudio error.
+retries a failed device every two seconds, and logs `four-mic audio
+diagnostics` at debug level every five seconds. These diagnostics report
+received/accepted events, active WAV and drivetrain voices, stream/device
+state, queue depth, callback count, peak and the last PortAudio error. A
+warning is logged once when playback degrades (stream inactive, or new
+underflows/overflows in the period) and an info line once when it recovers.
 
 ### Simulator relationship
 

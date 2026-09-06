@@ -220,6 +220,7 @@ class MicrophoneArrayNode(Node):
         self._audio_overflows = 0
         self._reported_underflows = 0
         self._reported_overflows = 0
+        self._playback_degraded = False
         self._audio_peak = 0.0
         self._audio_status = ""
         self._stream_error = ""
@@ -1120,12 +1121,14 @@ class MicrophoneArrayNode(Node):
             f"output_peak={self._audio_peak:.4f}, "
             f"status={self._audio_status!r}, error={self._stream_error!r}"
         )
-        if str(self.get_parameter("audio_device").value).strip() in {"", "none"}:
-            self.get_logger().info(message)
-        elif not active or new_underflows > 0 or new_overflows > 0:
-            self.get_logger().warning(message)
-        else:
-            self.get_logger().info(message)
+        playback = str(self.get_parameter("audio_device").value).strip() not in {"", "none"}
+        degraded = playback and (not active or new_underflows > 0 or new_overflows > 0)
+        if degraded and not self._playback_degraded:
+            self.get_logger().warning(f"four-mic playback degraded (stream_active={active}, underflows={self._audio_underflows}, overflows={self._audio_overflows}), monitoring only, hearing is unaffected")
+        elif self._playback_degraded and not degraded:
+            self.get_logger().info("four-mic playback recovered")
+        self._playback_degraded = degraded
+        self.get_logger().debug(message)
 
     @staticmethod
     def _stable_occurrence(event_id: str) -> int:
