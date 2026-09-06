@@ -52,6 +52,7 @@ from task_generator.manager.world_manager.world_manager_ros import (
     WorldManagerROS as WorldManager,
 )
 from task_generator.shared import Orientation, Pose, Position
+from task_generator.simulators.auditory import AuditorySimulatorRegistry, BaseAuditorySimulator
 from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorRegistry
 from task_generator.tasks import identifier_to_available, identifier_to_available_async
 from task_generator.tasks.obstacles import ObstacleKind
@@ -137,6 +138,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     _world_manager: WorldManager
     _human_simulator: BaseHumanSimulator
+    _auditory_simulator: BaseAuditorySimulator
     _environment_manager: EnvironmentManager
     _robots_manager: RobotsManager | None = None
     _simulator: BaseSim
@@ -397,7 +399,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             )
 
             await self._world_manager.sync()
-            if flag_enabled(self, "debug", "map_server") or bool(self.get_parameter("auditory_enabled").value):
+            if flag_enabled(self, "debug", "map_server") or self._auditory_simulator.requires_map_server:
                 await self._world_manager.require_map_server()
             await self._robots_manager.launch_pending()
             self._publish_viz_manifest()
@@ -501,6 +503,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             namespace=self._namespace,
             simulator=self._simulator,
             realizer=realizer,
+        )
+
+        self._logger.info("Setting up auditory simulator")
+        self._auditory_simulator = await AuditorySimulatorRegistry.get(
+            self.conf.Arena.AUDITORY.value,
+            node=self,
+            namespace=self._namespace,
         )
 
         self._logger.info("Setting up environment manager")

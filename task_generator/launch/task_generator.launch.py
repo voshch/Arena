@@ -146,9 +146,8 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="auditory.assets",
         default_value=PathJoinSubstitution(
             [
-                FindPackageShare("task_generator"),
+                FindPackageShare("arena_auditory"),
                 "config",
-                "auditory",
                 "acoustic_assets.yaml",
             ]
         ),
@@ -158,7 +157,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="auditory.sound_dir",
         default_value=PathJoinSubstitution(
             [
-                FindPackageShare("task_generator"),
+                FindPackageShare("arena_auditory"),
                 "sounds",
             ]
         ),
@@ -332,10 +331,6 @@ def generate_launch_description() -> launch.LaunchDescription:
 
         human_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(human.substitution)) or default_human(arena_sim)
         auditory_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(auditory.substitution))
-        # Robot microphones, propagation, and playback do not depend on the
-        # selected human simulator.  Human sound production is gated inside
-        # human.launch.py when Arena HumanSim is selected.
-        auditory_enabled = auditory_val != "none"
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
         tm_modules_val = launch.utilities.perform_substitutions(
@@ -352,10 +347,6 @@ def generate_launch_description() -> launch.LaunchDescription:
             launch.utilities.normalize_to_list_of_substitutions(
                 auditory_static_sounds.substitution
             ),
-        ).strip()
-        auditory_val = launch.utilities.perform_substitutions(
-            context,
-            launch.utilities.normalize_to_list_of_substitutions(auditory.substitution),
         ).strip()
         sounds_enabled = auditory_val != "none" or static_sounds_val not in ("", "[]")
         if sounds_enabled and "sounds" not in configured_modules:
@@ -392,11 +383,25 @@ def generate_launch_description() -> launch.LaunchDescription:
             launch_arguments={
                 "simulator": human_val,
                 "namespace": allocated_ns,
+            }.items(),
+        )
+
+        auditory_launch = IncludeLaunchDescription(
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("task_generator"),
+                    "launch",
+                    "auditory",
+                    "auditory.launch.py",
+                ]
+            ),
+            launch_arguments={
+                "simulator": auditory_val,
+                "namespace": allocated_ns,
                 # Launch substitutions preserve a relative value as relative
                 # to each node namespace.  Keep this explicitly absolute so
                 # auditory nodes do not resolve it below task_generator_node.
                 "environment_namespace": ("/" + os.path.dirname(allocated_ns).strip("/")),
-                **auditory.dict,
                 **auditory_viz.dict,
                 **auditory_playback.dict,
                 **auditory_block_size.dict,
@@ -490,7 +495,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "use_sim_time": True,
                     "sim": arena_sim,
                     "human": human_val,
-                    "auditory_enabled": auditory_enabled,
+                    "auditory": auditory_val,
                     "robot.mobile_adapter": mobile_val,
                     "robot.arm_adapter": arm_val,
                     **robot.str_param,
@@ -556,7 +561,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         )
 
         env_actions: list[launch.LaunchDescriptionEntity] = [
-            IsolatedGroupAction([human_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
+            IsolatedGroupAction([human_launch, auditory_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
         ]
         if truthy(debug_flags.get("debug.aiomonitor")):
             env_actions.append(launch.actions.RegisterEventHandler(debug_window_cb))

@@ -43,7 +43,7 @@ def test_heard_sounds_drive_notify_stimulus_edge_triggered(rclpy_context):
     from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
     from arena_rclpy_mixins.shared import Namespace
     from arena_runtime.sim.dummy_simulator import DummySimulator
-    from task_generator.auditory.qos_profiles import continuous_audio_qos
+    from arena_auditory.qos_profiles import continuous_audio_qos
     from task_generator.manager.realizer import Realizer
     from task_generator.simulators.human import TOPIC_CONTINUOUS_HEARD_SOUNDS
     from task_generator.simulators.human.noop import NoopHumanSimulator

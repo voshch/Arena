@@ -40,7 +40,7 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `task.episodes` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/` |
-| `auditory` | `none` \| `arena` | `none` | Auditory pipeline: sound propagation, robot hearing, robot and human sound emission. Sub-keys below take effect only when not `none`; see [auditory/README.md](../../task_generator/launch/human/auditory/README.md). |
+| `auditory` | `none` \| `arena` | `none` | Auditory pipeline: sound propagation, robot hearing, robot and human sound emission. Sub-keys below take effect only when not `none`; see [arena_auditory/README.md](../../arena_auditory/README.md). |
 | `auditory.playback` | string | `auto` | PortAudio output device for workstation playback; `auto` tries `pulse`, `pipewire`, `default`, then the PortAudio default, `none` starts no playback nodes. |
 | `auditory.viz` | bool string | `false` | Publish propagation markers. |
 | `auditory.ped_hearing` | bool string | `true` | Pedestrians are propagation listeners and receive sound stimuli through the human simulator. |

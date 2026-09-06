@@ -19,6 +19,10 @@ class Constants:
         HUNAV = "hunav"
         ARENA = "arena"
 
+    class AuditorySimulator(Enum):
+        NONE = "none"
+        ARENA = "arena"
+
     class TaskMode:
         @enum.unique
         class TM_Obstacles(enum.Enum):

@@ -84,6 +84,7 @@ line-length = 320
 src = [
     "arena_runtime/arena_runtime/arena_runtime",
     "task_generator/task_generator",
+    "arena_auditory/arena_auditory",
     "arena_bringup/arena_bringup",
     "arena_robots/arena_robots/arena_robots",
     "arena_simulation_setup/src/arena_simulation_setup",

@@ -60,7 +60,7 @@ Build the changed packages on Ubuntu first:
 ```bash
 cd /opt/arena_ws
 source src/Arena/_meta/tools/source
-arena rebuild task_generator arena_evaluation arena_simulation_setup
+arena rebuild task_generator arena_auditory arena_evaluation arena_simulation_setup
 source install/setup.bash
 sudo apt install ffmpeg  # only needed for optional FLAC export
 ```

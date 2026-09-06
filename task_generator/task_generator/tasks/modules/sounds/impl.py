@@ -11,6 +11,7 @@ import rclpy
 import tf2_ros
 import yaml
 from ament_index_python.packages import get_package_share_directory
+from arena_auditory.qos_profiles import continuous_audio_qos
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
 from arena_simulation_setup.tree.World import WorldDescription, WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import Scenario
@@ -21,7 +22,6 @@ from rclpy.clock import Clock, ClockType
 from task_generator_msgs.msg import ContinuousAudioSourceState
 from task_generator_msgs.srv import RemoveSound, SpawnSound
 
-from task_generator.auditory.qos_profiles import continuous_audio_qos
 from task_generator.tasks.modules import TM_Module
 
 
@@ -187,7 +187,7 @@ class Mod_Sounds(TM_Module):
         self._runtime: set[str] = set()
         self._warned_inert: set[str] = set()
 
-        catalog_path = Path(get_package_share_directory("task_generator")) / "config" / "auditory" / "acoustic_assets.yaml"
+        catalog_path = Path(get_package_share_directory("arena_auditory")) / "config" / "acoustic_assets.yaml"
         self._catalog = _parse_catalog(yaml.safe_load(catalog_path.read_text()))
 
         self._source_publisher = self.node.create_publisher(
