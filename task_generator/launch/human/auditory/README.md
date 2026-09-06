@@ -404,8 +404,10 @@ path per sound and playback uses one independent RIR convolver each. A wall,
 doorway, or extra distance can therefore delay and attenuate each speaker
 differently.
 
-A sound with no `sound_on` plays only when told to. An always-on device like
-a radio is authored with an initial value in its preset params,
+A world- or scenario-authored sound with no `sound_on` plays only when told
+to, and the sounds module warns at load about such a sound, with the service
+call that turns it on. An always-on device like a radio is authored with an
+initial value in its preset params,
 `{preset: sound, params: {sounding: true, volume_db: 62.0}}` (`sounding:` and
 `sound_on:` are exclusive). Anything can be toggled later, either from a
 scenario timeline entry:
@@ -495,11 +497,14 @@ pass the same schema, as a flat list, through `auditory.static_sounds`:
 arena launch \
   world:=demo \
   auditory:=arena \
-  auditory.static_sounds:='[{name: room_radio, asset_id: radio_loop, position: [5.0, 5.0, 1.2], level: level_1, semantics: [{preset: sound}]}]'
+  auditory.static_sounds:='[{name: room_radio, asset_id: radio_loop, position: [5.0, 5.0, 1.2], level: level_1, semantics: [{preset: sound, params: {volume_db: 62.0}}]}]'
 ```
 
-Direct positions in `auditory.static_sounds` need `level` in a multi-level
-world, same as a world-authored direct `position`. Several radios are several
+A launch-defined sound plays from the start unless its entry names a
+`sound_on` regime or sets `sounding` itself, unlike a world-authored sound,
+which stays silent until told otherwise. Direct positions in
+`auditory.static_sounds` need `level` in a multi-level world, same as a
+world-authored direct `position`. Several radios are several
 list entries. A multi-speaker alarm is several list entries sharing one
 `sound_on`. World- and launch-defined sound names must be unique. To keep
 custom WAV files outside the package, pass

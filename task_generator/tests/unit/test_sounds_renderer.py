@@ -13,12 +13,14 @@ from task_generator.tasks.modules.sounds.impl import (
     _CatalogEntry,
     _catalog_default,
     _catalog_lookup,
+    _has_initial_sounding,
     _index_static_entities,
     _merge_params,
     _parse_catalog,
     _realize_frame,
     _resolve_sound_placement,
     _sound_group_id,
+    _sounding_by_default,
 )
 
 
@@ -188,6 +190,49 @@ def test_sound_group_id_prefers_sound_on_regime() -> None:
 def test_sound_group_id_falls_back_to_realized_name() -> None:
     cfgs = parse_semantics([{"preset": "sound"}])
     assert _sound_group_id(cfgs, "env_0/1_alarm") == "env_0/1_alarm"
+
+
+@pytest.mark.parametrize(
+    ("semantics", "expected"),
+    [
+        ([{"preset": "sound"}], False),
+        ([{"preset": "sound", "params": {"volume_db": 62.0}}], False),
+        ([{"preset": "sound", "params": {"sounding": False}}], True),
+        ([{"preset": "sound", "params": {"sounding": True}}], True),
+        ([{"preset": "sound", "params": {"sound_on": "alarm"}}], True),
+    ],
+)
+def test_has_initial_sounding(semantics: list, expected: bool) -> None:
+    assert _has_initial_sounding(parse_semantics(semantics)) is expected
+
+
+def _launch_sound(semantics: list) -> Sound:
+    return Sound(name="radio", asset_id="radio_loop", position=Position(1.0, 2.0, 1.2), semantics=semantics)
+
+
+def test_sounding_by_default_turns_on_a_bare_preset() -> None:
+    snd = _sounding_by_default(_launch_sound([{"preset": "sound", "params": {"volume_db": 62.0}}]))
+    values = {cfg.name: cfg.value for cfg in snd.semantics}
+    assert values == {"sounding": True, "volume_db": 62.0}
+
+
+def test_sounding_by_default_adds_the_predicate_when_missing() -> None:
+    snd = _sounding_by_default(_launch_sound([{"state": "volume_db", "value": 62.0}]))
+    assert [(cfg.role, cfg.name, cfg.value) for cfg in snd.semantics] == [("state", "volume_db", 62.0), ("predicate", "sounding", True)]
+
+
+@pytest.mark.parametrize(
+    "semantics",
+    [
+        [{"preset": "sound", "params": {"sounding": False}}],
+        [{"preset": "sound", "params": {"sound_on": "alarm"}}],
+    ],
+)
+def test_sounding_by_default_leaves_a_decided_entry_alone(semantics: list) -> None:
+    snd = _launch_sound(semantics)
+    before = [(cfg.name, cfg.value, dict(cfg.params)) for cfg in snd.semantics]
+    _sounding_by_default(snd)
+    assert [(cfg.name, cfg.value, dict(cfg.params)) for cfg in snd.semantics] == before
 
 
 # ---------------------------------------------------------------------------

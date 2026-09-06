@@ -82,6 +82,25 @@ def _merge_params(cfgs: Sequence[SemanticCfg]) -> dict:
     return params
 
 
+def _has_initial_sounding(cfgs: Sequence[SemanticCfg]) -> bool:
+    """True when a sound_on regime or an explicit sounding value decides whether the sound plays."""
+    if _merge_params(cfgs).get("sound_on"):
+        return True
+    return any(cfg.name == "sounding" and cfg.value is not None for cfg in cfgs)
+
+
+def _sounding_by_default(snd: Sound) -> Sound:
+    """Launch-defined sounds play from the start unless the entry decides otherwise."""
+    if _has_initial_sounding(snd.semantics):
+        return snd
+    sounding = next((cfg for cfg in snd.semantics if cfg.name == "sounding"), None)
+    if sounding is None:
+        sounding = SemanticCfg(role="predicate", name="sounding")
+        snd.semantics.append(sounding)
+    sounding.value = True
+    return snd
+
+
 def _sound_group_id(cfgs: Sequence[SemanticCfg], realized_name: str) -> str:
     """Wire group_id: the sound_on regime name when set (groups sirens sharing it), else the entity name."""
     sound_on = _merge_params(cfgs).get("sound_on")
@@ -166,6 +185,7 @@ class Mod_Sounds(TM_Module):
         self._sound_state: dict[str, _SoundState] = {}
         self._attached: set[str] = set()
         self._runtime: set[str] = set()
+        self._warned_inert: set[str] = set()
 
         catalog_path = Path(get_package_share_directory("task_generator")) / "config" / "auditory" / "acoustic_assets.yaml"
         self._catalog = _parse_catalog(yaml.safe_load(catalog_path.read_text()))
@@ -207,12 +227,14 @@ class Mod_Sounds(TM_Module):
         for level_id, level in world.levels.items():
             for snd in level.all_sounds:
                 realized_name = self.node._realizer.realize(snd, level_id).name
+                self._warn_if_inert(snd, realized_name)
                 resolved[realized_name] = self._resolve_and_build(snd, world, indexed_entities, level_id, realized_name)
 
         attached: set[str] = set()
         episode_sounds = list(scenario.sounds) if scenario is not None else []
         for snd in [*episode_sounds, *self._configured_sounds()]:
             realized_name = self.node._realizer.realize(snd).name
+            self._warn_if_inert(snd, realized_name)
             resolved[realized_name] = self._resolve_and_build(snd, world, indexed_entities, None, realized_name)
             self.node._simulator.attach_semantics("sound", realized_name, snd.semantics)
             attached.add(realized_name)
@@ -268,7 +290,13 @@ class Mod_Sounds(TM_Module):
             parsed = []
         if not isinstance(parsed, list):
             raise ValueError("static_sounds must be a YAML list of sound entries")
-        return converter.structure(parsed, list[Sound])
+        return [_sounding_by_default(snd) for snd in converter.structure(parsed, list[Sound])]
+
+    def _warn_if_inert(self, snd: Sound, realized_name: str) -> None:
+        if _has_initial_sounding(snd.semantics) or realized_name in self._warned_inert:
+            return
+        self._warned_inert.add(realized_name)
+        self._logger.warning(f"sound {snd.name!r} has neither sound_on nor a sounding value, so it stays silent until toggled: ros2 service call {self.node.service_namespace('semantics', 'set')} task_generator_msgs/srv/SetSemantic \"{{entity: {realized_name}, field: sounding, value: 'true'}}\"")
 
     def _spawn_sound(
         self,
