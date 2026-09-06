@@ -53,8 +53,9 @@ class Level3Propagation:
         listener: Point,
         source_level_db: float,
     ) -> PropagationResult:
-        distance = max(self._distance(source, listener), 1.0)
-        direct_loss = 20.0 * math.log10(distance)
+        distance = self._distance(source, listener)
+        attenuation_distance = max(distance, 1.0)
+        direct_loss = 20.0 * math.log10(attenuation_distance)
 
         source_zone = scene.zone_at(source)
         listener_zone = scene.zone_at(listener)
@@ -124,14 +125,15 @@ class Level3Propagation:
 
             d1 = self._distance(source, reflection)
             d2 = self._distance(reflection, listener)
-            total_distance = max(d1 + d2, 1.0)
+            total_distance = d1 + d2
+            attenuation_distance = max(total_distance, 1.0)
 
             material = self._materials.get(wall.material_id)
             absorption = sum(material.absorption) / len(material.absorption)
             reflection_coefficient = math.sqrt(max(1.0 - absorption, 1e-6))
 
             reflection_loss = -20.0 * math.log10(max(reflection_coefficient, 1e-6))
-            gain_db = -20.0 * math.log10(total_distance) - reflection_loss
+            gain_db = -20.0 * math.log10(attenuation_distance) - reflection_loss
 
             if source_level_db + gain_db < self._reflection_floor_db:
                 continue

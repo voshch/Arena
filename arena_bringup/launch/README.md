@@ -47,7 +47,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `auditory.static_sounds` | YAML string | `[]` | World-independent `sound` entities (radios, alarms), as a flat list of the same `Sound` schema used in `world.yaml`. Non-empty adds `sounds` to `task.modules` (already on whenever `auditory` is not `none`). |
 | `auditory.motor` | `off` \| `wav` \| `procedural` | `procedural` | Robot motor audio source. |
 | `auditory.environment_playback` | bool string | `true` | Play propagated environment audio locally without disabling simulated emission. |
-| `auditory.block_size` | int string | `2048` | PortAudio callback size; raise to `4096` on repeated underflows. |
+| `microphone_mode` | `stereo` \| `four_mic` | `stereo` | Receiver layout; `four_mic` starts the synchronized Jackal raw PCM/hearing/headphone pipeline. |
+| `auditory.block_size` | int string | `2048` | Legacy playback callback size; the four-mic renderer uses its 320-frame configuration and reports/retries underflows itself. |
 | `auditory.assets` / `auditory.sound_dir` | paths | bundled files | Asset catalog and WAV directory shared by all playback nodes. |
 | `use_sim_time` | bool string | `true` | Use sim clock instead of wall clock |
 | `env.n` | int string | `1` | Number of task-generator environments `arena launch` will spawn this invocation. Additive: if the runtime already has envs, these add to them rather than replace. |

@@ -28,6 +28,7 @@ import tf2_ros
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.Time import Time
 from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
@@ -97,6 +98,7 @@ class EpisodeRecord:
     goal_dist_min: float = 0.0
     path_length: float = 0.0
     integrity: bool = True
+    start_time: Time = attrs.Factory(Time)
 
 
 @attrs.define
@@ -395,7 +397,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             )
 
             await self._world_manager.sync()
-            if flag_enabled(self, "debug", "map_server"):
+            if flag_enabled(self, "debug", "map_server") or bool(self.get_parameter("auditory_enabled").value):
                 await self._world_manager.require_map_server()
             await self._robots_manager.launch_pending()
             self._publish_viz_manifest()
@@ -559,6 +561,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.goal_dist_min = record.goal_dist_min
         msg.path_length = record.path_length
         msg.integrity = record.integrity
+        msg.start_time = record.start_time.to_msg()
         msg.conditions = json.dumps([c.serialize() for c in self._episode_conditions])
         return msg
 
@@ -1192,6 +1195,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
             self._pub_state_world.publish(String(data=record.world))
 
+            # This is the first instant at which the reset world, robot and
+            # pedestrians are all committed. Dataset export clips audio to it.
+            record.start_time = self.sim_time
             record.outcome_state = task_generator_msgs.action.RunEpisode.Result.RUNNING
             self._publish_episode_state()
 

@@ -6,7 +6,11 @@ import numpy as np
 import yaml
 from scipy.io import wavfile
 
-from task_generator.auditory.asset_lib import AcousticAssetCatalog, AcousticSample
+from task_generator.auditory.asset_lib import (
+    AcousticAssetCatalog,
+    AcousticSample,
+    footstep_material_tags,
+)
 
 
 def _catalog(tmp_path: Path) -> AcousticAssetCatalog:
@@ -16,6 +20,11 @@ def _catalog(tmp_path: Path) -> AcousticAssetCatalog:
         sound_dir / "step.wav",
         22_050,
         np.asarray([0, 1000, -1000, 0], dtype=np.int16),
+    )
+    wavfile.write(
+        sound_dir / "walnut.wav",
+        22_050,
+        np.asarray([0, 500, -500, 0], dtype=np.int16),
     )
     config = {
         "assets": {
@@ -33,7 +42,12 @@ def _catalog(tmp_path: Path) -> AcousticAssetCatalog:
                             125: -10.0,
                             1000: -3.0,
                         },
-                    }
+                    },
+                    {
+                        "sample_id": "step_walnut",
+                        "file": "walnut.wav",
+                        "tags": ["walnut_planks"],
+                    },
                 ],
             }
         }
@@ -68,6 +82,30 @@ def test_catalog_select_is_metadata_only_and_load_is_cached(tmp_path):
     assert catalog.cached_samples == 1
     assert catalog.cache_misses == 1
     assert catalog.cache_hits == 1
+
+
+def test_unknown_material_selects_default_footstep(tmp_path):
+    catalog = _catalog(tmp_path)
+
+    selected = catalog.select(
+        "footstep",
+        episode_seed=4,
+        agent_id=7,
+        occurrence=9,
+        required_tags=frozenset({"unknown_floor"}),
+    )
+
+    assert selected is not None
+    assert selected[1].sample_id == "step_1"
+
+
+def test_footstep_material_tags_preserve_known_and_default_unknown():
+    assert footstep_material_tags(["walk", "walnut_planks"]) == frozenset(
+        {"walnut_planks"}
+    )
+    assert footstep_material_tags(["walk", "unmapped_floor"]) == frozenset(
+        {"default"}
+    )
 
 
 def test_catalog_still_validates_missing_files_at_startup(tmp_path):

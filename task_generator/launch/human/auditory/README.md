@@ -1,8 +1,10 @@
 # Auditory Module
 
-The auditory module adds sound events to the Arena human simulation path. It is
-enabled by default when the Arena human simulator is selected. Set
-`auditory:=none` (the default) runs without the auditory nodes; `auditory:=arena` enables them.
+The auditory module adds robot microphones, propagation, hearing, and local
+playback independently of the selected human simulator. `auditory:=none` (the
+default) runs without the auditory nodes; `auditory:=arena` enables them.
+Human footsteps and greetings are additionally produced when Arena HumanSim is
+selected.
 
 ## Features
 
@@ -17,9 +19,10 @@ enabled by default when the Arena human simulator is selected. Set
   multi-portal coupling across doors and shared open boundaries.
 - TF microphones: named microphones can attach to any TF frame. Every
   microphone is an independent propagation listener.
-- Robot hearing: `robot_hearing_node` listens for `HeardSoundEvent`, discovers
-  robots from `state/robots`, republishes per-robot heard events, and publishes
-  an RViz text marker when a robot hears a configured sound type.
+- Robot hearing: in stereo mode, `robot_hearing_node` consumes the center
+  listener. In four-mic mode, `microphone_array_node` first fuses the matching
+  FL/FR/RL/RR results and `robot_hearing_node` consumes only that array-derived
+  event. It republishes per-robot heard events and RViz text markers.
 - Human audio playback: `human_sound_playback` plays human sound assets from
   `config/auditory/acoustic_assets.yaml`.
 - Environment audio: worlds (or `auditory.static_sounds`) declare standalone
@@ -41,12 +44,15 @@ Expected nodes when enabled include:
 - `robot_hearing_node`
 - `human_sound_playback`
 - `environment_sound_playback`
-- `sound_propagation_visualizer` (enabled by default with the auditory module)
+- `microphone_array_node` (with `microphone_mode:=four_mic`)
+- `sound_propagation_visualizer` (enabled with `auditory.viz:=true`)
 
 ## Main Topics
 
 - `human_sound_events`: emitted `SoundEvent` stream.
 - `heard_sound_events`: propagated `HeardSoundEvent` stream.
+- `four_mic_heard_sound_events`: one array-fused event per finite sound in
+  four-mic mode; this is the input to `robot_hearing_node` in that mode.
 - `continuous_audio_sources`: persistent procedural source state.
 - `continuous_heard_sounds`: listener-specific propagated procedural state.
 - `state/semantics`: latched `SemanticSnapshot` carrying every sound's live
@@ -65,6 +71,243 @@ Expected nodes when enabled include:
 - `sound_propagation_markers`: RViz source/portal/listener paths.
 - `environment_audio_source_markers`: fixed radio and alarm emitters.
 
+## Four-microphone Jackal array
+
+Set `microphone_mode:=four_mic` to replace the legacy 0.20 m side pair with
+four independent propagation listeners and start the synchronized raw PCM,
+robot-hearing, headphone and TDoA outputs. `microphone_mode:=stereo` preserves
+the old behavior.
+
+The implementation is part of the existing ROS 2 auditory stack, not a sensor
+plugin tied to a physics simulator. `sound_propagation_node` remains the source
+of listener-specific distance, delay, attenuation, occupancy/material
+occlusion, reflection metadata and pyroomacoustics portal routing.
+`microphone_array_node` renders its four results on one 16 kHz sample clock.
+Finite sound events use reliable volatile QoS: current subscribers receive
+each event without replaying stale clips to nodes that join later.
+
+### Geometry and spacing
+
+The Jackal collision chassis in
+`arena_robots/arena_robots/robots/jackal/urdf/jackal.urdf.xacro` is 0.420 m
+long, 0.310 m wide and 0.184 m high. Each microphone is inset 0.020 m from its
+two nearest horizontal edges and mounted at z=0.220 m:
+
+| Channel | Frame | Position in `base_link` (m) | Inlet yaw |
+|---:|---|---:|---:|
+| 0 | `mic_front_left` | `(0.190, 0.135, 0.220)` | `+45 deg` |
+| 1 | `mic_front_right` | `(0.190, -0.135, 0.220)` | `-45 deg` |
+| 2 | `mic_rear_left` | `(-0.190, 0.135, 0.220)` | `+135 deg` |
+| 3 | `mic_rear_right` | `(-0.190, -0.135, 0.220)` | `-135 deg` |
+
+Yes, the two principal spacings are deliberately different:
+
+- front-to-back spacing on either side is `0.190 - (-0.190) = 0.380 m`;
+- left-to-right spacing at either end is `0.135 - (-0.135) = 0.270 m`;
+- diagonal spacing is about `0.466 m`.
+
+This follows the rectangular chassis instead of forcing the receivers into a
+smaller square. A square that remained on the chassis would have to reduce the
+front-to-back spacing from 0.380 m to 0.270 m, discarding 29% of the available
+longitudinal aperture. With speed of sound 343 m/s, the current far-field
+maximum path delays are approximately 1,108 us (17.7 samples at 16 kHz)
+front-to-back and 787 us (12.6 samples) left-to-right. The larger longitudinal
+baseline therefore gives more observable timing information for front/back
+classification. TDoA algorithms use the exact coordinates, so equal baselines
+are not required. The tradeoff is greater high-frequency spatial aliasing;
+the design favors broadband, relatively low-frequency events such as footsteps
+and retains the configurable geometry for comparison experiments.
+
+```text
+                         +X FRONT
+
+              FL  ↖                 ↗  FR
+                    +---------------+
+                    |               |
+              +Y    |    JACKAL     |    -Y
+                    |               |
+                    +---------------+
+              RL  ↙                 ↘  RR
+
+                         -X REAR
+```
+
+The frames are fixed children of `base_link`, so the normal robot TF chain
+moves and rotates them rigidly. The arrows represent outward-facing inlet
+normals. Propagation is currently omnidirectional because no calibrated
+XVF3800 polar response exists in the acoustic API; orientation is retained in
+the model, RViz and stream metadata for future directivity models.
+
+Defaults live in `config/auditory/jackal_four_mic.yaml` and are configurable
+through `mic_array_width`, `mic_array_length`, `mic_height` and
+`mic_corner_inset`. The same YAML is loaded by propagation and rendering so
+their geometry cannot drift in file-based experiments.
+
+The receiver uses the Seeed reSpeaker XMOS XVF3800 as a technology reference:
+four raw PDM MEMS-like channels, -26 dBFS nominal sensitivity, 64 dBA SNR,
+120 dB SPL overload and 16 kHz maximum reference-board sampling rate. See the
+[XVF3800 data sheet](https://files.seeedstudio.com/Bazaar/product_pdf/114993700.pdf)
+and [XVF3800 guide](https://wiki.seeedstudio.com/respeaker_xvf3800_introduction/).
+The physical board is circular; Arena retains the synchronized raw-channel
+concept but uses Jackal corner positions. It does not apply the hardware's
+onboard AEC, AGC, beamforming, noise suppression or phase correction.
+
+### Signal path and topics
+
+```text
+sources -> existing sound_propagation_node -> FL / FR / RL / RR results
+        -> synchronized raw PCM -> mono diagnostic / spatial stereo / GCC-PHAT
+        -> four-channel event fusion -> robot_hearing_node -> jackal/heard_sound
+```
+
+Each listener result has its own `direct_delay_sec`, `received_volume_db`,
+audibility and occlusion/portal result. Finite events use one source sample and
+one common scheduling anchor, then apply each receiver's delay with
+fractional-sample interpolation. WAV loops share `program_start_time` while
+retaining each receiver's independent delay and level. The renderer never
+duplicates one received channel four times.
+Procedural Jackal drivetrain state is synthesized once at the array's 16 kHz
+rate, then distributed with each microphone's independent propagation gain and
+streaming fractional delay. The RViz motor enable and tuning controls are
+mirrored to this renderer in four-mic mode.
+
+The legacy human and environment playback nodes are not launched in four-mic
+mode; the array is the sole workstation output path. `robot_sound_node` remains
+active as the motor-state producer, but its legacy mixer has no local device.
+The independent `robot:jackal` center listener is not propagated in four-mic
+mode. Once all four microphone results for a finite event arrive, the array
+publishes one compatible event using the strongest audible received level, the
+earliest audible arrival, and the mean microphone position as the robot-array
+center. The existing robot-hearing threshold, delay and marker logic then
+publishes `jackal/heard_sound`.
+
+`task_generator_msgs/AudioFrame` contains timestamp, sample rate, encoding,
+frame count, fixed ordering, microphone frame IDs, positions, inlet yaws and
+interleaved float32 PCM. For a robot named `jackal`, topics end in:
+
+- `jackal/audio/mic_front_left`
+- `jackal/audio/mic_front_right`
+- `jackal/audio/mic_rear_left`
+- `jackal/audio/mic_rear_right`
+- `jackal/audio/raw_array` with order FL, FR, RL, RR
+- `jackal/audio/hearing/mono`
+- `jackal/audio/hearing/energy`
+- `jackal/audio/headphones/left`
+- `jackal/audio/headphones/right`
+- `jackal/audio/headphones/stereo`
+- `jackal/audio/diagnostics/tdoa`
+
+`hearing/mono` is a diagnostic signal that selects the highest-RMS raw channel
+per block instead of phase-averaging asynchronous signals. It is not the normal
+headphone presentation. `hearing/energy` carries linear RMS in
+the order FL, FR, RL, RR, hearing, headphone L, headphone R. The canonical
+research observation remains the unchanged four-channel `raw_array`.
+
+Headphone monitoring uses
+`L=(front_gain*FL + rear_gain*RL)/gain_sum` and the corresponding right-side
+expression, with no time alignment. Raw channels keep the -26 dBFS-at-94-dB-SPL
+MEMS calibration. A separate `monitor_gain_db` workstation preamp (36 dB by
+default) makes those physical levels audible without changing `raw_array`, and
+`monitor_limit` bounds headphone peaks. `auditory.playback:=auto` routes the
+stereo result to the selected PortAudio device in addition to publishing it.
+When `PULSE_SERVER` is present, automatic device selection prefers a stereo
+PulseAudio output over an exclusive raw ALSA device.
+
+The PCM renderer runs from a steady wall clock because PortAudio consumes in
+wall time even when the simulation real-time factor changes. Its small queue
+accepts arbitrary PortAudio callback frame sizes, counts underflow/overflow,
+retries a failed device every two seconds, and prints `four-mic audio
+diagnostics` every five seconds. These diagnostics report received/accepted
+events, active WAV and drivetrain voices, stream/device state, queue depth,
+callback count, peak and the last PortAudio error.
+
+### Simulator relationship
+
+The microphone and propagation nodes do not call Gazebo APIs. They consume ROS
+interfaces: TF, `state/robots`, the occupancy map and acoustic-world metadata,
+plus finite or continuous sound-source messages. Consequently the array is
+usable with the repository's Gazebo, Isaac and external/dummy workflows when
+those interfaces are present.
+
+Gazebo appears in the concrete commands because it is the repository's default
+full physics backend and can run the bundled Jackal, moving pedestrian and
+S-bend world together. In that example Gazebo supplies robot/world motion and
+the TF/odometry state. It does **not** propagate or render audio; Arena's ROS
+auditory nodes do that. The same four-microphone pipeline can be selected with
+`sim:=isaac`. A dummy backend is useful for message-level tests or externally
+published state, but by itself does not provide the moving physical scenario.
+
+Launch a basic example with either full simulator backend:
+
+```bash
+arena launch \
+  sim:=gazebo world:=map_empty robot:=jackal \
+  human:=arena auditory:=arena auditory.viz:=true \
+  microphone_mode:=four_mic auditory.playback:=auto
+```
+
+Replace `sim:=gazebo` with `sim:=isaac` when using the Isaac runtime. Backend
+world and human-simulation support still determines which complete scenario is
+available; it does not change the microphone topic or processing contract.
+
+### Controls, visualization and diagnostics
+
+RViz's **Jackal Four-Mic Hearing** group controls array enable, headphone
+enable, mute, master/front/rear gain, FL/FR/RL/RR solo, all-four monitoring,
+the monitor preamp, microphone markers, TDoA diagnostics and gain/routing
+reset. **Spatial stereo (normal)** maps FL/RL to the left headphone and FR/RR
+to the right. **Mono detection preview** duplicates the highest-energy channel
+into both ears and exists only for diagnostics. `solo_channel=""` is the
+empty-string sentinel for **no solo**, meaning all four channels remain
+selected. Solo never changes the canonical four-channel raw or semantic input.
+
+Markers on `microphone_markers` show each position, name, inlet arrow, ON/OFF
+state and current dBFS. Solo changes only monitoring products; the raw array
+retains all four channels.
+
+Equivalent parameter commands include:
+
+```bash
+ros2 param set /arena/env_0/task_generator_node/microphone_array_node mute_all true
+ros2 param set /arena/env_0/task_generator_node/microphone_array_node monitor_gain_db 36.0
+ros2 param set /arena/env_0/task_generator_node/microphone_array_node solo_channel front_left
+ros2 param set /arena/env_0/task_generator_node/microphone_array_node tdoa_enabled true
+```
+
+Run the console diagnostic with:
+
+```bash
+ros2 run task_generator microphone_diagnostic --ros-args \
+  -p topic:=/arena/env_0/task_generator_node/jackal/audio/raw_array
+```
+
+It reports FL/FR/RL/RR dBFS, GCC-PHAT estimates for FL-FR, RL-RR, FL-RL and
+FR-RR, and explicitly labelled coarse energy evidence.
+
+### Four-microphone tests
+
+```bash
+python3 -m pytest task_generator/tests/unit/test_four_mic_array.py -q
+```
+
+The tests cover geometry, rigid motion, channel independence, known
+left/right/front/rear arrival ordering, fractional delay, MEMS calibration,
+silence, stereo asymmetry, monitor-only amplification, streaming fractional
+delay history, and disable/mute/solo/re-enable behavior. At 5 m
+from the array center, default geometry produces 786.604 us FR-minus-FL delay
+for a left source and 1,107.468 us RL-minus-FL delay for a front source.
+
+Known limitations are:
+
+- Full pyroomacoustics RIR samples are not serialized by `HeardSoundEvent`, so
+  raw PCM applies propagated direct/portal delay, calibrated level, occlusion
+  and route loss but not the detailed late RIR convolution.
+- The simple headphone map is not an HRTF, so front/back perception is weaker
+  than the timing information retained in the raw channels.
+- NLOS quality depends on authored acoustic zones and connected openings. With
+  no valid portal route, propagation reports its explicit Level-3/dry fallback
+  instead of fabricating diffraction.
+
 The generated RViz configuration shows pedestrian cones through
 `Arena/Pedestrians/Extra` and places each motor display in the corresponding
 `Arena/Robot: <name>` group. Source-to-listener paths, reflections, and door
@@ -78,6 +321,9 @@ group independently controls propagation and local radio/alarm playback. The
 listener group follows the transient microphone registry and updates human,
 robot, and environment playback. Its dropdown selects exactly one
 microphone, so workstation audio represents only what that microphone hears.
+It is visible in stereo mode and hidden whenever the four-mic array is active;
+four-mic monitoring instead uses the array's spatial stereo and diagnostic solo
+controls.
 The controls follow changes made through ROS parameters and
 persist across episode resets. `auditory.motor:=off` sets the initial
 mute state. This is separate from `auditory.robot_sound`, which controls
@@ -301,10 +547,24 @@ used.
 
 ## Microphones and playback routing
 
-Every robot in `state/robots` automatically creates one microphone named from
-the robot instance, for example `robot1_mic` and `robot2_mic`. It follows the
-robot base TF frame and appears as a green triangular cone in RViz. This makes
-multi-robot microphone testing available without extra launch arguments.
+Every robot in `state/robots` automatically creates a center microphone and a
+left/right pair named from the robot instance, for example `robot1_mic`,
+`robot1_left_mic`, and `robot1_right_mic`. All three follow the robot base TF
+frame. The side microphones are 20 cm apart at 0.35 m height by default, with
+left at positive robot y and right at negative robot y. RViz renders the center
+microphone green, the left microphone blue, and the right microphone orange.
+
+Both side microphones remain propagation listeners at the same time so their
+listener-specific delays and levels can later feed a direction-of-arrival
+estimator. The **Left microphone** and **Right microphone** buttons in the
+Auditory panel select which one feeds mono workstation playback; the existing
+dropdown remains available for every other listener. Playback selection does
+not disable propagation to either side microphone.
+
+The propagation-node parameters `robot_side_microphones`,
+`robot_side_microphone_separation_m`, `robot_microphone_height_m`, and
+`robot_microphone_forward_offset_m` control the automatic pair. Their defaults
+are `true`, `0.20`, `0.35`, and `0.0` respectively.
 
 Additional robot-mounted microphones can be configured with
 `auditory.microphones`. Each entry names the robot instance, placement,
@@ -377,10 +637,68 @@ share `heard_sound_events` and `continuous_heard_sounds`; the playback nodes
 filter those streams, render the selected feeds, and send the result to their
 configured workstation `audio_device`.
 
-The RViz dropdown applies one microphone ID to propagation,
-`human_sound_playback`, `robot_sound_node`, and
-`environment_sound_playback`. For a non-RViz workflow, set
-`auditory.listener:=robot1_mic` or another registered microphone ID at launch.
+The RViz dropdown applies one microphone ID to `human_sound_playback`,
+`robot_sound_node`, and `environment_sound_playback`, and keeps that selected
+listener in propagation. The robot left/right pair is always propagated in
+addition. For a non-RViz workflow, set `auditory.listener:=robot1_mic` or
+another registered microphone ID at launch.
+
+### Verify robot side microphones
+
+Start one Jackal, a looping test radio, propagation visualization, and local
+playback:
+
+```bash
+arena launch \
+  world:=map_empty \
+  robot:=jackal \
+  auditory:=arena \
+  auditory.viz:=true \
+  auditory.static_sounds:='[{name: mic_test_radio, asset_id: radio_loop, position: [2.0, 2.0, 1.2], semantics: [{preset: sound}]}]'
+```
+
+In another shell, confirm registration and RViz marker publication:
+
+```bash
+ros2 topic echo \
+  /arena/env_0/task_generator_node/microphone_listeners \
+  --qos-durability transient_local --once
+
+ros2 topic echo \
+  /arena/env_0/task_generator_node/microphone_markers \
+  --once --field markers
+```
+
+The registry must contain `<robot>_left_mic` and `<robot>_right_mic`. In RViz,
+enable `Arena/Sound Propagation/Microphones`; the blue and orange cones must
+move and rotate with the robot. Click **Left microphone** and **Right
+microphone** under **Legacy Audio Playback Microphone** to compare playback. Confirm
+that the selection reached all playback nodes and propagation, replacing
+`jackal_left_mic` if the registry shows a different robot name:
+
+```bash
+ros2 param get \
+  /arena/env_0/task_generator_node/human_sound_playback listener_id
+ros2 param get \
+  /arena/env_0/task_generator_node/robot_sound_node listener_id
+ros2 param get \
+  /arena/env_0/task_generator_node/environment_sound_playback listener_id
+ros2 param get \
+  /arena/env_0/task_generator_node/sound_propagation_node active_microphone_id
+```
+
+Finally, confirm that propagation continues to publish both side listeners,
+regardless of which playback button is selected:
+
+```bash
+ros2 topic echo \
+  /arena/env_0/task_generator_node/continuous_heard_sounds \
+  --field listener_id
+```
+
+The stream must repeatedly contain both `<robot>_left_mic` and
+`<robot>_right_mic`. Finite greetings and footsteps can be checked similarly
+on `heard_sound_events`.
 
 When the simulator viewport publishes `/arena/viewport/camera_pose`, two more
 listeners appear in the same dropdown:
@@ -489,11 +807,8 @@ analysis. The current bundled assets contain precomputed values.
 
 Docker playback uses the host PulseAudio/PipeWire compatibility socket. The
 image installs `libasound2-plugins`, Compose forwards the socket as
-`/tmp/pulse/native`, and `auditory.playback:=auto` prefers the `pulse` device
-(then `pipewire`, `default`, and the PortAudio default). This avoids
-opening raw `hw:0,0`, which is exclusive and unavailable while the host sound
-server owns the analog card. Rebuild/recreate the Arena container after a
-Docker audio configuration change.
+`/tmp/pulse/native`, `auditory.playback:=auto` prefers the `pulse` device
+(then `pipewire`, `default`, and the PortAudio default).
 
 RViz draws the complete source-to-portals-to-listener line and one cube per
 portal. Pedestrian-listener propagation is blue; robot-listener propagation

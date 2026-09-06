@@ -2,10 +2,11 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 
 
 def transient_event_qos(depth: int = 50) -> QoSProfile:
+    """Reliable, non-replayed delivery for finite sound events."""
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=depth,
-        reliability=ReliabilityPolicy.BEST_EFFORT,
+        reliability=ReliabilityPolicy.RELIABLE,
         durability=DurabilityPolicy.VOLATILE,
     )
 

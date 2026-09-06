@@ -380,32 +380,45 @@ class SoundPropagationVisualizer(Node):
         if not frame:
             return
         lifetime = float(self.get_parameter("continuous_marker_lifetime_sec").value)
-        base_id = self._stable_marker_base(msg.source_id, 2)
+        base_id = self._stable_marker_base(msg.source_id, 6)
         sound_type = str(msg.sound_type).lower()
+        is_alarm = "alarm" in sound_type or "siren" in sound_type
         if not msg.active:
             color = ColorRGBA(r=0.45, g=0.45, b=0.45, a=0.65)
-        elif "alarm" in sound_type or "siren" in sound_type:
+        elif is_alarm:
             color = ColorRGBA(r=1.0, g=0.08, b=0.05, a=0.95)
         else:
             color = ColorRGBA(r=0.05, g=0.75, b=0.95, a=0.92)
 
-        source = self._marker(frame, base_id, Marker.CUBE, lifetime)
-        source.ns = "environment_audio_sources"
-        source.pose.position = Point(
+        yaw = float(msg.source_yaw)
+        position = Point(
             x=float(msg.source_position.x),
             y=float(msg.source_position.y),
             z=float(msg.source_position.z),
         )
-        source.pose.orientation.z = math.sin(float(msg.source_yaw) / 2.0)
-        source.pose.orientation.w = math.cos(float(msg.source_yaw) / 2.0)
-        source.scale.x = 0.42
-        source.scale.y = 0.26
-        source.scale.z = 0.22
-        source.color = color
+        markers = (
+            self._alarm_source_markers(
+                frame,
+                base_id,
+                lifetime,
+                position,
+                yaw,
+                color,
+            )
+            if is_alarm
+            else self._radio_source_markers(
+                frame,
+                base_id,
+                lifetime,
+                position,
+                yaw,
+                color,
+            )
+        )
 
         label = self._marker(
             frame,
-            base_id + 1,
+            base_id + 5,
             Marker.TEXT_VIEW_FACING,
             lifetime,
         )
@@ -419,7 +432,121 @@ class SoundPropagationVisualizer(Node):
         label.color = color
         state = "ACTIVE" if msg.active else "OFF"
         label.text = f"{msg.label or msg.group_id} / {msg.source_agent_name} [{state}]"
-        self._environment_source_publisher.publish(MarkerArray(markers=[source, label]))
+        self._environment_source_publisher.publish(MarkerArray(markers=[*markers, label]))
+
+    def _radio_source_markers(
+        self,
+        frame: str,
+        base_id: int,
+        lifetime: float,
+        position: Point,
+        yaw: float,
+        color: ColorRGBA,
+    ) -> list[Marker]:
+        body = self._marker(frame, base_id, Marker.CUBE, lifetime)
+        body.ns = "environment_audio_radio_body"
+        body.pose.position = position
+        body.pose.orientation.z = math.sin(yaw / 2.0)
+        body.pose.orientation.w = math.cos(yaw / 2.0)
+        body.scale.x = 0.48
+        body.scale.y = 0.20
+        body.scale.z = 0.30
+        body.color = color
+
+        speaker = self._marker(frame, base_id + 1, Marker.CYLINDER, lifetime)
+        speaker.ns = "environment_audio_radio_speaker"
+        speaker.pose.position = self._source_local_point(
+            position,
+            yaw,
+            -0.11,
+            -0.115,
+            0.0,
+        )
+        roll = math.pi / 2.0
+        speaker.pose.orientation.x = math.sin(roll / 2.0) * math.cos(yaw / 2.0)
+        speaker.pose.orientation.y = math.sin(roll / 2.0) * math.sin(yaw / 2.0)
+        speaker.pose.orientation.z = math.cos(roll / 2.0) * math.sin(yaw / 2.0)
+        speaker.pose.orientation.w = math.cos(roll / 2.0) * math.cos(yaw / 2.0)
+        speaker.scale.x = 0.18
+        speaker.scale.y = 0.18
+        speaker.scale.z = 0.035
+        speaker.color = ColorRGBA(r=0.04, g=0.04, b=0.05, a=color.a)
+
+        display = self._marker(frame, base_id + 2, Marker.CUBE, lifetime)
+        display.ns = "environment_audio_radio_display"
+        display.pose.position = self._source_local_point(
+            position,
+            yaw,
+            0.115,
+            -0.116,
+            0.035,
+        )
+        display.pose.orientation.z = math.sin(yaw / 2.0)
+        display.pose.orientation.w = math.cos(yaw / 2.0)
+        display.scale.x = 0.15
+        display.scale.y = 0.025
+        display.scale.z = 0.065
+        display.color = ColorRGBA(r=0.95, g=0.82, b=0.16, a=color.a)
+
+        antenna = self._marker(frame, base_id + 3, Marker.LINE_STRIP, lifetime)
+        antenna.ns = "environment_audio_radio_antenna"
+        antenna.scale.x = 0.018
+        antenna.color = ColorRGBA(r=0.12, g=0.12, b=0.14, a=color.a)
+        antenna.points = [
+            self._source_local_point(position, yaw, 0.17, 0.0, 0.14),
+            self._source_local_point(position, yaw, 0.29, 0.0, 0.52),
+        ]
+        return [body, speaker, display, antenna]
+
+    def _alarm_source_markers(
+        self,
+        frame: str,
+        base_id: int,
+        lifetime: float,
+        position: Point,
+        yaw: float,
+        color: ColorRGBA,
+    ) -> list[Marker]:
+        body = self._marker(frame, base_id, Marker.CUBE, lifetime)
+        body.ns = "environment_audio_alarm_body"
+        body.pose.position = position
+        body.pose.orientation.z = math.sin(yaw / 2.0)
+        body.pose.orientation.w = math.cos(yaw / 2.0)
+        body.scale.x = 0.36
+        body.scale.y = 0.28
+        body.scale.z = 0.20
+        body.color = ColorRGBA(r=0.16, g=0.16, b=0.18, a=color.a)
+
+        beacon = self._marker(frame, base_id + 1, Marker.CYLINDER, lifetime)
+        beacon.ns = "environment_audio_alarm_beacon"
+        beacon.pose.position = self._source_local_point(
+            position,
+            yaw,
+            0.0,
+            0.0,
+            0.17,
+        )
+        beacon.scale.x = 0.22
+        beacon.scale.y = 0.22
+        beacon.scale.z = 0.18
+        beacon.color = color
+        return [body, beacon]
+
+    @staticmethod
+    def _source_local_point(
+        origin: Point,
+        yaw: float,
+        local_x: float,
+        local_y: float,
+        local_z: float,
+    ) -> Point:
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        return Point(
+            x=float(origin.x) + cos_yaw * local_x - sin_yaw * local_y,
+            y=float(origin.y) + sin_yaw * local_x + cos_yaw * local_y,
+            z=float(origin.z) + local_z,
+        )
 
     def _publish_continuous_path(
         self,
@@ -946,9 +1073,13 @@ class SoundPropagationVisualizer(Node):
 
     @staticmethod
     def _listener_height(listener_id: str, listener_z: float = 0.0) -> float:
-        if listener_id.startswith("microphone") or listener_id.endswith("_mic"):
+        if SoundPropagationVisualizer._is_microphone_listener(listener_id):
             return listener_z
         return 0.35 if listener_id.startswith("robot:") else 1.60
+
+    @staticmethod
+    def _is_microphone_listener(listener_id: str) -> bool:
+        return listener_id.startswith("microphone") or listener_id.endswith("_mic") or "_mic_" in listener_id
 
     @staticmethod
     def _stable_marker_base(key: str, width: int) -> int:
@@ -990,7 +1121,7 @@ class SoundPropagationVisualizer(Node):
                 "robot",
                 ColorRGBA(r=0.65, g=0.20, b=1.0, a=0.92),
             )
-        if listener_id.startswith("microphone") or listener_id.endswith("_mic"):
+        if self._is_microphone_listener(listener_id):
             listener_kind = listener_id.replace(":", "_").replace("/", "_")
             return (
                 self._robot_publisher,

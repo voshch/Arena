@@ -94,6 +94,15 @@ class SoundPropagationNode(Node):
             "continuous_heard_sounds",
         )
         self.declare_parameter("robot_microphones", "[]")
+        self.declare_parameter("microphone_mode", "stereo")
+        self.declare_parameter("robot_side_microphones", True)
+        self.declare_parameter("robot_side_microphone_separation_m", 0.20)
+        self.declare_parameter("robot_microphone_height_m", 0.35)
+        self.declare_parameter("robot_microphone_forward_offset_m", 0.0)
+        self.declare_parameter("mic_array_width", 0.310)
+        self.declare_parameter("mic_array_length", 0.420)
+        self.declare_parameter("mic_height", 0.220)
+        self.declare_parameter("mic_corner_inset", 0.020)
         self.declare_parameter("viewport_down_projection_height_m", 1.6)
         self.declare_parameter("enable_propagation", True)
         self.declare_parameter("active_microphone_id", "")
@@ -175,6 +184,7 @@ class SoundPropagationNode(Node):
         self._robot_base_frames: dict[str, str] = {}
         self._robot_microphone_specs = parse_robot_microphones(str(self.get_parameter("robot_microphones").value))
         self._robot_microphones: dict[str, tuple[Point, str]] = {}
+        self._robot_side_microphone_ids: set[str] = set()
         self._world_microphones: dict[str, WorldMicrophoneSpec] = {}
         self._spawned_microphones: dict[str, tuple[Point, str]] = {}
         self._viewport_microphones: dict[str, tuple[Point, str]] = {}
@@ -272,13 +282,14 @@ class SoundPropagationNode(Node):
         self._room_specs = ()
         backend = str(self.get_parameter("propagation_backend").value)
         self._requested_backend = backend
+        self._backend_init_fallback_reason = ""
 
         self._pra_adapter = None
 
         if backend == "pyroomacoustics":
             try:
-                # The adapter keeps PRA optional for the Level3 backend, but
-                # fail fast when the user explicitly selected this backend.
+                # Keep PRA optional. Initialization failure falls back to the
+                # Level-3 model below without taking microphone services down.
                 import pyroomacoustics  # noqa: F401
 
                 pra_config = PyroomacousticsConfig(
@@ -294,7 +305,8 @@ class SoundPropagationNode(Node):
                     pra_config,
                 )
             except (ImportError, PyroomacousticsUnavailableError, ValueError) as exc:
-                raise RuntimeError(f"pyroomacoustics backend requested but could not be initialized: {exc}") from exc
+                self._backend_init_fallback_reason = f"pyroomacoustics_initialization_failed:{type(exc).__name__}"
+                self.get_logger().warning(f"pyroomacoustics backend could not be initialized; using Level-3 propagation instead: {exc}")
         elif backend != "level3":
             raise ValueError("propagation_backend must be 'level3' or 'pyroomacoustics'")
         self._propagation = Level3Propagation(materials)
@@ -332,6 +344,8 @@ class SoundPropagationNode(Node):
                 if key[1] not in microphone_ids:
                     continue
                 if key[1] == active_microphone_id:
+                    continue
+                if key[1] in self._robot_side_microphone_ids:
                     continue
             stopped = copy.deepcopy(previous)
             stopped.header.stamp = self.get_clock().now().to_msg()
@@ -723,13 +737,90 @@ class SoundPropagationNode(Node):
                 self._robots.pop(listener_id, None)
                 self._robot_base_frames.pop(listener_id, None)
 
+        microphone_height = float(self.get_parameter("robot_microphone_height_m").value)
+        microphone_forward_offset = float(self.get_parameter("robot_microphone_forward_offset_m").value)
+        side_microphone_separation = float(self.get_parameter("robot_side_microphone_separation_m").value)
+        if not all(
+            math.isfinite(value)
+            for value in (
+                microphone_height,
+                microphone_forward_offset,
+                side_microphone_separation,
+            )
+        ):
+            self.get_logger().warning("robot microphone geometry must be finite; using defaults")
+            microphone_height = 0.35
+            microphone_forward_offset = 0.0
+            side_microphone_separation = 0.20
+        if side_microphone_separation <= 0.0:
+            self.get_logger().warning("robot side microphone separation must be positive; using 0.20 m")
+            side_microphone_separation = 0.20
+
         automatic_microphones = {
             f"{name}_mic": (
-                Point(z=0.35),
+                Point(
+                    x=microphone_forward_offset,
+                    z=microphone_height,
+                ),
                 self._robot_base_frames[f"robot:{name}"],
             )
             for name in active_names
         }
+        automatic_side_microphones: dict[str, tuple[Point, str]] = {}
+        microphone_mode = str(self.get_parameter("microphone_mode").value).strip().lower()
+        if microphone_mode not in {"stereo", "four_mic", "center"}:
+            self.get_logger().warning(f"unknown microphone_mode={microphone_mode!r}; using stereo")
+            microphone_mode = "stereo"
+        if microphone_mode == "stereo" and bool(self.get_parameter("robot_side_microphones").value):
+            half_separation = 0.5 * side_microphone_separation
+            for name in active_names:
+                frame_id = self._robot_base_frames[f"robot:{name}"]
+                automatic_side_microphones[f"{name}_left_mic"] = (
+                    Point(
+                        x=microphone_forward_offset,
+                        y=half_separation,
+                        z=microphone_height,
+                    ),
+                    frame_id,
+                )
+                automatic_side_microphones[f"{name}_right_mic"] = (
+                    Point(
+                        x=microphone_forward_offset,
+                        y=-half_separation,
+                        z=microphone_height,
+                    ),
+                    frame_id,
+                )
+        elif microphone_mode == "four_mic":
+            array_width = float(self.get_parameter("mic_array_width").value)
+            array_length = float(self.get_parameter("mic_array_length").value)
+            array_height = float(self.get_parameter("mic_height").value)
+            corner_inset = float(self.get_parameter("mic_corner_inset").value)
+            valid = all(math.isfinite(value) for value in (array_width, array_length, array_height, corner_inset)) and array_width > 0.0 and array_length > 0.0 and array_height >= 0.0 and corner_inset >= 0.0 and 2.0 * corner_inset < min(array_width, array_length)
+            if not valid:
+                self.get_logger().warning("invalid four-microphone geometry; using Jackal defaults width=0.310 length=0.420 height=0.220 inset=0.020")
+                array_width, array_length = 0.310, 0.420
+                array_height, corner_inset = 0.220, 0.020
+            half_x = 0.5 * array_length - corner_inset
+            half_y = 0.5 * array_width - corner_inset
+            offsets = {
+                "front_left": (half_x, half_y),
+                "front_right": (half_x, -half_y),
+                "rear_left": (-half_x, half_y),
+                "rear_right": (-half_x, -half_y),
+            }
+            for name in active_names:
+                frame_id = self._robot_base_frames[f"robot:{name}"]
+                for placement, (x_offset, y_offset) in offsets.items():
+                    automatic_side_microphones[f"{name}_mic_{placement}"] = (
+                        Point(
+                            x=x_offset,
+                            y=y_offset,
+                            z=array_height,
+                        ),
+                        frame_id,
+                    )
+        self._robot_side_microphone_ids = set(automatic_side_microphones)
         configured_microphones = {
             spec.listener_id: (
                 Point(),
@@ -740,6 +831,7 @@ class SoundPropagationNode(Node):
         }
         self._robot_microphones = {
             **automatic_microphones,
+            **automatic_side_microphones,
             **configured_microphones,
         }
         configured_robots = {spec.robot for spec in self._robot_microphone_specs}
@@ -760,7 +852,6 @@ class SoundPropagationNode(Node):
     def _publish_microphone_markers(self) -> None:
         stamp = self.get_clock().now().to_msg()
         markers = []
-        color = ColorRGBA(r=0.12, g=0.95, b=0.45, a=0.85)
         for index, (listener_id, (position, frame_id)) in enumerate(sorted(self._microphone_marker_poses().items())):
             marker = Marker()
             marker.header.frame_id = frame_id
@@ -771,27 +862,30 @@ class SoundPropagationNode(Node):
             marker.action = Marker.ADD
             marker.pose.orientation.w = 1.0
             marker.scale.x = marker.scale.y = marker.scale.z = 1.0
-            marker.color = color
+            marker.color = self._microphone_marker_color(listener_id)
             marker.lifetime.sec = 1
+            yaw = self._microphone_yaw(listener_id)
+            forward_x, forward_y = math.cos(yaw), math.sin(yaw)
+            left_x, left_y = -forward_y, forward_x
             apex = Point(
-                x=float(position.x) + 0.28,
-                y=float(position.y),
+                x=float(position.x) + 0.20 * forward_x,
+                y=float(position.y) + 0.20 * forward_y,
                 z=float(position.z),
             )
             base_a = Point(
-                x=float(position.x) - 0.14,
-                y=float(position.y) - 0.16,
-                z=float(position.z) - 0.12,
+                x=float(position.x) - 0.08 * forward_x - 0.08 * left_x,
+                y=float(position.y) - 0.08 * forward_y - 0.08 * left_y,
+                z=float(position.z) - 0.07,
             )
             base_b = Point(
-                x=float(position.x) - 0.14,
-                y=float(position.y) + 0.16,
-                z=float(position.z) - 0.12,
+                x=float(position.x) - 0.08 * forward_x + 0.08 * left_x,
+                y=float(position.y) - 0.08 * forward_y + 0.08 * left_y,
+                z=float(position.z) - 0.07,
             )
             base_c = Point(
-                x=float(position.x) - 0.14,
-                y=float(position.y),
-                z=float(position.z) + 0.18,
+                x=float(position.x) - 0.08 * forward_x,
+                y=float(position.y) - 0.08 * forward_y,
+                z=float(position.z) + 0.10,
             )
             marker.points = [
                 apex,
@@ -821,11 +915,44 @@ class SoundPropagationNode(Node):
             )
             label.pose.orientation.w = 1.0
             label.scale.z = 0.18
-            label.color = ColorRGBA(r=0.05, g=0.35, b=0.12, a=1.0)
+            label.color = ColorRGBA(
+                r=marker.color.r * 0.45,
+                g=marker.color.g * 0.45,
+                b=marker.color.b * 0.45,
+                a=1.0,
+            )
             label.lifetime = marker.lifetime
             label.text = listener_id
             markers.extend((marker, label))
         self._microphone_marker_pub.publish(MarkerArray(markers=markers))
+
+    @staticmethod
+    def _microphone_marker_color(listener_id: str) -> ColorRGBA:
+        if "_mic_front_left" in listener_id:
+            return ColorRGBA(r=0.05, g=0.75, b=1.0, a=0.95)
+        if "_mic_front_right" in listener_id:
+            return ColorRGBA(r=1.0, g=0.65, b=0.05, a=0.95)
+        if "_mic_rear_left" in listener_id:
+            return ColorRGBA(r=0.35, g=0.45, b=1.0, a=0.95)
+        if "_mic_rear_right" in listener_id:
+            return ColorRGBA(r=1.0, g=0.25, b=0.45, a=0.95)
+        if listener_id.endswith("_left_mic"):
+            return ColorRGBA(r=0.05, g=0.65, b=1.0, a=0.9)
+        if listener_id.endswith("_right_mic"):
+            return ColorRGBA(r=1.0, g=0.55, b=0.05, a=0.9)
+        return ColorRGBA(r=0.12, g=0.95, b=0.45, a=0.85)
+
+    @staticmethod
+    def _microphone_yaw(listener_id: str) -> float:
+        for name, yaw in (
+            ("front_left", math.radians(45.0)),
+            ("front_right", math.radians(-45.0)),
+            ("rear_left", math.radians(135.0)),
+            ("rear_right", math.radians(-135.0)),
+        ):
+            if listener_id.endswith(f"_mic_{name}"):
+                return yaw
+        return 0.0
 
     def _microphone_marker_poses(
         self,
@@ -1137,14 +1264,15 @@ class SoundPropagationNode(Node):
                 if position is not None:
                     listeners[listener_id] = position
 
-        for listener_id, (position, frame_id) in self._robots.items():
-            transformed = self._point_in_acoustic_frame(
-                position,
-                frame_id,
-                listener_id,
-            )
-            if transformed is not None:
-                listeners[listener_id] = transformed
+        if str(self.get_parameter("microphone_mode").value) != "four_mic":
+            for listener_id, (position, frame_id) in self._robots.items():
+                transformed = self._point_in_acoustic_frame(
+                    position,
+                    frame_id,
+                    listener_id,
+                )
+                if transformed is not None:
+                    listeners[listener_id] = transformed
 
         listeners.update(self._microphone_positions())
 
@@ -1155,10 +1283,11 @@ class SoundPropagationNode(Node):
 
     def _microphone_positions(self) -> dict[str, Point]:
         listeners = self._all_microphone_positions()
+        active_listeners = {listener_id: listeners[listener_id] for listener_id in self._robot_side_microphone_ids if listener_id in listeners}
         selected = str(self.get_parameter("active_microphone_id").value).strip()
-        if selected not in listeners:
-            return {}
-        return {selected: listeners[selected]}
+        if selected in listeners:
+            active_listeners[selected] = listeners[selected]
+        return active_listeners
 
     def _all_microphone_positions(self) -> dict[str, Point]:
         listeners: dict[str, Point] = {}
@@ -1468,6 +1597,7 @@ class SoundPropagationNode(Node):
         msg.sound_type = event.sound_type
         msg.label = event.label
         msg.asset_id = event.asset_id
+        msg.semantic_tags = list(event.semantic_tags)
         msg.source_position = event.source_position
         msg.listener_position = listener_pos
         msg.distance = float(geometric_distance)
@@ -1477,7 +1607,7 @@ class SoundPropagationNode(Node):
         msg.audible = received >= threshold
         msg.occluded = occluded
         msg.bearing_rad = float(math.atan2(dy, dx))
-        msg.direct_delay_sec = float(effective_distance / 343.0)
+        msg.direct_delay_sec = float(geometric_distance / 343.0)
         msg.propagation_level = 0
         msg.reverb_rt60_sec = 0.0
         msg.reverb_gain_db = 0.0
@@ -1504,7 +1634,7 @@ class SoundPropagationNode(Node):
                 fallback_reason="level3_self_hearing_uses_legacy_distance",
             )
 
-        fallback_reason = ""
+        fallback_reason = self._backend_init_fallback_reason
         deferred_same_room = False
         deferred_route = None
         compute_rir_here = bool(self.get_parameter("compute_rir_in_propagation").value)
@@ -1610,6 +1740,7 @@ class SoundPropagationNode(Node):
         msg.sound_type = event.sound_type
         msg.label = event.label
         msg.asset_id = event.asset_id
+        msg.semantic_tags = list(event.semantic_tags)
         msg.source_position = event.source_position
         msg.listener_position = listener_pos
         msg.distance = float(distance)
@@ -1858,6 +1989,7 @@ class SoundPropagationNode(Node):
         msg.sound_type = event.sound_type
         msg.label = event.label
         msg.asset_id = event.asset_id
+        msg.semantic_tags = list(event.semantic_tags)
         msg.source_position = event.source_position
         msg.listener_position = listener_position
         msg.distance = float(distance)

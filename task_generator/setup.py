@@ -58,6 +58,8 @@ setup(
             'auditory_benchmark = task_generator.auditory.benchmark:main',
             'acoustic_world_audit = task_generator.auditory.acoustic_audit:main',
             'sound_propagation_visualizer = task_generator.auditory.sound_propagation_visualizer:main',
+            'microphone_array_node = task_generator.auditory.microphone_array_node:main',
+            'microphone_diagnostic = task_generator.auditory.microphone_diagnostic:main',
             # 'server = task_generator.server:main',
             # 'filewatcher = task_generator.filewatcher:main'
         ]

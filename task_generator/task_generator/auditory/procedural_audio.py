@@ -13,6 +13,11 @@ from task_generator.auditory.drivetrain import (
     prewarm,
 )
 
+# The established motor trim was -9 dB.  Subtracting 20*log10(2) makes both
+# physical motor playback and the four-microphone self-noise exactly half the
+# previous linear amplitude while preserving their relative propagation gains.
+DEFAULT_MOTOR_VOLUME_DB = -15.020599913279624
+
 
 def clear_drivetrain_audio_cache() -> None:
     clear_cache()
@@ -203,6 +208,7 @@ class DrivetrainRenderSource:
         phase_index: int,
         block_size: int,
         channels: int,
+        sample_rate: int = JACKAL.sample_rate,
         volume_db: float,
         frequency_scale: float,
         tonal_gain_db: float,
@@ -213,20 +219,24 @@ class DrivetrainRenderSource:
     ) -> None:
         self.block_size = int(block_size)
         self.channels = int(channels)
+        self.sample_rate = int(sample_rate)
+        if self.sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
+        self._spec = JACKAL.replace(sample_rate=self.sample_rate)
         self._seed = int(field_seed) & 0xFFFFFFFF
         phase_index = int(phase_index) & 0x0FFFFFFF
-        prewarm(JACKAL, seed=self._seed)
+        prewarm(self._spec, seed=self._seed)
         # The bundled transfer contains recording-room and microphone colour.
         # Disable it so pyroomacoustics is the only simulated RIR.
         self._left = DrivetrainVoice(
-            JACKAL,
+            self._spec,
             index=phase_index * 2,
             count=2,
             seed=self._seed,
             transfer=False,
         )
         self._right = DrivetrainVoice(
-            JACKAL,
+            self._spec,
             index=phase_index * 2 + 1,
             count=2,
             seed=self._seed,
@@ -251,7 +261,7 @@ class DrivetrainRenderSource:
         self._rir_tail_frames = self.block_size
         self._convolver: PartitionedConvolver | None = None
         self._old_convolver: PartitionedConvolver | None = None
-        self._crossfade_total = max(int(JACKAL.sample_rate * rir_crossfade_seconds), 1)
+        self._crossfade_total = max(int(self.sample_rate * rir_crossfade_seconds), 1)
         self._crossfade_remaining = 0
         self._rir_signature: tuple[Hashable, ...] | None = None
 
@@ -319,7 +329,7 @@ class DrivetrainRenderSource:
             left_speed = np.full(frames, target_left, dtype=np.float64)
             right_speed = np.full(frames, target_right, dtype=np.float64)
         else:
-            decay = np.exp(-np.arange(1, frames + 1, dtype=np.float64) / (JACKAL.sample_rate * velocity_smoothing_seconds))
+            decay = np.exp(-np.arange(1, frames + 1, dtype=np.float64) / (self.sample_rate * velocity_smoothing_seconds))
             left_speed = target_left + (self._current_left - target_left) * decay
             right_speed = target_right + (self._current_right - target_right) * decay
         self._current_left = float(left_speed[-1])
@@ -376,7 +386,7 @@ class DrivetrainRenderSource:
     @property
     def finished(self) -> bool:
         with self._lock:
-            velocity_tail_frames = int(JACKAL.sample_rate * self._velocity_smoothing_seconds * 5.0)
+            velocity_tail_frames = int(self.sample_rate * self._velocity_smoothing_seconds * 5.0)
             return (
                 not self._active
                 and self._inactive_frames

@@ -47,6 +47,7 @@ from task_generator.auditory.asset_lib import (
     AcousticAsset,
     AcousticAssetCatalog,
     CachedSample,
+    footstep_material_tags,
 )
 from task_generator.auditory.audio_mixer import AudioMixer
 from task_generator.auditory.material_catalog import AcousticMaterialCatalog
@@ -55,6 +56,7 @@ from task_generator.auditory.portal_coupling import (
     PortalCouplingConfig,
 )
 from task_generator.auditory.procedural_audio import (
+    DEFAULT_MOTOR_VOLUME_DB,
     DrivetrainRenderSource,
     clear_drivetrain_audio_cache,
 )
@@ -75,11 +77,9 @@ PropagatedEventMsg = ContinuousHeardSoundState | HeardSoundEvent
 #: Any of the three event flavours the node handles.
 SoundEventMsg = ContinuousHeardSoundState | HeardSoundEvent | SoundEvent
 
-FOOTSTEP_VARIANT_TAGS = frozenset({"default", "walnut_planks", "oak_planks", "marble_tile", "smooth_concrete", "ceramic_tile"})
-
 MOTOR_TUNING_PARAMETERS = {
     "motor_volume_db": (
-        -9.0,
+        DEFAULT_MOTOR_VOLUME_DB,
         -40.0,
         6.0,
         "Motor output trim in dB. -6 dB is half amplitude.",
@@ -715,6 +715,7 @@ class SoundPlaybackNode(Node):
                 phase_index=int(msg.deterministic_seed),
                 block_size=int(self.get_parameter("block_size").value),
                 channels=int(self.get_parameter("output_channels").value),
+                sample_rate=int(self.get_parameter("output_sample_rate").value),
                 rir_crossfade_seconds=float(self.get_parameter("motor_rir_crossfade_sec").value),
                 **self._motor_tuning(),
             )
@@ -732,7 +733,19 @@ class SoundPlaybackNode(Node):
                 impulse, _ = self._compute_normalized_rir(msg)
                 self._continuous_rir_signatures[source_key] = signature
             except Exception as exc:
-                self.get_logger().warning(f"continuous RIR unavailable for {msg.source_id!r}: {exc}; retaining the previous RIR")
+                reason = str(exc)
+                warning_key = (
+                    f"{msg.listener_id}|{msg.source_id}",
+                    reason,
+                )
+                now = time.monotonic()
+                last_warning = self._rir_warning_times.get(
+                    warning_key,
+                    -float("inf"),
+                )
+                if now - last_warning >= 5.0:
+                    self._rir_warning_times[warning_key] = now
+                    self.get_logger().warning(f"continuous RIR unavailable for {msg.source_id!r} at listener {msg.listener_id!r}: {exc}; retaining the previous RIR")
 
         gain_db = float(msg.received_volume_db) - float(msg.source_volume_db)
         has_rir = impulse is not None or source_key in self._continuous_rir_signatures
@@ -801,11 +814,14 @@ class SoundPlaybackNode(Node):
             f"asset_cache_misses={self._catalog.cache_misses}, "
             f"asset_loads_pending={len(self._pending_asset_loads)}"
         )
+        if str(self.get_parameter("audio_device").value).strip() == "none":
+            self.get_logger().info("local playback is disabled for this node; " + message)
+            return
         if self._heard_received > 0 and self._played_events == 0:
             self.get_logger().warning(message)
         elif self._room_specs and self._heard_received == 0 and not self._warned_no_heard_events:
             self._warned_no_heard_events = True
-            self.get_logger().warning(f"audio stream is ready but no HeardSoundEvent has reached playback; {message}")
+            self.get_logger().warning(f"acoustic scene is ready but no HeardSoundEvent has reached playback; {message}")
         else:
             self.get_logger().info(message)
 
@@ -848,12 +864,12 @@ class SoundPlaybackNode(Node):
         required_tags = frozenset()
 
         if asset_id == "footstep":
-            semantic_tags = tuple(str(tag) for tag in msg.semantic_tags) if isinstance(msg, SoundEvent) else ()
+            semantic_tags = tuple(str(tag) for tag in msg.semantic_tags)
             if not semantic_tags:
                 room = self._room_for_event(msg)
                 floor_id = room.floor_material_id.lower() if room is not None else ""
                 semantic_tags = ("walnut_planks",) if "walnut" in floor_id else ("oak_planks",) if "oak" in floor_id else ("marble_tile",) if "marble" in floor_id else ("smooth_concrete",) if "smooth" in floor_id else ("ceramic_tile",) if "ceramic" in floor_id else ("default",)
-            required_tags = frozenset(FOOTSTEP_VARIANT_TAGS.intersection(semantic_tags)) or frozenset({"default"})
+            required_tags = footstep_material_tags(semantic_tags)
 
         selected = self._catalog.select(
             asset_id,

@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
+import pytest
+import task_generator.auditory.procedural_audio as procedural_audio
 from task_generator.auditory.asset_lib import CachedSample
 from task_generator.auditory.drivetrain import DrivetrainSpec, DrivetrainVoice
 from task_generator.auditory.procedural_audio import (
@@ -27,6 +28,12 @@ def _cached_sample(values: list[float]) -> CachedSample:
     )
 
 
+def test_default_motor_volume_is_half_the_previous_amplitude() -> None:
+    ratio = 10.0 ** ((procedural_audio.DEFAULT_MOTOR_VOLUME_DB - (-9.0)) / 20.0)
+
+    assert ratio == pytest.approx(0.5)
+
+
 def test_partitioned_convolver_matches_linear_convolution() -> None:
     rng = np.random.default_rng(7)
     block_size = 32
@@ -34,12 +41,7 @@ def test_partitioned_convolver_matches_linear_convolution() -> None:
     impulse = rng.standard_normal(75).astype(np.float32)
     convolver = PartitionedConvolver(impulse, block_size)
 
-    rendered = np.concatenate(
-        [
-            convolver.process(signal[offset : offset + block_size])
-            for offset in range(0, len(signal), block_size)
-        ]
-    )
+    rendered = np.concatenate([convolver.process(signal[offset : offset + block_size]) for offset in range(0, len(signal), block_size)])
     expected = np.convolve(signal, impulse)[: len(signal)]
 
     np.testing.assert_allclose(rendered, expected, rtol=2e-5, atol=2e-5)
@@ -137,3 +139,46 @@ def test_drivetrain_runtime_tuning_changes_pitch_and_tonal_level() -> None:
         np.sqrt(np.mean(baseline**2)) * 10.0 ** (-12.0 / 20.0),
         rtol=0.01,
     )
+
+
+def test_drivetrain_render_source_uses_requested_sample_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeVoice:
+        def __init__(self, spec: DrivetrainSpec, **_: object) -> None:
+            self.spec = spec
+
+        def render(
+            self,
+            velocity: np.ndarray,
+            **_: float,
+        ) -> np.ndarray:
+            return np.ones_like(velocity, dtype=np.float64)
+
+    monkeypatch.setattr(procedural_audio, "prewarm", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(procedural_audio, "DrivetrainVoice", FakeVoice)
+    source = procedural_audio.DrivetrainRenderSource(
+        field_seed=7,
+        phase_index=3,
+        block_size=32,
+        channels=1,
+        sample_rate=8000,
+        volume_db=0.0,
+        frequency_scale=1.0,
+        tonal_gain_db=0.0,
+        broadband_gain_db=0.0,
+        speed_exponent=1.0,
+        velocity_smoothing_seconds=0.01,
+    )
+    source.update(
+        left_velocity=0.5,
+        right_velocity=0.5,
+        gain_db=0.0,
+        active=True,
+        impulse=None,
+        rir_signature=None,
+    )
+
+    assert source.sample_rate == 8000
+    assert source._spec.sample_rate == 8000
+    assert source.render(32).shape == (32, 1)

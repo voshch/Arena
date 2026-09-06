@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import threading
+from collections.abc import Iterable
 from pathlib import Path
 
 import attrs
@@ -14,6 +15,28 @@ from scipy.signal import resample_poly
 from task_generator.auditory.octave_bands import (
     calculate_octave_band_levels_db,
 )
+
+FOOTSTEP_MATERIAL_TAGS = frozenset(
+    {
+        "default",
+        "walnut_planks",
+        "oak_planks",
+        "marble_tile",
+        "smooth_concrete",
+        "ceramic_tile",
+    }
+)
+
+
+def footstep_material_tags(
+    semantic_tags: Iterable[object],
+) -> frozenset[str]:
+    """Return one supported floor tag, defaulting safely when it is unknown."""
+    for raw_tag in semantic_tags:
+        tag = str(raw_tag).strip().lower()
+        if tag in FOOTSTEP_MATERIAL_TAGS:
+            return frozenset({tag})
+    return frozenset({"default"})
 
 
 @attrs.frozen
@@ -166,7 +189,12 @@ class AcousticAssetCatalog:
         if asset is None:
             return None
 
-        candidates = tuple(sample for sample in asset.variants if required_tags.issubset(sample.tags)) or asset.variants
+        candidates = tuple(sample for sample in asset.variants if required_tags.issubset(sample.tags))
+        if not candidates:
+            # Unknown or mistyped semantics must not select an arbitrary
+            # material variant. Prefer the explicitly authored default WAV;
+            # if an asset has no such variant, use its first declared sample.
+            candidates = tuple(sample for sample in asset.variants if "default" in sample.tags) or asset.variants[:1]
 
         key = f"{episode_seed}:{agent_id}:{asset_id}:{occurrence}"
         digest = hashlib.blake2b(key.encode(), digest_size=8).digest()

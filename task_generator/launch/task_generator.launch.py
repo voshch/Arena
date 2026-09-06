@@ -11,11 +11,10 @@ import launch_ros.actions
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_bringup.actions import IsolatedGroupAction
-from arena_rclpy_mixins import launch_str_to_value
-from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.defaults import default_human
+from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
-from task_generator.utils.flags import expand_flag_namespace, truthy
+from arena_rclpy_mixins import launch_str_to_value
 from launch.actions import (
     ExecuteProcess,
     IncludeLaunchDescription,
@@ -25,6 +24,7 @@ from launch.actions import (
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
+from task_generator.utils.flags import expand_flag_namespace, truthy
 
 _REGISTER_RETRY_SEC = 1.0
 _REGISTER_LOG_INTERVAL_SEC = 10.0
@@ -78,7 +78,7 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
         node.destroy_node()
 
 
-def generate_launch_description():
+def generate_launch_description() -> launch.LaunchDescription:
     bringup_dir = get_package_share_directory("arena_bringup")
 
     ld_items = []
@@ -144,18 +144,24 @@ def generate_launch_description():
     )
     auditory_assets = LaunchArgument(
         name="auditory.assets",
-        default_value=PathJoinSubstitution([
-            FindPackageShare("task_generator"),
-            "config", "auditory", "acoustic_assets.yaml",
-        ]),
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("task_generator"),
+                "config",
+                "auditory",
+                "acoustic_assets.yaml",
+            ]
+        ),
         description="Acoustic asset catalog used by all playback nodes.",
     )
     auditory_sound_dir = LaunchArgument(
         name="auditory.sound_dir",
-        default_value=PathJoinSubstitution([
-            FindPackageShare("task_generator"),
-            "sounds",
-        ]),
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("task_generator"),
+                "sounds",
+            ]
+        ),
         description="Directory containing WAV files named by the catalog.",
     )
     auditory_propagation = LaunchArgument(
@@ -196,6 +202,11 @@ def generate_launch_description():
         default_value="sequence",
         description="WAV motor audio: start/loop/stop sequence, or a single repeating loop.",
     )
+    auditory_motor_mems_calibration = LaunchArgument(
+        name="auditory.motor.mems_calibration_db",
+        default_value="-40.0",
+        description="Four-microphone procedural motor calibration in dB; less negative is louder.",
+    )
     auditory_environment_playback = LaunchArgument(
         name="auditory.environment_playback",
         default_value="true",
@@ -215,6 +226,12 @@ def generate_launch_description():
         name="auditory.microphones",
         default_value="[]",
         description="YAML list of robot microphone mappings (owner, robot, placement, frame, index).",
+    )
+    microphone_mode = LaunchArgument(
+        name="microphone_mode",
+        choices=["stereo", "four_mic"],
+        default_value="stereo",
+        description="Robot receiver layout; four_mic enables synchronized Jackal raw PCM.",
     )
     auditory_viewport_height = LaunchArgument(
         name="auditory.viewport_height",
@@ -237,6 +254,11 @@ def generate_launch_description():
         name='task.scenario',
         default_value='',
         description='Sets task.scenario.file ROS param (empty = use task.params default).',
+    )
+    scenario_linger = LaunchArgument(
+        name='task.scenario.linger_after_completion',
+        default_value='false',
+        description='Keep a completed scenario robot task alive until timeout/external cancellation.',
     )
     tm_obstacles = LaunchArgument(name="task.obstacles", default_value="random")
     tm_modules = LaunchArgument(name="task.modules", default_value="rviz_ui")
@@ -309,13 +331,16 @@ def generate_launch_description():
         atexit.register(_restore_terminal_titles)
 
         human_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(human.substitution)) or default_human(arena_sim)
+        auditory_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(auditory.substitution))
+        # Robot microphones, propagation, and playback do not depend on the
+        # selected human simulator.  Human sound production is gated inside
+        # human.launch.py when Arena HumanSim is selected.
+        auditory_enabled = auditory_val != "none"
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
         tm_modules_val = launch.utilities.perform_substitutions(
             context,
-            launch.utilities.normalize_to_list_of_substitutions(
-                tm_modules.substitution
-            ),
+            launch.utilities.normalize_to_list_of_substitutions(tm_modules.substitution),
         )
         configured_modules = [
             value.strip()
@@ -370,9 +395,7 @@ def generate_launch_description():
                 # Launch substitutions preserve a relative value as relative
                 # to each node namespace.  Keep this explicitly absolute so
                 # auditory nodes do not resolve it below task_generator_node.
-                "environment_namespace": (
-                    "/" + os.path.dirname(allocated_ns).strip("/")
-                ),
+                "environment_namespace": ("/" + os.path.dirname(allocated_ns).strip("/")),
                 **auditory.dict,
                 **auditory_viz.dict,
                 **auditory_playback.dict,
@@ -386,9 +409,11 @@ def generate_launch_description():
                 **auditory_robot_sound.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
+                **auditory_motor_mems_calibration.dict,
                 **auditory_environment_playback.dict,
                 **auditory_listener.dict,
                 **auditory_microphones.dict,
+                **microphone_mode.dict,
                 **auditory_viewport_height.dict,
             }.items(),
         )
@@ -465,6 +490,7 @@ def generate_launch_description():
                     "use_sim_time": True,
                     "sim": arena_sim,
                     "human": human_val,
+                    "auditory_enabled": auditory_enabled,
                     "robot.mobile_adapter": mobile_val,
                     "robot.arm_adapter": arm_val,
                     **robot.str_param,
@@ -481,7 +507,10 @@ def generate_launch_description():
                     "prefix": prefix_val,
                 },
                 parameter_file.substitution,
-                {"episodes": episodes.param_value(int)},
+                {
+                    "episodes": episodes.param_value(int),
+                    "task.scenario.linger_after_completion": scenario_linger.param_value(bool),
+                },
                 *overrides_files,
             ],
         )

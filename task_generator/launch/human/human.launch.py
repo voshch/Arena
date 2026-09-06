@@ -1,15 +1,13 @@
 import launch
-from launch.substitutions import PathJoinSubstitution
 import launch_ros.parameter_descriptions
+from arena_bringup.substitutions import LaunchArgument, SelectAction
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-
-from arena_bringup.substitutions import LaunchArgument, SelectAction
-
 from task_generator.constants import Constants
 
 
-def generate_launch_description():
+def generate_launch_description() -> launch.LaunchDescription:
 
     ld = []
 
@@ -43,17 +41,23 @@ def generate_launch_description():
     )
     auditory_assets = LaunchArgument(
         name="auditory.assets",
-        default_value=PathJoinSubstitution([
-            FindPackageShare("task_generator"),
-            "config", "auditory", "acoustic_assets.yaml",
-        ]),
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("task_generator"),
+                "config",
+                "auditory",
+                "acoustic_assets.yaml",
+            ]
+        ),
     )
     auditory_sound_dir = LaunchArgument(
         name="auditory.sound_dir",
-        default_value=PathJoinSubstitution([
-            FindPackageShare("task_generator"),
-            "sounds",
-        ]),
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("task_generator"),
+                "sounds",
+            ]
+        ),
     )
     auditory_propagation = LaunchArgument(
         name="auditory.propagation",
@@ -86,6 +90,11 @@ def generate_launch_description():
         choices=["sequence", "single_loop"],
         default_value="sequence",
     )
+    auditory_motor_mems_calibration = LaunchArgument(
+        name="auditory.motor.mems_calibration_db",
+        default_value="-40.0",
+        description="Four-microphone procedural motor calibration in dB.",
+    )
     auditory_environment_playback = LaunchArgument(
         name="auditory.environment_playback",
         default_value="true",
@@ -102,6 +111,11 @@ def generate_launch_description():
         name="auditory.microphones",
         default_value="[]",
     )
+    microphone_mode = LaunchArgument(
+        name="microphone_mode",
+        choices=["stereo", "four_mic"],
+        default_value="stereo",
+    )
     auditory_viewport_height = LaunchArgument(
         name="auditory.viewport_height",
         default_value="1.6",
@@ -113,29 +127,81 @@ def generate_launch_description():
     )
 
     auditory_on = launch.conditions.IfCondition(
-        launch.substitutions.PythonExpression([
-            "'", auditory.substitution, "' != 'none'",
-        ])
+        launch.substitutions.PythonExpression(
+            [
+                "'",
+                auditory.substitution,
+                "' != 'none'",
+            ]
+        )
     )
-    auditory_playback_on = launch.conditions.IfCondition(
-        launch.substitutions.PythonExpression([
-            "'", auditory.substitution, "' != 'none' and '",
-            auditory_playback.substitution, "' != 'none'",
-        ])
+    legacy_playback_on = launch.conditions.IfCondition(
+        launch.substitutions.PythonExpression(
+            [
+                "'",
+                auditory.substitution,
+                "' != 'none' and '",
+                auditory_playback.substitution,
+                "' != 'none' and '",
+                microphone_mode.substitution,
+                "' != 'four_mic'",
+            ]
+        )
     )
     auditory_viz_on = launch.conditions.IfCondition(
-        launch.substitutions.PythonExpression([
-            "'", auditory.substitution, "' != 'none' and '",
-            auditory_viz.substitution, "' == 'true'",
-        ])
+        launch.substitutions.PythonExpression(
+            [
+                "'",
+                auditory.substitution,
+                "' != 'none' and '",
+                auditory_viz.substitution,
+                "' == 'true'",
+            ]
+        )
     )
-    motor_enabled = launch.substitutions.PythonExpression([
-        "'", auditory_motor.substitution, "' != 'off'",
-    ])
-    motor_audio_mode = launch.substitutions.PythonExpression([
-        "'procedural' if '", auditory_motor.substitution,
-        "' == 'off' else '", auditory_motor.substitution, "'",
-    ])
+    four_mic_on = launch.conditions.IfCondition(
+        launch.substitutions.PythonExpression(
+            [
+                "'",
+                auditory.substitution,
+                "' != 'none' and '",
+                microphone_mode.substitution,
+                "' == 'four_mic'",
+            ]
+        )
+    )
+    legacy_audio_device = launch.substitutions.PythonExpression(
+        [
+            "'none' if '",
+            microphone_mode.substitution,
+            "' == 'four_mic' else '",
+            auditory_playback.substitution,
+            "'",
+        ]
+    )
+    motor_enabled = launch.substitutions.PythonExpression(
+        [
+            "'",
+            auditory_motor.substitution,
+            "' != 'off'",
+        ]
+    )
+    motor_audio_mode = launch.substitutions.PythonExpression(
+        [
+            "'procedural' if '",
+            auditory_motor.substitution,
+            "' == 'off' else '",
+            auditory_motor.substitution,
+            "'",
+        ]
+    )
+    robot_hearing_events_topic = launch.substitutions.PythonExpression(
+        [
+            "'four_mic_heard_sound_events' if '",
+            microphone_mode.substitution,
+            "' == 'four_mic' else 'heard_sound_events'",
+        ]
+    )
 
     playback_parameters = {
         "sound_events_topic": "human_sound_events",
@@ -172,7 +238,7 @@ def generate_launch_description():
         "output_sample_rate": 44100,
         "output_channels": 1,
         "block_size": auditory_block_size.param_value(int),
-        "audio_device": auditory_playback.substitution,
+        "audio_device": legacy_audio_device,
         "asset_catalog": auditory_assets.substitution,
         "sound_dir": auditory_sound_dir.substitution,
         "master_gain_db": 0.0,
@@ -180,65 +246,78 @@ def generate_launch_description():
 
     launch_human_simulator = SelectAction(launch.substitutions.LaunchConfiguration('simulator'))
 
-    launch_human_simulator.add(
-        Constants.HumanSimulator.DUMMY.value,
-        launch.actions.GroupAction([])
-    )
+    launch_human_simulator.add(Constants.HumanSimulator.DUMMY.value, launch.actions.GroupAction([]))
 
-    launch_human_simulator.add(
-        Constants.HumanSimulator.NONE.value,
-        launch.actions.GroupAction([])
-    )
+    launch_human_simulator.add(Constants.HumanSimulator.NONE.value, launch.actions.GroupAction([]))
 
     launch_human_simulator.add(
         Constants.HumanSimulator.HUNAV.value,
         launch.actions.IncludeLaunchDescription(
-            PathJoinSubstitution([
-                FindPackageShare('task_generator'),
-                'launch', 'human', 'hunav', 'hunav.launch.py',
-            ]),
-            launch_arguments={
-                'use_sim_time': 'true',
-                **namespace.dict
-            }.items(),
-        )
+            PathJoinSubstitution(
+                [
+                    FindPackageShare('task_generator'),
+                    'launch',
+                    'human',
+                    'hunav',
+                    'hunav.launch.py',
+                ]
+            ),
+            launch_arguments={'use_sim_time': 'true', **namespace.dict}.items(),
+        ),
     )
 
     launch_human_simulator.add(
         Constants.HumanSimulator.ARENA.value,
-        launch.actions.GroupAction([
-            launch.actions.IncludeLaunchDescription(
-                PathJoinSubstitution([
-                    FindPackageShare('task_generator'),
-                    'launch', 'human', 'arena_humansim', 'arena_humansim.launch.py',
-                ]),
-                launch_arguments={
-                    'use_sim_time': 'true',
-                    **namespace.dict
-                }.items(),
-            ),
-            Node(
-                package='task_generator',
-                executable='human_sound_node',
-                name='human_sound_node',
-                namespace=namespace.substitution,
-                output='screen',
-                condition=auditory_on,
-                parameters=[{
-                    "use_sim_time": True,
-                    "arena_peds_topic": PathJoinSubstitution([
-                        environment_namespace.substitution,
-                        "arena_peds",
-                    ]),
-                    "world_topic": "state/world",
-                    "sound_events_topic": "human_sound_events",
-                    "sound_markers_topic": PathJoinSubstitution([
-                        environment_namespace.substitution,
-                        "pedestrian_markers",
-                        "extra",
-                    ]),
-                }],
-            ),
+        launch.actions.GroupAction(
+            [
+                launch.actions.IncludeLaunchDescription(
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare('task_generator'),
+                            'launch',
+                            'human',
+                            'arena_humansim',
+                            'arena_humansim.launch.py',
+                        ]
+                    ),
+                    launch_arguments={'use_sim_time': 'true', **namespace.dict}.items(),
+                ),
+                Node(
+                    package='task_generator',
+                    executable='human_sound_node',
+                    name='human_sound_node',
+                    namespace=namespace.substitution,
+                    output='screen',
+                    condition=auditory_on,
+                    parameters=[
+                        {
+                            "use_sim_time": True,
+                            "arena_peds_topic": PathJoinSubstitution(
+                                [
+                                    environment_namespace.substitution,
+                                    "arena_peds",
+                                ]
+                            ),
+                            "world_topic": "state/world",
+                            "sound_events_topic": "human_sound_events",
+                            "sound_markers_topic": PathJoinSubstitution(
+                                [
+                                    environment_namespace.substitution,
+                                    "pedestrian_markers",
+                                    "extra",
+                                ]
+                            ),
+                        }
+                    ],
+                ),
+            ]
+        ),
+    )
+
+    # The robot auditory stack is independent of the selected human simulator.
+    # Only human_sound_node above depends on Arena HumanSim's arena_peds topic.
+    auditory_stack = launch.actions.GroupAction(
+        [
             # 1. Sound propagation node
             Node(
                 package='task_generator',
@@ -247,74 +326,112 @@ def generate_launch_description():
                 namespace=namespace.substitution,
                 output='screen',
                 condition=auditory_on,
-                parameters=[{
-                    "use_sim_time": True,
-                    "sound_events_topic": "human_sound_events",
-                    "heard_sound_events_topic": "heard_sound_events",
-                    "continuous_audio_sources_topic":
-                        "continuous_audio_sources",
-                    "continuous_heard_sounds_topic":
-                        "continuous_heard_sounds",
-                    "robot_microphones":
-                        auditory_microphones.param_value(str),
-                    "viewport_down_projection_height_m":
-                        auditory_viewport_height.param_value(float),
-                    "active_microphone_id":
-                        auditory_listener.substitution,
-                    "microphone_listeners_topic":
-                        "microphone_listeners",
-                    "robot_listener_frame":
-                        auditory_listener_frame.substitution,
-                    "arena_peds_topic": PathJoinSubstitution([
-                        environment_namespace.substitution,
-                        "arena_peds",
-                    ]),
-                    "map_topic": "map",
-                    "world_topic": "state/world",
-                    "episode_topic": "state/episode",
-                    "robot_fleet_topic": "state/robots",
-                    "robots_hear_self": True,
-                    "propagation_level": 3,
-                    "default_hearing_threshold_db": 20.0,
-                    # "occlusion_penalty_db": 20.0,
-                    "max_first_order_reflections": 8,
-                    "reflection_floor_db": -60.0,
-                    "ceiling_height_m": 3.0,
-                    "publish_inaudible": True,
-                    "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
-                    "pyroom_sample_rate_hz": 44100,
-                    "pyroom_max_order": 1,
-                    "pyroom_temperature_c": 20.0,
-                    "pyroom_relative_humidity_percent": 50.0,
-                    "pyroom_ceiling_height_m": 3.0,
-                    "pyroom_cache_position_quantization_m": 0.10,
-                    "pyroom_cache_size": 512,
-                    "ped_hearing": auditory_ped_hearing.param_value(bool),
-                    "compute_rir_in_propagation": auditory_rir_in_propagation.param_value(bool),
-                    "propagation_backend": auditory_propagation.substitution,
-                    "portal_adjacency_tolerance_m": 0.2,
-                    "portal_inset_m": 0.03,
-                    "portal_loss_db": 3.0,
-                    "opening_portal_loss_db": 0.5,
-                    "derive_opening_portals": True,
-                    "minimum_opening_width_m": 0.2,
-                    # Each authored zone is one ordinary pyroomacoustics
-                    # room. Cross-zone rendering may follow a portal route.
-                    "enable_multi_portal_rir": auditory_multi_portal.param_value(bool),
-                    "max_portal_hops": 4,
-                    "route_distance_loss_db_per_m": 0.05,
-                    "portal_source_early_window_sec": 0.08,
-                    "portal_max_rir_duration_sec": 2.0,
-                    "portal_position_quantization_m": 0.10,
-                    "portal_rir_cache_size": 256,
-                    "validate_zone_coverage": False,
-                    "zone_coverage_stride_cells": 10,
-                    "zone_coverage_tolerance_m": 0.25,
-                    "buffer_events_until_scene_loaded": True,
-                    "scene_event_buffer_size": 128,
-                }],
+                parameters=[
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare("task_generator"),
+                            "config",
+                            "auditory",
+                            "jackal_four_mic.yaml",
+                        ]
+                    ),
+                    {
+                        "use_sim_time": True,
+                        "sound_events_topic": "human_sound_events",
+                        "heard_sound_events_topic": "heard_sound_events",
+                        "continuous_audio_sources_topic": "continuous_audio_sources",
+                        "continuous_heard_sounds_topic": "continuous_heard_sounds",
+                        "robot_microphones": auditory_microphones.param_value(str),
+                        "microphone_mode": microphone_mode.substitution,
+                        "viewport_down_projection_height_m": auditory_viewport_height.param_value(float),
+                        "active_microphone_id": auditory_listener.substitution,
+                        "microphone_listeners_topic": "microphone_listeners",
+                        "robot_listener_frame": auditory_listener_frame.substitution,
+                        "arena_peds_topic": PathJoinSubstitution(
+                            [
+                                environment_namespace.substitution,
+                                "arena_peds",
+                            ]
+                        ),
+                        "map_topic": "map",
+                        "world_topic": "state/world",
+                        "episode_topic": "state/episode",
+                        "robot_fleet_topic": "state/robots",
+                        "robots_hear_self": True,
+                        "propagation_level": 3,
+                        "default_hearing_threshold_db": 20.0,
+                        # "occlusion_penalty_db": 20.0,
+                        "max_first_order_reflections": 8,
+                        "reflection_floor_db": -60.0,
+                        "ceiling_height_m": 3.0,
+                        "publish_inaudible": True,
+                        "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
+                        "pyroom_sample_rate_hz": 44100,
+                        "pyroom_max_order": 1,
+                        "pyroom_temperature_c": 20.0,
+                        "pyroom_relative_humidity_percent": 50.0,
+                        "pyroom_ceiling_height_m": 3.0,
+                        "pyroom_cache_position_quantization_m": 0.10,
+                        "pyroom_cache_size": 512,
+                        "ped_hearing": auditory_ped_hearing.param_value(bool),
+                        "compute_rir_in_propagation": auditory_rir_in_propagation.param_value(bool),
+                        "propagation_backend": auditory_propagation.substitution,
+                        "portal_adjacency_tolerance_m": 0.2,
+                        "portal_inset_m": 0.03,
+                        "portal_loss_db": 3.0,
+                        "opening_portal_loss_db": 0.5,
+                        "derive_opening_portals": True,
+                        "minimum_opening_width_m": 0.2,
+                        # Each authored zone is one ordinary pyroomacoustics
+                        # room. Cross-zone rendering may follow a portal route.
+                        "enable_multi_portal_rir": auditory_multi_portal.param_value(bool),
+                        "max_portal_hops": 4,
+                        "route_distance_loss_db_per_m": 0.05,
+                        "portal_source_early_window_sec": 0.08,
+                        "portal_max_rir_duration_sec": 2.0,
+                        "portal_position_quantization_m": 0.10,
+                        "portal_rir_cache_size": 256,
+                        # Validation reports authoring gaps but is deliberately
+                        # non-fatal, so an acoustic diagnostic cannot abort a run.
+                        "validate_zone_coverage": True,
+                        "zone_coverage_stride_cells": 10,
+                        "zone_coverage_tolerance_m": 0.35,
+                        "buffer_events_until_scene_loaded": True,
+                        "scene_event_buffer_size": 128,
+                    },
+                ],
             ),
-
+            Node(
+                package='task_generator',
+                executable='microphone_array_node',
+                name='microphone_array_node',
+                namespace=namespace.substitution,
+                output='screen',
+                condition=four_mic_on,
+                parameters=[
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare("task_generator"),
+                            "config",
+                            "auditory",
+                            "jackal_four_mic.yaml",
+                        ]
+                    ),
+                    {
+                        "use_sim_time": True,
+                        "asset_catalog": auditory_assets.substitution,
+                        "sound_dir": auditory_sound_dir.substitution,
+                        "heard_sound_events_topic": "heard_sound_events",
+                        "fused_heard_sound_events_topic": "four_mic_heard_sound_events",
+                        "continuous_heard_sounds_topic": "continuous_heard_sounds",
+                        "robot_fleet_topic": "state/robots",
+                        "microphone_marker_topic": "microphone_markers",
+                        "visualization_enabled": auditory_viz.param_value(bool),
+                        "audio_device": auditory_playback.substitution,
+                        "motor_mems_calibration_db": auditory_motor_mems_calibration.param_value(float),
+                    },
+                ],
+            ),
             Node(
                 package='task_generator',
                 executable='sound_propagation_visualizer',
@@ -322,26 +439,22 @@ def generate_launch_description():
                 namespace=namespace.substitution,
                 output='screen',
                 condition=auditory_viz_on,
-                parameters=[{
-                    "use_sim_time": True,
-                    "heard_sound_events_topic": "heard_sound_events",
-                    "continuous_audio_sources_topic":
-                        "continuous_audio_sources",
-                    "continuous_heard_sounds_topic":
-                        "continuous_heard_sounds",
-                    "environment_source_marker_topic":
-                        "environment_audio_source_markers",
-                    "pedestrian_marker_topic":
-                        "pedestrian_sound_propagation_markers",
-                    "robot_marker_topic":
-                        "robot_sound_propagation_markers",
-                    "robot_fleet_topic": "state/robots",
-                    "sync_robot_listener_to_tf": True,
-                    "marker_lifetime_sec": 5.0,
-                    "path_z_m": 1.0,
-                }],
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "heard_sound_events_topic": "heard_sound_events",
+                        "continuous_audio_sources_topic": "continuous_audio_sources",
+                        "continuous_heard_sounds_topic": "continuous_heard_sounds",
+                        "environment_source_marker_topic": "environment_audio_source_markers",
+                        "pedestrian_marker_topic": "pedestrian_sound_propagation_markers",
+                        "robot_marker_topic": "robot_sound_propagation_markers",
+                        "robot_fleet_topic": "state/robots",
+                        "sync_robot_listener_to_tf": True,
+                        "marker_lifetime_sec": 5.0,
+                        "path_z_m": 1.0,
+                    }
+                ],
             ),
-
             # 2. Robot motor sound producer and playback
             Node(
                 package='task_generator',
@@ -350,57 +463,56 @@ def generate_launch_description():
                 namespace=namespace.substitution,
                 output='screen',
                 condition=auditory_on,
-                parameters=[{
-                    "use_sim_time": True,
-                    **playback_parameters,
-                    "enable_robot_sound": auditory_robot_sound.param_value(bool),
-                    "enable_motor_playback": launch_ros.parameter_descriptions.ParameterValue(motor_enabled, value_type=bool),
-                    "robot_fleet_topic": "state/robots",
-                    "continuous_audio_sources_topic":
-                        "continuous_audio_sources",
-                    "continuous_heard_sounds_topic":
-                        "continuous_heard_sounds",
-                    "motor_audio_mode": motor_audio_mode,
-                    "motor_rir_crossfade_sec": 0.10,
-                    "motor_playback_mode": auditory_motor_playback.substitution,
-                    "motor_single_asset_id": "motor",
-                    "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
-                    "sound_type": "motor",
-                    "motor_start_asset_id": "motor_start",
-                    "motor_stop_asset_id": "motor_stop",
-                    "source_volume_db": 45.0,
-                    "publish_period_sec": 0.05,
-                    "only_when_moving": True,
-                    "min_speed_mps": 0.05,
-                    "stop_speed_mps": 0.03,
-                    "angular_speed_scale_m": 0.25,
-                    "publish_motor_markers": True,
-                    "motor_marker_topic": "",
-                    "motor_marker_topic_suffix": "motor_sound_markers",
-                    "motor_marker_lifetime_sec": 0.8,
-                    "motor_marker_z_m": 0.16,
-                    "motor_marker_line_width_m": 0.055,
-                    "motor_marker_cone_degrees": 70.0,
-                    "motor_marker_range_m": 1.25,
-                }],
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        **playback_parameters,
+                        "enable_robot_sound": auditory_robot_sound.param_value(bool),
+                        "enable_motor_playback": launch_ros.parameter_descriptions.ParameterValue(motor_enabled, value_type=bool),
+                        "robot_fleet_topic": "state/robots",
+                        "continuous_audio_sources_topic": "continuous_audio_sources",
+                        "continuous_heard_sounds_topic": "continuous_heard_sounds",
+                        "motor_audio_mode": motor_audio_mode,
+                        "motor_rir_crossfade_sec": 0.10,
+                        "motor_playback_mode": auditory_motor_playback.substitution,
+                        "motor_single_asset_id": "motor",
+                        "odom_topic_template": "{namespace}/{name}_velocity_controller/odom",
+                        "sound_type": "motor",
+                        "motor_start_asset_id": "motor_start",
+                        "motor_stop_asset_id": "motor_stop",
+                        "source_volume_db": 45.0,
+                        "publish_period_sec": 0.05,
+                        "only_when_moving": True,
+                        "min_speed_mps": 0.05,
+                        "stop_speed_mps": 0.03,
+                        "angular_speed_scale_m": 0.25,
+                        "publish_motor_markers": True,
+                        "motor_marker_topic": "",
+                        "motor_marker_topic_suffix": "motor_sound_markers",
+                        "motor_marker_lifetime_sec": 0.8,
+                        "motor_marker_z_m": 0.16,
+                        "motor_marker_line_width_m": 0.055,
+                        "motor_marker_cone_degrees": 70.0,
+                        "motor_marker_range_m": 1.25,
+                    }
+                ],
             ),
-
             Node(
                 package='task_generator',
                 executable='environment_sound_playback',
                 name='environment_sound_playback',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=auditory_playback_on,
-                parameters=[{
-                    **playback_parameters,
-                    "continuous_heard_sounds_topic":
-                        "continuous_heard_sounds",
-                    "enable_environment_playback": auditory_environment_playback.param_value(bool),
-                    "environment_rir_crossfade_sec": 0.10,
-                }],
+                condition=legacy_playback_on,
+                parameters=[
+                    {
+                        **playback_parameters,
+                        "continuous_heard_sounds_topic": "continuous_heard_sounds",
+                        "enable_environment_playback": auditory_environment_playback.param_value(bool),
+                        "environment_rir_crossfade_sec": 0.10,
+                    }
+                ],
             ),
-
             # 3. Robot hearing node
             Node(
                 package='task_generator',
@@ -409,22 +521,23 @@ def generate_launch_description():
                 namespace=namespace.substitution,
                 output='screen',
                 condition=auditory_on,
-                parameters=[{
-                    "use_sim_time": True,
-                    "robot_fleet_topic": "state/robots",
-                    "heard_sound_events_topic": "heard_sound_events",
-                    "heard_sound_topic_suffix": "heard_sound",
-                    "marker_topic_suffix": "heard_sound_marker",
-                    "ignore_self": True,
-                    "min_snr_db": -5.0,
-                    "honor_propagation_delay": True,
-                    "marker_lifetime_sec": 1.5,
-                    "marker_z_offset": 1.2,
-                    "marker_text_height_m": 0.35,
-                    "marker_sound_types": ["greeting", "footstep", "motor"],
-                }],
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "robot_fleet_topic": "state/robots",
+                        "heard_sound_events_topic": robot_hearing_events_topic,
+                        "heard_sound_topic_suffix": "heard_sound",
+                        "marker_topic_suffix": "heard_sound_marker",
+                        "ignore_self": True,
+                        "min_snr_db": -5.0,
+                        "honor_propagation_delay": True,
+                        "marker_lifetime_sec": 1.5,
+                        "marker_z_offset": 1.2,
+                        "marker_text_height_m": 0.35,
+                        "marker_sound_types": ["greeting", "footstep", "motor"],
+                    }
+                ],
             ),
-
             # 4. Human sound playback node
             Node(
                 package='task_generator',
@@ -432,12 +545,14 @@ def generate_launch_description():
                 name='human_sound_playback',
                 namespace=namespace.substitution,
                 output='screen',
-                condition=auditory_playback_on,
-                parameters=[{
-                    **playback_parameters,
-                }],
+                condition=legacy_playback_on,
+                parameters=[
+                    {
+                        **playback_parameters,
+                    }
+                ],
             ),
-        ])
+        ]
     )
 
     simulator = LaunchArgument(
@@ -445,10 +560,13 @@ def generate_launch_description():
         choices=launch_human_simulator.keys,
     )
 
-    ld = launch.LaunchDescription([
-        *ld,
-        launch_human_simulator,
-    ])
+    ld = launch.LaunchDescription(
+        [
+            *ld,
+            launch_human_simulator,
+            auditory_stack,
+        ]
+    )
     return ld
 
 

@@ -31,7 +31,10 @@ class AcousticScene:
     zones: tuple[AcousticZone, ...]
     walls: tuple[AcousticWall, ...]
     ceiling_height_m: float = 3.0
-    zone_lookup_tolerance_m: float = 0.2
+    # Covers a robot-mounted microphone that is just beyond an authored room
+    # edge while the robot base is on that edge. The corresponding RIR point
+    # is moved just inside the room by PyroomacousticsAdapter.
+    zone_lookup_tolerance_m: float = 0.35
 
     @classmethod
     def from_world(cls, world: WorldDescription) -> AcousticScene:
@@ -53,11 +56,21 @@ class AcousticScene:
 
     def zone_at_xy(self, x: float, y: float) -> AcousticZone | None:
         candidate = shapely.Point(float(x), float(y))
-        tolerance = max(float(self.zone_lookup_tolerance_m), 0.0)
-        return next(
-            (zone for zone in self.zones if zone.polygon.buffer(tolerance).covers(candidate)),
+        # An exact match must win over a buffered match in an earlier zone.
+        # Otherwise microphones near a portal can be assigned to the adjacent
+        # room even though their physical coordinate is inside this one.
+        exact = next(
+            (zone for zone in self.zones if zone.polygon.covers(candidate)),
             None,
         )
+        if exact is not None:
+            return exact
+
+        tolerance = max(float(self.zone_lookup_tolerance_m), 0.0)
+        if tolerance == 0.0:
+            return None
+        nearby = [(zone.polygon.distance(candidate), index, zone) for index, zone in enumerate(self.zones) if zone.polygon.distance(candidate) <= tolerance]
+        return min(nearby, default=(0.0, 0, None))[2]
 
     def intersecting_walls(self, source: Point, listener: Point) -> list[AcousticWall]:
         path = shapely.LineString([(source.x, source.y), (listener.x, listener.y)])

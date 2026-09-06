@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 import attrs
 import numpy as np
 from numpy.typing import NDArray
+from shapely.geometry import Point, Polygon
+from shapely.ops import nearest_points
 
 from .acoustic_room_spec import AcousticRoomSpec
 from .material_catalog import (
@@ -67,6 +69,11 @@ class PyroomacousticsConfig:
     minimum_phase: bool = False
     cache_position_quantization_m: float = 0.10
     cache_size: int = 512
+    # Robot-mounted microphones can extend just beyond a zone boundary while
+    # the base remains in traversable space. Such near-boundary positions are
+    # projected into the room before asking pyroomacoustics to build an RIR.
+    room_boundary_tolerance_m: float = 0.35
+    room_boundary_inset_m: float = 0.01
 
     def __attrs_post_init__(self) -> None:
         if isinstance(self.sample_rate_hz, bool) or not isinstance(self.sample_rate_hz, int) or self.sample_rate_hz <= 0:
@@ -102,6 +109,10 @@ class PyroomacousticsConfig:
             raise ValueError("cache_position_quantization_m must be positive")
         if self.cache_size <= 0:
             raise ValueError("cache_size must be positive")
+        if not math.isfinite(self.room_boundary_tolerance_m) or self.room_boundary_tolerance_m < 0.0:
+            raise ValueError("room_boundary_tolerance_m must be finite and non-negative")
+        if not math.isfinite(self.room_boundary_inset_m) or self.room_boundary_inset_m <= 0.0:
+            raise ValueError("room_boundary_inset_m must be finite and positive")
 
 
 @attrs.frozen
@@ -354,6 +365,16 @@ class PyroomacousticsAdapter:
             listener_position_m,
             name="listener_position_m",
         )
+        source = self._position_inside_room(
+            specification,
+            source,
+            name="source_position_m",
+        )
+        listener = self._position_inside_room(
+            specification,
+            listener,
+            name="listener_position_m",
+        )
 
         self._validate_vertical_position(
             source,
@@ -409,6 +430,29 @@ class PyroomacousticsAdapter:
         while len(self._rir_cache) > self._config.cache_size:
             self._rir_cache.popitem(last=False)
         return result
+
+    def _position_inside_room(
+        self,
+        specification: AcousticRoomSpec,
+        position: Position3D,
+        *,
+        name: str,
+    ) -> Position3D:
+        """Return a numerically safe in-room point for a near-edge position."""
+        polygon = Polygon(specification.corners_xy)
+        point = Point(position[0], position[1])
+        if polygon.contains(point):
+            return position
+
+        distance = float(polygon.distance(point))
+        tolerance = self._config.room_boundary_tolerance_m
+        if distance > tolerance:
+            raise ValueError(f"{name} is {distance:.3f} m outside acoustic room {specification.zone_name!r} (tolerance={tolerance:.3f} m)")
+
+        inset = polygon.buffer(-self._config.room_boundary_inset_m)
+        target = inset if not inset.is_empty else polygon.representative_point()
+        adjusted = nearest_points(target, point)[0]
+        return float(adjusted.x), float(adjusted.y), position[2]
 
     @staticmethod
     def _position_xyz(

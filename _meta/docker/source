@@ -14,6 +14,10 @@ HOST_UID=$(id -u)
 export HOST_UID
 HOST_GID=$(id -g)
 export HOST_GID
+HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0 2>/dev/null || printf '%s' "$HOST_GID")
+export HOST_VIDEO_GID
+HOST_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128 2>/dev/null || printf '%s' "$HOST_VIDEO_GID")
+export HOST_RENDER_GID
 
 export arena_compose_sudo=""
 source "$ARENA_DIR/_meta/docker/lib"
@@ -25,6 +29,8 @@ docker_env="${docker_env} ARENA_IMAGE_TAG=$ARENA_IMAGE_TAG"
 docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
 docker_env="${docker_env} HOST_UID=$HOST_UID"
 docker_env="${docker_env} HOST_GID=$HOST_GID"
+docker_env="${docker_env} HOST_VIDEO_GID=$HOST_VIDEO_GID"
+docker_env="${docker_env} HOST_RENDER_GID=$HOST_RENDER_GID"
 docker_env="${docker_env} ARENA_DATA_DIR=$ARENA_DATA_DIR"
 docker_env="${docker_env} ROSNAV_AGENTS_DIR=$ROSNAV_AGENTS_DIR"
 export docker_env

@@ -53,6 +53,7 @@ def _make_sound_event():
     event.sound_type = "greeting"
     event.label = "greeting"
     event.asset_id = "greeting"
+    event.semantic_tags = ["human", "greeting"]
     event.source_position.x = 0.0
     event.source_position.y = 0.0
     event.source_position.z = 0.0
@@ -188,6 +189,7 @@ def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
         assert heard.event_id == "roundtrip_001"
         assert heard.listener_id == "agent:2"
         assert heard.sound_type == "greeting"
+        assert heard.semantic_tags == ["human", "greeting"]
         assert heard.distance == pytest.approx(5.0)
         assert heard.occluded is False
         assert heard.audible is True
@@ -473,6 +475,12 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
     propagation._robot_microphones = {
         "microphone1": (Point(), "map"),
         "microphone2": (Point(), "map"),
+        "robot1_left_mic": (Point(y=0.1), "map"),
+        "robot1_right_mic": (Point(y=-0.1), "map"),
+    }
+    propagation._robot_side_microphone_ids = {
+        "robot1_left_mic",
+        "robot1_right_mic",
     }
     propagation._map = OccupancyGrid()
     propagation._map.header.frame_id = "map"
@@ -490,7 +498,11 @@ def test_propagation_runtime_toggle_stops_continuous_outputs(rclpy_context):
             ),
         ])
         assert selection_results[0].successful is True
-        assert set(propagation._microphone_positions()) == {"microphone1"}
+        assert set(propagation._microphone_positions()) == {
+            "microphone1",
+            "robot1_left_mic",
+            "robot1_right_mic",
+        }
         assert propagation._last_continuous_outputs[key].active is True
         assert propagation._last_continuous_outputs[excluded_key].active is False
         assert propagation._last_continuous_outputs[robot_key].active is True
@@ -604,6 +616,38 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
         )
         assert robot_mic_position.z == 0.35
         assert robot_mic_frame == "robot1/base_link"
+        assert propagation._robot_side_microphone_ids == {
+            "robot1_left_mic",
+            "robot1_right_mic",
+        }
+        left_mic_position, left_mic_frame = (
+            propagation._robot_microphones["robot1_left_mic"]
+        )
+        right_mic_position, right_mic_frame = (
+            propagation._robot_microphones["robot1_right_mic"]
+        )
+        assert (
+            left_mic_position.x,
+            left_mic_position.y,
+            left_mic_position.z,
+        ) == (0.0, 0.1, 0.35)
+        assert (
+            right_mic_position.x,
+            right_mic_position.y,
+            right_mic_position.z,
+        ) == (0.0, -0.1, 0.35)
+        assert left_mic_frame == right_mic_frame == "robot1/base_link"
+        marker_poses = propagation._microphone_marker_poses()
+        assert marker_poses["robot1_left_mic"][1] == "robot1/base_link"
+        assert marker_poses["robot1_right_mic"][1] == "robot1/base_link"
+        left_color = propagation._microphone_marker_color(
+            "robot1_left_mic"
+        )
+        right_color = propagation._microphone_marker_color(
+            "robot1_right_mic"
+        )
+        assert left_color.b > left_color.r
+        assert right_color.r > right_color.b
 
         propagation._cb_robot_fleet(fleet)
         assert propagation._odom_subs.keys() == first.keys()
@@ -617,8 +661,163 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
         assert propagation._odom_subs == {}
         assert "robot:robot1" not in propagation._robots
         assert "robot1_mic" not in propagation._robot_microphones
+        assert "robot1_left_mic" not in propagation._robot_microphones
+        assert "robot1_right_mic" not in propagation._robot_microphones
+        assert propagation._robot_side_microphone_ids == set()
     finally:
         propagation.destroy_node()
+
+
+def test_propagation_registers_four_mic_jackal_receivers(rclpy_context):
+    from geometry_msgs.msg import Point
+    from rclpy.parameter import Parameter
+    from task_generator.auditory.sound_propagation_node import (
+        SoundPropagationNode,
+    )
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    propagation = SoundPropagationNode(
+        namespace=f"/test/{suffix}",
+        parameter_overrides=[
+            Parameter(
+                "microphone_mode",
+                Parameter.Type.STRING,
+                "four_mic",
+            ),
+            Parameter(
+                "odom_topic_template",
+                Parameter.Type.STRING,
+                "{namespace}/odom",
+            ),
+        ],
+    )
+    fleet = _make_robot_fleet("robot1", f"/test/{suffix}/robot1")
+    expected = {
+        "robot1_mic_front_left": (0.19, 0.135, 0.22),
+        "robot1_mic_front_right": (0.19, -0.135, 0.22),
+        "robot1_mic_rear_left": (-0.19, 0.135, 0.22),
+        "robot1_mic_rear_right": (-0.19, -0.135, 0.22),
+    }
+
+    try:
+        propagation._cb_robot_fleet(fleet)
+        assert propagation._robot_side_microphone_ids == set(expected)
+        for listener_id, coordinates in expected.items():
+            position, frame = propagation._robot_microphones[listener_id]
+            assert (position.x, position.y, position.z) == pytest.approx(
+                coordinates
+            )
+            assert frame == "robot1/base_link"
+        assert propagation._microphone_yaw(
+            "robot1_mic_front_left"
+        ) == pytest.approx(math.pi / 4.0)
+        assert propagation._microphone_yaw(
+            "robot1_mic_rear_right"
+        ) == pytest.approx(-3.0 * math.pi / 4.0)
+        propagation._robots["robot:robot1"] = (Point(), "map")
+        listeners = propagation._listeners_for_event(_make_sound_event())
+        assert "robot:robot1" not in listeners
+    finally:
+        propagation.destroy_node()
+
+
+def test_four_mic_array_renders_and_fuses_robot_hearing_event(rclpy_context):
+    import rclpy
+    from rclpy.parameter import Parameter
+    from std_msgs.msg import Float32MultiArray
+    from task_generator.auditory.microphone_array_node import MicrophoneArrayNode
+    from task_generator.auditory.qos_profiles import transient_event_qos
+    from task_generator.auditory.robot_hearing_node import RobotHearingNode
+    from task_generator_msgs.msg import HeardSoundEvent
+
+    suffix = f"t_{uuid.uuid4().hex[:8]}"
+    namespace = f"/test/{suffix}"
+    array = MicrophoneArrayNode(namespace=namespace)
+    hearing = RobotHearingNode(
+        namespace=namespace,
+        parameter_overrides=[
+            Parameter(
+                "heard_sound_events_topic",
+                Parameter.Type.STRING,
+                f"{namespace}/four_mic_heard_sound_events",
+            ),
+            Parameter(
+                "honor_propagation_delay",
+                Parameter.Type.BOOL,
+                False,
+            ),
+        ],
+    )
+    consumer = rclpy.create_node(f"four_mic_consumer_{suffix}")
+    levels: list[Float32MultiArray] = []
+    fused_events: list[HeardSoundEvent] = []
+    robot_events: list[HeardSoundEvent] = []
+    consumer.create_subscription(
+        Float32MultiArray,
+        f"{namespace}/jackal/audio/hearing/energy",
+        levels.append,
+        10,
+    )
+    consumer.create_subscription(
+        HeardSoundEvent,
+        f"{namespace}/four_mic_heard_sound_events",
+        fused_events.append,
+        transient_event_qos(),
+    )
+    consumer.create_subscription(
+        HeardSoundEvent,
+        f"{namespace}/jackal/heard_sound",
+        robot_events.append,
+        transient_event_qos(),
+    )
+
+    try:
+        fleet = _make_robot_fleet("jackal", f"{namespace}/jackal")
+        array._on_fleet(fleet)
+        hearing._cb_robot_fleet(fleet)
+        _spin_until(
+            rclpy,
+            [array, hearing, consumer],
+            lambda: array._fused_heard_pub.get_subscription_count() >= 2
+            and hearing._heard_pubs["jackal"].get_subscription_count() >= 1,
+        )
+        channel_values = {
+            "front_left": ((0.19, 0.135, 0.22), 94.0, 0.0040),
+            "front_right": ((0.19, -0.135, 0.22), 90.0, 0.0050),
+            "rear_left": ((-0.19, 0.135, 0.22), 92.0, 0.0045),
+            "rear_right": ((-0.19, -0.135, 0.22), 89.0, 0.0060),
+        }
+        for channel, (position, received_db, delay_sec) in channel_values.items():
+            event = _make_heard_sound_event()
+            event.event_id = "human:1:four-mic-regression"
+            event.listener_id = f"jackal_mic_{channel}"
+            event.listener_position.x = position[0]
+            event.listener_position.y = position[1]
+            event.listener_position.z = position[2]
+            event.received_volume_db = received_db
+            event.direct_delay_sec = delay_sec
+            array._on_heard_event(event)
+        _spin_until(
+            rclpy,
+            [array, hearing, consumer],
+            lambda: fused_events
+            and robot_events
+            and any(message.data and max(message.data) > 1e-3 for message in levels),
+        )
+        fused = fused_events[0]
+        assert fused.listener_id == "robot:jackal"
+        assert fused.received_volume_db == pytest.approx(94.0)
+        assert fused.direct_delay_sec == pytest.approx(0.0040)
+        assert fused.listener_position.x == pytest.approx(0.0)
+        assert fused.listener_position.y == pytest.approx(0.0)
+        assert fused.listener_position.z == pytest.approx(0.22)
+        assert fused.audible is True
+        assert robot_events[0].event_id == fused.event_id
+        assert robot_events[0].listener_id == "robot:jackal"
+    finally:
+        consumer.destroy_node()
+        hearing.destroy_node()
+        array.destroy_node()
 
 
 def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
@@ -682,6 +881,7 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
     consumer = rclpy.create_node(f"auditory_roundtrip_consumer_{suffix}")
 
     heard_by_robot: list[HeardSoundEvent] = []
+    propagated_events: list[HeardSoundEvent] = []
     markers: list[Marker] = []
 
     fleet_pub = emitter.create_publisher(RobotFleet, robot_fleet_topic, acoustic_metadata_qos())
@@ -692,6 +892,12 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
         HeardSoundEvent,
         robot_heard_topic,
         heard_by_robot.append,
+        transient_event_qos(),
+    )
+    consumer.create_subscription(
+        HeardSoundEvent,
+        heard_topic,
+        propagated_events.append,
         transient_event_qos(),
     )
     consumer.create_subscription(Marker, robot_marker_topic, markers.append, 10)
@@ -749,12 +955,20 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
         event.sound_type = "greeting"
         event.label = "greeting"
         event.asset_id = "greeting"
+        event.source_position.y = 1.0
         sound_pub.publish(event)
 
         _spin_until(
             rclpy,
             [emitter, propagation, hearing, consumer],
-            lambda: len(heard_by_robot) == 1 and len(markers) == 1,
+            lambda: len(heard_by_robot) == 1
+            and len(markers) == 1
+            and {
+                "robot1_left_mic",
+                "robot1_right_mic",
+            }.issubset(
+                {message.listener_id for message in propagated_events}
+            ),
             timeout_sec=5.0,
         )
 
@@ -763,6 +977,27 @@ def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
         assert heard.listener_id == "robot:robot1"
         assert heard.sound_type == "greeting"
         assert heard.audible is True
+
+        side_events = {
+            message.listener_id: message
+            for message in propagated_events
+            if message.listener_id
+            in {"robot1_left_mic", "robot1_right_mic"}
+        }
+        assert set(side_events) == {
+            "robot1_left_mic",
+            "robot1_right_mic",
+        }
+        assert side_events["robot1_left_mic"].listener_position.y == (
+            pytest.approx(0.1)
+        )
+        assert side_events["robot1_right_mic"].listener_position.y == (
+            pytest.approx(-0.1)
+        )
+        assert (
+            side_events["robot1_left_mic"].direct_delay_sec
+            < side_events["robot1_right_mic"].direct_delay_sec
+        )
 
         marker = markers[0]
         assert marker.ns == "robot1_heard_sound"
@@ -1084,6 +1319,25 @@ def test_human_sound_detector_uses_pose_when_twist_is_zero():
     assert emitted == [("footstep", 9)]
 
 
+def test_human_sound_detector_never_greets_with_one_pedestrian():
+    from arena_people_msgs.msg import Pedestrians
+    from task_generator.simulators.human.auditory_events import (
+        AuditoryEventDetector,
+    )
+
+    emitted: list[tuple[str, int]] = []
+    detector = AuditoryEventDetector(
+        lambda sound_type, ped: emitted.append((sound_type, int(ped.id)))
+    )
+    pedestrians = Pedestrians()
+    pedestrians.pedestrians.append(_make_pedestrian(9, 1.0, 2.0))
+
+    for now_sec in range(20):
+        detector.update(pedestrians, float(now_sec))
+
+    assert all(sound_type != "greeting" for sound_type, _ in emitted)
+
+
 def test_sound_propagation_uses_base_frame_when_listener_frame_is_empty(
     rclpy_context,
 ):
@@ -1329,6 +1583,23 @@ def test_propagation_visualizer_splits_pedestrian_and_robot_markers(
             )
         ]
         assert len(stale_portals) == 2
+
+        marker_count = len(robot_markers)
+        four_mic_event = _make_heard_sound_event()
+        four_mic_event.listener_id = "jackal_mic_front_left"
+        four_mic_event.listener_position.z = 0.22
+        visualizer._callback(four_mic_event)
+        _spin_until(
+            rclpy,
+            [visualizer, consumer],
+            lambda: len(robot_markers) > marker_count,
+        )
+        microphone_listener = next(
+            marker
+            for marker in robot_markers[-1].markers
+            if marker.ns == "jackal_mic_front_left_sound_listener"
+        )
+        assert microphone_listener.pose.position.z == pytest.approx(0.22)
     finally:
         consumer.destroy_node()
         visualizer.destroy_node()

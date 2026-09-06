@@ -18,6 +18,13 @@ arena_gpu(){
     elif [ -n "${ARENA_GPU+x}" ]; then
         raw=$ARENA_GPU
         source=environment
+    elif command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+        # A later plain `source arena` must not recreate a GPU-backed
+        # container without its NVIDIA devices.  Auto-enable the existing GPU
+        # compose overlay when the host driver reports a usable device; users
+        # can still opt out explicitly with ARENA_GPU=0.
+        raw=1
+        source=auto-detected-nvidia
     else
         source=unset
     fi
