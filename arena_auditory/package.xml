@@ -2,13 +2,14 @@
 <package format="3">
   <name>arena_auditory</name>
   <version>0.0.0</version>
-  <description>Arena auditory simulator: sound propagation, robot hearing, robot and human sound emission, local playback.</description>
+  <description>Arena auditory stack: the simulator behind auditory:=arena (propagation, hearing, emission, playback) and the robot-side hearing layer (SELDnet front-end, belief grid, Nav2 speed-filter mask).</description>
   <maintainer email="dev@voshch.dev">voshch</maintainer>
   <license>TODO</license>
 
   <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>rcl_interfaces</depend>
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>tf2_ros</depend>
@@ -17,6 +18,10 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>arena_people_msgs</exec_depend>
   <exec_depend>arena_robots</exec_depend>
+  <exec_depend>arena_robots_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>task_generator_msgs</exec_depend>
 

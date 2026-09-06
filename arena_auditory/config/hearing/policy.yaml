@@ -1,0 +1,31 @@
+# hearing_policy: the speed-filter mask writer. Speeds in m/s, converted with the
+# robot's mobile cap max speed. Nav2 reads a 0 % mask as "no limit", so the hold
+# is a creep, and 0.03 m/s clears the progress checker (0.2 m per 20 s) threefold.
+/**/hearing_policy:
+  ros__parameters:
+    publish_rate_hz: 10.0
+    listen_enabled: true
+    yield_enabled: true
+    # ego-noise amplitude scales with speed^1 on the Jackal drivetrain, so 0.2 m/s
+    # moves the footstep horizon from about 3 m (0.5 m/s) out to about 8 m
+    listen_mps: 0.2
+    hold_mps: 0.03
+    lookahead_m: 4.0            # a plan point is blind when the path this far ahead is hidden
+    approach_m: 4.0             # listen zone before the bend: 20 s at listen speed
+    hold_len_m: 1.5             # survives 0.3 m tracking error
+    hold_offset_m: 1.0          # parked before RPP's rotate-to-heading trigger
+    lane_radius_m: 0.6          # paints the corridor width, not a stripe
+    corner_radius_m: 2.0
+    bend_hysteresis_m: 1.0      # a replanned bend within this is the same bend
+    rearm_after_m: 3.0          # a consumed bend re-arms once the robot moved this far
+    yield_fraction: 0.5         # of the total belief mass inside the bend disc (wedges carry no range)
+    release_fraction: 0.25
+    min_yield_s: 3.0            # silence before any release: a pedestrian who stopped is still there
+    yield_timeout_s: 15.0
+    recede_s: 2.0
+    level_trend_db_per_s: -1.0
+    # belief layer: one footstep must not floor the whole corridor
+    belief_threshold: 0.6
+    speed_min_pct: 40
+    speed_free_pct: 100
+    reaction_radius_m: 2.0

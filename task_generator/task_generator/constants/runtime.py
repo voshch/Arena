@@ -99,6 +99,11 @@ def Configuration(server: ROSParamServer) -> type:
                 'moveit',
             )
 
+            HEARING = server.ROSParam[str](
+                'robot.hearing',
+                'none',
+            )
+
         class TaskMode:
             TM_ROBOTS = server.ROSParam[Constants.TaskMode.TM_Robots](
                 'tm_robots',

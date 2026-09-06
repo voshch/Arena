@@ -1,0 +1,17 @@
+# Nav2 params overlay: merged into arena_robots' nav2.yaml before substitution.
+#   arena launch ... robot.mobile.params_overlay:=$(ros2 pkg prefix arena_auditory)/share/arena_auditory/config/hearing/nav2_overlay.yaml
+# Topics are env-scoped and match launch/hearing.launch.py.
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      filters: ["speed_filter"]
+      speed_filter:
+        plugin: "nav2_costmap_2d::SpeedFilter"
+        enabled: true
+        filter_info_topic: ${env_namespace}/hearing/costmap_filter_info
+        speed_limit_topic: ${env_namespace}/hearing/speed_limit
+        transform_tolerance: 0.3
+
+controller_server:
+  ros__parameters:
+    speed_limit_topic: ${env_namespace}/hearing/speed_limit

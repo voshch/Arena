@@ -1,0 +1,58 @@
+# hearing_belief node parameters.  Topics and frames are set by the launch file
+# from env_namespace / robot / source. The values here are the estimator knobs.
+#
+# Nav2 SpeedFilter semantics (nav2_costmap_2d/costmap_filters/filter_values.hpp):
+#   mask value  0  -> SPEED_MASK_NO_LIMIT, no restriction
+#   mask value -1  -> SPEED_MASK_UNKNOWN
+#   otherwise      -> speed_limit = base + multiplier * value
+# with filter type 1 the limit is a PERCENTAGE of maximum speed, so a HIGH mask
+# value means FAST.  With base 0.0 / multiplier 1.0 the mask value *is* the
+# allowed percentage.  The filter reads the mask at the robot's own cell.
+
+/**/hearing_belief:
+  ros__parameters:
+    publish_markers: true
+    map_frame: "map"
+    # The consumer is the side that rotates.
+    # 'map'   = bearing is already absolute (Arena's HeardSoundEvent.bearing_rad).
+    # 'robot' = bearing is robot-frame CCW from +x (a front-end output).
+    # The launch file sets this from source:=bus|seld.
+    bearing_frame: "map"
+    use_listener_position_fallback: true
+    publish_rate_hz: 5.0
+
+    # --- grid ----------------------------------------------------------------
+    resolution: 0.0                          # 0 = inherit the map resolution
+    standalone_grid: false
+    standalone_origin: [-10.0, -10.0]
+    standalone_size: [20.0, 20.0]
+
+    # --- belief model --------------------------------------------------------
+    wedge_deg: 10.0
+    min_half_width_m: 0.3     # wedge never narrower than the array footprint
+    tau_sec: 2.0
+    max_range_m: 15.0
+    min_range_m: 0.5
+    reference_distance_m: 1.0
+    # false = flat wedge to max_range_m (ruling 4: level is not a range cue, and a
+    # wall costs ~7 dB on the bus, so an occluded pedestrian sounds twice as far).
+    use_level_range: false
+    range_sigma_frac: 0.35
+    range_floor_weight: 0.15
+    event_mass: 1.0
+    # belief 1.0 = steady state of one source emitting at this rate.  2 Hz is a
+    # walking pedestrian's footstep cadence on the Arena bus. The launch file
+    # sets 10.0 for the per-100-ms-frame SELDnet front-end.
+    nominal_event_rate_hz: 2.0
+    mass_full_scale: 0.0        # >0 overrides the rate-derived normalisation
+    emission_db_types: ["footstep", "greeting", "speech"]
+    emission_db_values: [45.0, 60.0, 60.0]
+    sound_types: ["footstep", "greeting", "speech"]
+
+# The CostmapFilterInfo publisher.  type 1 = speed limit in percent.
+/**/costmap_filter_info_server:
+  ros__parameters:
+    use_sim_time: true
+    type: 1
+    base: 0.0
+    multiplier: 1.0

@@ -22,6 +22,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `robot.arm` | string | `moveit` | Arm adapter kind |
 | `robot.planner` | string | `` (empty) | Top-level planner selector; resolves to `robot.mobile:=<adapter> robot.mobile.<selector>:=<name>` via `arena_planners.resolver` |
 | `robot.train` | bool string | `false` | Training mode: robot adapters route `cmd_vel` from the RL agent |
+| `robot.hearing` | `none` \| `bus` \| `seld` | `none` | Robot-side hearing layer ([arena_auditory.hearing](../../arena_auditory/README.md)): belief grid, Nav2 speed-filter mask merged into the robot's nav2 params, RViz displays. `bus` consumes simulator bus events, `seld` runs the SELDnet front-end on the four-mic array. Needs `auditory:=arena`. |
+| `robot.hearing.policy` | `belief` \| `listen` \| `full` | `full` | Hearing mask layers: belief only, plus the corner listen cap, plus creep-yield at blind bends ([arena_auditory.hearing](../../arena_auditory/README.md)). |
 | `robot.mobile.<key>:=<val>` | adapter-scoped | - | Override any kwarg the bound mobile adapter accepts. Lands as ROS param `robot.mobile.<key>` and overlays the cap-file YAML. Examples: `robot.mobile.local_planner:=teb`, `robot.mobile.global_planner:=smac`, `robot.mobile.agent:=jackal_pretrained`. |
 | `robot.arm.<key>:=<val>` | adapter-scoped | - | Same shape for the arm cap. |
 | `sim` | string | `gazebo` | Physics simulator: `dummy`, `gazebo`, or `isaac`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
@@ -47,7 +49,7 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `auditory.static_sounds` | YAML string | `[]` | World-independent `sound` entities (radios, alarms), as a flat list of the same `Sound` schema used in `world.yaml`. Non-empty adds `sounds` to `task.modules` (already on whenever `auditory` is not `none`). |
 | `auditory.motor` | `off` \| `wav` \| `procedural` | `procedural` | Robot motor audio source. |
 | `auditory.environment_playback` | bool string | `true` | Play propagated environment audio locally without disabling simulated emission. |
-| `microphone_mode` | `stereo` \| `four_mic` | `stereo` | Receiver layout; `four_mic` starts the synchronized Jackal raw PCM/hearing/headphone pipeline. |
+| `microphone_mode` | `stereo` \| `four_mic` | `stereo`, `four_mic` when `robot.hearing` is `seld` | Receiver layout; `four_mic` starts the synchronized Jackal raw PCM/hearing/headphone pipeline. |
 | `auditory.block_size` | int string | `2048` | Legacy playback callback size; the four-mic renderer uses its 320-frame configuration and reports/retries underflows itself. |
 | `auditory.assets` / `auditory.sound_dir` | paths | bundled files | Asset catalog and WAV directory shared by all playback nodes. |
 | `use_sim_time` | bool string | `true` | Use sim clock instead of wall clock |

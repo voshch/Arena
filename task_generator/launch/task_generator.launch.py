@@ -6,11 +6,12 @@ import time
 
 import launch
 import launch.event_handlers
+import launch.launch_description_sources
 import launch.substitutions
 import launch_ros.actions
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from arena_bringup.actions import IsolatedGroupAction
+from arena_bringup.actions import IsolatedGroupAction, IsolatedIncludeLaunchDescription
 from arena_bringup.defaults import default_human
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
@@ -228,9 +229,8 @@ def generate_launch_description() -> launch.LaunchDescription:
     )
     microphone_mode = LaunchArgument(
         name="microphone_mode",
-        choices=["stereo", "four_mic"],
-        default_value="stereo",
-        description="Robot receiver layout; four_mic enables synchronized Jackal raw PCM.",
+        default_value="",
+        description="Robot receiver layout, stereo or four_mic; four_mic enables synchronized Jackal raw PCM. Empty = stereo, or four_mic when robot.hearing is seld.",
     )
     auditory_viewport_height = LaunchArgument(
         name="auditory.viewport_height",
@@ -272,6 +272,18 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="robot.planner",
         default_value="",
         description="top-level planner selector; resolves to robot.mobile:=<adapter> robot.mobile.<selector>:=<name> via arena_planners.resolver",
+    )
+    hearing = LaunchArgument(
+        name="robot.hearing",
+        choices=["none", "bus", "seld"],
+        default_value="none",
+        description="Robot-side hearing layer (arena_auditory.hearing): belief grid, Nav2 speed-filter mask merged into the robot's nav2 params, RViz displays. Event source: the simulator bus, or the live SELDnet front-end on the four-mic array. Needs auditory:=arena.",
+    )
+    hearing_policy = LaunchArgument(
+        name="robot.hearing.policy",
+        choices=["belief", "listen", "full"],
+        default_value="full",
+        description="Hearing mask layers: belief only, plus the corner listen cap, plus yield.",
     )
     arm = LaunchArgument(
         name="robot.arm",
@@ -331,6 +343,11 @@ def generate_launch_description() -> launch.LaunchDescription:
 
         human_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(human.substitution)) or default_human(arena_sim)
         auditory_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(auditory.substitution))
+        hearing_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(hearing.substitution))
+        hearing_policy_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(hearing_policy.substitution))
+        microphone_mode_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(microphone_mode.substitution)) or ("four_mic" if hearing_val == "seld" else "stereo")
+        if hearing_val != "none" and auditory_val == "none":
+            raise RuntimeError(f"robot.hearing:={hearing_val} needs auditory:=arena")
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
         tm_modules_val = launch.utilities.perform_substitutions(
@@ -418,9 +435,27 @@ def generate_launch_description() -> launch.LaunchDescription:
                 **auditory_environment_playback.dict,
                 **auditory_listener.dict,
                 **auditory_microphones.dict,
-                **microphone_mode.dict,
+                "microphone_mode": microphone_mode_val,
                 **auditory_viewport_height.dict,
             }.items(),
+        )
+
+        # isolated: the parent's robot:=auto must not leak into the hearing nodes' robot binding
+        hearing_launch = launch.actions.GroupAction(
+            [
+                IsolatedIncludeLaunchDescription(
+                    launch.launch_description_sources.PythonLaunchDescriptionSource(
+                        os.path.join(get_package_share_directory("arena_auditory"), "launch", "hearing.launch.py"),
+                    ),
+                    args={
+                        "env_namespace": "/" + os.path.dirname(allocated_ns).strip("/"),
+                        "tg_node": os.path.basename(allocated_ns),
+                        "source": hearing_val,
+                        "policy": hearing_policy_val,
+                    },
+                )
+            ],
+            condition=launch.conditions.IfCondition(str(hearing_val != "none").lower()),
         )
 
         pedestrian_marker_node = launch_ros.actions.Node(
@@ -445,6 +480,8 @@ def generate_launch_description() -> launch.LaunchDescription:
                 # RobotManager._adapter_kwargs_for, overlaying the cap-file
                 # YAML for the bound adapter.
                 dotted_overrides[k] = launch_str_to_value(v)
+        if hearing_val != "none" and "robot.mobile.params_overlay" not in dotted_overrides:
+            dotted_overrides["robot.mobile.params_overlay"] = os.path.join(get_package_share_directory("arena_auditory"), "config", "hearing", "nav2_overlay.yaml")
         if _planner_selector_override is not None:
             sel_key, sel_val = _planner_selector_override
             param_key = f"robot.mobile.{sel_key}"
@@ -497,6 +534,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "human": human_val,
                     "auditory": auditory_val,
                     "robot.mobile_adapter": mobile_val,
+                    "robot.hearing": hearing_val,
                     "robot.arm_adapter": arm_val,
                     **robot.str_param,
                     "tm_robots": tm_robots.param_value(str),
@@ -561,7 +599,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         )
 
         env_actions: list[launch.LaunchDescriptionEntity] = [
-            IsolatedGroupAction([human_launch, auditory_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
+            IsolatedGroupAction([human_launch, auditory_launch, hearing_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
         ]
         if truthy(debug_flags.get("debug.aiomonitor")):
             env_actions.append(launch.actions.RegisterEventHandler(debug_window_cb))

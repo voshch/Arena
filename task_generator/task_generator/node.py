@@ -1006,6 +1006,23 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     group="Sound Propagation",
                 )
             )
+        if self.conf.Robot.HEARING.value != 'none':
+            for name, topic, topic_type, kind, style in (
+                ("Belief", f"{env_ns}/hearing/belief_grid", "nav_msgs/OccupancyGrid", DisplayKind.MAP, StyleSpec(alpha=0.6, extra={"rviz": {"Color Scheme": "costmap", "Durability Policy": "Volatile"}}).to_json()),
+                ("Speed Mask", f"{env_ns}/hearing/speed_filter_mask", "nav_msgs/OccupancyGrid", DisplayKind.MAP, StyleSpec(alpha=0.4, enabled=False, extra={"rviz": {"Color Scheme": "costmap"}}).to_json()),
+                ("Wedges", f"{env_ns}/hearing/belief_wedges", "visualization_msgs/MarkerArray", DisplayKind.MARKER_ARRAY, StyleSpec(enabled=True).to_json()),
+            ):
+                env_displays.append(
+                    AdapterDisplay(
+                        name=name,
+                        topic=topic,
+                        topic_type=topic_type,
+                        kind=kind,
+                        style_json=style,
+                        topic_must_exist=False,
+                        group="Hearing",
+                    )
+                )
         entries: list[AdapterEntry] = []
         for mgr in self._robots_manager.managers.values():
             ns_value = str(mgr.namespace)

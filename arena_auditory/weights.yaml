@@ -1,0 +1,13 @@
+# SELDnet front-end weights, fetched by `ros2 run arena_auditory hearing_setup` (or on first use)
+# into $ARENA_DATA_DIR/auditory/seld/. Same schema as the planners' weights.yaml.
+files:
+  - role: checkpoint
+    repo: arena-rosnav/auditory-seld
+    filename: seld_v1_dev_split0_multiaccdoa_mic_salsa_model.h5
+    dest: seld_v1_dev_split0_multiaccdoa_mic_salsa_model.h5
+    sha256: 8d92ca6c744081485979b047b20362cd7ea57a6ad830910bc29940e6a63f5b86
+  - role: scaler
+    repo: arena-rosnav/auditory-seld
+    filename: scaler.npz
+    dest: scaler.npz
+    sha256: 182adf269e665050816684c261865c8dd1a1a1a651133eda657ef520913986dc

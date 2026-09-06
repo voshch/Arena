@@ -922,3 +922,174 @@ speaker-device latency.
 - Node-side axis: `task_generator/task_generator/simulators/auditory/`
 - Nodes and DSP: `arena_auditory/arena_auditory/`
 - Human event generation: `arena_auditory/arena_auditory/auditory_events.py`
+
+## Robot-side hearing
+
+`arena_auditory.hearing` is the consumer side. `hearing_belief` turns
+`task_generator_msgs/HeardSoundEvent` into a decaying pedestrian-likelihood
+grid in the map frame and publishes it as an RViz `OccupancyGrid`
+(`hearing/belief_grid`) and a wedge `MarkerArray`. `hearing_policy` reads that
+grid and is the single writer of the Nav2 `SpeedFilter` mask
+(`hearing/speed_filter_mask`): a listen-then-yield policy that layers a
+corner-listen speed cap and a yield hold on top of the belief slowdown. A live
+SELDnet front-end turns the 4-mic `AudioFrame` stream into the same event
+message, so the belief node is source-agnostic.
+
+### Nodes and entry points
+
+| entry point | what it is |
+|---|---|
+| `hearing_belief_node` | belief grid (`hearing/belief_node.py`, estimator in `hearing/belief_grid.py`) |
+| `hearing_policy` | listen-then-yield, the single writer of the Nav2 speed-filter mask (`hearing/policy_node.py`, pure logic in `hearing/policy.py` and `hearing/corners.py`) |
+| `hearing_seld_frontend` | live SELDnet front-end: `AudioFrame` -> `HeardSoundEvent` at 10 Hz (`hearing/seld_frontend_node.py`, model in `hearing/seld.py`) |
+| `hearing_audio_replay` | publishes a 4-channel wav as `AudioFrame` blocks, for front-end tests |
+
+### Running in an Arena env
+
+`robot.hearing:=bus` on `arena launch` brings the layer up per env: it includes
+`launch/hearing.launch.py` next to the auditory sidecar, merges
+`config/hearing/nav2_overlay.yaml` (a `SpeedFilter` on the local costmap and
+the controller's `speed_limit_topic`) into the robot's Nav2 parameters through
+the nav2 adapter's `params_overlay`, and adds the belief, speed mask and wedge
+displays to the RViz that `arena launch` opens:
+
+    export ARENA_WORLD_PATH=$ARENA_WS_DIR/src/Arena/_assets/arena-benchmarks-prod-public/suites/acoustics/worlds
+    arena launch sim:=gazebo robot:=jackal world:=acoustics_bend_narrow_O \
+        task.robots:=scenario task.obstacles:=scenario \
+        task.scenario:=hearing__world-acoustics_bend_narrow_O__robot-moving__pedestrians-1__ends-a-to-b \
+        auditory:=arena robot.hearing:=bus
+
+`robot.hearing:=seld` runs the SELDnet front-end instead of the bus and
+implies `microphone_mode:=four_mic`. The nodes bind to the robot announced on
+`<tg_node>/state/robots`, so `robot:=auto` works; with several robots per env
+pass `robot:=<name>` to `hearing.launch.py` directly.
+
+Topics, all under the env namespace `/arena/env_0`:
+
+| direction | topic | note |
+|---|---|---|
+| in | `task_generator_node/jackal/heard_sound` | bus events from `robot_hearing_node`, BEST_EFFORT |
+| in | `task_generator_node/map` | grid geometry, TRANSIENT_LOCAL |
+| in | `task_generator_node/state/resetting` | clears the grid on episode reset |
+| in | `task_generator_node/jackal/plan` | robot's Nav2 global plan, for blind-bend detection |
+| in | tf `map -> env_0/jackal/base_link` | robot pose |
+| out | `hearing/speed_filter_mask` | `OccupancyGrid`, TRANSIENT_LOCAL, written by `hearing_policy`, read by the SpeedFilter |
+| out | `hearing/policy_state` | `std_msgs/String` JSON: state, dist_to_bend_m, frac_ahead, mass_ahead, mass_behind, mass_total, level_slope_db_s, limit_pct, binding_layer, yield_count, time_yielding_s |
+| out | `hearing/policy_markers` | approach lane and hold band |
+| out | `hearing/costmap_filter_info` | from `costmap_filter_info_server`, type 1 (percent) |
+| out | `hearing/speed_limit` | published by Nav2's SpeedFilter, consumed by `controller_server` |
+| out | `hearing/belief_grid`, `hearing/belief_wedges` | RViz |
+
+`source:=seld` starts the front-end on `task_generator_node/jackal/audio/raw_array`
+(the renderer's `AudioFrame`, 16 kHz x 4 ch, interleaved float, which exists
+only in `microphone_mode:=four_mic`) and consumes
+`task_generator_node/jackal/heard_sound_seld` with `bearing_frame: robot` and a
+10 Hz nominal event rate. The bus is map-frame and 2 Hz (`source:=bus`, the
+default).
+
+### Consumer semantics
+
+Nav2's `SpeedFilter` reads the mask at the robot's own cell and publishes
+`speed_limit` when it changes. The belief layer of the mask is the belief
+max-filtered over a disc of `reaction_radius_m` (2.0 m) before thresholding:
+the robot is slowed while likely pedestrian mass lies within that radius, from
+`speed_free_pct` (100) down to `speed_min_pct` (40) as the belief goes from
+`belief_threshold` (0.6) to 1, so one footstep does not floor the whole
+corridor. Those four now live in `config/hearing/policy.yaml`, read by
+`hearing_policy`, not on the belief node. The wedge itself is never narrower
+than `min_half_width_m` (0.3 m) so its apex carries full weight.
+
+`use_level_range` (default false) keeps the wedge flat out to `max_range_m`.
+On the bus a wall costs about 7 dB, so an occluded pedestrian sounds twice as
+far as it is; with the level-derived range the bump sits at 15 m and the
+speed limit barely moves before the corner.
+
+### Listen-then-yield
+
+`hearing_policy` composes `hearing/speed_filter_mask` from three layers by
+lowest nonzero percentage (0 stays "no limit" and never wins over an actual
+cap): belief (the dilated, thresholded `hearing/belief_grid`), listen
+(`listen_mps` painted on the approach to a blind bend), and hold (`hold_mps`
+on a short band before the bend while yielding). The extra layers exist
+because the robot's own drivetrain masks the pedestrian it is trying to hear:
+amplitude scales with speed^1 on the Jackal drivetrain, so at 0.5 m/s the
+noise floor masks footsteps beyond about 3 m, and slowing to 0.2 m/s pushes
+that horizon out to about 8 m.
+
+A plan point is blind when the map line from it to the point `lookahead_m`
+further along the plan crosses occupied cells; the bend is the first point
+after that where the line clears again. Bends are map-frame points tracked
+with `bend_hysteresis_m` hysteresis and a consumed latch (`rearm_after_m`), so
+a 1 Hz replan does not re-arm the corner it just cleared.
+
+State machine: cruise, listen once inside `approach_m` of the bend, yield once
+the fraction of total belief mass inside the `corner_radius_m` disc around the
+bend exceeds `yield_fraction`, release to pass once the mass has moved behind
+the robot, faded below `release_fraction`, or the received level has been
+falling for `recede_s` (each only after `min_yield_s` of silence), or
+unconditionally at `yield_timeout_s`. Pass takes the bend at listen speed,
+never full speed, so a pedestrian who yielded in turn is not driven into.
+
+Nav2 reads a 0 % mask as "no limit", so the hold is a `hold_mps` (0.03 m/s)
+creep rather than a stop, three times the progress checker's 0.2 m / 20 s
+threshold.
+
+`robot.hearing.policy:=belief|listen|full` on `arena launch` (`policy` on
+`hearing.launch.py`) picks how many layers are active. Parameters live in
+`config/hearing/policy.yaml`: `listen_mps` 0.2, `hold_mps` 0.03,
+`lookahead_m` 4.0, `approach_m` 4.0, `hold_len_m` 1.5, `hold_offset_m` 1.0,
+`lane_radius_m` 0.6, `corner_radius_m` 2.0, `bend_hysteresis_m` 1.0,
+`rearm_after_m` 3.0, `yield_fraction` 0.5, `release_fraction` 0.25,
+`min_yield_s` 3.0, `yield_timeout_s` 15.0, `recede_s` 2.0.
+
+v1 has no approach-versus-recede estimate beyond the level trend: presence
+near the bend yields regardless of whether the source is closing or
+receding.
+
+### Evaluation
+
+The arms are benchmark contestants, `contests/hearing.yaml` in arena_evaluation,
+run against the `acoustics` suite from the benchmark bucket:
+
+    arena evaluation benchmark --suite acoustics --contest hearing
+
+`yield_count` and `time_yielding_s` on `hearing/policy_state` are cumulative
+per env, so a metric over the recording differences them per episode.
+
+### Front-end checks
+
+    ros2 run arena_auditory hearing_seld_frontend --ros-args -r __ns:=/hearing_test
+    ros2 run arena_auditory hearing_audio_replay <4ch.wav> --topic /hearing_test/audio/raw_array
+
+`hearing.seld.SeldFrontend.events_from_wav` reproduces the DCASE per-file output
+(410/410 detections on the test clip, azimuths within 1e-5 deg, cuDNN noise).
+The streaming path re-runs the model on a 5 s sliding window once per 100 ms
+label frame and emits the frame `lookahead_frames` (default 5) before the
+window end, since the model is not causal.
+
+The model supplies detection and class. The bearing comes from
+`bearing_source`: `gcc` (default) fits the known array geometry to GCC-PHAT
+delays over the six mic pairs of the detection frame (`hearing/doa.py`), `seld`
+takes the model's azimuth. The shipped checkpoint's DOA head is front-biased:
+on the stock footstep rendered through the sim array at 3 m, sources at 0 and
+45 deg come back near 12 and 35 deg, but 90 deg left comes back near 2 deg,
+270 deg right near -34 deg, and a source directly behind puts a tenth of its
+detections within 10 deg of straight ahead. The fit is within 2 deg everywhere
+on the same clips (`tests/unit/test_seld_bearing.py`, the checkpoint half runs
+when the weights are fetched). With two simultaneous sources the fit follows the
+louder one, which is the one thing the model could in principle do better.
+
+### Weights
+
+The front-end needs two files, declared in `weights.yaml` with sha256 pins:
+the checkpoint (`.h5`, 5.3 MB) and the feature scaler (`scaler.npz`, mean and
+scale per feature bin, fitted on the checkpoint's training split, so the two
+only make sense together). They live on Hugging Face and land in
+`$ARENA_DATA_DIR/auditory/seld/`:
+
+    ros2 run arena_auditory hearing_setup
+
+The front-end node fetches them itself on first use when they are missing.
+The model architecture, SALSA-Lite feature extraction and multi-ACCDOA decode
+are in `hearing/dcase.py`, adapted from the DCASE 2023 SELD baseline
+(MIT), so no checkout of that repository is needed at runtime.

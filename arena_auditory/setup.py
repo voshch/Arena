@@ -12,8 +12,10 @@ setup(
     package_dir={'': '.'},
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name, ['package.xml', 'weights.yaml']),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'config', 'hearing'), glob('config/hearing/*.yaml')),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'sounds'), glob('sounds/*.wav')),
     ],
     install_requires=['setuptools'],
@@ -38,6 +40,11 @@ setup(
             'environment_sound_playback = arena_auditory.environment_sound_playback_node:main',
             'auditory_benchmark = arena_auditory.benchmark:main',
             'acoustic_world_audit = arena_auditory.acoustic_audit:main',
+            'hearing_belief_node = arena_auditory.hearing.belief_node:main',
+            'hearing_policy = arena_auditory.hearing.policy_node:main',
+            'hearing_seld_frontend = arena_auditory.hearing.seld_frontend_node:main',
+            'hearing_audio_replay = arena_auditory.hearing.audio_replay:main',
+            'hearing_setup = arena_auditory.hearing.weights:main',
         ]
     },
 )
