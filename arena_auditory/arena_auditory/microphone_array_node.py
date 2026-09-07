@@ -27,7 +27,9 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.time import Time as RosTime
+from rosgraph_msgs.msg import Clock as ClockMsg
 from std_msgs.msg import ColorRGBA, Float32MultiArray, String
 from task_generator_msgs.msg import (
     AudioFrame,
@@ -43,6 +45,7 @@ from arena_auditory.asset_lib import (
     CachedSample,
     footstep_material_tags,
 )
+from arena_auditory.lockstep import register_hard_channel
 from arena_auditory.procedural_audio import (
     DEFAULT_MOTOR_VOLUME_DB,
     DrivetrainRenderSource,
@@ -52,6 +55,7 @@ from arena_auditory.qos_profiles import (
     continuous_audio_qos,
     transient_event_qos,
 )
+from arena_auditory.render_clock import RenderCursor
 from arena_auditory.spatial_audio import (
     CHANNEL_NAMES,
     apply_monitor_controls,
@@ -131,6 +135,7 @@ class MicrophoneArrayNode(Node):
         self.declare_parameter("robot_name", "")
         self.declare_parameter("sample_rate", 16000)
         self.declare_parameter("block_size", 320)
+        self.declare_parameter("max_catchup_blocks", 10)
         self.declare_parameter("mic_array_width", 0.310)
         self.declare_parameter("mic_array_length", 0.420)
         self.declare_parameter("mic_height", 0.220)
@@ -199,6 +204,12 @@ class MicrophoneArrayNode(Node):
         self._publishers_ready = False
         self._cursor = 0
         self._stream_start_ns: int | None = None
+        self._render = RenderCursor(
+            block_ns=round(self.block_size * 1_000_000_000 / self.sample_rate),
+            max_catchup=max(int(self.get_parameter("max_catchup_blocks").value), 1),
+        )
+        self._reported_skipped = 0
+        self._render_behind = False
         self._clips: list[list[ScheduledClip]] = [[] for _ in CHANNEL_NAMES]
         self._event_loads: dict[str, EventLoad] = {}
         self._semantic_event_groups: dict[str, SemanticEventGroup] = {}
@@ -257,10 +268,12 @@ class MicrophoneArrayNode(Node):
             acoustic_metadata_qos(),
         )
         self.add_on_set_parameters_callback(self._on_parameters)
-        self.create_timer(
-            self.block_size / self.sample_rate,
-            self._publish_block,
-        )
+        if bool(self.get_parameter("use_sim_time").value):
+            # Render off /clock, not an rcl timer: a lockstep gate holding the
+            # clock for this node's block would never fire the timer.
+            self.create_subscription(ClockMsg, "/clock", self._on_clock, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
+        else:
+            self.create_timer(self.block_size / self.sample_rate, self._publish_block, clock=self._steady_clock)
         self.create_timer(0.25, self._publish_markers)
         self.create_timer(
             max(float(self.get_parameter("audio_retry_period_sec").value), 0.25),
@@ -310,15 +323,38 @@ class MicrophoneArrayNode(Node):
             transient_event_qos(),
         )
         self._publishers_ready = True
-        # Audio sample zero is anchored once in ROS simulation time. Every
-        # later block stamp is derived from the sample cursor, so timer jitter
-        # cannot desynchronize audio from robot/pedestrian poses.
-        self._stream_start_ns = self.get_clock().now().nanoseconds
+        # Audio sample zero is anchored once, on the first /clock under sim
+        # time. Every later block stamp is derived from the sample cursor, so
+        # timer jitter cannot desynchronize audio from robot/pedestrian poses.
+        if not bool(self.get_parameter("use_sim_time").value):
+            self._stream_start_ns = self._steady_clock.now().nanoseconds
         if str(self.get_parameter("audio_device").value).strip() not in {"", "none"}:
             with self._output_lock:
                 for _ in range(2):
                     self._output_blocks.append(np.zeros((self.block_size, 2), dtype=np.float32))
         self._open_audio_device()
+        if bool(self.get_parameter("use_sim_time").value):
+            register_hard_channel(
+                self,
+                name=f"audio/{self._robot_name}",
+                topic=self._raw_pub.topic_name,
+                msg_type="task_generator_msgs/msg/AudioFrame",
+                period_s=self.block_size / self.sample_rate,
+                env=self.get_namespace(),
+            )
+
+    def _on_clock(self, msg: ClockMsg) -> None:
+        if not self._publishers_ready:
+            return
+        now_ns = msg.clock.sec * 1_000_000_000 + msg.clock.nanosec
+        if self._stream_start_ns is None:
+            self._stream_start_ns = now_ns
+            self._render.start_ns = now_ns
+        render, skip = self._render.owed(now_ns)
+        for _ in range(render):
+            self._publish_block()
+        if skip:
+            self._cursor += skip * self.block_size
 
     def _listener_channel(self, listener_id: str) -> int | None:
         if not self._robot_name:
@@ -716,8 +752,6 @@ class MicrophoneArrayNode(Node):
     def _publish_block(self) -> None:
         if not self._publishers_ready:
             return
-        if self._stream_start_ns is None:
-            self._stream_start_ns = self.get_clock().now().nanoseconds
         block_start = self._cursor
         self._poll_loads()
         self._publish_procedural_activity_transitions(block_start)
@@ -765,7 +799,7 @@ class MicrophoneArrayNode(Node):
         levels = np.concatenate((np.asarray(rms(raw, axis=1)), [rms(hearing), rms(stereo[0]), rms(stereo[1])]))
         self._last_levels = levels.astype(np.float32)
         self._energy_pub.publish(Float32MultiArray(data=self._last_levels.tolist()))
-        if bool(self.get_parameter("tdoa_enabled").value):
+        if bool(self.get_parameter("tdoa_enabled").value) and self._tdoa_pub.get_subscription_count() > 0:
             self._publish_tdoa(raw, stamp)
         playback = stereo.T
         if str(self.get_parameter("monitor_mode").value) == "hearing":
@@ -1100,8 +1134,10 @@ class MicrophoneArrayNode(Node):
             queued = len(self._output_blocks)
         new_underflows = self._audio_underflows - self._reported_underflows
         new_overflows = self._audio_overflows - self._reported_overflows
+        new_skipped = self._render.skipped - self._reported_skipped
         self._reported_underflows = self._audio_underflows
         self._reported_overflows = self._audio_overflows
+        self._reported_skipped = self._render.skipped
         message = (
             "four-mic audio diagnostics: "
             f"robot={self._robot_name or None}, "
@@ -1119,8 +1155,14 @@ class MicrophoneArrayNode(Node):
             f"underflows={self._audio_underflows}, "
             f"overflows={self._audio_overflows}, "
             f"output_peak={self._audio_peak:.4f}, "
+            f"rendered={self._render.rendered}, skipped={self._render.skipped}, "
             f"status={self._audio_status!r}, error={self._stream_error!r}"
         )
+        if new_skipped > 0 and not self._render_behind:
+            self.get_logger().warning(f"four-mic render fell behind /clock, skipped {new_skipped} block(s) ({new_skipped * self.block_size / self.sample_rate:.2f} s of audio) to stay current")
+        elif self._render_behind and new_skipped == 0:
+            self.get_logger().info("four-mic render caught up with /clock")
+        self._render_behind = new_skipped > 0
         playback = str(self.get_parameter("audio_device").value).strip() not in {"", "none"}
         degraded = playback and (not active or new_underflows > 0 or new_overflows > 0)
         if degraded and not self._playback_degraded:

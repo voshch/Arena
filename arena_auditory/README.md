@@ -88,6 +88,17 @@ occlusion, reflection metadata and pyroomacoustics portal routing.
 Finite sound events use reliable volatile QoS: current subscribers receive
 each event without replaying stale clips to nodes that join later.
 
+The renderer is driven by `/clock`, not by an rcl timer: every clock message
+renders the 20 ms blocks it has covered, so sample zero stays anchored to the
+sim time of the first block and block stamps never drift behind the clock.
+When a clock message finds the render more than `max_catchup_blocks` (10)
+behind, the surplus blocks are skipped rather than rendered late: audio shows a
+gap, never a growing delay. Skips are counted in the diagnostics and warned
+once per lapse. Under `arena lockstep`, the node registers `raw_array` as a
+hard channel with one block per window, so the scheduler waits for every block
+instead and the skip path never fires. Without sim time (standalone tests) the
+renderer falls back to a steady-clock timer.
+
 ### Geometry and spacing
 
 The Jackal collision chassis in
@@ -221,9 +232,12 @@ accepts arbitrary PortAudio callback frame sizes, counts underflow/overflow,
 retries a failed device every two seconds, and logs `four-mic audio
 diagnostics` at debug level every five seconds. These diagnostics report
 received/accepted events, active WAV and drivetrain voices, stream/device
-state, queue depth, callback count, peak and the last PortAudio error. A
-warning is logged once when playback degrades (stream inactive, or new
-underflows/overflows in the period) and an info line once when it recovers.
+state, queue depth, callback count, peak, rendered/skipped block counts and
+the last PortAudio error. A warning is logged once when playback degrades
+(stream inactive, or new underflows/overflows in the period) and an info line
+once when it recovers, and likewise once when the render falls behind `/clock`
+and once when it catches up. `diagnostics/tdoa` is only computed while
+something subscribes to it.
 
 ### Simulator relationship
 

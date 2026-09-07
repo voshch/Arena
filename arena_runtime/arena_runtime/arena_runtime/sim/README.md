@@ -143,6 +143,9 @@ a `caller` replaces its set, an empty `channels[]` clears it, per-env
 registrations drop when their env despawns, and registrations merge into a
 running lockstep live. The arena_humansim adapter self-registers `engine`
 (hard) and `peds` (soft). The hunav adapter self-registers `roster` (hard).
+The arena_auditory microphone array (`microphone_mode:=four_mic`) registers
+`audio/<robot>` (hard, one 20 ms block) and renders off `/clock` for the same
+reason as the humansim engine below.
 The arena_robots task_server registers per-robot beats only while a goal is
 active: `nav/<robot>` (hard, pulsed per cmd_vel) during goto_pose for both
 nav2 (one controller period) and the goal-window passthrough stacks whose
