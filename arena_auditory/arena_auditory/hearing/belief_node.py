@@ -53,6 +53,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from arena_auditory.hearing.belief_grid import BeliefGrid, BeliefParams
 from arena_auditory.hearing.fleet import RobotBinding, bind_robot
+from arena_auditory.lockstep import register_hard_channel
 
 
 def transient_event_qos(depth: int = 50) -> QoSProfile:
@@ -171,8 +172,8 @@ class BeliefNode(Node):
         if bool(self.get_parameter("standalone_grid").value):
             self._build_standalone_grid()
 
-        rate = max(float(self.get_parameter("publish_rate_hz").value), 0.1)
-        self.create_timer(1.0 / rate, self._on_timer)
+        self._rate = max(float(self.get_parameter("publish_rate_hz").value), 0.1)
+        self.create_timer(1.0 / self._rate, self._on_timer)
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self.get_logger().info(f"hearing_belief up: bearing_frame={self.get_parameter('bearing_frame').value}")
@@ -191,6 +192,15 @@ class BeliefNode(Node):
         if not self._base_frame:
             self._base_frame = binding.base_frame
         self._bind_events(f"{binding.tg_node}/{binding.name}/{self.get_parameter('heard_sound_suffix').value}")
+        if bool(self.get_parameter("use_sim_time").value):
+            register_hard_channel(
+                self,
+                name=f"belief/{binding.name}",
+                topic=self._pub_belief.topic_name,
+                msg_type="nav_msgs/msg/OccupancyGrid",
+                period_s=1.1 / self._rate,
+                env=self.resolve_topic_name(binding.tg_node),
+            )
 
     def _read_belief_params(self) -> BeliefParams:
         g = self.get_parameter

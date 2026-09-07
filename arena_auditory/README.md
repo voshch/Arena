@@ -97,7 +97,10 @@ gap, never a growing delay. Skips are counted in the diagnostics and warned
 once per lapse. Under `arena lockstep`, the node registers `raw_array` as a
 hard channel with one block per window, so the scheduler waits for every block
 instead and the skip path never fires. Without sim time (standalone tests) the
-renderer falls back to a steady-clock timer.
+renderer falls back to a steady-clock timer. Detection (`hearing/<robot>`),
+belief (`belief/<robot>`) and the speed mask (`policy/<robot>`) are hard
+channels too, so under `lockstep:=true` a footstep at sim time t is in the
+mask by a fixed pipeline depth on any machine.
 
 ### Geometry and spacing
 

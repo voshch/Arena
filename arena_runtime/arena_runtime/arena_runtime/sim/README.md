@@ -146,6 +146,10 @@ running lockstep live. The arena_humansim adapter self-registers `engine`
 The arena_auditory microphone array (`microphone_mode:=four_mic`) registers
 `audio/<robot>` (hard, one 20 ms block) and renders off `/clock` for the same
 reason as the humansim engine below.
+`robot.hearing:=seld` also registers `hearing/<robot>` (hard, one 100 ms hop,
+`LockstepHeartbeat` stamped with the audio consumed), and the hearing stack
+registers `belief/<robot>` and `policy/<robot>` (hard, their publish periods)
+so the sim never runs ahead of the belief grid or the speed mask.
 The arena_robots task_server registers per-robot beats only while a goal is
 active: `nav/<robot>` (hard, pulsed per cmd_vel) during goto_pose for both
 nav2 (one controller period) and the goal-window passthrough stacks whose

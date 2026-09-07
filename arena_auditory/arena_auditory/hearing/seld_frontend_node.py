@@ -23,6 +23,7 @@ import math
 
 import numpy as np
 import rclpy
+from arena_runtime_msgs.msg import LockstepHeartbeat
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from task_generator_msgs.msg import AudioFrame, HeardSoundEvent, RobotFleet
@@ -33,6 +34,7 @@ from arena_auditory.hearing.doa import ArrayBearing
 from arena_auditory.hearing.fleet import bind_robot
 from arena_auditory.hearing.seld import SeldFrontend, SeldStream
 from arena_auditory.hearing.timeline import AudioTimeline
+from arena_auditory.lockstep import register_hard_channel
 
 
 class SeldFrontendNode(Node):
@@ -77,6 +79,7 @@ class SeldFrontendNode(Node):
         self._audio_qos = QoSProfile(depth=64)
         self._audio_qos.reliability = ReliabilityPolicy.RELIABLE if bool(g("audio_reliable").value) else ReliabilityPolicy.BEST_EFFORT
         self._pub = None
+        self._tick_pub = None
         self._listener_id = str(g("listener_id").value)
         self.get_logger().info(f"seld_frontend up on {self._fe.device}: window {self._fe.window_samples / self._fe.fs:.1f} s, lookahead {self._stream.lookahead} frames")
         if str(g("audio_topic").value):
@@ -87,7 +90,6 @@ class SeldFrontendNode(Node):
     def _bind(self, audio_topic: str, event_topic: str) -> None:
         self._pub = self.create_publisher(HeardSoundEvent, event_topic, transient_event_qos())
         self.create_subscription(AudioFrame, audio_topic, self._cb_audio, self._audio_qos)
-        self.create_timer(self._fe.label_hop_len / self._fe.fs, self._on_timer)
         self.create_timer(5.0, self._diag)
         self.get_logger().info(f"seld_frontend: audio {audio_topic!r} -> events {event_topic!r}")
 
@@ -100,6 +102,17 @@ class SeldFrontendNode(Node):
         if not self._listener_id:
             self._listener_id = f"robot:{binding.name}"
         self._bind(f"{binding.tg_node}/{binding.name}/audio/raw_array", f"{binding.tg_node}/{binding.name}/heard_sound_seld")
+        tick_topic = f"{binding.tg_node}/{binding.name}/lockstep/hearing"
+        self._tick_pub = self.create_publisher(LockstepHeartbeat, tick_topic, 10)
+        if bool(self.get_parameter("use_sim_time").value):
+            register_hard_channel(
+                self,
+                name=f"hearing/{binding.name}",
+                topic=self._tick_pub.topic_name,
+                msg_type="arena_runtime_msgs/msg/LockstepHeartbeat",
+                period_s=self._fe.label_hop_len / self._fe.fs,
+                env=self.resolve_topic_name(binding.tg_node),
+            )
 
     def _cb_audio(self, msg: AudioFrame) -> None:
         if int(msg.sample_rate) != self._fe.fs or int(msg.channel_count) < self._fe.nb_raw_ch:
@@ -118,10 +131,17 @@ class SeldFrontendNode(Node):
         if fill:
             self._stream.push(np.zeros((fill, ch), dtype=np.float32))
         self._stream.push(block)
+        while self._stream.ready():
+            self._step()
+        if self._tick_pub is not None:
+            end_ns = self._timeline.time_ns(self._timeline.samples)
+            beat = LockstepHeartbeat()
+            beat.header.stamp.sec = end_ns // 1_000_000_000
+            beat.header.stamp.nanosec = end_ns % 1_000_000_000
+            beat.header.frame_id = self._frame_id
+            self._tick_pub.publish(beat)
 
-    def _on_timer(self) -> None:
-        if self._timeline.start_ns is None or not self._stream.ready():
-            return
+    def _step(self) -> None:
         dets, end, seg = self._stream.step()
         self._n_frames += 1
         if not dets:

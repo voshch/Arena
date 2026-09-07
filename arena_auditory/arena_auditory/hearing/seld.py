@@ -211,7 +211,7 @@ class SeldStream:
         self.lookahead = int(lookahead)
         self._buf = np.zeros((frontend.window_samples, frontend.nb_raw_ch), dtype=np.float64)
         self.samples_seen = 0
-        self._last_step_at = -1
+        self._last_step_at = 0
 
     def push(self, block: np.ndarray) -> None:
         block = np.asarray(block, dtype=np.float64)
@@ -224,7 +224,7 @@ class SeldStream:
         self.samples_seen += n
 
     def ready(self) -> bool:
-        return self.samples_seen > self._last_step_at
+        return self.samples_seen - self._last_step_at >= self.fe.label_hop_len
 
     def step(self) -> tuple[list[Detection], int, np.ndarray]:
         """Returns (detections, end sample index of the emitted frame, that frame's samples plus the one before)."""

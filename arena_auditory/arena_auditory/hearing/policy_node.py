@@ -40,6 +40,7 @@ from arena_auditory.hearing.belief_node import latched_qos, transient_event_qos,
 from arena_auditory.hearing.corners import BlindBend, find_blind_bend
 from arena_auditory.hearing.fleet import RobotBinding, bind_robot
 from arena_auditory.hearing.policy import State, YieldMachine, YieldParams, compose_masks, mass_split, paint_lane
+from arena_auditory.lockstep import register_hard_channel
 
 
 class PolicyNode(Node):
@@ -130,7 +131,8 @@ class PolicyNode(Node):
         if reset_topic:
             self.create_subscription(Bool, reset_topic, self._cb_reset, latched_qos())
         self.create_subscription(RobotFleet, str(g("robot_fleet_topic").value), self._cb_fleet, latched_qos())
-        self.create_timer(1.0 / max(float(g("publish_rate_hz").value), 0.1), self._on_timer)
+        self._rate = max(float(g("publish_rate_hz").value), 0.1)
+        self.create_timer(1.0 / self._rate, self._on_timer)
         self.get_logger().info(f"hearing_policy up: listen={bool(g('listen_enabled').value)} yield={bool(g('yield_enabled').value)}")
 
     def _cb_fleet(self, msg: RobotFleet) -> None:
@@ -148,6 +150,15 @@ class PolicyNode(Node):
         self.create_subscription(Path, f"{prefix}/{self.get_parameter('plan_suffix').value}", self._cb_plan, 1)
         self.create_subscription(HeardSoundEvent, f"{prefix}/{self.get_parameter('heard_sound_suffix').value}", self._cb_event, transient_event_qos())
         self.get_logger().info(f"hearing_policy bound to {binding.name}: base {self._base_frame}, max {self._max_mps:.2f} m/s")
+        if bool(self.get_parameter("use_sim_time").value):
+            register_hard_channel(
+                self,
+                name=f"policy/{binding.name}",
+                topic=self._pub_mask.topic_name,
+                msg_type="nav_msgs/msg/OccupancyGrid",
+                period_s=1.1 / self._rate,
+                env=self.resolve_topic_name(binding.tg_node),
+            )
 
     def _cb_map(self, msg: OccupancyGrid) -> None:
         self._map = msg
