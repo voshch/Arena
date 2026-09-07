@@ -8,7 +8,7 @@
 [submodule "arena_evaluation"]
 	path = arena_evaluation
 	url = https://github.com/voshch/arena-evaluation.git
-	branch = jazzy
+	branch = feature/auditory-nav
 	update = checkout
 [submodule "arena_isaac"]
 	path = arena_isaac
