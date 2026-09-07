@@ -924,9 +924,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 topic_must_exist=False,
             ),
         ]
+        latched = StyleSpec(extra={"rviz": {"Reliability Policy": "Reliable", "Durability Policy": "Transient Local"}}).to_json()
         human_sim = self.conf.Arena.HUMAN.value
         if human_sim not in (Constants.HumanSimulator.DUMMY, Constants.HumanSimulator.NONE):
-            latched = StyleSpec(extra={"rviz": {"Reliability Policy": "Reliable", "Durability Policy": "Transient Local"}}).to_json()
             env_displays.append(
                 AdapterDisplay(
                     name="Pedestrians",
