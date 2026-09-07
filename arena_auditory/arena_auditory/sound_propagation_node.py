@@ -78,6 +78,11 @@ from arena_auditory.qos_profiles import (
     transient_event_qos,
 )
 
+# Fraction of the RIR peak magnitude at which the direct arrival is declared. The
+# fractional-delay filter pyroomacoustics uses rings at roughly 0.2 of its main lobe,
+# so this sits just above that.
+DIRECT_ARRIVAL_RELATIVE_THRESHOLD = 0.25
+
 
 class SoundPropagationNode(Node):
     def __init__(self, **kwargs: object) -> None:
@@ -1958,10 +1963,19 @@ class SoundPropagationNode(Node):
         if samples.size == 0 or not np.isfinite(samples).all():
             raise ValueError("RIR contains no finite samples")
 
-        peak_index = int(np.argmax(np.abs(samples)))
-        peak_amplitude = max(float(np.max(np.abs(samples))), 1e-12)
+        magnitude = np.abs(samples)
+        peak_index = int(np.argmax(magnitude))
+        peak_amplitude = max(float(magnitude[peak_index]), 1e-12)
         gain_db = 20.0 * math.log10(peak_amplitude)
-        delay_sec = (rir.global_delay_samples + peak_index) / float(rir.sample_rate_hz)
+        # The direct arrival is the first significant one, not the loudest. A floor,
+        # ceiling or wall reflection routinely exceeds the direct path, independently
+        # per microphone, which scatters the inter-channel delays the array reads its
+        # direction cue from. Searching only up to the peak makes this a no-op whenever
+        # the direct path is already the maximum.
+        arrival_threshold = peak_amplitude * DIRECT_ARRIVAL_RELATIVE_THRESHOLD
+        arrivals = np.flatnonzero(magnitude[: peak_index + 1] >= arrival_threshold)
+        direct_index = int(arrivals[0]) if arrivals.size else peak_index
+        delay_sec = (rir.global_delay_samples + direct_index) / float(rir.sample_rate_hz)
 
         # Report a conservative late-energy estimate as reverb gain. The
         # message schema has no RIR field; audio convolution is a later stage.
