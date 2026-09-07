@@ -72,6 +72,10 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="auditory.robot_sound",
         default_value="true",
     )
+    auditory_source_volume_db = LaunchArgument(
+        name="auditory.source_volume_db",
+        default_value="45.0",
+    )
     auditory_motor = LaunchArgument(
         name="auditory.motor",
         choices=["off", "wav", "procedural"],
@@ -143,6 +147,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 **auditory_rir_in_propagation.dict,
                 **auditory_ped_hearing.dict,
                 **auditory_robot_sound.dict,
+                **auditory_source_volume_db.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
                 **auditory_motor_mems_calibration.dict,

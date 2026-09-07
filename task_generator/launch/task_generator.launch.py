@@ -190,6 +190,11 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="true",
         description="Let robots emit motor audio (robots stay listeners regardless).",
     )
+    auditory_source_volume_db = LaunchArgument(
+        name="auditory.source_volume_db",
+        default_value="45.0",
+        description="Drivetrain (robot motor) source level in dB; lower it to attenuate ego-noise (39.0 = 6 dB down).",
+    )
     auditory_motor = LaunchArgument(
         name="auditory.motor",
         choices=["off", "wav", "procedural"],
@@ -429,6 +434,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 **auditory_rir_in_propagation.dict,
                 **auditory_ped_hearing.dict,
                 **auditory_robot_sound.dict,
+                **auditory_source_volume_db.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
                 **auditory_motor_mems_calibration.dict,

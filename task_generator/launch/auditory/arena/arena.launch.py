@@ -73,6 +73,10 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="auditory.robot_sound",
         default_value="true",
     )
+    auditory_source_volume_db = LaunchArgument(
+        name="auditory.source_volume_db",
+        default_value="45.0",
+    )
     auditory_motor = LaunchArgument(
         name="auditory.motor",
         choices=["off", "wav", "procedural"],
@@ -404,7 +408,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                         "sound_type": "motor",
                         "motor_start_asset_id": "motor_start",
                         "motor_stop_asset_id": "motor_stop",
-                        "source_volume_db": 45.0,
+                        "source_volume_db": auditory_source_volume_db.param_value(float),
                         "publish_period_sec": 0.05,
                         "only_when_moving": True,
                         "min_speed_mps": 0.05,
