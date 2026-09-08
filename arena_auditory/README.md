@@ -206,18 +206,40 @@ interleaved float32 PCM. For a robot named `jackal`, topics end in:
 - `jackal/audio/mic_rear_left`
 - `jackal/audio/mic_rear_right`
 - `jackal/audio/raw_array` with order FL, FR, RL, RR
+- `jackal/audio/stem_motor`, the ego-noise stem of the same mix
 - `jackal/audio/hearing/mono`
 - `jackal/audio/hearing/energy`
 - `jackal/audio/headphones/left`
 - `jackal/audio/headphones/right`
 - `jackal/audio/headphones/stereo`
 - `jackal/audio/diagnostics/tdoa`
+- `jackal/audio/diagnostics/render_inputs`
 
 `hearing/mono` is a diagnostic signal that selects the highest-RMS raw channel
 per block instead of phase-averaging asynchronous signals. It is not the normal
 headphone presentation. `hearing/energy` carries linear RMS in
 the order FL, FR, RL, RR, hearing, headphone L, headphone R. The canonical
 research observation remains the unchanged four-channel `raw_array`.
+
+`stem_motor` is the ego-noise half of that same mix: an `AudioFrame` with the
+same channel order, stamp and monitor controls as `raw_array`, carrying only
+the procedural drivetrain contribution. It is tapped before the output clip
+while `raw_array` is published after it, so `raw_array - stem_motor` is the
+pedestrian stem exactly and remixing an episode at a different ego-noise
+attenuation is exact as well, for every block that did not clip. Clipping
+breaks the identity because it is applied to the sum and not to either stem.
+The audio diagnostics carry a running clipped-sample count for this reason: a
+recording whose count is nonzero is compromised for remixing, and the two
+stems no longer add back to what was published.
+
+`diagnostics/render_inputs` is a `std_msgs/String` carrying one JSON object per
+rendered block: the block index, the clips starting in that block, and the
+complete live set of WAV and drivetrain voices with their gains, delays and
+tuning. It is the complete input state of the block rather than a delta, so an
+offline renderer can reproduce a recorded episode's audio from the trace alone,
+with no message history and without re-running the simulator. Launch pins
+`OMP_NUM_THREADS=1` on the node so the reduction order does not vary with
+thread count and the offline render matches the live one bit for bit.
 
 Headphone monitoring uses
 `L=(front_gain*FL + rear_gain*RL)/gain_sum` and the corresponding right-side
@@ -235,11 +257,11 @@ accepts arbitrary PortAudio callback frame sizes, counts underflow/overflow,
 retries a failed device every two seconds, and logs `four-mic audio
 diagnostics` at debug level every five seconds. These diagnostics report
 received/accepted events, active WAV and drivetrain voices, stream/device
-state, queue depth, callback count, peak, rendered/skipped block counts and
-the last PortAudio error. A warning is logged once when playback degrades
-(stream inactive, or new underflows/overflows in the period) and an info line
-once when it recovers, and likewise once when the render falls behind `/clock`
-and once when it catches up. `diagnostics/tdoa` is only computed while
+state, queue depth, callback count, peak, rendered/skipped block counts,
+clipped samples and the last PortAudio error. A warning is logged once when
+playback degrades (stream inactive, or new underflows/overflows in the period)
+and an info line once when it recovers, and likewise once when the render falls
+behind `/clock` and once when it catches up. `diagnostics/tdoa` is only computed while
 something subscribes to it.
 
 ### Simulator relationship

@@ -39,6 +39,7 @@ setup(
             'human_sound_playback = arena_auditory.human_sound_playback_node:main',
             'environment_sound_playback = arena_auditory.environment_sound_playback_node:main',
             'auditory_benchmark = arena_auditory.benchmark:main',
+            'auditory_offline_render = arena_auditory.offline_render:main',
             'acoustic_world_audit = arena_auditory.acoustic_audit:main',
             'hearing_belief_node = arena_auditory.hearing.belief_node:main',
             'hearing_policy = arena_auditory.hearing.policy_node:main',

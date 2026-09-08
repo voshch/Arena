@@ -360,6 +360,9 @@ def generate_launch_description() -> launch.LaunchDescription:
                         "motor_mems_calibration_db": auditory_motor_mems_calibration.param_value(float),
                     },
                 ],
+                # Single-threaded BLAS pins the block reduction order, so an
+                # offline re-render of a recording matches bit for bit.
+                additional_env={"OMP_NUM_THREADS": "1"},
             ),
             Node(
                 package='arena_auditory',

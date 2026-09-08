@@ -13,10 +13,11 @@ import json
 import math
 import os
 import threading
-import time
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from arena_auditory.asset_lib import (
     AcousticAssetCatalog,
+    AcousticSample,
     CachedSample,
     footstep_material_tags,
 )
@@ -56,28 +58,30 @@ from arena_auditory.qos_profiles import (
     transient_event_qos,
 )
 from arena_auditory.render_clock import RenderCursor
+from arena_auditory.render_core import (
+    ClipInput,
+    ContinuousInput,
+    DrivetrainInput,
+    DrivetrainTuning,
+    RenderInputs,
+    RenderParams,
+    RenderState,
+    prepare_clip,
+    render_block,
+    render_inputs_to_json,
+)
 from arena_auditory.spatial_audio import (
     CHANNEL_NAMES,
     apply_monitor_controls,
-    calibrate_mems,
     dbfs_from_rms,
-    fractional_delay,
     gcc_phat,
     headphone_stereo,
     hearing_waveform,
     interleave,
     monitor_amplify,
-    ramped_read,
     rectangular_array,
     rms,
-    streaming_fractional_delays,
 )
-
-
-@dataclass(slots=True)
-class ScheduledClip:
-    start: int
-    samples: np.ndarray
 
 
 @dataclass(slots=True)
@@ -93,32 +97,6 @@ class EventLoad:
 class SemanticEventGroup:
     messages: dict[int, HeardSoundEvent]
     updated_at: float
-
-
-@dataclass(slots=True)
-class ContinuousVoice:
-    samples: np.ndarray
-    program_start: int
-    delay_samples: float
-    delay_target: float
-    gain: float
-    loop: bool
-    active: bool
-
-
-@dataclass(slots=True)
-class ProceduralArrayVoice:
-    source: DrivetrainRenderSource
-    deterministic_seed: int
-    gains: np.ndarray
-    delay_samples: np.ndarray
-    active_channels: np.ndarray
-    source_id: str
-    source_agent_id: int
-    source_agent_name: str
-    sound_type: str
-    asset_id: str
-    history: np.ndarray | None = None
 
 
 @dataclass(slots=True)
@@ -199,10 +177,17 @@ class MicrophoneArrayNode(Node):
             max_workers=1,
             thread_name_prefix="array_drivetrain_loader",
         )
+        self._sim_time = bool(self.get_parameter("use_sim_time").value)
         self._robot_name = str(self.get_parameter("robot_name").value).strip()
         self._robot_frame_prefix = ""
         self._publishers_ready = False
-        self._cursor = 0
+        self._render_state = RenderState()
+        self._render_params = RenderParams(
+            block_size=self.block_size,
+            sample_rate=self.sample_rate,
+            resolve=self._resolve_asset,
+            log_error=self.get_logger().error,
+        )
         self._stream_start_ns: int | None = None
         self._render = RenderCursor(
             block_ns=round(self.block_size * 1_000_000_000 / self.sample_rate),
@@ -210,13 +195,15 @@ class MicrophoneArrayNode(Node):
         )
         self._reported_skipped = 0
         self._render_behind = False
-        self._clips: list[list[ScheduledClip]] = [[] for _ in CHANNEL_NAMES]
+        self._asset_specs: dict[str, AcousticSample] = {}
+        self._pending_clips: list[ClipInput] = []
+        self._clipped_samples = 0
         self._event_loads: dict[str, EventLoad] = {}
         self._semantic_event_groups: dict[str, SemanticEventGroup] = {}
         self._fused_events = 0
         self._incomplete_semantic_events = 0
-        self._continuous: dict[tuple[str, int], ContinuousVoice] = {}
-        self._procedural: dict[str, ProceduralArrayVoice] = {}
+        self._continuous_sources: dict[tuple[str, int], ContinuousInput] = {}
+        self._drivetrain_sources: dict[str, DrivetrainInput] = {}
         self._procedural_pending: dict[str, ProceduralLoad] = {}
         self._reported_procedural_activity: dict[tuple[str, int], bool] = {}
         self._continuous_pending: dict[tuple[str, int], tuple[Future[CachedSample], ContinuousHeardSoundState]] = {}
@@ -268,7 +255,7 @@ class MicrophoneArrayNode(Node):
             acoustic_metadata_qos(),
         )
         self.add_on_set_parameters_callback(self._on_parameters)
-        if bool(self.get_parameter("use_sim_time").value):
+        if self._sim_time:
             # Render off /clock, not an rcl timer: a lockstep gate holding the
             # clock for this node's block would never fire the timer.
             self.create_subscription(ClockMsg, "/clock", self._on_clock, QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
@@ -316,7 +303,9 @@ class MicrophoneArrayNode(Node):
         self._headphone_left_pub = self.create_publisher(AudioFrame, f"{prefix}/headphones/left", 10)
         self._headphone_right_pub = self.create_publisher(AudioFrame, f"{prefix}/headphones/right", 10)
         self._headphone_pub = self.create_publisher(AudioFrame, f"{prefix}/headphones/stereo", 10)
+        self._motor_stem_pub = self.create_publisher(AudioFrame, f"{prefix}/stem_motor", 10)
         self._tdoa_pub = self.create_publisher(String, f"{prefix}/diagnostics/tdoa", 10)
+        self._render_inputs_pub = self.create_publisher(String, f"{prefix}/diagnostics/render_inputs", 10)
         self._activity_pub = self.create_publisher(
             RenderedSoundActivity,
             f"{prefix}/rendered_sound_activity",
@@ -326,14 +315,14 @@ class MicrophoneArrayNode(Node):
         # Audio sample zero is anchored once, on the first /clock under sim
         # time. Every later block stamp is derived from the sample cursor, so
         # timer jitter cannot desynchronize audio from robot/pedestrian poses.
-        if not bool(self.get_parameter("use_sim_time").value):
+        if not self._sim_time:
             self._stream_start_ns = self._steady_clock.now().nanoseconds
         if str(self.get_parameter("audio_device").value).strip() not in {"", "none"}:
             with self._output_lock:
                 for _ in range(2):
                     self._output_blocks.append(np.zeros((self.block_size, 2), dtype=np.float32))
         self._open_audio_device()
-        if bool(self.get_parameter("use_sim_time").value):
+        if self._sim_time:
             register_hard_channel(
                 self,
                 name=f"audio/{self._robot_name}",
@@ -354,7 +343,17 @@ class MicrophoneArrayNode(Node):
         for _ in range(render):
             self._publish_block()
         if skip:
-            self._cursor += skip * self.block_size
+            self._render_state.cursor += skip * self.block_size
+        self._report_render_skips()
+
+    def _report_render_skips(self) -> None:
+        new_skipped = self._render.skipped - self._reported_skipped
+        self._reported_skipped = self._render.skipped
+        if new_skipped > 0 and not self._render_behind:
+            self.get_logger().error(f"four-mic render fell behind /clock, skipped {new_skipped} block(s) ({new_skipped * self.block_size / self.sample_rate:.2f} s of audio) to stay current: those blocks carry no render_inputs trace and cannot be re-rendered offline")
+        elif self._render_behind and new_skipped == 0:
+            self.get_logger().info("four-mic render caught up with /clock")
+        self._render_behind = new_skipped > 0
 
     def _listener_channel(self, listener_id: str) -> int | None:
         if not self._robot_name:
@@ -369,6 +368,17 @@ class MicrophoneArrayNode(Node):
             if listener_id == f"{self._robot_name}_mic_{name}":
                 return index
         return None
+
+    def _submit[T](self, executor: ThreadPoolExecutor, work: Callable[[], T]) -> Future[T]:
+        """Load off-thread in real time, inline under sim time where onset must be a function of sim time alone."""
+        if not self._sim_time:
+            return executor.submit(work)
+        future: Future[T] = Future()
+        try:
+            future.set_result(work())
+        except Exception as exc:
+            future.set_exception(exc)
+        return future
 
     def _on_heard_event(self, msg: HeardSoundEvent) -> None:
         self._heard_events += 1
@@ -396,15 +406,15 @@ class MicrophoneArrayNode(Node):
         if load is None:
             _, spec = selected
             load = EventLoad(
-                future=self._loader.submit(self._catalog.load, spec),
+                future=self._submit(self._loader, partial(self._catalog.load, spec)),
                 messages={},
                 scheduled_channels=set(),
-                anchor=self._cursor + 4 * self.block_size,
-                updated_at=time.monotonic(),
+                anchor=self._render_state.cursor + 4 * self.block_size,
+                updated_at=self._render_time(),
             )
             self._event_loads[event_id] = load
         load.messages[channel] = msg
-        load.updated_at = time.monotonic()
+        load.updated_at = self._render_time()
 
     @staticmethod
     def _event_key(msg: HeardSoundEvent) -> str:
@@ -418,10 +428,10 @@ class MicrophoneArrayNode(Node):
     ) -> None:
         group = self._semantic_event_groups.get(event_id)
         if group is None:
-            group = SemanticEventGroup(messages={}, updated_at=time.monotonic())
+            group = SemanticEventGroup(messages={}, updated_at=self._render_time())
             self._semantic_event_groups[event_id] = group
         group.messages[channel] = msg
-        group.updated_at = time.monotonic()
+        group.updated_at = self._render_time()
         if len(group.messages) == len(CHANNEL_NAMES):
             self._publish_fused_semantic_event(event_id, group)
 
@@ -468,19 +478,21 @@ class MicrophoneArrayNode(Node):
             return
         key = (str(msg.source_id), channel)
         if not msg.active or not msg.audible:
-            self._continuous.pop(key, None)
+            self._continuous_sources.pop(key, None)
             pending = self._continuous_pending.pop(key, None)
             if pending is not None:
                 pending[0].cancel()
             return
-        voice = self._continuous.get(key)
-        if voice is not None:
-            voice.gain = self._samples_spl_gain(
-                float(msg.received_volume_db),
-                voice.samples,
+        source = self._continuous_sources.get(key)
+        if source is not None:
+            self._continuous_sources[key] = replace(
+                source,
+                gain=self._samples_spl_gain(
+                    float(msg.received_volume_db),
+                    self._resolve_asset(source.asset_key),
+                ),
+                delay_target=self._delay_samples(msg),
             )
-            voice.delay_target = self._delay_samples(msg)
-            voice.active = True
             return
         if key in self._continuous_pending:
             future, _ = self._continuous_pending[key]
@@ -491,7 +503,8 @@ class MicrophoneArrayNode(Node):
         if selected is None:
             return
         _, spec = selected
-        self._continuous_pending[key] = (self._loader.submit(self._catalog.load, spec), msg)
+        self._asset_specs[str(spec.sample_id)] = spec
+        self._continuous_pending[key] = (self._submit(self._loader, partial(self._catalog.load, spec)), msg)
 
     def _on_drivetrain(
         self,
@@ -500,12 +513,12 @@ class MicrophoneArrayNode(Node):
     ) -> None:
         source_id = str(msg.source_id)
         seed = int(msg.deterministic_seed)
-        voice = self._procedural.get(source_id)
-        if voice is not None and voice.deterministic_seed == seed:
-            self._apply_drivetrain_message(voice, msg, channel)
+        source = self._drivetrain_sources.get(source_id)
+        if source is not None and source.deterministic_seed == seed:
+            self._apply_drivetrain_message(source_id, msg, channel)
             return
-        if voice is not None:
-            self._procedural.pop(source_id, None)
+        if source is not None:
+            self._drivetrain_sources.pop(source_id, None)
 
         pending = self._procedural_pending.get(source_id)
         if pending is not None and pending.deterministic_seed != seed:
@@ -516,10 +529,9 @@ class MicrophoneArrayNode(Node):
             if not msg.active:
                 return
             pending = ProceduralLoad(
-                future=self._procedural_loader.submit(
-                    self._make_drivetrain_source,
-                    seed,
-                    self._motor_tuning(),
+                future=self._submit(
+                    self._procedural_loader,
+                    partial(self._make_drivetrain_source, seed, self._motor_tuning()),
                 ),
                 deterministic_seed=seed,
                 messages={},
@@ -543,23 +555,28 @@ class MicrophoneArrayNode(Node):
 
     def _apply_drivetrain_message(
         self,
-        voice: ProceduralArrayVoice,
+        source_id: str,
         msg: ContinuousHeardSoundState,
         channel: int,
     ) -> None:
+        source = self._drivetrain_sources[source_id]
         active = bool(msg.active and msg.audible and self.get_parameter("motor_enabled").value)
-        voice.active_channels[channel] = active
+        active_channels = list(source.active_channels)
+        active_channels[channel] = active
         propagation_gain_db = float(msg.received_volume_db) - float(msg.source_volume_db) if active else 0.0
-        voice.gains[channel] = 10.0 ** (propagation_gain_db / 20.0) if active else 0.0
+        gains = list(source.gains)
+        gains[channel] = 10.0 ** (propagation_gain_db / 20.0) if active else 0.0
         direct_delay = float(msg.direct_delay_sec) * self.sample_rate
-        voice.delay_samples[channel] = direct_delay if math.isfinite(direct_delay) and direct_delay >= 0.0 else 0.0
-        voice.source.update(
+        delay_samples = list(source.delay_samples)
+        delay_samples[channel] = direct_delay if math.isfinite(direct_delay) and direct_delay >= 0.0 else 0.0
+        self._drivetrain_sources[source_id] = replace(
+            source,
+            gains=tuple(gains),
+            delay_samples=tuple(delay_samples),
+            active_channels=tuple(active_channels),
             left_velocity=float(msg.left_velocity_mps),
             right_velocity=float(msg.right_velocity_mps),
-            gain_db=0.0,
-            active=bool(np.any(voice.active_channels)),
-            impulse=None,
-            rir_signature=None,
+            active=any(active_channels),
         )
 
     def _motor_tuning(self) -> dict[str, float]:
@@ -572,8 +589,16 @@ class MicrophoneArrayNode(Node):
             "velocity_smoothing_seconds": float(self.get_parameter("motor_velocity_smoothing_sec").value),
         }
 
+    def _resolve_asset(self, asset_key: str) -> np.ndarray:
+        sample = self._catalog.load(self._asset_specs[asset_key])
+        return np.ascontiguousarray(np.asarray(sample.samples[:, 0], dtype=np.float32))
+
+    def _render_time(self) -> float:
+        """Seconds of audio rendered so far, the same clock the anchors use."""
+        return self._render_state.cursor / self.sample_rate
+
     def _poll_loads(self) -> None:
-        now = time.monotonic()
+        now = self._render_time()
         semantic_timeout = max(
             float(self.get_parameter("semantic_group_timeout_sec").value),
             0.1,
@@ -598,22 +623,31 @@ class MicrophoneArrayNode(Node):
                 # unscheduled event as a unit, retaining all physical deltas.
                 load.anchor = max(
                     load.anchor,
-                    self._cursor + 2 * self.block_size,
+                    self._render_state.cursor + 2 * self.block_size,
                 )
             for channel, msg in load.messages.items():
                 if channel in load.scheduled_channels:
                     continue
-                mono = sample.samples[:, 0]
-                calibrated = calibrate_mems(
-                    mono,
+                sensitivity = float(self.get_parameter("sensitivity_dbfs_at_94_dbspl").value)
+                delay_samples = float(msg.direct_delay_sec) * self.sample_rate
+                delay, delayed = prepare_clip(
+                    sample.samples[:, 0],
                     float(msg.received_volume_db),
-                    sensitivity_dbfs_at_94_dbspl=float(self.get_parameter("sensitivity_dbfs_at_94_dbspl").value),
+                    sensitivity,
+                    delay_samples,
                 )
-                delay, delayed = fractional_delay(
-                    calibrated,
-                    float(msg.direct_delay_sec) * self.sample_rate,
+                self._pending_clips.append(
+                    ClipInput(
+                        channel=channel,
+                        start=load.anchor + delay,
+                        asset_key=str(sample.sample_id),
+                        samples=delayed,
+                        anchor=load.anchor,
+                        received_volume_db=float(msg.received_volume_db),
+                        sensitivity_dbfs_at_94_dbspl=sensitivity,
+                        delay_samples=delay_samples,
+                    )
                 )
-                self._clips[channel].append(ScheduledClip(load.anchor + delay, delayed))
                 self._publish_discrete_activity(
                     event_id,
                     channel,
@@ -638,19 +672,19 @@ class MicrophoneArrayNode(Node):
                 self.get_logger().error(f"continuous raw-array asset decode failed: {exc}")
                 continue
             delay_samples = self._delay_samples(msg)
-            mono = np.asarray(sample.samples[:, 0], dtype=np.float32)
             elapsed = max(
                 self.get_clock().now().nanoseconds - (int(msg.program_start_time.sec) * 1_000_000_000 + int(msg.program_start_time.nanosec)),
                 0,
             )
-            self._continuous[key] = ContinuousVoice(
-                samples=np.ascontiguousarray(mono),
-                program_start=self._cursor - round(elapsed * self.sample_rate / 1e9),
-                delay_samples=delay_samples,
-                delay_target=delay_samples,
+            source_id, source_channel = key
+            self._continuous_sources[key] = ContinuousInput(
+                source_id=source_id,
+                channel=source_channel,
+                asset_key=str(sample.sample_id),
                 gain=self._spl_gain(float(msg.received_volume_db), sample),
+                delay_target=delay_samples,
                 loop=bool(msg.loop),
-                active=True,
+                program_start=self._render_state.cursor - round(elapsed * self.sample_rate / 1e9),
             )
 
         for source_id, pending in tuple(self._procedural_pending.items()):
@@ -659,27 +693,30 @@ class MicrophoneArrayNode(Node):
             self._procedural_pending.pop(source_id, None)
             if pending.future.cancelled():
                 continue
+            # The worker call only warms the shared noise field cache.
             try:
-                source = pending.future.result()
+                pending.future.result()
             except Exception as exc:
                 self.get_logger().error(f"procedural drivetrain initialization failed: {exc}")
                 continue
-            source.tune(**self._motor_tuning())
-            voice = ProceduralArrayVoice(
-                source=source,
-                deterministic_seed=pending.deterministic_seed,
-                gains=np.zeros(4, dtype=np.float32),
-                delay_samples=np.zeros(4, dtype=np.float64),
-                active_channels=np.zeros(4, dtype=np.bool_),
+            descriptor = next(iter(pending.messages.values()))
+            self._drivetrain_sources[source_id] = DrivetrainInput(
                 source_id=source_id,
-                source_agent_id=int(next(iter(pending.messages.values())).source_agent_id),
-                source_agent_name=str(next(iter(pending.messages.values())).source_agent_name),
-                sound_type=str(next(iter(pending.messages.values())).sound_type),
-                asset_id=str(next(iter(pending.messages.values())).asset_id),
+                deterministic_seed=pending.deterministic_seed,
+                gains=(0.0, 0.0, 0.0, 0.0),
+                delay_samples=(0.0, 0.0, 0.0, 0.0),
+                active_channels=(False, False, False, False),
+                left_velocity=0.0,
+                right_velocity=0.0,
+                active=False,
+                tuning=DrivetrainTuning(**self._motor_tuning()),
+                source_agent_id=int(descriptor.source_agent_id),
+                source_agent_name=str(descriptor.source_agent_name),
+                sound_type=str(descriptor.sound_type),
+                asset_id=str(descriptor.asset_id),
             )
-            self._procedural[source_id] = voice
             for channel, msg in pending.messages.items():
-                self._apply_drivetrain_message(voice, msg, channel)
+                self._apply_drivetrain_message(source_id, msg, channel)
 
     def _delay_samples(self, msg: ContinuousHeardSoundState) -> float:
         delay = float(msg.direct_delay_sec) * self.sample_rate
@@ -699,67 +736,35 @@ class MicrophoneArrayNode(Node):
         target_dbfs = received_spl_db - 94.0 + float(self.get_parameter("sensitivity_dbfs_at_94_dbspl").value)
         return (10.0 ** (target_dbfs / 20.0)) / mono_rms
 
-    def _render_raw(self) -> np.ndarray:
-        output = np.zeros((4, self.block_size), dtype=np.float32)
-        block_start, block_end = self._cursor, self._cursor + self.block_size
-        for channel, clips in enumerate(self._clips):
-            active: list[ScheduledClip] = []
-            for clip in clips:
-                clip_end = clip.start + len(clip.samples)
-                overlap_start = max(block_start, clip.start)
-                overlap_end = min(block_end, clip_end)
-                if overlap_start < overlap_end:
-                    dst = slice(overlap_start - block_start, overlap_end - block_start)
-                    src = slice(overlap_start - clip.start, overlap_end - clip.start)
-                    output[channel, dst] += clip.samples[src]
-                if clip_end > block_end:
-                    active.append(clip)
-            self._clips[channel] = active
-
-        for (_, channel), voice in tuple(self._continuous.items()):
-            if not voice.active:
-                continue
-            output[channel] += (
-                ramped_read(
-                    voice.samples,
-                    block_start - voice.program_start,
-                    voice.delay_samples,
-                    voice.delay_target,
-                    self.block_size,
-                    loop=voice.loop,
-                )
-                * voice.gain
-            )
-            voice.delay_samples = voice.delay_target
-        for source_id, voice in tuple(self._procedural.items()):
-            try:
-                mono = voice.source.render(self.block_size)[:, 0]
-            except Exception as exc:
-                self.get_logger().error(f"procedural drivetrain render failed for {source_id!r}: {exc}")
-                self._procedural.pop(source_id, None)
-                continue
-            delayed, voice.history = streaming_fractional_delays(
-                mono,
-                voice.delay_samples,
-                voice.history,
-            )
-            output += delayed * voice.gains[:, None]
-            if voice.source.finished:
-                self._procedural.pop(source_id, None)
-        self._cursor = block_end
-        return np.ascontiguousarray(np.clip(output, -1.0, 1.0))
+    def _collect_inputs(self) -> RenderInputs:
+        clips = tuple(self._pending_clips)
+        self._pending_clips.clear()
+        return RenderInputs(
+            block_index=self._render_state.cursor // self.block_size,
+            clips=clips,
+            continuous=tuple(self._continuous_sources.values()),
+            drivetrain=tuple(self._drivetrain_sources.values()),
+        )
 
     def _publish_block(self) -> None:
         if not self._publishers_ready:
             return
-        block_start = self._cursor
+        block_start = self._render_state.cursor
         self._poll_loads()
         self._publish_procedural_activity_transitions(block_start)
-        raw = self._render_raw()
+        inputs = self._collect_inputs()
+        # The trace is published first: no rendered block may exist without one.
+        self._render_inputs_pub.publish(String(data=render_inputs_to_json(inputs)))
+        result = render_block(self._render_state, inputs, self._render_params)
+        self._clipped_samples += result.clipped_samples
+        for source_id in tuple(self._drivetrain_sources):
+            if source_id not in self._render_state.procedural:
+                self._drivetrain_sources.pop(source_id)
         enabled = bool(self.get_parameter("enabled").value)
         muted = bool(self.get_parameter("mute_all").value)
         solo = str(self.get_parameter("solo_channel").value).strip().lower()
-        raw = apply_monitor_controls(raw, enabled=enabled, muted=muted)
+        raw = apply_monitor_controls(result.raw, enabled=enabled, muted=muted)
+        motor = apply_monitor_controls(result.motor, enabled=enabled, muted=muted)
         monitor = apply_monitor_controls(raw, solo_channel=solo)
         hearing = hearing_waveform(monitor)
         master_gain = float(self.get_parameter("master_gain").value)
@@ -783,6 +788,7 @@ class MicrophoneArrayNode(Node):
         stamp_ns = self._stream_start_ns + round(block_start * 1_000_000_000 / self.sample_rate)
         stamp = RosTime(nanoseconds=stamp_ns).to_msg()
         self._raw_pub.publish(self._audio_frame(raw, stamp, CHANNEL_NAMES))
+        self._motor_stem_pub.publish(self._audio_frame(motor, stamp, CHANNEL_NAMES))
         for index, publisher in enumerate(self._channel_pubs):
             publisher.publish(self._audio_frame(raw[index : index + 1], stamp, (CHANNEL_NAMES[index],)))
         self._hearing_pub.publish(
@@ -855,11 +861,11 @@ class MicrophoneArrayNode(Node):
 
     def _publish_procedural_activity_transitions(self, sample_index: int) -> None:
         current: dict[tuple[str, int], bool] = {}
-        voices = dict(self._procedural)
-        for source_id, voice in voices.items():
+        sources = dict(self._drivetrain_sources)
+        for source_id, source in sources.items():
             for channel, channel_name in enumerate(CHANNEL_NAMES):
                 key = (source_id, channel)
-                active = bool(voice.active_channels[channel])
+                active = bool(source.active_channels[channel])
                 current[key] = active
                 if self._reported_procedural_activity.get(key, False) == active:
                     continue
@@ -869,11 +875,11 @@ class MicrophoneArrayNode(Node):
                 msg.stream_id = f"{self._robot_name}/audio/raw_array"
                 msg.event_id = f"continuous:{source_id}"
                 msg.source_id = source_id
-                msg.source_agent_id = voice.source_agent_id
-                msg.source_agent_name = voice.source_agent_name
+                msg.source_agent_id = source.source_agent_id
+                msg.source_agent_name = source.source_agent_name
                 msg.source_type = "robot"
-                msg.sound_type = voice.sound_type or "motor"
-                msg.asset_id = voice.asset_id
+                msg.sound_type = source.sound_type or "motor"
+                msg.asset_id = source.asset_id
                 msg.channel_name = channel_name
                 msg.continuous = True
                 msg.active = active
@@ -886,18 +892,18 @@ class MicrophoneArrayNode(Node):
             if was_active and key not in current:
                 source_id, channel = key
                 # A finished voice still needs an explicit closing transition.
-                voice = voices.get(source_id)
+                source = sources.get(source_id)
                 msg = RenderedSoundActivity()
                 msg.header.stamp = self._sample_time(sample_index)
                 msg.header.frame_id = self._base_frame()
                 msg.stream_id = f"{self._robot_name}/audio/raw_array"
                 msg.event_id = f"continuous:{source_id}"
                 msg.source_id = source_id
-                msg.source_agent_id = voice.source_agent_id if voice else -1
-                msg.source_agent_name = voice.source_agent_name if voice else ""
+                msg.source_agent_id = source.source_agent_id if source else -1
+                msg.source_agent_name = source.source_agent_name if source else ""
                 msg.source_type = "robot"
-                msg.sound_type = voice.sound_type if voice else "motor"
-                msg.asset_id = voice.asset_id if voice else ""
+                msg.sound_type = source.sound_type if source else "motor"
+                msg.asset_id = source.asset_id if source else ""
                 msg.channel_name = CHANNEL_NAMES[channel]
                 msg.continuous = True
                 msg.active = False
@@ -1049,8 +1055,9 @@ class MicrophoneArrayNode(Node):
             for parameter_name, tuning_name in parameter_keys.items():
                 if parameter_name in overrides and parameter_name != "motor_volume_db":
                     tuning[tuning_name] = overrides[parameter_name]
-            for voice in self._procedural.values():
-                voice.source.tune(**tuning)
+            retuned = DrivetrainTuning(**tuning)
+            for source_id, source in tuple(self._drivetrain_sources.items()):
+                self._drivetrain_sources[source_id] = replace(source, tuning=retuned)
         return SetParametersResult(successful=True)
 
     def _open_audio_device(self) -> None:
@@ -1134,10 +1141,8 @@ class MicrophoneArrayNode(Node):
             queued = len(self._output_blocks)
         new_underflows = self._audio_underflows - self._reported_underflows
         new_overflows = self._audio_overflows - self._reported_overflows
-        new_skipped = self._render.skipped - self._reported_skipped
         self._reported_underflows = self._audio_underflows
         self._reported_overflows = self._audio_overflows
-        self._reported_skipped = self._render.skipped
         message = (
             "four-mic audio diagnostics: "
             f"robot={self._robot_name or None}, "
@@ -1147,22 +1152,18 @@ class MicrophoneArrayNode(Node):
             f"semantic_pending={len(self._semantic_event_groups)}, "
             f"semantic_incomplete={self._incomplete_semantic_events}, "
             f"finite_pending={len(self._event_loads)}, "
-            f"wav_voices={len(self._continuous)}, "
-            f"drivetrain_voices={len(self._procedural)}, "
+            f"wav_voices={len(self._render_state.continuous)}, "
+            f"drivetrain_voices={len(self._render_state.procedural)}, "
             f"drivetrain_pending={len(self._procedural_pending)}, "
             f"stream_active={active}, device={device}, queued={queued}, "
             f"callbacks={self._audio_callbacks}, "
             f"underflows={self._audio_underflows}, "
             f"overflows={self._audio_overflows}, "
             f"output_peak={self._audio_peak:.4f}, "
+            f"clipped_samples={self._clipped_samples}, "
             f"rendered={self._render.rendered}, skipped={self._render.skipped}, "
             f"status={self._audio_status!r}, error={self._stream_error!r}"
         )
-        if new_skipped > 0 and not self._render_behind:
-            self.get_logger().warning(f"four-mic render fell behind /clock, skipped {new_skipped} block(s) ({new_skipped * self.block_size / self.sample_rate:.2f} s of audio) to stay current")
-        elif self._render_behind and new_skipped == 0:
-            self.get_logger().info("four-mic render caught up with /clock")
-        self._render_behind = new_skipped > 0
         playback = str(self.get_parameter("audio_device").value).strip() not in {"", "none"}
         degraded = playback and (not active or new_underflows > 0 or new_overflows > 0)
         if degraded and not self._playback_degraded:
