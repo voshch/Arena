@@ -86,6 +86,11 @@ def generate_launch_description() -> launch.LaunchDescription:
         choices=["sequence", "single_loop"],
         default_value="sequence",
     )
+    auditory_motor_volume = LaunchArgument(
+        name="auditory.motor.volume_db",
+        default_value="-15.020599913279624",
+        description="Four-microphone procedural motor drivetrain level in dB.",
+    )
     auditory_motor_mems_calibration = LaunchArgument(
         name="auditory.motor.mems_calibration_db",
         default_value="-40.0",
@@ -150,6 +155,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 **auditory_source_volume_db.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
+                **auditory_motor_volume.dict,
                 **auditory_motor_mems_calibration.dict,
                 **auditory_environment_playback.dict,
                 **auditory_listener.dict,

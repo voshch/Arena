@@ -18,6 +18,11 @@ from arena_auditory.drivetrain import (
 # previous linear amplitude while preserving their relative propagation gains.
 DEFAULT_MOTOR_VOLUME_DB = -15.020599913279624
 
+# The node layer renders the drivetrain steeper than the spec's own
+# `speed_exponent` default, which JACKAL leaves untouched. Both nodes override
+# it on every render, so this is the exponent that reaches the synthesiser.
+DEFAULT_MOTOR_SPEED_EXPONENT = 1.5
+
 
 def clear_drivetrain_audio_cache() -> None:
     clear_cache()

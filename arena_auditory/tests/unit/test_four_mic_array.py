@@ -268,10 +268,11 @@ def _render_scenario(
     continuous_gain: float = 0.5,
     with_clip: bool = True,
     **drivetrain_overrides: object,
-) -> tuple[np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     state = RenderState()
     params = _render_params()
     raw: list[np.ndarray] = []
+    ped: list[np.ndarray] = []
     motor: list[np.ndarray] = []
     clipped = 0
     for index in range(blocks):
@@ -286,9 +287,15 @@ def _render_scenario(
             params,
         )
         raw.append(result.raw)
+        ped.append(result.ped)
         motor.append(result.motor)
         clipped += result.clipped_samples
-    return np.concatenate(raw, axis=1), np.concatenate(motor, axis=1), clipped
+    return (
+        np.concatenate(raw, axis=1),
+        np.concatenate(ped, axis=1),
+        np.concatenate(motor, axis=1),
+        clipped,
+    )
 
 
 _GOLDEN_RAW = np.array(
@@ -303,20 +310,20 @@ _GOLDEN_RAW = np.array(
 
 
 def test_render_block_reproduces_the_recorded_accumulation() -> None:
-    raw, _, clipped = _render_scenario(2)
+    raw, _, _, clipped = _render_scenario(2)
     assert clipped == 0
     assert np.array_equal(raw, _GOLDEN_RAW)
 
 
 def test_motor_stem_splits_the_raw_block_without_loss() -> None:
-    raw, motor, clipped = _render_scenario(2)
+    raw, _, motor, clipped = _render_scenario(2)
     assert clipped == 0
     assert np.max(np.abs(motor)) > 0.0
     assert np.array_equal(raw, (raw - motor) + motor)
 
 
 def test_motor_stem_is_silent_when_no_drivetrain_channel_is_active() -> None:
-    raw, motor, _ = _render_scenario(
+    raw, _, motor, _ = _render_scenario(
         2,
         gains=(0.0, 0.0, 0.0, 0.0),
         active_channels=(False, False, False, False),
@@ -329,8 +336,8 @@ def test_motor_stem_is_silent_when_no_drivetrain_channel_is_active() -> None:
 def test_motor_volume_change_remixes_as_a_scalar_on_the_stem() -> None:
     attenuation_db = 6.0
     quiet = replace(_MOTOR_TUNING, volume_db=_MOTOR_TUNING.volume_db - attenuation_db)
-    raw, motor, _ = _render_scenario(3, continuous_gain=0.02, with_clip=False)
-    remixed_raw, remixed_motor, _ = _render_scenario(
+    raw, _, motor, _ = _render_scenario(3, continuous_gain=0.02, with_clip=False)
+    remixed_raw, _, remixed_motor, _ = _render_scenario(
         3,
         continuous_gain=0.02,
         with_clip=False,
@@ -367,6 +374,81 @@ def test_clipped_samples_counts_the_clamped_output() -> None:
     assert np.array_equal(result.motor, np.zeros_like(result.motor))
 
 
+def _saturating_scenario(
+    blocks: int,
+    *,
+    with_drivetrain: bool = True,
+    **drivetrain_overrides: object,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """A full-scale clip on channel 0 that only the drivetrain pushes past the limit."""
+    state = RenderState()
+    params = _render_params()
+    raw: list[np.ndarray] = []
+    ped: list[np.ndarray] = []
+    motor: list[np.ndarray] = []
+    clipped = 0
+    for index in range(blocks):
+        result = render_block(
+            state,
+            RenderInputs(
+                block_index=index,
+                clips=(_clip(0, 0, "rail", np.ones(blocks * _RENDER_BLOCK, dtype=np.float32)),) if index == 0 else (),
+                continuous=(_continuous_input(),),
+                drivetrain=(_drivetrain_input(**drivetrain_overrides),) if with_drivetrain else (),
+            ),
+            params,
+        )
+        raw.append(result.raw)
+        ped.append(result.ped)
+        motor.append(result.motor)
+        clipped += result.clipped_samples
+    return (
+        np.concatenate(raw, axis=1),
+        np.concatenate(ped, axis=1),
+        np.concatenate(motor, axis=1),
+        clipped,
+    )
+
+
+def _pre_clip_mix(blocks: int) -> np.ndarray:
+    """The accumulator the renderer clips, rebuilt from a drivetrain-free run of the same scenario."""
+    reference, _, _, clipped = _saturating_scenario(blocks, with_drivetrain=False)
+    assert clipped == 0
+    _, _, motor, _ = _saturating_scenario(blocks)
+    return reference + motor
+
+
+def test_stems_add_back_to_the_pre_clip_mix_across_a_clipped_block() -> None:
+    blocks = 2
+    raw, ped, motor, clipped = _saturating_scenario(blocks)
+    assert clipped > 0
+    assert np.max(np.abs(motor)) > 0.0
+    assert np.max(np.abs(ped)) > 0.0
+    assert np.array_equal(ped + motor, _pre_clip_mix(blocks))
+    assert np.array_equal(raw, np.clip(ped + motor, -1.0, 1.0))
+
+
+def test_pedestrian_stem_survives_the_clipping_that_breaks_raw_minus_motor() -> None:
+    blocks = 2
+    raw, ped, motor, clipped = _saturating_scenario(blocks)
+    assert clipped > 0
+    assert not np.array_equal(raw - motor, ped)
+    assert np.array_equal(ped + motor, _pre_clip_mix(blocks))
+    assert not np.array_equal((raw - motor) + motor, _pre_clip_mix(blocks))
+
+
+def test_pedestrian_stem_does_not_move_when_only_the_drivetrain_level_does() -> None:
+    """Changing the drivetrain level moves the pedestrian stem by at most one ulp of the mix it comes out of."""
+    attenuation_db = 6.0
+    quiet = replace(_MOTOR_TUNING, volume_db=_MOTOR_TUNING.volume_db - attenuation_db)
+    _, ped, motor, _ = _render_scenario(3, continuous_gain=0.02, with_clip=False)
+    _, quiet_ped, quiet_motor, _ = _render_scenario(3, continuous_gain=0.02, with_clip=False, tuning=quiet)
+    assert np.max(np.abs(motor)) > 1e-6
+    assert np.max(np.abs(quiet_motor - motor)) > 1e-6
+    assert np.all(np.abs(quiet_ped - ped) <= np.spacing(np.abs(ped) + np.abs(motor)))
+    np.testing.assert_allclose(quiet_motor, 10.0 ** (-attenuation_db / 20.0) * motor, rtol=1e-5, atol=1e-9)
+
+
 def _traced_clip() -> ClipInput:
     """A clip built the way the live driver builds one, so the trace can rebuild it."""
     anchor, received_volume_db, sensitivity, delay_samples = 4, 88.0, -26.0, 3.25
@@ -396,6 +478,7 @@ def test_render_inputs_json_round_trip_renders_the_same_blocks() -> None:
     params = _render_params()
     live_state, replay_state = RenderState(), RenderState()
     live_raw: list[np.ndarray] = []
+    live_ped: list[np.ndarray] = []
     live_motor: list[np.ndarray] = []
     for index in range(3):
         inputs = _traced_inputs(index)
@@ -410,15 +493,19 @@ def test_render_inputs_json_round_trip_renders_the_same_blocks() -> None:
         live = render_block(live_state, inputs, params)
         replay = render_block(replay_state, replayed, params)
         assert np.array_equal(live.raw, replay.raw)
+        assert np.array_equal(live.ped, replay.ped)
         assert np.array_equal(live.motor, replay.motor)
         assert live.clipped_samples == replay.clipped_samples
         live_raw.append(live.raw)
+        live_ped.append(live.ped)
         live_motor.append(live.motor)
     raw = np.concatenate(live_raw, axis=1)
+    ped = np.concatenate(live_ped, axis=1)
     motor = np.concatenate(live_motor, axis=1)
     assert np.max(np.abs(raw[0])) > 0.0
     assert np.max(np.abs(raw[1])) > 0.0
     assert np.max(np.abs(motor)) > 0.0
+    assert np.array_equal(raw, np.clip(ped + motor, -1.0, 1.0))
 
 
 def test_render_inputs_json_rejects_a_clip_that_replays_at_another_sample() -> None:

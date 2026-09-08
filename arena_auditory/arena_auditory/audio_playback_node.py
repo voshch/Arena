@@ -56,6 +56,7 @@ from arena_auditory.portal_coupling import (
     PortalCouplingConfig,
 )
 from arena_auditory.procedural_audio import (
+    DEFAULT_MOTOR_SPEED_EXPONENT,
     DEFAULT_MOTOR_VOLUME_DB,
     DrivetrainRenderSource,
     clear_drivetrain_audio_cache,
@@ -103,7 +104,7 @@ MOTOR_TUNING_PARAMETERS = {
         "Broadband mechanical-noise trim in dB.",
     ),
     "motor_speed_exponent": (
-        1.5,
+        DEFAULT_MOTOR_SPEED_EXPONENT,
         0.25,
         3.0,
         "Exponent controlling how strongly volume follows wheel speed.",

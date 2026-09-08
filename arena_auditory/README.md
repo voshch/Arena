@@ -207,6 +207,7 @@ interleaved float32 PCM. For a robot named `jackal`, topics end in:
 - `jackal/audio/mic_rear_right`
 - `jackal/audio/raw_array` with order FL, FR, RL, RR
 - `jackal/audio/stem_motor`, the ego-noise stem of the same mix
+- `jackal/audio/stem_pedestrian`, everything in that mix except the ego noise
 - `jackal/audio/hearing/mono`
 - `jackal/audio/hearing/energy`
 - `jackal/audio/headphones/left`
@@ -221,16 +222,22 @@ headphone presentation. `hearing/energy` carries linear RMS in
 the order FL, FR, RL, RR, hearing, headphone L, headphone R. The canonical
 research observation remains the unchanged four-channel `raw_array`.
 
-`stem_motor` is the ego-noise half of that same mix: an `AudioFrame` with the
-same channel order, stamp and monitor controls as `raw_array`, carrying only
-the procedural drivetrain contribution. It is tapped before the output clip
-while `raw_array` is published after it, so `raw_array - stem_motor` is the
-pedestrian stem exactly and remixing an episode at a different ego-noise
-attenuation is exact as well, for every block that did not clip. Clipping
-breaks the identity because it is applied to the sum and not to either stem.
-The audio diagnostics carry a running clipped-sample count for this reason: a
-recording whose count is nonzero is compromised for remixing, and the two
-stems no longer add back to what was published.
+`stem_motor` and `stem_pedestrian` are the two halves of that same mix:
+`AudioFrame`s with the same channel order, stamp and monitor controls as
+`raw_array`, the first carrying only the procedural drivetrain contribution and
+the second everything else. Both are tapped before the output clip while
+`raw_array` is published after it. The pedestrian stem is the pre-clip mix
+minus the drivetrain rather than a second accumulation, so the two stems add
+back to that mix sample for sample. Remixing an episode at a different
+ego-noise attenuation is therefore exact whether or not the block clipped: form
+`stem_pedestrian + 10**(-attenuation_db / 20) * stem_motor` and clip the result
+to the range -1 to 1 the way the renderer does. The older
+`raw_array - stem_motor` route recovers the pedestrian stem only for blocks
+that did not clip, because the clip applies to the sum and not to either stem.
+With more than one drivetrain source audible the mix accumulates them one at a
+time, so the two stems can add back one float32 ulp away from it. The audio
+diagnostics carry a running clipped-sample count throughout: it is how you tell
+whether the published `raw_array` itself was clamped.
 
 `diagnostics/render_inputs` is a `std_msgs/String` carrying one JSON object per
 rendered block: the block index, the clips starting in that block, and the

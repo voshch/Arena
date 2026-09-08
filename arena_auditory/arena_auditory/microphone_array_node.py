@@ -49,6 +49,7 @@ from arena_auditory.asset_lib import (
 )
 from arena_auditory.lockstep import register_hard_channel
 from arena_auditory.procedural_audio import (
+    DEFAULT_MOTOR_SPEED_EXPONENT,
     DEFAULT_MOTOR_VOLUME_DB,
     DrivetrainRenderSource,
 )
@@ -153,7 +154,7 @@ class MicrophoneArrayNode(Node):
         self.declare_parameter("motor_frequency_scale", 1.0)
         self.declare_parameter("motor_tonal_gain_db", 0.0)
         self.declare_parameter("motor_broadband_gain_db", -12.0)
-        self.declare_parameter("motor_speed_exponent", 1.5)
+        self.declare_parameter("motor_speed_exponent", DEFAULT_MOTOR_SPEED_EXPONENT)
         self.declare_parameter("motor_velocity_smoothing_sec", 0.015)
 
         self.sample_rate = int(self.get_parameter("sample_rate").value)
@@ -304,6 +305,7 @@ class MicrophoneArrayNode(Node):
         self._headphone_right_pub = self.create_publisher(AudioFrame, f"{prefix}/headphones/right", 10)
         self._headphone_pub = self.create_publisher(AudioFrame, f"{prefix}/headphones/stereo", 10)
         self._motor_stem_pub = self.create_publisher(AudioFrame, f"{prefix}/stem_motor", 10)
+        self._pedestrian_stem_pub = self.create_publisher(AudioFrame, f"{prefix}/stem_pedestrian", 10)
         self._tdoa_pub = self.create_publisher(String, f"{prefix}/diagnostics/tdoa", 10)
         self._render_inputs_pub = self.create_publisher(String, f"{prefix}/diagnostics/render_inputs", 10)
         self._activity_pub = self.create_publisher(
@@ -765,6 +767,7 @@ class MicrophoneArrayNode(Node):
         solo = str(self.get_parameter("solo_channel").value).strip().lower()
         raw = apply_monitor_controls(result.raw, enabled=enabled, muted=muted)
         motor = apply_monitor_controls(result.motor, enabled=enabled, muted=muted)
+        pedestrian = apply_monitor_controls(result.ped, enabled=enabled, muted=muted)
         monitor = apply_monitor_controls(raw, solo_channel=solo)
         hearing = hearing_waveform(monitor)
         master_gain = float(self.get_parameter("master_gain").value)
@@ -789,6 +792,7 @@ class MicrophoneArrayNode(Node):
         stamp = RosTime(nanoseconds=stamp_ns).to_msg()
         self._raw_pub.publish(self._audio_frame(raw, stamp, CHANNEL_NAMES))
         self._motor_stem_pub.publish(self._audio_frame(motor, stamp, CHANNEL_NAMES))
+        self._pedestrian_stem_pub.publish(self._audio_frame(pedestrian, stamp, CHANNEL_NAMES))
         for index, publisher in enumerate(self._channel_pubs):
             publisher.publish(self._audio_frame(raw[index : index + 1], stamp, (CHANNEL_NAMES[index],)))
         self._hearing_pub.publish(

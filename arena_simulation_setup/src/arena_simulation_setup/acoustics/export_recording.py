@@ -399,7 +399,7 @@ def read_mcap(path: Path) -> dict[str, Any]:
     from mcap.reader import make_reader
     from mcap_ros2.decoder import DecoderFactory
 
-    audio: dict[str, list[AudioBlock]] = {"raw": [], "stem_motor": [], "rendered": []}
+    audio: dict[str, list[AudioBlock]] = {"raw": [], "stem_motor": [], "stem_pedestrian": [], "rendered": []}
     odom: dict[str, list[dict[str, Any]]] = {}
     arena_pedestrians: dict[str, list[dict[str, Any]]] = {}
     agent_state_pedestrians: dict[str, list[dict[str, Any]]] = {}
@@ -417,7 +417,7 @@ def read_mcap(path: Path) -> dict[str, Any]:
         for schema, channel, message, ros_msg in reader.iter_decoded_messages(log_time_order=True):
             topic = "/" + channel.topic.strip("/")
             topic_types[topic] = schema.name
-            audio_role = "raw" if topic.endswith("/audio/raw_array") else "stem_motor" if topic.endswith("/audio/stem_motor") else "rendered" if topic.endswith("/audio/headphones/stereo") else None
+            audio_role = "raw" if topic.endswith("/audio/raw_array") else "stem_motor" if topic.endswith("/audio/stem_motor") else "stem_pedestrian" if topic.endswith("/audio/stem_pedestrian") else "rendered" if topic.endswith("/audio/headphones/stereo") else None
             if audio_role is not None:
                 if str(ros_msg.encoding) != "32FC1" or not bool(ros_msg.interleaved):
                     raise ValueError(f"{topic}: expected interleaved 32FC1 AudioFrame, got encoding={ros_msg.encoding!r} interleaved={ros_msg.interleaved!r}")
@@ -1279,6 +1279,40 @@ def audio_statistics(audio: np.ndarray, channel_names: Sequence[str]) -> dict[st
     }
 
 
+def assemble_stem(
+    name: str,
+    chunks: list[AudioBlock],
+    raw: np.ndarray,
+    raw_summary: dict[str, Any],
+    raw_namespace: str,
+    robot_name: str,
+    allow_audio_gaps: bool,
+) -> tuple[np.ndarray | None, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
+    """Assemble one optional four-channel stem and check it lines up with raw_array."""
+    if not chunks:
+        return None, [], None, None
+    stem, timing, summary = assemble_audio(chunks)
+    if not np.all(np.isfinite(stem)):
+        raise ValueError(f"{name} audio contains NaN or infinite values")
+    if not allow_audio_gaps and summary["gap_frames"]:
+        raise ValueError(f"{name} audio has missing sample frames; inspect audio_timing.parquet or use --allow-audio-gaps")
+    if stem.shape[1] != 4:
+        raise ValueError(f"{name} must contain exactly four microphone channels, got {stem.shape[1]}")
+    if stem.shape[0] != raw.shape[0]:
+        raise ValueError(f"{name} must cover the same samples as raw_array, got {stem.shape[0]} frames against {raw.shape[0]}")
+    if summary["sample_rate"] != raw_summary["sample_rate"]:
+        raise ValueError(f"{name} and raw_array sample rates differ")
+    if summary["channel_names"] != raw_summary["channel_names"]:
+        raise ValueError(f"{name} channel_names must match raw_array")
+    if summary["first_timestamp_ns"] != raw_summary["first_timestamp_ns"]:
+        raise ValueError(f"{name} and raw_array do not start on the same sample")
+    if summary["max_timestamp_error_ns"] > round(1_000_000_000 / summary["sample_rate"]):
+        raise ValueError(f"{name} timestamps are not sample-contiguous")
+    if summary["topic"] != f"{raw_namespace}/{robot_name}/audio/{name}":
+        raise ValueError(f"{name} {summary['topic']!r} does not belong to the raw_array robot {raw_namespace}/{robot_name}")
+    return stem, timing, summary, audio_statistics(stem, summary["channel_names"])
+
+
 def flatten_transforms(transforms: dict[tuple[str, str], list[dict[str, Any]]]) -> list[dict[str, Any]]:
     return [{"parent_frame": parent, "child_frame": child, **row} for (parent, child), rows in transforms.items() for row in rows]
 
@@ -1331,6 +1365,7 @@ def export(args: argparse.Namespace) -> Path:
     episode_end_ns = None if args.expected_duration is None else episode_start_ns + round(args.expected_duration * 1_000_000_000)
     raw_chunks = clip_audio_chunks(data["audio"]["raw"], episode_start_ns, episode_end_ns)
     stem_motor_chunks = clip_audio_chunks(data["audio"]["stem_motor"], episode_start_ns, episode_end_ns)
+    stem_pedestrian_chunks = clip_audio_chunks(data["audio"]["stem_pedestrian"], episode_start_ns, episode_end_ns)
     rendered_chunks = clip_audio_chunks(data["audio"]["rendered"], episode_start_ns, episode_end_ns)
     raw, raw_timing, raw_summary = assemble_audio(raw_chunks)
     rendered, rendered_timing, rendered_summary = assemble_audio(rendered_chunks)
@@ -1372,34 +1407,26 @@ def export(args: argparse.Namespace) -> Path:
         raise ValueError("raw and rendered audio must share one robot and environment namespace")
     raw_namespace = raw_match.group("environment")
     robot_name = raw_match.group("robot")
-    # The drivetrain stem is optional, older recordings predate the topic.  When
-    # present it must line up sample for sample with raw_array, because the
-    # pedestrian stem is recovered as raw minus stem_motor.
-    stem_motor: np.ndarray | None = None
-    stem_motor_timing: list[dict[str, Any]] = []
-    stem_motor_summary: dict[str, Any] | None = None
-    stem_motor_statistics: dict[str, Any] | None = None
-    if stem_motor_chunks:
-        stem_motor, stem_motor_timing, stem_motor_summary = assemble_audio(stem_motor_chunks)
-        if not np.all(np.isfinite(stem_motor)):
-            raise ValueError("stem_motor audio contains NaN or infinite values")
-        if not args.allow_audio_gaps and stem_motor_summary["gap_frames"]:
-            raise ValueError("stem_motor audio has missing sample frames; inspect audio_timing.parquet or use --allow-audio-gaps")
-        if stem_motor.shape[1] != 4:
-            raise ValueError(f"stem_motor must contain exactly four microphone channels, got {stem_motor.shape[1]}")
-        if stem_motor.shape[0] != raw.shape[0]:
-            raise ValueError(f"stem_motor must cover the same samples as raw_array, got {stem_motor.shape[0]} frames against {raw.shape[0]}")
-        if stem_motor_summary["sample_rate"] != raw_summary["sample_rate"]:
-            raise ValueError("stem_motor and raw_array sample rates differ")
-        if stem_motor_summary["channel_names"] != raw_summary["channel_names"]:
-            raise ValueError("stem_motor channel_names must match raw_array")
-        if stem_motor_summary["first_timestamp_ns"] != raw_summary["first_timestamp_ns"]:
-            raise ValueError("stem_motor and raw_array do not start on the same sample")
-        if stem_motor_summary["max_timestamp_error_ns"] > round(1_000_000_000 / stem_motor_summary["sample_rate"]):
-            raise ValueError("stem_motor timestamps are not sample-contiguous")
-        if stem_motor_summary["topic"] != f"{raw_namespace}/{robot_name}/audio/stem_motor":
-            raise ValueError(f"stem_motor {stem_motor_summary['topic']!r} does not belong to the raw_array robot {raw_namespace}/{robot_name}")
-        stem_motor_statistics = audio_statistics(stem_motor, stem_motor_summary["channel_names"])
+    # Both stems are optional, older recordings predate the topics.  When present
+    # each must line up sample for sample with raw_array.
+    stem_motor, stem_motor_timing, stem_motor_summary, stem_motor_statistics = assemble_stem(
+        "stem_motor",
+        stem_motor_chunks,
+        raw,
+        raw_summary,
+        raw_namespace,
+        robot_name,
+        args.allow_audio_gaps,
+    )
+    stem_pedestrian, stem_pedestrian_timing, stem_pedestrian_summary, stem_pedestrian_statistics = assemble_stem(
+        "stem_pedestrian",
+        stem_pedestrian_chunks,
+        raw,
+        raw_summary,
+        raw_namespace,
+        robot_name,
+        args.allow_audio_gaps,
+    )
     raw_statistics = audio_statistics(raw, raw_summary["channel_names"])
     rendered_statistics = audio_statistics(rendered, rendered_summary["channel_names"])
     rendered_rms = rendered_statistics["rms"]
@@ -1540,6 +1567,7 @@ def export(args: argparse.Namespace) -> Path:
     rendered_flac_name = f"{prefix}recording.flac" if prefix else "rendered.flac"
     raw_wav_name = f"{prefix}raw.wav" if prefix else "raw.wav"
     stem_motor_wav_name = f"{prefix}stem_motor.wav" if prefix else "stem_motor.wav"
+    stem_pedestrian_wav_name = f"{prefix}stem_pedestrian.wav" if prefix else "stem_pedestrian.wav"
     raw_flac_name = f"{prefix}raw.flac" if prefix else "raw.flac"
     metadata_csv_name = f"{prefix}meta.csv" if prefix else "metadata.csv"
     timing_name = f"{prefix}audio_timing.parquet"
@@ -1562,12 +1590,14 @@ def export(args: argparse.Namespace) -> Path:
     write_wav(output / raw_wav_name, raw, raw_summary["sample_rate"])
     if stem_motor is not None:
         write_wav(output / stem_motor_wav_name, stem_motor, raw_summary["sample_rate"])
+    if stem_pedestrian is not None:
+        write_wav(output / stem_pedestrian_wav_name, stem_pedestrian, raw_summary["sample_rate"])
     if args.flac:
         write_flac(output / rendered_flac_name, rendered, rendered_summary["sample_rate"])
     if args.raw_flac:
         write_flac(output / raw_flac_name, raw, raw_summary["sample_rate"])
     write_csv(output / metadata_csv_name, labels)
-    write_parquet(output / timing_name, raw_timing + stem_motor_timing + rendered_timing)
+    write_parquet(output / timing_name, raw_timing + stem_motor_timing + stem_pedestrian_timing + rendered_timing)
     write_parquet(output / robot_positions_name, robot_rows)
     write_parquet(output / pedestrian_positions_name, [row for rows in data["pedestrians"].values() for row in rows])
     write_parquet(output / frame_labels_name, labels)
@@ -1597,9 +1627,11 @@ def export(args: argparse.Namespace) -> Path:
         "recorded_topics": episode_metadata.get("recorded_topics") or sorted(data["topic_types"]),
         "raw": raw_summary,
         "stem_motor": stem_motor_summary,
+        "stem_pedestrian": stem_pedestrian_summary,
         "rendered": rendered_summary,
         "raw_audio_statistics": raw_statistics,
         "stem_motor_audio_statistics": stem_motor_statistics,
+        "stem_pedestrian_audio_statistics": stem_pedestrian_statistics,
         "rendered_audio_statistics": rendered_statistics,
         "robot_odom_topic": odom_topic,
         "robot_frame_transform": robot_frame_transform,
@@ -1627,6 +1659,7 @@ def export(args: argparse.Namespace) -> Path:
         "rendered_audio_file": rendered_audio_name,
         "raw_audio_file": raw_wav_name,
         "stem_motor_audio_file": stem_motor_wav_name if stem_motor is not None else None,
+        "stem_pedestrian_audio_file": stem_pedestrian_wav_name if stem_pedestrian is not None else None,
         "metadata_csv_file": metadata_csv_name,
         "audio_timing_file": timing_name,
         "episode_events_file": episode_events_name,
@@ -1645,6 +1678,7 @@ def export(args: argparse.Namespace) -> Path:
                 "raw_audio": raw_wav_name,
                 "raw_audio_flac": raw_flac_name if args.raw_flac else None,
                 "stem_motor_audio": stem_motor_wav_name if stem_motor is not None else None,
+                "stem_pedestrian_audio": stem_pedestrian_wav_name if stem_pedestrian is not None else None,
                 "raw_lossless_location": str(mcap_path),
                 "audio_timing": timing_name,
                 "episode_events": episode_events_name,

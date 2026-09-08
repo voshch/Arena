@@ -207,6 +207,11 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="sequence",
         description="WAV motor audio: start/loop/stop sequence, or a single repeating loop.",
     )
+    auditory_motor_volume = LaunchArgument(
+        name="auditory.motor.volume_db",
+        default_value="-15.020599913279624",
+        description="Four-microphone procedural motor drivetrain level in dB; lower it to attenuate ego-noise (-21.04 = 6 dB down).",
+    )
     auditory_motor_mems_calibration = LaunchArgument(
         name="auditory.motor.mems_calibration_db",
         default_value="-40.0",
@@ -437,6 +442,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 **auditory_source_volume_db.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
+                **auditory_motor_volume.dict,
                 **auditory_motor_mems_calibration.dict,
                 **auditory_environment_playback.dict,
                 **auditory_listener.dict,

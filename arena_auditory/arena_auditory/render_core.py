@@ -145,6 +145,7 @@ class RenderState:
 @dataclass
 class RenderResult:
     raw: np.ndarray
+    ped: np.ndarray
     motor: np.ndarray
     clipped_samples: int
 
@@ -374,6 +375,7 @@ def render_block(state: RenderState, inputs: RenderInputs, params: RenderParams)
     clipped = int(np.count_nonzero((output < -1.0) | (output > 1.0)))
     return RenderResult(
         raw=np.ascontiguousarray(np.clip(output, -1.0, 1.0)),
+        ped=output - motor,
         motor=motor,
         clipped_samples=clipped,
     )
