@@ -662,6 +662,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
             ped.animation_state = agent.animation_state
             ped.gestures = gestures
+            ped.interaction_id = agent.interaction_id
+            ped.interaction_type = agent.interaction_type
 
             peds.pedestrians.append(ped)
         return peds

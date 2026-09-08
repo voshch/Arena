@@ -8,7 +8,7 @@
 [submodule "arena_evaluation"]
 	path = arena_evaluation
 	url = https://github.com/voshch/arena-evaluation.git
-	branch = jazzy
+	branch = feature/animation
 	update = checkout
 [submodule "arena_isaac"]
 	path = arena_isaac
@@ -23,15 +23,15 @@
 [submodule "arena_planners"]
 	path = arena_planners
 	url = https://github.com/arena-planners/arena_planners.git
-	branch = jazzy
+	branch = feature/animation
 	update = checkout
 [submodule "arena_robots"]
 	path = arena_robots
 	url = https://github.com/arena-robots/arena_robots.git
-	branch = jazzy
+	branch = feature/animation
 	update = checkout
 [submodule "humansim"]
 	path = humansim
 	url = https://github.com/voshch/humansim.git
-	branch = jazzy
+	branch = feature/animation
 	update = checkout
