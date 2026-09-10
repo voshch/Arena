@@ -454,7 +454,9 @@ the camera actually is.
 Anywhere: `F` frames the target entity, `Shift+F` cycles its reference mode
 (`full` / `yaw` / `position`), `H` returns to the world frame, `1` / `3` / `7`
 snap to front / right / top, `Space` brakes, `P` captures a still to
-`$ARENA_DATA_DIR/recordings/stills/`. Keys are ignored while a text field has
+`$ARENA_SCREENSHOTS_DIR` (default `$ARENA_DATA_DIR/screenshots/`, the same
+directory the Gazebo GUI and Isaac Kit screenshot buttons are forwarded to).
+Keys are ignored while a text field has
 focus, so the target box stays typeable.
 
 `[` / `]` are a held axis like the movement keys, not a step: fov ramps at

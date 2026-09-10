@@ -27,6 +27,8 @@ services:
       - "$HOST_ARENA_WS_DIR/.uv-cache:/opt/arena_ws/.uv-cache"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/home/arena/.gz/gui/pictures"
     environment:
       - QT_X11_NO_MITSHM=1
       - TMPDIR=/tmp/shared
@@ -44,7 +46,9 @@ services:
       - HOST_GID
       - HOST_ARENA_WS_DIR
       - HOST_ARENA_DATA_DIR
+      - HOST_ARENA_SCREENSHOTS_DIR
       - ARENA_DATA_DIR=/opt/arena_ws/data
+      - ARENA_SCREENSHOTS_DIR=/opt/arena_ws/screenshots
       - ROSNAV_AGENTS_DIR=/opt/arena_ws/data/agents
       - HF_HOME=/opt/arena_ws/data/hf
       - LLM_API_ENDPOINT

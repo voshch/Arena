@@ -8,6 +8,8 @@ export ARENA_ROS_DISTRO=jazzy
 
 export ARENA_DATA_DIR="${ARENA_DATA_DIR:-$ARENA_WS_DIR/data}"
 export HOST_ARENA_DATA_DIR="$ARENA_DATA_DIR"
+export ARENA_SCREENSHOTS_DIR="${ARENA_SCREENSHOTS_DIR:-$ARENA_DATA_DIR/screenshots}"
+export HOST_ARENA_SCREENSHOTS_DIR="$ARENA_SCREENSHOTS_DIR"
 export ROSNAV_AGENTS_DIR="${ROSNAV_AGENTS_DIR:-$ARENA_DATA_DIR/agents}"
 
 HOST_UID=$(id -u)
@@ -26,6 +28,7 @@ docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
 docker_env="${docker_env} HOST_UID=$HOST_UID"
 docker_env="${docker_env} HOST_GID=$HOST_GID"
 docker_env="${docker_env} ARENA_DATA_DIR=$ARENA_DATA_DIR"
+docker_env="${docker_env} ARENA_SCREENSHOTS_DIR=$ARENA_SCREENSHOTS_DIR"
 docker_env="${docker_env} ROSNAV_AGENTS_DIR=$ROSNAV_AGENTS_DIR"
 export docker_env
 
@@ -192,7 +195,7 @@ if [ "$1" = "uninstall" ]; then
 fi
 
 mkdir -p "$ARENA_DATA_DIR"
-mkdir -p "$ARENA_DATA_DIR/screenshots"
+mkdir -p "$ARENA_SCREENSHOTS_DIR"
 mkdir -p "$ARENA_DIR/.venv"
 mkdir -p "$ARENA_WS_DIR/build"
 mkdir -p "$ARENA_WS_DIR/install"
