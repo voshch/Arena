@@ -1,0 +1,6 @@
+services:
+  isaac:
+    devices:
+      - nvidia.com/gpu=all
+    security_opt:
+      - label=disable

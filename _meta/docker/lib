@@ -42,20 +42,25 @@ arena_gpu(){
 }
 
 # ${ARENA_WS_DIR} client-side, $HOST_ARENA_WS_DIR for volume sources
+_arena_compose_file(){
+    local f
+    for f in "$1" ${podman:+"${1%.yaml}.podman.yaml"}; do
+        [ -f "$f" ] && files="${files:+$files:}$f"
+    done
+}
+
 arena_docker_compose(){
-    local builder
-    arena_podman && builder="DOCKER_BUILDKIT=0 COMPOSE_BAKE=false"
-    local files="$ARENA_DIR/_meta/docker/docker-compose.yaml"
-    [ -d /dev/dri ] && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.dri.yaml"
-    arena_gpu > /dev/null && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.gpu.yaml"
+    local podman files feature
+    arena_podman && podman=1
+    _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.yaml"
+    [ -d /dev/dri ] && _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.dri.yaml"
+    arena_gpu > /dev/null && _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.gpu.yaml"
     if [ -f "$ARENA_DIR/.installed" ]; then
-        local feature ov
         while read -r feature; do
-            ov="$ARENA_DIR/_meta/docker/features/${feature}/docker-compose.yml"
-            [ -f "$ov" ] && files="${files}:${ov}"
+            _arena_compose_file "$ARENA_DIR/_meta/docker/features/$feature/docker-compose.yaml"
         done < "$ARENA_DIR/.installed"
     fi
-    ${arena_compose_sudo} env ${docker_env} ${builder} ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" COMPOSE_FILE="$files" \
+    ${arena_compose_sudo} env ${podman:+DOCKER_BUILDKIT=0} ${podman:+COMPOSE_BAKE=false} ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" COMPOSE_FILE="$files" \
         docker compose \
         --env-file "$ARENA_ENV_FILE" \
         --project-name "$ARENA_PROJECT_NAME" \
@@ -107,7 +112,7 @@ arena_container_wait(){
 arena_container_rm(){
     arena_containers -a "$1" | xargs -r ${arena_compose_sudo} docker rm -f
 }
-export -f arena_docker_compose arena_gpu arena_podman arena_docker arena_containers arena_container_state arena_container_health arena_container_wait arena_container_rm 2>/dev/null || true
+export -f _arena_compose_file arena_docker_compose arena_gpu arena_podman arena_docker arena_containers arena_container_state arena_container_health arena_container_wait arena_container_rm 2>/dev/null || true
 
 arena_podman_env(){
     arena_podman || return 0
