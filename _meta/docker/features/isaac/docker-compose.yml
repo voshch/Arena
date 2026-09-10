@@ -16,6 +16,7 @@ services:
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
+      - "$HOST_ARENA_DATA_DIR/isaac_screenshots:/root/Documents/Kit/shared/screenshots"
     environment:
       - DISPLAY
       - TMPDIR=/tmp/shared
