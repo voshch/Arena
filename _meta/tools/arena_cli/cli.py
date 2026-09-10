@@ -486,9 +486,10 @@ def _feature_short(name: str) -> str:
 
 def _feature_group_help() -> str:
     out = ["Usage: arena feature COMMAND [ARGS]...", "", _indent(FEATURE_HELP)]
-    rows = [(name, _feature_short(name)) for name in _feature_names()]
+    installed = _reg_list()
+    rows = [(("* " if name in installed else "  ") + name, _feature_short(name)) for name in _feature_names()]
     if rows:
-        out += ["", "Commands:", _listing(rows)]
+        out += ["", "Commands (* = installed):", _listing(rows)]
     return "\n".join(out)
 
 
