@@ -204,7 +204,7 @@ if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
     touch "$ARENA_WS_DIR/.env"
 fi
 
-xhost +local:docker
+xhost +local:docker || true
 
 do_run(){
     arena_docker_compose \
