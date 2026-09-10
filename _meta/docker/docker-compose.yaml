@@ -49,6 +49,8 @@ services:
       - HF_HOME=/opt/arena_ws/data/hf
       - LLM_API_ENDPOINT
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-1}
+      - GZ_PARTITION=arena-${ROS_DOMAIN_ID:-1}
       - GZ_IP=127.0.0.1
       - CYCLONEDDS_URI=file:///opt/arena_ws/src/Arena/_meta/docker/cyclonedds.${ARENA_NET:-local}.xml
       - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.${ARENA_NET:-local}.xml
