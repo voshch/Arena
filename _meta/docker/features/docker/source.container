@@ -30,5 +30,3 @@ export arena_compose_sudo="sudo"
 source "$ARENA_DIR/_meta/docker/lib"
 
 source src/Arena/_meta/tools/source
-
-[ "${ARENA_USERNS_MODE:-}" = keep-id ] && export arena_compose_sudo=""

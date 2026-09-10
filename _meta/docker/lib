@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 
+arena_docker(){
+    ${arena_compose_sudo} docker "$@"
+}
+
+arena_podman(){
+    { docker --version; arena_docker version --format '{{range .Server.Components}}{{.Name}} {{end}}'; } 2>/dev/null | grep -qi podman
+}
+
 ARENA_PROJECT_NAME="arena-$(basename "${HOST_ARENA_WS_DIR:-$ARENA_WS_DIR}")"
 export ARENA_PROJECT_NAME
 export ARENA_IMAGE_TAG="$ARENA_PROJECT_NAME"
 export ARENA_IMAGE="arena:${ARENA_IMAGE_TAG}"
+arena_podman && export ARENA_IMAGE="localhost/$ARENA_IMAGE"
 
 export ARENA_ENV_FILE="${ARENA_WS_DIR:-$HOST_ARENA_WS_DIR}/.env"
 
@@ -32,8 +41,10 @@ arena_gpu(){
     [ "$state" = on ]
 }
 
-# no --project-directory: compose paths are ${ARENA_WS_DIR} client-side, $HOST_ARENA_WS_DIR for volume sources
+# ${ARENA_WS_DIR} client-side, $HOST_ARENA_WS_DIR for volume sources
 arena_docker_compose(){
+    local builder
+    arena_podman && builder="DOCKER_BUILDKIT=0 COMPOSE_BAKE=false"
     local files="$ARENA_DIR/_meta/docker/docker-compose.yaml"
     [ -d /dev/dri ] && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.dri.yaml"
     arena_gpu > /dev/null && files="${files}:$ARENA_DIR/_meta/docker/docker-compose.gpu.yaml"
@@ -44,18 +55,12 @@ arena_docker_compose(){
             [ -f "$ov" ] && files="${files}:${ov}"
         done < "$ARENA_DIR/.installed"
     fi
-    ${arena_compose_sudo} env ${docker_env} ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" COMPOSE_FILE="$files" \
+    ${arena_compose_sudo} env ${docker_env} ${builder} ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-1}" COMPOSE_FILE="$files" \
         docker compose \
         --env-file "$ARENA_ENV_FILE" \
         --project-name "$ARENA_PROJECT_NAME" \
         "$@"
 }
-# engine cli, sudo inside the container
-arena_docker(){
-    ${arena_compose_sudo} docker "$@"
-}
-
-# ids of a compose service's containers, running only unless -a
 arena_containers(){
     local status="--filter=status=running"
     if [ "$1" = -a ]; then
@@ -67,12 +72,10 @@ arena_containers(){
         --filter "label=com.docker.compose.service=$1"
 }
 
-# "<health> <status>" of a container: healthy|starting|unhealthy|none, then running|exited|...
 arena_container_state(){
     arena_docker inspect -f '{{if .State.Health}}{{with .State.Health.Status}}{{.}}{{else}}none{{end}}{{else}}none{{end}} {{.State.Status}}' "$1"
 }
 
-# healthy|starting|unhealthy|none for a running service, 1 when it is not running
 arena_container_health(){
     local id
     id=$(arena_containers "$1" | head -n1)
@@ -80,7 +83,6 @@ arena_container_health(){
     arena_container_state "$id" | cut -d" " -f1
 }
 
-# blocks until each service is healthy, or running when it has no healthcheck, 1 once one exits
 arena_container_wait(){
     local svc id health run
     for svc in "$@"; do
@@ -102,16 +104,14 @@ arena_container_wait(){
     done
 }
 
-# force-removes every container of a service
 arena_container_rm(){
     arena_containers -a "$1" | xargs -r ${arena_compose_sudo} docker rm -f
 }
-export -f arena_docker_compose arena_gpu arena_docker arena_containers arena_container_state arena_container_health arena_container_wait arena_container_rm 2>/dev/null || true
+export -f arena_docker_compose arena_gpu arena_podman arena_docker arena_containers arena_container_state arena_container_health arena_container_wait arena_container_rm 2>/dev/null || true
 
-# podman: persist socket path and userns mode into .env, noop on docker
 arena_podman_env(){
-    docker --version 2>/dev/null | grep -qi podman || return 0
-    local info sock rootless mode
+    arena_podman || return 0
+    local info sock rootless mode ctl
     info=$(podman info --format '{{.Host.RemoteSocket.Path}} {{.Host.Security.Rootless}}') || return 1
     read -r sock rootless <<< "$info"
     sock=${sock#unix://}
@@ -119,11 +119,8 @@ arena_podman_env(){
         if [ -d "$sock" ]; then
             echo "arena: $sock is a directory left behind by a container started without the socket, rmdir it first" >&2
         fi
-        if [ "$rootless" = true ]; then
-            echo "arena: podman API socket $sock is not running, run: systemctl --user enable --now podman.socket" >&2
-        else
-            echo "arena: podman API socket $sock is not running, run: sudo systemctl enable --now podman.socket" >&2
-        fi
+        [ "$rootless" = true ] && ctl="systemctl --user" || ctl="sudo systemctl"
+        echo "arena: podman API socket $sock is not running, run: $ctl enable --now podman.socket" >&2
         return 1
     fi
     mode=host
