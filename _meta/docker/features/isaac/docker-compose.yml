@@ -3,10 +3,10 @@ services:
     image: "arena_isaac:${ARENA_IMAGE_TAG}"
     pull_policy: "never"
     build:
-      context: .
+      context: ${ARENA_WS_DIR}
       dockerfile: src/Arena/_meta/docker/features/isaac/Dockerfile
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "${ARENA_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
       - "shared:/tmp/shared"
       - "$HOST_ARENA_WS_DIR/src/Arena/.venv:/opt/venv"
@@ -37,7 +37,8 @@ services:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-1}
       - LLM_API_ENDPOINT
     env_file:
-      - .env
+      - ${ARENA_WS_DIR}/.env
+    userns_mode: ${ARENA_USERNS_MODE:-}
     stdin_open: true
     tty: true
     network_mode: host

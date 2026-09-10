@@ -21,15 +21,13 @@ def build(argv: list[str]) -> None:
 
 def commit(argv: list[str]) -> None:
     """Commit the running arena container back to its image."""
-    import subprocess
-
     if argv:
         raise CLIError("unexpected arguments")
-    out = features.compose_output(["ps", "-q", "-a", "arena"])
-    container_id = out.splitlines()[0].strip() if out.splitlines() else ""
+    ids = features.containers("arena", all_states=True)
+    container_id = ids[0] if ids else ""
     image = os.environ.get("ARENA_IMAGE", "")
     print(f"committing container {container_id} to image {image}...")
-    rc = subprocess.run(["sudo", "env", *os.environ.get("docker_env", "").split(), "docker", "commit", "--no-pause", container_id, image], check=False).returncode
+    rc = features.engine(["commit", "--no-pause", container_id, image])
     if rc:
         sys.exit(rc)
     print("done")
@@ -45,28 +43,24 @@ def stop(argv: list[str]) -> None:
 
 def down(argv: list[str]) -> None:
     """Stop and remove the project's containers."""
-    import subprocess
-
     if argv:
         raise CLIError("unexpected arguments")
     print("Stopping and removing containers...")
     project = os.environ.get("ARENA_PROJECT_NAME", "")
+    sock = os.environ.get("ARENA_DOCKER_SOCK", "/var/run/docker.sock")
     sys.exit(
-        subprocess.run(
+        features.engine(
             [
-                "sudo",
-                "docker",
                 "run",
                 "--rm",
                 "-v",
-                "/var/run/docker.sock:/var/run/docker.sock",
-                "docker:cli",
+                f"{sock}:/var/run/docker.sock",
+                "docker.io/library/docker:cli",
                 "sh",
                 "-lc",
                 f"docker compose --project-name '{project}' down --timeout 0",
-            ],
-            check=False,
-        ).returncode
+            ]
+        )
     )
 
 
@@ -94,16 +88,14 @@ def _gpu() -> tuple[str, str, str]:
 def _container_gpu() -> str:
     """Whether the running arena container reserves a gpu: 'yes', 'no', 'down' or 'unknown'."""
     import json
-    import subprocess
 
-    ids = features.compose_output(["ps", "-q", "arena"]).split()
+    ids = features.containers("arena")
     if not ids:
         return "down"
-    sudo = os.environ.get("arena_compose_sudo", "").split()
-    p = subprocess.run([*sudo, "docker", "inspect", "--format", "{{json .HostConfig.DeviceRequests}}", ids[0]], capture_output=True, text=True, check=False)
-    if p.returncode:
+    out = features.engine_output(["inspect", "--format", "{{json .HostConfig.DeviceRequests}}", ids[0]])
+    if out is None:
         return "unknown"
-    requests = json.loads(p.stdout or "null") or []
+    requests = json.loads(out or "null") or []
     return "yes" if any(r["Driver"] == "nvidia" for r in requests) else "no"
 
 

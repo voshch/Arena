@@ -1,9 +1,12 @@
+x-podman:
+  in_pod: false
+
 services:
   arena:
     image: "${ARENA_IMAGE}"
     pull_policy: "never"
     build:
-      context: .
+      context: ${ARENA_WS_DIR}
       dockerfile: src/Arena/_meta/docker/features/docker/Dockerfile
       args:
         - gid=${HOST_GID}
@@ -11,7 +14,7 @@ services:
     devices:
       - "/dev/snd:/dev/snd"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "${ARENA_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
       - "/run/user/${HOST_UID}/pulse:/tmp/pulse"
       - "shared:/tmp/shared"
@@ -50,8 +53,9 @@ services:
       - CYCLONEDDS_URI=file:///opt/arena_ws/src/Arena/_meta/docker/cyclonedds.${ARENA_NET:-local}.xml
       - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.${ARENA_NET:-local}.xml
     env_file:
-      - .env
+      - ${ARENA_WS_DIR}/.env
     user: "${HOST_UID}"
+    userns_mode: ${ARENA_USERNS_MODE:-}
     group_add:
       - sudo
       - audio

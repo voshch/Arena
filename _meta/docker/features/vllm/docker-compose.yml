@@ -1,6 +1,6 @@
 services:
   vllm:
-    image: vllm/vllm-openai:latest
+    image: docker.io/vllm/vllm-openai:latest
     network_mode: host
     ipc: host
     volumes:

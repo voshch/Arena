@@ -2,6 +2,7 @@
 
 import importlib
 import os
+import subprocess
 import sys
 from collections.abc import Callable
 from types import ModuleType
@@ -39,16 +40,39 @@ def assets_dir(name: str) -> str:
 
 def compose(args: list[str], env: dict[str, str] | None = None) -> int:
     """Run the arena_docker_compose bash function exported by _meta/docker/lib."""
-    import subprocess
-
     return subprocess.run(["bash", "-c", 'arena_docker_compose "$@"', "arena_docker_compose", *args], env=env, check=False).returncode
 
 
-def compose_output(args: list[str]) -> str:
-    """Like compose, but capture and return stdout."""
-    import subprocess
+def _lib(fn: str, *args: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    """Run a bash function exported by _meta/docker/lib."""
+    return subprocess.run(["bash", "-c", f'{fn} "$@"', fn, *args], capture_output=capture, text=True, check=False)
 
-    return subprocess.run(["bash", "-c", 'arena_docker_compose "$@"', "arena_docker_compose", *args], capture_output=True, text=True, check=False).stdout
+
+def engine(args: list[str]) -> int:
+    """Run the engine cli through arena_docker."""
+    return _lib("arena_docker", *args).returncode
+
+
+def engine_output(args: list[str]) -> str | None:
+    """Like engine, but return stdout, None on failure."""
+    p = _lib("arena_docker", *args, capture=True)
+    return None if p.returncode else p.stdout
+
+
+def containers(service: str, all_states: bool = False) -> list[str]:
+    """Container ids of a compose service, running only unless all_states."""
+    flags = ["-a"] if all_states else []
+    return _lib("arena_containers", *flags, service, capture=True).stdout.split()
+
+
+def wait_healthy(*services: str) -> int:
+    """Block until each service is healthy or running without a healthcheck, 1 once one exits."""
+    return _lib("arena_container_wait", *services).returncode
+
+
+def remove(service: str) -> int:
+    """Force-remove every container of a service."""
+    return _lib("arena_container_rm", service).returncode
 
 
 def source_verb(emit: Callable[[], str]) -> Verb:
@@ -101,8 +125,6 @@ def lifecycle_verbs(name: str, update_fn: Callable[[], int], deinit: str | None 
         if argv:
             raise CLIError("unexpected arguments")
         if deinit is not None:
-            import subprocess
-
             subprocess.run(["git", "submodule", "deinit", "-f", deinit], cwd=_env("ARENA_DIR"), check=False)
         _reg_remove(name)
 

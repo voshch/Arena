@@ -1,7 +1,7 @@
 # --- Stage 1: Builder (Python 3.12 + ROS Jazzy) ---
 # Isaac Sim 6.0 bundles Python 3.12, matching Jazzy's native interpreter, so the
 # messages are built against the system python3 with no deadsnakes/venv detour.
-FROM osrf/ros:jazzy-desktop AS builder
+FROM docker.io/osrf/ros:jazzy-desktop AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential cmake git curl \

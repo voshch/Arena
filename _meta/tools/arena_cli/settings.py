@@ -28,16 +28,14 @@ def _net() -> tuple[str, str]:
 def _container_net() -> str:
     """The ARENA_NET the running arena container was created with: a mode, 'down' or 'unknown'."""
     import json
-    import subprocess
 
-    ids = features.compose_output(["ps", "-q", "arena"]).split()
+    ids = features.containers("arena")
     if not ids:
         return "down"
-    sudo = os.environ.get("arena_compose_sudo", "").split()
-    p = subprocess.run([*sudo, "docker", "inspect", "--format", "{{json .Config.Env}}", ids[0]], capture_output=True, text=True, check=False)
-    if p.returncode:
+    out = features.engine_output(["inspect", "--format", "{{json .Config.Env}}", ids[0]])
+    if out is None:
         return "unknown"
-    for entry in json.loads(p.stdout or "[]"):
+    for entry in json.loads(out or "[]"):
         key, _, value = entry.partition("=")
         if key == "FASTRTPS_DEFAULT_PROFILES_FILE":
             return value.rsplit(".", 2)[-2] if value.endswith(".xml") else "unknown"

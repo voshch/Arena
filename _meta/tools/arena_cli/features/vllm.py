@@ -31,11 +31,11 @@ def _config_env() -> dict[str, str]:
 
 def _update() -> int:
     env = _config_env()
-    for args in (["pull", *_SERVICES], ["create", *_SERVICES], ["up", "-d", "--wait", *_SERVICES]):
+    for args in (["pull", *_SERVICES], ["up", "-d", *_SERVICES]):
         rc = features.compose(["--profile", "vllm", *args], env=env)
         if rc:
             return rc
-    return 0
+    return features.wait_healthy(*_SERVICES)
 
 
 def install(argv: list[str]) -> None:
@@ -67,8 +67,8 @@ def _shell_source() -> str:
     lines = [f"export VLLM_{k.upper()}={shlex.quote(str(v))}" for k, v in _config().items()]
     lines += [
         'export LLM_API_ENDPOINT="http://localhost:${VLLM_PROXY_PORT}"',
-        'if [ "$(arena_docker_compose --profile vllm ps --format json vllm vllm-proxy 2>/dev/null | grep -o \'"Health":"healthy"\' | wc -l)" -ne 2 ] ; then',
-        "    arena_docker_compose --profile vllm up -d --wait vllm vllm-proxy",
+        'if [ "$(arena_container_health vllm)" != healthy ] || [ "$(arena_container_health vllm-proxy)" != healthy ] ; then',
+        "    arena_docker_compose --profile vllm up -d vllm vllm-proxy && arena_container_wait vllm vllm-proxy",
         "fi",
     ]
     return "\n".join(lines)

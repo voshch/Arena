@@ -1,5 +1,5 @@
 ARG ROS_DISTRO=jazzy
-FROM osrf/ros:${ROS_DISTRO}-desktop AS base
+FROM docker.io/osrf/ros:${ROS_DISTRO}-desktop AS base
 
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \

@@ -204,6 +204,8 @@ if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
     touch "$ARENA_WS_DIR/.env"
 fi
 
+arena_podman_env || return 1 2>/dev/null || exit 1
+
 xhost +local:docker || true
 
 do_run(){
@@ -212,44 +214,24 @@ do_run(){
         "$arena_service"
 
     local ID
-    ID=$(arena_docker_compose ps -q "$arena_service")
+    ID=$(arena_containers -a "$arena_service" | head -n1)
     if [ -z "$ID" ]; then
         echo "Failed to find container for service '$arena_service'."
         return 1
     fi
 
-    local HEALTH_STATUS
-    HEALTH_STATUS=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$ID" 2>/dev/null)
-    if [ "$HEALTH_STATUS" != "healthy" ] && [ "$HEALTH_STATUS" != "none" ]; then
-        (
-            arena_docker_compose attach --no-stdin "$arena_service" &
-            local LOGS_PID=$!
-            
-            trap 'kill "$LOGS_PID" 2>/dev/null' EXIT
-            trap 'kill "$LOGS_PID" 2>/dev/null; exit 130' INT TERM
-
-            while true; do
-                ID=$(arena_docker_compose ps -q "$arena_service")
-                if [ -z "$ID" ]; then
-                    sleep 1
-                    continue
-                fi
-
-                HEALTH_STATUS=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$ID" 2>/dev/null)
-                local RUN_STATUS
-                RUN_STATUS=$(docker inspect -f '{{.State.Status}}' "$ID" 2>/dev/null)
-
-                if [ "$HEALTH_STATUS" = "healthy" ] || { [ "$HEALTH_STATUS" = "none" ] && [ "$RUN_STATUS" = "running" ]; }; then
-                    break
-                fi
-
-                if [ -n "$RUN_STATUS" ] && [ "$RUN_STATUS" != "running" ] && [ "$RUN_STATUS" != "restarting" ]; then
-                    exit 1
-                fi
-                sleep 1
-            done
-        ) || return $?
-    fi
+    case "$(arena_container_health "$arena_service")" in
+        healthy|none) ;;
+        *)
+            (
+                arena_docker attach --no-stdin --sig-proxy=false "$ID" &
+                local LOGS_PID=$!
+                trap 'kill "$LOGS_PID" 2>/dev/null' EXIT
+                trap 'kill "$LOGS_PID" 2>/dev/null; exit 130' INT TERM
+                arena_container_wait "$arena_service"
+            ) || return $?
+            ;;
+    esac
 
     if [ -t 0 ] && [ -t 1 ]; then
         arena_docker_compose exec "$arena_service" /entrypoint.sh \

@@ -168,7 +168,8 @@ def uninstall_container(argv: list[str]) -> None:
 
     if argv:
         raise CLIError("unexpected arguments")
-    features.compose(["rm", "-fs", "isaac"])
+    features.compose(["stop", "isaac"])
+    features.remove("isaac")
     subprocess.run(["git", "submodule", "deinit", "-f", "arena_isaac"], cwd=common._env("ARENA_DIR"), check=False)
     common._reg_remove(NAME)
 

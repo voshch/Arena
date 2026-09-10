@@ -9,7 +9,7 @@ A modular ROS 2 (Jazzy) platform for researching and benchmarking autonomous rob
 
 ## Installation
 
-Prerequisites: [Docker](https://docs.docker.com/engine/install/) installation with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU support. Current user must be in group `docker`.
+Prerequisites: [Docker](https://docs.docker.com/engine/install/) installation with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU support. Current user must be in group `docker`. Podman also works through the `podman-docker` alias package, with the API socket enabled (`systemctl --user enable --now podman.socket`).
 Afterwards, run the following commands to install Arena:
 
 ### Basic Installation
