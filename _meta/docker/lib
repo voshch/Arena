@@ -45,7 +45,8 @@ arena_gpu(){
 _arena_compose_file(){
     local f
     for f in "$1" ${podman:+"${1%.yaml}.podman.yaml"}; do
-        [ -f "$f" ] && files="${files:+$files:}$f"
+        [ -f "$f" ] || continue
+        files="${files:+$files:}$f"
     done
 }
 
