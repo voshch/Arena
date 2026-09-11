@@ -299,6 +299,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     fq_name = self._NS_ROBOT(robot.name)
 
+                    control_spec = robot_params.control
+                    is_ros2_control = control_spec is not None and control_spec.is_ros2_control
+                    relays_odom = control_spec is not None and is_ros2_control and control_spec.odom_topic != "odom"
+
                     spawn_res = await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
@@ -311,15 +315,12 @@ class IsaacSimulator(BaseSim, NodeInterface):
                             pose=robot.pose.to_msg(),
                             cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
                             joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
-                            odom_topic=self.node.service_namespace(robot.name, 'odom'),
+                            odom_topic='' if relays_odom else self.node.service_namespace(robot.name, 'odom'),
                         )
                     )
                     if spawn_res is None or not spawn_res.path:
                         self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check isaac log'}")
                         return False
-
-                    control_spec = robot_params.control
-                    is_ros2_control = control_spec is not None and control_spec.is_ros2_control
 
                     # Jazzy controller_manager reads URDF from the robot_description topic, not
                     # its parameter; feed RSP the bridge URDF so the same topic serves both
