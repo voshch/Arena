@@ -1,7 +1,0 @@
-data/
-build/
-install/
-log/
-.uv-cache/
-.uv-python/
-src/Arena/.venv/

@@ -37,7 +37,7 @@ FROM base AS python_deps
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /build
-COPY src/Arena/pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock* ./
 
 RUN uv venv /opt/venv --system-site-packages
 
@@ -95,7 +95,7 @@ RUN mkdir -p log
 RUN chown -R ${uid}:${gid} /opt/arena_ws
 
 
-COPY src/Arena/_meta/docker/features/docker/entrypoint.sh /entrypoint.sh
+COPY _meta/docker/features/docker/entrypoint.sh /entrypoint.sh
 RUN ln -fs src/Arena/_meta/docker/features/docker/source.container ./source
 
 RUN chmod +x /entrypoint.sh

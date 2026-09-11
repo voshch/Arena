@@ -1,0 +1,6 @@
+*
+!pyproject.toml
+!uv.lock
+!_meta/docker/features/docker/entrypoint.sh
+!arena_isaac/isaacsim_msgs
+!utils/msgs/arena_people_msgs

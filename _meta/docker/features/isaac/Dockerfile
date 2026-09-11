@@ -14,8 +14,8 @@ RUN python3 --version && \
 
 WORKDIR /opt/msg_build
 
-ADD src/Arena/arena_isaac/isaacsim_msgs src/isaacsim_msgs
-ADD src/Arena/utils/msgs/arena_people_msgs src/arena_people_msgs
+ADD arena_isaac/isaacsim_msgs src/isaacsim_msgs
+ADD utils/msgs/arena_people_msgs src/arena_people_msgs
 
 # Install build dependencies (Including NumPy for the C-extensions)
 RUN . /opt/ros/jazzy/setup.sh && \

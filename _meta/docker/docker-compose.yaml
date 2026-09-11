@@ -6,8 +6,8 @@ services:
     image: "${ARENA_IMAGE}"
     pull_policy: "never"
     build:
-      context: ${ARENA_WS_DIR}
-      dockerfile: src/Arena/_meta/docker/features/docker/Dockerfile
+      context: ${ARENA_WS_DIR}/src/Arena
+      dockerfile: _meta/docker/features/docker/Dockerfile
       args:
         - gid=${HOST_GID}
         - uid=${HOST_UID}
