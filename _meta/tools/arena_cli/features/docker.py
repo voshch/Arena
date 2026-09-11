@@ -33,12 +33,32 @@ def commit(argv: list[str]) -> None:
     print("done")
 
 
+def _teardown(compose_verb: str) -> int:
+    """Run a compose teardown from a labeled sibling container so it survives this one's death."""
+    project = os.environ.get("ARENA_PROJECT_NAME", "")
+    sock = os.environ.get("ARENA_DOCKER_SOCK", "/var/run/docker.sock")
+    return features.engine(
+        [
+            "run",
+            "--rm",
+            "--label",
+            f"arena.down={project}",
+            "-v",
+            f"{sock}:/var/run/docker.sock",
+            "docker.io/library/docker:cli",
+            "sh",
+            "-lc",
+            f"docker compose --project-name '{project}' {compose_verb} --timeout 0",
+        ]
+    )
+
+
 def stop(argv: list[str]) -> None:
     """Stop the project's containers."""
     if argv:
         raise CLIError("unexpected arguments")
     print("Stopping containers...")
-    sys.exit(features.compose(["stop", "--timeout", "0"]))
+    sys.exit(_teardown("stop"))
 
 
 def down(argv: list[str]) -> None:
@@ -46,22 +66,7 @@ def down(argv: list[str]) -> None:
     if argv:
         raise CLIError("unexpected arguments")
     print("Stopping and removing containers...")
-    project = os.environ.get("ARENA_PROJECT_NAME", "")
-    sock = os.environ.get("ARENA_DOCKER_SOCK", "/var/run/docker.sock")
-    sys.exit(
-        features.engine(
-            [
-                "run",
-                "--rm",
-                "-v",
-                f"{sock}:/var/run/docker.sock",
-                "docker.io/library/docker:cli",
-                "sh",
-                "-lc",
-                f"docker compose --project-name '{project}' down --timeout 0",
-            ]
-        )
-    )
+    sys.exit(_teardown("down"))
 
 
 def compose(argv: list[str]) -> None:

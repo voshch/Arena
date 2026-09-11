@@ -199,7 +199,26 @@ arena_podman_env || return 1 2>/dev/null || exit 1
 
 xhost +local:docker || true
 
+_teardown_in_flight(){
+    [ -n "$( { arena_docker ps -q --filter "label=arena.down=$ARENA_PROJECT_NAME"
+               arena_docker ps -aq --filter "label=com.docker.compose.project=$ARENA_PROJECT_NAME" --filter status=removing
+             } 2>/dev/null )" ]
+}
+
 do_run(){
+    local waited=0
+    if _teardown_in_flight; then
+        echo "waiting for teardown to finish..."
+        while _teardown_in_flight; do
+            sleep 1
+            waited=$((waited + 1))
+            [ "$waited" = 60 ] && echo "still waiting after 60s, inspect: docker ps --filter label=arena.down=$ARENA_PROJECT_NAME"
+        done
+    fi
+
+    { arena_docker ps -aq --filter "label=com.docker.compose.project=$ARENA_PROJECT_NAME" --filter status=dead 2>/dev/null \
+        | xargs -r ${arena_compose_sudo} docker rm -f > /dev/null; } || true
+
     arena_docker_compose \
         up -d --remove-orphans --timeout 0 \
         "$arena_service"
