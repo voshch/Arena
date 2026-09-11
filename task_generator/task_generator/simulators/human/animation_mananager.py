@@ -190,7 +190,8 @@ class AnimationManager:
             path = self.database_path / f"{name}.npy"
             assert path.is_file(), f"Animation {name} does not appear at {str(path)}"
 
-            anim_frames = np.load(path, allow_pickle=True)
+            # recordings that predate a wire DOF (the wrists) carry it as 0.0
+            anim_frames = [{**frame, "angles": {**dict.fromkeys(JOINT_NAMES, 0.0), **frame["angles"]}} for frame in np.load(path, allow_pickle=True)]
             n_frames = len(anim_frames)
             duration = n_frames / self._fps
             annotation = annotations.get(name, {})

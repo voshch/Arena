@@ -67,7 +67,7 @@ joint angles are committed to the `arena_peds` bus.  For each `Pedestrian` in
 the outgoing message it checks `ped.joint_state.name`:
 
 - **non-empty**: upstream backend supplied its own joint state, published unchanged (override path: an upstream producer that already computes joint angles).
-- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (36 DOF, no body suffix).
+- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (40 DOF, no body suffix).
 
 The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac and Gazebo pedestrian rigs.
 

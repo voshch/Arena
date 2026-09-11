@@ -1,4 +1,4 @@
-"""Parametric PointAt animations for the Arena 36-DOF human wire contract."""
+"""Parametric PointAt animations for the Arena 40-DOF human wire contract."""
 
 from .generator import (
     TEMPLATES,

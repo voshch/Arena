@@ -100,7 +100,8 @@ class Template:
 
 def _load_frames(path: str) -> list[dict]:
     raw = np.load(path, allow_pickle=True)
-    return [dict(f) for f in raw]
+    # recordings that predate a wire DOF (the wrists) carry it as 0.0
+    return [{**f, "angles": {**dict.fromkeys(C.ROS_JOINT_ORDER, 0.0), **f["angles"]}} for f in raw]
 
 
 def _elbow_swivel(sh: np.ndarray, el: np.ndarray, aim_dir: np.ndarray) -> float:

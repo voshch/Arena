@@ -24,7 +24,7 @@ Degenerate branch (|sin(b)| < 1e-6, limb pointing along the twist axis): a and c
 individually ill-conditioned, only their sum or difference survives. Hold a at pi/2
 and fold the rest into c.
 
-All other joints (spine stack, collars, hips, knees, elbows, head, ankles) pass straight
+All other joints (spine stack, collars, hips, knees, elbows, wrists, head, ankles) pass straight
 through: the fork keeps every other frame body-aligned at rest, so the wire and raw
 URDF axes already coincide there.
 """
