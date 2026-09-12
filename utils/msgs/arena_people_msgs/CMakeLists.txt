@@ -22,6 +22,7 @@ set(srv_files
 )
 
 set(msg_files
+  "msg/Gesture.msg"
   "msg/Pedestrian.msg"
   "msg/Pedestrians.msg"
   "msg/SpawnPedestrian.msg"

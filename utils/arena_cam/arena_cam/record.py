@@ -19,6 +19,15 @@ def resolve_dir(out_dir: str) -> Path:
     return (Path(base) if base else Path.cwd()) / "recordings" / out_dir
 
 
+def screenshots_dir() -> Path:
+    """$ARENA_SCREENSHOTS_DIR, else $ARENA_DATA_DIR/screenshots, the dir the sim GUIs also drop shots into."""
+    explicit = os.environ.get("ARENA_SCREENSHOTS_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+    base = os.environ.get("ARENA_DATA_DIR")
+    return (Path(base) if base else Path.cwd()) / "screenshots"
+
+
 def record_dir(out_dir: str, force: bool = False) -> Path:
     """Resolve and prepare the output directory.
 

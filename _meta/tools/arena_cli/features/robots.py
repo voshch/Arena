@@ -4,11 +4,10 @@ import os
 import sys
 
 import common
-from common import Verb, make_verb
 import complete
-from complete import Flags, Static, Union
-
 import features
+from common import Verb, make_verb
+from complete import Flags, Static, Union
 
 _NAME = "robots"
 

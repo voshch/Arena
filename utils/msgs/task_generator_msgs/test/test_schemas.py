@@ -6,6 +6,7 @@ types expose the correct field names and accept the right Python values.
 Run after `colcon build` installs the generated Python bindings.
 """
 
+
 def test_episode_record_fields():
     from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
     from task_generator_msgs.msg import EpisodeRecord

@@ -16,6 +16,7 @@ def _ros_gate():
 class _FakeLogger:
     def get_child(self, name):
         return self
+
     def debug(self, *a, **kw): ...
     def info(self, *a, **kw): ...
     def warn(self, *a, **kw): ...
@@ -55,6 +56,7 @@ def _make_task_mode(namespace_str="root"):
 
 def test_namespace_returns_namespace_type():
     from arena_rclpy_mixins.shared import Namespace
+
     tm = _make_task_mode("root")
     result = tm.namespace("child")
     assert isinstance(result, Namespace)

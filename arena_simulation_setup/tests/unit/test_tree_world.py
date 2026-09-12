@@ -24,8 +24,10 @@ def test_zone_floor_rectangle():
     zone = _make_zone(
         name="room",
         corners=[
-            Position(0.0, 0.0), Position(4.0, 0.0),
-            Position(4.0, 3.0), Position(0.0, 3.0),
+            Position(0.0, 0.0),
+            Position(4.0, 0.0),
+            Position(4.0, 3.0),
+            Position(0.0, 3.0),
         ],
     )
     floor = zone.floor
@@ -39,7 +41,9 @@ def test_zone_floor_triangular():
     zone = _make_zone(
         name="tri",
         corners=[
-            Position(0.0, 0.0), Position(2.0, 0.0), Position(1.0, 2.0),
+            Position(0.0, 0.0),
+            Position(2.0, 0.0),
+            Position(1.0, 2.0),
         ],
     )
     floor = zone.floor
@@ -300,8 +304,10 @@ def _make_square_zone(name: str = "room", size: float = 10.0) -> WorldDescriptio
     return _make_zone(
         name=name,
         corners=[
-            Position(0.0, 0.0), Position(size, 0.0),
-            Position(size, size), Position(0.0, size),
+            Position(0.0, 0.0),
+            Position(size, 0.0),
+            Position(size, size),
+            Position(0.0, size),
         ],
         walls=[
             Wall(start=Position(0.0, 0.0), end=Position(size, 0.0)),
@@ -319,6 +325,7 @@ def test_render_returns_bytes_and_origin_tuple():
 def test_render_bytes_is_valid_png():
     import io
     import PIL.Image
+
     wd = WorldDescription(zones=[_make_square_zone()])
     png_bytes, _ = wd.render()
     assert isinstance(png_bytes, bytes)
@@ -329,6 +336,7 @@ def test_render_bytes_is_valid_png():
 def test_render_image_mode_is_rgb():
     import io
     import PIL.Image
+
     wd = WorldDescription(zones=[_make_square_zone()])
     png_bytes, _ = wd.render()
     img = PIL.Image.open(io.BytesIO(png_bytes))
@@ -339,6 +347,7 @@ def test_render_image_size_reflects_zone_aabb():
     import io
     import math
     import PIL.Image
+
     size = 10.0
     resolution = 0.05
     padding = 5
@@ -375,6 +384,7 @@ def test_all_floors_skips_empty_material():
 
 def test_all_ceilings_skips_empty_material():
     import asyncio
+
     kept = WorldDescription.Zone(name="kept", corners=_square_corners(), ceiling_height=2.5)
     dropped = WorldDescription.Zone(name="dropped", corners=_square_corners(), ceiling_height=2.5, ceiling_material='')
     wd = WorldDescription(zones=[kept, dropped])
@@ -384,6 +394,7 @@ def test_all_ceilings_skips_empty_material():
 
 def test_all_walls_skips_empty_material():
     from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+
     default_wall = Wall(start=Position(0, 0), end=Position(1, 0))
     named_wall = Wall(start=Position(1, 0), end=Position(2, 0), material=MaterialIdentifier('Marble'))
     dropped_wall = Wall(start=Position(2, 0), end=Position(3, 0), material=MaterialIdentifier(''))
@@ -394,6 +405,7 @@ def test_all_walls_skips_empty_material():
 
 def test_zone_mat_key_aliases():
     from arena_simulation_setup.utils.cattrs import converter
+
     zone = converter.structure({'name': 'z', 'mat': '', 'ceiling_mat': '', 'wall_mat': ''}, WorldDescription.Zone)
     assert zone.material.name == ''
     assert zone.ceiling_material.name == ''
@@ -402,6 +414,7 @@ def test_zone_mat_key_aliases():
 
 def test_zone_canonical_key_wins_over_alias():
     from arena_simulation_setup.utils.cattrs import converter
+
     zone = converter.structure({'name': 'z', 'material': 'Porcelain_Tile_4', 'mat': ''}, WorldDescription.Zone)
     assert zone.material.name == 'Porcelain_Tile_4'
 
@@ -439,9 +452,7 @@ def test_world_microphones_validate_zone_position_and_indices():
     )
 
     world.validate_microphones()
-    assert [
-        microphone.listener_id for microphone in world.microphones
-    ] == [
+    assert [microphone.listener_id for microphone in world.microphones] == [
         "microphone:zone:reception:ceiling:1",
         "microphone:zone:reception:ceiling:2",
     ]

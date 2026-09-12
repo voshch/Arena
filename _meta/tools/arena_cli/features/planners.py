@@ -2,13 +2,13 @@
 
 import os
 import sys
+from types import ModuleType
 
 import common
-from common import Verb, make_verb
 import complete
-from complete import Flags, Static, Union
-
 import features
+from common import Verb, make_verb
+from complete import Flags, Static, Union
 
 _NAME = "planners"
 
@@ -71,7 +71,7 @@ def _deps_build() -> int:
     return common._resourced("arena deps && arena build --executor sequential")
 
 
-def _payload_module():
+def _payload_module() -> ModuleType:
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("_planners_payload", _payload())

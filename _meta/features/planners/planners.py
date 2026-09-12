@@ -26,8 +26,11 @@ def arena_dir() -> Path:
 def submodule_status(arena: Path) -> dict[str, str]:
     """{path: 'init'|'uninit'} for each submodule (recursive)."""
     out = subprocess.run(
-        ["git", "submodule", "status", "--recursive"], cwd=arena,
-        text=True, capture_output=True, check=False,
+        ["git", "submodule", "status", "--recursive"],
+        cwd=arena,
+        text=True,
+        capture_output=True,
+        check=False,
     ).stdout
     status: dict[str, str] = {}
     for line in out.splitlines():
@@ -117,11 +120,11 @@ def _cli(arena: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, "-m", "arena_planners", *args], cwd=arena, env=env, check=False)
 
 
-def cmd_ls(arena: Path, _args) -> int:
+def cmd_ls(arena: Path, _args: argparse.Namespace) -> int:
     return _cli(arena, "ls").returncode
 
 
-def cmd_add(arena: Path, args) -> int:
+def cmd_add(arena: Path, args: argparse.Namespace) -> int:
     subs = planner_submodules(arena)
     kinds = planner_kinds(arena)
     if args.all:
@@ -159,13 +162,11 @@ def cmd_add(arena: Path, args) -> int:
             print(f"planners: {msg}", file=sys.stderr)
             rc = 1
             continue
-        _git(["-c", "protocol.file.allow=always",
-              "submodule", "update", "--init", "--checkout", _SDK_SUBDIR], arena)
+        _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--checkout", _SDK_SUBDIR], arena)
         sdk = arena / _SDK_SUBDIR
         for p in paths:
             sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
-            _git(["-c", "protocol.file.allow=always",
-                  "submodule", "update", "--init", "--checkout", sub_path], sdk)
+            _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--checkout", sub_path], sdk)
         if kinds.get(planner) == "nav2":
             print(f"planners: '{planner}' is a native Nav2 controller")
         else:
@@ -177,7 +178,7 @@ def _fetch_weights(arena: Path, planner: str) -> None:
     _cli(arena, "fetch", planner)
 
 
-def cmd_rm(arena: Path, args) -> int:
+def cmd_rm(arena: Path, args: argparse.Namespace) -> int:
     subs = planner_submodules(arena)
     if args.all:
         if args.names:
@@ -237,14 +238,14 @@ def cmd_rm(arena: Path, args) -> int:
     return rc
 
 
-def cmd_update(arena: Path, _args) -> int:
+def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
     sdk = arena / _SDK_SUBDIR
     if not (sdk / ".gitmodules").is_file():
         return 0
     return _git(["submodule", "update", "--recursive"], sdk, check=False)
 
 
-def cmd_uninstall(arena: Path, _args) -> int:
+def cmd_uninstall(arena: Path, _args: argparse.Namespace) -> int:
     subs = planner_submodules(arena)
     status = submodule_status(arena)
     sdk = arena / _SDK_SUBDIR
@@ -255,7 +256,7 @@ def cmd_uninstall(arena: Path, _args) -> int:
     return 0
 
 
-def cmd_check(arena: Path, args) -> int:
+def cmd_check(arena: Path, args: argparse.Namespace) -> int:
     subs = planner_submodules(arena)
     status = submodule_status(arena)
     if not subs:
@@ -289,16 +290,19 @@ def main() -> int:
     p_rm = sub.add_parser("rm")
     p_rm.add_argument("names", nargs="*")
     p_rm.add_argument("--all", action="store_true", help="remove every planner")
-    p_rm.add_argument("-f", "--force", action="store_true",
-                      help="deinit shared paths too; co-tagged planners become pending")
+    p_rm.add_argument("-f", "--force", action="store_true", help="deinit shared paths too; co-tagged planners become pending")
     p_check = sub.add_parser("check")
     p_check.add_argument("--all", action="store_true")
     p_check.add_argument("-q", "--quiet", action="store_true")
 
     args = ap.parse_args()
     handlers = {
-        "ls": cmd_ls, "add": cmd_add, "rm": cmd_rm,
-        "update": cmd_update, "uninstall": cmd_uninstall, "check": cmd_check,
+        "ls": cmd_ls,
+        "add": cmd_add,
+        "rm": cmd_rm,
+        "update": cmd_update,
+        "uninstall": cmd_uninstall,
+        "check": cmd_check,
     }
     return handlers[args.cmd](arena_dir(), args)
 

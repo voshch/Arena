@@ -454,7 +454,9 @@ the camera actually is.
 Anywhere: `F` frames the target entity, `Shift+F` cycles its reference mode
 (`full` / `yaw` / `position`), `H` returns to the world frame, `1` / `3` / `7`
 snap to front / right / top, `Space` brakes, `P` captures a still to
-`$ARENA_DATA_DIR/recordings/stills/`. Keys are ignored while a text field has
+`$ARENA_SCREENSHOTS_DIR` (default `$ARENA_DATA_DIR/screenshots/`, the same
+directory the Gazebo GUI and Isaac Kit screenshot buttons are forwarded to).
+Keys are ignored while a text field has
 focus, so the target box stays typeable.
 
 `[` / `]` are a held axis like the movement keys, not a step: fov ramps at
@@ -522,7 +524,7 @@ reached that sim time. Gazebo only.
 
 ## Requirements
 
-Two backends host the `/arena/viewport/*` contract (`set_view`,
+rviz and all simulators host the `/arena/viewport/*` contract (`set_view`,
 `set_reference_frame`, `set_projection`, `capture`, plus the `cmd_view` /
 `camera_pose` topics):
 
@@ -530,10 +532,11 @@ Two backends host the `/arena/viewport/*` contract (`set_view`,
   GUI plugin, so nothing exists in headless mode (`gz sim -s`).
 - **rviz**, under each env's namespace, via the `rviz_viewport_control` view
   controller that [rviz_config.py](../../rviz_utils/rviz_utils/scripts/rviz_config.py)
-  writes into the generated config.
+  writes into the generated config. Drives the rviz camera, so it works under
+  every simulator.
+- **Isaac**, under `/arena`, via the `isaac_utils.viewport` node the sim process
+  starts. GUI only, `--headless` starts none.
 
-Isaac hosts no part of the contract, so nothing here works under `sim:=isaac`.
-
-`capture` is Gazebo-only; the rviz side answers `capture not yet supported`, so
-recording and `P` need the sim camera. `Cam` waits up to 10 seconds for the
-services and logs an error if they are absent.
+Only Gazebo implements `capture`, so recording and `P` need the gz sim camera.
+`Cam` waits up to 10 seconds for the services and logs an error if they are
+absent.

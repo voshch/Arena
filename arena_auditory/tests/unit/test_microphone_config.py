@@ -23,16 +23,12 @@ def test_robot_microphones_require_robot_and_keep_stable_indices():
         "microphone:robot:jackal_1:front:1",
         "microphone:robot:jackal_1:front:2",
     ]
-    assert specs[0].resolve_frame("env_0/jackal_1") == (
-        "env_0/jackal_1/microphone_link"
-    )
+    assert specs[0].resolve_frame("env_0/jackal_1") == ("env_0/jackal_1/microphone_link")
 
 
 def test_robot_microphones_reject_missing_robot():
     with pytest.raises(ValueError, match="robot must be a string"):
-        parse_robot_microphones(
-            "[{owner: robot, placement: front, frame: microphone_link}]"
-        )
+        parse_robot_microphones("[{owner: robot, placement: front, frame: microphone_link}]")
 
 
 def test_robot_microphones_reject_duplicate_indexed_id():

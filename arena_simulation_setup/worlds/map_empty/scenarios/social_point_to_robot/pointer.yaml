@@ -1,0 +1,20 @@
+name: pointer
+mode: behavior_tree
+extends: adult
+
+initial_sequence: point_seq
+
+sequences:
+  point_seq:
+    steps:
+      point_robot:
+        attention:
+          point: [robot:robot_0, robot:robot, robot]
+          gaze: [robot:robot_0, robot:robot, robot]
+        duration: {mean: 6.0, std: 0.0}
+      point_person:
+        attention:
+          point: other_person
+          gaze: other_person
+        duration: {mean: 6.0, std: 0.0}
+    then: point_seq

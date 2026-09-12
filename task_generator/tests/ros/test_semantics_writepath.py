@@ -3,6 +3,7 @@
 Follows the stub pattern used across the node-service tests: unbound methods are
 invoked against a plain object carrying only the attributes each method reads.
 """
+
 from __future__ import annotations
 
 import random

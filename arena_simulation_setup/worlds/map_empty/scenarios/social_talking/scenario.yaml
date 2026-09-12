@@ -1,0 +1,14 @@
+robots:
+  - start: [2.0, 10.0, 0.0]
+    goal: [24.0, 10.0, 0.0]
+
+dynamic:
+  - name: talker_1
+    model: female_adult_business_02
+    pose: [12.0, 10.0, 0.0]
+    agent: { agent_type: ./talker_1.yaml }
+
+  - name: talker_2
+    model: male_adult_construction_01
+    pose: [14.0, 10.0, 3.14159]
+    agent: { agent_type: ./talker_2.yaml }

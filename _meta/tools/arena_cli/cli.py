@@ -2,6 +2,8 @@
 
 import os
 import sys
+from collections.abc import Callable
+from types import ModuleType
 
 import asset as _asset_mod
 import complete as _complete
@@ -42,13 +44,15 @@ SECTIONS = {
 
 _VERBS: dict[str, Verb] = {}
 
+VerbFn = Callable[[list[str]], int | None]
+
 
 def _register(v: Verb) -> None:
     _VERBS[v.name] = v
 
 
-def verb(name: str, *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: _complete.Spec | None = None):
-    def deco(fn):
+def verb(name: str, *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: _complete.Spec | None = None) -> Callable[[VerbFn], VerbFn]:
+    def deco(fn: VerbFn) -> VerbFn:
         _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text, complete=complete))
         return fn
 
@@ -261,12 +265,7 @@ def _lockstep_yq(s: str) -> str:
 
 
 def _lockstep_channel_yaml(c: dict) -> str:
-    return (
-        "{name: " + _lockstep_yq(c["name"])
-        + ", topic: " + _lockstep_yq(c["topic"])
-        + ", type: " + _lockstep_yq(c["type"])
-        + f", period_s: {c['period_s']}, hard: {'true' if c['hard'] else 'false'}}}"
-    )
+    return "{name: " + _lockstep_yq(c["name"]) + ", topic: " + _lockstep_yq(c["topic"]) + ", type: " + _lockstep_yq(c["type"]) + f", period_s: {c['period_s']}, hard: {'true' if c['hard'] else 'false'}}}"
 
 
 _LOCKSTEP_SPEC = Sub(
@@ -311,9 +310,7 @@ def lockstep(args: list[str]) -> None:
         _exec(
             "bash",
             "-c",
-            f'ros2 topic list 2>/dev/null | grep -qx /arena/state/lockstep || {{ echo "{unreachable}"; exit 1; }};'
-            " ros2 topic echo /arena/state/lockstep --once"
-            " --qos-durability transient_local --qos-reliability reliable",
+            f'ros2 topic list 2>/dev/null | grep -qx /arena/state/lockstep || {{ echo "{unreachable}"; exit 1; }}; ros2 topic echo /arena/state/lockstep --once --qos-durability transient_local --qos-reliability reliable',
         )
     stop = "ros2 service call /arena/sim_lifecycle/lockstep/stop std_srvs/srv/Trigger >/dev/null 2>&1"
     if action == "off":
@@ -322,19 +319,12 @@ def lockstep(args: list[str]) -> None:
         _exec(
             "bash",
             "-c",
-            f"{srv_guard(action)};"
-            f" R=$(ros2 service call /arena/sim_lifecycle/lockstep/{action} std_srvs/srv/Trigger 2>&1);"
-            f' grep -q "success=True" <<< "$R" && echo "lockstep {action}d" || {{ echo "lockstep not running"; exit 1; }}',
+            f"{srv_guard(action)}; R=$(ros2 service call /arena/sim_lifecycle/lockstep/{action} std_srvs/srv/Trigger 2>&1); grep -q \"success=True\" <<< \"$R\" && echo \"lockstep {action}d\" || {{ echo \"lockstep not running\"; exit 1; }}",
         )
     if action == "gate":
         channels = [_lockstep_parse_channel(a) for a in rest]
         reg = "registration: {caller: 'cli', env: ''" + f", channels: [{', '.join(_lockstep_channel_yaml(c) for c in channels)}]}}"
-        register = (
-            f"{srv_guard('register')};"
-            " R=$(ros2 service call /arena/sim_lifecycle/lockstep/register"
-            f' arena_runtime_msgs/srv/LockstepRegister "{reg}" 2>&1);'
-            ' grep -q "success=True" <<< "$R" || { grep -oE "error_msg=.*" <<< "$R"; exit 1; }'
-        )
+        register = f"{srv_guard('register')}; R=$(ros2 service call /arena/sim_lifecycle/lockstep/register arena_runtime_msgs/srv/LockstepRegister \"{reg}\" 2>&1); grep -q \"success=True\" <<< \"$R\" || {{ grep -oE \"error_msg=.*\" <<< \"$R\"; exit 1; }}"
         msg = "cli gates: " + ", ".join(c["name"] for c in channels) if channels else "cli gates cleared"
         _exec("bash", "-c", f'{register} && echo "{msg}"')
 
@@ -354,12 +344,7 @@ def lockstep(args: list[str]) -> None:
         else:
             raise CLIError(f"lockstep {action}: unrecognized argument '{a}'")
     start_req = f"{{target_rtf: {rtf if rtf is not None else 0.0}, ungated: {'true' if ungated else 'false'}}}"
-    start = (
-        f"{srv_guard('start')};"
-        " R=$(ros2 service call /arena/sim_lifecycle/lockstep/start"
-        f" arena_runtime_msgs/srv/LockstepStart '{start_req}' 2>&1);"
-        ' grep -q "success=True" <<< "$R" || { grep -oE "error_msg=.*" <<< "$R"; exit 1; }'
-    )
+    start = f"{srv_guard('start')}; R=$(ros2 service call /arena/sim_lifecycle/lockstep/start arena_runtime_msgs/srv/LockstepStart '{start_req}' 2>&1); grep -q \"success=True\" <<< \"$R\" || {{ grep -oE \"error_msg=.*\" <<< \"$R\"; exit 1; }}"
     if action == "on":
         _exec("bash", "-c", f'{start} && echo "lockstep on"')
     pause_cmd = "ros2 service call /arena/sim_lifecycle/lockstep/pause std_srvs/srv/Trigger >/dev/null 2>&1"
@@ -368,8 +353,7 @@ def lockstep(args: list[str]) -> None:
     _exec(
         "bash",
         "-c",
-        f'{start} && echo "lockstep running (ctrl-c to pause)";'
-        f' trap "{trap_pause}" EXIT; trap "exit 0" INT TERM; {wait}',
+        f'{start} && echo "lockstep running (ctrl-c to pause)"; trap "{trap_pause}" EXIT; trap "exit 0" INT TERM; {wait}',
     )
 
 
@@ -413,31 +397,23 @@ def rebuild(args: list[str]) -> None:
     Bare names expand to --packages-above like `arena build`.
     """
     import shutil
-    import subprocess
+
+    from build import build_main, resolve_packages, workspace
 
     if not args:
         raise CLIError("rebuild needs a package selection")
     argv = _select_args(args, above=True)
-    listing = subprocess.run(
-        ["colcon", "list", "--names-only", "--base-paths", os.path.join(_env("ARENA_WS_DIR"), "src"), *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if listing.returncode:
-        raise CLIError("colcon list rejected the arguments, aborting before clean")
-    pkgs = [line.strip() for line in listing.stdout.splitlines() if line.strip()]
+    pkgs = resolve_packages(argv)
     if not pkgs:
         raise CLIError("no packages matched")
+    ws = workspace()
     print(f"arena rebuild: resolved {len(pkgs)} package(s): {' '.join(pkgs)}")
     for pkg in pkgs:
-        for tree in (os.path.join("build", pkg), os.path.join("install", pkg)):
+        for tree in (os.path.join(ws.build_base, pkg), os.path.join(ws.install_base, pkg)):
             if os.path.isdir(tree):
                 print(f"  rm -rf {tree}")
                 shutil.rmtree(tree)
     print("arena rebuild: clean done, invoking build")
-    from build import build_main
-
     sys.exit(build_main(argv))
 
 
@@ -447,23 +423,21 @@ TEST_DEFAULT_SELECT = ("--packages-select-regex", "^arena_", "^task_generator$")
 @verb("test", passthrough=True, complete=Packages(), help_text=f"Run colcon test and print a summary.\n\nDefaults to `{' '.join(TEST_DEFAULT_SELECT)}` unless a selection flag is given. Bare package names are shorthand for --packages-select.")
 def test(args: list[str]) -> None:
     import re
-    import subprocess
+
+    from build import resolve_packages, workspace
 
     argv = _select_args(args)
     if not any(re.match(r"^--packages-(select|select-regex|up-to|above|ignore)", a) for a in argv):
         argv = [*TEST_DEFAULT_SELECT, *argv]
-    src_dir = os.path.join(_env("ARENA_WS_DIR"), "src")
-    listing = subprocess.run(
-        ["colcon", "list", "--names-only", "--base-paths", src_dir, *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    pkgs = [line.strip() for line in listing.stdout.splitlines() if line.strip()] if listing.returncode == 0 else []
-    test_rc = _run("colcon", "test", "--base-paths", src_dir, "--event-handlers", "console_direct+", *argv)
+    ws = workspace()
+    try:
+        pkgs = resolve_packages(argv)
+    except CLIError:
+        pkgs = []
+    test_rc = _run("colcon", "test", "--base-paths", *ws.base_paths, "--build-base", ws.build_base, "--install-base", ws.install_base, "--event-handlers", "console_direct+", *argv)
     from testsum import summarize
 
-    summary = [os.path.join(_env("ARENA_WS_DIR"), "build")]
+    summary = [ws.build_base]
     if pkgs:
         summary += ["--packages", *pkgs]
     summary_rc = summarize(summary)
@@ -501,7 +475,7 @@ def _feature_names() -> list[str]:
     return [name for name in sorted(_features.available()) if _features.load(name) is not None]
 
 
-def _feature_desc(mod) -> str:
+def _feature_desc(mod: ModuleType) -> str:
     return mod.DESCRIPTION.replace("\b", "").strip()
 
 
@@ -512,9 +486,10 @@ def _feature_short(name: str) -> str:
 
 def _feature_group_help() -> str:
     out = ["Usage: arena feature COMMAND [ARGS]...", "", _indent(FEATURE_HELP)]
-    rows = [(name, _feature_short(name)) for name in _feature_names()]
+    installed = _reg_list()
+    rows = [(("* " if name in installed else "  ") + name, _feature_short(name)) for name in _feature_names()]
     if rows:
-        out += ["", "Commands:", _listing(rows)]
+        out += ["", "Commands (* = installed):", _listing(rows)]
     return "\n".join(out)
 
 

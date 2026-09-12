@@ -136,6 +136,7 @@ def test_obstacle_asdict_returns_dict():
 
 def test_dynamic_obstacle_empty_waypoints():
     from arena_simulation_setup.tree.assets.Human import HumanIdentifier
+
     do = DynamicObstacle(
         name="dyn",
         pose=Pose(),
@@ -149,6 +150,7 @@ def test_dynamic_obstacle_empty_waypoints():
 
 def test_dynamic_obstacle_velocity_converter_string():
     from arena_simulation_setup.tree.assets.Human import HumanIdentifier
+
     do = DynamicObstacle(
         name="dyn",
         pose=Pose(),
@@ -165,6 +167,7 @@ def test_dynamic_obstacle_velocity_converter_string():
 
 def test_custom_dynamic_obstacle_getattr_hit():
     from arena_simulation_setup.tree.assets.Human import HumanIdentifier
+
     cdo = CustomDynamicObstacle(
         name="cdo",
         pose=Pose(),
@@ -176,6 +179,7 @@ def test_custom_dynamic_obstacle_getattr_hit():
 
 def test_custom_dynamic_obstacle_getattr_miss():
     from arena_simulation_setup.tree.assets.Human import HumanIdentifier
+
     cdo = CustomDynamicObstacle(
         name="cdo",
         pose=Pose(),

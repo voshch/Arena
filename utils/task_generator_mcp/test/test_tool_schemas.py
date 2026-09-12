@@ -1,4 +1,5 @@
 """Test: enum constraints in tool JSON schemas are derived from Constants.TaskMode."""
+
 import pytest
 
 from task_generator.constants import Constants

@@ -127,6 +127,16 @@ namespace task_generator_gui
                        std::function<void()> action,
                        std::chrono::milliseconds period = std::chrono::milliseconds(200));
 
+        // Catalog query behind the same readiness gate: yields the response's
+        // `ids`, or an empty list if the call fails.
+        template <typename Srv>
+        void queryIds(const std::shared_ptr<rclcpp::Client<Srv>> &client,
+                      std::shared_ptr<typename Srv::Request> request,
+                      std::function<void(std::vector<std::string>)> callback);
+
+        // Rebuild both param trees against the current task modes.
+        void rebuildParamTrees();
+
         void setupUi();
         QComboBox *setupComboBoxWithLabel(QLayout *parent, const QStringList &combobox_values, const QString &label);
         QTabWidget *setupTabs(QLayout *Parent);

@@ -1,0 +1,16 @@
+name: sitter
+mode: behavior_tree
+extends: adult
+desired_velocity: {mean: 1.2, std: 0.0, clip_low: 0.5, clip_high: 1.5}
+
+initial_sequence: sit_seq
+
+sequences:
+  sit_seq:
+    steps:
+      walk_to_chair: {kind: go_to, target: SM_Chair_01a}
+      sit_step:
+        target: SM_Chair_01a
+        interaction: SIT_ON
+        duration: {mean: 1000.0, std: 0.0}
+    then: sit_seq

@@ -17,13 +17,9 @@ def test_weight_families():
 
 
 def test_mixed_junctions_carry_per_arm_weight():
-    assert alphabet.arms_of('╪') == alphabet.arms(
-        {'N': alphabet.LIGHT, 'S': alphabet.LIGHT, 'E': alphabet.DOUBLE, 'W': alphabet.DOUBLE}
-    )
+    assert alphabet.arms_of('╪') == alphabet.arms({'N': alphabet.LIGHT, 'S': alphabet.LIGHT, 'E': alphabet.DOUBLE, 'W': alphabet.DOUBLE})
     assert alphabet.arms_of('╛') == alphabet.arms({'N': alphabet.LIGHT, 'W': alphabet.DOUBLE})
-    assert alphabet.arms_of('┿') == alphabet.arms(
-        {'N': alphabet.LIGHT, 'S': alphabet.LIGHT, 'E': alphabet.HEAVY, 'W': alphabet.HEAVY}
-    )
+    assert alphabet.arms_of('┿') == alphabet.arms({'N': alphabet.LIGHT, 'S': alphabet.LIGHT, 'E': alphabet.HEAVY, 'W': alphabet.HEAVY})
 
 
 def test_diagonals_and_stubs():

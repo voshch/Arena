@@ -1,0 +1,17 @@
+name: grid_3x3
+mode: behavior_tree
+extends: adult
+
+# 3x3 grid 3 m ahead, chained 1..9 in the layout
+#   1 7 3
+#   5 9 6
+#   2 8 4
+# arm stays up between cells, no gaze.
+sequences:
+  default:
+    steps:
+      grid: {attention: {point: {at: [{azimuth: 20, elevation: 18}, {azimuth: 20, elevation: -18}, {azimuth: -20, elevation: 18}, {azimuth: -20, elevation: -18}, {azimuth: 20, elevation: 0}, {azimuth: -20, elevation: 0}, {azimuth: 0, elevation: 18}, {azimuth: 0, elevation: -18}, {azimuth: 0, elevation: 0}], dwell: 1.5}}}
+      rest: {duration: {mean: 1.0}}
+    then: default
+
+initial_sequence: default

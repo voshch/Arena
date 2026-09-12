@@ -33,6 +33,7 @@ def test_register_raises_on_duplicate():
         return object
 
     with pytest.raises(ValueError):
+
         @reg.register("_test_dup")
         def _load_b():
             return object
@@ -70,6 +71,7 @@ def test_lazy_loading():
 def test_adapter_kind_classvar_matches_registry_key():
     """Convention guard: each adapter's `kind` ClassVar must equal its registry key."""
     from task_generator.tasks.robots.adapters import ADAPTERS
+
     for cap, reg in ADAPTERS.items():
         for kind in reg.keys():
             cls = reg.get(kind)
@@ -78,6 +80,7 @@ def test_adapter_kind_classvar_matches_registry_key():
 
 def test_adapter_meta_attached_on_every_adapter():
     from task_generator.tasks.robots.adapters import ADAPTERS, AdapterMeta
+
     for reg in ADAPTERS.values():
         for kind in reg.keys():
             cls = reg.get(kind)
@@ -87,6 +90,7 @@ def test_adapter_meta_attached_on_every_adapter():
 def test_every_mobile_adapter_subclasses_mobile_adapter():
     from task_generator.tasks.robots.adapters import ADAPTERS
     from task_generator.tasks.robots.adapters.mobile import MobileAdapter
+
     for kind in ADAPTERS["mobile"].keys():
         cls = ADAPTERS["mobile"].get(kind)
         assert issubclass(cls, MobileAdapter), f"{cls.__name__} (cap=mobile) must inherit MobileAdapter"
@@ -98,6 +102,7 @@ class TestAdapterMetaConverters:
         from arena_robots.clients.goto_pose import GotoPoseClient
         from arena_robots.task_kinds import TaskKind
         from task_generator.tasks.robots.adapters import AdapterMeta
+
         meta = AdapterMeta(
             accepts={TaskKind.GOTO_POSE},
             bringup=Nav2Bringup,
@@ -113,6 +118,7 @@ class TestAdapterMetaConverters:
         from arena_robots.task_kinds import TaskKind
         from arena_viz import DisplayKind
         from task_generator.tasks.robots.adapters import AdapterDisplayHint, AdapterMeta
+
         hint = AdapterDisplayHint(name="X", topic="{ns}/x", kind=DisplayKind.POSE)
         meta = AdapterMeta(
             accepts={TaskKind.GOTO_POSE},

@@ -50,12 +50,7 @@ def pull_main(argv: list[str]) -> int:
                 print("submodule checkout had issues, resolve manually")
                 skipped.append("recursive submodules")
 
-            foreach_script = (
-                'branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" 2>/dev/null || true)\n'
-                'if [ -n "$branch" ]; then\n'
-                '    git switch -C "$branch" HEAD || echo "  $name: could not reset branch $branch"\n'
-                "fi\n"
-            )
+            foreach_script = 'branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" 2>/dev/null || true)\nif [ -n "$branch" ]; then\n    git switch -C "$branch" HEAD || echo "  $name: could not reset branch $branch"\nfi\n'
             if subprocess.run(["git", "submodule", "foreach", "--recursive", foreach_script], env=env, check=False).returncode:
                 print("submodule branch reset had issues, ignoring")
 
@@ -81,12 +76,16 @@ def pull_main(argv: list[str]) -> int:
 
         if do_rosdep:
             rosdep_ok = subprocess.run(["rosdep", "update", "--rosdistro", _env("ARENA_ROS_DISTRO")], env=env, check=False).returncode == 0
-            deps_ok = rosdep_ok and subprocess.run(
-                ["rosdep", "install", "--ignore-src", "-r", "-y", "--rosdistro", _env("ARENA_ROS_DISTRO"), "--from-paths", "src", "--skip-keys", env["ROSDEP_EXCLUDES"]],
-                env=env,
-                cwd=arena_ws_dir,
-                check=False,
-            ).returncode == 0
+            deps_ok = (
+                rosdep_ok
+                and subprocess.run(
+                    ["rosdep", "install", "--ignore-src", "-r", "-y", "--rosdistro", _env("ARENA_ROS_DISTRO"), "--from-paths", "src", "--skip-keys", env["ROSDEP_EXCLUDES"]],
+                    env=env,
+                    cwd=arena_ws_dir,
+                    check=False,
+                ).returncode
+                == 0
+            )
             if not deps_ok:
                 print("rosdep failed to install all dependencies")
                 skipped.append("rosdep")

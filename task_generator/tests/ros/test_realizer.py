@@ -17,6 +17,7 @@ def _ros_gate():
 @pytest.fixture()
 def realizer():
     from task_generator.manager.realizer import Realizer
+
     config = Realizer._Configuration(x=1.0, y=2.0, prefix="world")
     return Realizer(config)
 
@@ -24,6 +25,7 @@ def realizer():
 @pytest.fixture()
 def zero_realizer():
     from task_generator.manager.realizer import Realizer
+
     config = Realizer._Configuration(x=0.0, y=0.0, prefix="")
     return Realizer(config)
 
@@ -31,18 +33,21 @@ def zero_realizer():
 @pytest.fixture()
 def _pose():
     from arena_simulation_setup.utils.geometry import Pose
+
     return Pose
 
 
 @pytest.fixture()
 def _position():
     from arena_simulation_setup.utils.geometry import Position
+
     return Position
 
 
 @pytest.fixture()
 def _orientation():
     from arena_simulation_setup.utils.geometry import Orientation
+
     return Orientation
 
 
@@ -71,6 +76,7 @@ def test_realize_str_zero_prefix(zero_realizer):
 
 def test_realize_position_translates_xy(_position, realizer):
     from arena_simulation_setup.utils.geometry import Position
+
     p = Position(x=3.0, y=4.0, z=5.0)
     result = realizer.realize(p)
     assert isinstance(result, Position)
@@ -81,6 +87,7 @@ def test_realize_position_translates_xy(_position, realizer):
 
 def test_realize_position_zero_offset_unchanged(zero_realizer, _position):
     from arena_simulation_setup.utils.geometry import Position
+
     p = Position(x=7.0, y=-3.0, z=1.0)
     result = zero_realizer.realize(p)
     assert math.isclose(result.x, 7.0)
@@ -89,6 +96,7 @@ def test_realize_position_zero_offset_unchanged(zero_realizer, _position):
 
 def test_realize_pose_translates_position(_pose, realizer):
     from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
+
     p = Pose(Position(0.0, 0.0), Orientation.from_yaw(0.5))
     result = realizer.realize(p)
     assert math.isclose(result.position.x, 1.0)
@@ -98,6 +106,7 @@ def test_realize_pose_translates_position(_pose, realizer):
 
 def test_realize_pose_orientation_preserved(realizer):
     from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
+
     yaw = 1.2
     p = Pose(Position(1.0, 1.0), Orientation.from_yaw(yaw))
     result = realizer.realize(p)
@@ -106,6 +115,7 @@ def test_realize_pose_orientation_preserved(realizer):
 
 def test_ezilear_translates_pose_by_negative_offset(realizer):
     from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
+
     p = Pose(Position(5.0, 7.0), Orientation.from_yaw(0.5))
     result = realizer.ezilear(p)
     assert math.isclose(result.position.x, 4.0)
@@ -115,6 +125,7 @@ def test_ezilear_translates_pose_by_negative_offset(realizer):
 
 def test_ezilear_round_trips_with_realize(realizer):
     from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
+
     p = Pose(Position(3.0, -2.5), Orientation.from_yaw(1.2))
     assert math.isclose(realizer.ezilear(realizer.realize(p)).position.x, p.position.x)
     assert math.isclose(realizer.ezilear(realizer.realize(p)).position.y, p.position.y)
@@ -125,6 +136,7 @@ def test_ezilear_round_trips_with_realize(realizer):
 def test_realize_wall_translates_start_end(realizer):
     from arena_simulation_setup.shared import Wall
     from arena_simulation_setup.utils.geometry import Position
+
     w = Wall(start=Position(0, 0), end=Position(1, 0))
     result = realizer.realize(w)
     assert math.isclose(result.start.x, 1.0)
@@ -136,6 +148,7 @@ def test_realize_wall_translates_start_end(realizer):
 def test_realize_door_translates_and_prefixes_name(realizer):
     from arena_simulation_setup.shared import Door
     from arena_simulation_setup.utils.geometry import Position
+
     d = Door(start=Position(0, 0), end=Position(1, 0), name="door1", extra={})
     result = realizer.realize(d)
     assert "door1" in result.name
@@ -146,6 +159,7 @@ def test_realize_door_translates_and_prefixes_name(realizer):
 def test_realize_floor_translates_and_prefixes_name(realizer):
     from arena_simulation_setup.shared import Floor
     from arena_simulation_setup.utils.geometry import Position
+
     f = Floor(pos=Position(0, 0), name="floor1", extra={})
     result = realizer.realize(f)
     assert "floor1" in result.name
@@ -156,6 +170,7 @@ def test_realize_floor_translates_and_prefixes_name(realizer):
 def test_realize_door_preserves_semantics_with_prefixed_name(realizer):
     from arena_simulation_setup.shared import Door
     from arena_simulation_setup.utils.geometry import Position
+
     d = Door(start=Position(0, 0), end=Position(1, 0), name="door1", semantics=[{"preset": "gate"}], extra={})
     result = realizer.realize(d)
     assert "door1" in result.name
@@ -165,6 +180,7 @@ def test_realize_door_preserves_semantics_with_prefixed_name(realizer):
 def test_realize_elevator_translates_and_prefixes(realizer):
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
+
     e = Elevator(position=Position(0, 0), name="elev1", extra={})
     result = realizer.realize(e)
     assert "elev1" in result.name
@@ -174,6 +190,7 @@ def test_realize_elevator_translates_and_prefixes(realizer):
 def test_realize_elevator_preserves_semantics_with_prefixed_name(realizer):
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
+
     e = Elevator(position=Position(0, 0), name="elev1", semantics=[{"preset": "pressure_plate"}], extra={})
     result = realizer.realize(e)
     assert "elev1" in result.name
@@ -183,6 +200,7 @@ def test_realize_elevator_preserves_semantics_with_prefixed_name(realizer):
 def test_realize_elevator_no_destination(realizer):
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
+
     e = Elevator(position=Position(0, 0), destination="", name="elev2", extra={})
     result = realizer.realize(e)
     assert result.destination == ""
@@ -191,6 +209,7 @@ def test_realize_elevator_no_destination(realizer):
 def test_realize_elevator_with_destination_prefixed(realizer):
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
+
     e = Elevator(position=Position(0, 0), destination="floor2", name="elev3", extra={})
     result = realizer.realize(e)
     assert "floor2" in result.destination
@@ -199,6 +218,7 @@ def test_realize_elevator_with_destination_prefixed(realizer):
 def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
     from arena_simulation_setup.shared import DynamicObstacle
     from arena_simulation_setup.utils.geometry import Position, Pose
+
     obs = DynamicObstacle(
         name="human1",
         pose=Pose(Position(0, 0)),
@@ -218,6 +238,7 @@ def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
 def test_realize_dynamic_obstacle_empty_waypoints(realizer):
     from arena_simulation_setup.shared import DynamicObstacle
     from arena_simulation_setup.utils.geometry import Position, Pose
+
     obs = DynamicObstacle(
         name="human2",
         pose=Pose(Position(0, 0)),
@@ -231,6 +252,7 @@ def test_realize_dynamic_obstacle_empty_waypoints(realizer):
 
 def test_realize_position_inverse_round_trip(realizer):
     from arena_simulation_setup.utils.geometry import Position
+
     p = Position(x=5.0, y=-3.0, z=1.0)
     forward = realizer._realize_position(p)
     back = realizer._realize_position_inv(forward)
@@ -246,6 +268,7 @@ def test_realize_unknown_type_raises(realizer):
 
 def test_realize_schedule_prefixes_name(realizer):
     from arena_simulation_setup.shared import Schedule
+
     s = Schedule(name="fire_alarm", semantics=[{"preset": "schedule"}], extra={})
     result = realizer.realize(s)
     assert "fire_alarm" in result.name
@@ -255,6 +278,7 @@ def test_realize_schedule_prefixes_name(realizer):
 
 def test_realize_signal_prefixes_name(realizer):
     from arena_simulation_setup.shared import Signal
+
     s = Signal(name="crossing_1", semantics=[{"preset": "signal"}], extra={})
     result = realizer.realize(s)
     assert "crossing_1" in result.name
@@ -264,6 +288,7 @@ def test_realize_signal_prefixes_name(realizer):
 
 def test_realize_polygon_translates_corners(realizer):
     from arena_simulation_setup.utils.geometry import Position
+
     corners = [Position(0, 0), Position(2, 0), Position(2, 2), Position(0, 2)]
     ring = realizer.realize_polygon(corners)
     assert ring == [(1.0, 2.0), (3.0, 2.0), (3.0, 4.0), (1.0, 4.0)]
@@ -271,6 +296,7 @@ def test_realize_polygon_translates_corners(realizer):
 
 def test_realize_polygon_zero_offset(zero_realizer):
     from arena_simulation_setup.utils.geometry import Position
+
     corners = [Position(1, 1), Position(3, 1), Position(3, 3)]
     ring = zero_realizer.realize_polygon(corners)
     assert ring == [(1.0, 1.0), (3.0, 1.0), (3.0, 3.0)]
@@ -279,6 +305,7 @@ def test_realize_polygon_zero_offset(zero_realizer):
 def test_entity_sim_path_set_after_realize(realizer):
     from arena_simulation_setup.shared import Obstacle
     from arena_simulation_setup.utils.geometry import Pose, Position
+
     obs = Obstacle(
         name="box1",
         pose=Pose(Position(0, 0)),

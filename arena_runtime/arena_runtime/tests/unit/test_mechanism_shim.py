@@ -3,6 +3,7 @@
 Skipped if task_generator / arena_simulation_setup aren't importable (no
 sourced overlay), since the shim's data types live there.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -349,8 +350,12 @@ def test_departing_door_closed_commits_teleport_to_dest():
     dr_a = _door_runtime(_door(name="a/door"), kind="sliding")
     dr_a.state = _DoorState.CLOSED
     result = _step_elevator(
-        a, dr_a, dest_runtime=b,
-        occupants=[("r1", (0.5, 0.5))], outside_trigger=False, now=2.0,
+        a,
+        dr_a,
+        dest_runtime=b,
+        occupants=[("r1", (0.5, 0.5))],
+        outside_trigger=False,
+        now=2.0,
     )
     assert not a.departing
     assert b.arriving_eta == pytest.approx(5.0)
@@ -411,9 +416,12 @@ def test_just_arrived_stale_outside_before_inside_does_not_clear():
     a.just_arrived = {"r": False}
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     _step_elevator(
-        a, dr, None,
+        a,
+        dr,
+        None,
         occupants=[],
-        outside_trigger=False, now=5.0,
+        outside_trigger=False,
+        now=5.0,
         outside_names=frozenset({"r"}),
     )
     assert a.just_arrived == {"r": False}
@@ -425,9 +433,12 @@ def test_just_arrived_outside_after_inside_confirmed_clears():
     a.just_arrived = {"r": True}
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     _step_elevator(
-        a, dr, None,
+        a,
+        dr,
+        None,
         occupants=[],
-        outside_trigger=False, now=5.0,
+        outside_trigger=False,
+        now=5.0,
         outside_names=frozenset({"r"}),
     )
     assert a.just_arrived == {}
@@ -451,9 +462,12 @@ def test_just_arrived_resident_blocks_depart_for_new_entrant():
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
     _step_elevator(
-        a, dr, None,
+        a,
+        dr,
+        None,
         occupants=[("r", (0.0, 0.0)), ("r2", (0.0, 0.0))],
-        outside_trigger=False, now=5.0,
+        outside_trigger=False,
+        now=5.0,
     )
     assert not a.departing
     assert dr.last_trigger_sim_time == 5.0
@@ -643,12 +657,8 @@ def _prime_pair(
     accept_outside_calls_b: bool = True,
 ) -> tuple[dict[str, _ElevatorRuntime], dict[str, _DoorRuntime]]:
     """Build a two-cabin pair. Both start idle (doors closed, no departure pending)."""
-    elev_a = _elevator(name="a", destination="b",
-                       hold_time=hold_time, transition_time=transition_time, travel_time=travel_time,
-                       accept_outside_calls=accept_outside_calls_a)
-    elev_b = _elevator(name="b", position=(10.0, 0.0, 0.0), destination="a",
-                       hold_time=hold_time, transition_time=transition_time, travel_time=travel_time,
-                       accept_outside_calls=accept_outside_calls_b)
+    elev_a = _elevator(name="a", destination="b", hold_time=hold_time, transition_time=transition_time, travel_time=travel_time, accept_outside_calls=accept_outside_calls_a)
+    elev_b = _elevator(name="b", position=(10.0, 0.0, 0.0), destination="a", hold_time=hold_time, transition_time=transition_time, travel_time=travel_time, accept_outside_calls=accept_outside_calls_b)
     a = _elev_runtime(elev_a, door_name="a/door", destination="b")
     b = _elev_runtime(elev_b, door_name="b/door", destination="a")
     door_a = _door_runtime(_door(name="a/door", hold_time=hold_time, transition_time=transition_time))
@@ -681,7 +691,9 @@ def _run_ticks(
             occ = occupants.get(name, [])
             outside = outside_trigger.get(name, False)
             r = _step_elevator(
-                elev, door, dest,
+                elev,
+                door,
+                dest,
                 occupants=occ,
                 outside_trigger=outside,
                 now=now,
@@ -715,7 +727,10 @@ def test_tick_robot_boards_and_rides():
     """Occupant inside A, door already closed: A departs immediately, robot teleports to B."""
     runtimes, doors = _prime_pair()
     _, jobs = _run_ticks(
-        runtimes, doors, start=0.0, n=200,
+        runtimes,
+        doors,
+        start=0.0,
+        n=200,
         occupants={"a": [("r1", (-0.5, 0.0))]},
     )
     assert jobs == [("a", "b", [("r1", (-0.5, 0.0))])]
@@ -737,7 +752,10 @@ def test_tick_full_round_trip():
     runtimes, doors = _prime_pair()
     # Leg 1: robot in A, no trigger needed (door already closed).
     now, jobs1 = _run_ticks(
-        runtimes, doors, start=0.0, n=200,
+        runtimes,
+        doors,
+        start=0.0,
+        n=200,
         occupants={"a": [("r1", (-0.5, 0.0))]},
     )
     assert len(jobs1) == 1
@@ -747,7 +765,10 @@ def test_tick_full_round_trip():
     # Leg 2: robot now in B (B's door open from arrival), robot stays in B.
     # Full cycle needs hold(2) + close(1) + travel(3) + open(1) > 200 ticks.
     now, jobs2 = _run_ticks(
-        runtimes, doors, start=now, n=250,
+        runtimes,
+        doors,
+        start=now,
+        n=250,
         occupants={"b": [("r1", (10.0, 0.0))]},
     )
     assert len(jobs2) == 1
@@ -786,7 +807,10 @@ def test_tick_no_pingpong_post_teleport():
     runtimes, doors = _prime_pair()
     b = runtimes["b"]
     now, jobs1 = _run_ticks(
-        runtimes, doors, start=0.0, n=250,
+        runtimes,
+        doors,
+        start=0.0,
+        n=250,
         outside_trigger={"b": True},
         occupants={"a": [("r1", (-0.5, 0.0))]},
     )
@@ -809,15 +833,23 @@ def test_tick_source_door_closed_through_teleport_under_outside_call():
     assert jobs == []  # still in transit
     # Transit: rider still inside, plus a persistent outside call. Door must not reopen.
     now, jobs = _run_ticks(
-        runtimes, doors, start=now, n=75,
-        occupants={"a": [("r1", (-0.5, 0.0))]}, outside_trigger={"a": True},
+        runtimes,
+        doors,
+        start=now,
+        n=75,
+        occupants={"a": [("r1", (-0.5, 0.0))]},
+        outside_trigger={"a": True},
     )
     assert doors["a/door"].state == _DoorState.CLOSED
     assert jobs == []
     # Arrival: teleport fires exactly once, source door still closed at that moment.
     _, jobs = _run_ticks(
-        runtimes, doors, start=now, n=60,
-        occupants={"a": [("r1", (-0.5, 0.0))]}, outside_trigger={"a": True},
+        runtimes,
+        doors,
+        start=now,
+        n=60,
+        occupants={"a": [("r1", (-0.5, 0.0))]},
+        outside_trigger={"a": True},
     )
     assert jobs == [("a", "b", [("r1", (-0.5, 0.0))])]
     assert doors["a/door"].state == _DoorState.CLOSED
@@ -837,7 +869,10 @@ def test_tick_accept_outside_calls_false_still_receives_arrival():
     # Occupant in A; B-side trigger... but B doesn't accept outside calls.
     # A's own outside trigger drives departure.
     now, jobs = _run_ticks(
-        runtimes, doors, start=0.0, n=250,
+        runtimes,
+        doors,
+        start=0.0,
+        n=250,
         outside_trigger={"a": True},  # A is called from outside: valid because A accepts.
         occupants={"a": [("r1", (-0.5, 0.0))]},
     )
@@ -875,10 +910,15 @@ def test_compute_teleport_preserves_relative_offset():
 
 def test_compute_teleport_multiple_agents():
     rt = _runtime_dict_with_pair((0.0, 0.0, 0.0), (10.0, 0.0, 0.0))
-    out = _compute_teleport_destinations(rt, "a", "b", [
-        ("r1", (0.5, 0.0)),
-        ("p1", (-0.5, 0.3)),
-    ])
+    out = _compute_teleport_destinations(
+        rt,
+        "a",
+        "b",
+        [
+            ("r1", (0.5, 0.0)),
+            ("p1", (-0.5, 0.3)),
+        ],
+    )
     assert out["r1"] == pytest.approx((10.5, 0.0))
     assert out["p1"] == pytest.approx((9.5, 0.3))
 
@@ -1131,11 +1171,19 @@ async def _drive_elevator(mech: _Mech, *, total_ticks: int) -> list[tuple]:
         t += DT
         mech.node.sim_time.seconds = t
         await _tick(mech, DT)
-        traj.append((
-            da.state, da.progress, db.state, db.progress,
-            a.departing, b.arriving_eta, tuple(sorted(a.dispatched)),
-            tuple(sorted(b.just_arrived)), mech._robots.get("r1"),
-        ))
+        traj.append(
+            (
+                da.state,
+                da.progress,
+                db.state,
+                db.progress,
+                a.departing,
+                b.arriving_eta,
+                tuple(sorted(a.dispatched)),
+                tuple(sorted(b.just_arrived)),
+                mech._robots.get("r1"),
+            )
+        )
     return traj
 
 
@@ -1189,9 +1237,7 @@ def test_wire_blocked_close_publishes_no_closing_and_no_flap():
     state, no progress churn, no triggered flap. closed is only ever published after the
     slot has cleared."""
     mech = _Mech()
-    mech._door_runtime["d"] = _door_runtime(
-        _door(name="d", activation=(0.0, 0.0), transition_time=1.0, hold_time=2.0), kind="sliding"
-    )
+    mech._door_runtime["d"] = _door_runtime(_door(name="d", activation=(0.0, 0.0), transition_time=1.0, hold_time=2.0), kind="sliding")
     mech._door_runtime["d"].last_trigger_sim_time = 0.0
     mech._semantics.set_sim("gazebo")
     mech._semantics.attach("door", "d")

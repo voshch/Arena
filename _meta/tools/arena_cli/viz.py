@@ -24,11 +24,7 @@ def _discover_envs() -> list[str]:
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
-    return [
-        line[: -len(MANIFEST_SUFFIX)]
-        for line in (s.strip() for s in out.splitlines())
-        if line.endswith(MANIFEST_SUFFIX)
-    ]
+    return [line[: -len(MANIFEST_SUFFIX)] for line in (s.strip() for s in out.splitlines()) if line.endswith(MANIFEST_SUFFIX)]
 
 
 def _matches(ns: str, target: str) -> bool:
@@ -114,7 +110,7 @@ def _main(argv: list[str]) -> int:
         if ":=" in tok:
             key, _, value = tok.partition(":=")
             if key.startswith("viz."):
-                key = key[len("viz."):]
+                key = key[len("viz.") :]
             viz_args[key] = value
             continue
         passthrough.append(tok)

@@ -142,7 +142,6 @@ def _spec_of(target: Spec | Verb) -> Spec | None:
     return target.complete if isinstance(target, Verb) else target
 
 
-
 @dataclasses.dataclass
 class Result:
     items: list[tuple[str, str, str]] = dataclasses.field(default_factory=list)
@@ -274,7 +273,6 @@ def _sub_names(table: Mapping[str, Spec | Verb]) -> dict[str, str]:
     return out
 
 
-
 def packages(ws: str) -> list[str]:
     root = os.path.join(ws, "src")
     names: list[str] = []
@@ -297,7 +295,6 @@ def packages(ws: str) -> list[str]:
         if m:
             names.append(m.group(1))
     return sorted(set(names))
-
 
 
 def cache_path(ws: str) -> str:
@@ -364,7 +361,6 @@ def refresh(ws: str) -> int:
     return subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.py"), "--out", cache_path(ws)], check=False).returncode
 
 
-
 def complete(words: list[str], verbs: Mapping[str, Verb], sections: Mapping[str, list[str]], ws: str) -> list[str]:
     """Candidate lines for `arena <words>`, the last word being the one under the cursor (empty words means the verb position)."""
     ctx = Context(ws, load_manifest(ws))
@@ -398,7 +394,7 @@ def _fold_key(value: str, desc: str, typed: str) -> tuple[str, str, bool]:
 def render(r: Result, cur: str) -> list[str]:
     if r.stop:
         return []
-    local = cur[len(r.prefix):] if cur.startswith(r.prefix) else cur
+    local = cur[len(r.prefix) :] if cur.startswith(r.prefix) else cur
     seen: set[str] = set()
     items = []
     folded: set[str] = set()

@@ -96,9 +96,7 @@ def test_filled_areas_merge_with_corridors():
 def test_only_polygonal_parts_survive_a_slit():
     """Cutting a hole open sheds lines and points beside the polygons, and they have no interiors.
     Areas alone would not say so: a collection reports the same total as the polygons inside it."""
-    mixed = shapely.GeometryCollection(
-        [shapely.box(0.0, 0.0, 1.0, 1.0), shapely.LineString([(2.0, 0.0), (3.0, 0.0)]), shapely.Point(4.0, 4.0)]
-    )
+    mixed = shapely.GeometryCollection([shapely.box(0.0, 0.0, 1.0, 1.0), shapely.LineString([(2.0, 0.0), (3.0, 0.0)]), shapely.Point(4.0, 4.0)])
     parts = _polygons(mixed)
     assert [type(part) for part in parts] == [shapely.Polygon]
     assert [part.area for part in parts] == [1.0]

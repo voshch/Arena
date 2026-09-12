@@ -5,9 +5,17 @@ from __future__ import annotations
 import dataclasses
 import importlib
 import sys
+import typing
 
 from common import CLIError, make_verb
 from complete import Flags, Manifest, Static, Sub, Union
+
+if typing.TYPE_CHECKING:
+    from pathlib import Path
+
+    from arena_simulation_setup.tree import AssetIdentifier, MultiLevelWorldView, NetResolver
+
+    from arena_evaluation.benchmark.config import Suite
 
 _TREE = "arena_simulation_setup.tree"
 _BENCH = "arena_evaluation.benchmark.tree"
@@ -73,13 +81,13 @@ def _kind(kind: str) -> Kind:
         raise CLIError(f"unknown kind {kind!r}, expected one of {', '.join(sorted(KINDS))}") from None
 
 
-def _identifier_type(kind: str):
+def _identifier_type(kind: str) -> type[AssetIdentifier]:
     """The identifier class for one kind. Imports the ROS-side package lazily."""
     spec = _kind(kind)
     return getattr(importlib.import_module(spec.module), spec.identifier)
 
 
-def _identifier(kind: str, name: str):
+def _identifier(kind: str, name: str) -> AssetIdentifier:
     identifier_t = _identifier_type(kind)
     return identifier_t.parse(name) if _kind(kind).parse else identifier_t(name)
 
@@ -102,10 +110,7 @@ def find(argv: list[str]) -> int:
 
         print(
             json.dumps(
-                [
-                    {"resolver": repr(v.resolver), "verdict": v.verdict.value, "path": str(v.path) if v.path else None}
-                    for v in verdicts
-                ],
+                [{"resolver": repr(v.resolver), "verdict": v.verdict.value, "path": str(v.path) if v.path else None} for v in verdicts],
                 indent=2,
             )
         )
@@ -153,18 +158,8 @@ def ls(argv: list[str]) -> int:
         return 0
 
     # a NetResolver's own cache is not a competing source, so it must not count as local
-    local = {
-        identifier.shortname
-        for resolver in identifier_t._resolvers
-        if not isinstance(resolver, NetResolver)
-        for identifier in resolver.listall()
-    }
-    remote = {
-        identifier.shortname
-        for resolver in identifier_t._resolvers
-        if isinstance(resolver, NetResolver)
-        for identifier in resolver.listall(network=True)
-    }
+    local = {identifier.shortname for resolver in identifier_t._resolvers if not isinstance(resolver, NetResolver) for identifier in resolver.listall()}
+    remote = {identifier.shortname for resolver in identifier_t._resolvers if isinstance(resolver, NetResolver) for identifier in resolver.listall(network=True)}
     _emit(sorted(local | remote), as_json, shadowed=local & remote)
     return 0
 
@@ -195,7 +190,7 @@ def _bucket_of(opts: dict[str, str | bool], kind: str) -> str:
     return candidates[0]
 
 
-def _net_resolver(kind: str, bucket: str):
+def _net_resolver(kind: str, bucket: str) -> NetResolver | None:
     """The kind's resolver for one bucket, which owns that bucket's cache and freshness stamps."""
     from arena_simulation_setup.tree import NetResolver
 
@@ -228,9 +223,9 @@ def pull(argv: list[str]) -> int:
     return 0
 
 
-def _world_dangling(view, source) -> list[str]:
+def _world_dangling(view: MultiLevelWorldView, source: Path) -> list[str]:
     """World references that would dangle once published: resolvable only from a local-only source."""
-    from arena_simulation_setup.tree import DynamicPaths, DynamicPathResolver, NetResolver
+    from arena_simulation_setup.tree import DynamicPathResolver, DynamicPaths, NetResolver
 
     # world-local assets only resolve once WORLD points at the world being published
     DynamicPaths.WORLD.path = source
@@ -252,7 +247,7 @@ def _world_dangling(view, source) -> list[str]:
     return dangling
 
 
-def _suite_dangling(suite, source) -> list[str]:
+def _suite_dangling(suite: Suite, source: Path) -> list[str]:
     """Worlds a suite stages that would not resolve for someone else. One bundled under the
     suite counts, since the runner exports it via ARENA_WORLD_PATH.
 
@@ -276,7 +271,7 @@ def _suite_dangling(suite, source) -> list[str]:
 _PREFLIGHTS = {"world": _world_dangling, "suite": _suite_dangling}
 
 
-def _config_source(identifier):
+def _config_source(identifier: AssetIdentifier) -> Path:
     """Where a bundled kind lives. It resolves to its yaml, so a directory bundle is
     reported as the directory holding it and a flat config as the file itself."""
     resolved = identifier.resolve_source_sync().path

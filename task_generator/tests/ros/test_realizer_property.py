@@ -20,6 +20,7 @@ _floats = st.floats(min_value=-1e4, max_value=1e4, allow_nan=False, allow_infini
 
 def _make_realizer(x, y, prefix=""):
     from task_generator.manager.realizer import Realizer
+
     return Realizer(Realizer._Configuration(x=x, y=y, prefix=prefix))
 
 
@@ -27,6 +28,7 @@ def _make_realizer(x, y, prefix=""):
 @settings(max_examples=100)
 def test_realize_position_inv_round_trip(ox, oy, px, py):
     from arena_simulation_setup.utils.geometry import Position
+
     r = _make_realizer(ox, oy)
     p = Position(x=px, y=py)
     fwd = r._realize_position(p)
@@ -39,6 +41,7 @@ def test_realize_position_inv_round_trip(ox, oy, px, py):
 @settings(max_examples=100)
 def test_combined_offset_equivalence(ox1, oy1, ox2, oy2):
     from arena_simulation_setup.utils.geometry import Position
+
     r1 = _make_realizer(ox1, oy1)
     r2 = _make_realizer(ox2, oy2)
     r_combined = _make_realizer(ox1 + ox2, oy1 + oy2)
@@ -53,6 +56,7 @@ def test_combined_offset_equivalence(ox1, oy1, ox2, oy2):
 @settings(max_examples=50)
 def test_pose_round_trip(ox, oy, px, py):
     from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
+
     r = _make_realizer(ox, oy)
     p = Pose(Position(px, py), Orientation.from_yaw(0.0))
     fwd = r._realize_pose(p)

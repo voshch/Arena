@@ -1,0 +1,14 @@
+name: talker
+mode: behavior_tree
+extends: adult
+desired_velocity: {mean: 1.0, std: 0.0, clip_low: 0.5, clip_high: 1.5}
+
+initial_sequence: talk
+
+sequences:
+  talk:
+    steps:
+      talk_step:
+        interaction: TALK_TO
+        duration: {mean: 1000.0, std: 0.0}
+    then: talk

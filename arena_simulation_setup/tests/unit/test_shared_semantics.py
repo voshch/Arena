@@ -250,9 +250,11 @@ def test_parse_semantics_preset_value_allowed_on_single_primitive_preset():
 
 
 def test_parse_semantics_pressure_plate_params_and_distance_override():
-    cfgs = parse_semantics([
-        {'preset': 'pressure_plate', 'distance': 1.0, 'params': {'position': [4.0, 2.0], 'press_on': 'alarm'}},
-    ])
+    cfgs = parse_semantics(
+        [
+            {'preset': 'pressure_plate', 'distance': 1.0, 'params': {'position': [4.0, 2.0], 'press_on': 'alarm'}},
+        ]
+    )
     assert len(cfgs) == 1
     assert cfgs[0].distance == 1.0
     assert cfgs[0].params == {'position': [4.0, 2.0], 'press_on': 'alarm'}

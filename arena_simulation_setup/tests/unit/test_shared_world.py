@@ -17,6 +17,7 @@ def _elev_pos() -> Position:
 
 def test_elevator_material_converter():
     from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+
     e = Elevator(name="elev", position=_elev_pos())
     assert isinstance(e.material, MaterialIdentifier)
 
@@ -222,5 +223,6 @@ def test_floor_position_converter():
 
 def test_floor_material_is_identifier():
     from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+
     f = Floor(name="floor", pos=Position(0.0, 0.0, 0.0))
     assert isinstance(f.material, MaterialIdentifier)

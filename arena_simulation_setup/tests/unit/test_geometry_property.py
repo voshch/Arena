@@ -63,5 +63,6 @@ def test_vector3_translation_associativity(a, b, c):
 @settings(max_examples=100)
 def test_pose_parse_idempotent(p):
     from arena_simulation_setup.utils.cattrs import converter
+
     p2 = converter.structure(p, Pose)
     assert p2 is p

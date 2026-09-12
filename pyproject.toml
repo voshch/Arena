@@ -92,31 +92,40 @@ src = [
     "utils/rviz_utils/rviz_utils",
     "utils/human_steering/human_steering",
     "utils/arena_cam/arena_cam",
+    "_meta/tools/arena_cli",
 ]
 extend-exclude = [
-    "_meta",
     "arena_tools",
-    "arena_isaac",
-    "arena_evaluation",
-    "arena_training",
     "arena_robots/deps",
+    "arena_training/deps",
     "arena_planners/planners",
     ".venv",
     "**/launch",
     "**/*.launch.py",
     "**/scripts",
     "**/setup.py",
-    "**/tests",
-    "**/test",
 ]
 
 [tool.ruff.lint]
+exclude = [
+    "**/tests/**",
+    "**/test/**",
+]
 select = ["E", "F", "W", "I", "UP", "B", "ANN", "PYI"]
 ignore = ["E501", "E402", "F841", "E731", "PYI051", "E741", "UP035"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "arena_evaluation",
+    "arena_isaac",
+    "arena_training",
+    "isaac_utils",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "arena_simulation_setup/**/*.py" = ["UP"]
 "utils/arena_rclpy_mixins/**/*.py" = ["UP046", "UP047"]
+"_meta/tools/arena_cli/__main__.py" = ["UP036"]
 
 [tool.ruff.lint.flake8-annotations]
 suppress-none-returning = true

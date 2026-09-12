@@ -10,6 +10,7 @@ import pytest
 
 def _make_context():
     import launch
+
     return launch.LaunchContext()
 
 
@@ -24,42 +25,53 @@ def _node(fqn: str):
 class TestParseLogLevelSpec:
     def test_bare_scalar(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("debug") == ("replace", [("**/*", "debug")])
 
     def test_inline_default_only(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("{info}") == ("replace", [("**/*", "info")])
 
     def test_inline_rules_with_default(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         spec = "{**/nav2*/**:fatal, /dummy/node:warn, info}"
-        assert parse_log_level_spec(spec) == ("replace", [
-            ("**/nav2*/**", "fatal"),
-            ("/dummy/node", "warn"),
-            ("**/*", "info"),
-        ])
+        assert parse_log_level_spec(spec) == (
+            "replace",
+            [
+                ("**/nav2*/**", "fatal"),
+                ("/dummy/node", "warn"),
+                ("**/*", "info"),
+            ],
+        )
 
     def test_inline_no_default_is_allowed(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("{/foo:debug}") == ("replace", [("/foo", "debug")])
 
     def test_inline_default_must_be_last(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         with pytest.raises(ValueError, match="bare log_level"):
             parse_log_level_spec("{info, /foo:debug}")
 
     def test_inline_rejects_warning_alias(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         with pytest.raises(ValueError, match="invalid log level"):
             parse_log_level_spec("{warning}")
 
     def test_inline_empty_braces(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         with pytest.raises(ValueError, match="empty"):
             parse_log_level_spec("{}")
 
     def test_prepend_form(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("+[**/nav2*/**:error]") == (
             "prepend",
             [("**/nav2*/**", "error")],
@@ -67,6 +79,7 @@ class TestParseLogLevelSpec:
 
     def test_prepend_multiple_rules(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("+[/foo:debug, /bar/**:warn]") == (
             "prepend",
             [("/foo", "debug"), ("/bar/**", "warn")],
@@ -74,6 +87,7 @@ class TestParseLogLevelSpec:
 
     def test_append_form(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("[/foo:debug]+") == (
             "append",
             [("/foo", "debug")],
@@ -81,32 +95,41 @@ class TestParseLogLevelSpec:
 
     def test_merge_form_rejects_bare_level(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         with pytest.raises(ValueError, match="must be"):
             parse_log_level_spec("+[warn]")
 
     def test_yaml_file(self, tmp_path) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         f = tmp_path / "lvl.yaml"
-        f.write_text(textwrap.dedent("""
+        f.write_text(
+            textwrap.dedent("""
             default: warn
             rules:
               - { match: '**/nav2*/**', level: fatal }
               - { match: '/dummy/node', level: error }
-        """))
-        assert parse_log_level_spec(str(f)) == ("replace", [
-            ("**/nav2*/**", "fatal"),
-            ("/dummy/node", "error"),
-            ("**/*", "warn"),
-        ])
+        """)
+        )
+        assert parse_log_level_spec(str(f)) == (
+            "replace",
+            [
+                ("**/nav2*/**", "fatal"),
+                ("/dummy/node", "error"),
+                ("**/*", "warn"),
+            ],
+        )
 
     def test_yaml_file_no_default(self, tmp_path) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         f = tmp_path / "lvl.yaml"
         f.write_text("rules: [{match: '/foo', level: debug}]\n")
         assert parse_log_level_spec(str(f)) == ("replace", [("/foo", "debug")])
 
     def test_yaml_file_rejects_bad_level(self, tmp_path) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         f = tmp_path / "lvl.yaml"
         f.write_text("default: warning\n")
         with pytest.raises(ValueError):
@@ -114,17 +137,20 @@ class TestParseLogLevelSpec:
 
     def test_unknown_value_errors(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         with pytest.raises(ValueError, match="not a known level"):
             parse_log_level_spec("verbose")
 
     def test_empty_value_returns_empty(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
+
         assert parse_log_level_spec("") == ("replace", [])
 
 
 class TestGlobToRegex:
     def test_double_star_matches_zero_segments(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _glob_to_regex
+
         rx = _glob_to_regex("**/nav2*/**")
         assert rx.match("nav2x")
         assert rx.match("nav2x/y")
@@ -135,6 +161,7 @@ class TestGlobToRegex:
 
     def test_anchored_pattern(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _glob_to_regex
+
         rx = _glob_to_regex("/dummy/node")
         assert rx.match("dummy/node")
         assert not rx.match("env_0/dummy/node")
@@ -142,6 +169,7 @@ class TestGlobToRegex:
 
     def test_single_star_within_segment(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _glob_to_regex
+
         rx = _glob_to_regex("/env_*/jackal")
         assert rx.match("env_0/jackal")
         assert rx.match("env_42/jackal")
@@ -149,12 +177,14 @@ class TestGlobToRegex:
 
     def test_default_pattern(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _glob_to_regex
+
         rx = _glob_to_regex("**/*")
         assert rx.match("foo")
         assert rx.match("a/b/c")
 
     def test_middle_double_star_collapses(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _glob_to_regex
+
         rx = _glob_to_regex("/foo/**/bar")
         assert rx.match("foo/bar")
         assert rx.match("foo/x/bar")
@@ -165,16 +195,19 @@ class TestGlobToRegex:
 class TestMatchLevel:
     def test_first_match_wins(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _match_level
+
         rules = [("/env_0/**", "debug"), ("**/*", "warn")]
         assert _match_level(rules, "/env_0/jackal") == "debug"
         assert _match_level(rules, "/env_1/jackal") == "warn"
 
     def test_no_match_returns_none(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _match_level
+
         assert _match_level([("/foo", "debug")], "/bar") is None
 
     def test_strips_leading_slash_from_fqn(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import _match_level
+
         assert _match_level([("foo", "info")], "/foo") == "info"
 
 
@@ -194,11 +227,14 @@ class TestNodeLogLevelExtension:
         from arena_bringup.extensions.NodeLogLevelExtension import NodeLogLevelExtension
 
         ctx = _make_context()
-        _set_rules(ctx, [
-            ("**/nav2*/**", "fatal"),
-            ("/dummy/node", "warn"),
-            ("**/*", "info"),
-        ])
+        _set_rules(
+            ctx,
+            [
+                ("**/nav2*/**", "fatal"),
+                ("/dummy/node", "warn"),
+                ("**/*", "info"),
+            ],
+        )
         ext = NodeLogLevelExtension()
         args, _ = ext.prepare_for_execute(ctx, {}, _node("/env_0/jackal/nav2_controller"))
         assert args[1][0].text == "fatal"
@@ -243,26 +279,32 @@ class TestNodeLogLevelExtension:
 class TestSetGlobalLogLevelAction:
     def test_str_to_level_debug(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
         assert SetGlobalLogLevelAction.str_to_level("debug") == logging.DEBUG
 
     def test_str_to_level_info(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
         assert SetGlobalLogLevelAction.str_to_level("info") == logging.INFO
 
     def test_str_to_level_warn(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
         assert SetGlobalLogLevelAction.str_to_level("warn") == logging.WARN
 
     def test_str_to_level_error(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
         assert SetGlobalLogLevelAction.str_to_level("error") == logging.ERROR
 
     def test_str_to_level_fatal(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
         assert SetGlobalLogLevelAction.str_to_level("fatal") == logging.FATAL
 
     def test_str_to_level_unknown_returns_notset(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
         assert SetGlobalLogLevelAction.str_to_level("unknown_level") == logging.NOTSET
 
     def test_execute_bare_scalar(self) -> None:

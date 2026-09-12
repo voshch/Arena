@@ -1,0 +1,20 @@
+name: walker
+mode: behavior_tree
+extends: adult
+
+# Walks a wide square around the three grid pointers, arm and gaze on grid_1 until it leaves reach,
+# then grid_2, then grid_3, cycling forever. The rider lives on the sequence so the list index
+# survives the leg changes.
+sequences:
+  default:
+    attention:
+      halt: {at: [grid_1, grid_2, grid_3], advance: unreachable, hold: keep}
+      gaze:  {at: [grid_1, grid_2, grid_3], advance: unreachable, hold: keep}
+    steps:
+      leg_1: {kind: go_to, target_pose: {x: 25.0, y: 3.0}}
+      leg_2: {kind: go_to, target_pose: {x: 25.0, y: 15.0}}
+      leg_3: {kind: go_to, target_pose: {x: 5.0, y: 15.0}}
+      leg_4: {kind: go_to, target_pose: {x: 5.0, y: 3.0}}
+    then: default
+
+initial_sequence: default

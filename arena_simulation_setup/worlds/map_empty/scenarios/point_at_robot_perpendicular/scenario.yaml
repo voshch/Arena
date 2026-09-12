@@ -1,0 +1,11 @@
+robots:
+  - start: [2.0, 10.0, 0.0]
+    goal: [22.0, 10.0, 0.0]
+
+dynamic:
+  - name: perpendicular_pointer
+    model: male_adult_construction_01
+    pose: [12.0, 12.0, -1.5708]
+    agent: { agent_type: ./pointer.yaml }
+    waypoints:
+      - [12.0, 12.0]

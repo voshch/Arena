@@ -3,9 +3,7 @@
 import importlib.util
 from pathlib import Path
 
-_SPEC = importlib.util.spec_from_file_location(
-    "arena_robots_feature", Path(__file__).resolve().parents[1] / "robots.py"
-)
+_SPEC = importlib.util.spec_from_file_location("arena_robots_feature", Path(__file__).resolve().parents[1] / "robots.py")
 robots = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(robots)
 
@@ -83,7 +81,8 @@ def test_robot_inherits_default_component_submodules(tmp_path):
 def test_inherited_path_is_shared_so_rm_keeps_it(tmp_path):
     shared = robots._path_robots(_arena(tmp_path))
     assert shared["arena_robots/arena_robots/components/lidar/sick_s300/meshes"] == {
-        "mpo700", "lidar/sick_s300",
+        "mpo700",
+        "lidar/sick_s300",
     }
 
 

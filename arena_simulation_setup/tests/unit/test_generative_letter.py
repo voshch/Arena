@@ -12,9 +12,7 @@ from arena_simulation_setup.utils.generative.letter import GLYPHS, SEGMENTS, Wor
 def build(text: str, **config) -> tuple[WorldGeneratorLetter, shapely.Polygon | shapely.MultiPolygon]:
     generator = WorldGeneratorLetter({'text': text, **config}, random.Random(0))
     level = generator.compute()
-    free = shapely.union_all(
-        [shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones]
-    )
+    free = shapely.union_all([shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones])
     return generator, free
 
 
@@ -87,9 +85,7 @@ def test_stroke_sets_the_corridor_width():
 
 def test_unknown_characters_are_reported_by_position():
     generator, _ = build('A\nA§')
-    assert [(note.row, note.col, note.text) for note in generator.warnings] == [
-        (1, 1, "no segment glyph for '§'")
-    ]
+    assert [(note.row, note.col, note.text) for note in generator.warnings] == [(1, 1, "no segment glyph for '§'")]
 
 
 def test_text_that_draws_nothing_is_rejected():

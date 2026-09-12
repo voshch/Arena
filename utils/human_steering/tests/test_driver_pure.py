@@ -202,7 +202,14 @@ def _stub_driver() -> Driver:
 def _arrive(intent: Intent, x: float, y: float) -> None:
     """Simulate one waypoint-following tick from a pose already at the target."""
     _nx, _ny, _nyaw, cursor = integrate.advance_waypoints(
-        x, y, 0.0, intent.waypoints, intent.waypoint_cursor, intent.speed, dt=1.0, loop=intent.loop,
+        x,
+        y,
+        0.0,
+        intent.waypoints,
+        intent.waypoint_cursor,
+        intent.speed,
+        dt=1.0,
+        loop=intent.loop,
     )
     intent.waypoint_cursor = cursor
 

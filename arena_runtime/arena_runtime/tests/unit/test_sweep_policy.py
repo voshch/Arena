@@ -3,6 +3,7 @@
 Skipped if arena_runtime / builtin_interfaces aren't importable (no sourced
 overlay).
 """
+
 from __future__ import annotations
 
 import pytest

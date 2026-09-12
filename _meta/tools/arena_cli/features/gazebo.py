@@ -3,10 +3,9 @@
 import os
 
 import common
+import features
 from common import Verb, make_verb
 from complete import LaunchArgs
-
-import features
 from features import lifecycle_verbs, source_verb
 
 NAME = "gazebo"
@@ -15,12 +14,7 @@ DESCRIPTION = "Gazebo simulator (ros_gz + OpenUSD tooling)."
 
 _FORMATS_SOURCE = 'case "$ARENA_MODELS_FORMATS" in *sdf*) ;; *) export ARENA_MODELS_FORMATS="${ARENA_MODELS_FORMATS},sdf" ;; esac'
 
-_HOST_SOURCE = (
-    'export USD_PATH="$ARENA_WS_DIR/tools/OpenUSD/install"\n'
-    'export PATH="$USD_PATH/bin:$PATH"\n'
-    'export LD_LIBRARY_PATH="$USD_PATH/lib:$LD_LIBRARY_PATH"\n'
-    'export CMAKE_PREFIX_PATH="$USD_PATH:$CMAKE_PREFIX_PATH"\n' + _FORMATS_SOURCE
-)
+_HOST_SOURCE = 'export USD_PATH="$ARENA_WS_DIR/tools/OpenUSD/install"\nexport PATH="$USD_PATH/bin:$PATH"\nexport LD_LIBRARY_PATH="$USD_PATH/lib:$LD_LIBRARY_PATH"\nexport CMAKE_PREFIX_PATH="$USD_PATH:$CMAKE_PREFIX_PATH"\n' + _FORMATS_SOURCE
 
 
 def _shell_source() -> str:

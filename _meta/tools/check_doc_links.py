@@ -41,11 +41,7 @@ def tracked_docs(root: pathlib.Path) -> list[pathlib.Path]:
         check=True,
         capture_output=True,
     ).stdout
-    return [
-        root / name
-        for name in listing.decode().split("\0")
-        if name and VENDORED.isdisjoint(pathlib.PurePosixPath(name).parts)
-    ]
+    return [root / name for name in listing.decode().split("\0") if name and VENDORED.isdisjoint(pathlib.PurePosixPath(name).parts)]
 
 
 def check(root: pathlib.Path) -> list[str]:

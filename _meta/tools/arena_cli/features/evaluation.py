@@ -2,7 +2,6 @@
 
 import common
 from common import Verb, make_verb
-
 from features import lifecycle_verbs
 
 NAME = "evaluation"

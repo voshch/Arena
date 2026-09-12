@@ -114,6 +114,7 @@ def test_position_parse_3d():
 
 def test_position_parse_idempotent():
     from arena_simulation_setup.utils.cattrs import converter
+
     orig = Position(5.0, 6.0, 7.0)
     copy = converter.structure(orig, Position)
     assert copy is orig
@@ -151,6 +152,7 @@ def test_orientation_parse_yaw_float():
 
 def test_orientation_parse_idempotent():
     from arena_simulation_setup.utils.cattrs import converter
+
     orig = Orientation.identity()
     copy = converter.structure(orig, Orientation)
     assert copy is orig
@@ -254,6 +256,7 @@ def test_pose_parse_nested():
 
 def test_pose_parse_idempotent():
     from arena_simulation_setup.utils.cattrs import converter
+
     orig = Pose(Position(1.0, 2.0, 3.0), Orientation.identity())
     copy = converter.structure(orig, Pose)
     assert copy is orig
@@ -311,6 +314,7 @@ def test_scale_parse_invalid():
 
 def test_scale_parse_idempotent():
     from arena_simulation_setup.utils.cattrs import converter
+
     s = Scale(2.0, 3.0, 4.0)
     s2 = converter.structure(s, Scale)
     assert s2 is s

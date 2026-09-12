@@ -9,6 +9,7 @@ def _launch_available() -> bool:
     try:
         import launch.actions  # noqa: F401
         import launch.launch_description_source  # noqa: F401
+
         return True
     except (ImportError, AttributeError):
         return False
@@ -19,10 +20,8 @@ _skip = pytest.mark.skipif(not _launch_available(), reason=_SKIP_REASON)
 
 def _resolve_args(ctx: object, include: object) -> dict[str, str]:
     from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
-    return {
-        name: perform_substitutions(ctx, normalize_to_list_of_substitutions(value))
-        for name, value in include.launch_arguments
-    }
+
+    return {name: perform_substitutions(ctx, normalize_to_list_of_substitutions(value)) for name, value in include.launch_arguments}
 
 
 @_skip

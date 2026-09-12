@@ -45,6 +45,7 @@ def test_orientation_yaw_roundtrip(yaw):
 @settings(max_examples=100)
 def test_pose_converter_idempotent(x, y, yaw):
     from arena_simulation_setup.utils.cattrs import converter
+
     p = Pose(Position(x, y, 0), Orientation.from_yaw(yaw))
     p2 = converter.structure(p, Pose)
     assert p2 is p

@@ -13,12 +13,14 @@ def _ros_gate():
 
 def test_tm_obstacles_prefix_no_args():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Obstacles.prefix()
     assert str(ns) == "tm_obstacles"
 
 
 def test_tm_obstacles_prefix_one_arg():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Obstacles.prefix("file")
     assert "tm_obstacles" in str(ns)
     assert "file" in str(ns)
@@ -26,6 +28,7 @@ def test_tm_obstacles_prefix_one_arg():
 
 def test_tm_obstacles_prefix_two_args():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Obstacles.prefix("a", "b")
     s = str(ns)
     assert "tm_obstacles" in s
@@ -35,12 +38,14 @@ def test_tm_obstacles_prefix_two_args():
 
 def test_tm_robots_prefix_no_args():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Robots.prefix()
     assert str(ns) == "tm_robots"
 
 
 def test_tm_robots_prefix_one_arg():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Robots.prefix("foo")
     assert "tm_robots" in str(ns)
     assert "foo" in str(ns)
@@ -48,12 +53,14 @@ def test_tm_robots_prefix_one_arg():
 
 def test_tm_module_prefix_no_args():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Module.prefix()
     assert str(ns) == "tm_module"
 
 
 def test_tm_module_prefix_one_arg():
     from task_generator.constants import Constants
+
     ns = Constants.TaskMode.TM_Module.prefix("bar")
     s = str(ns)
     assert "tm_module" in s
@@ -62,18 +69,21 @@ def test_tm_module_prefix_one_arg():
 
 def test_tm_obstacles_default_returns_random():
     from task_generator.constants import Constants
+
     d = Constants.TaskMode.TM_Obstacles.default()
     assert d is Constants.TaskMode.TM_Obstacles.RANDOM
 
 
 def test_tm_robots_default_returns_random():
     from task_generator.constants import Constants
+
     d = Constants.TaskMode.TM_Robots.default()
     assert d is Constants.TaskMode.TM_Robots.RANDOM
 
 
 def test_tm_module_default_returns_empty_set():
     from task_generator.constants import Constants
+
     d = Constants.TaskMode.TM_Module.default()
     assert isinstance(d, set)
     assert len(d) == 0
@@ -81,6 +91,7 @@ def test_tm_module_default_returns_empty_set():
 
 def test_tm_obstacles_values_stable():
     from task_generator.constants import Constants
+
     TM = Constants.TaskMode.TM_Obstacles
     assert TM.PARAMETRIZED.value == "parametrized"
     assert TM.RANDOM.value == "random"
@@ -91,6 +102,7 @@ def test_tm_obstacles_values_stable():
 
 def test_tm_robots_values_stable():
     from task_generator.constants import Constants
+
     TM = Constants.TaskMode.TM_Robots
     assert TM.GUIDED.value == "guided"
     assert TM.EXPLORE.value == "explore"
@@ -100,6 +112,7 @@ def test_tm_robots_values_stable():
 
 def test_tm_module_values_stable():
     from task_generator.constants import Constants
+
     TM = Constants.TaskMode.TM_Module
     assert TM.STAGED.value == "staged"
     assert TM.DYNAMIC_MAP.value == "dynamic_map"
@@ -109,6 +122,7 @@ def test_tm_module_values_stable():
 
 def test_sim_simulator_values_stable():
     from arena_runtime.constants import SimSimulator
+
     assert SimSimulator.DUMMY.value == "dummy"
     assert SimSimulator.FLATLAND.value == "flatland"
     assert SimSimulator.GAZEBO.value == "gazebo"
@@ -118,6 +132,7 @@ def test_sim_simulator_values_stable():
 
 def test_human_simulator_values_stable():
     from task_generator.constants import Constants
+
     HS = Constants.HumanSimulator
     assert HS.DUMMY.value == "dummy"
     assert HS.NONE.value == "none"

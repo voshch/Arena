@@ -1,0 +1,18 @@
+name: shaker_2
+mode: behavior_tree
+extends: adult
+
+initial_sequence: shake_seq
+
+sequences:
+  shake_seq:
+    steps:
+      walk_to_meet:
+        kind: go_to
+        target_pose: {x: 10.5, y: 17.0}
+      do_shake:
+        interaction: SHAKE_HAND
+        attention:
+          gaze: partner
+        duration: {mean: 1000.0, std: 0.0}
+    then: shake_seq

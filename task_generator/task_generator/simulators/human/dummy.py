@@ -23,7 +23,7 @@ _STATIC_QOS = rclpy.qos.QoSProfile(
     depth=1,
 )
 
-_KEEPALIVE_HZ = 2.0
+_KEEPALIVE_HZ = 30.0
 
 
 def _deleteall_marker(ns: str) -> Marker:

@@ -45,12 +45,14 @@ def _collect_pkg(pkg_dir: "Path") -> tuple[int, int, int, int, float, list[tuple
                     if el is None:
                         continue
                     msg = (el.get("message") or "").strip().splitlines()
-                    fails.append((
-                        kind,
-                        tc.get("classname", ""),
-                        tc.get("name", ""),
-                        msg[0] if msg else "",
-                    ))
+                    fails.append(
+                        (
+                            kind,
+                            tc.get("classname", ""),
+                            tc.get("name", ""),
+                            msg[0] if msg else "",
+                        )
+                    )
     return tests, failures, errors, skipped, elapsed, fails
 
 

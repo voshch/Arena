@@ -3,10 +3,9 @@
 import os
 import sys
 
-from common import CLIError, Verb, _env, _env_set, _host_path, _row, make_verb
-from complete import Static
-
 import features
+from common import CLIError, Verb, _env_set, _host_path, _row, make_verb
+from complete import Static
 
 NAME = "docker"
 
@@ -17,23 +16,41 @@ def build(argv: list[str]) -> None:
     """Build the arena container image."""
     if argv:
         raise CLIError("unexpected arguments")
-    sys.exit(features.compose(["build", "arena"]))
+    sys.exit(features.build(["arena"]))
 
 
 def commit(argv: list[str]) -> None:
     """Commit the running arena container back to its image."""
-    import subprocess
-
     if argv:
         raise CLIError("unexpected arguments")
-    out = features.compose_output(["ps", "-q", "-a", "arena"])
-    container_id = out.splitlines()[0].strip() if out.splitlines() else ""
+    ids = features.containers("arena", all_states=True)
+    container_id = ids[0] if ids else ""
     image = os.environ.get("ARENA_IMAGE", "")
     print(f"committing container {container_id} to image {image}...")
-    rc = subprocess.run(["sudo", "env", *os.environ.get("docker_env", "").split(), "docker", "commit", "--no-pause", container_id, image], check=False).returncode
+    rc = features.engine(["commit", "--no-pause", container_id, image])
     if rc:
         sys.exit(rc)
     print("done")
+
+
+def _teardown(compose_verb: str) -> int:
+    """Run a compose teardown from a labeled sibling container so it survives this one's death."""
+    project = os.environ.get("ARENA_PROJECT_NAME", "")
+    sock = os.environ.get("ARENA_DOCKER_SOCK", "/var/run/docker.sock")
+    return features.engine(
+        [
+            "run",
+            "--rm",
+            "--label",
+            f"arena.down={project}",
+            "-v",
+            f"{sock}:/var/run/docker.sock",
+            "docker.io/library/docker:cli",
+            "sh",
+            "-lc",
+            f"docker compose --project-name '{project}' {compose_verb} --timeout 0",
+        ]
+    )
 
 
 def stop(argv: list[str]) -> None:
@@ -41,34 +58,15 @@ def stop(argv: list[str]) -> None:
     if argv:
         raise CLIError("unexpected arguments")
     print("Stopping containers...")
-    sys.exit(features.compose(["stop", "--timeout", "0"]))
+    sys.exit(_teardown("stop"))
 
 
 def down(argv: list[str]) -> None:
     """Stop and remove the project's containers."""
-    import subprocess
-
     if argv:
         raise CLIError("unexpected arguments")
     print("Stopping and removing containers...")
-    project = os.environ.get("ARENA_PROJECT_NAME", "")
-    sys.exit(
-        subprocess.run(
-            [
-                "sudo",
-                "docker",
-                "run",
-                "--rm",
-                "-v",
-                "/var/run/docker.sock:/var/run/docker.sock",
-                "docker:cli",
-                "sh",
-                "-lc",
-                f"docker compose --project-name '{project}' down --timeout 0",
-            ],
-            check=False,
-        ).returncode
-    )
+    sys.exit(_teardown("down"))
 
 
 def compose(argv: list[str]) -> None:
@@ -95,16 +93,14 @@ def _gpu() -> tuple[str, str, str]:
 def _container_gpu() -> str:
     """Whether the running arena container reserves a gpu: 'yes', 'no', 'down' or 'unknown'."""
     import json
-    import subprocess
 
-    ids = features.compose_output(["ps", "-q", "arena"]).split()
+    ids = features.containers("arena")
     if not ids:
         return "down"
-    sudo = os.environ.get("arena_compose_sudo", "").split()
-    p = subprocess.run([*sudo, "docker", "inspect", "--format", "{{json .HostConfig.DeviceRequests}}", ids[0]], capture_output=True, text=True, check=False)
-    if p.returncode:
+    out = features.engine_output(["inspect", "--format", "{{json .HostConfig.DeviceRequests}}", ids[0]])
+    if out is None:
         return "unknown"
-    requests = json.loads(p.stdout or "null") or []
+    requests = json.loads(out or "null") or []
     return "yes" if any(r["Driver"] == "nvidia" for r in requests) else "no"
 
 

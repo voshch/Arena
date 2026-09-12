@@ -21,6 +21,7 @@ def stub_manager():
         class Robot:
             class TIMEOUT:
                 value = 60
+
         class Arena:
             class SIM:
                 value = SimSimulator.GAZEBO
@@ -28,6 +29,7 @@ def stub_manager():
     class _FakeLogger:
         def get_child(self, name):
             return self
+
         def debug(self, *a, **kw): ...
         def info(self, *a, **kw): ...
         def warn(self, *a, **kw): ...
@@ -49,9 +51,7 @@ def _seed_readiness():
     prior = robots_manager._READINESS_CACHE
 
     def seed(pending: dict[str, frozenset[str]]):
-        robots_manager._READINESS_CACHE = robots_manager._Readiness(
-            ready=frozenset(), pending=pending
-        )
+        robots_manager._READINESS_CACHE = robots_manager._Readiness(ready=frozenset(), pending=pending)
 
     yield seed
     robots_manager._READINESS_CACHE = prior

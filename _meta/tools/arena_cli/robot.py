@@ -25,11 +25,7 @@ def discover_envs() -> list[str]:
         out = subprocess.check_output(["ros2", "topic", "list"], stderr=subprocess.DEVNULL, text=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
-    return [
-        line[: -len(ROBOTS_SUFFIX)]
-        for line in (s.strip() for s in out.splitlines())
-        if line.endswith(ROBOTS_SUFFIX)
-    ]
+    return [line[: -len(ROBOTS_SUFFIX)] for line in (s.strip() for s in out.splitlines()) if line.endswith(ROBOTS_SUFFIX)]
 
 
 def matches(ns: str, target: str) -> bool:

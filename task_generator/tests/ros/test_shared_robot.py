@@ -21,6 +21,7 @@ def stub_node():
         class Robot:
             class TIMEOUT:
                 value = 60
+
         class Arena:
             class SIM:
                 value = SimSimulator.GAZEBO
@@ -28,6 +29,7 @@ def stub_node():
     class _FakeLogger:
         def get_child(self, name):
             return self
+
         def debug(self, *a, **kw): ...
         def info(self, *a, **kw): ...
         def warn(self, *a, **kw): ...
@@ -43,6 +45,7 @@ def stub_node():
 def _make_robot(name, model_name, mobile="nav2"):
     from arena_robots.Robot import RobotIdentifier
     from task_generator.shared import Pose, Robot
+
     return Robot(
         name=name,
         pose=Pose(),
@@ -73,6 +76,7 @@ def test_compatible_different_mobile_adapter():
 def test_compatible_different_parts():
     from arena_robots.Robot import RobotIdentifier
     from task_generator.shared import Pose, Robot
+
     r1 = Robot(
         name="r1",
         pose=Pose(),
@@ -94,6 +98,7 @@ def test_compatible_different_parts():
 
 def test_parse_minimal_value(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot1", "model": "turtlebot3_burger"}
     robot = Robot.parse(value, node=stub_node)
     assert "mobile" not in robot.adapters
@@ -101,6 +106,7 @@ def test_parse_minimal_value(stub_node):
 
 def test_parse_adapters_block_sets_adapters(stub_node):
     from task_generator.shared import Robot
+
     value = {
         "name": "bot2",
         "model": "turtlebot3_burger",
@@ -114,6 +120,7 @@ def test_parse_flat_mobile_key_not_routed_to_adapters(stub_node):
     """Flat `mobile: x` is a morphology key (§2.1), not adapter sugar; parse
     leaves it out of `adapters` (only `mobile.adapter=` / the `adapters` block routes there)."""
     from task_generator.shared import Robot
+
     value = {
         "name": "bot2b",
         "model": "turtlebot3_burger",
@@ -125,6 +132,7 @@ def test_parse_flat_mobile_key_not_routed_to_adapters(stub_node):
 
 def test_parse_unknown_adapter_cap_raises(stub_node):
     from task_generator.shared import Robot
+
     value = {
         "name": "bot2c",
         "model": "turtlebot3_burger",
@@ -136,6 +144,7 @@ def test_parse_unknown_adapter_cap_raises(stub_node):
 
 def test_parse_unknown_adapter_kind_raises(stub_node):
     from task_generator.shared import Robot
+
     value = {
         "name": "bot2d",
         "model": "turtlebot3_burger",
@@ -147,6 +156,7 @@ def test_parse_unknown_adapter_kind_raises(stub_node):
 
 def test_parse_extra_dict_preserved(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot3", "model": "turtlebot3_burger", "custom_key": "custom_val"}
     robot = Robot.parse(value, node=stub_node)
     assert "custom_key" in robot.extra
@@ -155,6 +165,7 @@ def test_parse_extra_dict_preserved(stub_node):
 
 def test_parse_name_set_correctly(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "my_robot", "model": "turtlebot3_burger"}
     robot = Robot.parse(value, node=stub_node)
     assert robot.name == "my_robot"
@@ -162,6 +173,7 @@ def test_parse_name_set_correctly(stub_node):
 
 def test_parse_default_pos_is_zero(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot4", "model": "turtlebot3_burger"}
     robot = Robot.parse(value, node=stub_node)
     assert robot.pose.position.x == 0.0
@@ -171,6 +183,7 @@ def test_parse_default_pos_is_zero(stub_node):
 def test_frame_sim_path_branch():
     from arena_robots.Robot import RobotIdentifier
     from task_generator.shared import Pose, Robot
+
     robot = Robot(
         name="r",
         pose=Pose(),
@@ -185,6 +198,7 @@ def test_frame_sim_path_branch():
 def test_frame_name_fallback():
     from arena_robots.Robot import RobotIdentifier
     from task_generator.shared import Pose, Robot
+
     robot = Robot(
         name="robot_a",
         pose=Pose(),
@@ -198,6 +212,7 @@ def test_frame_name_fallback():
 def test_from_setup_delegates_to_parse(stub_node):
     from arena_robots.SetupFile import Config
     from task_generator.shared import Robot
+
     setup = Config(robot="turtlebot3_burger", name="setup_bot")
     robot = Robot.from_setup(setup, node=stub_node)
     assert robot.name == "setup_bot"
@@ -230,6 +245,7 @@ def test_eq_not_equal_to_non_robot():
 def test_frame_empty_name_fallback_to_empty_string():
     from arena_robots.Robot import RobotIdentifier
     from task_generator.shared import Pose, Robot
+
     robot = Robot(
         name="",
         pose=Pose(),
@@ -241,6 +257,7 @@ def test_frame_empty_name_fallback_to_empty_string():
 
 def test_parse_empty_parts_no_assembly_resolved_assembly_none(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot5", "model": "turtlebot3_burger"}
     robot = Robot.parse(value, node=stub_node)
     assert robot.resolved_assembly is None
@@ -248,6 +265,7 @@ def test_parse_empty_parts_no_assembly_resolved_assembly_none(stub_node):
 
 def test_parse_empty_parts_with_assembly_resolves_default(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot5b", "model": "jackal"}
     robot = Robot.parse(value, node=stub_node)
     assert robot.resolved_assembly is not None
@@ -255,6 +273,7 @@ def test_parse_empty_parts_with_assembly_resolves_default(stub_node):
 
 def test_parse_parts_without_assembly_raises(stub_node):
     from task_generator.shared import Robot
+
     value = {
         "name": "bot6",
         "model": "rbkairos_plus",
@@ -269,6 +288,7 @@ def test_parse_frames_valid_mount_bakes_override_into_resolved_assembly(stub_nod
     resolved_assembly, winning over the mount's own declared frame (jackal's `front`
     declares frame: lidar; the override replaces it)."""
     from task_generator.shared import Robot
+
     value = {"name": "bot7", "model": "jackal", "frames": {"front": "custom_link"}}
     robot = Robot.parse(value, node=stub_node)
     front = next(p for p in robot.resolved_assembly.placements if p.mount.name == "front")
@@ -277,6 +297,7 @@ def test_parse_frames_valid_mount_bakes_override_into_resolved_assembly(stub_nod
 
 def test_parse_frames_unknown_mount_raises(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot8", "model": "jackal", "frames": {"bogus": "x"}}
     with pytest.raises(RuntimeError, match="unknown mount"):
         Robot.parse(value, node=stub_node)
@@ -284,6 +305,7 @@ def test_parse_frames_unknown_mount_raises(stub_node):
 
 def test_parse_frames_without_assembly_raises(stub_node):
     from task_generator.shared import Robot
+
     value = {"name": "bot9", "model": "rbkairos_plus", "frames": {"front": "x"}}
     with pytest.raises(RuntimeError, match="requires an assembly.yaml"):
         Robot.parse(value, node=stub_node)

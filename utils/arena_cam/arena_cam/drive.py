@@ -286,7 +286,7 @@ class Driver:
         self.status = "world frame"
 
     def grab_still(self) -> None:
-        """Capture the current view to a PPM under $ARENA_DATA_DIR/recordings/stills."""
+        """Capture the current view to a PPM in the screenshots dir."""
         surface = self._surfaces[self.namespaces[0]] if self._surfaces else None
         if surface is None or not surface.capture.service_is_ready():
             self.status = "capture service unavailable"
@@ -304,7 +304,7 @@ class Driver:
             self.status = f"capture failed: {result.message if result is not None else 'no response'}"
             return
         if self._stills is None:
-            self._stills = record.resolve_dir("stills")
+            self._stills = record.screenshots_dir()
             self._stills.mkdir(parents=True, exist_ok=True)
         path = record.next_still(self._stills)
         path.write_bytes(record.encode_ppm(result.image))

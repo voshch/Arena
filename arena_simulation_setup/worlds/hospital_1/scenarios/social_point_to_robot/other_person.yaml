@@ -1,0 +1,14 @@
+name: other_person
+mode: behavior_tree
+extends: adult
+
+initial_sequence: stand_seq
+
+sequences:
+  stand_seq:
+    steps:
+      stand_still:
+        attention:
+          gaze: pointer
+        duration: {mean: 1000.0, std: 0.0}
+    then: stand_seq

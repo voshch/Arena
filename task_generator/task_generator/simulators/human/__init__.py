@@ -4,12 +4,14 @@ import abc
 import asyncio
 import itertools
 import math
+import os
 import typing
 from collections.abc import Iterable, Mapping, Sequence
 
 import attrs
 import rclpy.publisher
 import rclpy.qos
+from ament_index_python.packages import get_package_share_directory
 from arena_auditory.qos_profiles import continuous_audio_qos
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_people_msgs.srv import MovePedestrians
@@ -23,13 +25,15 @@ from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Pose as PoseMsg
+from geometry_msgs.msg import Quaternion as QuaternionMsg
 from task_generator_msgs.msg import ContinuousHeardSoundState
 from visualization_msgs.msg import MarkerArray
 
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Region, Robot, Wall
-from task_generator.simulators.human.gait import GaitGenerator
+from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.utils import (
     KnownObstacle,
@@ -110,8 +114,11 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ),
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
-        self._gait = GaitGenerator()
+        self._ped_orientations: dict[str, QuaternionMsg] = {}
+        self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
+        self._gestures = GestureLayer(self._gait, self._logger)
+        self._gait.gesture_hook = self._gestures
         self.node.create_subscription(
             Pedestrians,
             self._namespace("arena_peds"),
@@ -190,6 +197,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         current_ids: set[int] = {ped.id for ped in out.pedestrians}
         for stale in sorted(set(self._gait_prev_stamp) - current_ids):
+            self._gestures.forget(stale)
             self._gait.forget(stale)
             del self._gait_prev_stamp[stale]
 
@@ -198,11 +206,19 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if ped.joint_state.name:
                 continue
             prev = self._gait_prev_stamp.get(ped.id)
-            dt = (now_sec - prev) if prev is not None and now_sec > prev else 0.1
+            if prev is None:
+                dt = 0.05
+            else:
+                dt = max(0.0, now_sec - prev)
             self._gait_prev_stamp[ped.id] = now_sec
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
             speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
-            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt)
+            gesture = GestureRequest(
+                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), clip=g.clip, hand=g.hand) for g in ped.gestures),
+                pose=(ped.pose.position.x, ped.pose.position.y, yaw),
+                moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
+            )
+            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture)
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
 
@@ -218,12 +234,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _on_arena_peds(self, msg: Pedestrians) -> None:
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
+        self._ped_orientations = {p.name: p.pose.orientation for p in msg.pedestrians}
 
     def pedestrian_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
         return [(name, xy, PED_RADIUS) for name, xy in self._ped_positions_xy.items()]
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
-        """Teleport tracked pedestrians to given (x, y). Default impl asks the sim to move them."""
+        """Teleport tracked pedestrians to given (x, y), keeping their facing. Default impl asks the sim to move them."""
         if not destinations:
             return True
         peds_msg = Pedestrians()
@@ -234,6 +251,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ped.pose.position.x = x
             ped.pose.position.y = y
             ped.pose.position.z = 0.0
+            if (orientation := self._ped_orientations.get(name)) is not None:
+                ped.pose.orientation = orientation
             peds_msg.pedestrians.append(ped)
             if cur is not None:
                 self._ped_positions_xy[name] = (x, y)

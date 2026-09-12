@@ -32,6 +32,7 @@ def test_wall_serialize_with_kind():
 
 def test_wall_serialize_with_material_no_kind():
     from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+
     mat = MaterialIdentifier("Marble")
     w = Wall(start=Position(0.0, 0.0, 0.0), end=Position(1.0, 0.0, 0.0), material=mat)
     d = w.serialize()

@@ -69,8 +69,9 @@ def _enum_names(keys: object) -> list[str]:
 
 def _asset_names() -> tuple[dict[str, list[str]], list[str]]:
     """Per-kind asset names for completion: local names plus bucket listings already cached on disk."""
-    import asset
     from arena_simulation_setup.tree import NetResolver
+
+    import asset
 
     values: dict[str, list[str]] = {}
     deps: list[str] = []
@@ -106,11 +107,7 @@ def _values() -> tuple[dict[str, list[str]], list[str]]:
         "robot": sorted(set(registry.identifier_to_available(RobotIdentifier)) - _uninstalled_robots(arena)),
         "robot.planner": _installed_planners(arena),
     }
-    deps = [
-        os.path.realpath(m.__file__)
-        for m in (runtime_sim, human_sim, registry, task_generator.tasks.robots, task_generator.tasks.obstacles, task_generator.tasks.modules)
-        if m.__file__
-    ]
+    deps = [os.path.realpath(m.__file__) for m in (runtime_sim, human_sim, registry, task_generator.tasks.robots, task_generator.tasks.obstacles, task_generator.tasks.modules) if m.__file__]
     deps += [str(arena / "arena_robots" / ".gitmodules"), str(arena / "arena_planners" / ".gitmodules")]
     asset_values, asset_deps = _asset_names()
     values.update(asset_values)

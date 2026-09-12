@@ -3,6 +3,7 @@
 Skipped if task_generator / arena_simulation_setup aren't importable (no sourced overlay),
 since the door/elevator runtime types live there.
 """
+
 from __future__ import annotations
 
 import math
@@ -645,11 +646,7 @@ def test_step_emits_causally_linked_changes_in_one_batch():
     mgr.set_change_callback(lambda b: batches.append(list(b)))
     mgr.step(0.0)
     mgr.step(15.0)
-    edge_batches = [
-        {(c.entity, c.field) for c in batch}
-        for batch in batches
-        if any(c.field in ("active", "sounding") for c in batch)
-    ]
+    edge_batches = [{(c.entity, c.field) for c in batch} for batch in batches if any(c.field in ("active", "sounding") for c in batch)]
     assert any({("fire", "active"), ("siren", "sounding")} <= fields for fields in edge_batches)
 
 

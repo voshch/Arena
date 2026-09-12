@@ -1,0 +1,17 @@
+name: collapser
+mode: behavior_tree
+extends: adult
+
+initial_sequence: collapse_seq
+
+sequences:
+  collapse_seq:
+    steps:
+      stand_briefly:
+        duration: {mean: 3.0, std: 0.0}
+      do_collapse:
+        attention:
+          clip: collapse_to_ground
+          posture: prone
+        duration: {mean: 1000.0, std: 0.0}
+    then: collapse_seq

@@ -17,6 +17,7 @@ def _ros_gate():
 
 def _make_registry():
     from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
+
     return Registry[str, object]()
 
 
@@ -56,6 +57,7 @@ def test_duplicate_register_always_raises(names):
             return "y"
 
         with pytest.raises(ValueError):
+
             @reg2.register(duplicate)
             async def _dupe():
                 return "z"
@@ -66,8 +68,8 @@ def test_duplicate_register_always_raises(names):
 def test_unregistered_name_never_retrievable(names):
     reg = _make_registry()
 
-    registered = names[:len(names)//2]
-    unregistered = names[len(names)//2:]
+    registered = names[: len(names) // 2]
+    unregistered = names[len(names) // 2 :]
 
     for name in registered:
         cap = name

@@ -1,0 +1,43 @@
+name: grid_4x4
+mode: behavior_tree
+extends: adult
+
+# 4x4 grid 3 m ahead, one cell at a time, arm lowered between cells, gaze on the same cell.
+sequences:
+  default:
+    steps:
+      cell_00: {attention: {point: {azimuth: 30, elevation: 20}, gaze: {azimuth: 30, elevation: 20}}, duration: {mean: 2.0}}
+      rest_00: {duration: {mean: 1.0}}
+      cell_01: {attention: {point: {azimuth: 10, elevation: 20}, gaze: {azimuth: 10, elevation: 20}}, duration: {mean: 2.0}}
+      rest_01: {duration: {mean: 1.0}}
+      cell_02: {attention: {point: {azimuth: -10, elevation: 20}, gaze: {azimuth: -10, elevation: 20}}, duration: {mean: 2.0}}
+      rest_02: {duration: {mean: 1.0}}
+      cell_03: {attention: {point: {azimuth: -30, elevation: 20}, gaze: {azimuth: -30, elevation: 20}}, duration: {mean: 2.0}}
+      rest_03: {duration: {mean: 1.0}}
+      cell_10: {attention: {point: {azimuth: 30, elevation: 7}, gaze: {azimuth: 30, elevation: 7}}, duration: {mean: 2.0}}
+      rest_10: {duration: {mean: 1.0}}
+      cell_11: {attention: {point: {azimuth: 10, elevation: 7}, gaze: {azimuth: 10, elevation: 7}}, duration: {mean: 2.0}}
+      rest_11: {duration: {mean: 1.0}}
+      cell_12: {attention: {point: {azimuth: -10, elevation: 7}, gaze: {azimuth: -10, elevation: 7}}, duration: {mean: 2.0}}
+      rest_12: {duration: {mean: 1.0}}
+      cell_13: {attention: {point: {azimuth: -30, elevation: 7}, gaze: {azimuth: -30, elevation: 7}}, duration: {mean: 2.0}}
+      rest_13: {duration: {mean: 1.0}}
+      cell_20: {attention: {point: {azimuth: 30, elevation: -6}, gaze: {azimuth: 30, elevation: -6}}, duration: {mean: 2.0}}
+      rest_20: {duration: {mean: 1.0}}
+      cell_21: {attention: {point: {azimuth: 10, elevation: -6}, gaze: {azimuth: 10, elevation: -6}}, duration: {mean: 2.0}}
+      rest_21: {duration: {mean: 1.0}}
+      cell_22: {attention: {point: {azimuth: -10, elevation: -6}, gaze: {azimuth: -10, elevation: -6}}, duration: {mean: 2.0}}
+      rest_22: {duration: {mean: 1.0}}
+      cell_23: {attention: {point: {azimuth: -30, elevation: -6}, gaze: {azimuth: -30, elevation: -6}}, duration: {mean: 2.0}}
+      rest_23: {duration: {mean: 1.0}}
+      cell_30: {attention: {point: {azimuth: 30, elevation: -19}, gaze: {azimuth: 30, elevation: -19}}, duration: {mean: 2.0}}
+      rest_30: {duration: {mean: 1.0}}
+      cell_31: {attention: {point: {azimuth: 10, elevation: -19}, gaze: {azimuth: 10, elevation: -19}}, duration: {mean: 2.0}}
+      rest_31: {duration: {mean: 1.0}}
+      cell_32: {attention: {point: {azimuth: -10, elevation: -19}, gaze: {azimuth: -10, elevation: -19}}, duration: {mean: 2.0}}
+      rest_32: {duration: {mean: 1.0}}
+      cell_33: {attention: {point: {azimuth: -30, elevation: -19}, gaze: {azimuth: -30, elevation: -19}}, duration: {mean: 2.0}}
+      rest_33: {duration: {mean: 1.0}}
+    then: default
+
+initial_sequence: default

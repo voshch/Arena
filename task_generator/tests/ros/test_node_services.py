@@ -3,6 +3,7 @@ task-mode enum validation, and ROSParamT.destroy idempotency.
 
 These tests are pure-Python and do not require a live ROS graph.
 """
+
 from __future__ import annotations
 
 import hashlib

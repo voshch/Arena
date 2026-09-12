@@ -3,6 +3,7 @@
 Skipped if task_generator / arena_simulation_setup aren't importable (no
 sourced overlay), since the door/elevator runtime types live there.
 """
+
 from __future__ import annotations
 
 import math

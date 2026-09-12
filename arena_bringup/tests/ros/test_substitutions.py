@@ -9,6 +9,7 @@ import yaml
 
 def _make_context():
     import launch
+
     return launch.LaunchContext()
 
 
@@ -62,14 +63,22 @@ def _nav2_costmap_fixture() -> tuple[dict, dict]:
         }
 
     obj_data = {
-        "global_costmap": {"global_costmap": {"ros__parameters": {
-            "use_sim_time": False,
-            "obstacle_layer": layer("nav2_costmap_2d::ObstacleLayer"),
-        }}},
-        "local_costmap": {"local_costmap": {"ros__parameters": {
-            "use_sim_time": False,
-            "voxel_layer": layer("nav2_costmap_2d::VoxelLayer"),
-        }}},
+        "global_costmap": {
+            "global_costmap": {
+                "ros__parameters": {
+                    "use_sim_time": False,
+                    "obstacle_layer": layer("nav2_costmap_2d::ObstacleLayer"),
+                }
+            }
+        },
+        "local_costmap": {
+            "local_costmap": {
+                "ros__parameters": {
+                    "use_sim_time": False,
+                    "voxel_layer": layer("nav2_costmap_2d::VoxelLayer"),
+                }
+            }
+        },
     }
     return subs_data, obj_data
 

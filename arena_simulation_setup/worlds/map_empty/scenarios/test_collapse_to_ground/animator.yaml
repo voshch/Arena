@@ -1,0 +1,13 @@
+name: animator_collapse_to_ground
+mode: behavior_tree
+extends: adult
+
+initial_sequence: anim_seq
+
+sequences:
+  anim_seq:
+    steps:
+      do_anim:
+        attention: {clip: collapse_to_ground, posture: prone}
+        duration: {mean: 5.0, std: 0.0}
+    then: anim_seq

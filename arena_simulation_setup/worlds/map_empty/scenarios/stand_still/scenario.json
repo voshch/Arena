@@ -1,0 +1,13 @@
+{
+  "dynamic": [
+    {
+      "name": "1",
+      "pos": [14.0, 2.0, 0.0],
+      "type": "adult",
+      "model": "arenian",
+      "waypoints": [
+        [14.0, 2.0, 0.0]]
+    }
+  ]
+}
+

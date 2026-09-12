@@ -39,8 +39,11 @@ def arena_dir() -> Path:
 def submodule_status(arena: Path) -> dict[str, str]:
     """{path: 'init'|'uninit'} for each submodule (recursive, paths relative to Arena)."""
     out = subprocess.run(
-        ["git", "submodule", "status", "--recursive"], cwd=arena,
-        text=True, capture_output=True, check=False,
+        ["git", "submodule", "status", "--recursive"],
+        cwd=arena,
+        text=True,
+        capture_output=True,
+        check=False,
     ).stdout
     status: dict[str, str] = {}
     for line in out.splitlines():
@@ -94,11 +97,7 @@ def submodule_sparse(arena: Path) -> dict[str, str]:
         return {}
     cfg = configparser.ConfigParser()
     cfg.read(sdk_gitmodules)
-    return {
-        f"{_SDK_SUBDIR}/{cfg[section].get('path', '').strip()}": sparse
-        for section in cfg.sections()
-        if section.startswith("submodule ") and (sparse := cfg[section].get("sparse", "").strip())
-    }
+    return {f"{_SDK_SUBDIR}/{cfg[section].get('path', '').strip()}": sparse for section in cfg.sections() if section.startswith("submodule ") and (sparse := cfg[section].get("sparse", "").strip())}
 
 
 def _apply_sparse(arena: Path, path: str) -> None:
@@ -112,11 +111,7 @@ def component_families(arena: Path) -> set[str]:
     root = arena / COMPONENTS_PREFIX
     if not root.is_dir():
         return set()
-    return {
-        f"{type_dir.name}/{fam.name}"
-        for type_dir in root.iterdir() if type_dir.is_dir()
-        for fam in type_dir.iterdir() if (fam / "component.yaml").is_file()
-    }
+    return {f"{type_dir.name}/{fam.name}" for type_dir in root.iterdir() if type_dir.is_dir() for fam in type_dir.iterdir() if (fam / "component.yaml").is_file()}
 
 
 def resolve_component_ref(arena: Path, ref: str) -> str | None:
@@ -205,7 +200,7 @@ def _git(args: list[str], arena: Path, *, check: bool = True) -> int:
     return subprocess.run(["git", *args], cwd=arena, check=check).returncode
 
 
-def cmd_ls(arena: Path, _args) -> int:
+def cmd_ls(arena: Path, _args: argparse.Namespace) -> int:
     subs = robot_submodules(arena)
     status = submodule_status(arena)
     components = component_families(arena) | {n for n in subs if "/" in n}
@@ -232,7 +227,7 @@ def _normalize_names(arena: Path, names: list[str]) -> list[str] | None:
     return out
 
 
-def cmd_add(arena: Path, args) -> int:
+def cmd_add(arena: Path, args: argparse.Namespace) -> int:
     subs = robot_submodules(arena)
     if args.all:
         if args.names:
@@ -251,18 +246,16 @@ def cmd_add(arena: Path, args) -> int:
         if not paths:
             print(f"robots: '{robot}' has no submodules (nothing to install)")
             continue
-        _git(["-c", "protocol.file.allow=always",
-              "submodule", "update", "--init", "--checkout", _SDK_SUBDIR], arena)
+        _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--checkout", _SDK_SUBDIR], arena)
         sdk = arena / _SDK_SUBDIR
         for p in paths:
             sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
-            _git(["-c", "protocol.file.allow=always",
-                  "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk)
+            _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk)
             _apply_sparse(arena, p)
     return 0
 
 
-def cmd_rm(arena: Path, args) -> int:
+def cmd_rm(arena: Path, args: argparse.Namespace) -> int:
     subs = robot_submodules(arena)
     if args.all:
         if args.names:
@@ -301,7 +294,7 @@ def cmd_rm(arena: Path, args) -> int:
     return 0
 
 
-def cmd_update(arena: Path, _args) -> int:
+def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
     sdk = arena / _SDK_SUBDIR
     if not (sdk / ".gitmodules").is_file():
         return 0
@@ -312,9 +305,7 @@ def cmd_update(arena: Path, _args) -> int:
     # --checkout overrides update=none
     for p in sorted({p for r in installed for p in subs[r]}):
         sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
-        if _git(["-c", "protocol.file.allow=always",
-                 "submodule", "update", "--init", "--recursive", "--checkout", sub_path],
-                sdk, check=False):
+        if _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk, check=False):
             failed.append(sub_path)
         _apply_sparse(arena, p)
     code = _git(["submodule", "update", "--recursive"], sdk, check=False)
@@ -323,7 +314,7 @@ def cmd_update(arena: Path, _args) -> int:
     return 1 if failed else code
 
 
-def cmd_uninstall(arena: Path, _args) -> int:
+def cmd_uninstall(arena: Path, _args: argparse.Namespace) -> int:
     subs = robot_submodules(arena)
     status = submodule_status(arena)
     sdk = arena / _SDK_SUBDIR
@@ -359,7 +350,7 @@ def _uri_owner(rel: str) -> str | None:
     return None
 
 
-def cmd_check(arena: Path, args) -> int:
+def cmd_check(arena: Path, args: argparse.Namespace) -> int:
     sdk = arena / "arena_robots" / "arena_robots"
     roots = [sdk / "robots", sdk / "components"]
     if not roots[0].is_dir():
@@ -369,8 +360,7 @@ def cmd_check(arena: Path, args) -> int:
 
     misses: dict[str, dict[str, set[str]]] = {}
     dynamic: set[str] = set()
-    files = [p for root in roots if root.is_dir() for p in root.rglob("*")
-             if p.is_file() and (p.suffix.lower() in SCAN_EXTS or ".urdf." in p.name)]
+    files = [p for root in roots if root.is_dir() for p in root.rglob("*") if p.is_file() and (p.suffix.lower() in SCAN_EXTS or ".urdf." in p.name)]
     for f in files:
         try:
             txt = f.read_text(errors="ignore")
@@ -415,8 +405,8 @@ def cmd_check(arena: Path, args) -> int:
 
 
 DRIVE_EMPTY_RANDOM = {
-    "static":      {"min": 0, "max": 0},
-    "dynamic":     {"min": 0, "max": 0},
+    "static": {"min": 0, "max": 0},
+    "dynamic": {"min": 0, "max": 0},
     "interactive": {"min": 0, "max": 0},
 }
 DRIVE_OWN_KEYS = frozenset({"map", "episodes", "timeout"})
@@ -458,7 +448,9 @@ def _benchmark_data_root() -> Path:
         return Path(env) / "benchmarks"
     out = subprocess.run(
         ["ros2", "pkg", "prefix", "arena_evaluation"],
-        text=True, capture_output=True, check=False,
+        text=True,
+        capture_output=True,
+        check=False,
     )
     if out.returncode != 0:
         sys.exit("error: ARENA_DATA_DIR is unset and `ros2 pkg prefix arena_evaluation` failed")
@@ -491,7 +483,7 @@ def _summarize(run_dir: Path) -> tuple[dict[str, tuple[int, int]], bool]:
     return summary, all_drove
 
 
-def cmd_drive(arena: Path, args) -> int:
+def cmd_drive(arena: Path, args: argparse.Namespace) -> int:
     own: dict[str, str] = {}
     passthrough: list[str] = []
     selected: list[str] = []
@@ -532,9 +524,14 @@ def cmd_drive(arena: Path, args) -> int:
         timeout=own.get("timeout", "30s"),
     )
     cmd = [
-        "ros2", "run", "arena_evaluation", "benchmark",
-        "--suite", json.dumps(suite),
-        "--contest", '[{"name":"default"}]',
+        "ros2",
+        "run",
+        "arena_evaluation",
+        "benchmark",
+        "--suite",
+        json.dumps(suite),
+        "--contest",
+        '[{"name":"default"}]',
         *passthrough,
     ]
     print(
@@ -567,28 +564,26 @@ def main() -> int:
     sub.add_parser("update")
     sub.add_parser("uninstall")
     p_add = sub.add_parser("add")
-    p_add.add_argument("names", nargs="*",
-                       help="robot names and/or component refs (<type>/<name>); "
-                            "a robot also pulls the components its assembly mounts by default")
+    p_add.add_argument("names", nargs="*", help="robot names and/or component refs (<type>/<name>); a robot also pulls the components its assembly mounts by default")
     p_add.add_argument("--all", action="store_true", help="fetch every robot and component")
     p_rm = sub.add_parser("rm")
     p_rm.add_argument("names", nargs="*", help="robot names and/or component refs (<type>/<name>)")
     p_rm.add_argument("--all", action="store_true", help="remove every robot and component")
-    p_rm.add_argument("-f", "--force", action="store_true",
-                      help="deinit shared paths too; co-tagged robots become pending")
+    p_rm.add_argument("-f", "--force", action="store_true", help="deinit shared paths too; co-tagged robots become pending")
     p = sub.add_parser("check")
     p.add_argument("--all", action="store_true")
     p.add_argument("-q", "--quiet", action="store_true")
     p_drive = sub.add_parser("drive")
-    p_drive.add_argument("kv", nargs="*",
-                         help="bare tokens select robots (default: all ready); "
-                              "key:=value pairs: map/episodes/timeout consumed locally, "
-                              "rest forwarded to the benchmark runner")
+    p_drive.add_argument("kv", nargs="*", help="bare tokens select robots (default: all ready); key:=value pairs: map/episodes/timeout consumed locally, rest forwarded to the benchmark runner")
 
     args = ap.parse_args()
     handlers = {
-        "ls": cmd_ls, "add": cmd_add, "rm": cmd_rm,
-        "update": cmd_update, "uninstall": cmd_uninstall, "check": cmd_check,
+        "ls": cmd_ls,
+        "add": cmd_add,
+        "rm": cmd_rm,
+        "update": cmd_update,
+        "uninstall": cmd_uninstall,
+        "check": cmd_check,
         "drive": cmd_drive,
     }
     return handlers[args.cmd](arena_dir(), args)

@@ -5,19 +5,11 @@ import os
 import common
 from common import Verb, make_verb
 from complete import Files, LaunchArgs
-
 from features import lifecycle_verbs
 
 NAME = "training"
 
-DESCRIPTION = (
-    "arena_training + rosnav_rl for DRL-based navigation.\n\n"
-    "This enables:\n\n"
-    "\b\n"
-    "- Training RL agents with Stable Baselines 3 and DreamerV3\n"
-    "- Deploying trained agents as nav2 local planners\n"
-    "- Action server for real-time model inference"
-)
+DESCRIPTION = "arena_training + rosnav_rl for DRL-based navigation.\n\nThis enables:\n\n\b\n- Training RL agents with Stable Baselines 3 and DreamerV3\n- Deploying trained agents as nav2 local planners\n- Action server for real-time model inference"
 
 
 def _update() -> int:

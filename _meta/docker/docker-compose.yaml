@@ -1,17 +1,20 @@
+x-podman:
+  in_pod: false
+
 services:
   arena:
     image: "${ARENA_IMAGE}"
     pull_policy: "never"
     build:
-      context: .
-      dockerfile: src/Arena/_meta/docker/features/docker/Dockerfile
+      context: ${ARENA_WS_DIR}/src/Arena
+      dockerfile: _meta/docker/features/docker/Dockerfile
       args:
         - gid=${HOST_GID}
         - uid=${HOST_UID}
     devices:
       - "/dev/snd:/dev/snd"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "${ARENA_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
       - "/run/user/${HOST_UID}/pulse:/tmp/pulse"
       - "shared:/tmp/shared"
@@ -24,6 +27,8 @@ services:
       - "$HOST_ARENA_WS_DIR/.uv-cache:/opt/arena_ws/.uv-cache"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/home/arena/.gz/gui/pictures"
     environment:
       - QT_X11_NO_MITSHM=1
       - TMPDIR=/tmp/shared
@@ -41,17 +46,22 @@ services:
       - HOST_GID
       - HOST_ARENA_WS_DIR
       - HOST_ARENA_DATA_DIR
+      - HOST_ARENA_SCREENSHOTS_DIR
       - ARENA_DATA_DIR=/opt/arena_ws/data
+      - ARENA_SCREENSHOTS_DIR=/opt/arena_ws/screenshots
       - ROSNAV_AGENTS_DIR=/opt/arena_ws/data/agents
       - HF_HOME=/opt/arena_ws/data/hf
       - LLM_API_ENDPOINT
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-1}
+      - GZ_PARTITION=arena-${ROS_DOMAIN_ID:-1}
       - GZ_IP=127.0.0.1
       - CYCLONEDDS_URI=file:///opt/arena_ws/src/Arena/_meta/docker/cyclonedds.${ARENA_NET:-local}.xml
       - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.${ARENA_NET:-local}.xml
     env_file:
-      - .env
+      - ${ARENA_WS_DIR}/.env
     user: "${HOST_UID}"
+    userns_mode: ${ARENA_USERNS_MODE:-}
     group_add:
       - sudo
       - audio

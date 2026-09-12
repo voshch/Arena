@@ -1,4 +1,5 @@
 """Unit tests for Agent E: per-level directory shape, selective loading, WorldIdentifier.parse."""
+
 from __future__ import annotations
 
 import logging
@@ -38,6 +39,7 @@ def _write_level_yaml(path: Path, zones: list[LevelDescription.Zone] | None = No
     data: dict = {"zones": []}
     if zones:
         from arena_simulation_setup.utils.cattrs import converter
+
         data["zones"] = [converter.unstructure(z) for z in zones]
     path.write_text(yaml.safe_dump(data))
 
@@ -263,9 +265,7 @@ def test_level_filter_excludes_others(tmp_path: Path):
 
 
 def test_export_produces_per_level_dirs(tmp_path: Path):
-    wd = WorldDescription.from_levels(
-        LevelDescription(zones=[_minimal_zone()])
-    )
+    wd = WorldDescription.from_levels(LevelDescription(zones=[_minimal_zone()]))
     tarball = wd.export()
     names = [m.name for m in tarball.getmembers()]
     assert any("0/world.yaml" in n for n in names)
@@ -274,9 +274,7 @@ def test_export_produces_per_level_dirs(tmp_path: Path):
 
 
 def test_export_no_map_levels_path(tmp_path: Path):
-    wd = WorldDescription.from_levels(
-        LevelDescription(zones=[_minimal_zone()])
-    )
+    wd = WorldDescription.from_levels(LevelDescription(zones=[_minimal_zone()]))
     tarball = wd.export()
     names = [m.name for m in tarball.getmembers()]
     assert not any("map/levels" in n for n in names)

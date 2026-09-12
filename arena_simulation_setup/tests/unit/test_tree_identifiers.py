@@ -332,6 +332,7 @@ def test_simple_resolver_invalidate_clears_cache(tmp_path):
     resolver = SimplePathResolver(_DomainFoo, path=tmp_path)
     ident = _DomainFoo(name='model', domain='D')
     import asyncio
+
     asyncio.run(resolver.resolve(ident))
     assert len(resolver._cache) > 0
     resolver.invalidate()

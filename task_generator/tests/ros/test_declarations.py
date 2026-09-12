@@ -4,6 +4,7 @@ Uses a recording stub on `node.rosparam.declare_forward` instead of a live
 node, schema authors care about what the descriptor looks like, not about
 the rclpy plumbing (covered separately by declare_safe tests).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -90,8 +91,7 @@ def test_declare_enum() -> None:
     from arena_rclpy_mixins.declarations import declare_enum
 
     node = _StubNode()
-    declare_enum(node, "task.prompt.generation_mode", "arena",
-                 choices=["arena", "behavior_tree"], label="Generation mode")
+    declare_enum(node, "task.prompt.generation_mode", "arena", choices=["arena", "behavior_tree"], label="Generation mode")
     _, value, desc = _last(node)
     assert value == "arena"
     assert desc.type == rclpy.Parameter.Type.STRING.value
