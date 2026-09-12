@@ -53,6 +53,8 @@ class PolicyNode(Node):
         d("max_linear_mps", 0.0)  # explicit; 0 = from the robot's mobile cap via the fleet
         d("heard_sound_suffix", "heard_sound")
         d("plan_suffix", "plan")
+        d("heard_sound_topic", "")  # explicit; empty = <tg_node>/<robot>/<heard_sound_suffix> from the fleet
+        d("plan_topic", "")  # explicit; empty = <tg_node>/<robot>/<plan_suffix> from the fleet
         d("belief_topic", "hearing/belief_grid")
         d("map_topic", "/map")
         d("reset_topic", "")
@@ -130,7 +132,10 @@ class PolicyNode(Node):
         reset_topic = str(g("reset_topic").value)
         if reset_topic:
             self.create_subscription(Bool, reset_topic, self._cb_reset, latched_qos())
-        self.create_subscription(RobotFleet, str(g("robot_fleet_topic").value), self._cb_fleet, latched_qos())
+        if str(g("robot_fleet_topic").value):
+            self.create_subscription(RobotFleet, str(g("robot_fleet_topic").value), self._cb_fleet, latched_qos())
+        else:
+            self._bind(str(g("plan_topic").value), str(g("heard_sound_topic").value))
         self._rate = max(float(g("publish_rate_hz").value), 0.1)
         self.create_timer(1.0 / self._rate, self._on_timer)
         self.get_logger().info(f"hearing_policy up: listen={bool(g('listen_enabled').value)} yield={bool(g('yield_enabled').value)}")
@@ -147,8 +152,7 @@ class PolicyNode(Node):
         if self._max_mps <= 0.0:
             self._max_mps = binding.max_linear_mps
         prefix = f"{binding.tg_node}/{binding.name}"
-        self.create_subscription(Path, f"{prefix}/{self.get_parameter('plan_suffix').value}", self._cb_plan, 1)
-        self.create_subscription(HeardSoundEvent, f"{prefix}/{self.get_parameter('heard_sound_suffix').value}", self._cb_event, transient_event_qos())
+        self._bind(f"{prefix}/{self.get_parameter('plan_suffix').value}", f"{prefix}/{self.get_parameter('heard_sound_suffix').value}")
         self.get_logger().info(f"hearing_policy bound to {binding.name}: base {self._base_frame}, max {self._max_mps:.2f} m/s")
         if bool(self.get_parameter("use_sim_time").value):
             register_hard_channel(
@@ -159,6 +163,12 @@ class PolicyNode(Node):
                 period_s=1.1 / self._rate,
                 env=self.resolve_topic_name(binding.tg_node),
             )
+
+    def _bind(self, plan_topic: str, event_topic: str) -> None:
+        if plan_topic:
+            self.create_subscription(Path, plan_topic, self._cb_plan, 1)
+        if event_topic:
+            self.create_subscription(HeardSoundEvent, event_topic, self._cb_event, transient_event_qos())
 
     def _cb_map(self, msg: OccupancyGrid) -> None:
         self._map = msg
