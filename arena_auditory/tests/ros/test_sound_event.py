@@ -509,6 +509,7 @@ def test_viewport_camera_registers_selectable_microphones(rclpy_context):
     from geometry_msgs.msg import PoseStamped
     from nav_msgs.msg import OccupancyGrid
     from rclpy.parameter import Parameter
+    from std_msgs.msg import String
     from arena_auditory.sound_propagation_node import (
         SoundPropagationNode,
     )
@@ -541,6 +542,9 @@ def test_viewport_camera_registers_selectable_microphones(rclpy_context):
 
     try:
         propagation._cb_viewport_camera_pose(camera_pose)
+        assert propagation._viewport_microphones == {}
+
+        propagation._cb_listener_selected(String(data="microphone:viewport:projective_center"))
 
         assert set(propagation._viewport_microphones) == {
             "microphone:viewport:down_projection",
@@ -565,6 +569,11 @@ def test_viewport_camera_registers_selectable_microphones(rclpy_context):
             down_projection.y,
             down_projection.z,
         ) == (3.0, 4.0, 1.7)
+
+        propagation._cb_listener_selected(String(data=""))
+
+        assert propagation._viewport_microphones == {}
+        assert propagation._all_microphone_positions() == {}
     finally:
         propagation.destroy_node()
 

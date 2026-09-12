@@ -84,6 +84,8 @@ from arena_auditory.qos_profiles import (
 DIRECT_ARRIVAL_RELATIVE_THRESHOLD = 0.25
 
 
+VIEWPORT_LISTENER_IDS = ("microphone:viewport:down_projection", "microphone:viewport:projective_center")
+
 class SoundPropagationNode(Node):
     def __init__(self, **kwargs: object) -> None:
         super().__init__("sound_propagation_node", **kwargs)
@@ -109,6 +111,7 @@ class SoundPropagationNode(Node):
         self.declare_parameter("mic_height", 0.220)
         self.declare_parameter("mic_corner_inset", 0.020)
         self.declare_parameter("viewport_down_projection_height_m", 1.6)
+        self.declare_parameter("listener_selected_topic", "audio/listener_selected")
         self.declare_parameter("enable_propagation", True)
         self.declare_parameter("active_microphone_id", "")
         self.declare_parameter(
@@ -193,6 +196,8 @@ class SoundPropagationNode(Node):
         self._world_microphones: dict[str, WorldMicrophoneSpec] = {}
         self._spawned_microphones: dict[str, tuple[Point, str]] = {}
         self._viewport_microphones: dict[str, tuple[Point, str]] = {}
+        self._viewport_camera_pose: PoseStamped | None = None
+        self._selected_listener_id = ""
         self._spawned_microphone_index = 0
         self._last_continuous_outputs: dict[tuple[str, str], ContinuousHeardSoundState] = {}
         self._continuous_propagation_signatures: dict[tuple[str, str], tuple[Hashable, ...]] = {}
@@ -274,6 +279,12 @@ class SoundPropagationNode(Node):
             "/arena/viewport/camera_pose",
             self._cb_viewport_camera_pose,
             10,
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("listener_selected_topic").value),
+            self._cb_listener_selected,
+            acoustic_metadata_qos(),
         )
         self.create_subscription(
             OccupancyGrid,
@@ -364,17 +375,19 @@ class SoundPropagationNode(Node):
         self._peds = {int(p.id): p for p in msg.pedestrians}
         self._peds_frame_id = str(msg.header.frame_id).strip() or "map"
 
-    def _cb_viewport_camera_pose(self, msg: PoseStamped) -> None:
-        frame_id = str(msg.header.frame_id).strip().lstrip("/")
-        position = msg.pose.position
+    def _build_viewport_microphones(
+        self,
+        pose: PoseStamped,
+    ) -> dict[str, tuple[Point, str]] | None:
+        frame_id = str(pose.header.frame_id).strip().lstrip("/")
+        position = pose.pose.position
         if not frame_id or not all(math.isfinite(value) for value in (position.x, position.y, position.z)):
-            return
+            return None
         down_projection_height = float(self.get_parameter("viewport_down_projection_height_m").value)
         if not math.isfinite(down_projection_height):
-            return
-        publish_registry = not self._viewport_microphones
-        self._viewport_microphones = {
-            "microphone:viewport:down_projection": (
+            return None
+        return {
+            VIEWPORT_LISTENER_IDS[0]: (
                 Point(
                     x=float(position.x),
                     y=float(position.y),
@@ -382,7 +395,7 @@ class SoundPropagationNode(Node):
                 ),
                 frame_id,
             ),
-            "microphone:viewport:projective_center": (
+            VIEWPORT_LISTENER_IDS[1]: (
                 Point(
                     x=float(position.x),
                     y=float(position.y),
@@ -391,7 +404,44 @@ class SoundPropagationNode(Node):
                 frame_id,
             ),
         }
-        if publish_registry:
+
+    def _cb_viewport_camera_pose(self, msg: PoseStamped) -> None:
+        frame_id = str(msg.header.frame_id).strip().lstrip("/")
+        position = msg.pose.position
+        if not frame_id or not all(math.isfinite(value) for value in (position.x, position.y, position.z)):
+            return
+        first_pose = self._viewport_camera_pose is None
+        self._viewport_camera_pose = msg
+        if self._viewport_microphones or self._selected_listener_id.startswith("microphone:viewport:"):
+            microphones = self._build_viewport_microphones(msg)
+            if microphones is not None:
+                first_pose = first_pose or not self._viewport_microphones
+                self._viewport_microphones = microphones
+        if first_pose:
+            self._publish_microphone_registry()
+
+    def _clear_viewport_propagation_state(self) -> None:
+        for key in tuple(self._last_continuous_outputs):
+            if not key[1].startswith("microphone:viewport:"):
+                continue
+            stopped = self._last_continuous_outputs.pop(key)
+            self._continuous_propagation_signatures.pop(key, None)
+            stopped.header.stamp = self.get_clock().now().to_msg()
+            stopped.active = False
+            stopped.audible = False
+            self._continuous_heard_pub.publish(stopped)
+
+    def _cb_listener_selected(self, msg: String) -> None:
+        self._selected_listener_id = str(msg.data).strip()
+        wants_viewport = self._selected_listener_id.startswith("microphone:viewport:")
+        if wants_viewport and self._viewport_camera_pose is not None:
+            microphones = self._build_viewport_microphones(self._viewport_camera_pose)
+            if microphones is not None:
+                self._viewport_microphones = microphones
+                self._publish_microphone_registry()
+        elif self._viewport_microphones:
+            self._viewport_microphones = {}
+            self._clear_viewport_propagation_state()
             self._publish_microphone_registry()
 
     def _cb_world(self, msg: String) -> None:
@@ -850,8 +900,10 @@ class SoundPropagationNode(Node):
         self._publish_microphone_registry()
 
     def _publish_microphone_registry(self) -> None:
-        listener_ids = sorted(set(self._robot_microphones) | set(self._world_microphones) | set(self._spawned_microphones) | set(self._viewport_microphones))
-        self._microphone_registry_pub.publish(String(data=json.dumps(listener_ids, separators=(",", ":"))))
+        listener_ids = set(self._robot_microphones) | set(self._world_microphones) | set(self._spawned_microphones) | set(self._viewport_microphones)
+        if self._viewport_camera_pose is not None:
+            listener_ids |= set(VIEWPORT_LISTENER_IDS)
+        self._microphone_registry_pub.publish(String(data=json.dumps(sorted(listener_ids), separators=(",", ":"))))
         self._publish_microphone_markers()
 
     def _publish_microphone_markers(self) -> None:

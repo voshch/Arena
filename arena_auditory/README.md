@@ -755,16 +755,12 @@ The stream must repeatedly contain both `<robot>_left_mic` and
 `<robot>_right_mic`. Finite greetings and footsteps can be checked similarly
 on `heard_sound_events`.
 
-When the simulator viewport publishes `/arena/viewport/camera_pose`, two more
-listeners appear in the same dropdown:
-
-- `microphone:viewport:projective_center` follows the camera position.
-- `microphone:viewport:down_projection` follows the camera x/y position at
-  `auditory.viewport_height`, which defaults to 1.6 m.
-
-Selecting either listener detaches workstation playback from the robot
-microphone. Viewport microphones are available only when the simulator GUI
-publishes the viewport pose.
+Once the simulator viewport publishes `/arena/viewport/camera_pose`, the
+dropdown also offers `microphone:viewport:projective_center` (the camera
+position) and `microphone:viewport:down_projection` (the camera x/y at
+`auditory.viewport_height`, default 1.6 m). They are propagated and drawn only
+while one of them is selected, following the camera for as long as the
+selection holds. Selecting another listener removes them again.
 
 ## Pyroomacoustics portal routing
 

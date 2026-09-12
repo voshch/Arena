@@ -151,6 +151,7 @@ class SoundPlaybackNode(Node):
                 "continuous_heard_sounds",
             )
         self.declare_parameter("listener_id", "")
+        self.declare_parameter("listener_selected_topic", "audio/listener_selected")
         self.declare_parameter(
             "microphone_listeners_topic",
             "microphone_listeners",
@@ -274,6 +275,12 @@ class SoundPlaybackNode(Node):
         self._continuous_sources: dict[tuple[str, str], DrivetrainRenderSource] = {}
         self._continuous_rir_signatures: dict[tuple[str, str], tuple[Hashable, ...]] = {}
         self._microphone_listener_ids: set[str] = set()
+        self._listener_selected_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("listener_selected_topic").value),
+            acoustic_metadata_qos(),
+        )
+        self._publish_listener_selected(self._configured_listener_id())
         self.add_on_set_parameters_callback(self._on_set_parameters)
         self._world_graph: AcousticWorldGraph | None = None
         self._authored_world_graph: AcousticWorldGraph | None = None
@@ -402,6 +409,7 @@ class SoundPlaybackNode(Node):
 
     def _on_set_parameters(self, parameters: list[Parameter]) -> SetParametersResult:
         selection_changed = False
+        new_listener_id = ""
         for parameter in parameters:
             if parameter.name == "listener_id":
                 if parameter.type_ != Parameter.Type.STRING:
@@ -410,6 +418,7 @@ class SoundPlaybackNode(Node):
                         reason="listener_id must be a string",
                     )
                 selection_changed = True
+                new_listener_id = str(parameter.value).strip()
 
         if selection_changed:
             self._mixer.stop_all()
@@ -421,6 +430,7 @@ class SoundPlaybackNode(Node):
                 self._cancelled_motor_starts.clear()
                 self._continuous_sources.clear()
                 self._continuous_rir_signatures.clear()
+            self._publish_listener_selected(new_listener_id)
 
         if self._source_kind != "robot":
             return SetParametersResult(successful=True)
@@ -619,6 +629,9 @@ class SoundPlaybackNode(Node):
 
     def _configured_listener_id(self) -> str:
         return str(self.get_parameter("listener_id").value).strip()
+
+    def _publish_listener_selected(self, listener_id: str) -> None:
+        self._listener_selected_pub.publish(String(data=listener_id))
 
     def _matches_listener(self, listener_id: str) -> bool:
         selected = self._configured_listener_id()
