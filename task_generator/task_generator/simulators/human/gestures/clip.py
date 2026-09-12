@@ -40,7 +40,7 @@ class ClipGesture:
         # a looping clip has no wind-up to protect, it may release from frame 0
         hold_start = 0 if anim.loop else last
         joints = frozenset(anim.joints) if anim.joints else None
-        return GestureClip(frames=list(anim.frames), fps=anim.fps, hold_start=hold_start, hold_end=last, side="", hold=name, report={}, joints=joints, loop=anim.loop)
+        return GestureClip(frames=list(anim.frames), fps=anim.fps, hold_start=hold_start, hold_end=last, side="", hold=name, report={}, joints=joints, loop=anim.loop, reverse=anim.reverse)
 
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         del hold

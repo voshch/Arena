@@ -7,6 +7,7 @@ Usage (container):
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import math
 from collections.abc import Sequence
@@ -49,6 +50,8 @@ class Case:
     duration: float
     min_clips: int = 0  # arm clips the layer must install (a tracking arm retargets many times)
     rest_windows: Sequence[tuple[float, float]] = ()  # the arm must hang at some tick inside each (t0, t1)
+    collar_limit: float = MAX_COLLAR_RAD  # canned clips raise the clavicle on purpose; the shrug check is the solver's
+    aim_limit: float = MAX_HOLD_AIM_DEG
 
 
 @attrs.frozen
@@ -67,10 +70,12 @@ class Result:
     rest_times: list[float]
     arm_clips: int
     missing_rest: list[tuple[float, float]]
+    collar_limit: float = MAX_COLLAR_RAD
+    aim_limit: float = MAX_HOLD_AIM_DEG
 
     @property
     def ok(self) -> bool:
-        return not self.warnings and self.max_link_m <= MAX_LINK_STEP_M and self.max_collar_rad <= MAX_COLLAR_RAD and self.max_hold_aim_deg <= MAX_HOLD_AIM_DEG and not self.missing_rest and all(r.get("ok", True) and not r.get("relaxed") and not r.get("near_target_fallback") for r in self.reports)
+        return not self.warnings and self.max_link_m <= MAX_LINK_STEP_M and self.max_collar_rad <= self.collar_limit and self.max_hold_aim_deg <= self.aim_limit and not self.missing_rest and all(r.get("ok", True) and not r.get("relaxed") and not r.get("near_target_fallback") for r in self.reports)
 
 
 class _Log:
@@ -146,7 +151,7 @@ def run(case: Case, *, agent_id: int = 1) -> Result:
         prev, prev_pos = angles, pos
         frames.append({"angles": dict(angles), "t": t})
     missing = [w for w in case.rest_windows if not any(w[0] <= rt <= w[1] for rt in rest_times)]
-    return Result(case.name, frames, reports, list(log.lines), max_step, max_joint, max_link, max_link_name, max_link_t, max_collar, max_hold_aim, rest_times, arm_clips, missing)
+    return Result(case.name, frames, reports, list(log.lines), max_step, max_joint, max_link, max_link_name, max_link_t, max_collar, max_hold_aim, rest_times, arm_clips, missing, case.collar_limit, case.aim_limit)
 
 
 def _pose(x: float, y: float, yaw_deg: float) -> tuple[float, float, float]:
@@ -163,6 +168,18 @@ def halt(at: tuple[float, float, float], **opts: str) -> Channel:
 
 def head(at: tuple[float, float, float]) -> Channel:
     return Channel("head", at)
+
+
+@functools.cache
+def _database() -> AnimationManager:
+    mgr = AnimationManager(ANIMATIONS, logger=_Log(), fps=20.0)
+    mgr.cache_animations()
+    return mgr
+
+
+def looping_clips() -> list[str]:
+    """Canned clips the database loops, so the gate covers their wrap as it is played."""
+    return sorted(name for name, anim in _database().animations.items() if anim.loop and anim.frames)
 
 
 def default_cases() -> list[Case]:
@@ -190,7 +207,16 @@ def default_cases() -> list[Case]:
         Case("walker_tracks", walk, 10.0 + 2.0, min_clips=8),
         Case("halt_level", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.5, [], p)], 5.0),
         Case("halt_switch", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.0, [Channel("halt_r", (5.0, 4.5, 1.2))], p), Cue(4.0, [], p)], 6.5),
+        # every looping canned clip, played long enough to wrap at least twice: the seam is judged as it plays
+        *[
+            Case(f"loop_{name}", [Cue(0.0, [Channel("body", (0.0, 0.0, 0.0), clip=name)], p)], 3.0 * _clip_seconds(name) + 1.0, collar_limit=math.inf, aim_limit=math.inf)
+            for name in looping_clips()
+        ],
     ]
+
+
+def _clip_seconds(name: str) -> float:
+    return float(_database().animations[name].duration)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

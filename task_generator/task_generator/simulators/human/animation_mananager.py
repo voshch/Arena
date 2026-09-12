@@ -38,9 +38,21 @@ class Animation:
     fps: float = 20.0
     loop_from: int = 0  # looping clips wrap back to this frame, so an intro plays once
     joints: tuple[str, ...] = ()  # joints the clip moves, empty = all (canned clips carry this from annotations)
+    reverse: bool = False  # loop forward then backward, for clips whose end does not meet their start
 
     def __len__(self) -> int:
         return len(self.frames)
+
+    @property
+    def cycle_frames(self) -> int:
+        """Frames in one loop cycle: a reverse clip plays out and back without repeating its end frames."""
+        return 2 * self.n_frames - 2 if self.reverse and self.n_frames > 1 else self.n_frames
+
+    def frame_index(self, position: int) -> int:
+        """Clip frame at a cycle position, folding the return leg of a reverse clip."""
+        cycle = self.cycle_frames
+        position %= cycle
+        return position if position < self.n_frames else cycle - position
 
     def __getitem__(self, index: int) -> dict:
         return self.frames[index]
@@ -196,20 +208,27 @@ class AnimationManager:
             duration = n_frames / self._fps
             annotation = annotations.get(name, {})
             is_loop = loop_mapping.get(name, annotation.get("loop", name not in self.one_shot_animations))
+            is_reverse = bool(annotation.get("reverse", False))
 
             assert n_frames > 0, "Animation does not contain any frames"
             assert duration > 0.0, f"Animation duration is invalid, got: {duration}"
+            assert not (is_reverse and not is_loop), f"Animation {name} is reverse but does not loop"
 
-            self.animations[name] = Animation(name=name, frames=anim_frames, n_frames=n_frames, duration=duration, loop=is_loop, fps=self._fps, joints=tuple(annotation.get("joints", ())))
-            self.logger.info(f"Animation loaded: [{name}]: [{n_frames} frames - {duration}s at {self._fps}, loop={is_loop}]")
+            if is_reverse:
+                duration = (2 * n_frames - 2) / self._fps  # the cycle is the clip out and back
 
-    def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0) -> Animation:
+            self.animations[name] = Animation(name=name, frames=anim_frames, n_frames=n_frames, duration=duration, loop=is_loop, fps=self._fps, joints=tuple(annotation.get("joints", ())), reverse=is_reverse)
+            self.logger.info(f"Animation loaded: [{name}]: [{n_frames} frames - {duration}s at {self._fps}, loop={is_loop}{', reverse' if is_reverse else ''}]")
+
+    def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0, reverse: bool = False) -> Animation:
         """Register a generated clip (list of {"angles": ...} frames) under ``name``, optionally owned by an agent."""
         fps = self._fps if fps is None else fps
         n_frames = len(frames)
         assert n_frames > 0, "Animation does not contain any frames"
         assert 0 <= loop_from < n_frames, f"loop_from {loop_from} outside the clip"
-        anim = Animation(name=name, frames=list(frames), n_frames=n_frames, duration=n_frames / fps, loop=loop, fps=fps, loop_from=loop_from)
+        assert not (reverse and not loop), f"Animation {name} is reverse but does not loop"
+        cycle = 2 * n_frames - 2 if reverse and n_frames > 1 else n_frames
+        anim = Animation(name=name, frames=list(frames), n_frames=n_frames, duration=cycle / fps, loop=loop, fps=fps, loop_from=loop_from, reverse=reverse)
         self.animations[name] = anim
         if owner is not None:
             self._transients.setdefault(owner, set()).add(name)
@@ -317,6 +336,7 @@ class AnimationManager:
         on_end: Callable[[int], None] | None = None,
         slot: str = "arm",
         carry_ramps: bool = False,
+        start_s: float | None = None,
     ) -> None:
         """
         Register an overlay animation that blends over specific joints (e.g. waving arms).
@@ -334,6 +354,8 @@ class AnimationManager:
             on_end: Called once with agent_id when a non-looping overlay reaches its end or a fade-out completes.
             slot: Overlay slot. Slots are independent (own playhead, envelope, on_end) and applied in insertion order.
             carry_ramps: When replacing a live overlay in this slot, keep its blend set and per-joint ramps instead of blend_joints.
+            start_s: Playhead to start from, None = the per-agent stagger for looping clips. Partners of a
+                     contact clip pass the same value so they play in phase.
         """
         if overlay is None:
             self.clear_ped_blend(agent_id, slot=slot)
@@ -366,7 +388,15 @@ class AnimationManager:
             new.ramps = {joint: list(ramp) for joint, ramp in current.ramps.items()}
         slots[slot] = new
         # Safe reset/initialization for the overlay playhead
-        self._overlay_playhead[(agent_id, slot)] = self._overlay_start(agent_id, new)
+        self._overlay_playhead[(agent_id, slot)] = self._overlay_start(agent_id, new) if start_s is None else start_s
+
+    def overlays(self, agent_id: int) -> list[tuple[str, Overlay, float, float]]:
+        """Live overlays in blend order: (slot, overlay, playhead s, blend weight after the envelope)."""
+        out = []
+        for slot, overlay in self._ped_blend.get(agent_id, {}).items():
+            playhead = self._overlay_playhead.get((agent_id, slot), 0.0)
+            out.append((slot, overlay, playhead, overlay.weight * self._envelope(overlay, playhead)))
+        return out
 
     def set_overlay_joints(self, agent_id: int, slot: str, joints: set[str], fade_s: float = 0.0) -> None:
         """Change a live overlay's blend set in place: leaving joints ramp to 0 and entering joints ramp to 1 over fade_s, playhead and envelope untouched."""
@@ -574,13 +604,14 @@ class AnimationManager:
         if not anim.loop and frame >= anim.n_frames - 1:
             return dict(anim[-1]["angles"])
 
-        frame %= anim.n_frames
+        cycle = anim.cycle_frames
+        frame %= cycle
         next_frame = frame + 1
-        if next_frame >= anim.n_frames:
+        if next_frame >= cycle:
             next_frame = anim.loop_from
 
-        current_angles = anim[frame]["angles"]
-        next_angles = anim[next_frame]["angles"]
+        current_angles = anim[anim.frame_index(frame)]["angles"]
+        next_angles = anim[anim.frame_index(next_frame)]["angles"]
 
         return {name: current_angles[name] * (1.0 - frac) + next_angles[name] * frac for name in JOINT_NAMES if name in current_angles and name in next_angles}
 

@@ -82,7 +82,8 @@ from geometry_msgs.msg import (
     Pose2D as Pose2DMsg,
 )
 from rcl_interfaces.msg import ParameterType
-from rcl_interfaces.srv import GetParameters
+from rcl_interfaces.srv import GetParameters, SetParameters
+from rclpy.parameter import Parameter as RclParameter
 from rclpy.qos import (
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
@@ -212,6 +213,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         self._next_id: int = 1
+        self._set_params_client: ClientWrapper | None = None
+        self._contact_config: tuple[str, float] = ("enabled", 1.2)  # humansim launch defaults
 
         self._agents_lock: asyncio.Lock = asyncio.Lock()
         self._prev_agent_states: AgentStatesMsg | None = None
@@ -392,6 +395,27 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return values[0].double_value
         self._logger.warning(f"engine dt param unavailable, assuming {self._ENGINE_DT_DEFAULT}")
         return self._ENGINE_DT_DEFAULT
+
+    async def configure_contact(self, mode: str, standing_distance: float) -> None:
+        if self._contact_config == (mode, standing_distance):
+            return
+        if self._set_params_client is None:
+            self._set_params_client = self.node.create_client_wrapper(
+                SetParameters,
+                self.node.service_namespace("arena_humansim", "set_parameters"),
+            )
+        request = SetParameters.Request(
+            parameters=[
+                RclParameter("contact_mode", value=mode).to_parameter_msg(),
+                RclParameter("locomotion_standing_distance", value=float(standing_distance)).to_parameter_msg(),
+            ],
+        )
+        response = await self._set_params_client.call_timeout(request)
+        if response is None or not all(r.successful for r in response.results):
+            reasons = "; ".join(r.reason for r in response.results if not r.successful) if response is not None else "timeout"
+            raise RuntimeError(f"arena_humansim rejected contact_mode={mode!r} standing_distance={standing_distance}: {reasons}")
+        self._contact_config = (mode, standing_distance)
+        self._logger.info(f"contact_mode={mode} standing_distance={standing_distance}")
 
     async def setup(self):
         await asyncio.gather(

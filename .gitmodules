@@ -12,8 +12,8 @@
 	update = checkout
 [submodule "arena_isaac"]
 	path = arena_isaac
-	url = https://github.com/Arena-Rosnav/arena-isaac
-	branch = isaac6.0.0
+	url = https://github.com/ductaingn/arena-isaac
+	branch = feature/animation
 	update = checkout
 [submodule "arena_training"]
 	path = arena_training

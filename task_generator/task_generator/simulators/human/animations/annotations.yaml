@@ -1,4 +1,5 @@
-# Per clip: loop (else one-shot, parks on the last frame) and the joints it drives (omitted = whole body).
+# Per clip: loop (else one-shot, parks on the last frame), reverse (loop out and back, for a clip whose end
+# does not meet its start) and the joints it drives (omitted = whole body).
 # Masks are authored by body group: capture noise and twist wraps make per-joint motion a poor guide.
 
 _upper_body: &upper_body
@@ -34,6 +35,6 @@ jump: {loop: false}
 shake_hand: {loop: true, joints: *upper_body}
 sit: {loop: false}
 t-pose: {loop: false}
-talk_with_arm_gesture: {loop: true, joints: *upper_body}
+talk_with_arm_gesture: {loop: true, reverse: true, joints: *upper_body}  # the ends are 0.67 m apart: ping-pong instead of a cut
 wave: {loop: true, joints: *upper_body}
 wave_high: {loop: true, joints: *upper_body}

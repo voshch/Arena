@@ -66,6 +66,7 @@ class Channel:
     at: tuple[float, float, float]
     clip: str = ""
     hand: str = ""
+    lock: bool = False  # contact clip: start at frame 0 so the partner playing it the same tick stays in phase
 
     @property
     def opts(self) -> dict:
@@ -101,6 +102,7 @@ class GestureClip:
     release: Sequence[dict] | None = None  # lowering arc from the park pose, None = keep the previous one
     joints: frozenset[str] | None = None  # blend set fixed by the clip itself, None = ask ``Gesture.joints``
     loop: bool = False  # loop the whole clip on the hold instead of parking on ``hold_end``
+    reverse: bool = False  # loop out and back, for a clip whose end does not meet its start
 
 
 class Gesture(typing.Protocol):
@@ -203,6 +205,7 @@ class _Slot:
         "joints",
         "kind",
         "local",
+        "locked",
         "opts",
         "phase",
         "release_frames",
@@ -211,13 +214,14 @@ class _Slot:
         "t",
     )
 
-    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict) -> None:
+    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict, locked: bool = False) -> None:
         self.slot = slot
         self.channel = channel
         self.kind = kind
         self.local = local
         self.opts = opts
         self.bound = bound
+        self.locked = locked
         self.phase = "requested"  # requested | ramp | hold | transition | release
         self.clip: GestureClip | None = None
         self.hold: object = None
@@ -248,6 +252,13 @@ class GestureLayer:
         self._agents: dict[int, _Agent] = {}
         self._warned: dict[int, set[str]] = {}
         self._dropped: dict[tuple[int, str], tuple] = {}  # last channel whose generator failed, not resubmitted until it changes
+
+    def phases(self, agent_id: int) -> dict[str, tuple[str, str, str, str]]:
+        """Overlay slot -> (gesture kind, wire channel, phase, clip name) for the agent's live gesture slots."""
+        ag = self._agents.get(agent_id)
+        if ag is None:
+            return {}
+        return {name: (st.kind, st.channel, st.phase, str(st.opts.get("clip", ""))) for name, st in ag.slots.items()}
 
     def forget(self, agent_id: int) -> None:
         self._agents.pop(agent_id, None)
@@ -343,7 +354,9 @@ class GestureLayer:
                 self._manager.set_overlay_joints(agent_id, st.slot, joints, FADE_S)
             if st.bound.get("moving") != ag.moving:
                 st.bound = {**st.bound, "moving": ag.moving}
-                if st.phase == "hold":
+                # a canned clip is not aimed, so there is nothing to re-solve, and reinstalling it would
+                # restart it from frame 0 at full weight: a one-tick snap of every masked joint
+                if st.phase == "hold" and st.kind != "clip":
                     self._retarget(agent_id, st, st.local)
 
     # -- transitions ------------------------------------------------------
@@ -356,7 +369,7 @@ class GestureLayer:
             self._agents[agent_id] = ag
         gesture = self._gesture(kind)
         bound = gesture.bind(ch.slot, local, {**ch.opts, "moving": moving})
-        st = _Slot(overlay, ch.slot, kind, local, ch.opts, bound)
+        st = _Slot(overlay, ch.slot, kind, local, ch.opts, bound, locked=ch.lock)
         ag.slots[overlay] = st
         try:
             clip = gesture.start(local, bound)
@@ -415,8 +428,17 @@ class GestureLayer:
         gesture = self._gesture(st.kind)
         st.joints = self._joints(gesture, clip, ag.moving)
         frames, loop_from = self._breathed(agent_id, st, clip, gesture.breathing(clip.side))
-        anim = self._manager.register_transient(f"gesture:{st.kind}:{agent_id}:{st.slot}", frames, fps=clip.fps, loop=loop_from is not None or clip.loop, owner=agent_id, loop_from=loop_from or 0)
-        self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, fade_in_s=FADE_S if fresh else 0.0, slot=st.slot, carry_ramps=not fresh)
+        loops = loop_from is not None or clip.loop
+        anim = self._manager.register_transient(
+            f"gesture:{st.kind}:{agent_id}:{st.slot}",
+            frames,
+            fps=clip.fps,
+            loop=loops,
+            owner=agent_id,
+            loop_from=loop_from or 0,
+            reverse=clip.reverse and loops and loop_from is None,  # a breathing park loop wraps on its own
+        )
+        self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, fade_in_s=FADE_S if fresh else 0.0, slot=st.slot, carry_ramps=not fresh, start_s=0.0 if st.locked else None)
 
     def _breathed(self, agent_id: int, st: _Slot, clip: GestureClip, amps: dict[str, float]) -> tuple[list[dict], int | None]:
         """Frames up to the park pose, with the breathing drift baked in and a one-period park loop appended when the kind breathes."""

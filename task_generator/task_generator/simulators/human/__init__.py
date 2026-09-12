@@ -12,7 +12,7 @@ import attrs
 import rclpy.publisher
 import rclpy.qos
 from ament_index_python.packages import get_package_share_directory
-from arena_people_msgs.msg import Pedestrian, Pedestrians
+from arena_people_msgs.msg import AnimationSlot, AnimationState, AnimationStates, Pedestrian, Pedestrians
 from arena_people_msgs.srv import MovePedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
@@ -92,6 +92,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
         self._arena_peds_publisher = self.node.create_publisher(Pedestrians, self._namespace("arena_peds"), 10)
+        # what the animation layer renders per ped (clip, playhead, gesture phase), for recording
+        self._animation_states_publisher = self.node.create_publisher(AnimationStates, self._namespace("animation_states"), 10)
         self._marker_publisher = self.node.create_publisher(
             MarkerArray,
             self._namespace("pedestrian_markers", "extra"),
@@ -199,6 +201,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._gait.forget(stale)
             del self._gait_prev_stamp[stale]
 
+        animation = AnimationStates()
+        animation.header = out.header
         for ped in out.pedestrians:
             ped.model_uri = self._ped_model_uris.get(ped.name, "")
             if ped.joint_state.name:
@@ -212,15 +216,42 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
             speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
             gesture = GestureRequest(
-                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), clip=g.clip, hand=g.hand) for g in ped.gestures),
+                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), clip=g.clip, hand=g.hand, lock=g.render_pose_override) for g in ped.gestures),
                 pose=(ped.pose.position.x, ped.pose.position.y, yaw),
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture)
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
+            animation.peds.append(self._animation_state(ped))
 
         self._arena_peds_publisher.publish(out)
+        self._animation_states_publisher.publish(animation)
+
+    def _animation_state(self, ped: Pedestrian) -> AnimationState:
+        state = AnimationState(id=ped.id, name=ped.name, base_phase=float(ped.gait_phase))
+        base = self._gait.get_current_ped_animation(ped.id)
+        state.base = base.name if base is not None else ""
+        phases = self._gestures.phases(ped.id)
+        for slot, overlay, playhead, weight in self._gait.overlays(ped.id):
+            kind, channel, phase, clip = phases.get(slot, ("", "", "", ""))
+            if not phase and overlay.releasing:
+                phase = "release"  # the gesture slot ended, the overlay is fading out
+            state.slots.append(
+                AnimationSlot(
+                    slot=slot,
+                    kind=kind,
+                    channel=channel,
+                    phase=phase,
+                    clip=clip,
+                    animation=overlay.anim.name,
+                    playhead=float(playhead),
+                    duration=float(overlay.anim.duration),
+                    weight=float(weight),
+                    loop=overlay.loop,
+                ),
+            )
+        return state
 
     def publish_markers(self, markers: MarkerArray) -> None:
         """Publish a transient debug-overlay MarkerArray on `pedestrian_markers/extra`."""
@@ -853,6 +884,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
         pass
+
+    async def configure_contact(self, mode: str, standing_distance: float) -> None:
+        """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""
+        del standing_distance
+        if mode != "enabled":
+            raise NotImplementedError(f"{type(self).__name__} has no contact interactions, contact_mode={mode!r} would be a silent no-op")
 
     @abc.abstractmethod
     async def _spawn_obstacles_impl(

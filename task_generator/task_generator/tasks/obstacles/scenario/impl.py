@@ -14,6 +14,8 @@ class TM_Scenario(TM_Obstacles):
 
     async def reset(self, *, seed: int) -> Obstacles:
         scenario_name = self._config.value
+        # before any ped spawns, contact interactions read the mode when they form
+        await self._ctx.environment_manager.configure_contact(self._contact_mode.value, self._standing_distance.value)
         world_description = self._ctx.world_manager.world_compacted()
 
         safe_dist = self.node.conf.Obstacles.SAFE_DIST.value
@@ -70,3 +72,5 @@ class TM_Scenario(TM_Obstacles):
             self.namespace("file"),
             default_scenario(self._ctx.world_manager.loaded_world),
         )
+        self._contact_mode = self.node.ROSParam[str](self.namespace("contact_mode"), "enabled")
+        self._standing_distance = self.node.ROSParam[float](self.namespace("standing_distance"), 1.2)

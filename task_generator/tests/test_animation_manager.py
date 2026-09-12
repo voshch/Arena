@@ -278,3 +278,39 @@ def test_set_ped_blend_carry_ramps_preserves_ramps(mgr):
     assert "waist" not in new.joints
     mgr.set_ped_blend(1, first, blend_joints=ARMS | {"waist"})
     assert mgr._ped_blend[1]["arm"].joints == ARMS | {"waist"} and not mgr._ped_blend[1]["arm"].ramps
+
+
+def test_start_s_overrides_the_loop_stagger(mgr):
+    anim = mgr.register_transient("loop", const_frames(1.0, 40), loop=True)
+    mgr.set_ped_blend(5, anim, slot="body")
+    mgr.set_ped_blend(77, anim, slot="body", start_s=0.0)
+    staggered = {slot: playhead for slot, _, playhead, _ in mgr.overlays(5)}
+    locked = {slot: playhead for slot, _, playhead, _ in mgr.overlays(77)}
+    assert staggered["body"] == pytest.approx((5 % 360) / 360.0 * anim.duration)
+    assert locked["body"] == 0.0
+
+
+def test_overlays_report_weight_after_envelope(mgr):
+    anim = mgr.register_transient("wave_t", const_frames(1.0, 40), loop=False)
+    mgr.set_ped_blend(1, anim, blend_weight=0.5, fade_in_s=1.0)
+    step(mgr, 1, n=5)  # 0.5 s into a 1 s fade
+    [(slot, overlay, playhead, weight)] = mgr.overlays(1)
+    assert slot == "arm" and overlay.anim is anim
+    assert playhead == pytest.approx(0.5)
+    assert weight == pytest.approx(0.25)
+    assert mgr.overlays(2) == []
+
+
+def test_reverse_clip_plays_out_and_back(mgr):
+    frames = const_frames(0.0, 1) + const_frames(1.0, 1) + const_frames(2.0, 1)
+    ov = mgr.register_transient("pingpong", frames, loop=True, reverse=True)
+    assert ov.cycle_frames == 4 and ov.duration == pytest.approx(4 / FPS)
+    assert [ov.frame_index(i) for i in range(6)] == [0, 1, 2, 1, 0, 1]
+    mgr.set_ped_blend(360, ov, blend_joints=ARMS)  # agent 360 gets the zero start offset
+    seq = [step(mgr, 360, dt=1 / FPS)["l_elbow"] for _ in range(8)]
+    assert seq == pytest.approx([1.0, 2.0, 1.0, 0.0, 1.0, 2.0, 1.0, 0.0])  # out and back; never cuts from the end to the start
+
+
+def test_a_reverse_clip_must_loop(mgr):
+    with pytest.raises(AssertionError):
+        mgr.register_transient("bad", const_frames(0.0, 3), loop=False, reverse=True)

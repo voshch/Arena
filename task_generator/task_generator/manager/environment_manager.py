@@ -330,6 +330,10 @@ class EnvironmentManager(NodeInterface):
         """
         return await self._human_simulator.setup_regions(regions)
 
+    async def configure_contact(self, mode: str, standing_distance: float) -> None:
+        """Contact mode of the human simulator for the episode about to spawn."""
+        await self._human_simulator.configure_contact(mode, standing_distance)
+
     async def remove_all_regions(self) -> bool:
         """
         Remove all tracked regions from the human simulator.
