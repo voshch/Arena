@@ -94,6 +94,10 @@ RUN mkdir -p install
 RUN mkdir -p log
 RUN chown -R ${uid}:${gid} /opt/arena_ws
 
+# gz cache mount points
+RUN mkdir -p /home/${username}/.gz/gui/pictures /home/${username}/.gz/sim /home/${username}/.gz/rendering
+RUN chown -R ${uid}:${gid} /home/${username}/.gz
+
 
 COPY _meta/docker/features/docker/entrypoint.sh /entrypoint.sh
 RUN ln -fs src/Arena/_meta/docker/features/docker/source.container ./source
