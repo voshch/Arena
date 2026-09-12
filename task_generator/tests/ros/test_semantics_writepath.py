@@ -26,7 +26,6 @@ def _ros_gate() -> None:
 
 def test_route_semantics_splits_gate_and_plate_off_door() -> None:
     from arena_simulation_setup.shared.semantics import parse_semantics
-
     from task_generator.manager.environment_manager import _route_semantics
 
     cfgs = parse_semantics(
@@ -43,7 +42,6 @@ def test_route_semantics_splits_gate_and_plate_off_door() -> None:
 
 def test_route_semantics_splits_plate_off_elevator() -> None:
     from arena_simulation_setup.shared.semantics import parse_semantics
-
     from task_generator.manager.environment_manager import _route_semantics
 
     cfgs = parse_semantics([{"preset": "pressure_plate", "params": {"position": [1.0, 2.0]}}])
@@ -55,7 +53,6 @@ def test_route_semantics_splits_plate_off_elevator() -> None:
 def test_route_semantics_base_vocabulary_field_on_door_raises() -> None:
     """Door state publishes intrinsically now: annotating a door-vocabulary field is stale."""
     from arena_simulation_setup.shared.semantics import parse_semantics
-
     from task_generator.manager.environment_manager import _route_semantics
 
     cfgs = parse_semantics([{"state": "progress"}])
@@ -65,7 +62,6 @@ def test_route_semantics_base_vocabulary_field_on_door_raises() -> None:
 
 def test_route_semantics_unknown_field_raises() -> None:
     from arena_simulation_setup.shared.semantics import parse_semantics
-
     from task_generator.manager.environment_manager import _route_semantics
 
     cfgs = parse_semantics([{"state": "not_a_real_field"}])
@@ -82,7 +78,6 @@ def test_fire_timeline_entry_writes_sound_sounding_predicate() -> None:
     from arena_runtime.sim._semantics import SemanticsManager
     from arena_simulation_setup.shared.semantics import parse_semantics
     from arena_simulation_setup.tree.World.Scenario import TimelineEntry
-
     from task_generator.manager.realizer import Realizer
     from task_generator.node import TaskGenerator
 
@@ -272,7 +267,6 @@ def test_timeline_when_fires_on_rising_edge() -> None:
 
 def test_reset_timeline_clears_state() -> None:
     from arena_simulation_setup.tree.World.Scenario import TimelineEntry
-
     from task_generator.node import TaskGenerator
 
     entry = TimelineEntry(set=[{"entity": "a", "field": "x", "value": "1"}], at=1.0)

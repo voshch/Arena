@@ -189,6 +189,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             ),
         )
         self._declare_mutable_param(
+            "fail_on_static_collision",
+            False,
+            ParameterDescriptor(
+                description=("true = abort the episode as FAILED when the robot footprint contacts a wall or a "
+                             "static obstacle (pedestrian contact stays a recorded metric, not an abort)."),
+            ),
+        )
+        self._declare_mutable_param(
             "run_seed",
             run_seed,
             ParameterDescriptor(
@@ -466,7 +474,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         req = arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request()
         req.action = arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request.ACQUIRE
         req.caller_id = self.get_fully_qualified_name()
-        await self._arena_unpause_window_client.call_forever(req)
+        # Bounded: an unpause that stalls must fail the reset instead of holding its lock forever.
+        granted = await self._arena_unpause_window_client.call_timeout(req, timeout_sec=120.0)
+        if granted is None:
+            raise RuntimeError("unpause window not granted within 120 s (runtime lifecycle stalled?)")
         try:
             yield
         finally:
@@ -952,6 +963,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     group="Static",
                 )
             )
+            # `topic_must_exist=False`: the adapter creates these publishers when the human simulator
+            # binds, which can be after the reconciler first reads the topic list; they are TRANSIENT_LOCAL.
             for leaf in ("static_walls", "static_objects"):
                 env_displays.append(
                     AdapterDisplay(
@@ -960,7 +973,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         topic_type="visualization_msgs/MarkerArray",
                         kind=DisplayKind.MARKER_ARRAY,
                         style_json=latched,
-                        topic_must_exist=True,
+                        topic_must_exist=False,
                         group="Static",
                     )
                 )
@@ -1075,8 +1088,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         current_obstacles = self.conf.TaskMode.TM_OBSTACLES.value.value if self.conf.TaskMode.TM_OBSTACLES.value else ""
         current_modules = [m.value for m in self.conf.TaskMode.TM_MODULES.value]
         record_world = self._episodes.current.world
-        loaded_world = self._world_manager.loaded_world
-        queued_robots = [m.model_name for m in self._robots_manager.managers.values()]
+        # like _robots_manager below, the world manager may not exist yet on an early first reset
+        loaded_world = self._world_manager.loaded_world if hasattr(self, "_world_manager") else ""
+        # the first record is built before the robots manager exists (boot); the queue state then
+        # carries no robots rather than crashing the episode task
+        queued_robots = [m.model_name for m in self._robots_manager.managers.values()] if self._robots_manager is not None else []
 
         if overrides is None:
             queued_tm_robots = current_robots
@@ -1137,7 +1153,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             world = world or overrides.world
             # World swap itself happens inside `_run_reset_cycle`'s hold window.
 
-        resolved_world = world or self._world_manager.loaded_world or self._episodes.current.world
+        # _world_manager is assigned during startup; an early reset can land before it exists
+        loaded = self._world_manager.loaded_world if hasattr(self, "_world_manager") else ""
+        resolved_world = world or loaded or self._episodes.current.world
         run_seed = self.rosparam[str].get("run_seed", "") or self._episodes.run_seed
         resolved_seed = seed if seed >= 0 else _derive_seed(run_seed, resolved_world, new_id)
 
@@ -1177,6 +1195,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             self._pub_state_resetting.publish(Bool(data=True))
 
             record = self._episodes.current
+            if self._task is None:
+                # a reset_episode that beat the task's construction at boot; fail the cycle loudly
+                raise RuntimeError("reset requested before the task exists; retry once the stack is up")
             await self.hold("reset")
             try:
                 if record.world:
@@ -1540,6 +1561,26 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = str(e)
         return response
 
+    async def _cb_despawn_obstacle(
+        self,
+        request: task_generator_msgs.srv.DespawnObstacle.Request,
+        response: task_generator_msgs.srv.DespawnObstacle.Response,
+    ) -> task_generator_msgs.srv.DespawnObstacle.Response:
+        try:
+            response.found = await self._task.tm_obstacles.retract(request.id)
+            # `found` false is not a failure: the id resolving to nothing is the state the
+            # caller asked for. The two are reported separately so a scripted timeline can
+            # tell "already gone" from "the backend refused", which for a pedestrian under
+            # any backend but arena_humansim is the real answer.
+            response.success = True
+            if response.found:
+                self._flip_integrity()
+        except Exception as e:
+            response.success = False
+            response.found = False
+            response.error_msg = str(e)
+        return response
+
     async def _cb_spawn_robot(
         self,
         request: task_generator_msgs.srv.SpawnRobot.Request,
@@ -1856,6 +1897,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             task_generator_msgs.srv.SpawnDynamic,
             self.service_namespace("runtime", "spawn_dynamic"),
             self._cb_spawn_dynamic,
+        )
+
+        self.create_service(
+            task_generator_msgs.srv.DespawnObstacle,
+            self.service_namespace("runtime", "despawn_obstacle"),
+            self._cb_despawn_obstacle,
         )
 
         self.create_service(

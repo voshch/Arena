@@ -24,7 +24,6 @@ from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Pose as PoseMsg
-from geometry_msgs.msg import Quaternion as QuaternionMsg
 from task_generator_msgs.msg import ContinuousHeardSoundState
 from visualization_msgs.msg import MarkerArray
 
@@ -114,7 +113,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ),
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
-        self._ped_orientations: dict[str, QuaternionMsg] = {}
         self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
@@ -234,13 +232,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _on_arena_peds(self, msg: Pedestrians) -> None:
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
-        self._ped_orientations = {p.name: p.pose.orientation for p in msg.pedestrians}
 
     def pedestrian_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
         return [(name, xy, PED_RADIUS) for name, xy in self._ped_positions_xy.items()]
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
-        """Teleport tracked pedestrians to given (x, y), keeping their facing. Default impl asks the sim to move them."""
+        """Teleport tracked pedestrians to given (x, y). Default impl asks the sim to move them."""
         if not destinations:
             return True
         peds_msg = Pedestrians()
@@ -251,8 +248,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ped.pose.position.x = x
             ped.pose.position.y = y
             ped.pose.position.z = 0.0
-            if (orientation := self._ped_orientations.get(name)) is not None:
-                ped.pose.orientation = orientation
             peds_msg.pedestrians.append(ped)
             if cur is not None:
                 self._ped_positions_xy[name] = (x, y)
@@ -731,6 +726,151 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._known_regions.clear()
         return await self._remove_regions_impl(regions)
 
+    async def set_agent_waypoints(
+        self,
+        routes: Mapping[str, Sequence[tuple[float, float]]],
+    ) -> bool:
+        """Send already-spawned agents somewhere else, *mid-episode*.
+
+        The counterpart to `remove_obstacles_by_id` for people rather than props, and the
+        only way to perturb where a crowd is going rather than what it is: an evacuation
+        rallying on an exit, an agent walking at the robot. Everything else that sets a route
+        does so at spawn, which is the right time for a population and the wrong one for a
+        fire alarm.
+
+        Keys are agent names; the point list replaces the agent's remaining goals. Plain
+        names and ``sim_path`` both resolve, for the same reason they do in
+        :meth:`remove_obstacles_by_id`: the caller that *placed* an agent knows it by the
+        name it wrote, and refusing that would be a papercut for no benefit. Resolution goes
+        through the known-obstacle registry rather than being recomputed, so it cannot drift
+        from how the agent was actually registered.
+
+        Returns whether the backend accepted the rewrite.
+        """
+        if not routes:
+            return True
+
+        index: dict[str, str] = {}
+        for name, known in self._known_obstacles.items():
+            sim_path = str(getattr(known.obstacle, "sim_path", "") or name)
+            index.setdefault(name, sim_path)
+            index.setdefault(sim_path, sim_path)
+
+        resolved = {index.get(name, name): points for name, points in routes.items()}
+        return await self._set_waypoints_impl(resolved)
+
+    async def update_agents(self, obstacles: Sequence[DynamicObstacle]) -> bool:
+        """Change already-spawned agents' parameters *in place*, mid-episode.
+
+        The counterpart to :meth:`set_agent_waypoints` for *what* an agent is rather than
+        where it goes: a blackout that slows everyone down and shortens their sight, a
+        group that stops yielding. Each obstacle carries the agent's new ``extra["agent"]``
+        block under the name it was spawned with (plain name or ``sim_path``, resolved through
+        the known-obstacle registry as everywhere else). Nothing respawns: position, velocity
+        and route continue, which is what "the lights go out" looks like.
+
+        Returns whether the backend changed anyone; a backend that cannot reports False and
+        the caller falls back to a respawn.
+        """
+        if not obstacles:
+            return True
+        index: dict[str, str] = {}
+        for name, known in self._known_obstacles.items():
+            sim_path = str(getattr(known.obstacle, "sim_path", "") or name)
+            index.setdefault(name, sim_path)
+            index.setdefault(sim_path, sim_path)
+        resolved = {index.get(str(getattr(o, "sim_path", "") or o.name), index.get(str(o.name), str(o.name))): o for o in obstacles}
+        return await self._update_agents_impl(resolved)
+
+    async def _update_agents_impl(self, obstacles: Mapping[str, DynamicObstacle]) -> bool:
+        """Backend hook for :meth:`update_agents`; defaults to "this backend cannot" (False)
+        for the same reason :meth:`_set_waypoints_impl` does."""
+        del obstacles
+        return False
+
+    async def remove_obstacles_by_id(self, ids: Sequence[str]) -> tuple[list[str], list[str]]:
+        """Remove specific spawned obstacles *mid-episode*.
+
+        The counterpart to `TM_Obstacles.extend`. Everything else here removes by *layer* at
+        a reset boundary, which is the right granularity for rebuilding a population and the
+        wrong one for "the cart blocking the doorway goes away now" - an edge case whose
+        whole point is that the world changes while the robot is in it.
+
+        `ids` are what the spawn returned, i.e. ``sim_path``. Plain names resolve too: the
+        two differ only by the env prefix, and refusing the name would be a papercut for no
+        benefit. Resolution goes through the known-obstacle registry rather than being
+        recomputed, so it cannot drift from how the entity was actually registered.
+
+        Returns ``(removed, missing)``. Missing is not an error - an id that is already gone
+        is the state the caller asked for - but it is reported separately so "already gone"
+        stays distinguishable from "the backend cannot remove that one", which is the real
+        answer for a pedestrian under any backend except arena_humansim.
+        """
+        if not ids:
+            return [], []
+
+        index: dict[str, str] = {}
+        for name, known in self._known_obstacles.items():
+            index.setdefault(name, name)
+            sim_path = getattr(known.obstacle, "sim_path", None)
+            if sim_path:
+                index.setdefault(str(sim_path), name)
+
+        static: list[Obstacle] = []
+        dynamic: list[DynamicObstacle] = []
+        missing: list[str] = []
+        #: requested id -> (registry key, is_dynamic), so the outcome can be reported per id
+        resolved: dict[str, tuple[str, bool]] = {}
+
+        for requested in ids:
+            name = index.get(requested)
+            known = self._known_obstacles.get(name) if name is not None else None
+            if name is None or known is None:
+                missing.append(requested)
+                continue
+            is_dynamic = isinstance(known.obstacle, DynamicObstacle)
+            resolved[requested] = (name, is_dynamic)
+            if is_dynamic:
+                dynamic.append(known.obstacle)
+            else:
+                static.append(known.obstacle)
+
+        static_ok = True
+        dynamic_ok = True
+        futures: list[typing.Awaitable] = []
+
+        if static:
+            static_ok = await self._remove_obstacles_impl([o.name for o in static])
+            if static_ok:
+                futures.append(self._simulator.obstacle_delete(static))
+
+        if dynamic:
+            dynamic_ok = await self._remove_pedestrian_names_impl([str(o.sim_path) for o in dynamic])
+            if dynamic_ok:
+                # Same bookkeeping `remove_obstacles` does: the stream gate is closed so a
+                # pedestrian tick cannot arrive for an agent that no longer exists, and the
+                # bus index is cleared under both keys it is written under.
+                self._close_stream_gate()
+                for obstacle in dynamic:
+                    self._ped_bus_index.pop(obstacle.name, None)
+                    self._ped_bus_index.pop(obstacle.sim_path, None)
+                futures.append(self._simulator.pedestrian_delete(dynamic))
+
+        if futures:
+            await asyncio.gather(*futures)
+
+        removed: list[str] = []
+        for requested, (name, is_dynamic) in resolved.items():
+            if dynamic_ok if is_dynamic else static_ok:
+                self._known_obstacles.forget(name)
+                removed.append(requested)
+            else:
+                missing.append(requested)
+
+        if removed:
+            self._logger.debug(f"removed {len(removed)} obstacle(s) mid-episode: {removed}")
+        return removed, missing
+
     async def remove_obstacles(self, purge: ObstacleLayer = ObstacleLayer.UNUSED):
         """Removes obstacles from simulator.
 
@@ -881,6 +1021,36 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def _remove_pedestrians_impl(
         self,
     ) -> bool: ...
+
+    async def _remove_pedestrian_names_impl(
+        self,
+        names: Sequence[str],
+    ) -> bool:
+        """Remove *specific* pedestrians, by ``sim_path``.
+
+        Not abstract, and defaults to "this backend cannot": `_remove_pedestrians_impl`
+        clears everything, which is all a reset ever needs, and only `arena_humansim` keeps
+        the per-agent id mapping that makes a targeted removal possible. Returning False
+        lets :meth:`remove_obstacles_by_id` report the id as *not removed* instead of
+        clearing the entire crowd as a side effect of despawning one cart.
+        """
+        del names
+        return False
+
+    async def _set_waypoints_impl(
+        self,
+        routes: Mapping[str, Sequence[tuple[float, float]]],
+    ) -> bool:
+        """Replace the waypoint list of already-spawned agents, mid-episode.
+
+        Not abstract, and defaults to "this backend cannot", for the same reason
+        :meth:`_remove_pedestrian_names_impl` does: rewriting a route needs the per-agent id
+        mapping only `arena_humansim` keeps. A backend that cannot do it reports False, and
+        the caller records a case that did not run - which is honest, and better than a
+        silent no-op that would report a crowd rerouted to an exit it never walked to.
+        """
+        del routes
+        return False
 
     @abc.abstractmethod
     async def _spawn_walls_impl(

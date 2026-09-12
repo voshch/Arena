@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import time
 import uuid
+
 import pytest
 
 
@@ -107,12 +108,11 @@ def _make_robot_fleet(robot_name: str, namespace: str):
 
 def test_sound_event_round_trips_to_heard_sound_event(rclpy_context):
     import rclpy
-    from rclpy.parameter import Parameter
-    from rclpy.qos import DurabilityPolicy
     from arena_people_msgs.msg import Pedestrians
     from geometry_msgs.msg import Point
-    from geometry_msgs.msg import TransformStamped
     from nav_msgs.msg import OccupancyGrid
+    from rclpy.parameter import Parameter
+    from rclpy.qos import DurabilityPolicy
     from task_generator.auditory.acoustic_frame import runtime_acoustic_offset
     from task_generator.auditory.qos_profiles import transient_event_qos
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode
@@ -602,9 +602,9 @@ def test_propagation_reconciles_robot_odom_subscriptions(rclpy_context):
 
 def test_auditory_round_trip_greeting_reaches_robot_marker(rclpy_context):
     import rclpy
-    from rclpy.parameter import Parameter
     from geometry_msgs.msg import TransformStamped
     from nav_msgs.msg import OccupancyGrid, Odometry
+    from rclpy.parameter import Parameter
     from task_generator.auditory.qos_profiles import acoustic_metadata_qos, transient_event_qos
     from task_generator.auditory.robot_hearing_node import RobotHearingNode
     from task_generator.auditory.sound_propagation_node import SoundPropagationNode

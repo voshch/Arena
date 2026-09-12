@@ -24,8 +24,8 @@ class _FakeLogger:
 
 
 def _make_tm_module():
-    from task_generator.tasks.modules import TM_Module
     from arena_rclpy_mixins.shared import Namespace
+    from task_generator.tasks.modules import TM_Module
 
     class _FakeConf:
         class Robot:
@@ -70,8 +70,8 @@ def test_tm_module_after_reset_callable():
 
 
 def test_tm_module_task_stored():
-    from task_generator.tasks.modules import TM_Module
     from arena_rclpy_mixins.shared import Namespace
+    from task_generator.tasks.modules import TM_Module
 
     class _FakeConf:
         class Robot:

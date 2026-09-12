@@ -26,6 +26,8 @@ pedestrian agents, and environment templates through the types defined here.
 |---|---|---|
 | `generate_world` | `generate_world "<prompt>" [-e endpoint] [-o outdir]` | Posts a natural-language prompt to a generation server; extracts the returned zip into `worlds/<outdir>/` |
 | `model_staging` | `model_staging <install_dir>` | Creates symlinks in `<install_dir>` for all known robot models and writes a `deps` file |
+| `prune_blocking_assets` | `prune_blocking_assets [world ...] [--robots jackal mpo700] [--apply] [--backup DIR]` | Finds static entities that stand in a doorway or cut navigable space in two, and with `--apply` deletes them from `world.yaml`. Sized per robot from its footprint; dry run by default. Companion to `screen_worlds`, which only measures. |
+| `screen_worlds` | `screen_worlds [world ...] [--json out.json]` | Screens worlds against a replica of the nav2 global costmap: static-layer inflation, door clearance before/after furniture, entities overlapping walls or standing in doorways, and free-space fragmentation. Emits JSON; no world is modified. |
 | `preload_world` | `preload_world <world_name> [--no-scenarios] [--dry-run]` | Resolves every identifier the world and its scenarios reference, downloading what is missing. `--dry-run` reports without transferring. Reached from the CLI as `arena preload`. |
 | `touch_world` | `touch_world <world_name> [--all] [--resolution N] [--assets color] ...` | Renders a preview `map.png` + `map.yaml` into the world dir for inspection; `--all` regenerates canonical per-level `world.yaml` + maps. The runtime renders its own map in-process, so this is an authoring aid, not required after editing. |
 

@@ -189,8 +189,17 @@ class CollisionTrackerNode(rclpy.node.Node):
         evmsg.events = events
         self._pub_events.publish(evmsg)
 
-        if events and self._rm.node.rosparam[bool].get_unsafe('fail_on_collision'):
-            self._rm.node.fail_episode('collision')
+        fail_all = self._rm.node.rosparam[bool].get_unsafe('fail_on_collision')
+        fail_static = self._rm.node.rosparam[bool].get_unsafe('fail_on_static_collision')
+        if hit is not None and (fail_all or fail_static):
+            _cell, obstacle_id = hit
+            self._rm.node.fail_episode(f'static collision: {obstacle_id or "<wall>"} at robot ({rx:.2f}, {ry:.2f}, yaw {rth:.2f})')
+            return
+        if fail_all:
+            for ev in events:
+                if ev.kind == arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN:
+                    self._rm.node.fail_episode(f'collision: {ev.obstacle_id}')
+                    return
 
     def _pedestrians(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, float, float]]:
         if self._peds_msg is None:

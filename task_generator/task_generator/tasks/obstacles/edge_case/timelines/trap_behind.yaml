@@ -1,0 +1,20 @@
+# An object closes in behind the robot after it has committed.
+#
+# Tests whether backtracking is attempted at all. The failure this looks for is a planner
+# that treats its own back-track as blocked and reports "no valid path" rather than trying
+# the remaining space.
+#
+# Deliberately paired with a despawn: without it the episode can only ever end in failure,
+# and an arm that cannot succeed measures the timeout, not the robot.
+
+events:
+  - action: spawn
+    entity: rear_blocker
+    model: Office/Object/SM_BookcaseA
+    at: {route_fraction: 0.5}
+    place: {route_fraction: 0.3}
+    note: Behind the robot at the moment it appears, on ground already travelled.
+
+  - action: despawn
+    entity: rear_blocker
+    at: {t: 60.0}

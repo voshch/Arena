@@ -1,0 +1,348 @@
+#! /usr/bin/env python
+"""Screen worlds for obstacle placement pathologies against a replica of the nav2 global costmap.
+
+Rebuilds what `global_costmap` sees (static layer from map.png, inflation layer, door-mask
+overlay) and compares it against where the world's static furniture actually stands. The two
+disagree by construction: `WorldDescription._rasterize_kwargs` draws an entity into map.png only
+when the entity carries an inline `bbox` and a colour was requested, while the runtime resolves
+every footprint from the asset's own `annotation.yaml`. Anything that gap hides is a lethal
+obstacle the planner believes is free floor.
+
+Costmap constants mirror arena_robots/config/nav2/nav2.yaml; robot extents mirror the jackal
+mobile cap. Both are overridable so an arm with a different robot can be screened as it runs.
+"""
+
+import argparse
+import collections
+import json
+import math
+import os
+import sys
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+
+import numpy as np
+import PIL.Image
+import scipy.ndimage
+import shapely
+import shapely.affinity
+import yaml
+from arena_simulation_setup.tree.World import WorldIdentifier
+
+# nav2_costmap_2d cost semantics
+LETHAL = 254
+INSCRIBED = 253
+FREE = 0
+
+WORLDS_DIR = Path(__file__).resolve().parent.parent / 'worlds'
+ASSETS_DIR = Path(os.environ.get('ARENA_ASSETS_DIR', Path(__file__).resolve().parents[2] / '_assets')) / 'default'
+
+# Mirrored from task_generator/manager/world_manager/world_manager.py
+DEFAULT_ENTITY_RADIUS = 0.35
+PASSAGE_CLEARANCE = 2.0
+_BBOX_CACHE: dict = {}
+
+
+def build_costmap(occ: np.ndarray, resolution: float, inscribed_r: float, inflation_r: float, cost_scaling: float) -> tuple[np.ndarray, np.ndarray]:
+    """nav2 InflationLayer over a lethal mask. Returns (cost, distance-to-lethal in metres)."""
+    if not occ.any():
+        return np.zeros(occ.shape, np.uint8), np.full(occ.shape, np.inf)
+    dist = scipy.ndimage.distance_transform_edt(~occ, sampling=resolution)
+    cost = np.zeros(occ.shape, np.uint8)
+    band = (dist > inscribed_r) & (dist <= inflation_r)
+    cost[band] = (INSCRIBED - 1) * np.exp(-cost_scaling * (dist[band] - inscribed_r))
+    cost[dist <= inscribed_r] = INSCRIBED
+    cost[occ] = LETHAL
+    return cost, dist
+
+
+def rasterize(polys: Iterable[shapely.Polygon], shape: tuple[int, int], origin: Sequence[float], resolution: float) -> np.ndarray:
+    """Stamp world-frame polygons into a boolean grid, row 0 == origin (map.png is flipped on load)."""
+    mask = np.zeros(shape, bool)
+    h, w = shape
+    for poly in polys:
+        if poly.is_empty:
+            continue
+        min_x, min_y, max_x, max_y = poly.bounds
+        c0 = max(0, int((min_x - origin[0]) / resolution))
+        c1 = min(w, int((max_x - origin[0]) / resolution) + 1)
+        r0 = max(0, int((min_y - origin[1]) / resolution))
+        r1 = min(h, int((max_y - origin[1]) / resolution) + 1)
+        if c0 >= c1 or r0 >= r1:
+            continue
+        cols = origin[0] + (np.arange(c0, c1) + 0.5) * resolution
+        rows = origin[1] + (np.arange(r0, r1) + 0.5) * resolution
+        gx, gy = np.meshgrid(cols, rows)
+        pts = shapely.points(gx.ravel(), gy.ravel())
+        hit = shapely.covers(poly, pts).reshape(gy.shape)
+        mask[r0:r1, c0:c1] |= hit
+    return mask
+
+
+def _annotation_bbox(model_key: str) -> tuple[list[list[float]] | None, str]:
+    """`bounding_box` from the asset's own annotation.yaml, plus how it had to be found.
+
+    Read off disk rather than through `model.resolve_sync()`: the resolver's NetResolver leg
+    goes to GCS for anything not cached, which turned screening office_1's 568 entities into a
+    50s-per-40 network crawl. The bbox is the same `bounding_box` either way.
+    """
+    if model_key in _BBOX_CACHE:
+        return _BBOX_CACHE[model_key]
+    # ObjectIdentifier._asset_type == 'Object', so a model written `Office/SM_Box` in world.yaml
+    # lives at `Office/Object/SM_Box`. That segment is the scheme, not a defect.
+    domain, _, rest = model_key.partition('/')
+    result = (None, 'missing')
+    f = ASSETS_DIR / domain / 'Object' / rest / 'annotation.yaml'
+    if f.is_file():
+        try:
+            bb = (yaml.safe_load(f.read_text()) or {}).get('bounding_box')
+        except Exception:
+            bb = None
+        if bb:
+            result = ([[float(a), float(b)] for a, b in bb], 'resolved')
+    _BBOX_CACHE[model_key] = result
+    return result
+
+
+def entity_footprint(entity: object) -> tuple[shapely.Polygon | None, str, str]:
+    """Oriented world-frame footprint. Mirrors the runtime's fallbacks so the costmap stays faithful."""
+    key = f'{entity.model.domain}/{entity.model.name}' if getattr(entity.model, 'domain', None) else str(entity.model.name)
+    bbox, how = _annotation_bbox(key)
+    if bbox is None:
+        # world_manager falls back to a _DEFAULT_ENTITY_RADIUS disc; the planner sees that, so
+        # screening must too, or every unresolvable model would read as harmless.
+        poly = shapely.Point(entity.pose.position.x, entity.pose.position.y).buffer(DEFAULT_ENTITY_RADIUS)
+        return poly, how, key
+    (x_min, x_max), (y_min, y_max), *z_pair = bbox
+    if z_pair:
+        z_min, _ = z_pair[0]
+        # Fixtures mounted above passage height do not obstruct the floor (World._rasterize_kwargs).
+        if entity.pose.position.z + z_min > PASSAGE_CLEARANCE:
+            return None, 'above_passage', key
+    poly = shapely.box(x_min, y_min, x_max, y_max)
+    scale = getattr(entity, 'scale', None)
+    if scale is not None:
+        poly = shapely.affinity.scale(poly, float(getattr(scale, 'x', 1.0)), float(getattr(scale, 'y', 1.0)), origin=(0, 0))
+    poly = shapely.affinity.rotate(poly, entity.pose.orientation.to_yaw(), origin=(0, 0), use_radians=True)
+    poly = shapely.affinity.translate(poly, entity.pose.position.x, entity.pose.position.y)
+    return poly, how, key
+
+
+def door_polygons(level: object) -> list[tuple[str, shapely.Polygon]]:
+    return [(d.name, shapely.Polygon([(c.x, c.y) for c in d.corners])) for d in level.all_doors]
+
+
+def door_axes(poly: shapely.Polygon) -> tuple[tuple[tuple[float, float], tuple[float, float]], tuple[float, float], float]:
+    """(opening segment, unit normal) from the door's minimum rotated rectangle.
+
+    The long axis spans the opening; the short axis is wall thickness, which is the direction a
+    robot actually drives through. Derived from the polygon so it holds for any door orientation.
+    """
+    rect = poly.minimum_rotated_rectangle
+    pts = list(rect.exterior.coords)[:4]
+    edges = [(pts[i], pts[(i + 1) % 4]) for i in range(4)]
+    long_e = max(edges, key=lambda e: math.dist(*e))
+    short_e = min(edges, key=lambda e: math.dist(*e))
+    cx, cy = poly.centroid.x, poly.centroid.y
+    (lx0, ly0), (lx1, ly1) = long_e
+    half = math.dist(long_e[0], long_e[1]) / 2
+    ux, uy = (lx1 - lx0) / (2 * half), (ly1 - ly0) / (2 * half)
+    seg = ((cx - ux * half, cy - uy * half), (cx + ux * half, cy + uy * half))
+    return seg, (-uy, ux), math.dist(short_e[0], short_e[1])
+
+
+def probe_navigable(nav: np.ndarray, pt: tuple[float, float], origin: Sequence[float], resolution: float) -> bool:
+    h, w = nav.shape
+    col = int((pt[0] - origin[0]) / resolution)
+    row = int((pt[1] - origin[1]) / resolution)
+    if not (0 <= col < w and 0 <= row < h):
+        return False
+    return bool(nav[row, col])
+
+
+def sample_clearance(dist: np.ndarray, seg: tuple[tuple[float, float], tuple[float, float]], origin: Sequence[float], resolution: float, n: int = 64) -> float:
+    """Best distance-to-lethal anywhere on a segment: half the widest gap a robot centre can use."""
+    h, w = dist.shape
+    (x0, y0), (x1, y1) = seg
+    ts = np.linspace(0, 1, n)
+    xs, ys = x0 + (x1 - x0) * ts, y0 + (y1 - y0) * ts
+    cols = ((xs - origin[0]) / resolution).astype(int)
+    rows = ((ys - origin[1]) / resolution).astype(int)
+    ok = (cols >= 0) & (cols < w) & (rows >= 0) & (rows < h)
+    if not ok.any():
+        return 0.0
+    return float(dist[rows[ok], cols[ok]].max())
+
+
+def screen_level(world: str, level_id: str, level: object, level_dir: Path, args: argparse.Namespace) -> dict:
+    map_yaml = yaml.safe_load((level_dir / 'map.yaml').read_text())
+    resolution = float(map_yaml['resolution'])
+    origin = list(map_yaml.get('origin', [0, 0, 0]))[:2]
+    img = PIL.Image.open(level_dir / 'map.png').convert('L')
+    # map_server: row 0 of the image is the TOP of the map, origin is the bottom-left corner
+    px = np.flipud(np.asarray(img, dtype=np.uint8))
+    occupancy = (255 - px) / 255.0 if not int(map_yaml.get('negate', 0)) else px / 255.0
+    occ_map = occupancy >= float(map_yaml.get('occupied_thresh', 0.65))
+
+    doors = door_polygons(level)
+    door_mask = rasterize(
+        [p.buffer(args.door_buffer) for _, p in doors], occ_map.shape, origin, resolution
+    ) if doors else np.zeros(occ_map.shape, bool)
+
+    ents = list(level.all_static_entities)
+    footprints, resolution_kinds, fallback_models = [], collections.Counter(), collections.Counter()
+    for e in ents:
+        poly, how, key = entity_footprint(e)
+        resolution_kinds[how] += 1
+        if how == 'missing':
+            fallback_models[key] += 1
+        if poly is not None:
+            footprints.append((e, poly))
+
+    occ_ent = occ_map | (rasterize([p for _, p in footprints], occ_map.shape, origin, resolution) if footprints else np.zeros(occ_map.shape, bool))
+
+    cost_a, dist_a = build_costmap(occ_map, resolution, args.inscribed_radius, args.inflation_radius, args.cost_scaling)
+    cost_b, dist_b = build_costmap(occ_ent, resolution, args.inscribed_radius, args.inflation_radius, args.cost_scaling)
+    for c in (cost_a, cost_b):
+        c[door_mask] = FREE
+
+    cell_area = resolution * resolution
+    # Cells a robot centre may legally occupy; the planner refuses anything at inscribed cost.
+    nav_a, nav_b = cost_a < INSCRIBED, cost_b < INSCRIBED
+
+    findings = []
+
+    # Furniture clipped into wall geometry: real modelling errors, and they inflate twice.
+    for e, poly in footprints:
+        fp = rasterize([poly], occ_map.shape, origin, resolution)
+        n = int(fp.sum())
+        if n == 0:
+            continue
+        overlap = int((fp & occ_map).sum()) / n
+        if overlap >= args.wall_overlap_thresh:
+            findings.append({
+                'kind': 'entity_in_wall', 'entity': e.name, 'model': str(e.model),
+                'overlap_frac': round(overlap, 3),
+                'pose': [round(e.pose.position.x, 2), round(e.pose.position.y, 2)],
+            })
+
+    # Furniture standing in a doorway.
+    for e, poly in footprints:
+        for dname, dpoly in doors:
+            if not poly.intersects(dpoly):
+                continue
+            frac = poly.intersection(dpoly).area / dpoly.area if dpoly.area else 0.0
+            findings.append({
+                'kind': 'entity_blocks_door', 'entity': e.name, 'model': str(e.model),
+                'door': dname, 'door_area_frac': round(frac, 3),
+                'pose': [round(e.pose.position.x, 2), round(e.pose.position.y, 2)],
+            })
+
+    # Door passability, before and after the furniture the map does not show.
+    door_rows = []
+    for dname, dpoly in doors:
+        seg, normal, thickness = door_axes(dpoly)
+        nominal = math.dist(seg[0], seg[1])
+        ca = sample_clearance(dist_a, seg, origin, resolution)
+        cb = sample_clearance(dist_b, seg, origin, resolution)
+        # A door only has to be passable if navigable floor exists on BOTH sides of it.
+        # Exterior doors open onto unmapped space and are dead ends by construction.
+        reach = thickness / 2 + args.inscribed_radius + 0.15
+        cx, cy = dpoly.centroid.x, dpoly.centroid.y
+        sides = [probe_navigable(nav_a, (cx + normal[0] * s_, cy + normal[1] * s_), origin, resolution)
+                 for s_ in (reach, -reach)]
+        interior = all(sides)
+        row = {'door': dname, 'nominal_m': round(nominal, 2), 'interior': interior,
+               'clearance_map_m': round(ca, 3), 'clearance_with_entities_m': round(cb, 3)}
+        door_rows.append(row)
+        if not interior:
+            continue
+        if cb < args.inscribed_radius <= ca:
+            findings.append({'kind': 'door_closed_by_entity', **row})
+        elif ca < args.inscribed_radius:
+            findings.append({'kind': 'door_impassable_in_map', **row})
+        elif cb < args.inscribed_radius + args.tight_margin:
+            findings.append({'kind': 'door_tight', **row})
+
+    # Does the furniture cut the navigable space apart?
+    lbl_a, n_a = scipy.ndimage.label(nav_a)
+    lbl_b, n_b = scipy.ndimage.label(nav_b)
+    def largest(lbl: np.ndarray, n: int) -> int:
+        if n == 0:
+            return 0
+        return int(np.bincount(lbl.ravel())[1:].max())
+    la, lb = largest(lbl_a, n_a), largest(lbl_b, n_b)
+
+    return {
+        'world': world, 'level': level_id,
+        'resolution': resolution,
+        'map_cells': int(occ_map.size),
+        'entities': len(ents),
+        'entities_with_footprint': len(footprints),
+        'entity_bbox_resolution': dict(resolution_kinds),
+        'models_missing_asset': {k: v for k, v in fallback_models.most_common()},
+        'entities_overlapping_walls': sum(1 for f in findings if f['kind'] == 'entity_in_wall'),
+        'doors': len(doors),
+        'doors_interior': sum(1 for r in door_rows if r['interior']),
+        'walls': len(list(level.all_walls)),
+        'costmap': {
+            'navigable_m2_map': round(int(nav_a.sum()) * cell_area, 1),
+            'navigable_m2_with_entities': round(int(nav_b.sum()) * cell_area, 1),
+            'navigable_lost_pct': round(100 * (1 - (nav_b.sum() / nav_a.sum())), 2) if nav_a.sum() else 0.0,
+            'lethal_m2_map': round(int(occ_map.sum()) * cell_area, 1),
+            'lethal_m2_entities': round(int((occ_ent & ~occ_map).sum()) * cell_area, 1),
+            'inflated_m2_map': round(int(((cost_a > FREE) & (cost_a < LETHAL)).sum()) * cell_area, 1),
+            'inflated_m2_with_entities': round(int(((cost_b > FREE) & (cost_b < LETHAL)).sum()) * cell_area, 1),
+        },
+        'connectivity': {
+            'components_map': int(n_a), 'components_with_entities': int(n_b),
+            'largest_component_frac': round(lb / la, 4) if la else 0.0,
+        },
+        'door_clearances': door_rows,
+        'findings': findings,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('worlds', nargs='*', help='Worlds to screen (default: every world with a map).')
+    ap.add_argument('--json', help='Write the full per-world result here.')
+    ap.add_argument('--inflation-radius', type=float, default=0.25, help='global_costmap inflation_layer.inflation_radius')
+    ap.add_argument('--cost-scaling', type=float, default=3.0, help='global_costmap inflation_layer.cost_scaling_factor')
+    ap.add_argument('--inscribed-radius', type=float, default=0.165, help='Robot inscribed radius + footprint_padding (jackal: 0.155 + 0.01)')
+    ap.add_argument('--door-buffer', type=float, default=0.2, help='_DOOR_MASK_BUFFER_M from world_manager_ros')
+    ap.add_argument('--tight-margin', type=float, default=0.1, help='Flag interior doors whose clearance exceeds the robot by less than this')
+    ap.add_argument('--wall-overlap-thresh', type=float, default=0.25, help='Footprint fraction inside map-lethal cells to flag')
+    ap.add_argument('--quiet', action='store_true', help='Suppress per-world progress on stderr.')
+    args = ap.parse_args()
+
+    names = args.worlds or sorted(
+        d.name for d in WORLDS_DIR.iterdir()
+        if d.is_dir() and any((d / lvl / 'map.png').exists() for lvl in os.listdir(d) if (d / lvl).is_dir())
+    )
+
+    results, failed = [], []
+    for i, name in enumerate(names, 1):
+        if not args.quiet:
+            print(f'[{i}/{len(names)}] {name}', file=sys.stderr, flush=True)
+        try:
+            view = WorldIdentifier(name).resolve_sync()
+            desc = view.load()
+            for level_id in desc.level_ids:
+                level_dir = view.path / level_id
+                if not (level_dir / 'map.png').exists():
+                    continue
+                results.append(screen_level(name, level_id, desc.get_level(level_id), level_dir, args))
+        except Exception as exc:
+            failed.append({'world': name, 'error': f'{type(exc).__name__}: {exc}'})
+
+    report = {'params': vars(args), 'results': results, 'failed': failed}
+    if args.json:
+        Path(args.json).write_text(json.dumps(report, indent=2))
+    else:
+        json.dump(report, sys.stdout, indent=2)
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -51,6 +51,8 @@ setup(
     scripts=[
         'scripts/model_staging',
         'scripts/preload_world',
+        'scripts/prune_blocking_assets',
+        'scripts/screen_worlds',
         'scripts/touch_world',
     ],
     entry_points={

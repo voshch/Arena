@@ -15,6 +15,7 @@ try:
     from arena_simulation_setup.tree.World.World import Level, LevelDescription, WorldDescription
     from arena_simulation_setup.utils.geometry import Pose
     from arena_simulation_setup.utils.geometry import Position as GeoPosition
+    from task_generator.constants.rng import EpisodeRng
     from task_generator.manager.world_manager.utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
     from task_generator.manager.world_manager.world_manager import (
         WorldManager,
@@ -22,7 +23,6 @@ try:
         _sample_grid_positions,
         _zone_mask,
     )
-    from task_generator.constants.rng import EpisodeRng
     from task_generator.shared import Position, PositionRadius
 except ImportError:
     pytestmark = pytest.mark.skip(reason="ROS2 not available")

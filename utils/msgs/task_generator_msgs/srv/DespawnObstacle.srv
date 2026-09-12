@@ -1,0 +1,14 @@
+# Remove an obstacle spawned at runtime via SpawnStatic / SpawnDynamic.
+#
+# `id` is what that call returned: the entity's `sim_path`, not its bare name. The two
+# differ - the adapter registers world objects under an env-prefixed path - and taking the
+# name here would fail to match for exactly the entities this service exists to remove.
+#
+# Scoped to obstacles the task mode is holding. World geometry (walls, doors, the scenario's
+# own furniture) is not removable this way: it is replaced wholesale by a world reload.
+string id
+---
+bool success
+# Set when the id resolved to nothing, so a caller can tell "already gone" from "failed".
+bool found
+string error_msg

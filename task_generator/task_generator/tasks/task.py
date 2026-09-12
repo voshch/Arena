@@ -265,6 +265,13 @@ class Task(NodeInterface):
 
                 obstacles, dynamic_obstacles = await self.tm_obstacles.reset(seed=seed)
 
+                # Flow regions are applied here rather than by the mode that built them, so a wrapping mode
+                # can perturb the crowd before it exists. Cleared first so sources do not accumulate across
+                # scenario changes.
+                await self.environment_manager.remove_all_regions()
+                if self.__tm_obstacles.pending_regions:
+                    await self.environment_manager.setup_regions(self.__tm_obstacles.pending_regions)
+
                 async def respawn():
                     await asyncio.gather(
                         self.environment_manager.spawn_dynamic_obstacles(dynamic_obstacles),

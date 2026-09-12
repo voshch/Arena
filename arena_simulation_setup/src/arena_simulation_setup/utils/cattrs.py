@@ -199,6 +199,7 @@ class Parseable:
                 # try "normal" attrs structuring
                 try:
                     if isinstance(value, dict):
+                        # Refuse undeclared keys instead of structuring them into an all-defaults instance.
                         unknown = set(value) - {f.name for f in attrs.fields(target_type)}
                         if unknown:
                             raise ValueError(f'unknown keys {sorted(unknown)} for {target_type}')

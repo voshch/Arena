@@ -50,14 +50,17 @@ _NAV2_QUIET_NODES = (
     'velocity_smoother',
     'waypoint_follower',
 )
-_NAV2_QUIET_RULES = '+[' + ', '.join(f'**/{n}:error' for n in _NAV2_QUIET_NODES) + ']'
+# Appended, not prepended: rules are first-match-wins, so an explicit log_level on the
+# command line still wins.
+_NAV2_QUIET_RULES = '[' + ', '.join(f'**/{n}:error' for n in _NAV2_QUIET_NODES) + ']+'
 
-_MOVEIT_QUIET_RULES = '+[**/moveit/**:error]'
+_MOVEIT_QUIET_RULES = '[**/moveit/**:error]+'
 
 _CONTROLLER_POLL = 0.2
-_CM_CALL_TIMEOUT = 10.0
+_CM_CALL_TIMEOUT = 60.0
 _CM_REFUSAL_GRACE_S = 20.0
-_CM_SWITCH_TIMEOUT = 60.0
+# mpo700's controller_manager can take up to a minute to answer load/list.
+_CM_SWITCH_TIMEOUT = 120.0
 _CM_SWITCH_TIMED_OUT = "timed out"
 
 _TELEPORT_TOLERANCE = 0.3
@@ -73,6 +76,8 @@ class RobotManager(NodeInterface):
     _environment_manager: EnvironmentManager
     _start_pos: Pose
     _goal_pos: Pose
+    _route_goal: Pose
+    _start_assigned: bool
     _robot_radius: float
     _robot: Robot
     _move_base_pub: rclpy.publisher.Publisher
@@ -102,11 +107,46 @@ class RobotManager(NodeInterface):
 
     @property
     def start_pos(self) -> Pose:
+        """Where the robot was last placed, in the **abstract** frame (see `move`)."""
         return self._start_pos
 
     @property
+    def start_assigned(self) -> bool:
+        """Whether `move` has ever placed this robot.
+
+        Until it has, `start_pos` is the constructed `Pose()` - the map origin, which is a
+        plausible-looking coordinate rather than an obviously missing one. On the first
+        episode the obstacle modes can run before placement, so anything reasoning about the
+        robot's route must check this or it will silently design against the origin.
+        """
+        return self._start_assigned
+
+    @property
     def goal_pos(self) -> Pose:
+        """Target of the phase currently being driven, in the **map** frame.
+
+        Owned by the mobile adapters: each `dispatch_phase` overwrites it with the leg it is
+        about to drive, and `publish_goal_loop` republishes it on `<ns>/goal_pose` with
+        `frame_id: "map"`. It is therefore neither the final destination nor comparable with
+        `start_pos`. For either of those, use `route_goal`.
+        """
         return self._goal_pos
+
+    @property
+    def route_goal(self) -> Pose:
+        """Final destination of the current request, in the **abstract** frame.
+
+        The counterpart to `start_pos`, and what the task-generation layer must use: obstacle
+        poses are abstract until the environment manager realizes them downstream, and
+        `world_manager.map` is the abstract occupancy grid. Comparing `start_pos` against
+        `goal_pos` instead mixes frames — on any env with a non-zero grid offset that yields a
+        "route" leaving the world entirely.
+
+        Feeding this back into a new `TaskRequest` is also the only safe round trip:
+        `submit_task` realizes whatever it is handed, so re-submitting `goal_pos` realizes an
+        already-realized pose a second time.
+        """
+        return self._route_goal
 
     @property
     def controls_orientation(self) -> bool:
@@ -163,6 +203,8 @@ class RobotManager(NodeInterface):
 
         self._start_pos = Pose()
         self._goal_pos = Pose()
+        self._route_goal = Pose()
+        self._start_assigned = False
         self._robot_radius = 0.25
 
         self._robot = robot
@@ -416,11 +458,27 @@ class RobotManager(NodeInterface):
             routed_phases.append(phase)
         request = attrs.evolve(request, phases=routed_phases)
 
+        # `route_goal` is the final destination of this request in the ABSTRACT frame, read
+        # before realization so it is directly comparable with `start_pos` and with obstacle
+        # poses, and so that feeding it back into a later TaskRequest cannot realize it twice.
+        # Requests with no GoToPhase leave it untouched.
+        last_goto_abstract = next((p for p in reversed(request.phases) if isinstance(p, GoToPhase)), None)
+        if last_goto_abstract is not None:
+            self._route_goal = last_goto_abstract.pose
+
         realized_phases = [attrs.evolve(phase, pose=self._environment_manager.realize(phase.pose)) if isinstance(phase, GoToPhase) else phase for phase in request.phases]
         request = attrs.evolve(request, phases=realized_phases)
 
         self._current_request = request
         self._phase_index = 0
+
+        # `goal_pos` is MAP frame: it is published on `<ns>/goal_pose` with frame_id "map",
+        # and each adapter's `dispatch_phase` overwrites it with the leg it is driving. Seed
+        # it with the realized final destination so it is never the constructed Pose() (i.e.
+        # the map origin) for robots whose phase kind has no adapter bound.
+        last_goto = next((p for p in reversed(request.phases) if isinstance(p, GoToPhase)), None)
+        if last_goto is not None:
+            self._goal_pos = last_goto.pose
 
         phase0 = request.phases[0]
         adapter = self._adapters.get(phase0.kind)
@@ -526,6 +584,7 @@ class RobotManager(NodeInterface):
     async def move(self, pose: Pose) -> None:
         """Teleport the robot to ``pose``. Positioning only, no task dispatch."""
         self._start_pos = pose
+        self._start_assigned = True
         await self._apply_pose(pose)
 
     async def _launch_robot(self, node_paths: set[str]):

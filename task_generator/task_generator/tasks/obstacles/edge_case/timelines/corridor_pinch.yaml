@@ -1,0 +1,27 @@
+# The corridor narrows once the robot is inside it.
+#
+# Route-relative, so this is a valid case in every one of the twelve generated office worlds
+# as well as the hand-authored ones. It never names a coordinate, which is the only way it
+# can be: `arena_arena_002` and its siblings share only `open_work_area` and `reception`, so
+# an absolute pose would be right in one world and silently wrong in eleven.
+#
+# WHAT IT TESTS
+# The object appears when the robot is a third of the way along its route, two thirds of the
+# way along it - so it is ahead, not on top, and the robot has already committed to the
+# corridor when its plan stops being valid. The question is whether nav2 replans or freezes.
+#
+# WHAT TO WATCH
+# A mid-episode static object is NOT in nav2's static layer - it is only in the map the
+# lidar builds. So nothing happens until the object is *seen*, and `reveal_distance_m` in the
+# score row is what says how far away that was. An object revealed beyond sensor range is a
+# case that measured nothing.
+
+events:
+  - action: spawn
+    entity: pinch_left
+    model: Office/Object/SM_BookcaseA
+    at: {route_fraction: 0.33}
+    place: {route_fraction: 0.66, lateral_offset: 0.55}
+    note: >-
+      Offset left of travel, so it narrows the lane rather than sealing it. A robot that can
+      pass has a decision to make; one that cannot only has a failure.

@@ -16,6 +16,23 @@ class TM_Obstacles(TaskMode):
 `Obstacles = tuple[list[Obstacle], list[DynamicObstacle]]`. The base
 implementation returns empty lists; every subclass overrides `reset`.
 
+Two further methods on the base class work *mid-episode*, outside the reset cycle:
+
+| Method | Service | What it does |
+| --- | --- | --- |
+| `extend(kind, model, pose=None)` | `runtime/spawn_static`, `runtime/spawn_dynamic` | Adds one obstacle to the running episode; returns its `sim_path`. Omitting the pose picks a random valid placement. |
+| `retract(entity_id)` | `runtime/despawn_obstacle` | Removes one obstacle `extend` added. `False` means the id resolved to nothing, which is not an error. |
+
+`retract` is the counterpart `extend` did not have. Everything else removes obstacles by
+*layer* at a reset boundary, so before it an object could appear mid-episode but never
+disappear — and "the blocked doorway clears" was not expressible. That case is the
+interesting half of an object edge case: whether a robot that gave up on a route ever
+retries it.
+
+Removing one **pedestrian** needs a backend that keeps a per-agent id map, which is
+`arena_humansim` only. Elsewhere the id is reported as not removed rather than the whole
+crowd being cleared as a side effect.
+
 `TM_Obstacles` is level-agnostic: it populates the whole compacted map (all loaded
 levels at once) via `get_position(s)_on_map` with no `level_id`. Which levels exist is
 decided at load time, not per reset: `world:=name` loads every level, `world:=name[0,3]`

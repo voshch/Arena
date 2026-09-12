@@ -24,8 +24,8 @@ class _FakeLogger:
 
 
 def _make_task_mode(namespace_str="root"):
-    from task_generator.tasks.mode import TaskMode
     from arena_rclpy_mixins.shared import Namespace
+    from task_generator.tasks.mode import TaskMode
 
     class _FakeConf:
         class Robot:

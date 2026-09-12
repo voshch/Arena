@@ -21,6 +21,12 @@ def generate_launch_description():
                 'rviz': 'false',
                 'markers': markers,
                 'namespace': namespace,
+                # Generated worlds are furnished tightly: finer grid, agent-radius inflation, small
+                # furniture left to local avoidance.
+                'global_planner_inflation': '0.25',
+                'global_planner_resolution': '0.1',
+                'global_planner_min_obstacle_extent': '0.7',
+                'global_planner_thin_inflation': '0.15',
             },
         ),
     ])

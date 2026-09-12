@@ -29,3 +29,12 @@ suffixed per body before publishing to `joint_states` so they match the
 `human_description` URDF rig.  See
 [`task_generator/simulators/human/gait.py`](../../task_generator/task_generator/simulators/human/gait.py)
 for the full 20-joint semantic name set.
+
+## rviz config generation
+
+[`rviz_utils/scripts/rviz_config.py`](rviz_utils/scripts/rviz_config.py) renders
+[`config/rviz_default.rviz`](config/rviz_default.rviz) for one env and launches rviz2 on it
+(`arena viz`). The `view:=map` camera is framed on the env's static map: the generator waits
+up to 5 s for the latched `<ns>/map` grid and orbits its centre at 1.45 m of distance per
+metre of map span, so a 20 m office and a 35 m hospital both fill the viewport. Without a map
+it falls back to the fixed frame (focal (15, 10), distance 50).

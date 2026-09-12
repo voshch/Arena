@@ -1,0 +1,405 @@
+#! /usr/bin/env python
+"""Find, and optionally delete, static entities that make a world unnavigable.
+
+Companion to `screen_worlds`, which only measures. This one decides. An entity blocks the way
+when the robot physically cannot get past it: either it stands in a doorway, or removing it
+reconnects navigable space that is otherwise cut in two.
+
+Physical clearance, not costmap cost. The `mask_overlay_layer` forces cost 0 inside door
+polygons, which papers a doorway open again even when a desk is standing in it — faithful to
+nav2 and useless for deciding whether a robot fits. Here an obstacle is an obstacle and the
+robot needs its inscribed radius of clearance from all of them.
+
+Sized for the largest robot asked for, since a world navigable for mpo700 (inscribed 0.255) is
+navigable for jackal (0.155), never the reverse.
+"""
+
+import argparse
+import json
+import shutil
+import sys
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+
+import numpy as np
+import PIL.Image
+import scipy.ndimage
+import shapely
+import shapely.affinity
+import yaml
+from arena_simulation_setup.tree.World import WorldIdentifier
+
+WORLDS_DIR = Path(__file__).resolve().parent.parent / 'worlds'
+ASSETS_DIR = Path(__file__).resolve().parents[2] / '_assets' / 'default'
+DEFAULT_ENTITY_RADIUS = 0.35
+PASSAGE_CLEARANCE = 2.0
+
+# inscribed radius (half the narrow footprint side) from arena_robots/robots/<r>/caps/mobile.yaml
+ROBOTS = {'jackal': 0.155, 'mpo700': 0.255}
+FOOTPRINT_PADDING = 0.01
+
+_BBOX_CACHE: dict = {}
+
+
+def annotation_bbox(model_key: str) -> list[list[float]] | None:
+    if model_key in _BBOX_CACHE:
+        return _BBOX_CACHE[model_key]
+    domain, _, rest = model_key.partition('/')
+    f = ASSETS_DIR / domain / 'Object' / rest / 'annotation.yaml'
+    out = None
+    if f.is_file():
+        try:
+            bb = (yaml.safe_load(f.read_text()) or {}).get('bounding_box')
+            if bb:
+                out = [[float(a), float(b)] for a, b in bb]
+        except Exception:
+            out = None
+    _BBOX_CACHE[model_key] = out
+    return out
+
+
+def footprint(entity: object) -> shapely.Polygon | None:
+    model = entity.model
+    key = f'{model.domain}/{model.name}' if getattr(model, 'domain', None) else str(model.name)
+    bbox = annotation_bbox(key)
+    if bbox is None:
+        return shapely.Point(entity.pose.position.x, entity.pose.position.y).buffer(DEFAULT_ENTITY_RADIUS)
+    (x0, x1), (y0, y1), *z = bbox
+    if z and entity.pose.position.z + z[0][0] > PASSAGE_CLEARANCE:
+        return None
+    poly = shapely.box(x0, y0, x1, y1)
+    scale = getattr(entity, 'scale', None)
+    if scale is not None:
+        poly = shapely.affinity.scale(poly, float(getattr(scale, 'x', 1.0)), float(getattr(scale, 'y', 1.0)), origin=(0, 0))
+    poly = shapely.affinity.rotate(poly, entity.pose.orientation.to_yaw(), origin=(0, 0), use_radians=True)
+    return shapely.affinity.translate(poly, entity.pose.position.x, entity.pose.position.y)
+
+
+def rasterize(polys: Iterable[shapely.Polygon], shape: tuple[int, int], origin: Sequence[float], res: float) -> np.ndarray:
+    mask = np.zeros(shape, bool)
+    h, w = shape
+    for poly in polys:
+        if poly is None or poly.is_empty:
+            continue
+        minx, miny, maxx, maxy = poly.bounds
+        c0, c1 = max(0, int((minx - origin[0]) / res)), min(w, int((maxx - origin[0]) / res) + 1)
+        r0, r1 = max(0, int((miny - origin[1]) / res)), min(h, int((maxy - origin[1]) / res) + 1)
+        if c0 >= c1 or r0 >= r1:
+            continue
+        gx, gy = np.meshgrid(origin[0] + (np.arange(c0, c1) + .5) * res,
+                             origin[1] + (np.arange(r0, r1) + .5) * res)
+        mask[r0:r1, c0:c1] |= shapely.covers(poly, shapely.points(gx.ravel(), gy.ravel())).reshape(gy.shape)
+    return mask
+
+
+def navigable(obstacles: np.ndarray, res: float, radius: float) -> np.ndarray:
+    """Where the robot centre may legally sit: `radius` of clearance from every physical obstacle."""
+    if not obstacles.any():
+        return np.ones(obstacles.shape, bool)
+    return scipy.ndimage.distance_transform_edt(~obstacles, sampling=res) >= radius
+
+
+def components(mask: np.ndarray, cell_area: float, min_area: float) -> tuple[np.ndarray, list[int]]:
+    """Labelled components plus the labels big enough to be somewhere a robot has business going."""
+    lbl, n = scipy.ndimage.label(mask)
+    if n == 0:
+        return lbl, []
+    sizes = np.bincount(lbl.ravel())
+    keep = [i for i in range(1, n + 1) if sizes[i] * cell_area >= min_area]
+    return lbl, keep
+
+
+def cheapest_breach(ref: np.ndarray, nav: np.ndarray, lbl: np.ndarray, a: int, b: int) -> np.ndarray:
+    """Cells on the thinnest furniture barrier between components `a` and `b`.
+
+    The barrier around a furnished room is usually one connected blob spanning the whole world, so
+    "which entities touch the barrier" selects nearly everything. Asking instead for the cheapest
+    path from one component to the other - counting only the blocked cells it must cross - lands on
+    the narrowest place to open a passage, which is the fewest pieces of furniture to remove.
+    """
+    import scipy.sparse
+    import scipy.sparse.csgraph
+
+    idx = np.full(ref.shape, -1, np.int64)
+    cells = np.flatnonzero(ref.ravel())
+    idx.ravel()[cells] = np.arange(cells.size)
+    blocked = (~nav & ref).ravel()[cells]
+    weight = np.where(blocked, 1.0, 1e-6)
+
+    h, w = ref.shape
+    ii = idx.ravel()
+    rows, cols, data = [], [], []
+    for shift, valid in (
+        (1, (np.arange(h * w) % w) < w - 1),
+        (-1, (np.arange(h * w) % w) > 0),
+        (w, np.arange(h * w) < w * (h - 1)),
+        (-w, np.arange(h * w) >= w),
+    ):
+        src = np.flatnonzero((ii >= 0) & valid)
+        dst = src + shift
+        ok = ii[dst] >= 0
+        rows.append(ii[src[ok]])
+        cols.append(ii[dst[ok]])
+        data.append(weight[ii[dst[ok]]])
+    g = scipy.sparse.csr_matrix(
+        (np.concatenate(data), (np.concatenate(rows), np.concatenate(cols))),
+        shape=(cells.size, cells.size),
+    )
+
+    sources = np.flatnonzero(lbl.ravel()[cells] == a)
+    targets = np.flatnonzero(lbl.ravel()[cells] == b)
+    # min_only=True returns (distances, predecessors, sources) - three arrays, not two.
+    dist, pred, _src = scipy.sparse.csgraph.dijkstra(g, indices=sources, return_predecessors=True, min_only=True)
+    reach = targets[np.isfinite(dist[targets])]
+    if reach.size == 0:
+        return np.zeros(ref.shape, bool)
+    node = int(reach[np.argmin(dist[reach])])
+    path = np.zeros(ref.shape, bool)
+    flat = path.ravel()
+    while node >= 0:
+        flat[cells[node]] = True
+        node = int(pred[node])
+    return path
+
+
+def load_level(view: object, level_id: str) -> tuple:
+    d = view.path / level_id
+    my = yaml.safe_load((d / 'map.yaml').read_text())
+    res, origin = float(my['resolution']), list(my.get('origin', [0, 0, 0]))[:2]
+    px = np.flipud(np.asarray(PIL.Image.open(d / 'map.png').convert('L'), dtype=np.uint8))
+    occ = ((255 - px) / 255.0 if not int(my.get('negate', 0)) else px / 255.0) >= float(my.get('occupied_thresh', .65))
+    return occ, res, origin
+
+
+def analyse(world: str, level_id: str, level: object, view: object, args: argparse.Namespace) -> dict:
+    occ, res, origin = load_level(view, level_id)
+    cell_area = res * res
+    radius = max(ROBOTS[r] for r in args.robots) + FOOTPRINT_PADDING
+
+    ents = list(level.all_static_entities)
+    fps = [(e, footprint(e)) for e in ents]
+    fps = [(e, p) for e, p in fps if p is not None]
+
+    doors = [(d.name, shapely.Polygon([(c.x, c.y) for c in d.corners])) for d in level.all_doors]
+
+    # A doorway is a designated passage; anything standing in one blocks it by definition.
+    blockers: dict[str, dict] = {}
+    for e, poly in fps:
+        for dname, dpoly in doors:
+            if poly.intersects(dpoly):
+                frac = poly.intersection(dpoly).area / dpoly.area if dpoly.area else 0.0
+                if frac >= args.door_frac:
+                    blockers[e.name] = {'entity': e.name, 'model': f'{e.model.domain}/{e.model.name}',
+                                        'reason': 'in_doorway', 'door': dname,
+                                        'door_area_frac': round(frac, 3),
+                                        'pose': [round(e.pose.position.x, 2), round(e.pose.position.y, 2)]}
+
+    ref = navigable(occ, res, radius)
+    _, ref_keep = components(ref, cell_area, args.min_pocket)
+    ref_lbl, n_ref = scipy.ndimage.label(ref)
+    ref_sizes = np.bincount(ref_lbl.ravel()) if n_ref else np.array([0])
+    ref_big = int(ref_sizes[1:].max()) if n_ref else 0
+
+    # Reconnect the navigable space, once per robot. A world has to work for every robot asked
+    # for, and the radii disagree about what "connected" means: a nook jackal can enter but not
+    # reach is a real defect, while at mpo700's radius that same nook shrinks under --min-pocket
+    # and disappears. Screening only the largest robot would miss it.
+    live = {e.name: (e, p) for e, p in fps}
+    rounds = []
+    for robot in sorted(args.robots, key=lambda r: ROBOTS[r]):
+        rr = ROBOTS[robot] + FOOTPRINT_PADDING
+        ref_r = navigable(occ, res, rr)
+        for _ in range(args.max_rounds):
+            ent_mask = rasterize([p for _, p in live.values()], occ.shape, origin, res)
+            nav = navigable(occ | ent_mask, res, rr)
+            lbl, keep = components(nav, cell_area, args.min_pocket)
+            if len(keep) <= 1:
+                break
+
+            # The cheapest removal that actually reconnects, so a sofa beside the doorway is not
+            # deleted along with the desk standing in it.
+            picked = None
+            for name in live:
+                trial = {k: v for k, v in live.items() if k != name}
+                tm = rasterize([p for _, p in trial.values()], occ.shape, origin, res)
+                _, tk = components(navigable(occ | tm, res, rr), cell_area, args.min_pocket)
+                if len(tk) < len(keep):
+                    picked = [name]
+                    break
+
+            if picked is None:
+                # No single entity is the cut - the barrier is several in a row. Open the
+                # narrowest crossing between the two largest components and take only the
+                # furniture standing on it.
+                sizes = np.bincount(lbl.ravel())
+                ranked = sorted(keep, key=lambda i: -sizes[i])
+                path = cheapest_breach(ref_r, nav, lbl, ranked[0], ranked[1])
+                picked = [n for n, (_e, poly) in live.items()
+                          if (rasterize([poly.buffer(rr + res)], occ.shape, origin, res) & path).any()]
+            if not picked:
+                break
+
+            for name in picked:
+                e, _ = live.pop(name)
+                blockers.setdefault(name, {
+                    'entity': name, 'model': f'{e.model.domain}/{e.model.name}',
+                    'reason': 'splits_free_space', 'robot': robot,
+                    'pose': [round(e.pose.position.x, 2), round(e.pose.position.y, 2)],
+                })
+            rounds.append({'robot': robot, 'components': len(keep), 'removed': picked})
+
+    for name in list(blockers):
+        live.pop(name, None)
+    final_mask = rasterize([p for _, p in live.values()], occ.shape, origin, res)
+    final_nav = navigable(occ | final_mask, res, radius)
+    _, final_keep = components(final_nav, cell_area, args.min_pocket)
+
+    per_robot = {}
+    for r in args.robots:
+        rr = ROBOTS[r] + FOOTPRINT_PADDING
+        nv = navigable(occ | final_mask, res, rr)
+        _, kp = components(nv, cell_area, args.min_pocket)
+        per_robot[r] = {'components': len(kp), 'navigable_m2': round(int(nv.sum()) * cell_area, 1)}
+
+    return {
+        'world': world, 'level': level_id, 'radius_used': round(radius, 3),
+        'entities': len(ents),
+        'map_components': len(ref_keep), 'map_largest_m2': round(ref_big * cell_area, 1),
+        'components_before': rounds[0]['components'] if rounds else len(final_keep),
+        'components_after': len(final_keep),
+        'blockers': list(blockers.values()),
+        'rounds': rounds,
+        'per_robot': per_robot,
+    }
+
+
+def strip_entities(world_yaml: Path, names: set[str]) -> int:
+    """Delete the named static entities, leaving every other byte of the file untouched.
+
+    A yaml round-trip would reformat the whole generated file and bury the change in an
+    unreviewable diff. Entity names are unique per world (checked across all of them), so removing
+    each matching sequence item's own lines is exact.
+
+    Every `- ` marker is considered, at any depth: entity items are nested two sequences deep
+    inside `zones:`, so walking only top-level items would hand back each zone whole. And `name`
+    is not always an item's first key - office_1 writes `- pose:` first and `name:` third - so the
+    item is collected whole and its name read at the item's own key depth, never deeper, which
+    would otherwise match `material.name`.
+    """
+    lines = world_yaml.read_text().splitlines(keepends=True)
+    drop: set[int] = set()
+    removed = 0
+
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if not stripped.startswith('- '):
+            continue
+        marker_indent = len(line) - len(stripped)
+
+        j = i + 1
+        while j < len(lines):
+            nxt = lines[j]
+            if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= marker_indent:
+                break
+            j += 1
+
+        key_indent = marker_indent + 2
+        name = None
+        for k in range(i, j):
+            body = ' ' * marker_indent + lines[k][marker_indent + 2 :] if k == i else lines[k]
+            if not body.strip() or len(body) - len(body.lstrip()) != (marker_indent if k == i else key_indent):
+                continue
+            head = body.strip()
+            if head.startswith('name:'):
+                name = head[len('name:') :].strip().strip('"\'')
+                break
+
+        if name is not None and name in names:
+            drop.update(range(i, j))
+            removed += 1
+
+    if not removed:
+        return 0
+
+    kept = [(n, l) for n, l in enumerate(lines) if n not in drop]
+
+    # Emptying a sequence leaves a bare `static:`, which yaml reads as null, not []. The
+    # LevelDescription validator then refuses the whole world - office_1's sub_hallway held
+    # exactly one entity and the file stopped loading.
+    def children(seq: list, at: int, indent: int) -> bool:
+        """A block sequence's items sit at the SAME indent as their key, so `> indent` alone
+        would report every `static:` as childless and rewrite untouched keys."""
+        for _, nxt in seq[at + 1 :]:
+            if not nxt.strip():
+                continue
+            got = len(nxt) - len(nxt.lstrip())
+            return got > indent or (got == indent and nxt.lstrip().startswith('- '))
+        return False
+
+    out = []
+    for pos, (orig_n, line) in enumerate(kept):
+        body = line.rstrip('\n')
+        if body.endswith(':') and body.strip():
+            indent = len(line) - len(line.lstrip())
+            had = children([(i, x) for i, x in enumerate(lines)], orig_n, indent)
+            has = children(kept, pos, indent)
+            if had and not has:
+                out.append(f'{body} []\n')
+                continue
+        out.append(line)
+
+    world_yaml.write_text(''.join(out))
+    return removed
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('worlds', nargs='*')
+    ap.add_argument('--robots', nargs='+', default=['jackal', 'mpo700'], choices=sorted(ROBOTS))
+    ap.add_argument('--min-pocket', type=float, default=2.0, help='m2 below which a cut-off pocket is not worth deleting furniture for')
+    ap.add_argument('--door-frac', type=float, default=0.02, help='fraction of a door polygon an entity must cover to count as blocking it')
+    ap.add_argument('--per-round', type=int, default=4, help='entities removed per reconnection round')
+    ap.add_argument('--max-rounds', type=int, default=40)
+    ap.add_argument('--apply', action='store_true', help='rewrite world.yaml; default is a dry run')
+    ap.add_argument('--backup', help='copy each world.yaml here before rewriting')
+    ap.add_argument('--json', help='write the full analysis here')
+    ap.add_argument('--quiet', action='store_true')
+    args = ap.parse_args()
+
+    names = args.worlds or sorted(
+        d.name for d in WORLDS_DIR.iterdir()
+        if d.is_dir() and any((d / s / 'map.png').exists() for s in [p.name for p in d.iterdir() if p.is_dir()])
+    )
+
+    results, failed = [], []
+    for i, name in enumerate(names, 1):
+        if not args.quiet:
+            print(f'[{i}/{len(names)}] {name}', file=sys.stderr, flush=True)
+        try:
+            view = WorldIdentifier(name).resolve_sync()
+            desc = view.load()
+            for level_id in desc.level_ids:
+                if not (view.path / level_id / 'map.png').exists():
+                    continue
+                r = analyse(name, level_id, desc.get_level(level_id), view, args)
+                results.append(r)
+                if args.apply and r['blockers']:
+                    wy = view.path / level_id / 'world.yaml'
+                    if args.backup:
+                        dest = Path(args.backup) / name / level_id
+                        dest.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(wy, dest / 'world.yaml')
+                    r['removed_from_disk'] = strip_entities(wy, {b['entity'] for b in r['blockers']})
+        except Exception as exc:
+            failed.append({'world': name, 'error': f'{type(exc).__name__}: {exc}'})
+
+    report = {'params': vars(args), 'results': results, 'failed': failed}
+    if args.json:
+        Path(args.json).write_text(json.dumps(report, indent=2))
+    else:
+        json.dump(report, sys.stdout, indent=2)
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

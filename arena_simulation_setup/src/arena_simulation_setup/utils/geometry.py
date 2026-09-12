@@ -294,7 +294,7 @@ class Pose(Parseable, Idempotent):
     def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, object]) -> Self:
         """
         parse value into Pose
-        formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,yaw]}, zone ref name
+        formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,theta|yaw]}, zone ref name
         """
         if isinstance(value, str):
             return cls(position=resolve_zone_point(value), orientation=Orientation.identity())
@@ -303,11 +303,13 @@ class Pose(Parseable, Idempotent):
             return cls.from_msg(value)
 
         if isinstance(value, Mapping) and not {"position", "orientation"} & set(value):
-            if not {"x", "y"} <= set(value) or not set(value) <= {"x", "y", "z", "yaw"}:
-                raise ValueError(f"Pose mapping must have keys x, y[, z][, yaw], got {value}")
+            # `theta` is accepted as an alias for `yaw`; authored scenario YAML uses both.
+            if not {"x", "y"} <= set(value) or not set(value) <= {"x", "y", "z", "theta", "yaw"}:
+                raise ValueError(f"Pose mapping must have keys x, y[, z][, theta|yaw], got {value}")
+            yaw = value.get("theta", value.get("yaw"))
             return cls(
                 position=Position(x=value["x"], y=value["y"], z=value.get("z", 0.0)),
-                orientation=Orientation.from_yaw(value["yaw"]) if "yaw" in value else Orientation.identity(),
+                orientation=Orientation.identity() if yaw is None else Orientation.from_yaw(yaw),
             )
 
         # direct sequence

@@ -48,34 +48,36 @@ class WorldGeneratorHallway(WorldGeneratorImpl):
         logger.info(self.config)
 
     def compute(self) -> LevelDescription:
+        # The hallway is shared by both sides and emitted once here, not per side: two coincident
+        # slabs and walls interpenetrate in physics.
+        hallway = self._hallway()
         top_rooms = self._impl("top", self.config.rooms_per_side)
         bottom_rooms = self._impl("bottom", self.config.rooms_per_side)
 
-        return LevelDescription(zones=[*top_rooms, *bottom_rooms])
+        return LevelDescription(zones=[hallway, *top_rooms, *bottom_rooms])
+
+    def _hallway(self) -> LevelDescription.Zone:
+        return LevelDescription.Zone(
+            name="hallway",
+            corners=[Position(x=0, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_top), Position(x=0, y=self.config.hallway_top)],
+            walls=[
+                Wall(
+                    start=Position(x=self.config.wall_gap / 2, y=self.config.hallway_top),
+                    end=Position(x=self.config.wall_gap / 2, y=self.config.hallway_bottom),
+                ),
+                Wall(
+                    start=Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_bottom),
+                    end=Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_top),
+                ),
+            ],
+            description="hallway",
+        )
 
     def _impl(self, side: str, num_rooms: int) -> Iterable[LevelDescription.Zone]:
         rooms: list[LevelDescription.Zone] = []
 
         widths: list[float] = []
         heights: list[float] = []
-
-        rooms.append(
-            LevelDescription.Zone(
-                name=f"{side}_room_{len(rooms)}",
-                corners=[Position(x=0, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_top), Position(x=0, y=self.config.hallway_top)],
-                walls=[
-                    Wall(
-                        start=Position(x=self.config.wall_gap / 2, y=self.config.hallway_top),
-                        end=Position(x=self.config.wall_gap / 2, y=self.config.hallway_bottom),
-                    ),
-                    Wall(
-                        start=Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_bottom),
-                        end=Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_top),
-                    ),
-                ],
-                description="hallway",
-            )
-        )
 
         for i in range(num_rooms):
             if i == 0 or i == num_rooms - 1:

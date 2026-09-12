@@ -4,4 +4,5 @@ addopts = "-ra --strict-markers"
 markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",
+    "sim: boots the full simulation stack in the container (ARENA_SIM_TESTS=1, minutes per test)",
 ]

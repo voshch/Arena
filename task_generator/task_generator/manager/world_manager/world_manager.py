@@ -87,6 +87,98 @@ def _sample_grid_positions(
     return _sample_from_candidates(available, n, safe_dist_cells, rng, max_depth=max_depth)
 
 
+#: Fallback half-extent when an entity's footprint cannot be determined at all, metres.
+#: Reached only when the asset has no annotation and none is inlined on the entity.
+_DEFAULT_ENTITY_RADIUS = 0.35
+
+#: Fixtures whose underside clears this height (lamps, wall signs, mounted screens) do not
+#: obstruct the floor. Mirrors `_PASSAGE_CLEARANCE` in World.py, which the map rasterizer
+#: already applies - the occupancy grid should agree with the rendered map.
+_PASSAGE_CLEARANCE = 2.0
+
+#: model name -> half-diagonal, or None for "does not touch the floor"; cached because a
+#: world repeats few models.
+_ENTITY_RADIUS_CACHE: dict[str, float | None] = {}
+
+
+def _bbox_radius(bbox: object, entity_z: float, scale: object = None) -> float | None:
+    """Half-diagonal of a 3D bounding box's floor footprint, or ``None`` to skip it.
+
+    The half-diagonal circumscribes the box, so the value is rotation-invariant - the
+    entity's yaw never has to be applied, and it cannot under-block whichever way the object
+    is turned. Under-blocking is the failure mode worth avoiding: an object the grid cannot
+    see is one the sampler will happily place a robot inside.
+    """
+    try:
+        (x_min, x_max), (y_min, y_max), *z_pair = bbox  # type: ignore[misc]
+    except (ValueError, TypeError):
+        return _DEFAULT_ENTITY_RADIUS
+
+    if z_pair:
+        try:
+            z_min = float(z_pair[0][0])
+        except (ValueError, TypeError, IndexError):
+            z_min = 0.0
+        if entity_z + z_min > _PASSAGE_CLEARANCE:
+            return None
+
+    size_x = float(x_max) - float(x_min)
+    size_y = float(y_max) - float(y_min)
+    if scale is not None:
+        size_x *= float(getattr(scale, 'x', 1.0))
+        size_y *= float(getattr(scale, 'y', 1.0))
+    return 0.5 * math.hypot(size_x, size_y)
+
+
+def _entity_radius(entity: object) -> float | None:
+    """Half-diagonal of a static entity's real footprint, or ``None`` to skip it.
+
+    Read from the asset's ``annotation.yaml`` (the same ``bounding_box`` the object viewer
+    exposes), because a world usually writes only ``name``, ``pose`` and ``model``.
+    """
+    inline = None
+    try:
+        inline = entity.asdict(expand_extra=True).get('bbox')  # type: ignore[attr-defined]
+    except Exception:
+        inline = None
+
+    entity_z = float(getattr(getattr(entity, 'pose', None), 'position', None).z) if getattr(entity, 'pose', None) else 0.0
+    scale = getattr(entity, 'scale', None)
+
+    if inline:
+        return _bbox_radius(inline, entity_z, scale)
+
+    model = getattr(entity, 'model', None)
+    key = str(getattr(model, 'name', model))
+    if key in _ENTITY_RADIUS_CACHE:
+        cached = _ENTITY_RADIUS_CACHE[key]
+        # The cache holds the unscaled, ground-level answer; re-apply this entity's own
+        # scale and height, which differ per instance.
+        if cached is None:
+            return None
+        if scale is None:
+            return cached
+        return cached * max(float(getattr(scale, 'x', 1.0)), float(getattr(scale, 'y', 1.0)))
+
+    radius: float | None = _DEFAULT_ENTITY_RADIUS
+    try:
+        bbox = model.resolve_sync().bbox  # type: ignore[union-attr]
+        if bbox is not None:
+            size, center = bbox
+            half_x, half_y, half_z = size[0] / 2, size[1] / 2, size[2] / 2
+            as_pairs = (
+                (center[0] - half_x, center[0] + half_x),
+                (center[1] - half_y, center[1] + half_y),
+                (center[2] - half_z, center[2] + half_z),
+            )
+            radius = _bbox_radius(as_pairs, entity_z, scale)
+    except Exception:
+        radius = _DEFAULT_ENTITY_RADIUS
+
+    _ENTITY_RADIUS_CACHE[key] = radius if scale is None else None if radius is None else radius
+    return radius
+
+
 class WorldManager(NodeInterface):
     """Used to get new goal, robot and obstacle positions from the static map."""
 
