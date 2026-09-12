@@ -71,8 +71,9 @@ RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # install lightsfm
-ADD https://github.com/robotics-upo/lightsfm.git /lightsfm
-RUN cd /lightsfm && make && make install
+RUN git clone --depth 1 https://github.com/robotics-upo/lightsfm.git /lightsfm \
+    && make -C /lightsfm && make -C /lightsfm install \
+    && rm -rf /lightsfm
 
 
 
