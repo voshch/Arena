@@ -219,8 +219,14 @@ do_run(){
     { arena_docker ps -aq --filter "label=com.docker.compose.project=$ARENA_PROJECT_NAME" --filter status=dead 2>/dev/null \
         | xargs -r ${arena_compose_sudo} docker rm -f > /dev/null; } || true
 
+    local nobuild=""
+    if arena_podman; then
+        nobuild=--no-build
+        arena_docker image inspect "$ARENA_IMAGE" >/dev/null 2>&1 \
+            || arena_compose_build "$arena_service" || return 1
+    fi
     arena_docker_compose \
-        up -d --remove-orphans --timeout 0 \
+        up -d --remove-orphans --timeout 0 $nobuild \
         "$arena_service"
 
     local ID

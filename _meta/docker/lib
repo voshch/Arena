@@ -67,6 +67,45 @@ arena_docker_compose(){
         --project-name "$ARENA_PROJECT_NAME" \
         "$@"
 }
+# compose 5 builds only via buildx, which podman lacks: build from the resolved config with the engine's plain build path
+arena_compose_build(){
+    if ! arena_podman; then
+        arena_docker_compose build "$@"
+        return
+    fi
+    local py lines line
+    py=$(cat <<'EOF'
+import json, os, shlex, sys
+cfg = json.load(sys.stdin)
+for name in sys.argv[1:]:
+    b = cfg["services"][name].get("build")
+    if not b:
+        continue
+    if b.get("additional_contexts") or b.get("secrets"):
+        sys.exit(f"arena: build of '{name}' needs buildkit, unsupported under podman")
+    # compose resolves unqualified image names to docker.io/library
+    image = cfg["services"][name]["image"]
+    first = image.split("/", 1)[0]
+    if "/" not in image:
+        image = "docker.io/library/" + image
+    elif "." not in first and ":" not in first and first != "localhost":
+        image = "docker.io/" + image
+    argv = ["-t", image, "-f", os.path.join(b["context"], b.get("dockerfile", "Dockerfile"))]
+    for k, v in (b.get("args") or {}).items():
+        if v is not None:
+            argv += ["--build-arg", f"{k}={v}"]
+    if b.get("target"):
+        argv += ["--target", b["target"]]
+    print(shlex.join(argv + [b["context"]]))
+EOF
+)
+    lines=$(arena_docker_compose config --format json | python3 -c "$py" "$@") || return 1
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        eval "set -- $line"
+        DOCKER_BUILDKIT=0 arena_docker build "$@" || return 1
+    done <<< "$lines"
+}
 arena_containers(){
     local status="--filter=status=running"
     if [ "$1" = -a ]; then
@@ -113,7 +152,7 @@ arena_container_wait(){
 arena_container_rm(){
     arena_containers -a "$1" | xargs -r ${arena_compose_sudo} docker rm -f
 }
-export -f _arena_compose_file arena_docker_compose arena_gpu arena_podman arena_docker arena_containers arena_container_state arena_container_health arena_container_wait arena_container_rm 2>/dev/null || true
+export -f _arena_compose_file arena_docker_compose arena_compose_build arena_gpu arena_podman arena_docker arena_containers arena_container_state arena_container_health arena_container_wait arena_container_rm 2>/dev/null || true
 
 arena_podman_env(){
     arena_podman || return 0

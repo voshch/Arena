@@ -116,7 +116,7 @@ def _update_container() -> int:
     rc = subprocess.run(["git", "submodule", "update", "--init", "--rebase", "arena_isaac"], cwd=common._env("ARENA_DIR"), check=False).returncode
     if rc:
         return rc
-    rc = features.compose(["build", "isaac"])
+    rc = features.build(["isaac"])
     if rc:
         return rc
     return features.compose(["up", "-d", "--remove-orphans", "--no-start", "isaac"])

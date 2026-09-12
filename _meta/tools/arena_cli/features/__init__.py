@@ -43,6 +43,11 @@ def compose(args: list[str], env: dict[str, str] | None = None) -> int:
     return subprocess.run(["bash", "-c", 'arena_docker_compose "$@"', "arena_docker_compose", *args], env=env, check=False).returncode
 
 
+def build(services: list[str]) -> int:
+    """Build compose services, bypassing compose under podman."""
+    return _lib("arena_compose_build", *services).returncode
+
+
 def _lib(fn: str, *args: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
     """Run a bash function exported by _meta/docker/lib."""
     return subprocess.run(["bash", "-c", f'{fn} "$@"', fn, *args], capture_output=capture, text=True, check=False)

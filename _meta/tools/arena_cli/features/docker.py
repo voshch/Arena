@@ -16,7 +16,7 @@ def build(argv: list[str]) -> None:
     """Build the arena container image."""
     if argv:
         raise CLIError("unexpected arguments")
-    sys.exit(features.compose(["build", "arena"]))
+    sys.exit(features.build(["arena"]))
 
 
 def commit(argv: list[str]) -> None:
