@@ -173,6 +173,7 @@ class IsaacHost(SimLifecycle):
             StepSimulation,
             "/isaac/StepSimulationN",
         )
+        self._clock_skew_logged = False
 
     async def ensure_ready(self) -> None:
         await asyncio.gather(
@@ -198,13 +199,18 @@ class IsaacHost(SimLifecycle):
 
     async def step_seconds(self, seconds: float) -> float:
         n = max(1, round(seconds * _ISAAC_PHYSICS_HZ))
+        start = self._node.sim_time
         res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
         if not res.success:
             raise RuntimeError(res.error_msg)
-        target = Time.from_float(res.target_sim_time)
+        reported = res.target_sim_time - n / _ISAAC_PHYSICS_HZ
+        if not self._clock_skew_logged and abs(reported - start.to_seconds()) > 1.0 / _ISAAC_PHYSICS_HZ:
+            self._clock_skew_logged = True
+            self._logger.warning(f"isaac sim time {reported:.3f}s vs /clock {start.to_seconds():.3f}s, stepping on /clock")
+        target = start + Time.from_float((n - 0.5) / _ISAAC_PHYSICS_HZ)
         while not await self._node.await_sim_time(target, freeze_timeout=10.0):
-            self._node.get_logger().warning(f"waiting on isaac sim clock >= {res.target_sim_time:.3f}s")
-        return n / _ISAAC_PHYSICS_HZ
+            self._node.get_logger().warning(f"waiting on isaac sim clock >= {target.to_seconds():.3f}s (at {self._node.sim_time.to_seconds():.3f}s)")
+        return (self._node.sim_time - start).to_seconds()
 
 
 def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Material) -> isaacsim_msgs.msg.Material:
