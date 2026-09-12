@@ -240,7 +240,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     microphone_mode = LaunchArgument(
         name="microphone_mode",
         default_value="",
-        description="Robot receiver layout, stereo or four_mic; four_mic enables synchronized Jackal raw PCM. Empty = stereo, or four_mic when robot.hearing is seld.",
+        description="Robot receiver layout, stereo or four_mic; four_mic enables synchronized Jackal raw PCM. Empty = stereo, or four_mic when robot.hearing is srp or seld.",
     )
     auditory_viewport_height = LaunchArgument(
         name="auditory.viewport_height",
@@ -285,9 +285,9 @@ def generate_launch_description() -> launch.LaunchDescription:
     )
     hearing = LaunchArgument(
         name="robot.hearing",
-        choices=["none", "bus", "seld"],
+        choices=["none", "bus", "srp", "seld"],
         default_value="none",
-        description="Robot-side hearing layer (arena_auditory.hearing): belief grid, Nav2 speed-filter mask merged into the robot's nav2 params, RViz displays. Event source: the simulator bus, or the live SELDnet front-end on the four-mic array. Needs auditory:=arena.",
+        description="Robot-side hearing layer (arena_auditory.hearing): belief grid, Nav2 speed-filter mask merged into the robot's nav2 params, RViz displays. Event source: the simulator bus, the untrained onset + GCC-PHAT front-end, or the live SELDnet front-end, both on the four-mic array. Needs auditory:=arena.",
     )
     hearing_policy = LaunchArgument(
         name="robot.hearing.policy",
@@ -355,7 +355,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         auditory_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(auditory.substitution))
         hearing_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(hearing.substitution))
         hearing_policy_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(hearing_policy.substitution))
-        microphone_mode_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(microphone_mode.substitution)) or ("four_mic" if hearing_val == "seld" else "stereo")
+        microphone_mode_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(microphone_mode.substitution)) or ("four_mic" if hearing_val in ("srp", "seld") else "stereo")
         if hearing_val != "none" and auditory_val == "none":
             raise RuntimeError(f"robot.hearing:={hearing_val} needs auditory:=arena")
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")

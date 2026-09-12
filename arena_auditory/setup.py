@@ -44,6 +44,7 @@ setup(
             'hearing_belief_node = arena_auditory.hearing.belief_node:main',
             'hearing_policy = arena_auditory.hearing.policy_node:main',
             'hearing_seld_frontend = arena_auditory.hearing.seld_frontend_node:main',
+            'hearing_srp_frontend = arena_auditory.hearing.srp_frontend_node:main',
             'hearing_audio_replay = arena_auditory.hearing.audio_replay:main',
             'hearing_setup = arena_auditory.hearing.weights:main',
         ]

@@ -978,8 +978,9 @@ grid in the map frame and publishes it as an RViz `OccupancyGrid`
 grid and is the single writer of the Nav2 `SpeedFilter` mask
 (`hearing/speed_filter_mask`): a listen-then-yield policy that layers a
 corner-listen speed cap and a yield hold on top of the belief slowdown. A live
-SELDnet front-end turns the 4-mic `AudioFrame` stream into the same event
-message, so the belief node is source-agnostic.
+SELDnet front-end, or the untrained `srp` front-end (energy-onset detection
+plus array GCC-PHAT bearing), turns the 4-mic `AudioFrame` stream into the
+same event message, so the belief node is source-agnostic.
 
 ### Nodes and entry points
 
@@ -988,6 +989,7 @@ message, so the belief node is source-agnostic.
 | `hearing_belief_node` | belief grid (`hearing/belief_node.py`, estimator in `hearing/belief_grid.py`) |
 | `hearing_policy` | listen-then-yield, the single writer of the Nav2 speed-filter mask (`hearing/policy_node.py`, pure logic in `hearing/policy.py` and `hearing/corners.py`) |
 | `hearing_seld_frontend` | live SELDnet front-end: `AudioFrame` -> `HeardSoundEvent` at 10 Hz (`hearing/seld_frontend_node.py`, model in `hearing/seld.py`) |
+| `hearing_srp_frontend` | untrained front-end: energy-onset detection plus array GCC-PHAT bearing, `AudioFrame` -> `HeardSoundEvent` at 10 Hz (`hearing/srp_frontend_node.py`, onset detector in `hearing/onset.py`) |
 | `hearing_audio_replay` | publishes a 4-channel wav as `AudioFrame` blocks, for front-end tests |
 
 ### Running in an Arena env
@@ -1005,8 +1007,9 @@ displays to the RViz that `arena launch` opens:
         task.scenario:=hearing__world-acoustics_bend_narrow_O__robot-moving__pedestrians-1__ends-a-to-b \
         auditory:=arena robot.hearing:=bus
 
-`robot.hearing:=seld` runs the SELDnet front-end instead of the bus and
-implies `microphone_mode:=four_mic`. The nodes bind to the robot announced on
+`robot.hearing:=srp` runs the untrained energy-onset + GCC-PHAT front-end, and
+`robot.hearing:=seld` runs the SELDnet front-end, instead of the bus; both
+imply `microphone_mode:=four_mic`. The nodes bind to the robot announced on
 `<tg_node>/state/robots`, so `robot:=auto` works; with several robots per env
 pass `robot:=<name>` to `hearing.launch.py` directly.
 
@@ -1026,11 +1029,12 @@ Topics, all under the env namespace `/arena/env_0`:
 | out | `hearing/speed_limit` | published by Nav2's SpeedFilter, consumed by `controller_server` |
 | out | `hearing/belief_grid`, `hearing/belief_wedges` | RViz |
 
-`source:=seld` starts the front-end on `task_generator_node/jackal/audio/raw_array`
-(the renderer's `AudioFrame`, 16 kHz x 4 ch, interleaved float, which exists
-only in `microphone_mode:=four_mic`) and consumes
-`task_generator_node/jackal/heard_sound_seld` with `bearing_frame: robot` and a
-10 Hz nominal event rate. The bus is map-frame and 2 Hz (`source:=bus`, the
+`source:=srp` and `source:=seld` both start their front-end on
+`task_generator_node/jackal/audio/raw_array` (the renderer's `AudioFrame`,
+16 kHz x 4 ch, interleaved float, which exists only in
+`microphone_mode:=four_mic`) and consume `heard_sound_srp` or
+`heard_sound_seld` respectively, with `bearing_frame: robot` and a 10 Hz
+nominal event rate. The bus is map-frame and 2 Hz (`source:=bus`, the
 default).
 
 ### Consumer semantics
