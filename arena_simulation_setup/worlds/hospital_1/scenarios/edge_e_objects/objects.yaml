@@ -1,0 +1,76 @@
+# Object timeline for hospital_1/edge_e_objects. Named by that scenario's `edge_case:` block
+# (`objects: ./objects.yaml`), so it runs with the ordinary edge-case launch:
+#
+#     arena launch sim:=gazebo world:=hospital_1 robot:=jackal human:=arena \
+#           task.robots:=edge_case task.obstacles:=edge_case headless:=true \
+#           task.auto_reset:=true task.scenario.file:=edge_e_objects
+#
+# ABSOLUTE POSES, NOT ROUTE FRACTIONS, and deliberately. hospital_1 is hand-authored: the
+# doorway at (8.0, 14.1) is a specific gap with known width, and the whole point of these
+# cases is that the object lands in THAT gap rather than somewhere 60% of the way along a
+# route. The portable, route-relative equivalents are the shipped timelines
+# (`corridor_pinch`, `doorway_block_clear`, `trap_behind`), which is what the generated
+# office worlds use because they have no fixed coordinates to name.
+#
+# hospital_1 is where geometry is authored; generated worlds are where it is solved.
+#
+# TIMINGS come from the robot's arrival times in scenario.yaml: y=8.5 at 7.3 s, the junction
+# at 10.1 s, the doorway at 12.4 s.
+#
+# READ `reveal_distance_m` IN THE SCORE ROW. A mid-episode object is not in nav2's static
+# layer - it exists only in what the lidar sees - so an object that appears beyond sensor
+# range does nothing until the robot gets close, and one that appears at 0.5 m is a
+# different experiment from one that appears at 5 m. Neither is wrong; both must be known.
+
+events:
+  # --- the doorway is blocked before the robot reaches it ------------------------------
+  # A supply cart in patient_ward_door_1 at t=9.5 s, three seconds before the robot arrives
+  # at 12.4 s. Late enough that the route was planned through a clear doorway, early enough
+  # that the robot can see it before committing to the gap.
+  - action: spawn
+    entity: door_cart
+    model: Hospital/Object/SM_SupplyCart_01e
+    at: {t: 9.5}
+    place: {pose: [8.0, 14.1, 0.0]}
+    note: >-
+      Squarely in the gap. With nominal_doorway also arriving at 12.3 s, the robot has a body
+      and an object contesting a single-file doorway - the passing-clearance row of the
+      Level C table, which it cannot satisfy by taking the centreline.
+
+  # --- and then it clears ---------------------------------------------------------------
+  # THE HALF A SCENARIO CANNOT EXPRESS. Does a robot that abandoned this route ever retry it?
+  # t=40 s is well past any reasonable first attempt.
+  #
+  # Expect costmap residue: the object may linger in the obstacle layer until the clearing
+  # raycast catches up, so "still avoids a cart that is no longer there" is a real outcome
+  # here. Report it; do not tune it away.
+  - action: despawn
+    entity: door_cart
+    at: {t: 40.0}
+
+  # --- the corridor narrows once the robot is inside it ---------------------------------
+  # central_hallway is x[8,12], 4 m wide. A trolley at x=9.2 leaves roughly 1.2 m of lane on
+  # one side and 2.8 m on the other, at y=11.0 - just short of the junction the robot reaches
+  # at 10.1 s. Fires at 6.0 s, while the robot is at y~7, so the plan predates it.
+  - action: spawn
+    entity: corridor_trolley
+    model: Hospital/Object/Instrument_Table
+    at: {t: 6.0}
+    place: {pose: [9.2, 11.0, 1.5708]}
+    note: Narrows the lane rather than sealing it, so a robot that can pass has a decision to make.
+
+  # --- something closes in behind, after the robot has committed -------------------------
+  # At t=13 s the robot is through the doorway heading west. This drops a cabinet back in the
+  # corridor it came from, so a retreat is no longer clear. Tests whether backtracking is
+  # attempted at all, rather than reported as "no valid path".
+  - action: spawn
+    entity: rear_cabinet
+    model: Hospital/Object/SM_MedicalCabinet_01a
+    at: {t: 13.0}
+    place: {pose: [10.0, 12.6, 0.0]}
+
+  # Removed before the episode ends so the arm can still succeed. An arm that can only ever
+  # fail measures the timeout, not the robot.
+  - action: despawn
+    entity: rear_cabinet
+    at: {t: 55.0}

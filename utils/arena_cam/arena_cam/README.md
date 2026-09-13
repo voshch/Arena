@@ -524,7 +524,7 @@ reached that sim time. Gazebo only.
 
 ## Requirements
 
-rviz and all simulators host the `/arena/viewport/*` contract (`set_view`,
+Two backends host the `/arena/viewport/*` contract (`set_view`,
 `set_reference_frame`, `set_projection`, `capture`, plus the `cmd_view` /
 `camera_pose` topics):
 
@@ -532,11 +532,10 @@ rviz and all simulators host the `/arena/viewport/*` contract (`set_view`,
   GUI plugin, so nothing exists in headless mode (`gz sim -s`).
 - **rviz**, under each env's namespace, via the `rviz_viewport_control` view
   controller that [rviz_config.py](../../rviz_utils/rviz_utils/scripts/rviz_config.py)
-  writes into the generated config. Drives the rviz camera, so it works under
-  every simulator.
-- **Isaac**, under `/arena`, via the `isaac_utils.viewport` node the sim process
-  starts. GUI only, `--headless` starts none.
+  writes into the generated config.
 
-Only Gazebo implements `capture`, so recording and `P` need the gz sim camera.
-`Cam` waits up to 10 seconds for the services and logs an error if they are
-absent.
+Isaac hosts no part of the contract, so nothing here works under `sim:=isaac`.
+
+`capture` is Gazebo-only; the rviz side answers `capture not yet supported`, so
+recording and `P` need the sim camera. `Cam` waits up to 10 seconds for the
+services and logs an error if they are absent.

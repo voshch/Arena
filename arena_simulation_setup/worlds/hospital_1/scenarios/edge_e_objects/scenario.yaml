@@ -1,0 +1,67 @@
+# Objects that appear and disappear while the robot is driving.
+#
+# The level that perturbs the WORLD rather than the people in it. Levels A-D all tail a
+# pedestrian parameter; this tails the geometry the planner is working against, after the
+# plan exists.
+#
+# WHY THIS IS NOT A `static:` BLOCK
+# A scenario places objects at t=0, and an object present from the start is just furniture:
+# the robot plans around it and nothing is learned. Every failure mode worth measuring here
+# needs the world to change while the robot is inside it. So the objects live in
+# `objects.yaml` beside this file, named by the `edge_case:` block at the bottom, and this
+# scenario supplies only the route and the crowd they interact with.
+#
+# GEOMETRY, shared with edge_c_ego so the two are directly comparable
+# The robot runs (10.0,0.5) -> north up central_hallway -> west through patient_ward_door_1
+# (8.0,14.1) -> (4.0,17.6). At 1.1 m/s (edge_case/impl.py _ROBOT_SPEED) it is at:
+#
+#     y =  8.5  at t =  7.3 s
+#     y = 11.6  at t = 10.1 s   (mid sub_hallway junction)
+#     y = 14.1  at t = 12.4 s   (patient_ward_door_1)
+#
+# Every timing in objects.yaml is derived from those three numbers.
+#
+# WHY THERE ARE PEDESTRIANS AT ALL
+# Two of them, kept nominal. They are not the case - the objects are - but an empty corridor
+# lets the robot take the doorway centreline, and the corridor-pinch row of the Level C table
+# is only reachable when both a body and an object are competing for the same gap. Keeping
+# them nominal means any difference between this scenario and edge_c_ego is attributable to
+# the objects.
+#
+# tm_obstacles:=edge_case also selects its perturbation target from `dynamic:` only, so
+# without these the mode aborts with "base population contains no arena_humansim agents to
+# perturb" the moment anyone crosses this scenario with a knob.
+
+robots:
+  - start: [10.0, 0.5, 1.5708]
+    goal: [4.0, 17.6, 0.0]
+
+dynamic:
+  # Head-on in the corridor, arriving at the same place as the first object event. Same
+  # construction as edge_c_ego's head_on_1: closing speed 2.2 m/s over a 16.0 m gap, so they
+  # meet at t = 7.3 s, y = 8.5.
+  - name: nominal_head_on
+    model: female_adult_business_02
+    pose: [10.0, 16.5, -1.5708]
+    agent: {agent_type: adult, desired_velocity: 1.1}
+    waypoints:
+      - [10.0, 1.5]
+
+  # Through the doorway against the robot, so the gap is contested by a body as well as by
+  # the cart. Two legs inside patient_ward totalling 13.5 m -> at the door at t = 12.3 s
+  # against the robot's 12.4 s.
+  - name: nominal_doorway
+    model: male_adult_medical_01
+    pose: [2.0, 22.0, -1.5708]
+    agent: {agent_type: adult, desired_velocity: 1.1}
+    waypoints:
+      - [2.0, 14.1]
+      - [7.6, 14.1]
+
+# The case, declared where the scenario is. `tm_obstacles:=edge_case` reads this block at
+# reset and fills in every parameter still at its default; an explicitly set parameter wins.
+# `objects` resolves beside the scenario, the same convention `agent_type: ./talker.yaml`
+# uses. `inject: 0` so the two nominal pedestrians above are the whole population and any
+# difference from edge_c_ego is attributable to the objects.
+edge_case: {id: e_objects, note: 'hand-authored object events in hospital_1''s doorway
+    and corridor, at absolute poses', objects: ./objects.yaml}

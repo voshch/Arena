@@ -115,6 +115,91 @@ separately.
 
 ---
 
+### 3b. Edge-case generation (`tm_obstacles:=edge_case`)
+
+Edge-case pedestrians built against the robot's route, per
+[`documents/edge_case_changes.md`](../../../documents/edge_case_changes.md). The mode
+delegates to another obstacle mode for the base population and then, by default
+(`task.edge_case.mode:=inject`), **adds** pedestrians whose spawn geometry is solved so they
+meet the robot at a designed point and time (Level C), each carrying a tail on one parameter
+(Level A/D). `:=perturb` instead rewrites one agent already in the population, which is the
+original behaviour and applies no geometry.
+
+`arena_arena_002` is one of twelve generated office worlds that all ship the same `default`
+scenario; swap `world:=` for any of the others.
+
+```bash
+arena launch \
+    sim:=dummy \
+    world:=arena_arena_002 \
+    robot:=jackal \
+    human:=arena \
+    tm_robots:=edge_case \
+    tm_obstacles:=edge_case
+```
+
+`tm_robots:=edge_case` is the matching robot mode and is worth using here. It takes its
+route from the scenario's `robots:` block, so its goal is set during `reset()` — which is
+what lets the obstacle mode plan the route its effects are designed against. It also crosses
+the crowd several times per episode and ends the episode on completion, obstruction, or
+timeout. Its knobs live under `task.edge_case_robot.*`;
+see [that mode's README](../task_generator/task_generator/tasks/robots/edge_case/README.md).
+Under `tm_robots:=explore` the goal is still unset when the crowd is generated, and
+episodes never end.
+
+#### The case lives in the scenario
+
+A case is a scenario directory whose `scenario.yaml` carries an `edge_case:` block listing
+runtime **effects** (`intercept`, `rally`, `shuffle`/`scatter`, `track_robot`, `hold`, each
+with a `when`); everything static - the population, derived profiles, a placed formation - is
+baked into the file by the generator
+([`arena_benchmark promptgen`](../arena_benchmark/README.md#prompt-driven-generation)).
+There is no knob surface any more: to run a case, launch its scenario.
+
+```bash
+arena launch sim:=gazebo world:=hospital_1 robot:=jackal human:=arena headless:=true \
+    task.robots:=edge_case task.obstacles:=edge_case task.auto_reset:=true \
+    task.scenario.file:=normal_a__u_004
+```
+
+`task.scenario.file` is the node parameter, and also the launch spelling that reaches it: the
+declared `task.scenario` launch argument is applied in the same parameter dict that
+`configs/task_generator.yaml` overrides, so it loses to the shipped `default`.
+
+| Parameter | Meaning |
+|---|---|
+| `task.edge_case.read_scenario_block` | Off runs the base population alone - the control arm. |
+| `task.edge_case.prompt` | A natural-language situation; the scenario is generated from it at reset (`<base>__rviz_<hash>`, model answers cached) and run instead of `task.scenario.file`. This is the RViz panel's input. |
+| `task.edge_case.prompt_base` | Base scenario for the prompt; empty uses `task.scenario.file`. |
+| `task.edge_case.record_dir` | Where `cases.jsonl` / `scores.jsonl` are written; empty uses `$ARENA_DATA_DIR/edge_case`. |
+| `task.edge_case.score` / `score_rate_hz` / `score_scope` | The per-episode criticality panel. |
+| `task.edge_case.objects` | A hand-authored object timeline, overriding the block's `objects:`. |
+
+Mode reference:
+[`task_generator/tasks/obstacles/edge_case/README.md`](../task_generator/task_generator/tasks/obstacles/edge_case/README.md).
+
+**Requires `human:=arena`** — the mode drives `arena_humansim` agents and is registered by
+that adapter, exactly like `tm_obstacles:=prompt`.
+
+#### Running several cases
+
+Cases are scenario files, so a sweep is a list of scenarios cycled against one stack
+(`data/promptgen/tools/cycle_prompt.sh`: `param set task.scenario.file` + `reset_episode`,
+verified per case), or an `arena_benchmark` spec listing them. The former `sweep:=` launch knob
+and the `edge_case_sweep` runner went with the knob surface.
+
+It writes `trials.jsonl` (what ran) beside the mode's `cases.jsonl` (what was perturbed) and
+`scores.jsonl` (what the episode did); they join on `run_seed` + `episode_id`. `--report`
+joins all three into `summary.md` / `summary.csv`, and
+`ros2 run task_generator edge_case_report <run_dir>` does the same for a run recorded
+earlier.
+
+`--driver action` waits for the task mode's own episode outcome, so it needs a robot mode
+that terminates — `edge_case` or `scenario`, not `explore`, whose `done` is always false.
+The default `reset` driver works under any robot mode.
+
+---
+
 ### 4. Isaac + multi-robot via task.config
 
 Isaac must be installed and `arena feature isaac` must be set up before launch.

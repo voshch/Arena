@@ -27,11 +27,15 @@
 	update = checkout
 [submodule "arena_robots"]
 	path = arena_robots
-	url = https://github.com/arena-robots/arena_robots.git
-	branch = jazzy
+	url = https://github.com/shibuina/arena_robots.git
+	branch = feature/edge_case
 	update = checkout
 [submodule "humansim"]
 	path = humansim
-	url = https://github.com/voshch/humansim.git
-	branch = jazzy
+	url = https://github.com/shibuina/humansim.git
+	branch = feature/edge_case
 	update = checkout
+[submodule "arena_benchmark"]
+	path = arena_benchmark
+	url = https://github.com/shibuina/arena_benchmark.git
+	branch = main

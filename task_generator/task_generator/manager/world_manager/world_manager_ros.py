@@ -1,5 +1,6 @@
 import asyncio
 import io
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -27,7 +28,7 @@ from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
 from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree import DynamicPaths
-from arena_simulation_setup.tree.World.World import _render_door_polygons, _render_elevator_polygons
+from arena_simulation_setup.tree.World.World import _render_elevator_polygons
 
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.realizer import Realizer
@@ -41,7 +42,32 @@ if TYPE_CHECKING:
     from task_generator.node import TaskGenerator
 
 _DEFAULT_RESOLUTION = 0.05
-_DOOR_MASK_BUFFER_M = 0.2
+#: The door mask is a rectangle on the door line. ACROSS swallows the inflation halo of the
+#: closed slab's laser marks (inflation radius plus one cell); ALONG is negative, so the mask
+#: stops short of each jamb by the robot's inscribed radius plus one cell and the global path
+#: stays centred in the opening.
+_DOOR_MASK_ACROSS_M = 0.35
+_DOOR_MASK_ALONG_M = -0.25
+#: Elevators keep the isotropic buffer they were tuned with.
+_ELEVATOR_MASK_BUFFER_M = 0.2
+
+
+def _door_mask_polygon(door: 'World.Door') -> shapely.Polygon:
+    """The mask rectangle for one door: thick across the opening, flush with the jambs."""
+    sx, sy = door.start.x, door.start.y
+    ex, ey = door.end.x, door.end.y
+    length = math.hypot(ex - sx, ey - sy)
+    if length <= 0.0:
+        return shapely.Point(sx, sy).buffer(_DOOR_MASK_ACROSS_M)
+    ux, uy = (ex - sx) / length, (ey - sy) / length
+    nx, ny = -uy, ux
+    a, c = _DOOR_MASK_ALONG_M, _DOOR_MASK_ACROSS_M
+    return shapely.Polygon([
+        (sx - ux * a + nx * c, sy - uy * a + ny * c),
+        (ex + ux * a + nx * c, ey + uy * a + ny * c),
+        (ex + ux * a - nx * c, ey + uy * a - ny * c),
+        (sx - ux * a - nx * c, sy - uy * a - ny * c),
+    ])
 
 
 class MapServerHandler(NodeInterface):
@@ -316,13 +342,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         origin_world = list(map_yaml.get('origin', [0, 0, 0]))
 
         data = np.full(width * height, -1, dtype=np.int8)
-        polys = [p for d in description.all_doors for p in _render_door_polygons(d)] + [p for e in description.all_elevators for p in _render_elevator_polygons(e)]
+        polys = [_door_mask_polygon(d) for d in description.all_doors] + [
+            p.buffer(_ELEVATOR_MASK_BUFFER_M) for e in description.all_elevators for p in _render_elevator_polygons(e)
+        ]
         for poly in polys:
             if poly.is_empty:
                 continue
-            # Buffer carves into adjacent walls so global costmap inflation
-            # doesn't fully close the opening.
-            poly = poly.buffer(_DOOR_MASK_BUFFER_M)
             min_x, min_y, max_x, max_y = poly.bounds
             col_min = max(0, int((min_x - origin_world[0]) / resolution))
             col_max = min(width, int((max_x - origin_world[0]) / resolution) + 1)

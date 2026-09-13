@@ -36,9 +36,8 @@ def _stub(pose, tol_dist, tol_ang):
 @given(_floats, _floats, _angles, _pos_floats, _pos_floats)
 @settings(max_examples=100)
 def test_is_satisfied_goal_equals_pose(gx, gy, gyaw, tol_dist, tol_ang):
+    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
     from task_generator.tasks.robots.request import GoToPhase
-    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
-
     goal = Pose(Position(gx, gy), Orientation.from_yaw(gyaw))
     phase = GoToPhase(pose=goal, tolerance_radius=tol_dist, tolerance_angle=tol_ang)
     assert phase.is_satisfied(_stub(goal, tol_dist, tol_ang)) is True
@@ -55,9 +54,8 @@ def test_dyaw_normalization_within_minus_pi_to_pi(yaw):
 @given(_floats, _floats, _angles, _pos_floats)
 @settings(max_examples=100)
 def test_none_pose_always_false(gx, gy, gyaw, tol_dist):
+    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
     from task_generator.tasks.robots.request import GoToPhase
-    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
-
     goal = Pose(Position(gx, gy), Orientation.from_yaw(gyaw))
     phase = GoToPhase(pose=goal, tolerance_radius=tol_dist, tolerance_angle=0.0)
     assert phase.is_satisfied(_stub(None, tol_dist, 0.0)) is False
@@ -67,9 +65,8 @@ def test_none_pose_always_false(gx, gy, gyaw, tol_dist):
 @settings(max_examples=100)
 def test_large_distance_always_fails(gx, gy, gyaw, tol_dist):
     assume(tol_dist < 100.0)
+    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
     from task_generator.tasks.robots.request import GoToPhase
-    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
-
     goal = Pose(Position(gx, gy), Orientation.from_yaw(gyaw))
     far = Pose(Position(gx + 1000.0, gy + 1000.0), Orientation.from_yaw(gyaw))
     phase = GoToPhase(pose=goal, tolerance_radius=tol_dist, tolerance_angle=0.0)

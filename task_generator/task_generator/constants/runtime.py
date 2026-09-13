@@ -59,7 +59,14 @@ def Configuration(server: ROSParamServer) -> type:
 
             SAFE_DIST = server.ROSParam[float](
                 'obstacle_safe_dist',
-                0.35,
+                0.15,
+            )
+
+            #: Nominal body radius of a spawned pedestrian, metres. SAFE_DIST clears a pedestrian's
+            #: centre; this clears its body. Matches the `agent_radius` the builtin agent types declare.
+            PEDESTRIAN_BODY_RADIUS = server.ROSParam[float](
+                'pedestrian_body_radius',
+                0.25,
             )
 
         class Robot:

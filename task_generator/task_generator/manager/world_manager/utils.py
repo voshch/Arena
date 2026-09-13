@@ -130,6 +130,18 @@ class WorldLayers:
         return self._combined.grid
 
     @property
+    def physical(self) -> np.ndarray:
+        """Walls and intrinsic obstacles only, without the task-obstacle exclusion layer.
+
+        `grid` also folds in `_forbidden`, which is where task modes mark space that new
+        obstacles must not spawn in - the robot's own start and goal, for instance. That is a
+        placement constraint, not geometry: the robot drives through it every episode. Anything
+        reasoning about where the robot can *go* must use this instead, or the robot appears
+        sealed inside its own exclusion zone.
+        """
+        return np.minimum(self._walls.grid, self._obstacle.grid)
+
+    @property
     def shape(self) -> tuple[int, ...]:
         return self._walls.grid.shape
 
