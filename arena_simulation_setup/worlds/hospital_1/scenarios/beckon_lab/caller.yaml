@@ -1,0 +1,25 @@
+name: caller
+mode: behavior_tree
+extends: adult
+initial_sequence: call_seq
+sequences:
+  call_seq:
+    steps:
+      wait:
+        attention:
+          gaze:
+          - robot:robot_0
+          - robot
+        duration:
+          mean: 5.0
+          std: 0.0
+      call:
+        attention:
+          clip: beckon
+          gaze:
+          - robot:robot_0
+          - robot
+        duration:
+          mean: 1000.0
+          std: 0.0
+    then: call_seq

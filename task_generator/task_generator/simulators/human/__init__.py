@@ -891,6 +891,11 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if mode != "enabled":
             raise NotImplementedError(f"{type(self).__name__} has no contact interactions, contact_mode={mode!r} would be a silent no-op")
 
+    async def configure_gestures(self, mode: str) -> None:
+        """Agents publish gestures (`enabled`) or behave the same and publish none (`disabled`)."""
+        if mode != "enabled":
+            raise NotImplementedError(f"{type(self).__name__} publishes no gestures, gesture_mode={mode!r} would be a silent no-op")
+
     @abc.abstractmethod
     async def _spawn_obstacles_impl(
         self,

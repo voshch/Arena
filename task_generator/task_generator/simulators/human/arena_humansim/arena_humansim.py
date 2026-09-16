@@ -215,6 +215,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._next_id: int = 1
         self._set_params_client: ClientWrapper | None = None
         self._contact_config: tuple[str, float] = ("enabled", 1.2)  # humansim launch defaults
+        self._gesture_config: str = "enabled"
 
         self._agents_lock: asyncio.Lock = asyncio.Lock()
         self._prev_agent_states: AgentStatesMsg | None = None
@@ -416,6 +417,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             raise RuntimeError(f"arena_humansim rejected contact_mode={mode!r} standing_distance={standing_distance}: {reasons}")
         self._contact_config = (mode, standing_distance)
         self._logger.info(f"contact_mode={mode} standing_distance={standing_distance}")
+
+    async def configure_gestures(self, mode: str) -> None:
+        if self._gesture_config == mode:
+            return
+        if self._set_params_client is None:
+            self._set_params_client = self.node.create_client_wrapper(
+                SetParameters,
+                self.node.service_namespace("arena_humansim", "set_parameters"),
+            )
+        request = SetParameters.Request(parameters=[RclParameter("gesture_mode", value=mode).to_parameter_msg()])
+        response = await self._set_params_client.call_timeout(request)
+        if response is None or not all(r.successful for r in response.results):
+            reasons = "; ".join(r.reason for r in response.results if not r.successful) if response is not None else "timeout"
+            raise RuntimeError(f"arena_humansim rejected gesture_mode={mode!r}: {reasons}")
+        self._gesture_config = mode
+        self._logger.info(f"gesture_mode={mode}")
 
     async def setup(self):
         await asyncio.gather(

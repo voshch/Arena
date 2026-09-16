@@ -1,0 +1,1564 @@
+zones:
+- name: central_hallway
+  description: Main Central Hallway
+  material:
+  - Concrete_Smooth
+  - {}
+  corners:
+  - x: 8.0
+    y: 0.0
+    z: 0.0
+  - x: 12.0
+    y: 0.0
+    z: 0.0
+  - x: 12.0
+    y: 34.2
+    z: 0.0
+  - x: 8.0
+    y: 34.2
+    z: 0.0
+  walls:
+  - start:
+      x: 8.0
+      y: 0.0
+      z: 0.0
+    end:
+      x: 9.25
+      y: 0.0
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 10.75
+      y: 0.0
+      z: 0.0
+    end:
+      x: 12.0
+      y: 0.0
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 34.2
+      z: 0.0
+    end:
+      x: 12.0
+      y: 34.2
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: main_hallway_entrance
+    start:
+      x: 9.25
+      y: 0.0
+      z: 0.0
+    end:
+      x: 10.75
+      y: 0.0
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  schedules:
+  - name: fire_alarm
+    semantics:
+    - preset: schedule
+      params:
+        windows: []
+        regime: alarm
+  sounds:
+  - name: hall_siren
+    asset_id: alarm_loop
+    position:
+    - 10.0
+    - 17.0
+    semantics:
+    - preset: sound
+      params:
+        sound_on: alarm
+        volume_db: 88.0
+  semantics:
+  - state: max_speed
+    value: 1.0
+  entities:
+    static: []
+    dynamic: []
+- name: reception
+  description: Reception and Check-in
+  material:
+  - Oak_Planks
+  - {}
+  corners:
+  - x: 0.0
+    y: 0.0
+    z: 0.0
+  - x: 8.0
+    y: 0.0
+    z: 0.0
+  - x: 8.0
+    y: 5.0
+    z: 0.0
+  - x: 0.0
+    y: 5.0
+    z: 0.0
+  walls:
+  - start:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    end:
+      x: 0.0
+      y: 5.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 0.0
+      y: 5.0
+      z: 0.0
+    end:
+      x: 8.0
+      y: 5.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 5.0
+      z: 0.0
+    end:
+      x: 8.0
+      y: 3.25
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 1.75
+      z: 0.0
+    end:
+      x: 8.0
+      y: 0.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 0.0
+      z: 0.0
+    end:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: reception_door
+    start:
+      x: 8.0
+      y: 1.75
+      z: 0.0
+    end:
+      x: 8.0
+      y: 3.25
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - state: max_speed
+    value: 1.0
+  entities:
+    static: []
+    dynamic: []
+- name: exam_room_1
+  description: Examination Room 1
+  material:
+  - Ceramic_Tile_6
+  - {}
+  corners:
+  - x: 0.0
+    y: 5.05
+    z: 0.0
+  - x: 8.0
+    y: 5.05
+    z: 0.0
+  - x: 8.0
+    y: 10.05
+    z: 0.0
+  - x: 0.0
+    y: 10.05
+    z: 0.0
+  walls:
+  - start:
+      x: 0.0
+      y: 5.05
+      z: 0.0
+    end:
+      x: 0.0
+      y: 10.05
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 0.0
+      y: 10.05
+      z: 0.0
+    end:
+      x: 8.0
+      y: 10.05
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 10.05
+      z: 0.0
+    end:
+      x: 8.0
+      y: 8.3
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 6.8
+      z: 0.0
+    end:
+      x: 8.0
+      y: 5.05
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 5.05
+      z: 0.0
+    end:
+      x: 0.0
+      y: 5.05
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: exam_room_1_door
+    start:
+      x: 8.0
+      y: 6.8
+      z: 0.0
+    end:
+      x: 8.0
+      y: 8.3
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: patient_ward
+  description: Patient Ward
+  material:
+  - Oak_Planks
+  - {}
+  corners:
+  - x: 0.0
+    y: 10.1
+    z: 0.0
+  - x: 8.0
+    y: 10.1
+    z: 0.0
+  - x: 8.0
+    y: 25.1
+    z: 0.0
+  - x: 0.0
+    y: 25.1
+    z: 0.0
+  walls:
+  - start:
+      x: 0.0
+      y: 10.1
+      z: 0.0
+    end:
+      x: 0.0
+      y: 25.1
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 0.0
+      y: 25.1
+      z: 0.0
+    end:
+      x: 8.0
+      y: 25.1
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 25.1
+      z: 0.0
+    end:
+      x: 8.0
+      y: 21.85
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 20.35
+      z: 0.0
+    end:
+      x: 8.0
+      y: 14.85
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 13.35
+      z: 0.0
+    end:
+      x: 8.0
+      y: 10.1
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 10.1
+      z: 0.0
+    end:
+      x: 0.0
+      y: 10.1
+      z: 0.0
+    kind: patient_room_walls
+  doors:
+  - name: patient_ward_door_1
+    start:
+      x: 8.0
+      y: 13.35
+      z: 0.0
+    end:
+      x: 8.0
+      y: 14.85
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: patient_ward_door_2
+    start:
+      x: 8.0
+      y: 20.35
+      z: 0.0
+    end:
+      x: 8.0
+      y: 21.85
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: pharmacy
+  description: Pharmacy
+  material:
+  - Ceramic_Tile_6
+  - {}
+  corners:
+  - x: 0.0
+    y: 25.15
+    z: 0.0
+  - x: 8.0
+    y: 25.15
+    z: 0.0
+  - x: 8.0
+    y: 30.15
+    z: 0.0
+  - x: 0.0
+    y: 30.15
+    z: 0.0
+  walls:
+  - start:
+      x: 0.0
+      y: 25.15
+      z: 0.0
+    end:
+      x: 0.0
+      y: 30.15
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 0.0
+      y: 30.15
+      z: 0.0
+    end:
+      x: 8.0
+      y: 30.15
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 30.15
+      z: 0.0
+    end:
+      x: 8.0
+      y: 28.4
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 26.9
+      z: 0.0
+    end:
+      x: 8.0
+      y: 25.15
+      z: 0.0
+    kind: patient_room_walls
+  - start:
+      x: 8.0
+      y: 25.15
+      z: 0.0
+    end:
+      x: 0.0
+      y: 25.15
+      z: 0.0
+    kind: patient_room_walls
+  doors:
+  - name: pharmacy_door
+    start:
+      x: 8.0
+      y: 26.9
+      z: 0.0
+    end:
+      x: 8.0
+      y: 28.4
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: nurse_resting_room
+  description: Nurse Resting Room
+  material:
+  - Walnut_Planks
+  - {}
+  corners:
+  - x: 12.0
+    y: 0.0
+    z: 0.0
+  - x: 18.5
+    y: 0.0
+    z: 0.0
+  - x: 18.5
+    y: 10.0
+    z: 0.0
+  - x: 12.0
+    y: 10.0
+    z: 0.0
+  walls:
+  - start:
+      x: 12.0
+      y: 0.0
+      z: 0.0
+    end:
+      x: 12.0
+      y: 10.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 10.0
+      z: 0.0
+    end:
+      x: 14.25
+      y: 10.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 15.75
+      y: 10.0
+      z: 0.0
+    end:
+      x: 18.5
+      y: 10.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.5
+      y: 10.0
+      z: 0.0
+    end:
+      x: 18.5
+      y: 0.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.5
+      y: 0.0
+      z: 0.0
+    end:
+      x: 12.0
+      y: 0.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: nurse_resting_door
+    start:
+      x: 14.25
+      y: 10.0
+      z: 0.0
+    end:
+      x: 15.75
+      y: 10.0
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: waiting_area
+  description: Main Waiting Area
+  material:
+  - Oak_Planks
+  - {}
+  corners:
+  - x: 18.5
+    y: 0.0
+    z: 0.0
+  - x: 25.0
+    y: 0.0
+    z: 0.0
+  - x: 25.0
+    y: 10.0
+    z: 0.0
+  - x: 18.5
+    y: 10.0
+    z: 0.0
+  walls:
+  - start:
+      x: 18.5
+      y: 0.0
+      z: 0.0
+    end:
+      x: 18.5
+      y: 10.0
+      z: 0.0
+    material:
+      name: Marble
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.5
+      y: 10.0
+      z: 0.0
+    end:
+      x: 21.25
+      y: 10.0
+      z: 0.0
+    material:
+      name: Marble
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 22.75
+      y: 10.0
+      z: 0.0
+    end:
+      x: 25.0
+      y: 10.0
+      z: 0.0
+    material:
+      name: Marble
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 25.0
+      y: 10.0
+      z: 0.0
+    end:
+      x: 25.0
+      y: 0.0
+      z: 0.0
+    material:
+      name: Marble
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 25.0
+      y: 0.0
+      z: 0.0
+    end:
+      x: 18.5
+      y: 0.0
+      z: 0.0
+    material:
+      name: Marble
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: waiting_to_sub_2
+    start:
+      x: 21.25
+      y: 10.0
+      z: 0.0
+    end:
+      x: 22.75
+      y: 10.0
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: sub_hallway
+  description: Sub-Hallway
+  material:
+  - Concrete_Smooth
+  - {}
+  corners:
+  - x: 12.0
+    y: 10.05
+    z: 0.0
+  - x: 25.0
+    y: 10.05
+    z: 0.0
+  - x: 25.0
+    y: 13.05
+    z: 0.0
+  - x: 12.0
+    y: 13.05
+    z: 0.0
+  walls:
+  - start:
+      x: 12.0
+      y: 13.05
+      z: 0.0
+    end:
+      x: 19.25
+      y: 13.05
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.75
+      y: 13.05
+      z: 0.0
+    end:
+      x: 25.0
+      y: 13.05
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 25.0
+      y: 13.05
+      z: 0.0
+    end:
+      x: 25.0
+      y: 10.05
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 25.0
+      y: 10.05
+      z: 0.0
+    end:
+      x: 22.75
+      y: 10.05
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 21.25
+      y: 10.05
+      z: 0.0
+    end:
+      x: 15.75
+      y: 10.05
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 14.25
+      y: 10.05
+      z: 0.0
+    end:
+      x: 12.0
+      y: 10.05
+      z: 0.0
+    material:
+      name: Plaster_Wall
+      domain: Common
+      _modifiers: null
+  doors: []
+  elevators: []
+  semantics:
+  - state: max_speed
+    value: 0.8
+  entities:
+    static: []
+    dynamic: []
+- name: operating_room
+  description: Operating Room
+  material:
+  - Ceramic_Tile_6
+  - {}
+  corners:
+  - x: 12.0
+    y: 13.1
+    z: 0.0
+  - x: 18.0
+    y: 13.1
+    z: 0.0
+  - x: 18.0
+    y: 21.6
+    z: 0.0
+  - x: 12.0
+    y: 21.6
+    z: 0.0
+  walls:
+  - start:
+      x: 12.0
+      y: 13.1
+      z: 0.0
+    end:
+      x: 12.0
+      y: 16.6
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 18.1
+      z: 0.0
+    end:
+      x: 12.0
+      y: 21.6
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 21.6
+      z: 0.0
+    end:
+      x: 18.0
+      y: 21.6
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.0
+      y: 21.6
+      z: 0.0
+    end:
+      x: 18.0
+      y: 13.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.0
+      y: 13.1
+      z: 0.0
+    end:
+      x: 12.0
+      y: 13.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: or_door
+    start:
+      x: 12.0
+      y: 16.6
+      z: 0.0
+    end:
+      x: 12.0
+      y: 18.1
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: laboratory
+  description: Laboratory
+  material:
+  - Ceramic_Tile_6
+  - {}
+  corners:
+  - x: 12.0
+    y: 21.65
+    z: 0.0
+  - x: 18.0
+    y: 21.65
+    z: 0.0
+  - x: 18.0
+    y: 30.15
+    z: 0.0
+  - x: 12.0
+    y: 30.15
+    z: 0.0
+  walls:
+  - start:
+      x: 12.0
+      y: 21.65
+      z: 0.0
+    end:
+      x: 12.0
+      y: 25.15
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 26.65
+      z: 0.0
+    end:
+      x: 12.0
+      y: 30.15
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 30.15
+      z: 0.0
+    end:
+      x: 18.0
+      y: 30.15
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.0
+      y: 30.15
+      z: 0.0
+    end:
+      x: 18.0
+      y: 21.65
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.0
+      y: 21.65
+      z: 0.0
+    end:
+      x: 12.0
+      y: 21.65
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: laboratory_door
+    start:
+      x: 12.0
+      y: 25.15
+      z: 0.0
+    end:
+      x: 12.0
+      y: 26.65
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: restricted
+    value: true
+  entities:
+    static: []
+    dynamic: []
+- name: wc_pharmacy
+  description: WC Pharmacy
+  material:
+  - Carpet_Cream
+  - {}
+  corners:
+  - x: 0.0
+    y: 30.2
+    z: 0.0
+  - x: 8.0
+    y: 30.2
+    z: 0.0
+  - x: 8.0
+    y: 34.2
+    z: 0.0
+  - x: 0.0
+    y: 34.2
+    z: 0.0
+  walls:
+  - start:
+      x: 0.0
+      y: 34.2
+      z: 0.0
+    end:
+      x: 8.0
+      y: 34.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 34.2
+      z: 0.0
+    end:
+      x: 8.0
+      y: 33.0
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 31.5
+      z: 0.0
+    end:
+      x: 8.0
+      y: 30.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 8.0
+      y: 30.2
+      z: 0.0
+    end:
+      x: 0.0
+      y: 30.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 0.0
+      y: 30.2
+      z: 0.0
+    end:
+      x: 0.0
+      y: 34.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 0.0
+      y: 31.5
+      z: 0.0
+    end:
+      x: 2.0
+      y: 31.5
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 0.0
+      y: 32.8
+      z: 0.0
+    end:
+      x: 2.0
+      y: 32.8
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 2.0
+      y: 30.2
+      z: 0.0
+    end:
+      x: 2.0
+      y: 30.5
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 2.0
+      y: 31.2
+      z: 0.0
+    end:
+      x: 2.0
+      y: 31.8
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 2.0
+      y: 32.5
+      z: 0.0
+    end:
+      x: 2.0
+      y: 33.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 2.0
+      y: 33.8
+      z: 0.0
+    end:
+      x: 2.0
+      y: 34.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: wc_pharmacy_door
+    start:
+      x: 8.0
+      y: 31.5
+      z: 0.0
+    end:
+      x: 8.0
+      y: 33.0
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: wc_stall_1_door
+    start:
+      x: 2.0
+      y: 30.5
+      z: 0.0
+    end:
+      x: 2.0
+      y: 31.2
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: wc_stall_2_door
+    start:
+      x: 2.0
+      y: 31.8
+      z: 0.0
+    end:
+      x: 2.0
+      y: 32.5
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: wc_stall_3_door
+    start:
+      x: 2.0
+      y: 33.1
+      z: 0.0
+    end:
+      x: 2.0
+      y: 33.8
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  entities:
+    static: []
+    dynamic: []
+- name: wc_waiting
+  description: WC Waiting
+  material:
+  - Carpet_Cream
+  - {}
+  corners:
+  - x: 18.05
+    y: 13.1
+    z: 0.0
+  - x: 22.05
+    y: 13.1
+    z: 0.0
+  - x: 22.05
+    y: 17.1
+    z: 0.0
+  - x: 18.05
+    y: 17.1
+    z: 0.0
+  walls:
+  - start:
+      x: 18.05
+      y: 17.1
+      z: 0.0
+    end:
+      x: 22.05
+      y: 17.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 22.05
+      y: 17.1
+      z: 0.0
+    end:
+      x: 22.05
+      y: 13.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 22.05
+      y: 13.1
+      z: 0.0
+    end:
+      x: 20.75
+      y: 13.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 19.25
+      y: 13.1
+      z: 0.0
+    end:
+      x: 18.05
+      y: 13.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.05
+      y: 13.1
+      z: 0.0
+    end:
+      x: 18.05
+      y: 17.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.05
+      y: 14.43
+      z: 0.0
+    end:
+      x: 20.05
+      y: 14.43
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.05
+      y: 15.77
+      z: 0.0
+    end:
+      x: 20.05
+      y: 15.77
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.05
+      y: 13.1
+      z: 0.0
+    end:
+      x: 20.05
+      y: 13.4
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.05
+      y: 14.1
+      z: 0.0
+    end:
+      x: 20.05
+      y: 14.43
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.05
+      y: 14.43
+      z: 0.0
+    end:
+      x: 20.05
+      y: 14.73
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.05
+      y: 15.43
+      z: 0.0
+    end:
+      x: 20.05
+      y: 15.77
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.05
+      y: 15.77
+      z: 0.0
+    end:
+      x: 20.05
+      y: 16.07
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 20.05
+      y: 16.77
+      z: 0.0
+    end:
+      x: 20.05
+      y: 17.1
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: wc_waiting_door
+    start:
+      x: 19.25
+      y: 13.1
+      z: 0.0
+    end:
+      x: 20.75
+      y: 13.1
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: wc_waiting_stall_1_door
+    start:
+      x: 20.05
+      y: 13.4
+      z: 0.0
+    end:
+      x: 20.05
+      y: 14.1
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: wc_waiting_stall_2_door
+    start:
+      x: 20.05
+      y: 14.73
+      z: 0.0
+    end:
+      x: 20.05
+      y: 15.43
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  - name: wc_waiting_stall_3_door
+    start:
+      x: 20.05
+      y: 16.07
+      z: 0.0
+    end:
+      x: 20.05
+      y: 16.77
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  entities:
+    static: []
+    dynamic: []
+- name: doctors_resting_room
+  description: Doctor Resting Room
+  material:
+  - Walnut_Planks
+  - {}
+  corners:
+  - x: 12.0
+    y: 30.2
+    z: 0.0
+  - x: 18.0
+    y: 30.2
+    z: 0.0
+  - x: 18.0
+    y: 34.2
+    z: 0.0
+  - x: 12.0
+    y: 34.2
+    z: 0.0
+  walls:
+  - start:
+      x: 12.0
+      y: 30.2
+      z: 0.0
+    end:
+      x: 12.0
+      y: 31.5
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 33.0
+      z: 0.0
+    end:
+      x: 12.0
+      y: 34.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 12.0
+      y: 34.2
+      z: 0.0
+    end:
+      x: 18.0
+      y: 34.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.0
+      y: 34.2
+      z: 0.0
+    end:
+      x: 18.0
+      y: 30.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  - start:
+      x: 18.0
+      y: 30.2
+      z: 0.0
+    end:
+      x: 12.0
+      y: 30.2
+      z: 0.0
+    material:
+      name: Paint_Gloss
+      domain: Common
+      _modifiers: null
+  doors:
+  - name: doctors_resting_room_door
+    start:
+      x: 12.0
+      y: 31.5
+      z: 0.0
+    end:
+      x: 12.0
+      y: 33.0
+      z: 0.0
+    kind: sliding
+    width: 0.1
+    height: 2.0
+    material:
+    - Aluminum_Anodized
+    - {}
+  elevators: []
+  semantics:
+  - predicate: quiet
+    value: true
+  entities:
+    static: []
+    dynamic: []

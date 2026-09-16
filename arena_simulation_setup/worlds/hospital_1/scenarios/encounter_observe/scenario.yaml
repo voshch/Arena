@@ -1,0 +1,49 @@
+# Observe-an-encounter figure (panel "observe another encounter first"): the robot stands in the central_hallway
+# and watches a target pedestrian negotiate passage with an oncoming one, with through-traffic around them.
+# Framed from behind and above the robot, looking straight up the hallway (+y).
+#
+#   target      doctor walking down the hallway diagonally, toward the robot
+#   negotiator  walks up the hallway on the crossing diagonal, they meet around y ~ 18 about 5 s in
+#   background  four walkers, two far up the hallway, one passing the robot, one crossing at the sub_hallway
+#
+# Run with tm_robots=stationary (pos_x=9.3 pos_y=11.0 pos_theta=1.5708), not scenario: a scenario robot whose goal
+# equals its start is done at once, and the episode resets every step, respawning the crowd at its spawn poses.
+robots:
+- start: [9.3, 11.0, 1.5708]
+
+dynamic:
+- name: target
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [11.2, 23.0, -1.8]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints: [[11.2, 23.0], [9.2, 13.5]]
+
+- name: negotiator
+  model: arenian
+  pose: [9.1, 14.0, 1.35]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints: [[9.1, 14.0], [11.2, 24.0]]
+
+- name: walker_far_1
+  model: Hospital/nurse_female_caucasian_young
+  pose: [10.9, 27.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints: [[10.9, 27.0], [10.9, 33.0]]
+
+- name: walker_far_2
+  model: arenian
+  pose: [8.7, 32.0, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints: [[8.7, 32.0], [8.7, 20.0]]
+
+- name: walker_near
+  model: arenian
+  pose: [11.3, 9.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints: [[11.3, 9.0], [11.3, 30.0]]
+
+- name: walker_cross
+  model: Hospital/nurse_female_caucasian_young
+  pose: [17.0, 11.8, 3.14159]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints: [[17.0, 11.8], [12.5, 11.8]]

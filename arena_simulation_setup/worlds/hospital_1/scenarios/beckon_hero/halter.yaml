@@ -1,0 +1,14 @@
+# Aimed at the junction point the robot turns through, see caller.yaml.
+name: halter
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      stop_robot:
+        attention:
+          halt: {x: 11.4, y: 11.0, z: 0.4}
+          gaze: {x: 11.4, y: 11.0, z: 0.4}
+        duration: {mean: 1000.0, std: 0.0}
+    then: seq

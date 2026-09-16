@@ -13,6 +13,7 @@ if typing.TYPE_CHECKING:
 _NS = _REGISTRY_NAMESPACE("scenario")
 
 CONTACT_MODES = ("enabled", "locomotion_only")
+GESTURE_MODES = ("enabled", "disabled")
 
 
 def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
@@ -27,6 +28,14 @@ def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
         description="locomotion_only = motion-matched control: contact interactions (hug, handshake) approach and hold at standing_distance, no contact clip.",
     )
     declare_double(node, ns("standing_distance"), 1.2, label="Standing distance", description="Pair separation in m for contact interactions under contact_mode=locomotion_only.", lo=0.3, hi=5.0)
+    declare_enum(
+        node,
+        ns("gesture_mode"),
+        GESTURE_MODES[0],
+        choices=GESTURE_MODES,
+        label="Gesture mode",
+        description="disabled = the gesture-off control: agents behave identically but publish no gesture, so nothing renders and no consumer can read one.",
+    )
 
 
 @OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.SCENARIO, namespace=_NS, schema=declare_schema)

@@ -1,0 +1,60 @@
+# Crowd-in-the-corridor figure (panel "real data supports the mechanism"): the robot stands in the middle of the
+# central_hallway facing the camera while a crowd walks past it in both directions. Framed at eye height, looking
+# straight up the hallway (+y).
+#
+#   target      doctor walking toward the camera just right of the robot
+#   crowd       seven walkers in both directions spread over the depth of the hallway
+#
+# Run with tm_robots=stationary (pos_x=10.0 pos_y=9.0 pos_theta=-1.5708), not scenario: a scenario robot whose goal
+# equals its start is done at once, and the episode resets every step, respawning the crowd at its spawn poses.
+robots:
+- start: [10.0, 9.0, -1.5708]
+
+dynamic:
+- name: target
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [11.1, 10.5, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 0.9}
+  waypoints: [[11.1, 6.0], [11.1, 26.0]]
+
+- name: walker_1
+  model: arenian
+  pose: [8.8, 6.5, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints: [[8.8, 32.0], [8.8, 6.0]]
+
+- name: walker_2
+  model: Hospital/nurse_female_caucasian_young
+  pose: [8.9, 12.5, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints: [[8.9, 6.0], [8.9, 30.0]]
+
+- name: walker_3
+  model: arenian
+  pose: [9.6, 15.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints: [[9.6, 32.0], [9.6, 6.0]]
+
+- name: walker_4
+  model: arenian
+  pose: [10.8, 17.5, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints: [[10.8, 6.5], [10.8, 31.0]]
+
+- name: walker_5
+  model: Hospital/nurse_female_caucasian_young
+  pose: [8.7, 20.5, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints: [[8.7, 33.0], [8.7, 6.0]]
+
+- name: walker_6
+  model: arenian
+  pose: [11.3, 23.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints: [[11.3, 33.0], [11.3, 6.0]]
+
+- name: walker_7
+  model: Hospital/nurse_female_caucasian_young
+  pose: [9.9, 27.0, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints: [[9.9, 12.0], [9.9, 33.0]]

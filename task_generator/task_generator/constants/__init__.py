@@ -42,6 +42,7 @@ class Constants:
             EXPLORE = "explore"
             RANDOM = "random"
             SCENARIO = "scenario"
+            PATROL = "patrol"
             DEMO = "demo"
             STATIONARY = "stationary"
             CHARACTERIZATION = "characterization"

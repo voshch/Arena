@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -14,7 +15,8 @@ from task_generator.simulators.human.pointing.generator import direction_from_an
 from . import BODY_HEIGHT, GestureClip
 from .point import PointGesture
 
-HOLD_ELEVATION_DEG = 15.0
+# hold elevation above the horizontal; ARENA_HALT_ELEVATION_DEG overrides it for a launch (e.g. a figure render)
+HOLD_ELEVATION_DEG = float(os.environ.get("ARENA_HALT_ELEVATION_DEG", "15.0"))
 EXTENSION_RAD = math.radians(70.0)  # wrist extension on the hold: fingers up, palm at the target
 
 

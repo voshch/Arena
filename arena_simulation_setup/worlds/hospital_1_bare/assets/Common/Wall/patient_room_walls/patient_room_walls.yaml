@@ -1,0 +1,14 @@
+main:
+  - material: "Paint_Gloss"
+    height: 0.75
+    z: 0
+  - material: ["Paint_Gloss", {"tint": "rgba(244, 255, 0, 0.2)"}]
+    height: 1.25
+    z: 0.75
+  - tile:
+      - model: Hospital/Towel_Dispenser
+        orientation: 1.5708 # rotate 90 degrees
+        y: 0.1
+        z: 1
+    every: 5
+    width: 3

@@ -1,0 +1,13 @@
+name: guide
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      direct:
+        attention:
+          point: visitor
+          gaze: visitor
+        duration: {mean: 1000.0, std: 0.0}
+    then: seq
