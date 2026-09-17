@@ -665,7 +665,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.stamp = self.sim_time.to_msg()
         msg.env_id = self._env_id
         msg.world = self._world_manager.loaded_world
-        entities = [self._semantic_entity_state_msg(s) for s in self._simulator.semantics_snapshot()]
+        snapshots = self._simulator.semantics_snapshot()
+        self._world_manager.publish_world_markers(snapshots)
+        entities = [self._semantic_entity_state_msg(s) for s in snapshots]
         entities.extend(self._zone_semantic_states())
         msg.entities = entities
         self._pub_state_semantics.publish(msg)
@@ -912,7 +914,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 topic_must_exist=False,
             ),
         ]
-        latched = StyleSpec(extra={"rviz": {"Reliability Policy": "Reliable", "Durability Policy": "Transient Local"}}).to_json()
+        latched = StyleSpec(latched=True).to_json()
         human_sim = self.conf.Arena.HUMAN.value
         if human_sim not in (Constants.HumanSimulator.DUMMY, Constants.HumanSimulator.NONE):
             env_displays.append(
@@ -964,6 +966,18 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         group="Static",
                     )
                 )
+
+        env_displays.append(
+            AdapterDisplay(
+                name="World",
+                topic=f"{env_ns}/world_markers",
+                topic_type="visualization_msgs/MarkerArray",
+                kind=DisplayKind.MARKER_ARRAY,
+                style_json=StyleSpec(latched=True, enabled=False).to_json(),
+                topic_must_exist=False,
+                group="Static",
+            )
+        )
 
         for name, topic in (
             (

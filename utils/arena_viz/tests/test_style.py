@@ -18,6 +18,7 @@ def test_roundtrip_full():
         line_width=0.1,
         enabled=False,
         decay=0.3,
+        latched=True,
         extra={"rviz": {"Color Scheme": "costmap"}},
     )
     assert StyleSpec.from_json(s.to_json()) == s

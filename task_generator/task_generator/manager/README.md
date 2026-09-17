@@ -97,6 +97,12 @@ uses `ClientWrapper` to call `map_server/load_map`, and triggers registered
 callbacks when the world changes. The `start()` coroutine must be awaited
 before the first reset.
 
+It also publishes the latched `world_markers` MarkerArray
+([`world_manager/markers.py`](world_manager/markers.py)): zone outlines and
+labels, walls, doors and elevators, one marker namespace per layer so rviz
+toggles them individually. Doors and elevators are recolored from the
+semantic snapshot on every state change.
+
 `sync(timeout)` blocks until the internal `_map_name` matches `_world_name`,
 indicating the map server has processed the latest world change.
 
