@@ -82,7 +82,7 @@ class _Surface:
 
 
 class EntityRoster:
-    """Live robot frames (`env_0/jackal`), the sim_paths a reference frame can track."""
+    """Live robot base frames (`env_0/jackal/base_link`), TF frame ids a reference can track."""
 
     def __init__(self, node: rclpy.node.Node) -> None:
         self._node = node
@@ -95,7 +95,7 @@ class EntityRoster:
                 self._subs[name] = self._node.create_subscription(RobotFleet, name, lambda msg, topic=name: self._on_fleet(topic, msg), surfaces.ENVS_QOS)
 
     def _on_fleet(self, topic: str, msg: RobotFleet) -> None:
-        self._names[topic] = [robot.descriptor.frame for robot in msg.robots if robot.descriptor.frame]
+        self._names[topic] = [robot.descriptor.base_frame for robot in msg.robots if robot.descriptor.base_frame]
 
     def names(self) -> list[str]:
         return sorted({name for names in self._names.values() for name in names})

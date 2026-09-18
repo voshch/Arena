@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from . import curves
 from .client import CamNode, TargetSelection
 from .curves import Quat, Vec3
-from .record import record_dir
+from .record import default_name, record_path
 from .registry import primitive
 from .shots import resolve
 
@@ -469,18 +469,20 @@ class Camera:
         """Connect to the live sim, run the shot, disconnect. Blocks until done."""
         CamNode.run_main(timeline=self, targets=self._targets)
 
-    def record(self, out_dir: str, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> None:
-        """Render the shot to a numbered PPM sequence, one capture per frame.
+    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> None:
+        """Render the shot to a video, one capture per frame, encoded by ffmpeg.
 
-        A bare `out_dir` name lands under `$ARENA_DATA_DIR/recordings/`; an absolute
-        or slash-bearing path is used verbatim. Raises `FileExistsError` if the
-        directory is not empty unless `force`. Blocks until done.
+        A bare `out` name lands under `$ARENA_DATA_DIR/recordings/`, an absolute
+        or slash-bearing path is used verbatim, and the suffix picks the container
+        (none means .mp4). `None` names the take `take_<YYYYmmdd-HHMMSS>`. Raises
+        `FileExistsError` if the file exists unless `force`, `FileNotFoundError`
+        without ffmpeg. Blocks until done.
 
-        `lockstep` makes the recording frame-exact (Gazebo only): with a run active
+        `lockstep` makes the recording frame-exact: with a run active
         the cam rides it as a hard channel gated at 1/fps, with no run it takes its
         own hold and steps the sim by 1/fps between frames.
         """
-        path = record_dir(out_dir, force)
+        path = record_path(out or default_name("take"), force)
         CamNode.run_main(timeline=self, targets=self._targets, record=(str(path), float(fps)), lockstep=bool(lockstep))
 
     async def run(self, node: CamNode) -> None:

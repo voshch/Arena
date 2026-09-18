@@ -163,17 +163,22 @@ class CamNode(ArenaMixinNode):
             names = ", ".join(endpoint.ns for endpoint in self._endpoints)
             self.get_logger().info(f"viewport connected ({names}), {'recording' if self._recorder else 'playing'} shot")
             await self.arrives(f"{self._endpoints[0].ns}/viewport/camera_pose", PoseStamped)  # seed the cursor
-            if self._lockstep and self._scheduler_active:
-                await self._run_follower()
-            elif self._lockstep:
-                await self._run_lockstep()
-            else:
-                await self._timeline.run(self)
-            if rclpy.ok():
-                if self._recorder is not None:
-                    self.get_logger().info(f"recorded {self._recorder.n} frames to {self._recorder.dir}")
+            try:
+                if self._lockstep and self._scheduler_active:
+                    await self._run_follower()
+                elif self._lockstep:
+                    await self._run_lockstep()
                 else:
+                    await self._timeline.run(self)
+            finally:
+                encoded = self._recorder is not None and self._recorder.close()
+            if rclpy.ok():
+                if self._recorder is None:
                     self.get_logger().info("shot complete")
+                elif encoded:
+                    self.get_logger().info(f"recorded {self._recorder.n} frames to {self._recorder.path}")
+                else:
+                    self.get_logger().error(f"recording failed after {self._recorder.n} frames, {self._recorder.path} is not usable")
         rclpy.try_shutdown()
 
     def _on_lockstep_status(self, msg: LockstepStatus) -> None:
@@ -408,7 +413,11 @@ class CamNode(ArenaMixinNode):
             detail = "service timed out" if res is None else res.message
             self.get_logger().warning(f"capture failed ({detail}), stopping record")
             return False
-        self._recorder.write(res.image)
+        try:
+            self._recorder.write(res.image)
+        except (ValueError, OSError) as e:
+            self.get_logger().warning(f"frame not encoded ({e}), stopping record")
+            return False
         return True
 
     async def _call(self, client: ClientWrapper, req: object) -> bool:
