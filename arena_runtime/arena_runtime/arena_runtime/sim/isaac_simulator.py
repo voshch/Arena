@@ -173,6 +173,7 @@ class IsaacHost(SimLifecycle):
             StepSimulation,
             "/isaac/StepSimulationN",
         )
+        self._clock_skew_logged = False
 
     async def ensure_ready(self) -> None:
         await asyncio.gather(
@@ -198,13 +199,18 @@ class IsaacHost(SimLifecycle):
 
     async def step_seconds(self, seconds: float) -> float:
         n = max(1, round(seconds * _ISAAC_PHYSICS_HZ))
+        start = self._node.sim_time
         res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
         if not res.success:
             raise RuntimeError(res.error_msg)
-        target = Time.from_float(res.target_sim_time)
+        reported = res.target_sim_time - n / _ISAAC_PHYSICS_HZ
+        if not self._clock_skew_logged and abs(reported - start.to_seconds()) > 1.0 / _ISAAC_PHYSICS_HZ:
+            self._clock_skew_logged = True
+            self._logger.warning(f"isaac sim time {reported:.3f}s vs /clock {start.to_seconds():.3f}s, stepping on /clock")
+        target = start + Time.from_float((n - 0.5) / _ISAAC_PHYSICS_HZ)
         while not await self._node.await_sim_time(target, freeze_timeout=10.0):
-            self._node.get_logger().warning(f"waiting on isaac sim clock >= {res.target_sim_time:.3f}s")
-        return n / _ISAAC_PHYSICS_HZ
+            self._node.get_logger().warning(f"waiting on isaac sim clock >= {target.to_seconds():.3f}s (at {self._node.sim_time.to_seconds():.3f}s)")
+        return (self._node.sim_time - start).to_seconds()
 
 
 def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Material) -> isaacsim_msgs.msg.Material:
@@ -299,6 +305,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     fq_name = self._NS_ROBOT(robot.name)
 
+                    control_spec = robot_params.control
+                    is_ros2_control = control_spec is not None and control_spec.is_ros2_control
+                    relays_odom = control_spec is not None and is_ros2_control and control_spec.odom_topic != "odom"
+
                     spawn_res = await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
@@ -311,15 +321,12 @@ class IsaacSimulator(BaseSim, NodeInterface):
                             pose=robot.pose.to_msg(),
                             cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
                             joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
-                            odom_topic=self.node.service_namespace(robot.name, 'odom'),
+                            odom_topic='' if relays_odom else self.node.service_namespace(robot.name, 'odom'),
                         )
                     )
                     if spawn_res is None or not spawn_res.path:
                         self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check isaac log'}")
                         return False
-
-                    control_spec = robot_params.control
-                    is_ros2_control = control_spec is not None and control_spec.is_ros2_control
 
                     # Jazzy controller_manager reads URDF from the robot_description topic, not
                     # its parameter; feed RSP the bridge URDF so the same topic serves both

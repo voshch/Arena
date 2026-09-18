@@ -126,14 +126,16 @@ class GateLedger:
         return self.base + self.now
 
     def rebase(self, sim_now: float) -> float:
-        """Absorb sim time that advanced outside the run (windows, foreign holds), every
-        window restarts from the new now. Returns the drift absorbed, 0.0 within half a step."""
+        """Re-anchor on the sim clock in either direction, every window restarts from the
+        new now. Returns the drift absorbed, 0.0 within half a step."""
         drift = (sim_now - self.base) - self.now
-        if drift <= self.dt / 2.0:
+        if abs(drift) <= self.dt / 2.0:
             return 0.0
         self.now += drift
         for ch in self.channels.values():
             ch.next_due = self.now + ch.period
+            if drift < 0.0:
+                ch.latest_stamp = None
         return drift
 
     def refresh(self, desired: Mapping[str, tuple[ChannelSpec, str]]) -> tuple[list[Channel], list[Channel]]:

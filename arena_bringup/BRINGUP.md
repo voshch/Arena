@@ -439,6 +439,22 @@ Default is `gazebo`. Valid values:
 | `isaac` | Isaac Sim via `arena feature isaac launch`. `mobile` defaults to `nav2`. |
 | `dummy` | No physics engine; a static `map->dummy` TF is published. For plumbing-only checks (no GPU, no controllers). Must be passed explicitly. |
 
+### sim.isaac.*
+
+| Key | Default | Meaning |
+|---|---|---|
+| `sim.isaac.physics` | `physx` | Physics engine, `physx` or `newton`. |
+| `sim.isaac.viewport.preset` | `photoreal` | Base viewport render preset, `photoreal` or `boring`. The keys below override single fields of the chosen preset and keep the preset value when empty. |
+| `sim.isaac.viewport.resolution` | preset | Render size of the GUI viewport, `WxH` (for example `1920x1080`) or `dynamic` (fill the window). Recordings capture the viewport, so this is the recording resolution. |
+| `sim.isaac.viewport.scale` | preset | Resolution scale factor applied on top of the render size. |
+| `sim.isaac.viewport.dlss` | preset | DLSS mode, `auto`, `quality`, `balanced` or `performance`. |
+| `sim.isaac.viewport.lighting` | preset | Lighting rig, `lights_off`, `camera_light`, `stage_lights`, `colored_lights`, `default` or `grey_studio`. |
+| `sim.isaac.viewport.overlays` | preset | Overlays drawn in the viewport, comma list of `axis`, `grid`, `bbox`, or `none`. |
+
+The viewport keys act on the GUI viewport only, so they have no effect under
+`headless:=true`. Robot camera sensors render through their own products and
+are unaffected.
+
 ### debug:= and optim:=
 
 Two open, dev-oriented flag namespaces. `debug:=a,b` is shorthand for

@@ -116,7 +116,7 @@ def _update_container() -> int:
     rc = subprocess.run(["git", "submodule", "update", "--init", "--rebase", "arena_isaac"], cwd=common._env("ARENA_DIR"), check=False).returncode
     if rc:
         return rc
-    rc = features.compose(["build", "isaac"])
+    rc = features.build(["isaac"])
     if rc:
         return rc
     return features.compose(["up", "-d", "--remove-orphans", "--no-start", "isaac"])
@@ -168,7 +168,8 @@ def uninstall_container(argv: list[str]) -> None:
 
     if argv:
         raise CLIError("unexpected arguments")
-    features.compose(["rm", "-fs", "isaac"])
+    features.compose(["stop", "isaac"])
+    features.remove("isaac")
     subprocess.run(["git", "submodule", "deinit", "-f", "arena_isaac"], cwd=common._env("ARENA_DIR"), check=False)
     common._reg_remove(NAME)
 

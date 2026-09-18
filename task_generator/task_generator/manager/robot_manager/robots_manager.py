@@ -480,6 +480,7 @@ class RobotsManager(NodeInterface):
                         model=mgr.model_name,
                         ns=str(mgr.namespace),
                         frame=mgr.frame.raw().lstrip("/"),
+                        base_frame=mgr.base_frame.lstrip("/"),
                     ),
                     caps=[
                         task_generator_msgs.msg.RobotCap(

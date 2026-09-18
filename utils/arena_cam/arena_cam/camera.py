@@ -15,17 +15,14 @@ import math
 from collections.abc import Callable, Sequence
 
 from . import curves
-from .client import CamNode, TargetSelection
+from .client import FOV_DEFAULT, CamNode, Steered, TargetSelection
 from .curves import Quat, Vec3
-from .record import record_dir
+from .record import default_name, record_path
 from .registry import primitive
 from .shots import resolve
 
 # A sampler maps eased progress in [0, 1] to (position, quat, fov).
 _Sampler = Callable[[float], tuple[Vec3, Quat, float]]
-
-
-FOV_DEFAULT = 1.047
 
 
 class _Cursor:
@@ -448,6 +445,17 @@ class _Zoom(_Segment):
         return sample, _Cursor(pos, quat, self.to_fov)
 
 
+class _Steer(_Action):
+    verb = "steer"
+
+    def __init__(self, next_frame: Callable[[float], Steered | None]) -> None:
+        self.next_frame = next_frame
+
+    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
+        await node.steer(self.next_frame)
+        return cursor
+
+
 class Camera:
     """Author a camera shot as a chain of `add(verb, ...)` calls, then `play()` it."""
 
@@ -465,23 +473,31 @@ class Camera:
         self._actions.extend(resolve(name, spec))
         return self
 
+    def steer(self, next_frame: Callable[[float], Steered | None]) -> Camera:
+        """Queue an open-ended segment whose poses come from live input (the drive panel), record only."""
+        self._actions.append(_Steer(next_frame))
+        return self
+
     def play(self) -> None:
         """Connect to the live sim, run the shot, disconnect. Blocks until done."""
         CamNode.run_main(timeline=self, targets=self._targets)
 
-    def record(self, out_dir: str, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> None:
-        """Render the shot to a numbered PPM sequence, one capture per frame.
+    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> None:
+        """Render the shot to a video, one capture per frame, encoded by ffmpeg.
 
-        A bare `out_dir` name lands under `$ARENA_DATA_DIR/recordings/`; an absolute
-        or slash-bearing path is used verbatim. Raises `FileExistsError` if the
-        directory is not empty unless `force`. Blocks until done.
+        A bare `out` name lands under `$ARENA_DATA_DIR/recordings/`, an absolute
+        or slash-bearing path is used verbatim, and the suffix picks the container
+        (none means .mp4). `None` names the take `take_<YYYYmmdd-HHMMSS>`. With
+        several cameras selected each gets its own file, tagged `-sim` / `-viz<env>`.
+        An existing file is refused with an error log unless `force`. Raises
+        `FileNotFoundError` without ffmpeg. Blocks until done.
 
-        `lockstep` makes the recording frame-exact (Gazebo only): with a run active
+        `lockstep` makes the recording frame-exact: with a run active
         the cam rides it as a hard channel gated at 1/fps, with no run it takes its
         own hold and steps the sim by 1/fps between frames.
         """
-        path = record_dir(out_dir, force)
-        CamNode.run_main(timeline=self, targets=self._targets, record=(str(path), float(fps)), lockstep=bool(lockstep))
+        path = record_path(out or default_name("take"))
+        CamNode.run_main(timeline=self, targets=self._targets, record=(str(path), float(fps)), force=bool(force), lockstep=bool(lockstep))
 
     async def run(self, node: CamNode) -> None:
         """Execute the queued actions against a connected node (called by CamNode.setup)."""
