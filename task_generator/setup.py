@@ -29,6 +29,10 @@ setup(
          existing('launch/human/hunav/*.launch.py')),
         (os.path.join('share', package_name, 'launch', 'human', 'arena_humansim'),
          existing('launch/human/arena_humansim/*.launch.py')),
+        # Edge-case object timelines. Resolved via the share dir at runtime, with an
+        # in-package fallback so a source tree works without installing.
+        (os.path.join('share', package_name, 'edge_case', 'timelines'),
+         existing('task_generator/tasks/obstacles/edge_case/timelines/*.yaml')),
         (os.path.join('share', package_name, 'simulators', 'human', 'animations'),
          existing('task_generator/simulators/human/animations/*.npy', 'task_generator/simulators/human/animations/*.npz', 'task_generator/simulators/human/animations/*.yaml')),
         (os.path.join('share', package_name, 'config', 'auditory'),
@@ -38,6 +42,9 @@ setup(
         (os.path.join('share', package_name, 'launch', 'human', 'auditory'),
         existing('launch/human/auditory/*.launch.py', 'launch/human/auditory/*.md')),
     ],
+    package_data={
+        package_name: ['tasks/obstacles/edge_case/timelines/*.yaml'],
+    },
     install_requires=['setuptools'],
     extras_require={
         'test': ['pytest>=7', 'hypothesis>=6'],

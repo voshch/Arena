@@ -3,9 +3,11 @@
 import asyncio
 import copy
 import math
+import time
 import traceback
 from collections.abc import Mapping, Sequence
 
+import attrs
 import yaml
 from arena_humansim_msgs.msg import (
     AgentState as AgentStateMsg,
@@ -62,6 +64,7 @@ from arena_humansim_msgs.srv import (
     SetFlow,
     SetWaypoints,
     SpawnAgents,
+    UpdateAgents,
     UpdateRobot,
 )
 from arena_people_msgs.msg import Gesture as GestureMsg
@@ -101,6 +104,8 @@ from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObst
 class ArenaHumanSimulator(BaseHumanSimulator):
     @classmethod
     def _register_task_modes(cls):
+        from task_generator.tasks.obstacles.edge_case import NS as EDGE_CASE_NS
+        from task_generator.tasks.obstacles.edge_case import declare_schema as edge_case_schema
         from task_generator.tasks.obstacles.prompt import NS, declare_schema
         from task_generator.tasks.registry import OBSTACLES_MODES
 
@@ -110,8 +115,15 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
             return TM_Prompt
 
+        @OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.EDGE_CASE, namespace=EDGE_CASE_NS, schema=edge_case_schema)
+        def _edge_case() -> type:
+            from task_generator.tasks.obstacles.edge_case.impl import TM_EdgeCase
+
+            return TM_EdgeCase
+
     SERVICE_SPAWN_AGENTS = "spawn_agents"
     SERVICE_REMOVE_AGENTS = "remove_agents"
+    SERVICE_UPDATE_AGENTS = "update_agents"
     SERVICE_UPDATE_ROBOT = "update_robot"
     SERVICE_SET_WAYPOINTS = "set_waypoints"
     SERVICE_SET_FLOW = "set_flow"
@@ -140,6 +152,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._remove_client: ClientWrapper = self.node.create_client_wrapper(
             RemoveAgents,
             self.node.service_namespace(self.SERVICE_REMOVE_AGENTS),
+        )
+        self._update_client: ClientWrapper = self.node.create_client_wrapper(
+            UpdateAgents,
+            self.node.service_namespace(self.SERVICE_UPDATE_AGENTS),
         )
         self._set_flow_client: ClientWrapper = self.node.create_client_wrapper(
             SetFlow,
@@ -219,6 +235,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._arena_pedestrians: Pedestrians = Pedestrians()
         self._arena_pedestrians.header.frame_id = "map"
         self._dirty_robots: dict[str, Robot] = {}
+        #: Robots placed this episode, by name: their live poses go out on every feedback tick.
+        self._tracked_robots: dict[str, Robot] = {}
 
         # IDs managed by the bridge (scenario-defined agents)
         self._bridge_agent_ids: set[int] = set()
@@ -239,12 +257,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         # Subscribe to agent_states topic from arena_humansim
-        self.node.create_subscription(
+        self._agent_states_sub = self.node.create_subscription(
             AgentStatesMsg,
             self.node.service_namespace("agent_states"),
             self._agent_states_callback,
             10,
         )
+        self._agent_states_wall: float = time.monotonic()
+        self._roster_empty_seen: bool = True
+        self._roster_log_wall: float = 0.0
+        self._publish_log_wall: float = 0.0
 
         self.node.create_subscription(
             MarkerArray,
@@ -300,6 +322,17 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     def _agent_states_callback(self, msg: AgentStatesMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
+        self._agent_states_wall = time.monotonic()
+        if time.monotonic() - self._roster_log_wall > 30.0:
+            self._roster_log_wall = time.monotonic()
+            self._logger.warning(f"agent_states receipt heartbeat: {len(msg.agents)} agent(s)")
+        empty = not msg.agents
+        if empty != self._roster_empty_seen:
+            self._roster_empty_seen = empty
+            if empty:
+                self._logger.warning("received agent_states roster went EMPTY")
+            else:
+                self._logger.warning(f"received agent_states roster non-empty: {len(msg.agents)} agent(s)")
         self._prev_agent_states = self._curr_agent_states
         self._curr_agent_states = msg
         # publish on receipt (the rate loop can race a stepped clock burst), but
@@ -314,8 +347,32 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._publish_pending = False
         await self._publish_interpolated()
 
+    #: Wall seconds without an agent_states message before the subscription is recreated.
+    #: arena_humansim publishes the roster continuously once its node is up (~6 Hz even
+    #: pre-spawn), so sustained silence means the subscription died, not the publisher.
+    _AGENT_STATES_STALE_S = 10.0
+
+    def _resubscribe_agent_states(self, stale: float) -> None:
+        # A subscription that goes silent while the topic still flows is recreated, which re-runs
+        # discovery.
+        self._logger.warning(f"agent_states silent for {stale:.0f} s (wall) - recreating the subscription")
+        try:
+            self.node.destroy_subscription(self._agent_states_sub)
+        except Exception as e:  # a dead handle must not kill the interpolation loop
+            self._logger.warning(f"agent_states resubscribe: destroy failed ({e})")
+        self._agent_states_wall = time.monotonic()
+        self._agent_states_sub = self.node.create_subscription(
+            AgentStatesMsg,
+            self.node.service_namespace("agent_states"),
+            self._agent_states_callback,
+            10,
+        )
+
     async def _publish_interpolated(self) -> None:
         """Interpolate at the current sim time and publish the roster."""
+        stale = time.monotonic() - self._agent_states_wall
+        if stale > self._AGENT_STATES_STALE_S:
+            self._resubscribe_agent_states(stale)
         now = self.node.sim_time
         states = self._interpolate_agent_states(now.sec * int(1e9) + now.nanosec)
         if states is None:
@@ -323,6 +380,11 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         peds = self._agent_states_to_pedestrians(states)
         async with self._agents_lock:
             self._arena_pedestrians = peds
+        if not self.node.context.ok():
+            return  # shutting down: the publisher's context is already gone (a traceback per pending task otherwise)
+        if time.monotonic() - self._publish_log_wall > 30.0:
+            self._publish_log_wall = time.monotonic()
+            self._logger.warning(f"arena_peds publish heartbeat: {len(peds.pedestrians)} ped(s) from {len(states.agents)} agent state(s)")
         self.publish_arena_peds(peds)
 
     def _interpolate_agent_states(self, now_ns: int) -> AgentStatesMsg | None:
@@ -506,10 +568,15 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return obs
 
     def _make_flow_dynamic_obstacle(self, agent: AgentStateMsg) -> DynamicObstacle:
-        """Create a DynamicObstacle for a source-spawned agent using a default model."""
+        """Create a DynamicObstacle for a source-spawned agent.
+
+        The mesh is the pedestrian fallback outright, not ``"default"``: no asset of that name
+        exists, and a failed provider fetch per spawn starves the human simulator.
+        """
         return self._runtime_obstacle(
             name=f"flow_{agent.agent_id}",
             pose=Pose(Position(*self._from_engine(agent.pose.x, agent.pose.y))),
+            model=self._PEDESTRIAN_FALLBACK,
             velocity=agent.desired_velocity,
         )
 
@@ -594,16 +661,30 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"Error in pedestrian update loop: {e}\n{traceback.format_exc()}")
 
     async def _feedback_loop(self):
-        """Publish dirty robot and possessed pedestrian poses on world_state topic."""
+        """Publish robot and possessed pedestrian poses on world_state topic."""
         try:
             with self.node.sim_time_rate(self.FEEDBACK_RATE) as (done, rate):
                 while not done.is_set():
                     await rate.get()
+                    self._refresh_robot_poses()
                     self._publish_world_state()
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self._logger.error(f"Error in feedback loop: {e}\n{traceback.format_exc()}")
+
+    def _refresh_robot_poses(self) -> None:
+        """Mark every placed robot dirty with its live map-frame pose (the robot manager's, from TF),
+        so arena_humansim's mirror of the robot follows the drive. A robot without a live pose
+        yet (respawn window) keeps its placement pose.
+        """
+        managers = getattr(getattr(self.node, "robots_manager", None), "managers", None)
+        if not managers:
+            return
+        for name, robot in self._tracked_robots.items():
+            manager = managers.get(name)
+            pose = getattr(manager, "pose", None) if manager is not None else None
+            self._dirty_robots[name] = attrs.evolve(robot, pose=pose) if pose is not None else robot
 
     def _publish_world_state(self):
         """Publish robot and possessed pedestrian poses as AgentStates on world_state topic."""
@@ -915,6 +996,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.vision_range = params.perception.vision_range
                 agent_msg.vision_fov = params.perception.vision_fov
                 lp = params.local_planner_params
+                agent_msg.max_velocity = float(getattr(params, "max_velocity", 0.0) or 0.0)
                 agent_msg.relaxation_time = lp.get("relaxation_time", 0.0)
                 agent_msg.repulsion_strength = lp.get("repulsion_strength", 0.0)
                 agent_msg.repulsion_range = lp.get("repulsion_range", 0.0)
@@ -1020,6 +1102,147 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"RemoveAgents call failed: {e}")
             return False
 
+    async def _set_waypoints_impl(
+        self,
+        routes: Mapping[str, Sequence[tuple[float, float]]],
+    ) -> bool:
+        """Rewrite the routes of named agents through `SetWaypoints`.
+
+        `_agent_names` maps id -> sim_path for the pedestrian bus, so the reverse lookup is
+        the whole of the resolution, exactly as in `_remove_pedestrian_names_impl`.
+
+        `MODE_ONCE`: a rewritten route is a destination, not a patrol. Leaving the default
+        `MODE_REPEAT` would send an evacuating crowd back out of the exit and round again.
+
+        One call per agent because the service takes one agent. An unknown name is skipped
+        with a warning rather than failing the batch - a crowd where one agent despawned
+        mid-episode should still evacuate - but a request where *nothing* resolved returns
+        False, so a rewrite that reached no one cannot be reported as a success.
+        """
+        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        sent = 0
+        for name, points in routes.items():
+            agent_id = by_name.get(name)
+            if agent_id is None:
+                self._logger.warning(f"SetWaypoints: {name!r} is not a known agent")
+                continue
+
+            request = SetWaypoints.Request()
+            request.agent_id = agent_id
+            request.name = name
+            wp_msg = WaypointsMsg()
+            wp_msg.mode = WaypointsMsg.MODE_ONCE
+            for x, y in points:
+                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=float(x), y=float(y), theta=0.0)))
+            request.waypoints = wp_msg
+
+            try:
+                response = await self._set_waypoints_client.call_timeout(request)
+            except Exception as e:
+                self._logger.error(f"SetWaypoints call failed for {name!r}: {e}")
+                continue
+            if not response.success:
+                self._logger.error(f"SetWaypoints failed for {name!r}: {response.message}")
+                continue
+            sent += 1
+
+        if not sent:
+            self._logger.warning(f"SetWaypoints: none of {list(routes)} could be rerouted")
+            return False
+        self._logger.info(f"SetWaypoints: rerouted {sent} of {len(routes)} agent(s)")
+        return True
+
+    async def _update_agents_impl(self, obstacles: Mapping[str, DynamicObstacle]) -> bool:
+        """Change named agents' parameters in place through `UpdateAgents` (no respawn).
+
+        Keys are ``sim_path``; each value is the obstacle as it should now be - its `agent:`
+        block is parsed and sampled exactly the way a spawn parses it, so a retuned agent gets
+        the same numbers a fresh spawn on that profile would. Position, velocity and route are
+        untouched by the engine. An unknown name is skipped with a warning; a request that
+        reached nobody returns False, so the caller can fall back to a respawn.
+        """
+        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        request = UpdateAgents.Request()
+        wanted: list[str] = []
+        for name, obstacle in obstacles.items():
+            agent_id = by_name.get(name)
+            if agent_id is None:
+                self._logger.warning(f"UpdateAgents: {name!r} is not a known agent")
+                continue
+            parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
+            params = parsed.sample_params(self.node.conf.General.RNG.stream("humansim", name)) if parsed is not None else None
+            msg = AgentStateMsg()
+            msg.agent_id = agent_id
+            if params is not None:
+                msg.desired_velocity = params.desired_velocity
+                msg.radius = params.agent_radius
+                msg.vision_range = params.perception.vision_range
+                msg.vision_fov = params.perception.vision_fov
+                msg.max_velocity = float(getattr(params, "max_velocity", 0.0) or 0.0)
+                lp = params.local_planner_params
+                msg.relaxation_time = lp.get("relaxation_time", 0.0)
+                msg.repulsion_strength = lp.get("repulsion_strength", 0.0)
+                msg.repulsion_range = lp.get("repulsion_range", 0.0)
+                msg.agent_type = parsed.agent_type
+            else:
+                msg.desired_velocity = float(obstacle.velocity or 0.0)
+            request.agents.append(msg)
+            wanted.append(name)
+        if not wanted:
+            self._logger.warning(f"UpdateAgents: none of {list(obstacles)} is a known agent")
+            return False
+        try:
+            response = await self._update_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"UpdateAgents call failed: {e}")
+            return False
+        if not response.success:
+            self._logger.error(f"UpdateAgents failed: {response.message}")
+            return False
+        self._logger.info(f"UpdateAgents: {len(response.updated_ids)} of {len(wanted)} agent(s) updated in place")
+        return len(response.updated_ids) > 0
+
+    async def _remove_pedestrian_names_impl(self, names: Sequence[str]) -> bool:
+        """Remove *specific* agents, named by ``sim_path``.
+
+        `RemoveAgents` has always taken an id list - the reset path just passes an empty one
+        meaning "all". `_agent_names` already maps id -> sim_path for the pedestrian bus, so
+        the reverse lookup is the whole of it.
+
+        An unknown name is not a failure: the agent is gone, which is the state the caller
+        wanted. Only a request where *nothing* resolved and the caller asked for something
+        returns False, so a despawn of a never-spawned agent cannot be reported as success.
+        """
+        if not names:
+            return True
+
+        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        agent_ids = [by_name[name] for name in names if name in by_name]
+        if not agent_ids:
+            self._logger.warning(f"RemoveAgents: none of {list(names)} is a known agent")
+            return False
+
+        request = RemoveAgents.Request()
+        request.agent_ids = agent_ids
+        try:
+            response = await self._remove_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"RemoveAgents call failed: {e}")
+            return False
+
+        if not response.success:
+            self._logger.error(f"RemoveAgents failed: {response.message}")
+            return False
+
+        # Only the removed agents are forgotten. `_next_id` is deliberately NOT rewound:
+        # reusing an id whose removal the simulator has not finished processing would
+        # rebind a fresh agent onto a dying one.
+        for aid in agent_ids:
+            self._agent_names.pop(aid, None)
+            self._bridge_agent_ids.discard(aid)
+            self._flow_agent_ids.discard(aid)
+        return True
+
     async def _spawn_walls_impl(self, walls: Mapping[str, Wall]) -> bool:
         return await self._add_walls(walls)
 
@@ -1075,19 +1298,23 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return False
 
     async def _spawn_robot_impl(self, robots: Sequence[Robot]) -> Sequence[bool]:
-        """Register robot poses: published to arena_humansim via world_state topic."""
+        """Register robot poses: published to arena_humansim via world_state topic, and
+        kept up to date from TF by the feedback loop."""
         for robot in robots:
+            self._tracked_robots[robot.name] = robot
             self._dirty_robots[robot.name] = robot
         self._publish_world_state()
         return (True,) * len(robots)
 
     async def _remove_robot_impl(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:
+            self._tracked_robots.pop(robot.name, None)
             self._dirty_robots.pop(robot.name, None)
         return (True,) * len(robots)
 
     async def _move_robot_impl(self, robots: Sequence[Robot]) -> Sequence[bool]:
         """Update tracked robot poses (sent to arena_humansim each tick)."""
         for robot in robots:
+            self._tracked_robots[robot.name] = robot
             self._dirty_robots[robot.name] = robot
         return (True,) * len(robots)

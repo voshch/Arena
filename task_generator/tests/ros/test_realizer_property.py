@@ -55,8 +55,7 @@ def test_combined_offset_equivalence(ox1, oy1, ox2, oy2):
 @given(_floats, _floats, _floats, _floats)
 @settings(max_examples=50)
 def test_pose_round_trip(ox, oy, px, py):
-    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
-
+    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
     r = _make_realizer(ox, oy)
     p = Pose(Position(px, py), Orientation.from_yaw(0.0))
     fwd = r._realize_pose(p)

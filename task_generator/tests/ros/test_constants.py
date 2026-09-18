@@ -98,6 +98,7 @@ def test_tm_obstacles_values_stable():
     assert TM.SCENARIO.value == "scenario"
     assert TM.ENVIRONMENT.value == "environment"
     assert TM.PROMPT.value == "prompt"
+    assert TM.EDGE_CASE.value == "edge_case"
 
 
 def test_tm_robots_values_stable():

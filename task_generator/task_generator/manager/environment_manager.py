@@ -1,6 +1,6 @@
 import asyncio
 import typing
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any
 
 import shapely
@@ -20,6 +20,7 @@ from task_generator.shared import (
     Elevator,
     Obstacle,
     Pose,
+    Position,
     Region,
     Robot,
     SemanticCfg,
@@ -279,6 +280,43 @@ class EnvironmentManager(NodeInterface):
         realized = tuple(self._realizer.realize(obstacle, obstacle.level_id or "") for obstacle in setups)
         await self._cache_polygons(realized)
         await self._human_simulator.spawn_obstacles(realized)
+
+    async def remove_obstacles_by_id(self, ids: Sequence[str]) -> tuple[list[str], list[str]]:
+        """Remove specific spawned obstacles mid-episode; returns (removed, missing).
+
+        The footprint cache is resynced afterwards, because `static_polygons` is what
+        clearance is measured against - a despawned object left in it would report the robot
+        squeezing past something that is no longer there.
+        """
+        removed, missing = await self._human_simulator.remove_obstacles_by_id(ids)
+        if removed:
+            self._sync_static_polygons()
+        return removed, missing
+
+    async def update_agents(self, obstacles: Sequence[DynamicObstacle]) -> bool:
+        """Change spawned agents' parameters in place, mid-episode (see the human simulator's
+        `update_agents`). No frame work: nothing moves."""
+        return await self._human_simulator.update_agents(obstacles)
+
+    async def set_agent_waypoints(
+        self,
+        routes: Mapping[str, Sequence[tuple[float, float]]],
+    ) -> bool:
+        """Send already-spawned agents somewhere else, mid-episode.
+
+        Points arrive in the **abstract** frame - the frame the task layer places agents and
+        reads zones in - and are realized into the map frame here, the same contract every
+        spawn and `move_robot` path honours. No footprint resync, unlike `remove_obstacles_by_id`:
+        a rerouted pedestrian is still there.
+        """
+        realized = {
+            name: [
+                (lambda p: (float(p.x), float(p.y)))(self._realizer.realize(Position(x=float(x), y=float(y))))
+                for x, y in points
+            ]
+            for name, points in routes.items()
+        }
+        return await self._human_simulator.set_agent_waypoints(realized)
 
     async def spawn_robot(self, robots: Sequence[Robot]) -> Sequence[Robot]:
         """

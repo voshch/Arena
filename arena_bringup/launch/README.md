@@ -31,9 +31,9 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `complexity` | string | `1` | `1` map+position known; `2` map known AMCL; `3` SLAM |
 | `record.dir` | string | `` (empty) | Directory for data recording; empty disables |
 | `record.auto` | bool string | `true` | `false` = do not auto-start the recorder even when `record.dir` is set (the benchmark runner starts its own) |
-| `task.robots` | string | `explore` | Robot task mode (legacy single-kind shorthand) |
+| `task.robots` | string | `explore` | Robot task mode (legacy single-kind shorthand): `explore`, `random`, `guided`, `scenario`, `demo`, `edge_case`. `edge_case` routes repeated traversals from the scenario's `robots:` block and ends the episode on completion, obstruction, or timeout — pair it with `task.obstacles:=edge_case`. |
 | `task.config` | string | `` (empty) | Path to a [TaskModeSpec YAML](../configs/tasks/README.md); empty -> synthesize from `task.robots` (wins if both set) |
-| `task.obstacles` | string | `random` | Obstacle task mode |
+| `task.obstacles` | string | `random` | Obstacle task mode: `random`, `scenario`, `parametrized`, `environment`, `prompt`, `edge_case`. The last two need `human:=arena` — they are registered by the HumanSim adapter. `edge_case` defaults to `task.edge_case.mode:=inject`, which adds edge-case pedestrians on top of the base population and solves where they intercept the robot; `:=perturb` rewrites one existing agent instead. |
 | `task.modules` | string | `rviz_ui` | Comma-separated task modules to load |
 | `task.scenario` | string | `` (empty) | Sets the `task.scenario.file` ROS param (empty = use the `task.params` default) |
 | `task.params` | string | `configs/task_generator.yaml` | Task-generator ROS parameter YAML |

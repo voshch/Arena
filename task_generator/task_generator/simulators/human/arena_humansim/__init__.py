@@ -30,9 +30,11 @@ _WAYPOINT_MODE_MAP = {
 @attrs.define()
 class ArenaHumanDynamicObstacle:
     agent_type: str = "adult"
-    desired_velocity_min: float = 1.0
-    desired_velocity_max: float = 1.5
-    agent_radius: float = 0.35
+    #: Per-agent overrides from the scenario's `agent:` block. `None` means the scenario did not
+    #: say, and the agent type's own distribution decides.
+    desired_velocity_min: float | None = None
+    desired_velocity_max: float | None = None
+    agent_radius: float | None = None
     waypoint_mode: int = WaypointsMsg.MODE_REPEAT
     _waypoints: list = attrs.Factory(list)
 
@@ -51,23 +53,27 @@ class ArenaHumanDynamicObstacle:
         if not isinstance(raw, dict):
             return None
 
-        vel = raw.get("desired_velocity", {})
+        vel = raw.get("desired_velocity")
+        vel_min: float | None
+        vel_max: float | None
         if isinstance(vel, dict):
-            vel_min = vel.get("min", 1.0)
-            vel_max = vel.get("max", 1.5)
+            vel_min = float(vel.get("min", 1.0))
+            vel_max = float(vel.get("max", 1.5))
         elif vel is not None:
             vel_min = vel_max = float(vel)
         else:
-            vel_min, vel_max = 1.0, 1.5
+            vel_min = vel_max = None
+
+        radius = raw.get("radius", raw.get("agent_radius"))
 
         agent_type = raw.get("agent_type", "adult")
         agent_type = cls._resolve_agent_type_path(agent_type, obs)
 
         return cls(
             agent_type=agent_type,
-            desired_velocity_min=float(vel_min),
-            desired_velocity_max=float(vel_max),
-            agent_radius=float(raw.get("radius", 0.35)),
+            desired_velocity_min=vel_min,
+            desired_velocity_max=vel_max,
+            agent_radius=None if radius is None else float(radius),
             waypoints=list(getattr(obs, "waypoints", [])),
             waypoint_mode=cls._parse_waypoint_mode(extra),
         )
@@ -95,10 +101,10 @@ class ArenaHumanDynamicObstacle:
 
         params = sample_agent_type(agent_type_def, rng)
 
-        # Apply velocity/radius overrides
-        desired_velocity = float(rng.uniform(self.desired_velocity_min, self.desired_velocity_max))
-        return attrs.evolve(
-            params,
-            desired_velocity=desired_velocity,
-            agent_radius=self.agent_radius,
-        )
+        # Only what the scenario declared overrides the type's own sample.
+        overrides: dict[str, float] = {}
+        if self.desired_velocity_min is not None and self.desired_velocity_max is not None:
+            overrides["desired_velocity"] = float(rng.uniform(self.desired_velocity_min, self.desired_velocity_max))
+        if self.agent_radius is not None:
+            overrides["agent_radius"] = float(self.agent_radius)
+        return attrs.evolve(params, **overrides) if overrides else params

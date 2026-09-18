@@ -27,6 +27,7 @@ class Constants:
             SCENARIO = "scenario"
             ENVIRONMENT = "environment"
             PROMPT = "prompt"
+            EDGE_CASE = "edge_case"
 
             @classmethod
             def prefix(cls, *args: object) -> Namespace:
@@ -43,6 +44,7 @@ class Constants:
             RANDOM = "random"
             SCENARIO = "scenario"
             DEMO = "demo"
+            EDGE_CASE = "edge_case"
             STATIONARY = "stationary"
             CHARACTERIZATION = "characterization"
 

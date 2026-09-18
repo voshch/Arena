@@ -282,6 +282,16 @@ def generate_launch_description():
         default_value="false",
         description="true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, or pedestrian.",
     )
+    fail_on_static_collision = LaunchArgument(
+        name="task.fail_on_static_collision",
+        default_value="false",
+        description="true = abort the episode (FAILED) when the robot footprint contacts a wall or static obstacle; pedestrians excluded.",
+    )
+    run_seed = LaunchArgument(
+        name="task.run_seed",
+        default_value="",
+        description="Pins per-episode seed derivation (blake2b(run_seed|world|episode_id)) for reproducible runs; empty = random per boot.",
+    )
     train_mode = LaunchArgument(name="robot.train", default_value="false")
     parameter_file = LaunchArgument(
         name="task.params",
@@ -476,6 +486,8 @@ def generate_launch_description():
                     "static_sounds": auditory_static_sounds.param_value(str),
                     "auto_reset": auto_reset.param_value(bool),
                     "fail_on_collision": fail_on_collision.param_value(bool),
+                    "fail_on_static_collision": fail_on_static_collision.param_value(bool),
+                    "run_seed": run_seed.param_value(str),
                     "train_mode": train_mode.param_value(bool),
                     "env_id": allocated_id,
                     "prefix": prefix_val,

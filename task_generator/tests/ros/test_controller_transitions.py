@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from task_generator.manager.robot_manager.controller_transitions import next_transition
 
 EXPECTED = ["joint_state_broadcaster", "base_controller", "arm_controller"]

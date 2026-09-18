@@ -39,7 +39,7 @@ if TYPE_CHECKING:
             topic="{ns}/local_costmap/costmap",
             topic_type="nav_msgs/OccupancyGrid",
             kind=DisplayKind.MAP,
-            style_json=StyleSpec(alpha=0.7, extra={"rviz": {"Color Scheme": "costmap"}}).to_json(),
+            style_json=StyleSpec(alpha=0.7, enabled=False, extra={"rviz": {"Color Scheme": "costmap"}}).to_json(),
         ),
         AdapterDisplayHint(
             name="Global Costmap",

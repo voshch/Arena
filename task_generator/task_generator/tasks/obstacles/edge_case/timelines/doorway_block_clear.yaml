@@ -1,0 +1,27 @@
+# A blocked route that later clears.
+#
+# THIS IS THE CASE THE DESPAWN HALF EXISTS FOR, and the one a scenario `static:` block cannot
+# express at all: an object present from t=0 is furniture, and the robot simply plans around
+# it. The interesting question needs the obstruction to arrive after the plan, and then to
+# leave: does a robot that gave up on a route ever retry it?
+#
+# Watch for the residue. A despawned object may stay in the costmap until the clearing
+# raycast catches up, so "the robot still avoids a cart that is no longer there" is a real
+# and expected outcome here - arguably the more interesting one. It is a result to report,
+# not a bug to work around.
+
+events:
+  - action: spawn
+    entity: blocker
+    model: Office/Object/Long_Rectangle_Table
+    at: {route_fraction: 0.25}
+    place: {route_fraction: 0.6}
+    note: Squarely on the route, so the plan through it stops being valid.
+
+  - action: despawn
+    entity: blocker
+    at: {t: 45.0}
+    note: >-
+      Absolute time, not a route fraction: by now the robot may be nowhere near where the
+      route said it would be - that is the point of the case - so there is no fraction that
+      means "a while after it gave up".

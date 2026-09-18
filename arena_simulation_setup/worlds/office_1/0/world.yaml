@@ -142,18 +142,6 @@ zones:
           z: 0.0
       name: hallway_plant_4
       model: Office/SM_Plant01
-    - pose:
-        position:
-          x: 24.0
-          y: 10.7
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: hallway_plant_5
-      model: Office/SM_Plant01
     dynamic: []
 - name: cafeteria
   description: Cafeteria
@@ -630,19 +618,7 @@ zones:
   doors: []
   elevators: []
   entities:
-    static:
-    - pose:
-        position:
-          x: 14.4
-          y: 0.8
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: sub_hallway_plant
-      model: Office/SM_Plant01
+    static: []
     dynamic: []
 - name: meeting_room_1
   description: Meeting Room 1

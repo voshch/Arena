@@ -1,11 +1,11 @@
 import enum
 import uuid
 
-from task_generator.shared import CustomDynamicObstacle, DynamicObstacle, Obstacle, Pose
+from task_generator.shared import CustomDynamicObstacle, DynamicObstacle, Obstacle, Pose, Region
 from task_generator.tasks.mode import TaskMode
 from task_generator.tasks.obstacles._placement import random_placement
 
-from . import environment, parametrized, prompt, random, scenario
+from . import edge_case, environment, parametrized, prompt, random, scenario
 
 Obstacles = tuple[list[Obstacle], list[DynamicObstacle]]
 CustomObstacles = tuple[list[Obstacle], list[CustomDynamicObstacle]]
@@ -18,6 +18,28 @@ class ObstacleKind(enum.Enum):
 
 
 class TM_Obstacles(TaskMode):
+    @property
+    def pending_regions(self) -> list[Region]:
+        """Flow regions (sources/sinks) this mode wants configured for the coming episode.
+
+        A mode *fills* this during `reset` rather than pushing to the simulator itself, and
+        `Task._reset_episode` applies it once afterwards. Two reasons:
+
+        * A mode that pushes its own regions has already half-applied the population by the
+          time `reset` returns, so anything wrapping it cannot see or change the flow -
+          `tm_obstacles:=edge_case` could perturb agents but not the crowd that spawns them,
+          which is exactly what Level B needs.
+        * Nothing ever called `remove_all_regions`, so regions accumulated across scenario
+          switches. Applying them from one place makes clearing-then-setting the normal path.
+
+        Lazily created so modes need not touch `__init__`.
+        """
+        regions = getattr(self, "_pending_regions", None)
+        if regions is None:
+            regions = []
+            self._pending_regions = regions
+        return regions
+
     async def reset(self, *, seed: int) -> Obstacles:
         return [], []
 
@@ -37,5 +59,20 @@ class TM_Obstacles(TaskMode):
             await self._ctx.environment_manager.spawn_dynamic_obstacles([obstacle])
         return obstacle.sim_path
 
+    async def retract(self, entity_id: str) -> bool:
+        """Remove one obstacle this mode added with :meth:`extend`. True if it was there.
 
-__all__ = ["TM_Obstacles", "ObstacleKind", "Obstacles", "CustomObstacles", "environment", "parametrized", "prompt", "random", "scenario"]
+        The counterpart `extend` never had. Without it the only way to remove an obstacle is
+        `EnvironmentManager.reset`, which purges by layer at an episode boundary - so an
+        object could appear mid-episode but never disappear, and "the blocked doorway
+        clears" was not expressible. That case is the interesting half: whether a robot that
+        gave up on a route ever retries it.
+
+        Takes the id `extend` returned (the entity's `sim_path`). False means the id
+        resolved to nothing, which is not an error - it is the state the caller wanted.
+        """
+        removed, _ = await self._ctx.environment_manager.remove_obstacles_by_id([entity_id])
+        return bool(removed)
+
+
+__all__ = ["TM_Obstacles", "ObstacleKind", "Obstacles", "CustomObstacles", "edge_case", "environment", "parametrized", "prompt", "random", "scenario"]
