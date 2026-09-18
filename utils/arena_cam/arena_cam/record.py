@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 
 if typing.TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from sensor_msgs.msg import Image
 
 
@@ -37,18 +39,25 @@ def screenshots_dir() -> Path:
     return (Path(base) if base else Path.cwd()) / "screenshots"
 
 
-def record_path(out: str, force: bool = False) -> Path:
-    """Resolve and prepare the output file.
-
-    Refuse an existing file so a take is never clobbered, `force` overrides that.
-    """
+def record_path(out: str) -> Path:
+    """Resolve the output file and create its directory."""
     if shutil.which("ffmpeg") is None:
         raise FileNotFoundError("cam: record needs ffmpeg on PATH")
     path = resolve_path(out)
-    if path.exists() and not force:
-        raise FileExistsError(f"cam: {path} already exists, pass -f/--force to overwrite")
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def tagged(path: Path, tag: str) -> Path:
+    """`tour.mp4` -> `tour-sim.mp4`, one file per recorded camera."""
+    return path.with_stem(f"{path.stem}-{tag}")
+
+
+def claim(paths: Iterable[Path], force: bool = False) -> None:
+    """Refuse existing files so a take is never clobbered, `force` overrides that."""
+    taken = [str(path) for path in paths if path.exists()]
+    if taken and not force:
+        raise FileExistsError(f"cam: refusing to overwrite {', '.join(taken)}, pass -f/--force")
 
 
 def rgb_bytes(image: Image) -> bytes:

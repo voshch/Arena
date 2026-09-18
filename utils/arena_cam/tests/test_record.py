@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from arena_cam.record import Recorder, default_name, record_path
+from arena_cam.record import Recorder, claim, default_name, record_path, tagged
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe not on PATH")
 
@@ -59,14 +59,22 @@ def test_no_frames_is_a_failed_take(tmp_path: Path) -> None:
     assert not Recorder(str(tmp_path / "empty.mp4"), 30).close()
 
 
-def test_record_path_defaults_and_refuses_clobber(tmp_path: Path) -> None:
+def test_record_path_defaults_and_tags_per_camera(tmp_path: Path) -> None:
     path = record_path(str(tmp_path / "takes" / "tour"))
     assert path == tmp_path / "takes" / "tour.mp4"
-    path.write_bytes(b"")
-    with pytest.raises(FileExistsError):
-        record_path(str(path))
-    assert record_path(str(path), force=True) == path
+    assert path.parent.is_dir()
     assert record_path(str(tmp_path / "tour.mkv")).suffix == ".mkv"
+    assert tagged(path, "sim") == tmp_path / "takes" / "tour-sim.mp4"
+    assert tagged(path, "viz0") == tmp_path / "takes" / "tour-viz0.mp4"
+
+
+def test_claim_refuses_clobber(tmp_path: Path) -> None:
+    taken, free = tmp_path / "tour-sim.mp4", tmp_path / "tour-viz0.mp4"
+    taken.write_bytes(b"")
+    claim([free])
+    with pytest.raises(FileExistsError, match="tour-sim.mp4"):
+        claim([taken, free])
+    claim([taken, free], force=True)
 
 
 def test_default_name_is_stem_and_filesystem_safe_timestamp() -> None:

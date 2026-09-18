@@ -4,7 +4,7 @@ One command shape for everything:
 
     arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]]   # name is verb, shot, or .yaml
     arena cam <name> ... --record [FILE] [--fps 30] [--lockstep] [-f]   # render to a video (ffmpeg) instead
-    arena cam drive [--sim] [--viz [ENV_ID]]     # fly the camera from the keyboard
+    arena cam drive [--sim] [--viz [ENV_ID]] [--record [FILE] ...]   # fly the camera from the keyboard, R records
     arena cam list                               # catalog of verbs and shots
     arena cam show <name>                        # parameters of a verb or shot
 
@@ -20,7 +20,7 @@ bare it is `<name>_<YYYYmmdd-HHMMSS>`. `--fps` sets the frame rate and
 Targets select which viewport cameras the shot drives. With no flag it drives
 everything: the sim GUI camera plus every env's rviz camera. `--sim` is sim only,
 `--viz` is all rviz cameras, `--viz <env_id>` is one env's, and the flags compose.
-Record needs the selection to resolve to a single camera.
+Record writes one file per selected camera, tagged `-sim` / `-viz<env>` when there are several.
 """
 
 from __future__ import annotations
@@ -96,9 +96,16 @@ def _print_catalog() -> None:
         print("  (none installed)")
 
 
-def _drive(sim_flag: bool, viz_arg: object) -> None:
-    """Hand the camera to the rqt panel, forwarding the target flags."""
+def _drive(sim_flag: bool, viz_arg: object, record: str | None, fps: float, lockstep: bool, force: bool) -> None:
+    """Hand the camera to the rqt panel, forwarding the target and record flags."""
     flags: list[str] = []
+    if record is not None:
+        flags.append(f"--record={record}")
+    flags += ["--fps", f"{fps:g}"]
+    if lockstep:
+        flags.append("--lockstep")
+    if force:
+        flags.append("--force")
     if sim_flag:
         flags.append("--sim")
     if viz_arg is _VIZ_ALL:
@@ -106,9 +113,7 @@ def _drive(sim_flag: bool, viz_arg: object) -> None:
     elif viz_arg is not None:
         flags += ["--viz", str(viz_arg)]
     # force-discover: an rqt plugin cache written before this panel existed hides it.
-    argv = ["rqt", "--force-discover", "--standalone", "arena_cam"]
-    if flags:
-        argv += ["--args", *flags]
+    argv = ["rqt", "--force-discover", "--standalone", "arena_cam", "--args", *flags]
     os.execvp(argv[0], argv)
 
 
@@ -155,12 +160,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--lockstep", action="store_true", help="record in physics lockstep, one 1/fps step per frame")
     parser.add_argument("-f", "--force", action="store_true", help="overwrite an existing record file")
     args = parser.parse_intermixed_args(argv if argv is not None else sys.argv[1:])
-    if args.record is None and (args.fps != 30.0 or args.lockstep or args.force):
+    if args.record is None and args.name != "drive" and (args.fps != 30.0 or args.lockstep or args.force):
         parser.error("--fps, --lockstep and -f only apply with --record")
     if args.record and "=" in args.record:
         parser.error(f"--record took {args.record!r} as the file name, use --record=FILE or put it after the key=value params")
 
-    if args.name is None or args.name == "list":
+    if args.name is None:
+        parser.print_usage()
+        _print_catalog()
+        print("play one with `arena cam <name> [key=value ...]`, film it with `--record [FILE]`, see `arena cam --help`")
+        return
+    if args.name == "list":
         _print_catalog()
         return
     if args.name == "show":
@@ -171,7 +181,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.name == "drive":
         if args.params:
             parser.error("drive takes no params, only the target flags")
-        _drive(args.sim, args.viz)
+        _drive(args.sim, args.viz, args.record, args.fps, args.lockstep, args.force)
         return
     params = _parse_params(args.params)
     targets = _resolve_targets(args.sim, args.viz)
@@ -186,7 +196,7 @@ def main(argv: list[str] | None = None) -> None:
     out = args.record or default_name(os.path.splitext(os.path.basename(args.name))[0] if is_path else args.name)
     try:
         cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep)
-    except (FileExistsError, FileNotFoundError) as e:
+    except FileNotFoundError as e:
         raise SystemExit(str(e)) from e
 
 

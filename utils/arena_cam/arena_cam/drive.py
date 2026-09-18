@@ -5,17 +5,24 @@ there is no asyncio bridge: publishes are synchronous, service calls fire-and-fo
 Streaming is continuous while engaged, including at rest, since the plugin hands the
 camera back after ~400 ms of silence. Release is just stopping the stream.
 
+A take is the one exception: `R` hosts a recording `CamNode` whose single segment
+pulls its frames from `Driver.next_frame`, so a driven take is a scripted take.
+
 Keyframes lead by `DRIVE_LEAD` instead of the scripted `client.LEAD`: a starved
 publisher stutters at the last keyframe rather than trailing every keypress.
 """
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
+import threading
 import typing
 
 from arena_runtime_msgs.msg import EnvRegistry
 from geometry_msgs.msg import PoseStamped
 from rclpy.duration import Duration
+from rclpy.executors import SingleThreadedExecutor
 from task_generator_msgs.msg import RobotFleet
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import (
@@ -26,6 +33,8 @@ from viewport_control_msgs.srv import (
 )
 
 from . import record, surfaces
+from .camera import Camera
+from .client import CamNode, Steered
 from .fly import Fly, Intent, View
 
 if typing.TYPE_CHECKING:
@@ -45,6 +54,8 @@ RESEED_TIMEOUT = 1.0
 ROBOTS_SUFFIX = "/state/robots"
 
 REFERENCE_MODES = ("full", "yaw", "position")
+# how long shutdown waits for a take to close its files
+FINISH_TIMEOUT = 20.0
 
 
 class _Surface:
@@ -101,13 +112,60 @@ class EntityRoster:
         return sorted({name for names in self._names.values() for name in names})
 
 
+@dataclasses.dataclass
+class Take:
+    """Record flags of the panel. An empty `name` stamps a fresh `drive_<time>` per take."""
+
+    start: bool = False  # record from the first cameras found, without waiting for R
+    name: str = ""
+    fps: float = 30.0
+    force: bool = False
+    lockstep: bool = False
+
+
+class _Recording:
+    """A scripted take whose only segment is steered by the driver: a `CamNode` on the
+    host's rclpy context, run on a thread of its own."""
+
+    def __init__(self, selection: TargetSelection, take: Take, next_frame: Callable[[float], Steered | None]) -> None:
+        self.path = record.record_path(take.name or record.default_name("drive"))
+        self.recorded = False
+        self._thread = threading.Thread(target=lambda: asyncio.run(self._run(selection, take, next_frame)), daemon=True)
+        self._thread.start()
+
+    async def _run(self, selection: TargetSelection, take: Take, next_frame: Callable[[float], Steered | None]) -> None:
+        loop = asyncio.get_running_loop()
+        node = CamNode(timeline=Camera(selection).steer(next_frame), targets=selection, node_name="arena_cam_take", record=(str(self.path), take.fps), force=take.force, lockstep=take.lockstep)
+        node.event_loop = loop
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+        spin = loop.run_in_executor(None, executor.spin)
+        try:
+            self.recorded = await node.take()
+        finally:
+            executor.shutdown()
+            await spin
+            node.destroy_node()
+
+    def done(self) -> bool:
+        return not self._thread.is_alive()
+
+    def wait(self, timeout: float) -> None:
+        self._thread.join(timeout)
+
+
 class Driver:
     """Drives the selected viewport surfaces from live intent. Qt-free, tick it from anywhere."""
 
-    def __init__(self, node: rclpy.node.Node, selection: TargetSelection, *, lead: float = DRIVE_LEAD) -> None:
+    def __init__(self, node: rclpy.node.Node, selection: TargetSelection, *, lead: float = DRIVE_LEAD, take: Take | None = None) -> None:
         self._node = node
         self._selection = selection
         self.lead = lead
+        self._take = take or Take()
+        self._autostart = self._take.start
+        self._recording: _Recording | None = None
+        self._stopping = False
+        self._intent = Intent()
         self.fly = Fly()
         self.engaged = False
         self.entity = ""
@@ -200,6 +258,10 @@ class Driver:
 
     def tick(self, dt: float, intent: Intent) -> tuple[Vec3, Quat, float] | None:
         """Integrate one frame and stream it, or mirror the live camera. None when not driving."""
+        if self._recording is not None:
+            # the take pulls its frames through next_frame, one frame period each
+            self._intent = intent
+            return None
         if not self._surfaces:
             return None
         if not self.engaged:
@@ -252,6 +314,8 @@ class Driver:
             self.fly.stop()
         elif name == "p":
             self.grab_still()
+        elif name == "r":
+            self.toggle_recording()
 
     def frame(self) -> None:
         """Orbit the target entity in its own frame, so the camera follows it."""
@@ -298,6 +362,53 @@ class Driver:
         req.fov = float(fov)
         surface.capture.call_async(req).add_done_callback(self._on_still)
 
+    # recording ------------------------------------------------------------
+
+    @property
+    def recording(self) -> bool:
+        return self._recording is not None
+
+    def toggle_recording(self) -> None:
+        if self._recording is not None:
+            self.stop_recording()
+            return
+        if not self._surfaces:
+            self.status = "no viewport cameras to record"
+            return
+        try:
+            self._recording = _Recording(self._selection, self._take, self.next_frame)
+        except FileNotFoundError as e:
+            self.status = str(e)
+            return
+        self._stopping = False
+        self.status = f"recording to {self._recording.path.parent}, R stops"
+
+    def stop_recording(self) -> None:
+        """Ask the take to end, `record_tick` reaps it once the files are closed."""
+        self._stopping = True
+
+    def next_frame(self, dt: float) -> Steered | None:
+        """The take's pose source: fly one frame period on the held keys, None ends the take."""
+        if self._stopping:
+            return None
+        pos, quat, fov = self.fly.tick(dt, self._intent)
+        return Steered(pos, quat, fov, self._referenced)
+
+    def finish_recording(self) -> None:
+        """Blocking stop for host shutdown: the files close and a lockstep hold is released."""
+        if self._recording is not None:
+            self._stopping = True
+            self._recording.wait(FINISH_TIMEOUT)
+            self.record_tick()
+
+    def record_tick(self) -> None:
+        if self._autostart and self._surfaces:
+            self._autostart = False
+            self.toggle_recording()
+        if self._recording is not None and self._recording.done():
+            self.status = f"saved to {self._recording.path.parent}" if self._recording.recorded else "nothing recorded, see the log"
+            self._recording = None
+
     def _on_still(self, future: object) -> None:
         result = future.result()
         if result is None or not result.success:
@@ -332,4 +443,5 @@ class Driver:
         where = f"pos {pos[0]:.1f} {pos[1]:.1f} {pos[2]:.1f}"
         aim = f"dir {fwd[0]:.2f} {fwd[1]:.2f} {fwd[2]:.2f}"
         fov_text = "sim" if fov <= 0.0 else f"{fov:.2f}"
-        return f"{where} | {aim} | fov {fov_text} | {self.anchor or 'world'} | {len(self._surfaces)} cam"
+        rec = " | REC" if self.recording else ""
+        return f"{where} | {aim} | fov {fov_text} | {self.anchor or 'world'} | {len(self._surfaces)} cam{rec}"

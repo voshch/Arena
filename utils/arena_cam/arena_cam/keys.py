@@ -26,6 +26,7 @@ _SCANCODES = {
     16: "7",
     65: "space",
     33: "p",
+    27: "r",
 }
 
 # Layout-dependent Qt keys, for platforms that report no scancode or one outside the
@@ -51,6 +52,7 @@ _KEYS = {
     Qt.Key_7: "7",
     Qt.Key_Space: "space",
     Qt.Key_P: "p",
+    Qt.Key_R: "r",
 }
 
 

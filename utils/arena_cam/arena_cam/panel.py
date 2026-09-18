@@ -52,6 +52,7 @@ _COMMON_ROWS = (
     ("1 / 3 / 7", "front / right / top"),
     ("Space", "brake, drop the carried momentum"),
     ("P", "still capture"),
+    ("R", "start / stop recording"),
 )
 
 _LEAD_RANGE_MS = (10, 200)
@@ -63,9 +64,10 @@ _DEACTIVATE_EVENTS = (QEvent.ApplicationDeactivate, QEvent.WindowDeactivate)
 class Panel(QWidget):
     """Camera readout, target picker and speed knobs around the keyboard driving."""
 
-    def __init__(self, selection: TargetSelection) -> None:
+    def __init__(self, selection: TargetSelection, take: drive.Take | None = None) -> None:
         super().__init__()
         self._selection = selection
+        self._take = take
         self._driver: Driver | None = None
         self._roster: EntityRoster | None = None
         self._last = time.monotonic()
@@ -156,7 +158,7 @@ class Panel(QWidget):
     # lifecycle ------------------------------------------------------------
 
     def attach(self, node: rclpy.node.Node) -> None:
-        self._driver = Driver(node, self._selection)
+        self._driver = Driver(node, self._selection, take=self._take)
         self._roster = EntityRoster(node)
         self.speed.setValue(self._driver.fly.speed)
         self.reference_mode.setCurrentText(self._driver.reference_mode)
@@ -164,6 +166,7 @@ class Panel(QWidget):
 
     def detach(self) -> None:
         if self._driver is not None:
+            self._driver.finish_recording()
             self._driver.release()
 
     def command(self, label: str) -> None:
@@ -243,6 +246,7 @@ class Panel(QWidget):
                 self._sync_entities(self._roster.names())
 
         self._driver.tick(dt, fly.intent_from_keys(self._keys, self._boost, self._crawl))
+        self._driver.record_tick()
         self._sync_keymap(self._driver.fly.mode)
         self.summary_label.setText(self._driver.summary())
         self.status_label.setText(self._driver.status)

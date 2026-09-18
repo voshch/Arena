@@ -103,10 +103,13 @@ unchanged.
 
 **`track`** -- `entity`, `mode="full"`
 Attach the reference frame to a TF frame (e.g. `"env_0/jackal/base_link"`), the
-name every backend resolves. A backend-native name is accepted as well and tried
-first: a gz entity name (`env_0/jackal`) or an Isaac prim path
-(`/World/env_0/Robots/jackal`). `mode` is `"full"`, `"yaw"`, or `"position"`.
-All subsequent verbs run in this entity's frame.
+name every backend resolves and the one the fleet advertises as `base_frame`. A
+backend-native name is accepted as well and tried first: a gz entity name
+(`env_0/jackal`) or an Isaac prim path (`/World/env_0/Ground`). Under Isaac a
+prim path only fits static stage entities: physics moves bodies in Fabric, not
+in USD, and a robot's root Xform never leaves its spawn pose, so robots there are
+tracked by their TF frame. `mode` is `"full"`, `"yaw"`, or `"position"`. All
+subsequent verbs run in this entity's frame.
 
 **`world`** -- no params
 Reset the reference frame to the world origin.
@@ -389,7 +392,7 @@ may sit anywhere on the line.
   itself is localized.
 - `--record [FILE]` renders the take to a video instead of playing it live, see
   [Recording](#recording). `--fps`, `--lockstep` and `-f` qualify it and are
-  rejected without it. The selection must resolve to a single camera.
+  rejected without it. Every selected camera is recorded, one file each.
 
 ```
 arena cam look eye=8,8,6 target=0,0,0.5
@@ -440,6 +443,7 @@ keyboard, over the same selection a shot uses (no flag drives everything,
 arena cam drive               # every viewport camera
 arena cam drive --sim         # the sim GUI camera only
 arena cam drive --viz 0       # env 0's rviz camera
+arena cam drive --record      # record the flight from the start
 ```
 
 The panel drives the camera while its window is active and releases it as soon as
@@ -465,6 +469,15 @@ snap to front / right / top, `Space` brakes, `P` captures a still to
 directory the Gazebo GUI and Isaac Kit screenshot buttons are forwarded to).
 Keys are ignored while a text field has
 focus, so the target box stays typeable.
+
+`R` starts and stops a take, `--record [FILE]` starts one as soon as the cameras
+are found, and `--fps N`, `--lockstep` and `-f` apply to every take of the session. Each camera writes its own file under
+`$ARENA_DATA_DIR/recordings/` exactly as a scripted take does, a bare take is named
+`drive_<YYYYmmdd-HHMMSS>`. A driven take is a scripted take whose one segment is
+steered by the held keys, so everything under [Recording](#recording) applies,
+`--lockstep` included. Each recorded frame flies the camera one frame period, which
+makes the flight run in video time: it feels slow in the panel while captures are
+slower than the frame rate, and plays back smooth.
 
 `[` / `]` are a held axis like the movement keys, not a step: fov ramps at
 0.5 rad/s while held, so a tap moves it by a degree or two.
@@ -497,9 +510,13 @@ smooth and deterministic regardless of render speed. A bare `out` name lands
 under `$ARENA_DATA_DIR/recordings/` and an absolute or slash-bearing path is used
 as given. The suffix picks the container (`tour.mkv`, `tour.webm`), none means
 `.mp4`. No name at all means `take_<YYYYmmdd-HHMMSS>`, a colon-free stamp that
-survives NTFS, exFAT and URLs. Recording onto an existing file errors, so a take
-is never silently clobbered. Pass `force=True` (CLI: `-f` / `--force`) to
-overwrite it.
+survives NTFS, exFAT and URLs. Every selected camera is recorded at once, each
+to its own file: a lone camera keeps the name, several get a tag before the
+suffix, `tour-sim.mp4` for the sim camera and `tour-viz0.mp4` for env 0's rviz.
+While a shot leaves the fov open, a multi-camera take films at `FOV_DEFAULT` so
+the cameras share one lens instead of each keeping its own.
+Recording onto an existing file errors, so a take is never silently clobbered.
+Pass `force=True` (CLI: `-f` / `--force`) to overwrite it.
 
 ```python
 cam = Camera()
@@ -518,6 +535,7 @@ arena cam tour --record tour --fps 30
 arena cam orbit radius=4 duration=8 --record           # recordings/orbit_20260918-143012.mp4
 arena cam orbit radius=4 duration=8 --record orbit --lockstep
 arena cam shots/my_shot.yaml --record                   # recordings/my_shot_20260918-143012.mp4
+arena cam tour --record tour --sim --viz 0              # recordings/tour-sim.mp4 + tour-viz0.mp4
 ```
 
 `--record` takes an optional FILE, so a `key=value` token right after a bare
@@ -556,7 +574,8 @@ rviz and all simulators host the `/arena/viewport/*` contract (`set_view`,
   writes into the generated config. Drives the rviz camera, so it works under
   every simulator.
 - **Isaac**, under `/arena`, via the `isaac_utils.viewport` node the sim process
-  starts. GUI only, `--headless` starts none.
+  starts. GUI only, `--headless` starts none. Robots are tracked by TF frame
+  there, see `track`.
 
 Every backend implements `capture`. The rviz capture renders offscreen at the
 panel's size, so it also works while the window is covered. Isaac answers from a

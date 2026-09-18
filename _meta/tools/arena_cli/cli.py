@@ -229,9 +229,56 @@ _register(_human_mod.VERB)
 _register(_robot_mod.VERB)
 
 
-@verb("cam", passthrough=True)
+CAM_SPEC = Union(
+    Static({"list": "catalog of verbs and shots", "show": "parameters of a verb or shot", "drive": "fly the camera from the keyboard"}),
+    Flags(
+        {
+            "--sim": "the sim GUI camera only",
+            "--viz": "rviz cameras, bare for all or an env id for one",
+            "--record": "render to a video instead of playing live",
+            "--fps": "record frame rate (default 30)",
+            "--lockstep": "record in physics lockstep, one 1/fps step per frame",
+            "--force": "overwrite an existing record file",
+        },
+        valued=("--fps",),
+    ),
+)
+
+
+@verb("cam", passthrough=True, complete=CAM_SPEC)
 def cam(args: list[str]) -> None:
-    """Control the simulator viewport camera."""
+    """Script the viewport cameras: the sim GUI's and every env's rviz.
+
+    \b
+    Usage:
+      cam <name> [key=value ...]   play a verb, a shot or a shot .yaml live
+      cam list                     catalog of verbs and shots
+      cam show <name>              parameters of a verb or shot
+      cam drive                    fly the camera from the keyboard, R starts and stops a take
+
+    \b
+    Targets (default: every camera, the flags compose):
+      --sim                        the sim GUI camera only
+      --viz [ENV_ID]               rviz cameras, bare for all or an env id for one
+
+    \b
+    Recording (needs ffmpeg):
+      --record [FILE]              render to a video instead of playing live
+      --fps N                      frame rate (default 30)
+      --lockstep                   step physics by 1/fps per frame, frame-exact at any render speed
+      -f, --force                  overwrite an existing file
+
+    \b
+    Examples:
+      cam orbit radius=4 duration=8
+      cam tour --record tour --sim --viz 0
+      cam orbit radius=4 duration=8 --record --lockstep
+      cam drive --record           record the flight from the start, --lockstep frame by frame
+
+    FILE lands under $ARENA_DATA_DIR/recordings (.mp4 if no suffix), bare --record names
+    it <name>_<YYYYmmdd-HHMMSS>. Each camera records its own file, tagged -sim / -viz<env>
+    when there are several. Flags may sit anywhere on the line.
+    """
     _exec("ros2", "run", "arena_cam", "cam", *args)
 
 
