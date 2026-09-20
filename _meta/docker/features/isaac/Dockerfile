@@ -1,7 +1,7 @@
 # --- Stage 1: Builder (Python 3.12 + ROS Jazzy) ---
 # Isaac Sim 6.0 bundles Python 3.12, matching Jazzy's native interpreter, so the
 # messages are built against the system python3 with no deadsnakes/venv detour.
-FROM osrf/ros:jazzy-desktop AS builder
+FROM docker.io/osrf/ros:jazzy-desktop AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential cmake git curl \
@@ -14,8 +14,8 @@ RUN python3 --version && \
 
 WORKDIR /opt/msg_build
 
-ADD src/Arena/arena_isaac/isaacsim_msgs src/isaacsim_msgs
-ADD src/Arena/utils/msgs/arena_people_msgs src/arena_people_msgs
+ADD arena_isaac/isaacsim_msgs src/isaacsim_msgs
+ADD utils/msgs/arena_people_msgs src/arena_people_msgs
 
 # Install build dependencies (Including NumPy for the C-extensions)
 RUN . /opt/ros/jazzy/setup.sh && \

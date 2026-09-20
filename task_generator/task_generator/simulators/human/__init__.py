@@ -24,6 +24,7 @@ from arena_runtime_msgs.srv import LockstepRegister
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Pose as PoseMsg
+from geometry_msgs.msg import Quaternion as QuaternionMsg
 from task_generator_msgs.msg import ContinuousHeardSoundState
 from visualization_msgs.msg import MarkerArray
 
@@ -115,6 +116,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ),
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
+        self._ped_orientations: dict[str, QuaternionMsg] = {}
         self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
@@ -263,12 +265,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _on_arena_peds(self, msg: Pedestrians) -> None:
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
+        self._ped_orientations = {p.name: p.pose.orientation for p in msg.pedestrians}
 
     def pedestrian_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
         return [(name, xy, PED_RADIUS) for name, xy in self._ped_positions_xy.items()]
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
-        """Teleport tracked pedestrians to given (x, y). Default impl asks the sim to move them."""
+        """Teleport tracked pedestrians to given (x, y), keeping their facing. Default impl asks the sim to move them."""
         if not destinations:
             return True
         peds_msg = Pedestrians()
@@ -279,6 +282,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ped.pose.position.x = x
             ped.pose.position.y = y
             ped.pose.position.z = 0.0
+            if (orientation := self._ped_orientations.get(name)) is not None:
+                ped.pose.orientation = orientation
             peds_msg.pedestrians.append(ped)
             if cur is not None:
                 self._ped_positions_xy[name] = (x, y)

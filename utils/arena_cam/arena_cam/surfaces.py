@@ -57,6 +57,11 @@ def env_id_from_ns(ns: str) -> int | None:
     return None
 
 
+def tag(ns: str) -> str:
+    """Short name of a viewport surface for file names: `sim`, or `viz<env_id>`."""
+    return "sim" if ns == ARENA_ROOT else f"viz{env_id_from_ns(ns)}"
+
+
 def env_refs(msg: EnvRegistry) -> dict[int, tuple[float, float]]:
     return {r.env_id: (float(r.reference[0]), float(r.reference[1])) for r in msg.envs}
 

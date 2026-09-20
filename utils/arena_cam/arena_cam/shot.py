@@ -5,7 +5,7 @@ Schema (see cam/README.md):
     params:                            # optional defaults for ${...} references
       target: [0, 0, 0.5]
     projection: perspective            # optional, desugars to a leading step
-    reference: { entity: env_0/jackal, mode: yaw }   # optional, desugars to a leading step
+    reference: { entity: env_0/jackal/base_link, mode: yaw }   # optional, desugars to a leading step
     timeline:
       - look:  { eye: [8, 8, 6], target: "${target}", fov: 1.0 }
       - orbit: { radius: 4, elevation_deg: 30, sweep_deg: 360, duration: 8, ease: inout }

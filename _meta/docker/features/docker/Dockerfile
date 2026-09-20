@@ -1,5 +1,5 @@
 ARG ROS_DISTRO=jazzy
-FROM osrf/ros:${ROS_DISTRO}-desktop AS base
+FROM docker.io/osrf/ros:${ROS_DISTRO}-desktop AS base
 
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -37,7 +37,7 @@ FROM base AS python_deps
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /build
-COPY src/Arena/pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock* ./
 
 RUN uv venv /opt/venv --system-site-packages
 
@@ -71,8 +71,9 @@ RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # install lightsfm
-ADD https://github.com/robotics-upo/lightsfm.git /lightsfm
-RUN cd /lightsfm && make && make install
+RUN git clone --depth 1 https://github.com/robotics-upo/lightsfm.git /lightsfm \
+    && make -C /lightsfm && make -C /lightsfm install \
+    && rm -rf /lightsfm
 
 
 
@@ -94,8 +95,12 @@ RUN mkdir -p install
 RUN mkdir -p log
 RUN chown -R ${uid}:${gid} /opt/arena_ws
 
+# gz cache mount points
+RUN mkdir -p /home/${username}/.gz/gui/pictures /home/${username}/.gz/sim /home/${username}/.gz/rendering
+RUN chown -R ${uid}:${gid} /home/${username}/.gz
 
-COPY src/Arena/_meta/docker/features/docker/entrypoint.sh /entrypoint.sh
+
+COPY _meta/docker/features/docker/entrypoint.sh /entrypoint.sh
 RUN ln -fs src/Arena/_meta/docker/features/docker/source.container ./source
 
 RUN chmod +x /entrypoint.sh

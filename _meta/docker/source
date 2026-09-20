@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
+export ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
 
 export HOST_ARENA_WS_DIR="$ARENA_WS_DIR"
 export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
@@ -8,6 +8,8 @@ export ARENA_ROS_DISTRO=jazzy
 
 export ARENA_DATA_DIR="${ARENA_DATA_DIR:-$ARENA_WS_DIR/data}"
 export HOST_ARENA_DATA_DIR="$ARENA_DATA_DIR"
+export ARENA_SCREENSHOTS_DIR="${ARENA_SCREENSHOTS_DIR:-$ARENA_DATA_DIR/screenshots}"
+export HOST_ARENA_SCREENSHOTS_DIR="$ARENA_SCREENSHOTS_DIR"
 export ROSNAV_AGENTS_DIR="${ROSNAV_AGENTS_DIR:-$ARENA_DATA_DIR/agents}"
 
 HOST_UID=$(id -u)
@@ -17,17 +19,6 @@ export HOST_GID
 
 export arena_compose_sudo=""
 source "$ARENA_DIR/_meta/docker/lib"
-
-docker_env=""
-docker_env="${docker_env} ARENA_PROJECT_NAME=$ARENA_PROJECT_NAME"
-docker_env="${docker_env} ARENA_IMAGE=$ARENA_IMAGE"
-docker_env="${docker_env} ARENA_IMAGE_TAG=$ARENA_IMAGE_TAG"
-docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
-docker_env="${docker_env} HOST_UID=$HOST_UID"
-docker_env="${docker_env} HOST_GID=$HOST_GID"
-docker_env="${docker_env} ARENA_DATA_DIR=$ARENA_DATA_DIR"
-docker_env="${docker_env} ROSNAV_AGENTS_DIR=$ROSNAV_AGENTS_DIR"
-export docker_env
 
 arena_service="arena"
 
@@ -192,6 +183,7 @@ if [ "$1" = "uninstall" ]; then
 fi
 
 mkdir -p "$ARENA_DATA_DIR"
+mkdir -p "$ARENA_SCREENSHOTS_DIR"
 mkdir -p "$ARENA_DIR/.venv"
 mkdir -p "$ARENA_WS_DIR/build"
 mkdir -p "$ARENA_WS_DIR/install"
@@ -203,52 +195,59 @@ if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
     touch "$ARENA_WS_DIR/.env"
 fi
 
-xhost +local:docker
+arena_podman_env || return 1 2>/dev/null || exit 1
+
+xhost +local:docker || true
+
+_teardown_in_flight(){
+    [ -n "$( { arena_docker ps -q --filter "label=arena.down=$ARENA_PROJECT_NAME"
+               arena_docker ps -aq --filter "label=com.docker.compose.project=$ARENA_PROJECT_NAME" --filter status=removing
+             } 2>/dev/null )" ]
+}
 
 do_run(){
+    local waited=0
+    if _teardown_in_flight; then
+        echo "waiting for teardown to finish..."
+        while _teardown_in_flight; do
+            sleep 1
+            waited=$((waited + 1))
+            [ "$waited" = 60 ] && echo "still waiting after 60s, inspect: docker ps --filter label=arena.down=$ARENA_PROJECT_NAME"
+        done
+    fi
+
+    { arena_docker ps -aq --filter "label=com.docker.compose.project=$ARENA_PROJECT_NAME" --filter status=dead 2>/dev/null \
+        | xargs -r ${arena_compose_sudo} docker rm -f > /dev/null; } || true
+
+    local nobuild=""
+    if arena_podman; then
+        nobuild=--no-build
+        arena_docker image inspect "$ARENA_IMAGE" >/dev/null 2>&1 \
+            || arena_compose_build "$arena_service" || return 1
+    fi
     arena_docker_compose \
-        up -d --remove-orphans --timeout 0 \
+        up -d --remove-orphans --timeout 0 $nobuild \
         "$arena_service"
 
     local ID
-    ID=$(arena_docker_compose ps -q "$arena_service")
+    ID=$(arena_containers -a "$arena_service" | head -n1)
     if [ -z "$ID" ]; then
         echo "Failed to find container for service '$arena_service'."
         return 1
     fi
 
-    local HEALTH_STATUS
-    HEALTH_STATUS=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$ID" 2>/dev/null)
-    if [ "$HEALTH_STATUS" != "healthy" ] && [ "$HEALTH_STATUS" != "none" ]; then
-        (
-            arena_docker_compose attach --no-stdin "$arena_service" &
-            local LOGS_PID=$!
-            
-            trap 'kill "$LOGS_PID" 2>/dev/null' EXIT
-            trap 'kill "$LOGS_PID" 2>/dev/null; exit 130' INT TERM
-
-            while true; do
-                ID=$(arena_docker_compose ps -q "$arena_service")
-                if [ -z "$ID" ]; then
-                    sleep 1
-                    continue
-                fi
-
-                HEALTH_STATUS=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$ID" 2>/dev/null)
-                local RUN_STATUS
-                RUN_STATUS=$(docker inspect -f '{{.State.Status}}' "$ID" 2>/dev/null)
-
-                if [ "$HEALTH_STATUS" = "healthy" ] || { [ "$HEALTH_STATUS" = "none" ] && [ "$RUN_STATUS" = "running" ]; }; then
-                    break
-                fi
-
-                if [ -n "$RUN_STATUS" ] && [ "$RUN_STATUS" != "running" ] && [ "$RUN_STATUS" != "restarting" ]; then
-                    exit 1
-                fi
-                sleep 1
-            done
-        ) || return $?
-    fi
+    case "$(arena_container_health "$arena_service")" in
+        healthy|none) ;;
+        *)
+            (
+                arena_docker attach --no-stdin --sig-proxy=false "$ID" &
+                local LOGS_PID=$!
+                trap 'kill "$LOGS_PID" 2>/dev/null' EXIT
+                trap 'kill "$LOGS_PID" 2>/dev/null; exit 130' INT TERM
+                arena_container_wait "$arena_service"
+            ) || return $?
+            ;;
+    esac
 
     if [ -t 0 ] && [ -t 1 ]; then
         arena_docker_compose exec "$arena_service" /entrypoint.sh \

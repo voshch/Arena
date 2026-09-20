@@ -3,23 +3,24 @@
 One command shape for everything:
 
     arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]]   # name is verb, shot, or .yaml
-    arena cam <name> ... record=<dir> [fps=30] [lockstep=true] [-f]   # render to a PPM frame sequence instead
-    arena cam drive [--sim] [--viz [ENV_ID]]     # fly the camera from the keyboard
+    arena cam <name> ... --record [FILE] [--fps 30] [--lockstep] [-f]   # render to a video (ffmpeg) instead
+    arena cam drive [--sim] [--viz [ENV_ID]] [--record [FILE] ...]   # fly the camera from the keyboard, R records
     arena cam list                               # catalog of verbs and shots
     arena cam show <name>                        # parameters of a verb or shot
 
 A verb and a shot launch identically; the caller need not know which a name is.
 Params are bare `key=value` (coerced: number / x,y,z tuple / bool / string);
-launcher options are `--flags`. Nested or list-valued params live in a shot file.
-The reserved params `record` (output dir), `fps`, and `lockstep` switch from live
-playback to deterministic capture. `lockstep` rides an active lockstep run as a
-registered hard channel gated at 1/fps, or steps physics by 1/fps between frames
-itself when no run is active.
+launcher options are `--flags` and may sit anywhere on the line. Nested or
+list-valued params live in a shot file. `--record` switches from live playback to
+deterministic capture: its optional FILE names the output (.mp4 if no suffix),
+bare it is `<name>_<YYYYmmdd-HHMMSS>`. `--fps` sets the frame rate and
+`--lockstep` rides an active lockstep run as a registered hard channel gated at
+1/fps, or steps physics by 1/fps between frames itself when no run is active.
 
 Targets select which viewport cameras the shot drives. With no flag it drives
 everything: the sim GUI camera plus every env's rviz camera. `--sim` is sim only,
 `--viz` is all rviz cameras, `--viz <env_id>` is one env's, and the flags compose.
-Record needs the selection to resolve to a single camera.
+Record writes one file per selected camera, tagged `-sim` / `-viz<env>` when there are several.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import sys
 import yaml
 
 from arena_cam import Camera, TargetSelection, load_shot
+from arena_cam.record import default_name
 from arena_cam.registry import PRIMITIVES
 from arena_cam.shots import SHOTS
 
@@ -94,9 +96,16 @@ def _print_catalog() -> None:
         print("  (none installed)")
 
 
-def _drive(sim_flag: bool, viz_arg: object) -> None:
-    """Hand the camera to the rqt panel, forwarding the target flags."""
+def _drive(sim_flag: bool, viz_arg: object, record: str | None, fps: float, lockstep: bool, force: bool) -> None:
+    """Hand the camera to the rqt panel, forwarding the target and record flags."""
     flags: list[str] = []
+    if record is not None:
+        flags.append(f"--record={record}")
+    flags += ["--fps", f"{fps:g}"]
+    if lockstep:
+        flags.append("--lockstep")
+    if force:
+        flags.append("--force")
     if sim_flag:
         flags.append("--sim")
     if viz_arg is _VIZ_ALL:
@@ -104,9 +113,7 @@ def _drive(sim_flag: bool, viz_arg: object) -> None:
     elif viz_arg is not None:
         flags += ["--viz", str(viz_arg)]
     # force-discover: an rqt plugin cache written before this panel existed hides it.
-    argv = ["rqt", "--force-discover", "--standalone", "arena_cam"]
-    if flags:
-        argv += ["--args", *flags]
+    argv = ["rqt", "--force-discover", "--standalone", "arena_cam", "--args", *flags]
     os.execvp(argv[0], argv)
 
 
@@ -141,10 +148,29 @@ def main(argv: list[str] | None = None) -> None:
         metavar="ENV_ID",
         help="drive rviz cameras: bare for all, or an env id for one",
     )
-    parser.add_argument("-f", "--force", action="store_true", help="overwrite a non-empty record dir")
-    args = parser.parse_args(argv if argv is not None else sys.argv[1:])
+    parser.add_argument(
+        "--record",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="FILE",
+        help="render to a video instead of playing live: FILE under $ARENA_DATA_DIR/recordings (.mp4 if no suffix), bare for <name>_<YYYYmmdd-HHMMSS>",
+    )
+    parser.add_argument("--fps", type=float, default=30.0, help="record frame rate (default 30)")
+    parser.add_argument("--lockstep", action="store_true", help="record in physics lockstep, one 1/fps step per frame")
+    parser.add_argument("-f", "--force", action="store_true", help="overwrite an existing record file")
+    args = parser.parse_intermixed_args(argv if argv is not None else sys.argv[1:])
+    if args.record is None and args.name != "drive" and (args.fps != 30.0 or args.lockstep or args.force):
+        parser.error("--fps, --lockstep and -f only apply with --record")
+    if args.record and "=" in args.record:
+        parser.error(f"--record took {args.record!r} as the file name, use --record=FILE or put it after the key=value params")
 
-    if args.name is None or args.name == "list":
+    if args.name is None:
+        parser.print_usage()
+        _print_catalog()
+        print("play one with `arena cam <name> [key=value ...]`, film it with `--record [FILE]`, see `arena cam --help`")
+        return
+    if args.name == "list":
         _print_catalog()
         return
     if args.name == "show":
@@ -155,25 +181,23 @@ def main(argv: list[str] | None = None) -> None:
     if args.name == "drive":
         if args.params:
             parser.error("drive takes no params, only the target flags")
-        _drive(args.sim, args.viz)
+        _drive(args.sim, args.viz, args.record, args.fps, args.lockstep, args.force)
         return
     params = _parse_params(args.params)
-    record = params.pop("record", None)
-    fps = float(params.pop("fps", 30.0))
-    lockstep = bool(params.pop("lockstep", False))
-
     targets = _resolve_targets(args.sim, args.viz)
+    is_path = _is_path(args.name)
     try:
-        cam = load_shot(args.name, targets) if _is_path(args.name) else Camera(targets).add(args.name, params)
+        cam = load_shot(args.name, targets) if is_path else Camera(targets).add(args.name, params)
     except ValueError as e:
         raise SystemExit(str(e)) from None
-    if record is not None:
-        try:
-            cam.record(str(record), fps=fps, force=args.force, lockstep=lockstep)
-        except FileExistsError as e:
-            raise SystemExit(str(e)) from e
-    else:
+    if args.record is None:
         cam.play()
+        return
+    out = args.record or default_name(os.path.splitext(os.path.basename(args.name))[0] if is_path else args.name)
+    try:
+        cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep)
+    except FileNotFoundError as e:
+        raise SystemExit(str(e)) from e
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ class StyleSpec:
     line_width: float = 0.05
     enabled: bool = True
     decay: float = 0.0
+    latched: bool = False
     extra: dict[str, object] = attrs.field(factory=dict)
 
     @classmethod
@@ -32,6 +33,7 @@ class StyleSpec:
             line_width=float(raw.get("line_width", 0.05)),
             enabled=bool(raw.get("enabled", True)),
             decay=float(raw.get("decay", 0.0)),
+            latched=bool(raw.get("latched", False)),
             extra=dict(raw.get("extra", {})),
         )
 
@@ -41,6 +43,7 @@ class StyleSpec:
             "line_width": self.line_width,
             "enabled": self.enabled,
             "decay": self.decay,
+            "latched": self.latched,
         }
         if self.color is not None:
             payload["color"] = list(self.color)
