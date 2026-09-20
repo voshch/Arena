@@ -134,6 +134,9 @@ def _transform_urdf_for_bridge(
             # No anti-spam gating on a sim bridge: publish every CM tick so Isaac sees
             # the very first non-zero command without waiting for state to diverge.
             ET.SubElement(hw, 'param', {'name': 'trigger_joint_command_threshold'}).text = '0.0'
+            if kind == 'velocity':
+                # physx wraps continuous joints at +-2pi
+                ET.SubElement(hw, 'param', {'name': 'sum_wrapped_joint_states'}).text = 'true'
             for joint in joints:
                 if not any(si.get('name') == 'effort' for si in joint.findall('state_interface')):
                     ET.SubElement(joint, 'state_interface', {'name': 'effort'})
