@@ -1,6 +1,6 @@
 # A meta-shot: include the establishing shot, then add verbs, all in a tracked frame.
 params:
-  subject: env_0/jackal
+  subject: env_0/jackal/base_link
 reference:
   entity: "${subject}"
   mode: yaw

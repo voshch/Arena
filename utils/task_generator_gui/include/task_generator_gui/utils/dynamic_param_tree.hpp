@@ -62,7 +62,7 @@ private:
     void buildTreeWidgets(const std::shared_ptr<RebuildState>& state);
     std::vector<std::string> seedCatalogItems(const std::string& catalog,
                                               const std::vector<std::string>& current) const;
-    void fetchCatalogs(uint64_t gen);
+    void fetchCatalogs();
     void fillCatalogWidgets(const std::string& catalog, const std::vector<std::string>& ids);
 
     rclcpp::Node::SharedPtr                           node_;

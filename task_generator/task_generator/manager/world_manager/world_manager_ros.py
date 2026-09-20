@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ import numpy as np
 import PIL.Image
 import rclpy.qos
 import shapely
+import visualization_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.Async import ClientWrapper
@@ -34,10 +36,13 @@ from task_generator.manager.realizer import Realizer
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import MapSource, map_source
 
+from . import markers
 from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
 from .world_manager import WorldManager
 
 if TYPE_CHECKING:
+    from arena_runtime.sim._semantics import SemanticEntitySnapshot
+
     from task_generator.node import TaskGenerator
 
 _DEFAULT_RESOLUTION = 0.05
@@ -88,6 +93,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     _world_mtime: float
     _map_server_present: bool
     _map_render_memo: dict[str, tuple[bytes, str]]
+    _static_markers: list[visualization_msgs.msg.Marker] | None
 
     def _load_multi_level_map(self, world_root: Path) -> MultiLevelMap | None:
         maps: dict[str, WorldMap] = {}
@@ -256,6 +262,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         self._world_name = world_name
         self._world_mtime = mtime
+        self._static_markers = None
         self.node.rosparam[str].set('world', world_name)
 
         if self._map_server_present:
@@ -351,6 +358,18 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         self._door_mask_pub.publish(grid)
 
+    def publish_world_markers(self, snapshots: "Sequence[SemanticEntitySnapshot]") -> None:
+        """Publish the latched world overlay, clearing the previous world's markers on the first publish after a change."""
+        stamp = self.node.sim_time.to_msg()
+        realizer: Realizer = self.node._realizer
+        msg = visualization_msgs.msg.MarkerArray()
+        if self._static_markers is None:
+            self._static_markers = markers.static_markers(self._world, realizer, stamp)
+            msg.markers.extend(markers.deleteall_markers())
+        msg.markers.extend(self._static_markers)
+        msg.markers.extend(markers.mechanism_markers(self._world, realizer, snapshots, stamp))
+        self._world_markers_pub.publish(msg)
+
     async def require_map_server(self) -> None:
         """Idempotent: lazy-launch map_server and push the current world. Safe to call concurrently."""
         async with self._map_server_lock:
@@ -403,6 +422,17 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._map_server_present = False
         self._map_server_lock = asyncio.Lock()
         self._map_render_memo = {}
+        self._static_markers = None
+        self._world_markers_pub = self.node.create_publisher(
+            visualization_msgs.msg.MarkerArray,
+            'world_markers',
+            rclpy.qos.QoSProfile(
+                durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
+                history=rclpy.qos.HistoryPolicy.KEEP_LAST,
+                depth=1,
+            ),
+        )
         self._door_mask_pub = self.node.create_publisher(
             nav_msgs.msg.OccupancyGrid,
             'door_mask',

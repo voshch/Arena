@@ -5,61 +5,57 @@
 namespace task_generator_gui
 {
 
+template <typename Srv>
+void TaskGeneratorPanel::queryIds(
+    const std::shared_ptr<rclcpp::Client<Srv>> &client,
+    std::shared_ptr<typename Srv::Request> request,
+    std::function<void(std::vector<std::string>)> callback)
+{
+    whenReady(
+        [client]() { return client->service_is_ready(); },
+        [client, req = std::move(request), cb = std::move(callback)]() mutable
+        {
+            client->async_send_request(
+                std::move(req),
+                [cb = std::move(cb)](typename rclcpp::Client<Srv>::SharedFuture f)
+                {
+                    auto resp = f.get();
+                    cb(resp ? resp->ids : std::vector<std::string>{});
+                });
+        });
+}
+
 void TaskGeneratorPanel::fetchCatalog(
     const std::string &catalog_name,
     std::function<void(std::vector<std::string>)> callback)
 {
+    namespace srv = task_generator_msgs::srv;
+
     if (catalog_name == "objects")
     {
-        query_static_obstacles_client->async_send_request(
-            std::make_shared<task_generator_msgs::srv::QueryStaticObstacles::Request>(),
-            [cb = std::move(callback)](rclcpp::Client<task_generator_msgs::srv::QueryStaticObstacles>::SharedFuture f)
-            {
-                auto resp = f.get();
-                cb(resp ? resp->ids : std::vector<std::string>{});
-            });
+        queryIds(query_static_obstacles_client,
+                 std::make_shared<srv::QueryStaticObstacles::Request>(), std::move(callback));
     }
     else if (catalog_name == "pedestrians")
     {
-        query_dynamic_obstacles_client->async_send_request(
-            std::make_shared<task_generator_msgs::srv::QueryDynamicObstacles::Request>(),
-            [cb = std::move(callback)](rclcpp::Client<task_generator_msgs::srv::QueryDynamicObstacles>::SharedFuture f)
-            {
-                auto resp = f.get();
-                cb(resp ? resp->ids : std::vector<std::string>{});
-            });
+        queryIds(query_dynamic_obstacles_client,
+                 std::make_shared<srv::QueryDynamicObstacles::Request>(), std::move(callback));
     }
     else if (catalog_name == "scenarios")
     {
-        auto req   = std::make_shared<task_generator_msgs::srv::QueryScenarios::Request>();
+        auto req   = std::make_shared<srv::QueryScenarios::Request>();
         req->world = staged_world;
-        query_scenarios_client->async_send_request(
-            req,
-            [cb = std::move(callback)](rclcpp::Client<task_generator_msgs::srv::QueryScenarios>::SharedFuture f)
-            {
-                auto resp = f.get();
-                cb(resp ? resp->ids : std::vector<std::string>{});
-            });
+        queryIds(query_scenarios_client, std::move(req), std::move(callback));
     }
     else if (catalog_name == "parametrizeds")
     {
-        query_parametrizeds_client->async_send_request(
-            std::make_shared<task_generator_msgs::srv::QueryParametrizeds::Request>(),
-            [cb = std::move(callback)](rclcpp::Client<task_generator_msgs::srv::QueryParametrizeds>::SharedFuture f)
-            {
-                auto resp = f.get();
-                cb(resp ? resp->ids : std::vector<std::string>{});
-            });
+        queryIds(query_parametrizeds_client,
+                 std::make_shared<srv::QueryParametrizeds::Request>(), std::move(callback));
     }
     else if (catalog_name == "environments")
     {
-        query_environments_client->async_send_request(
-            std::make_shared<task_generator_msgs::srv::QueryEnvironments::Request>(),
-            [cb = std::move(callback)](rclcpp::Client<task_generator_msgs::srv::QueryEnvironments>::SharedFuture f)
-            {
-                auto resp = f.get();
-                cb(resp ? resp->ids : std::vector<std::string>{});
-            });
+        queryIds(query_environments_client,
+                 std::make_shared<srv::QueryEnvironments::Request>(), std::move(callback));
     }
     else
     {

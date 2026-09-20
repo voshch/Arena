@@ -28,7 +28,7 @@ from python_qt_binding.QtWidgets import (
     QWidget,
 )
 
-from arena_cam import drive, fly
+from arena_cam import drive, fly, keys
 from arena_cam.drive import Driver, EntityRoster
 from arena_cam.fly import Mode
 
@@ -36,60 +36,6 @@ if TYPE_CHECKING:
     import rclpy.node
 
     from arena_cam.surfaces import TargetSelection
-
-_HELD_KEYS = {
-    Qt.Key_W: "w",
-    Qt.Key_A: "a",
-    Qt.Key_S: "s",
-    Qt.Key_D: "d",
-    Qt.Key_Q: "q",
-    Qt.Key_E: "e",
-    Qt.Key_Left: "left",
-    Qt.Key_Right: "right",
-    Qt.Key_Up: "up",
-    Qt.Key_Down: "down",
-    Qt.Key_BracketLeft: "[",
-    Qt.Key_BracketRight: "]",
-}
-
-_TAP_KEYS = {
-    Qt.Key_Tab: "tab",
-    Qt.Key_F: "f",
-    Qt.Key_H: "h",
-    Qt.Key_1: "1",
-    Qt.Key_3: "3",
-    Qt.Key_7: "7",
-    Qt.Key_Space: "space",
-    Qt.Key_P: "p",
-}
-
-# xkb keycodes (evdev + 8): the physical key, identical under any layout. The Qt keys
-# above stay as the fallback for platforms that report no scancode.
-_HELD_SCANCODES = {
-    25: "w",
-    38: "a",
-    39: "s",
-    40: "d",
-    24: "q",
-    26: "e",
-    113: "left",
-    114: "right",
-    111: "up",
-    116: "down",
-    34: "[",
-    35: "]",
-}
-
-_TAP_SCANCODES = {
-    23: "tab",
-    41: "f",
-    43: "h",
-    10: "1",
-    12: "3",
-    16: "7",
-    65: "space",
-    33: "p",
-}
 
 _TAB_ROW = {Mode.FLY: "switch to orbit", Mode.ORBIT: "switch to fly"}
 
@@ -106,6 +52,7 @@ _COMMON_ROWS = (
     ("1 / 3 / 7", "front / right / top"),
     ("Space", "brake, drop the carried momentum"),
     ("P", "still capture"),
+    ("R", "start / stop recording"),
 )
 
 _LEAD_RANGE_MS = (10, 200)
@@ -117,9 +64,10 @@ _DEACTIVATE_EVENTS = (QEvent.ApplicationDeactivate, QEvent.WindowDeactivate)
 class Panel(QWidget):
     """Camera readout, target picker and speed knobs around the keyboard driving."""
 
-    def __init__(self, selection: TargetSelection) -> None:
+    def __init__(self, selection: TargetSelection, take: drive.Take | None = None) -> None:
         super().__init__()
         self._selection = selection
+        self._take = take
         self._driver: Driver | None = None
         self._roster: EntityRoster | None = None
         self._last = time.monotonic()
@@ -210,7 +158,7 @@ class Panel(QWidget):
     # lifecycle ------------------------------------------------------------
 
     def attach(self, node: rclpy.node.Node) -> None:
-        self._driver = Driver(node, self._selection)
+        self._driver = Driver(node, self._selection, take=self._take)
         self._roster = EntityRoster(node)
         self.speed.setValue(self._driver.fly.speed)
         self.reference_mode.setCurrentText(self._driver.reference_mode)
@@ -218,6 +166,7 @@ class Panel(QWidget):
 
     def detach(self) -> None:
         if self._driver is not None:
+            self._driver.finish_recording()
             self._driver.release()
 
     def command(self, label: str) -> None:
@@ -249,22 +198,18 @@ class Panel(QWidget):
         mods = event.modifiers()
         self._boost = bool(mods & Qt.ShiftModifier)
         self._crawl = bool(mods & Qt.ControlModifier)
-        scan = event.nativeScanCode()
-        held_map, tap_map = (_HELD_SCANCODES, _TAP_SCANCODES) if scan else (_HELD_KEYS, _TAP_KEYS)
-        code = scan or event.key()
-        held = held_map.get(code)
-        if held is not None:
+        label = keys.label(event)
+        if label is None:
+            return False
+        if label in fly.AXES:
             if pressed:
-                self._keys.add(held)
+                self._keys.add(label)
             else:
-                self._keys.discard(held)
+                self._keys.discard(label)
             return True
-        tap = tap_map.get(code)
-        if tap is not None:
-            if pressed:
-                self.command("shift+f" if tap == "f" and mods & Qt.ShiftModifier else tap)
-            return True
-        return False
+        if pressed:
+            self.command("shift+f" if label == "f" and mods & Qt.ShiftModifier else label)
+        return True
 
     def _typing(self) -> bool:
         widget = QApplication.focusWidget()
@@ -301,6 +246,7 @@ class Panel(QWidget):
                 self._sync_entities(self._roster.names())
 
         self._driver.tick(dt, fly.intent_from_keys(self._keys, self._boost, self._crawl))
+        self._driver.record_tick()
         self._sync_keymap(self._driver.fly.mode)
         self.summary_label.setText(self._driver.summary())
         self.status_label.setText(self._driver.status)

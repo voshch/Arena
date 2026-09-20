@@ -229,9 +229,56 @@ _register(_human_mod.VERB)
 _register(_robot_mod.VERB)
 
 
-@verb("cam", passthrough=True)
+CAM_SPEC = Union(
+    Static({"list": "catalog of verbs and shots", "show": "parameters of a verb or shot", "drive": "fly the camera from the keyboard"}),
+    Flags(
+        {
+            "--sim": "the sim GUI camera only",
+            "--viz": "rviz cameras, bare for all or an env id for one",
+            "--record": "render to a video instead of playing live",
+            "--fps": "record frame rate (default 30)",
+            "--lockstep": "record in physics lockstep, one 1/fps step per frame",
+            "--force": "overwrite an existing record file",
+        },
+        valued=("--fps",),
+    ),
+)
+
+
+@verb("cam", passthrough=True, complete=CAM_SPEC)
 def cam(args: list[str]) -> None:
-    """Control the simulator viewport camera."""
+    """Script the viewport cameras: the sim GUI's and every env's rviz.
+
+    \b
+    Usage:
+      cam <name> [key=value ...]   play a verb, a shot or a shot .yaml live
+      cam list                     catalog of verbs and shots
+      cam show <name>              parameters of a verb or shot
+      cam drive                    fly the camera from the keyboard, R starts and stops a take
+
+    \b
+    Targets (default: every camera, the flags compose):
+      --sim                        the sim GUI camera only
+      --viz [ENV_ID]               rviz cameras, bare for all or an env id for one
+
+    \b
+    Recording (needs ffmpeg):
+      --record [FILE]              render to a video instead of playing live
+      --fps N                      frame rate (default 30)
+      --lockstep                   step physics by 1/fps per frame, frame-exact at any render speed
+      -f, --force                  overwrite an existing file
+
+    \b
+    Examples:
+      cam orbit radius=4 duration=8
+      cam tour --record tour --sim --viz 0
+      cam orbit radius=4 duration=8 --record --lockstep
+      cam drive --record           record the flight from the start, --lockstep frame by frame
+
+    FILE lands under $ARENA_DATA_DIR/recordings (.mp4 if no suffix), bare --record names
+    it <name>_<YYYYmmdd-HHMMSS>. Each camera records its own file, tagged -sim / -viz<env>
+    when there are several. Flags may sit anywhere on the line.
+    """
     _exec("ros2", "run", "arena_cam", "cam", *args)
 
 
@@ -397,31 +444,23 @@ def rebuild(args: list[str]) -> None:
     Bare names expand to --packages-above like `arena build`.
     """
     import shutil
-    import subprocess
+
+    from build import build_main, resolve_packages, workspace
 
     if not args:
         raise CLIError("rebuild needs a package selection")
     argv = _select_args(args, above=True)
-    listing = subprocess.run(
-        ["colcon", "list", "--names-only", "--base-paths", os.path.join(_env("ARENA_WS_DIR"), "src"), *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if listing.returncode:
-        raise CLIError("colcon list rejected the arguments, aborting before clean")
-    pkgs = [line.strip() for line in listing.stdout.splitlines() if line.strip()]
+    pkgs = resolve_packages(argv)
     if not pkgs:
         raise CLIError("no packages matched")
+    ws = workspace()
     print(f"arena rebuild: resolved {len(pkgs)} package(s): {' '.join(pkgs)}")
     for pkg in pkgs:
-        for tree in (os.path.join("build", pkg), os.path.join("install", pkg)):
+        for tree in (os.path.join(ws.build_base, pkg), os.path.join(ws.install_base, pkg)):
             if os.path.isdir(tree):
                 print(f"  rm -rf {tree}")
                 shutil.rmtree(tree)
     print("arena rebuild: clean done, invoking build")
-    from build import build_main
-
     sys.exit(build_main(argv))
 
 
@@ -431,23 +470,21 @@ TEST_DEFAULT_SELECT = ("--packages-select-regex", "^arena_", "^task_generator$")
 @verb("test", passthrough=True, complete=Packages(), help_text=f"Run colcon test and print a summary.\n\nDefaults to `{' '.join(TEST_DEFAULT_SELECT)}` unless a selection flag is given. Bare package names are shorthand for --packages-select.")
 def test(args: list[str]) -> None:
     import re
-    import subprocess
+
+    from build import resolve_packages, workspace
 
     argv = _select_args(args)
     if not any(re.match(r"^--packages-(select|select-regex|up-to|above|ignore)", a) for a in argv):
         argv = [*TEST_DEFAULT_SELECT, *argv]
-    src_dir = os.path.join(_env("ARENA_WS_DIR"), "src")
-    listing = subprocess.run(
-        ["colcon", "list", "--names-only", "--base-paths", src_dir, *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    pkgs = [line.strip() for line in listing.stdout.splitlines() if line.strip()] if listing.returncode == 0 else []
-    test_rc = _run("colcon", "test", "--base-paths", src_dir, "--event-handlers", "console_direct+", *argv)
+    ws = workspace()
+    try:
+        pkgs = resolve_packages(argv)
+    except CLIError:
+        pkgs = []
+    test_rc = _run("colcon", "test", "--base-paths", *ws.base_paths, "--build-base", ws.build_base, "--install-base", ws.install_base, "--event-handlers", "console_direct+", *argv)
     from testsum import summarize
 
-    summary = [os.path.join(_env("ARENA_WS_DIR"), "build")]
+    summary = [ws.build_base]
     if pkgs:
         summary += ["--packages", *pkgs]
     summary_rc = summarize(summary)
@@ -496,9 +533,10 @@ def _feature_short(name: str) -> str:
 
 def _feature_group_help() -> str:
     out = ["Usage: arena feature COMMAND [ARGS]...", "", _indent(FEATURE_HELP)]
-    rows = [(name, _feature_short(name)) for name in _feature_names()]
+    installed = _reg_list()
+    rows = [(("* " if name in installed else "  ") + name, _feature_short(name)) for name in _feature_names()]
     if rows:
-        out += ["", "Commands:", _listing(rows)]
+        out += ["", "Commands (* = installed):", _listing(rows)]
     return "\n".join(out)
 
 

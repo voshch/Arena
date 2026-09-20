@@ -16,7 +16,7 @@ to the live sim, runs every action in order, then disconnects.
 
 Poses are expressed in the CURRENT reference frame. `add("track", ...)` attaches
 the reference to a sim entity so any verb authored AFTER it runs in that
-entity's moving frame: an `orbit` authored after `add("track", entity="env_0/jackal")`
+entity's moving frame: an `orbit` authored after `add("track", entity="env_0/jackal/base_link")`
 orbits the robot even while it drives.
 
 `look` (alias `cut`) is one-shot: it snaps the camera via the `set_view`
@@ -72,7 +72,7 @@ from arena_cam import Camera
 cam = Camera()
 cam.add("projection", "perspective")
 cam.add("look", eye=(8, 8, 6), target=(0, 0, 0.5))
-cam.add("track", entity="env_0/jackal", mode="yaw")
+cam.add("track", entity="env_0/jackal/base_link", mode="yaw")
 cam.add("orbit", radius=4, elevation_deg=30, sweep_deg=360, duration=8, ease="inout")
 cam.add("hold", duration=2)
 cam.play()
@@ -102,9 +102,14 @@ releases the camera to manual control. `fov` in radians, 0 leaves it
 unchanged.
 
 **`track`** -- `entity`, `mode="full"`
-Attach the reference frame to a sim entity identified by its `sim_path`
-(e.g. `"env_0/jackal"`). `mode` is `"full"`, `"yaw"`, or `"position"`.
-All subsequent verbs run in this entity's frame.
+Attach the reference frame to a TF frame (e.g. `"env_0/jackal/base_link"`), the
+name every backend resolves and the one the fleet advertises as `base_frame`. A
+backend-native name is accepted as well and tried first: a gz entity name
+(`env_0/jackal`) or an Isaac prim path (`/World/env_0/Ground`). Under Isaac a
+prim path only fits static stage entities: physics moves bodies in Fabric, not
+in USD, and a robot's root Xform never leaves its spawn pose, so robots there are
+tracked by their TF frame. `mode` is `"full"`, `"yaw"`, or `"position"`. All
+subsequent verbs run in this entity's frame.
 
 **`world`** -- no params
 Reset the reference frame to the world origin.
@@ -185,7 +190,7 @@ params:                          # defaults; override at the call/include site
 
 projection: perspective          # optional; desugars to a leading `projection` step
 reference:                       # optional; desugars to a leading track/latch/reference step
-  entity: env_0/jackal
+  entity: env_0/jackal/base_link
   mode: yaw
 
 timeline:                        # list of single-key steps {name: params}
@@ -287,7 +292,7 @@ params:                          # optional; shot parameter defaults
 projection: perspective          # optional, perspective|orthographic
 
 reference:                       # optional; one of:
-  entity: env_0/jackal           #   track a sim entity
+  entity: env_0/jackal/base_link #   track a TF frame (or a native entity name)
   mode: yaw                      #   full|yaw|position (default full)
 # --- OR ---
 reference:
@@ -340,7 +345,7 @@ prints them), so each verb runs bare.
 projection: perspective
 
 reference:
-  entity: env_0/jackal
+  entity: env_0/jackal/base_link
   mode: yaw
 
 timeline:
@@ -360,9 +365,11 @@ timeline:
 The interface is fully generic: one positional name dispatches verbs, shots,
 and files uniformly.
 
-### `arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]]`
+### `arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]] [--record [FILE] [--fps N] [--lockstep] [-f]]`
 
-Run a verb, a shot, or a YAML file against the live sim.
+Run a verb, a shot, or a YAML file against the live sim. Params are bare
+`key=value` tokens, everything the launcher itself needs is a `--flag`, and flags
+may sit anywhere on the line.
 
 - `<name>` is a verb name, a shot name, or a path to a `.yaml`/`.yml`
   file. A `.yaml`/`.yml` suffix, a `/` in the name, or an existing file
@@ -382,8 +389,10 @@ Run a verb, a shot, or a YAML file against the live sim.
   in absolute coordinates is localized into each env's frame (the registry
   `reference` offset) before being sent. Once a shot sets a reference frame,
   poses are relative to it and go out as authored, and only the reference pose
-  itself is localized. Record mode needs the selection to resolve to a single
-  camera.
+  itself is localized.
+- `--record [FILE]` renders the take to a video instead of playing it live, see
+  [Recording](#recording). `--fps`, `--lockstep` and `-f` qualify it and are
+  rejected without it. Every selected camera is recorded, one file each.
 
 ```
 arena cam look eye=8,8,6 target=0,0,0.5
@@ -391,6 +400,7 @@ arena cam orbit radius=4 elevation_deg=30 sweep_deg=360 duration=8
 arena cam establishing radius=8
 arena cam tour duration=12 --sim
 arena cam shots/my_shot.yaml radius=5 --viz 0
+arena cam orbit radius=4 duration=8 --record
 ```
 
 **Param coercion** for `key=value` tokens:
@@ -433,6 +443,7 @@ keyboard, over the same selection a shot uses (no flag drives everything,
 arena cam drive               # every viewport camera
 arena cam drive --sim         # the sim GUI camera only
 arena cam drive --viz 0       # env 0's rviz camera
+arena cam drive --record      # record the flight from the start
 ```
 
 The panel drives the camera while its window is active and releases it as soon as
@@ -454,15 +465,26 @@ the camera actually is.
 Anywhere: `F` frames the target entity, `Shift+F` cycles its reference mode
 (`full` / `yaw` / `position`), `H` returns to the world frame, `1` / `3` / `7`
 snap to front / right / top, `Space` brakes, `P` captures a still to
-`$ARENA_DATA_DIR/recordings/stills/`. Keys are ignored while a text field has
+`$ARENA_SCREENSHOTS_DIR` (default `$ARENA_DATA_DIR/screenshots/`, the same
+directory the Gazebo GUI and Isaac Kit screenshot buttons are forwarded to).
+Keys are ignored while a text field has
 focus, so the target box stays typeable.
+
+`R` starts and stops a take, `--record [FILE]` starts one as soon as the cameras
+are found, and `--fps N`, `--lockstep` and `-f` apply to every take of the session. Each camera writes its own file under
+`$ARENA_DATA_DIR/recordings/` exactly as a scripted take does, a bare take is named
+`drive_<YYYYmmdd-HHMMSS>`. A driven take is a scripted take whose one segment is
+steered by the held keys, so everything under [Recording](#recording) applies,
+`--lockstep` included. Each recorded frame flies the camera one frame period, which
+makes the flight run in video time: it feels slow in the panel while captures are
+slower than the frame rate, and plays back smooth.
 
 `[` / `]` are a held axis like the movement keys, not a step: fov ramps at
 0.5 rad/s while held, so a tap moves it by a degree or two.
 
 Framing sets the reference frame to the entity and orbits its local origin, so the
 camera follows it as it drives. The target picker lists live robot frames
-(`env_0/jackal`); any other `sim_path` can be typed in.
+(`env_0/jackal/base_link`); any other TF frame or native entity name can be typed in.
 
 Two behaviours differ from scripted playback:
 
@@ -481,48 +503,67 @@ is pressed, so the panel never overrides the sim's own value by default.
 
 ## Recording
 
-`Camera.record(out_dir, fps=30, lockstep=False)` is the offline sibling of
-`play()`: it renders the timeline to a numbered PPM sequence (`frame_00000.ppm`,
-...) by capturing each frame at an exact pose through the `capture` service, so
-the result is smooth and deterministic regardless of render speed. A bare
-`out_dir` name lands under `$ARENA_DATA_DIR/recordings/` and an absolute or
-slash-bearing path is used as given. Recording into a non-empty directory errors
-(a take is never silently clobbered); pass `-f` / `--force` to overwrite it.
+`Camera.record(out=None, fps=30, lockstep=False)` is the offline sibling of
+`play()`: it renders the timeline to a video by capturing each frame at an exact
+pose through the `capture` service and piping it into `ffmpeg`, so the result is
+smooth and deterministic regardless of render speed. A bare `out` name lands
+under `$ARENA_DATA_DIR/recordings/` and an absolute or slash-bearing path is used
+as given. The suffix picks the container (`tour.mkv`, `tour.webm`), none means
+`.mp4`. No name at all means `take_<YYYYmmdd-HHMMSS>`, a colon-free stamp that
+survives NTFS, exFAT and URLs. Every selected camera is recorded at once, each
+to its own file: a lone camera keeps the name, several get a tag before the
+suffix, `tour-sim.mp4` for the sim camera and `tour-viz0.mp4` for env 0's rviz.
+While a shot leaves the fov open, a multi-camera take films at `FOV_DEFAULT` so
+the cameras share one lens instead of each keeping its own.
+Recording onto an existing file errors, so a take is never silently clobbered.
+Pass `force=True` (CLI: `-f` / `--force`) to overwrite it.
 
 ```python
 cam = Camera()
 cam.add("orbit", radius=4, elevation_deg=30, sweep_deg=360, duration=8)
-cam.record("orbit", fps=30)        # -> $ARENA_DATA_DIR/recordings/orbit/
+cam.record("orbit", fps=30)        # -> $ARENA_DATA_DIR/recordings/orbit.mp4
+cam.record()                       # -> $ARENA_DATA_DIR/recordings/take_20260918-143012.mp4
 cam.record("orbit", fps=30, lockstep=True)  # physics-lockstep take
 ```
 
-On the CLI, `record` (output dir), `fps`, and `lockstep` are reserved params,
-popped before the rest reach the verb, shot, or file:
+On the CLI, `--record [FILE]` switches a run to recording. Bare `--record` names
+the file after the verb, shot, or file stem plus the stamp. `--fps` (default 30)
+and `--lockstep` qualify it:
 
 ```
-arena cam tour record=tour fps=30
-arena cam orbit radius=4 duration=8 record=orbit
-arena cam orbit radius=4 duration=8 record=orbit lockstep=true
+arena cam tour --record tour --fps 30
+arena cam orbit radius=4 duration=8 --record           # recordings/orbit_20260918-143012.mp4
+arena cam orbit radius=4 duration=8 --record orbit --lockstep
+arena cam shots/my_shot.yaml --record                   # recordings/my_shot_20260918-143012.mp4
+arena cam tour --record tour --sim --viz 0              # recordings/tour-sim.mp4 + tour-viz0.mp4
 ```
+
+`--record` takes an optional FILE, so a `key=value` token right after a bare
+`--record` would be read as the file name. The CLI rejects that; write
+`--record=FILE` or put `--record` after the params.
 
 A streamed segment emits `round(duration * fps)` frames, a discrete `look` /
 `cut` one frame, and the state-only verbs (`track`, `world`, `latch`,
-`reference`, `projection`) none. Frames are raw `P6` PPM; assemble with e.g.
-`ffmpeg -framerate <fps> -i frame_%05d.ppm -pix_fmt yuv420p out.mp4`.
+`reference`, `projection`) none. The first captured frame fixes the video size
+(odd dimensions are padded to even), so keep the viewport size fixed during a
+take: a resize stops the recording at the last good frame.
 
 Recording is camera-locked by default: the camera path is deterministic but the
 scene advances at the sim's own rate, so pause the sim first for a fully
-reproducible take. Pass `lockstep=True` (CLI: `lockstep=true`) for physics-lockstep
+reproducible take. Pass `lockstep=True` (CLI: `--lockstep`) for physics-lockstep
 recording instead: with a lockstep run active the cam rides it as a hard channel
 gated at `1/fps`, and without one it takes its own sim hold and steps physics by
 `1/fps` between frames. Either way a frame is captured only once the scene has
-reached that sim time. Gazebo only.
+reached that sim time. Lockstep works under Gazebo and Isaac, filmed from the sim
+camera or from an rviz camera. rviz has no scene time of its own, so it gates on
+`/clock` and draws one more update before the grab. Isaac steps slowly under a
+hold, expect a couple of seconds per frame.
 
 ---
 
 ## Requirements
 
-Two backends host the `/arena/viewport/*` contract (`set_view`,
+rviz and all simulators host the `/arena/viewport/*` contract (`set_view`,
 `set_reference_frame`, `set_projection`, `capture`, plus the `cmd_view` /
 `camera_pose` topics):
 
@@ -530,10 +571,15 @@ Two backends host the `/arena/viewport/*` contract (`set_view`,
   GUI plugin, so nothing exists in headless mode (`gz sim -s`).
 - **rviz**, under each env's namespace, via the `rviz_viewport_control` view
   controller that [rviz_config.py](../../rviz_utils/rviz_utils/scripts/rviz_config.py)
-  writes into the generated config.
+  writes into the generated config. Drives the rviz camera, so it works under
+  every simulator.
+- **Isaac**, under `/arena`, via the `isaac_utils.viewport` node the sim process
+  starts. GUI only, `--headless` starts none. Robots are tracked by TF frame
+  there, see `track`.
 
-Isaac hosts no part of the contract, so nothing here works under `sim:=isaac`.
-
-`capture` is Gazebo-only; the rviz side answers `capture not yet supported`, so
-recording and `P` need the sim camera. `Cam` waits up to 10 seconds for the
-services and logs an error if they are absent.
+Every backend implements `capture`. The rviz capture renders offscreen at the
+panel's size, so it also works while the window is covered. Isaac answers from a
+spinner thread of its own and grabs the viewport's LdrColor AOV after the pose has
+settled for a few renders, so a capture costs a handful of frames.
+`Cam` waits up to 10 seconds for the services and logs an error if they are
+absent.

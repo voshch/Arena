@@ -464,6 +464,22 @@ def test_scenario_view_load_modern_binary_op_missing_q_reraises(tmp_path):
         view.load()
 
 
+def test_scenario_view_modern_shape_does_not_degrade_to_empty(tmp_path):
+    """A top-level-key scenario that fails to parse must raise, not fall back to an empty legacy load."""
+    scenario_dir = tmp_path / "sc_modern_broken"
+    scenario_dir.mkdir()
+    data = {
+        "static": [{"name": "obs1", "pose": [0.0, 0.0], "model": "box"}],
+        "dynamic": [{"name": "ped1", "pose": [0.0, 0.0], "type": "arenian"}],
+        "robots": [{"start": [1.0, 2.0], "goal": [3.0, 4.0]}],
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    view = ScenarioView(scenario_dir)
+    with pytest.raises(RuntimeError, match="no legacy"):
+        view.load()
+
+
 def test_scenario_view_load_legacy_shape_still_falls_back(tmp_path):
     scenario_dir = tmp_path / "sc_legacy_no_modern_keys"
     scenario_dir.mkdir()

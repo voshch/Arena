@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import rerun as rr
 from arena_viz import DisplayKind, StyleSpec
-from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -36,7 +36,10 @@ def subscribe_marker_array(ctx: RendererCtx, d: AdapterDisplay, base: str) -> No
         if centers:
             rr.log(f"{base}/bodies", rr.Boxes3D(centers=centers, sizes=sizes, colors=colors))
 
-    qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
+    if StyleSpec.from_json(d.style_json).latched:
+        qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    else:
+        qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
     ctx.node.create_subscription(MarkerArray, d.topic, cb, qos)
 
 

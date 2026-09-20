@@ -160,7 +160,7 @@ void DynamicParamTree::retryRebuild(const std::string& namespace_prefix)
                 {
                     if (this_gen != rebuild_gen_) return;
                     buildTreeWidgets(state);
-                    fetchCatalogs(this_gen);
+                    fetchCatalogs();
                 }, Qt::QueuedConnection);
             };
 
@@ -511,7 +511,7 @@ std::vector<std::string> DynamicParamTree::seedCatalogItems(
     return items;
 }
 
-void DynamicParamTree::fetchCatalogs(uint64_t gen)
+void DynamicParamTree::fetchCatalogs()
 {
     if (!catalog_fetcher_)
         return;
@@ -519,12 +519,11 @@ void DynamicParamTree::fetchCatalogs(uint64_t gen)
     for (const auto &entry : catalog_widgets_)
     {
         const std::string cat = entry.first;
-        catalog_fetcher_(cat, [this, gen, cat](std::vector<std::string> ids)
+        catalog_fetcher_(cat, [this, cat](std::vector<std::string> ids)
         {
-            QMetaObject::invokeMethod(tree_, [this, gen, cat, ids = std::move(ids)]()
+            QMetaObject::invokeMethod(tree_, [this, cat, ids = std::move(ids)]()
             {
                 catalog_memo_[cat] = ids;
-                if (gen != rebuild_gen_) return;
                 fillCatalogWidgets(cat, ids);
             }, Qt::QueuedConnection);
         });

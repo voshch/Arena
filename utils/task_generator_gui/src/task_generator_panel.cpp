@@ -253,6 +253,52 @@ namespace task_generator_gui
                     }
                 }, Qt::QueuedConnection);
             });
+
+        // The staged world must start as the world the node is actually running:
+        // `worlds` is an unordered catalog, so its first entry would query scenarios
+        // for an unrelated world.
+        whenReady(
+            [this]() { return parameters_client->service_is_ready(); },
+            [this]()
+            {
+                parameters_client->get_parameters(
+                    {"world"},
+                    [this](std::shared_future<std::vector<rclcpp::Parameter>> f)
+                    {
+                        std::string running;
+                        try
+                        {
+                            const auto params = f.get();
+                            if (!params.empty() && params[0].get_type() == rclcpp::ParameterType::PARAMETER_STRING)
+                                running = params[0].as_string();
+                        }
+                        catch (...) { return; }
+                        if (running.empty()) return;
+                        QMetaObject::invokeMethod(this, [this, running]()
+                        {
+                            if (staged_world == running) return;
+                            staged_world = running;
+                            if (world_combobox)
+                            {
+                                QSignalBlocker blocker(world_combobox);
+                                world_combobox->setCurrentText(QString::fromStdString(running));
+                            }
+                            rebuildParamTrees();
+                        }, Qt::QueuedConnection);
+                    });
+            });
+    }
+
+    void TaskGeneratorPanel::rebuildParamTrees()
+    {
+        auto lower = [](std::string s) {
+            for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return s;
+        };
+        if (obstacles_tree && !obstacles_task_mode.isEmpty())
+            dynamic_param_tree_obstacles_->rebuild("task." + lower(obstacles_task_mode.toStdString()));
+        if (robots_tree && !robots_task_mode.isEmpty())
+            dynamic_param_tree_robots_->rebuild("task." + lower(robots_task_mode.toStdString()));
     }
 
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
@@ -449,13 +495,7 @@ namespace task_generator_gui
         staged_world = text.toStdString();
 
         getScenarios(staged_world);
-        auto obs_mode = obstacles_task_mode.toStdString();
-        for (char &c : obs_mode) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        dynamic_param_tree_obstacles_->rebuild("task." + obs_mode);
-
-        auto rob_mode = robots_task_mode.toStdString();
-        for (char &c : rob_mode) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        dynamic_param_tree_robots_->rebuild("task." + rob_mode);
+        rebuildParamTrees();
 
         if (!loading_from_queue_)
         {

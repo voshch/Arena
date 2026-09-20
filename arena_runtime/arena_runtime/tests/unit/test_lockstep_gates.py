@@ -292,9 +292,9 @@ def test_rebase_after_external_advance() -> None:
     ledger.refresh(_desired(_spec("a", 0.1), _spec("b", 0.25)))
     ledger.complete(_tick(ledger))
     assert ledger.now == pytest.approx(0.1)
-    # jitter within half a step and a clock that lags are not drift
+    # jitter within half a step either way is not drift
     assert ledger.rebase(5.1 + DT / 4) == 0.0
-    assert ledger.rebase(5.05) == 0.0
+    assert ledger.rebase(5.1 - DT / 4) == 0.0
     assert ledger.now == pytest.approx(0.1)
     # an unpause window ran the sim 2 s: every window restarts from the new now
     drift = ledger.rebase(7.1)
@@ -303,6 +303,23 @@ def test_rebase_after_external_advance() -> None:
     assert ledger.tick == pytest.approx(7.1)
     assert ledger.channels["/a"].next_due == pytest.approx(2.2)
     assert ledger.channels["/b"].next_due == pytest.approx(2.35)
+
+
+def test_rebase_back_when_clock_falls_behind_ledger() -> None:
+    ledger = GateLedger(dt=DT, base=5.0)
+    ledger.refresh(_desired(_spec("a", 0.1)))
+    a = ledger.channels["/a"]
+    for _ in range(30):
+        ledger.complete(_tick(ledger))
+    ledger.observe(a, 8.0)
+    assert ledger.now == pytest.approx(3.0)
+    # steps the sim never took: the clock is at 6.0, the ledger walked to 8.0
+    drift = ledger.rebase(6.0)
+    assert drift == pytest.approx(-2.0)
+    assert ledger.tick == pytest.approx(6.0)
+    assert a.next_due == pytest.approx(1.1)
+    assert a.latest_stamp is None
+    assert ledger.rebase(6.0) == 0.0
 
 
 def test_soft_channel_schedules_but_never_gates() -> None:

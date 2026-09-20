@@ -2,7 +2,6 @@ import abc
 import functools
 import itertools
 import os
-import traceback
 import typing
 import warnings
 from collections.abc import Iterable
@@ -109,6 +108,7 @@ class TimelineEntry(Parseable):
 
 
 _MODERN_ONLY_KEYS: frozenset[str] = frozenset({"conditions", "timeline", "regions"})
+_LEGACY_KEY = "obstacles"  # the wrapper that identifies a legacy scenario
 
 
 @attrs.define
@@ -170,22 +170,17 @@ class ScenarioView(PathView):
         except Exception as e:
             load_exc = e
 
-        if isinstance(raw, dict) and _MODERN_ONLY_KEYS.intersection(raw):
-            raise RuntimeError(f"Scenario {self.scenario_path}: modern-format scenario failed to parse, refusing to degrade to legacy. Underlying error:\n{''.join(traceback.format_exception(type(load_exc), load_exc, load_exc.__traceback__))}") from load_exc
+        keys = set(raw) if isinstance(raw, dict) else set()
+        if _MODERN_ONLY_KEYS & keys:
+            raise RuntimeError(f"Scenario {self.scenario_path}: modern-format scenario failed to parse, refusing to degrade to legacy") from load_exc
+        if _LEGACY_KEY not in keys:
+            raise RuntimeError(f"Scenario {self.scenario_path}: failed to parse and has no legacy {_LEGACY_KEY!r} block to fall back to") from load_exc
 
-        legacy_exc: Exception
         try:
             scenario = self.load_legacy()
-            warnings.warn(
-                f"Scenario {self.scenario_path}: new-format load failed, falling back to legacy. Underlying error:\n{''.join(traceback.format_exception(type(load_exc), load_exc, load_exc.__traceback__))}",
-                UserWarning,
-                stacklevel=2,
-            )
-            warnings.warn("Loading Scenario in legacy format.", DeprecationWarning, stacklevel=2)
-            return scenario
         except Exception as e:
-            legacy_exc = e
+            raise RuntimeError(f"Scenario {self.scenario_path}: failed to parse as either format, legacy error: {e}") from load_exc
 
-        raise RuntimeError(
-            f"Failed to load scenario from {self.scenario_path}:\n - New format error: {load_exc}\n{''.join(traceback.format_exception(type(load_exc), load_exc, load_exc.__traceback__))}\n - Legacy format error: {legacy_exc}\n{''.join(traceback.format_exception(type(legacy_exc), legacy_exc, legacy_exc.__traceback__))}"
-        )
+        warnings.warn(f"Scenario {self.scenario_path}: parsed as legacy, modern load failed with {type(load_exc).__name__}: {load_exc}", UserWarning, stacklevel=2)
+        warnings.warn("Loading Scenario in legacy format.", DeprecationWarning, stacklevel=2)
+        return scenario

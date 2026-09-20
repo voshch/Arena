@@ -92,4 +92,5 @@ renderer.
 The renderer reads styling from `StyleSpec.from_json(d.style_json)`:
 
 - `color`, `alpha`, `line_width`, `enabled`, `decay`: honored when meaningful for the archetype.
+- `latched`: MARKER_ARRAY subscribes reliable + transient-local.
 - `extra={"rerun": {...}}` is the escape hatch (not used by any current renderer; reserved for future per-viz nudges).

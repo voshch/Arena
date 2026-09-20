@@ -7,7 +7,7 @@ from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
-_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'sim.isaac.physics', 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused', 'env.bootstrap_timeout'})
+_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'sim.isaac.physics', *(f'sim.isaac.viewport.{k}' for k in ('preset', 'resolution', 'scale', 'dlss', 'lighting', 'overlays')), 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused', 'env.bootstrap_timeout'})
 
 
 def generate_launch_description():

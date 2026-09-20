@@ -8,6 +8,7 @@ import typing
 import arena_runtime_msgs.msg
 import rclpy.qos
 import rclpy.subscription
+import rosgraph_msgs.msg
 from arena_rclpy_mixins.Time import Time
 from rosidl_runtime_py.utilities import get_message
 
@@ -19,6 +20,14 @@ if typing.TYPE_CHECKING:
 _LOCKSTEP_REASON = "lockstep"
 _STATUS_PERIOD = 1.0
 _STALL_AFTER = 1.0
+_CLOCK_NUDGE_S = 0.5
+
+_CLOCK_QOS = rclpy.qos.QoSProfile(
+    depth=1,
+    reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
+    durability=rclpy.qos.DurabilityPolicy.VOLATILE,
+    history=rclpy.qos.HistoryPolicy.KEEP_LAST,
+)
 
 _LATCHED = rclpy.qos.QoSProfile(
     depth=1,
@@ -85,6 +94,7 @@ class LockstepScheduler:
             node.service_namespace("state", "lockstep"),
             _LATCHED,
         )
+        self._pub_clock = node.create_publisher(rosgraph_msgs.msg.Clock, "/clock", _CLOCK_QOS)
         self._publish_status()
 
     @property
@@ -231,6 +241,9 @@ class LockstepScheduler:
                 drift = ledger.rebase(self._node.sim_time.to_seconds())
                 if drift > 0.0:
                     self._node.get_logger().info(f"lockstep: sim advanced {drift:.3f}s outside the run, rebasing")
+                elif drift < 0.0:
+                    self._node.get_logger().warning(f"lockstep: sim clock {-drift:.3f}s behind the ledger, rebasing back")
+                if drift != 0.0:
                     sim_before = ledger.now
 
                 if not config.ungated:
@@ -296,6 +309,7 @@ class LockstepScheduler:
         start = self._node.wall_time
         next_warn = 10.0
         stalled = False
+        nudged = False
         version = self._registry.version
         due_time = Time.from_float(ledger.tick)
         while True:
@@ -318,10 +332,17 @@ class LockstepScheduler:
                 self._publish_stall(ledger, due_time, hard_due)
                 next_warn += 10.0
             threshold = next_warn if stalled else min(_STALL_AFTER, next_warn)
+            timeout = max(threshold - elapsed, 0.01)
+            if stalled:
+                timeout = min(timeout, _CLOCK_NUDGE_S)
             try:
-                await asyncio.wait_for(self._arrived.wait(), timeout=max(threshold - elapsed, 0.01))
+                await asyncio.wait_for(self._arrived.wait(), timeout=timeout)
             except TimeoutError:
-                pass
+                if stalled:
+                    if not nudged:
+                        nudged = True
+                        self._node.get_logger().info(f"lockstep: repeating /clock {self._node.sim_time.to_seconds():.3f}s while waiting on {', '.join(ch.name for ch in waiting)}")
+                    self._pub_clock.publish(rosgraph_msgs.msg.Clock(clock=self._node.sim_time.to_msg()))
         self._waiting = []
         if stalled:
             self._publish_status(tick=due_time, arrived=[ch.name for ch in hard_due])
