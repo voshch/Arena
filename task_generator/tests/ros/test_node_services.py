@@ -137,6 +137,7 @@ def _invoke_queue_episode(request: object) -> tuple[object, object]:
     stub._episodes = EpisodeRuntime()
     stub._staged_obstacles_params = {}
     stub._staged_robots_params = {}
+    stub._staged_human_params = {}
 
     def _noop_publish_queue_state() -> None:
         pass
@@ -146,6 +147,32 @@ def _invoke_queue_episode(request: object) -> tuple[object, object]:
     response = task_generator_msgs.srv.QueueEpisode.Response()
     asyncio.run(TaskGenerator._cb_queue_episode(stub, request, response))
     return stub, response
+
+
+def _human_params_request(name: str) -> object:
+    import task_generator_msgs.srv
+    from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+
+    request = task_generator_msgs.srv.QueueEpisode.Request()
+    request.action = task_generator_msgs.srv.QueueEpisode.Request.MERGE
+    request.keep_modules = True
+    request.human_params = [Parameter(name=name, value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=0.1))]
+    return request
+
+
+def test_queue_episode_stages_namespaced_human_param() -> None:
+    stub, response = _invoke_queue_episode(_human_params_request("humansim.global_planner.resolution"))
+    assert response.success
+    assert stub._staged_human_params["humansim.global_planner.resolution"].double_value == 0.1
+
+
+@pytest.mark.parametrize("name", ["human.speed", "humansm.global_planner.resolution", "resolution", "humansim"])
+def test_queue_episode_rejects_human_param_outside_known_namespaces(name: str) -> None:
+    stub, response = _invoke_queue_episode(_human_params_request(name))
+    assert not response.success
+    assert name in response.error_msg
+    assert stub._staged_human_params == {}
+    assert stub._episodes.pending_overrides is None
 
 
 def test_queue_episode_combined_call_populates_both_modes() -> None:

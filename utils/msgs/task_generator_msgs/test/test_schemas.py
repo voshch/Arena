@@ -31,6 +31,7 @@ def test_episode_record_fields():
     p.value.integer_value = 4
     r.obstacles_params = [p]
     r.robots_params = []
+    r.human_params = [p]
 
     assert r.episode_id == 7
     assert r.world == "map1"
@@ -47,6 +48,7 @@ def test_episode_record_fields():
     assert r.obstacles_params[0].name == "static.n"
     assert r.obstacles_params[0].value.integer_value == 4
     assert list(r.robots_params) == []
+    assert [q.name for q in r.human_params] == ["static.n"]
 
     assert EpisodeRecord.QUEUED == 0
     assert EpisodeRecord.RUNNING == 1
@@ -156,6 +158,7 @@ def test_queue_episode_srv():
     p.value.integer_value = 5
     req.obstacles_params = [p]
     req.robots_params = []
+    req.human_params = [p]
 
     assert req.action == QueueEpisode.Request.MERGE
     assert QueueEpisode.Request.MERGE == 0
@@ -166,6 +169,7 @@ def test_queue_episode_srv():
     assert req.world == "maze"
     assert len(req.obstacles_params) == 1
     assert req.obstacles_params[0].name == "static.n"
+    assert [q.name for q in req.human_params] == ["static.n"]
 
     res = QueueEpisode.Response()
     res.success = True

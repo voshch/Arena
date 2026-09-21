@@ -81,8 +81,9 @@ from geometry_msgs.msg import Pose as PoseMsg
 from geometry_msgs.msg import (
     Pose2D as Pose2DMsg,
 )
+from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterType
-from rcl_interfaces.srv import GetParameters
+from rcl_interfaces.srv import GetParameters, SetParametersAtomically
 from rclpy.qos import (
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
@@ -99,6 +100,8 @@ from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObst
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
+    PARAM_NAMESPACE = Constants.HUMAN_PARAM_NAMESPACES[Constants.HumanSimulator.ARENA]
+
     @classmethod
     def _register_task_modes(cls):
         from task_generator.tasks.obstacles.prompt import NS, declare_schema
@@ -204,6 +207,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._feedback_client: ClientWrapper = self.node.create_client_wrapper(
             Feedback,
             self.node.service_namespace(self.SERVICE_FEEDBACK),
+        )
+        self._set_params_client: ClientWrapper = self.node.create_client_wrapper(
+            SetParametersAtomically,
+            self.node.service_namespace("arena_humansim", "set_parameters_atomically"),
         )
         self._publish_pending = False
         self._notify_stimulus_client: ClientWrapper = self.node.create_client_wrapper(
@@ -393,6 +400,17 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._logger.warning(f"engine dt param unavailable, assuming {self._ENGINE_DT_DEFAULT}")
         return self._ENGINE_DT_DEFAULT
 
+    async def _configure_impl(self, params: Sequence[ParameterMsg]) -> set[str]:
+        accepted: set[str] = set()
+        if params:
+            response = await self._set_params_client.call_timeout(SetParametersAtomically.Request(parameters=list(params)))
+            if response is not None and response.result.successful:
+                accepted = {p.name for p in params}
+            elif response is not None:
+                self._logger.error(f"engine rejected human params {[p.name for p in params]}: {response.result.reason}")
+        await self._reset_client.call_timeout(ResetSimulation.Request(soft=True))
+        return accepted
+
     async def setup(self):
         await asyncio.gather(
             *(
@@ -417,6 +435,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     self._get_profile_client,
                     self._feedback_client,
                     self._notify_stimulus_client,
+                    self._set_params_client,
                 )
             )
         )

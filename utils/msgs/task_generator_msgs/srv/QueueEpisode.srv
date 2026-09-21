@@ -18,6 +18,8 @@ string world
 rcl_interfaces/Parameter[] obstacles_params
 # Leaf-keyed per-mode params; per-key upsert.
 rcl_interfaces/Parameter[] robots_params
+# Human backend params, names <backend namespace>.<param>, per-key upsert.
+rcl_interfaces/Parameter[] human_params
 ---
 bool success
 string error_msg

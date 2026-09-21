@@ -25,6 +25,7 @@ from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Pose as PoseMsg
 from geometry_msgs.msg import Quaternion as QuaternionMsg
+from rcl_interfaces.msg import Parameter as ParameterMsg
 from task_generator_msgs.msg import ContinuousHeardSoundState
 from visualization_msgs.msg import MarkerArray
 
@@ -55,6 +56,8 @@ _STREAM_QOS = rclpy.qos.QoSProfile(
 
 
 class BaseHumanSimulator(NodeInterface, abc.ABC):
+    PARAM_NAMESPACE: typing.ClassVar[str | None] = None
+
     _arena_peds_publisher: rclpy.publisher.Publisher
     _marker_publisher: rclpy.publisher.Publisher
     _static_marker_publisher: rclpy.publisher.Publisher
@@ -724,6 +727,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         for region in regions:
             self._known_regions[region.name] = region
         return await self._add_regions_impl(regions)
+
+    async def configure(self, params: Sequence[ParameterMsg]) -> list[ParameterMsg]:
+        """Hand the params under this backend's namespace to it at the episode boundary and return the accepted ones."""
+        prefix = f"{self.PARAM_NAMESPACE}."
+        own = sorted((p for p in params if self.PARAM_NAMESPACE is not None and p.name.startswith(prefix)), key=lambda p: p.name)
+        if len(own) < len(params):
+            self._logger.info(f"skipping human params of other backends: {[p.name for p in params if p not in own]}")
+        accepted = await self._configure_impl([ParameterMsg(name=p.name.removeprefix(prefix), value=p.value) for p in own])
+        return [p for p in own if p.name.removeprefix(prefix) in accepted]
+
+    async def _configure_impl(self, params: Sequence[ParameterMsg]) -> set[str]:
+        return set()
 
     async def remove_all_regions(self) -> bool:
         """Remove all tracked regions."""

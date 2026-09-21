@@ -245,6 +245,7 @@ class Task(NodeInterface):
 
             try:
                 self.node._apply_staged_params()
+                await self.node._apply_staged_human_params()
 
                 if new_tm_config := self.node.conf.TaskMode.TM_CONFIG.value:
                     if new_tm_config != self.__param_tm_config or frozenset(self._ctx.robots.keys()) != self.__composite_fleet:

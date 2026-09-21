@@ -30,6 +30,7 @@ def _record_to_dict(record: object) -> dict:
         "integrity": record.integrity,
         "obstacles_params": [{"name": p.name, "type": p.value.type, "value": _param_value_to_python(p.value)} for p in record.obstacles_params],
         "robots_params": [{"name": p.name, "type": p.value.type, "value": _param_value_to_python(p.value)} for p in record.robots_params],
+        "human_params": [{"name": p.name, "type": p.value.type, "value": _param_value_to_python(p.value)} for p in record.human_params],
     }
 
 

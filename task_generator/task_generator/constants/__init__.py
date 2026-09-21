@@ -19,6 +19,9 @@ class Constants:
         HUNAV = "hunav"
         ARENA = "arena"
 
+    HUMAN_PARAM_NAMESPACES = {HumanSimulator.ARENA: "humansim"}
+    HUMAN_PARAM_RESERVED = "human"
+
     class TaskMode:
         @enum.unique
         class TM_Obstacles(enum.Enum):
