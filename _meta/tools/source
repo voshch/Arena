@@ -27,7 +27,6 @@ ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
 
 export ARENA_WS_DIR
 export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
-export ARENA_FEATURES_DIR="${ARENA_FEATURES_DIR:-$ARENA_DIR/_meta/features}"
 
 export INSTALLED="$ARENA_DIR/.installed"
 export TOOLS_DIR="$ARENA_DIR/_meta/tools"

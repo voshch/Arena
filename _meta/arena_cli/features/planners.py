@@ -381,22 +381,9 @@ def test(argv: list[str]) -> None:
     """Lockstep soak of planners via the benchmark runner.
 
     `arena planners test [--preflight] <name...|--all> [sim:=gazebo] [KEY:=VALUE ...]`
-    runs one short crowded stage per planner with the scheduler stepping
-    the sim (inline suite + contest, `--lockstep-verdict`), then prints a
-    per-planner stall/rtf/beat table. Exit 3 when a planner stalls for 5 s
-    or never beats the gate, exit 4 when the runner itself hung and was
-    killed by its deadman. `--preflight` is the start-and-drive check: two
-    episodes of map_empty's `preflight` scenario (a clear 5 m straight run,
-    two scripted arenians patrolling elsewhere in the hall) on a 20 s sim
-    budget, a 90 s env startup deadline, a 120 s spawn ceiling and no
-    retries. Verdict per planner: wedged (a cell
-    errored or ran short, `--strict`), weak (an episode closed less than
-    half its start distance without reaching the goal, `--efficacy 0.5`)
-    or ok, exit 3 on any wedged or weak. Lockstep rows informational.
-    `--all` soaks every initialized planner, the `[x]` rows of
-    `arena planners check`. Bridge planners run under the drl driver,
-    anything else as a nav2 local planner. Other tokens forward verbatim
-    to the benchmark runner. Needs the evaluation feature.
+    Soak: one crowded lockstep stage per planner, stall/rtf/beat table, exit 3 on a stall, 4 when the runner hung.
+    `--preflight`: two episodes of map_empty's `preflight` scenario, verdict wedged/weak/ok per planner, exit 3 on either.
+    `--all`: every initialized planner. Other tokens forward to the runner. Needs the evaluation feature.
     """
     import json
 

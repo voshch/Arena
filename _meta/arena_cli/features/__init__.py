@@ -14,8 +14,8 @@ CONTAINER_FEATURES = (*HOST_FEATURES, "docker", "vllm")
 
 
 def in_container() -> bool:
-    """True when ARENA_FEATURES_DIR points at the in-container feature tree."""
-    return os.path.realpath(_env("ARENA_FEATURES_DIR")) == os.path.realpath(os.path.join(_env("ARENA_DIR"), "_meta", "docker", "features"))
+    """True inside the arena container, where source.container exports ARENA_CONTAINER."""
+    return bool(os.environ.get("ARENA_CONTAINER"))
 
 
 def available() -> tuple[str, ...]:
@@ -34,8 +34,8 @@ def load(name: str) -> ModuleType | None:
 
 
 def assets_dir(name: str) -> str:
-    """The feature's asset directory under ARENA_FEATURES_DIR."""
-    return os.path.join(_env("ARENA_FEATURES_DIR"), name)
+    """The feature's asset directory under _meta/docker/features."""
+    return os.path.join(_env("ARENA_DIR"), "_meta", "docker", "features", name)
 
 
 def compose(args: list[str], env: dict[str, str] | None = None) -> int:
