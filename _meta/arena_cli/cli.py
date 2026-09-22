@@ -5,14 +5,14 @@ import sys
 from collections.abc import Callable
 from types import ModuleType
 
-import asset as _asset_mod
-import complete as _complete
-import features as _features
-import human as _human_mod
-import robot as _robot_mod
-import settings as _settings_mod
-import viz as _viz_mod
-from common import (
+from arena_cli import asset as _asset_mod
+from arena_cli import complete as _complete
+from arena_cli import features as _features
+from arena_cli import human as _human_mod
+from arena_cli import robot as _robot_mod
+from arena_cli import settings as _settings_mod
+from arena_cli import viz as _viz_mod
+from arena_cli.common import (
     CLIError,
     Verb,
     _env,
@@ -25,7 +25,7 @@ from common import (
     _run,
     make_verb,
 )
-from complete import Files, Flags, Kv, LaunchArgs, Manifest, Nothing, Packages, Static, Sub, Union
+from arena_cli.complete import Files, Flags, Kv, LaunchArgs, Manifest, Nothing, Packages, Static, Sub, Union
 
 MAIN_HELP = """Arena workspace CLI.
 
@@ -430,7 +430,7 @@ def build(args: list[str]) -> None:
     Bare package names are shorthand for --packages-above. The shell
     shim re-sources the environment afterwards.
     """
-    from build import build_main
+    from arena_cli.build import build_main
 
     sys.exit(build_main(_select_args(args, above=True)))
 
@@ -445,7 +445,7 @@ def rebuild(args: list[str]) -> None:
     """
     import shutil
 
-    from build import build_main, resolve_packages, workspace
+    from arena_cli.build import build_main, resolve_packages, workspace
 
     if not args:
         raise CLIError("rebuild needs a package selection")
@@ -471,7 +471,7 @@ TEST_DEFAULT_SELECT = ("--packages-select-regex", "^arena_", "^task_generator$")
 def test(args: list[str]) -> None:
     import re
 
-    from build import resolve_packages, workspace
+    from arena_cli.build import resolve_packages, workspace
 
     argv = _select_args(args)
     if not any(re.match(r"^--packages-(select|select-regex|up-to|above|ignore)", a) for a in argv):
@@ -482,7 +482,7 @@ def test(args: list[str]) -> None:
     except CLIError:
         pkgs = []
     test_rc = _run("colcon", "test", "--base-paths", *ws.base_paths, "--build-base", ws.build_base, "--install-base", ws.install_base, "--event-handlers", "console_direct+", *argv)
-    from testsum import summarize
+    from arena_cli.testsum import summarize
 
     summary = [ws.build_base]
     if pkgs:
@@ -503,7 +503,7 @@ def update(args: list[str]) -> None:
     """Pull the Arena repos and refresh the python env."""
     import subprocess
 
-    from pull import pull_main
+    from arena_cli.pull import pull_main
 
     rc = pull_main(list(args))
     probe = subprocess.run(["python", "-c", "import pip.__main__"], capture_output=True, check=False)

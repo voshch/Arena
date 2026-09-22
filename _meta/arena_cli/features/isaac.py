@@ -3,11 +3,10 @@
 import os
 import sys
 
-import common
-import features
-from common import CLIError, Verb, make_verb
-from complete import LaunchArgs
-from features import lifecycle_verbs, source_verb
+from arena_cli import common, features
+from arena_cli.common import CLIError, Verb, make_verb
+from arena_cli.complete import LaunchArgs
+from arena_cli.features import lifecycle_verbs, source_verb
 
 NAME = "isaac"
 ISAAC_VERSION = "4.2.0"

@@ -2,10 +2,10 @@
 
 import os
 
-import common
-from common import Verb, make_verb
-from complete import Files, LaunchArgs
-from features import lifecycle_verbs
+from arena_cli import common
+from arena_cli.common import Verb, make_verb
+from arena_cli.complete import Files, LaunchArgs
+from arena_cli.features import lifecycle_verbs
 
 NAME = "training"
 

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, NoReturn
 
 if TYPE_CHECKING:
-    from complete import Spec
+    from arena_cli.complete import Spec
 
 
 class CLIError(Exception):
@@ -99,7 +99,7 @@ def _cli(*argv: str, env: dict[str, str] | None = None) -> int:
     import subprocess
 
     return subprocess.run(
-        [sys.executable, os.path.join(_env("TOOLS_DIR"), "arena_cli", "__main__.py"), *argv],
+        [sys.executable, "-m", "arena_cli", *argv],
         cwd=_env("ARENA_WS_DIR"),
         env=env,
         check=False,
@@ -122,12 +122,19 @@ def _resourced(cmd: str) -> int:
 # installed-features registry, backed by the $INSTALLED file
 
 
-def _reg_list() -> list[str]:
+BUILTIN_FEATURES = ("planners", "robots")
+
+
+def _reg_file() -> list[str]:
     try:
         with open(_env("INSTALLED")) as f:
             return [line.strip() for line in f if line.strip()]
     except OSError:
         return []
+
+
+def _reg_list() -> list[str]:
+    return [*BUILTIN_FEATURES, *(n for n in _reg_file() if n not in BUILTIN_FEATURES)]
 
 
 def _reg_has(name: str) -> bool:
@@ -146,7 +153,7 @@ def _reg_add(name: str) -> None:
 
 
 def _reg_remove(name: str) -> None:
-    kept = [n for n in _reg_list() if n != name]
+    kept = [n for n in _reg_file() if n != name]
     with open(_env("INSTALLED"), "w") as f:
         f.writelines(n + "\n" for n in kept)
 

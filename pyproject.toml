@@ -3,6 +3,7 @@ package = false
 
 [tool.uv.sources]
 arena_planners = { path = "arena_planners/arena_planners", editable = true }
+arena_cli = { path = "_meta/arena_cli", editable = true }
 
 [tool.pytest.ini_options]
 norecursedirs = ["deps", ".git", ".venv", "build", "install", "log", "_meta"]
@@ -71,6 +72,7 @@ dependencies = [
     "sounddevice>=0.5.5",
     "pyroomacoustics>=0.10.1",
     "arena_planners",
+    "arena_cli",
 ]
 
 [build-system]
@@ -95,7 +97,6 @@ src = [
     "utils/rviz_utils/rviz_utils",
     "utils/human_steering/human_steering",
     "utils/arena_cam/arena_cam",
-    "_meta/tools/arena_cli",
 ]
 extend-exclude = [
     "arena_tools",
@@ -119,6 +120,7 @@ ignore = ["E501", "E402", "F841", "E731", "PYI051", "E741", "UP035"]
 
 [tool.ruff.lint.isort]
 known-first-party = [
+    "arena_cli",
     "arena_evaluation",
     "arena_isaac",
     "arena_training",
@@ -128,7 +130,7 @@ known-first-party = [
 [tool.ruff.lint.per-file-ignores]
 "arena_simulation_setup/**/*.py" = ["UP"]
 "utils/arena_rclpy_mixins/**/*.py" = ["UP046", "UP047"]
-"_meta/tools/arena_cli/__main__.py" = ["UP036"]
+"_meta/arena_cli/__main__.py" = ["UP036"]
 
 [tool.ruff.lint.flake8-annotations]
 suppress-none-returning = true

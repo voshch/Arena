@@ -3,8 +3,8 @@
 import os
 import sys
 
-from common import make_verb
-from complete import Flags
+from arena_cli.common import make_verb
+from arena_cli.complete import Flags
 
 MANIFEST_SUFFIX = "/state/viz_manifest"
 

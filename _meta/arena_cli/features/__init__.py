@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from types import ModuleType
 
-from common import CLIError, Verb, _env, _reg_add, _reg_has, _reg_pull, _reg_remove, _reg_require, make_verb
+from arena_cli.common import CLIError, Verb, _env, _reg_add, _reg_has, _reg_pull, _reg_remove, _reg_require, make_verb
 
 HOST_FEATURES = ("evaluation", "gazebo", "isaac", "planners", "robots", "training")
 CONTAINER_FEATURES = (*HOST_FEATURES, "docker", "vllm")
@@ -28,7 +28,7 @@ def load(name: str) -> ModuleType | None:
     if name not in available():
         return None
     try:
-        return importlib.import_module(f"features.{name}")
+        return importlib.import_module(f"arena_cli.features.{name}")
     except ImportError:
         return None
 

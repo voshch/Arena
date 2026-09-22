@@ -1,4 +1,4 @@
-# bash completion for the arena shell function. Sourced by _meta/tools/source.
+# bash completion for the arena shell function. Sourced by _meta/tools/source, which defines _arena_cli.
 
 _arena_complete() {
     local line="${COMP_LINE:0:COMP_POINT}"
@@ -8,7 +8,7 @@ _arena_complete() {
     [ -z "$cur" ] && words+=("")
 
     local out
-    out=$(python3 "$TOOLS_DIR/arena_cli/__main__.py" complete "${words[@]}" 2>/dev/null) || out=""
+    out=$(_arena_cli complete "${words[@]}" 2>/dev/null) || out=""
 
     local prefix="" nospace=0 files=0 head
     head="${cur%"${cur##*[$COMP_WORDBREAKS]}"}"

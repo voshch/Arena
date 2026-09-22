@@ -1,8 +1,8 @@
-# zsh completion for the arena shell function. Sourced by _meta/tools/source.
+# zsh completion for the arena shell function. Sourced by _meta/tools/source, which defines _arena_cli.
 
 _arena() {
     local -a lines
-    lines=("${(@f)$(python3 "$TOOLS_DIR/arena_cli/__main__.py" complete "${(@)words[1,CURRENT]}" 2>/dev/null)}")
+    lines=("${(@f)$(_arena_cli complete "${(@)words[1,CURRENT]}" 2>/dev/null)}")
 
     local prefix='' nospace=0 files=0 group='arena' line value desc shown
     local -a order

@@ -7,10 +7,9 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-import common
-import complete
-from common import Verb, make_verb
-from complete import Flags, Static, Union
+from arena_cli import common, complete
+from arena_cli.common import Verb, make_verb
+from arena_cli.complete import Flags, Static, Union
 
 _NAME = "planners"
 _SDK_SUBDIR = "arena_planners"
@@ -357,7 +356,6 @@ def add(argv: list[str]) -> None:
 
 
 def update(argv: list[str]) -> None:
-    common._reg_require(_NAME)
     rc = _run_update(argv)
     sys.exit(_deps_build() or rc)
 
@@ -427,7 +425,6 @@ def uninstall(argv: list[str]) -> None:
     if argv:
         sys.exit(_run_rm(argv))
     _run_uninstall_all([])
-    common._reg_remove(_NAME)
     sys.exit(0)
 
 
@@ -435,12 +432,12 @@ COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
         make_verb("add", add, passthrough=True, help_text="clone planner's submodules (alias: install)", complete=_SELECT),
-        make_verb("update", update, passthrough=True, help_text="Update the feature to the latest state."),
+        make_verb("update", update, passthrough=True, help_text="refresh initialized submodules"),
         make_verb("rm", rm, passthrough=True, help_text="deinit planner's submodules (alias: uninstall <name...>)", complete=Union(_SELECT, Flags({"-f": "deinit shared paths too"}))),
         make_verb("ls", ls, passthrough=True, help_text="list planners, [x] ready, [ ] pending"),
         make_verb("check", check, passthrough=True, help_text="verify planner submodules are initialized", complete=Union(_ALL, Flags({"-q": "quiet"}))),
         make_verb("install", install, passthrough=True, help_text="clone planner's submodules (alias for add)", complete=_SELECT),
-        make_verb("uninstall", uninstall, passthrough=True, help_text="Uninstall and unregister the feature.", complete=Static(_names)),
+        make_verb("uninstall", uninstall, passthrough=True, help_text="deinit all submodules (alias: rm --all)", complete=Static(_names)),
         make_verb("test", test, passthrough=True, complete=Union(_SELECT, _PREFLIGHT)),
     ]
 }

@@ -10,15 +10,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-import complete
-from complete import LaunchArgs
+from arena_cli import complete
+from arena_cli.complete import LaunchArgs
 
 _ARG_RE = re.compile(r"^\s+'([^']+)':\*?\s*$")
 _DEFAULT_RE = re.compile(r"^\s+\(default: '(.*)'\)\s*$")
 
 
 def _launch_targets() -> set[tuple[str, str]]:
-    import cli
+    from arena_cli import cli
 
     found: set[tuple[str, str]] = set()
     for v in cli._VERBS.values():
@@ -71,7 +71,7 @@ def _asset_names() -> tuple[dict[str, list[str]], list[str]]:
     """Per-kind asset names for completion: local names plus bucket listings already cached on disk."""
     from arena_simulation_setup.tree import NetResolver
 
-    import asset
+    from arena_cli import asset
 
     values: dict[str, list[str]] = {}
     deps: list[str] = []
@@ -148,7 +148,7 @@ def build(ws: str) -> dict:
 def main(argv: list[str]) -> int:
     flag, *rest = argv or [""]
     if flag != "--out" or len(rest) != 1:
-        print("usage: manifest.py --out <path>", file=sys.stderr)
+        print("usage: python -m arena_cli.manifest --out <path>", file=sys.stderr)
         return 2
     out = rest[0]
     ws = os.environ.get("ARENA_WS_DIR", "")

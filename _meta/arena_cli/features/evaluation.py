@@ -1,8 +1,8 @@
 """evaluation feature: recording, metrics, benchmarking."""
 
-import common
-from common import Verb, make_verb
-from features import lifecycle_verbs
+from arena_cli import common
+from arena_cli.common import Verb, make_verb
+from arena_cli.features import lifecycle_verbs
 
 NAME = "evaluation"
 

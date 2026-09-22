@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from features import robots
+from arena_cli.features import robots
 
 GITMODULES = """\
 [submodule "arena_robots/robots/mpo700/meshes"]

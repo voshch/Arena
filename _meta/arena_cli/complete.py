@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator, Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from common import Verb
+    from arena_cli.common import Verb
 
 SCHEMA = 1
 LOCK_MAX_AGE_S = 120.0
@@ -137,7 +137,7 @@ def walk(spec: Spec | None) -> Iterator[Spec]:
 
 
 def _spec_of(target: Spec | Verb) -> Spec | None:
-    from common import Verb
+    from arena_cli.common import Verb
 
     return target.complete if isinstance(target, Verb) else target
 
@@ -260,7 +260,7 @@ def _launch_source(spec: LaunchArgs, key: str, arg: dict[str, str], ctx: Context
 
 
 def _sub_names(table: Mapping[str, Spec | Verb]) -> dict[str, str]:
-    from common import Verb
+    from arena_cli.common import Verb
 
     out: dict[str, str] = {}
     for name, target in table.items():
@@ -342,7 +342,7 @@ def _spawn_generator(path: str) -> None:
     except OSError:
         return
     subprocess.Popen(
-        [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.py"), "--out", path],
+        [sys.executable, "-m", "arena_cli.manifest", "--out", path],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -358,7 +358,7 @@ def invalidate(ws: str) -> None:
 def refresh(ws: str) -> int:
     import subprocess
 
-    return subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.py"), "--out", cache_path(ws)], check=False).returncode
+    return subprocess.run([sys.executable, "-m", "arena_cli.manifest", "--out", cache_path(ws)], check=False).returncode
 
 
 def complete(words: list[str], verbs: Mapping[str, Verb], sections: Mapping[str, list[str]], ws: str) -> list[str]:

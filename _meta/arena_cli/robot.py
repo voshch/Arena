@@ -6,8 +6,8 @@ import os
 import sys
 from typing import TYPE_CHECKING
 
-from common import make_verb
-from complete import Flags, Kv, Manifest, Static, Sub, Union
+from arena_cli.common import make_verb
+from arena_cli.complete import Flags, Kv, Manifest, Static, Sub, Union
 
 if TYPE_CHECKING:
     import argparse

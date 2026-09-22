@@ -4,8 +4,8 @@ import os
 import sys
 from typing import TYPE_CHECKING
 
-from common import make_verb
-from complete import Flags, Kv, Static, Union
+from arena_cli.common import make_verb
+from arena_cli.complete import Flags, Kv, Static, Union
 
 if TYPE_CHECKING:
     from types import FrameType

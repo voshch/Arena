@@ -18,7 +18,7 @@ def workspace() -> Workspace:
     """Build layout from the environment. Assumes cwd is ARENA_WS_DIR."""
     import glob
 
-    from common import _env
+    from arena_cli.common import _env
 
     arena_ws_dir = _env("ARENA_WS_DIR")
 
@@ -53,7 +53,7 @@ def resolve_packages(argv: list[str]) -> list[str]:
     """Package names a colcon selection argv resolves to."""
     import subprocess
 
-    from common import CLIError
+    from arena_cli.common import CLIError
 
     listing = subprocess.run(
         ["colcon", "list", "--names-only", "--base-paths", *workspace().base_paths, *argv],
@@ -90,7 +90,7 @@ def build_main(argv: list[str]) -> int:
     """Run colcon build with the workspace package-skip and cmake-args logic. Assumes cwd is ARENA_WS_DIR."""
     import subprocess
 
-    from common import _env
+    from arena_cli.common import _env
 
     args = list(argv)
 

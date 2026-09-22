@@ -2,9 +2,9 @@
 
 import os
 
-import features
-from common import CLIError, _env_file, _env_set, _host_path, _row, make_verb
-from complete import Static
+from arena_cli import features
+from arena_cli.common import CLIError, _env_file, _env_set, _host_path, _row, make_verb
+from arena_cli.complete import Static
 
 DESCRIPTION = "Workspace settings, persisted in .env.\n\nEvery `source arena` reads them, on the host and in the container. A bare command shows the current value."
 

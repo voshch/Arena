@@ -3,9 +3,9 @@
 import os
 import sys
 
-import features
-from common import CLIError, Verb, _env_set, _host_path, _row, make_verb
-from complete import Static
+from arena_cli import features
+from arena_cli.common import CLIError, Verb, _env_set, _host_path, _row, make_verb
+from arena_cli.complete import Static
 
 NAME = "docker"
 

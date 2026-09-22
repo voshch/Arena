@@ -9,8 +9,8 @@ def pull_main(argv: list[str]) -> int:
     import shutil
     import subprocess
 
-    import features
-    from common import _cli, _env, _git_ssh_command, _reg_list, _reg_pull
+    from arena_cli import features
+    from arena_cli.common import _cli, _env, _git_ssh_command, _reg_list, _reg_pull
 
     arena_dir = _env("ARENA_DIR")
     arena_ws_dir = _env("ARENA_WS_DIR")

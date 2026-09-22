@@ -7,8 +7,8 @@ import importlib
 import sys
 import typing
 
-from common import CLIError, make_verb
-from complete import Flags, Manifest, Static, Sub, Union
+from arena_cli.common import CLIError, make_verb
+from arena_cli.complete import Flags, Manifest, Static, Sub, Union
 
 if typing.TYPE_CHECKING:
     from pathlib import Path

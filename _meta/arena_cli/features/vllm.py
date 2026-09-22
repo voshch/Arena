@@ -3,10 +3,9 @@
 import os
 import sys
 
-import common
-import features
-from common import CLIError, Verb, make_verb
-from features import source_verb
+from arena_cli import common, features
+from arena_cli.common import CLIError, Verb, make_verb
+from arena_cli.features import source_verb
 
 NAME = "vllm"
 

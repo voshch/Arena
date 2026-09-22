@@ -10,10 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import common
-import complete
-from common import Verb, make_verb
-from complete import Flags, Static, Union
+from arena_cli import common, complete
+from arena_cli.common import Verb, make_verb
+from arena_cli.complete import Flags, Static, Union
 
 _NAME = "robots"
 
@@ -589,7 +588,6 @@ def add(argv: list[str]) -> None:
 
 
 def update(argv: list[str]) -> None:
-    common._reg_require(_NAME)
     ap = argparse.ArgumentParser(prog="robots update")
     args = ap.parse_args(argv)
     os.environ.setdefault("GIT_SSH_COMMAND", common._git_ssh_command())
@@ -644,7 +642,6 @@ def uninstall(argv: list[str]) -> None:
     os.environ.setdefault("GIT_SSH_COMMAND", common._git_ssh_command())
     cmd_uninstall(Path(common._env("ARENA_DIR")), args)
     complete.invalidate(common._env("ARENA_WS_DIR"))
-    common._reg_remove(_NAME)
     sys.exit(0)
 
 
@@ -652,12 +649,12 @@ COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
         make_verb("add", add, passthrough=True, help_text="clone robot/component submodules (alias: install)", complete=_SELECT),
-        make_verb("update", update, passthrough=True, help_text="Update the feature to the latest state."),
+        make_verb("update", update, passthrough=True, help_text="refresh initialized submodules"),
         make_verb("rm", rm, passthrough=True, help_text="deinit robot/component submodules (alias: uninstall <name...>)", complete=Union(_SELECT, Flags({"-f": "deinit shared paths too"}))),
         make_verb("ls", ls, passthrough=True, help_text="list robots and components, [x] ready, [ ] pending"),
         make_verb("check", check, passthrough=True, help_text="verify all package://arena_robots/... URIs resolve", complete=Union(_ALL, Flags({"-q": "quiet"}))),
         make_verb("drive", drive, passthrough=True, help_text="run a random-goal episode per ready robot, report success/total"),
         make_verb("install", install, passthrough=True, help_text="clone robot/component submodules (alias for add)", complete=_SELECT),
-        make_verb("uninstall", uninstall, passthrough=True, help_text="Uninstall and unregister the feature.", complete=Static(_names)),
+        make_verb("uninstall", uninstall, passthrough=True, help_text="deinit all submodules (alias: rm --all)", complete=Static(_names)),
     ]
 }

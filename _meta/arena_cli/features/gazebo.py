@@ -2,11 +2,10 @@
 
 import os
 
-import common
-import features
-from common import Verb, make_verb
-from complete import LaunchArgs
-from features import lifecycle_verbs, source_verb
+from arena_cli import common, features
+from arena_cli.common import Verb, make_verb
+from arena_cli.complete import LaunchArgs
+from arena_cli.features import lifecycle_verbs, source_verb
 
 NAME = "gazebo"
 

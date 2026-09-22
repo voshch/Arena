@@ -176,6 +176,11 @@ wheels = [
 ]
 
 [[package]]
+name = "arena-cli"
+version = "0.0.0"
+source = { editable = "_meta/arena_cli" }
+
+[[package]]
 name = "arena-planners"
 version = "0.0.0"
 source = { editable = "arena_planners/arena_planners" }
@@ -204,6 +209,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
+    { name = "arena-cli" },
     { name = "arena-planners" },
     { name = "attrs" },
     { name = "cattrs" },
@@ -268,6 +274,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles" },
+    { name = "arena-cli", editable = "_meta/arena_cli" },
     { name = "arena-planners", editable = "arena_planners/arena_planners" },
     { name = "attrs" },
     { name = "cattrs" },
