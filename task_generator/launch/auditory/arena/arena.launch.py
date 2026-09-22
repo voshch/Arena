@@ -245,6 +245,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                             ]
                         ),
                         "world_topic": "state/world",
+                        "map_topic": "map",
                         "sound_events_topic": "human_sound_events",
                         "sound_markers_topic": PathJoinSubstitution(
                             [

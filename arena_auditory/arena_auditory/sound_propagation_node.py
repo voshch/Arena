@@ -12,7 +12,6 @@ from pathlib import Path
 import numpy as np
 import rclpy
 import tf2_ros
-import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
 from arena_robots.Robot import RobotIdentifier
@@ -41,6 +40,7 @@ from task_generator_msgs.srv import RemoveMicrophone, SpawnMicrophone
 from visualization_msgs.msg import Marker, MarkerArray
 
 from arena_auditory.acoustic_frame import (
+    compact_authored_world,
     realize_acoustic_geometry,
     runtime_acoustic_offset,
 )
@@ -85,6 +85,7 @@ DIRECT_ARRIVAL_RELATIVE_THRESHOLD = 0.25
 
 
 VIEWPORT_LISTENER_IDS = ("microphone:viewport:down_projection", "microphone:viewport:projective_center")
+
 
 class SoundPropagationNode(Node):
     def __init__(self, **kwargs: object) -> None:
@@ -509,25 +510,12 @@ class SoundPropagationNode(Node):
     ]:
         world_view = WorldIdentifier(world_name).resolve_sync()
         world_description = world_view.load()
-        authored_map_origin = None
-        level_origins = world_view.level_origins()
         microphones = world_microphones(
             world_description,
             ceiling_height_m,
-            level_origins=level_origins,
+            level_origins=world_view.level_origins(),
         )
-        if level_origins is not None:
-            world_description = world_description.compact_world(level_origins)
-            _, authored_map_origin = world_description.render_grid()
-        else:
-            for level_id in sorted(world_description.levels):
-                map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
-                if not map_yaml.exists():
-                    continue
-                map_config = yaml.safe_load(map_yaml.read_text(encoding="utf-8"))
-                origin = map_config.get("origin", (0.0, 0.0, 0.0))
-                authored_map_origin = (float(origin[0]), float(origin[1]))
-                break
+        world_description, authored_map_origin = compact_authored_world(world_view, world_description)
 
         scene = AcousticScene.from_world(world_description)
 

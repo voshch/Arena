@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import attrs
+import yaml
+from arena_simulation_setup.tree.World import LevelDescription, MultiLevelWorldView, WorldDescription
 from nav_msgs.msg import OccupancyGrid
 from shapely.affinity import translate
 
@@ -13,6 +17,25 @@ from .acoustic_world_graph import (
 )
 
 Offset2D = tuple[float, float]
+
+
+def compact_authored_world(
+    world_view: MultiLevelWorldView,
+    world_description: WorldDescription,
+) -> tuple[WorldDescription | LevelDescription, Offset2D | None]:
+    """Compact a multi-level world onto one grid and return it with the authored map origin."""
+    level_origins = world_view.level_origins()
+    if level_origins is not None:
+        compacted = world_description.compact_world(level_origins)
+        _, origin = compacted.render_grid()
+        return compacted, (float(origin[0]), float(origin[1]))
+    for level_id in sorted(world_description.levels):
+        map_yaml = Path(world_view.path) / str(level_id) / "map.yaml"
+        if not map_yaml.exists():
+            continue
+        origin = yaml.safe_load(map_yaml.read_text(encoding="utf-8")).get("origin", (0.0, 0.0, 0.0))
+        return world_description, (float(origin[0]), float(origin[1]))
+    return world_description, None
 
 
 def runtime_acoustic_offset(

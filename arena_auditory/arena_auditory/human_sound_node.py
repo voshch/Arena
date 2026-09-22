@@ -8,6 +8,7 @@ from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_simulation_setup.tree.World import WorldIdentifier
 from builtin_interfaces.msg import Duration, Time
 from geometry_msgs.msg import Point, Quaternion
+from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -19,6 +20,7 @@ from std_msgs.msg import ColorRGBA, String
 from task_generator_msgs.msg import SoundEvent
 from visualization_msgs.msg import Marker, MarkerArray
 
+from arena_auditory.acoustic_frame import compact_authored_world, runtime_acoustic_offset
 from arena_auditory.acoustic_scene import AcousticScene
 from arena_auditory.auditory_events import AuditoryEventDetector
 from arena_auditory.qos_profiles import (
@@ -34,6 +36,7 @@ class HumanSoundNode(Node):
         super().__init__("human_sound_node", **kwargs)
         self.declare_parameter("arena_peds_topic", "arena_peds")
         self.declare_parameter("world_topic", "state/world")
+        self.declare_parameter("map_topic", "map")
         self.declare_parameter("sound_events_topic", "human_sound_events")
         self.declare_parameter(
             "sound_markers_topic",
@@ -48,6 +51,8 @@ class HumanSoundNode(Node):
         self._event_counter = itertools.count()
         self._marker_counter = itertools.count()
         self._acoustic_scene: AcousticScene | None = None
+        self._authored_map_origin: tuple[float, float] | None = None
+        self._map: OccupancyGrid | None = None
         self._sound_publisher = self.create_publisher(
             SoundEvent,
             str(self.get_parameter("sound_events_topic").value),
@@ -83,6 +88,12 @@ class HumanSoundNode(Node):
             self._on_world,
             acoustic_metadata_qos(),
         )
+        self._map_subscription = self.create_subscription(
+            OccupancyGrid,
+            str(self.get_parameter("map_topic").value),
+            self._on_map,
+            acoustic_metadata_qos(),
+        )
 
     def _on_pedestrians(self, msg: Pedestrians) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1e-9
@@ -93,16 +104,22 @@ class HumanSoundNode(Node):
         if not world_name:
             return
         try:
-            world = WorldIdentifier(world_name).resolve_sync().load()
+            world_view = WorldIdentifier(world_name).resolve_sync()
+            world, self._authored_map_origin = compact_authored_world(world_view, world_view.load())
             self._acoustic_scene = AcousticScene.from_world(world)
         except Exception as exc:
             self.get_logger().warning(f"failed to load acoustic scene for footstep material mapping: {exc!r}")
             self._acoustic_scene = None
+            self._authored_map_origin = None
+
+    def _on_map(self, msg: OccupancyGrid) -> None:
+        self._map = msg
 
     def _floor_tag(self, ped: Pedestrian) -> str:
-        if self._acoustic_scene is None:
+        if self._acoustic_scene is None or self._map is None or self._authored_map_origin is None:
             return "default"
-        zone = self._acoustic_scene.zone_at(ped.pose.position)
+        dx, dy = runtime_acoustic_offset(self._map, self._authored_map_origin)
+        zone = self._acoustic_scene.zone_at_xy(ped.pose.position.x - dx, ped.pose.position.y - dy)
         if zone is None:
             return "default"
         tag = zone.floor_material_id.strip().lower().replace(" ", "_").replace("-", "_")
