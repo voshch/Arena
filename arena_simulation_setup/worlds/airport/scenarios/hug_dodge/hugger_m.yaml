@@ -1,0 +1,14 @@
+name: hugger_m
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle: {duration: {mean: 0.3, std: 0.0}}
+      interact:
+        interaction: HUG
+        formation_spec: {type: dyad, anchor_kind: centroid, params: {separation: 0.3126}}
+        attention: {clip: {name: hug_v7_air_m, when: bound}}
+        duration: {mean: 10000.0, std: 0.0}
+    then: seq

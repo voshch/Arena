@@ -1,0 +1,19 @@
+# FAST minimal clip: the locked v7 handshake (wider stance) on the robot's path, RViz curated (human cylinders + proximity/vision
+# debug off, Map/Alpha 0.99), aura blinking twice. Built to quickly re-verify the fixes that the full hero take still lacks
+# (that take predates the v7 handshake and the RViz cylinder fix).
+robots:
+- start: [7.5, 15.6, 0.0]
+  phases:
+  - goto: [11.0, 15.6, 0.0]
+
+dynamic:
+- name: shaker_doctor
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [8.9, 16.6, 0.0]
+  agent: {agent_type: ./shaker.yaml}
+  waypoints: [[8.9, 16.6]]
+- name: shaker_visitor
+  model: Office/office_male_caucasian_middleage
+  pose: [9.5, 16.6, 3.14159]
+  agent: {agent_type: ./shaker.yaml}
+  waypoints: [[9.5, 16.6]]

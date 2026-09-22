@@ -1,0 +1,41 @@
+# The woman at the back of check-in line 1: waits, waves at her friend at the back of line 2 (fixed gaze target, no WAVE_AT
+# pairing needed), then walks to a shared meeting point between the two lines and hugs him there (scripted, per
+# arena_simulation_setup/worlds/hospital_1/scenarios/social_hugging/hugger_*.yaml: kind: go_to, then interact: HUG).
+# Uses the locked airport hug clip (hug_v7_air_w, office_female_caucasian_young + worker_male_asian_middleage, dyad separation 0.3126).
+name: queue_wave_hugger_w
+mode: behavior_tree
+extends: adult
+desired_velocity: {mean: 1.9, std: 0.15, clip_low: 1.0, clip_high: 2.4}
+initial_sequence: wave_seq
+sequences:
+  wave_seq:
+    steps:
+      settle:
+        duration: {mean: 2.0, std: 0.0}
+      wave:
+        attention:
+          clip: {name: wave_high, when: always}
+          gaze: {x: 13.0, y: 15.0, z: 1.5}
+        duration: {mean: 2.2, std: 0.0}
+    then: approach_seq
+  approach_seq:
+    steps:
+      walk_to_meet:
+        kind: go_to
+        target_pose: {x: 13.0, y: 9.35, theta: 1.5708}
+    then: hug_seq
+  hug_seq:
+    steps:
+      do_hug:
+        interaction: HUG
+        formation_spec:
+          type: dyad
+          anchor_kind: centroid
+          params:
+            separation: 0.3126
+        attention:
+          clip:
+            name: hug_v7_air_w
+            when: bound
+        duration: {mean: 10000.0, std: 0.0}
+    then: hug_seq

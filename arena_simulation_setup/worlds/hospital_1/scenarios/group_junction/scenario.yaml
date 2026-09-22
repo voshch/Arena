@@ -1,0 +1,25 @@
+# Minimal comparison scene: the central_hallway x sub_hallway junction from beckon_hero_video, with one small group
+# conversation (3 people) standing just off the robot's straight line through the junction. Two takes of this scenario are
+# recorded, identical except for robot.mobile.social_cost_layer (true / false), to show side by side what the social cost
+# layer buys: with it on the robot bends around the group's personal-space halo, with it off it cuts closer / through it.
+robots:
+- start: [9.3, 11.55, 0.0]
+  phases:
+  - goto: [15.0, 11.55, 0.0]
+
+dynamic:
+- name: grouper_a
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [12.0, 12.2, -1.9]
+  agent: {agent_type: ./grouper.yaml, desired_velocity: 1.0}
+  waypoints: [[12.0, 12.2]]
+- name: grouper_b
+  model: Hospital/nurse_female_caucasian_young
+  pose: [12.7, 12.0, -2.9]
+  agent: {agent_type: ./grouper.yaml, desired_velocity: 1.0}
+  waypoints: [[12.7, 12.0]]
+- name: grouper_c
+  model: arenian
+  pose: [12.3, 12.5, 1.4]
+  agent: {agent_type: ./grouper.yaml, desired_velocity: 1.0}
+  waypoints: [[12.3, 12.5]]

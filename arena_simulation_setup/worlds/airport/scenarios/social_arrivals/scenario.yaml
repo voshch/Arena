@@ -1,0 +1,84 @@
+# Airport arrivals hall (video scene). The robot crosses the open hall from the check-in side toward the
+# chairs; three groups sit around its line, so the path has to bend around them rather than between them:
+#   G1  two people talking on the robot's line, 1.8 m apart (the gap is passable, the conversation is not)
+#   G2  a reunion hug south of the line, right where the robot comes back onto it
+#   G3  three people in a group conversation north of the line
+#   G4  a handshake near the goal, plus two wavers and two through-walkers for background
+# World coordinates. Furniture: check-in desks x~5, queue rails x 8-14, information island x 20-23.5 y 12-18,
+# chair blocks x 30-40; the hall is open between x 15 and 29.
+robots:
+- start: [14.0, 9.5, 0.0]   # 6 m before the talkers: their cost halo (2.5 m) must not enclose the start
+  phases:
+  - goto: [27.0, 9.5, 0.0]
+
+dynamic:
+- name: talker_a
+  model: Common/worker_male_caucasian_young
+  pose: [20.0, 8.6, 1.5708]
+  agent: {agent_type: ./talker.yaml}
+  waypoints: [[20.0, 8.6]]
+- name: talker_b
+  model: Common/casual_female_caucasian_young
+  pose: [20.0, 10.4, -1.5708]
+  agent: {agent_type: ./talker.yaml}
+  waypoints: [[20.0, 10.4]]
+
+- name: hugger_a
+  model: Common/worker_male_asian_middleage
+  pose: [23.7, 5.9, 0.0]
+  agent: {agent_type: ./hugger_m.yaml}
+  waypoints: [[23.7, 5.9]]
+- name: hugger_b
+  model: Office/office_female_caucasian_young
+  pose: [24.25, 5.9, 3.14159]
+  agent: {agent_type: ./hugger_w.yaml}
+  waypoints: [[24.25, 5.9]]
+
+- name: grouper_a
+  model: Common/worker_male_african_young
+  pose: [25.4, 13.4, 0.0]
+  agent: {agent_type: ./grouper.yaml, desired_velocity: 1.0}
+  waypoints: [[25.4, 13.4]]
+- name: grouper_b
+  model: Office/office_female_asian_young
+  pose: [26.4, 13.4, 2.1]
+  agent: {agent_type: ./grouper.yaml, desired_velocity: 1.0}
+  waypoints: [[26.4, 13.4]]
+- name: grouper_c
+  model: Common/worker_male_caucasian_middleage
+  pose: [25.9, 14.3, -2.1]
+  agent: {agent_type: ./grouper.yaml, desired_velocity: 1.0}
+  waypoints: [[25.9, 14.3]]
+
+- name: shaker_a
+  model: Office/office_female_african_young
+  pose: [28.3, 5.2, 0.0]
+  agent: {agent_type: ./shaker.yaml}
+  waypoints: [[28.3, 5.2]]
+- name: shaker_b
+  model: Common/casual_female_african_young
+  pose: [29.0, 5.2, 3.14159]
+  agent: {agent_type: ./shaker.yaml}
+  waypoints: [[29.0, 5.2]]
+
+- name: waver_a
+  model: Hospital/nurse_female_caucasian_young
+  pose: [17.0, 14.5, 0.0]
+  agent: {agent_type: ./waver.yaml, desired_velocity: 1.0}
+  waypoints: [[17.0, 14.5]]
+- name: waver_b
+  model: arenian
+  pose: [18.2, 14.5, 3.14159]
+  agent: {agent_type: ./waver.yaml, desired_velocity: 1.0}
+  waypoints: [[18.2, 14.5]]
+
+- name: walker_1
+  model: Common/casual_female_caucasian_young
+  pose: [16.5, 26.0, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints: [[16.5, 26.0], [16.5, 2.0]]
+- name: walker_2
+  model: Office/office_male_african_young
+  pose: [28.0, 1.5, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints: [[28.0, 1.5], [28.0, 27.0]]

@@ -1,0 +1,40 @@
+# FAST minimal repro: the hug pair already hugging from t=0 (no wave/run, no timing race with the robot), positioned right on
+# the robot's short straight route, plus a handful of queue-context people. Built under a hard time budget: prioritises a
+# correct, quickly re-recordable dodge shot over the fuller queue_reunion scene.
+robots:
+- start: [1.0, 10.0, 0.0]
+  phases:
+  - goto: [12.0, 10.0, 0.0]
+
+dynamic:
+- name: hugger_w
+  model: Office/office_female_caucasian_young
+  pose: [8.85, 10.0, 1.5708]
+  agent: {agent_type: ./hugger_w.yaml}
+  waypoints: [[8.85, 10.0]]
+- name: hugger_m
+  model: Common/worker_male_asian_middleage
+  pose: [9.16, 10.0, -1.5708]
+  agent: {agent_type: ./hugger_m.yaml}
+  waypoints: [[9.16, 10.0]]
+
+- name: queue_1
+  model: Common/worker_male_caucasian_middleage
+  pose: [11.5, 5.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints: [[11.5, 5.0]]
+- name: queue_2
+  model: Office/office_female_african_young
+  pose: [10.0, 5.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints: [[10.0, 5.0]]
+- name: queue_3
+  model: Common/casual_female_caucasian_young
+  pose: [8.5, 5.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints: [[8.5, 5.0]]
+- name: officer_1
+  model: Office/office_male_caucasian_middleage
+  pose: [5.2, 7.5, -1.5708]
+  agent: {agent_type: adult}
+  waypoints: [[5.2, 7.5]]

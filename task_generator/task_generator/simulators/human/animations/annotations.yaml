@@ -47,3 +47,22 @@ hug_v2: {loop: true, joints: *upper_body_wrists}
 shake_hand_v2: {loop: true, joints: *upper_body_wrists}
 beckon_v3: {loop: true, joints: *upper_body_wrists}
 shake_hand_v3: {loop: true, joints: *upper_body_wrists}
+
+# Round 5 (paper video, LOCKED): handshakes at a wider stance still, checked with the exact triangle-crossing test (only the clasped hands cross, same as the narrower stance; nothing else does).
+# Authored by data/recordings/paper_video/scripts/make_contact_clips_v5.py (shake) + scripts/shake_check2.py (scripts/meshx.py crossing check).
+#   shake_hand_v7_doctor_pair   doctor_male_caucasian_middleage with office_male_caucasian_middleage, separation 0.88
+#   shake_hand_v7_women_pair    office_female_african_young with casual_female_african_young, separation 0.84
+#   shake_hand_v7_men_pair      office_male_asian_middleage with worker_male_asian_middleage, separation 0.88
+shake_hand_v7_doctor_pair: {loop: true, joints: *upper_body_wrists}
+shake_hand_v7_women_pair: {loop: true, joints: *upper_body_wrists}
+shake_hand_v7_men_pair: {loop: true, joints: *upper_body_wrists}
+# Hugs designed against the skinned meshes with an exact surface-crossing test (scripts/meshx.py, hugclear.py in data/recordings/paper_video): ZERO triangles of one body cross the other's
+# surface, in every phase pairing of the loop; hands rest on the partner's back (0.8 to 1.4 cm), arms keep 1.4 cm or more. Over-under: his arms go over her shoulders to her upper back,
+# hers around his waist to his lower back; the heads pass side by side (part of the clip: no gaze override); she leans in, he stays upright. One clip per ROLE of a PAIR at a fixed
+# dyad separation (put it in both agents' formation_spec).
+#   hug_v7_hero_w / _m   office_female_asian_young + arenian, separation 0.2838 (the nurse has a hair plate down her back that makes a clean hug impossible)
+hug_v7_hero_w: {loop: true, joints: *upper_body_wrists}
+hug_v7_hero_m: {loop: true, joints: *upper_body_wrists}
+#   hug_v7_air_w / _m    office_female_caucasian_young + worker_male_asian_middleage, separation 0.3126
+hug_v7_air_w: {loop: true, joints: *upper_body_wrists}
+hug_v7_air_m: {loop: true, joints: *upper_body_wrists}

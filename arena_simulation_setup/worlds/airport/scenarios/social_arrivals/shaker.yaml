@@ -1,0 +1,28 @@
+# Handshake (LOCKED): office_female_african_young + casual_female_african_young (same rig, 1.75 / 1.76 m), palms meet at the midpoint of a 0.84 m dyad.
+name: shaker
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration:
+          mean: 1.0
+          std: 0.0
+      interact:
+        interaction: SHAKE_HAND
+        formation_spec:
+          type: dyad
+          anchor_kind: centroid
+          params:
+            separation: 0.84
+        attention:
+          clip:
+            name: shake_hand_v7_women_pair
+            when: bound
+          gaze: partner
+        duration:
+          mean: 10000.0
+          std: 0.0
+    then: seq

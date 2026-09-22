@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("arena_people_msgs")
 
 from task_generator.manager.world_manager.utils import GridFrame, WorldOccupancy
-from task_generator.shared import Position
+from task_generator.shared import Orientation, Pose, Position
 from task_generator.tasks.robots.patrol.impl import TM_Patrol
 
 RESOLUTION = 0.05
@@ -22,7 +22,7 @@ def _param(value: object) -> SimpleNamespace:
     return SimpleNamespace(value=value)
 
 
-def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, require_los: bool = True, agent: str = "caller", clip: str = "beckon") -> TM_Patrol:
+def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, require_los: bool = True, agent: str = "caller", clip: str = "beckon", frame_offset: tuple[float, float] = (0.0, 0.0)) -> TM_Patrol:
     """A TM_Patrol with only the fields its pure helpers read."""
     mode = object.__new__(TM_Patrol)
     grid = np.full(SHAPE, WorldOccupancy.EMPTY, dtype=np.uint8) if walls is None else walls
@@ -42,6 +42,7 @@ def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, requir
     mode._peds = None
     mode._walls_cache = None
     mode._last_look = -1e9
+    mode._frame_offset = frame_offset
     return mode
 
 
@@ -89,6 +90,32 @@ def test_perception_needs_range_and_sight() -> None:
     assert not far._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))  # in range, but the wall blocks it
     blind = _mode(walls=_wall_at(5.0), sensor_range=12.0, require_los=False)
     assert blind._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))  # the control that ignores what it could see
+
+
+def test_sightlines_are_traced_in_the_scenario_frame() -> None:
+    """hospital_1's env sits at (+5, +5) in the map the robot reports in: poses are shifted by that before they meet the wall grid."""
+    wall = _wall_at(5.0)  # scenario frame
+    shifted = _mode(walls=wall, frame_offset=(5.0, 5.0))
+    # robot and caller on the same side of the wall (scenario x = 1 and 4): visible; in the robot's frame they are at x = 6 and 9
+    assert shifted._perceives(_pose(6.0, 10.0), Position(9.0, 10.0, 0.0))
+    # across the wall (scenario x = 1 and 8): blocked
+    assert not shifted._perceives(_pose(6.0, 10.0), Position(13.0, 10.0, 0.0))
+    # without the offset the same robot-frame poses would be looked up at the wrong cells (x = 6..13 is past the wall): no shift, no block
+    unshifted = _mode(walls=wall)
+    assert unshifted._perceives(_pose(6.0, 8.0), Position(9.0, 8.0, 0.0))
+
+
+def test_goals_are_submitted_in_the_scenario_frame() -> None:
+    """The route is shifted into the robot's frame for arrival checks, but the adapter adds the env offset to goals again: submit the unshifted pose."""
+    mode = _mode(frame_offset=(5.0, 5.0))
+    mode._route_local = [Pose(position=Position(10.6, 11.6, 0.0), orientation=Orientation.from_yaw(0.0))]
+    mode._route = [Pose(position=Position(15.6, 16.6, 0.0), orientation=Orientation.from_yaw(0.0))]
+    mode._index = 0
+    goal = mode._next_checkpoint().phases[0].pose
+    assert (goal.position.x, goal.position.y) == (10.6, 11.6)  # scenario frame
+    assert (mode._current_goal.position.x, mode._current_goal.position.y) == (15.6, 16.6)  # arrival is checked in the robot's frame
+    service = mode._to_scenario_pose(Pose(position=Position(18.5, 16.6, 0.0), orientation=Orientation.from_yaw(0.0)))
+    assert (service.position.x, service.position.y) == pytest.approx((13.5, 11.6))
 
 
 def test_only_the_named_agent_playing_the_call_clip_counts() -> None:
