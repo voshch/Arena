@@ -1,0 +1,19 @@
+# The call is aimed at the point in the hallway the robot passes; beckon_v3 is the hero come-here call (Isaac rig).
+name: caller
+mode: behavior_tree
+extends: adult
+initial_sequence: call_seq
+sequences:
+  call_seq:
+    steps:
+      call:
+        attention:
+          clip: beckon_v3
+          gaze:
+            x: 9.6
+            y: 11.6
+            z: 0.4
+        duration:
+          mean: 1000.0
+          std: 0.0
+    then: call_seq

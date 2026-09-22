@@ -1,0 +1,145 @@
+# Airport check-in hall: three queue lines (Personenleitsystem rails already in worlds/airport/0/world.yaml, x 8-14, at the
+# three reception desks x=5 y=6/16/26), an officer beside each desk, background walkers throughout the hall. The person at the
+# back of line 1 (reunion_w) and the back of line 2 (reunion_m) spot each other, wave, then jog to meet and hug (queue_wave_hugger_*.yaml):
+# WAVE_AT then HUG with an enlarged interaction_radius, so they pair and converge across the ~10 m gap between the lines instead of
+# only at contact range. The robot's straight route (y=10) runs right between the two lines, through the point where they meet,
+# to show it routing around the embracing pair (or not, with the social cost layer off).
+robots:
+- start: [1.0, 10.0, 0.0]
+  phases:
+  - goto: [13.2, 10.0, 0.0]
+  - goto: [29.0, 10.5, 0.0]
+dynamic:
+- name: officer_1
+  model: Office/office_female_asian_young
+  pose: [5.2, 7.5, -1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - [5.2, 7.5]
+- name: queue1_1
+  model: Common/worker_male_caucasian_middleage
+  pose: [11.5, 5.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [11.5, 5.0]
+- name: queue1_2
+  model: Office/office_male_caucasian_middleage
+  pose: [10.0, 5.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [10.0, 5.0]
+- name: queue1_3
+  model: Common/casual_female_caucasian_young
+  pose: [8.5, 5.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [8.5, 5.0]
+- name: officer_2
+  model: Office/office_male_african_middleage
+  pose: [5.2, 17.5, -1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - [5.2, 17.5]
+- name: queue2_1
+  model: Office/office_female_asian_young
+  pose: [10.0, 15.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [10.0, 15.0]
+- name: queue2_2
+  model: Common/worker_male_african_young
+  pose: [8.5, 15.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [8.5, 15.0]
+- name: officer_3
+  model: Office/office_male_caucasian_middleage
+  pose: [5.2, 27.5, -1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - [5.2, 27.5]
+- name: queue3_0
+  model: Office/office_male_caucasian_middleage
+  pose: [13.0, 25.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [13.0, 25.0]
+- name: queue3_1
+  model: Common/casual_female_caucasian_young
+  pose: [11.5, 25.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [11.5, 25.0]
+- name: queue3_2
+  model: Office/office_male_caucasian_middleage
+  pose: [10.0, 25.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [10.0, 25.0]
+- name: queue3_3
+  model: Common/worker_male_caucasian_middleage
+  pose: [8.5, 25.0, 3.14159]
+  agent: {agent_type: adult}
+  waypoints:
+  - [8.5, 25.0]
+- name: reunion_w
+  model: Office/office_female_caucasian_young
+  pose: [13.0, 5.0, 1.5708]
+  agent: {agent_type: ./queue_wave_hugger_w.yaml}
+  waypoints:
+  - [13.0, 5.0]
+- name: reunion_m
+  model: Common/worker_male_asian_middleage
+  pose: [13.0, 15.0, -1.5708]
+  agent: {agent_type: ./queue_wave_hugger_m.yaml}
+  waypoints:
+  - [13.0, 15.0]
+- name: walker_1
+  model: Common/casual_female_caucasian_young
+  pose: [16.5, 28.0, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints:
+  - [16.5, 28.0]
+  - [16.5, 2.0]
+- name: walker_2
+  model: Office/office_male_caucasian_middleage
+  pose: [30.0, 1.5, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints:
+  - [30.0, 1.5]
+  - [30.0, 28.5]
+- name: walker_3
+  model: Common/worker_male_african_young
+  pose: [20.0, 29.0, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.0}
+  waypoints:
+  - [20.0, 29.0]
+  - [22.0, 2.0]
+- name: walker_4
+  model: Office/office_female_asian_young
+  pose: [40.0, 3.0, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.15}
+  waypoints:
+  - [40.0, 3.0]
+  - [40.0, 27.0]
+- name: walker_5
+  model: Common/casual_female_african_young
+  pose: [44.0, 26.0, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.05}
+  waypoints:
+  - [44.0, 26.0]
+  - [44.0, 4.0]
+- name: walker_6
+  model: Office/office_male_caucasian_middleage
+  pose: [18.0, 8.5, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.1}
+  waypoints:
+  - [18.0, 8.5]
+  - [18.0, 21.0]
+- name: walker_7
+  model: Common/worker_male_african_young
+  pose: [36.0, 22.0, 0.0]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints:
+  - [36.0, 22.0]
+  - [22.0, 8.0]

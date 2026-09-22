@@ -44,6 +44,7 @@ class TM_Patrol(TM_Robots):
 
         self._route = []
         self._route_local = []
+        self._frame_offset = (0.0, 0.0)
         self._index = 0
         self._current_goal = None
         self._walls_cache = None
@@ -85,6 +86,7 @@ class TM_Patrol(TM_Robots):
         oy = spawn_pose.position.y - self._scenario_start.position.y
         if math.hypot(ox, oy) < 1.0:  # the robot is where the scenario put it
             ox = oy = 0.0
+        self._frame_offset = (ox, oy)
         self._route = [
             Pose(position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z), orientation=pose.orientation)
             for pose in self._route_local
@@ -100,9 +102,11 @@ class TM_Patrol(TM_Robots):
         Re-submitting a goal makes the adapter re-dispatch it, which stops the robot for a moment; driving the
         loop off ``is_done`` cost roughly half the robot's average speed, so arrival is measured here instead.
         """
-        self._current_goal = self._route[self._index % len(self._route)]
+        i = self._index % len(self._route)
+        self._current_goal = self._route[i]  # robot frame: arrival is measured against the robot's own pose
         self._index += 1
-        return TaskRequest(phases=[GoToPhase(pose=self._current_goal)])
+        # goals are handed over in the scenario frame: the adapter adds the env offset itself, so the offset-shifted route would be shifted twice
+        return TaskRequest(phases=[GoToPhase(pose=self._route_local[i])])
 
     def _on_peds(self, msg: Pedestrians) -> None:
         """Keep the latest pedestrians; everything else happens on the episode tick.
@@ -193,10 +197,18 @@ class TM_Patrol(TM_Robots):
         cols = np.clip(np.array(cols), 0, walls.shape[1] - 1)
         return not bool(walls[rows, cols].any())
 
+    def _to_scenario_frame(self, p: Position) -> Position:
+        """Robot-frame position -> the frame of the world map and its wall grid (they differ by the env offset, e.g. (5, 5) in hospital_1)."""
+        ox, oy = self._frame_offset
+        return Position(p.x - ox, p.y - oy, p.z)
+
+    def _to_scenario_pose(self, pose: Pose) -> Pose:
+        return Pose(position=self._to_scenario_frame(pose.position), orientation=pose.orientation)
+
     def _perceives(self, robot_pose: Pose, ped: Position) -> bool:
         if math.dist((robot_pose.position.x, robot_pose.position.y), (ped.x, ped.y)) > self._sensor_range.value:
             return False
-        return not self._require_los.value or self._line_of_sight(robot_pose.position, ped)
+        return not self._require_los.value or self._line_of_sight(self._to_scenario_frame(robot_pose.position), self._to_scenario_frame(ped))
 
     # -- episode -------------------------------------------------------------------------------
 
@@ -226,7 +238,7 @@ class TM_Patrol(TM_Robots):
 
         # a call the robot could perceive overrides the patrol, once
         if self._divert_pending and not self._diverted and self._service_goal is not None:
-            await robot.submit_task(TaskRequest(phases=[GoToPhase(pose=self._service_goal)]))
+            await robot.submit_task(TaskRequest(phases=[GoToPhase(pose=self._to_scenario_pose(self._service_goal))]))
             self._diverted = True
             self._divert_pending = False
             self._logger.info(f"goal overridden by the caller at ({self._service_goal.position.x:.1f}, {self._service_goal.position.y:.1f})")
@@ -256,6 +268,7 @@ class TM_Patrol(TM_Robots):
         self._peds: Pedestrians | None = None
         self._route: list[Pose] = []
         self._route_local: list[Pose] = []
+        self._frame_offset: tuple[float, float] = (0.0, 0.0)
         self._index = 0
         self._current_goal: Pose | None = None
         self._walls_cache: np.ndarray | None = None

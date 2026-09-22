@@ -1,0 +1,139 @@
+# Office hallway (office_1): the robot patrols the main hallway westward, past a handshake, a group conversation, greeting colleagues and
+# walkers; a woman in the cafeteria opening beckons it (patrol mode perceives the call once it has line of sight through the opening).
+# World frame (the env sits at +5, +5 in the map frame).
+robots:
+- start:
+  - 17.0
+  - 11.7
+  - 3.14159
+  phases:
+  - goto:
+    - 12.5
+    - 11.7
+    - 3.14159
+  - goto:
+    - 17.0
+    - 11.7
+    - 3.14159
+dynamic:
+- name: caller
+  model: Office/office_female_caucasian_young
+  pose:
+  - 6.0
+  - 8.8
+  - 0.7
+  agent:
+    agent_type: ./caller.yaml
+  waypoints:
+  - - 6.0
+    - 8.8
+- name: shaker_a
+  model: Office/office_male_asian_middleage
+  pose:
+  - 14.3
+  - 13.2
+  - 0.0
+  agent:
+    agent_type: ./shaker.yaml
+  waypoints:
+  - - 14.3
+    - 13.2
+- name: shaker_b
+  model: Common/worker_male_asian_middleage
+  pose:
+  - 14.9
+  - 13.2
+  - 3.14159
+  agent:
+    agent_type: ./shaker.yaml
+  waypoints:
+  - - 14.9
+    - 13.2
+- name: grouper_a
+  model: Common/worker_male_african_young
+  pose:
+  - 9.0
+  - 13.1
+  - 0.0
+  agent:
+    agent_type: ./grouper.yaml
+    desired_velocity: 1.0
+  waypoints:
+  - - 9.0
+    - 13.1
+- name: grouper_b
+  model: Common/casual_female_caucasian_young
+  pose:
+  - 10.1
+  - 13.3
+  - 2.1
+  agent:
+    agent_type: ./grouper.yaml
+    desired_velocity: 1.0
+  waypoints:
+  - - 10.1
+    - 13.3
+- name: grouper_c
+  model: Common/worker_male_caucasian_middleage
+  pose:
+  - 9.6
+  - 12.4
+  - -2.1
+  agent:
+    agent_type: ./grouper.yaml
+    desired_velocity: 1.0
+  waypoints:
+  - - 9.6
+    - 12.4
+- name: waver_a
+  model: Hospital/nurse_female_caucasian_young
+  pose:
+  - 19.5
+  - 10.7
+  - 0.0
+  agent:
+    agent_type: ./waver.yaml
+    desired_velocity: 1.0
+  waypoints:
+  - - 19.5
+    - 10.7
+- name: waver_b
+  model: arenian
+  pose:
+  - 20.8
+  - 10.7
+  - 3.14159
+  agent:
+    agent_type: ./waver.yaml
+    desired_velocity: 1.0
+  waypoints:
+  - - 20.8
+    - 10.7
+- name: walker_1
+  model: Office/office_male_african_young
+  pose:
+  - 1.5
+  - 10.9
+  - 0.0
+  agent:
+    agent_type: adult
+    desired_velocity: 1.0
+  waypoints:
+  - - 1.5
+    - 10.9
+  - - 26.0
+    - 10.9
+- name: walker_2
+  model: Common/casual_female_african_young
+  pose:
+  - 24.0
+  - 13.25
+  - 3.14159
+  agent:
+    agent_type: adult
+    desired_velocity: 1.0
+  waypoints:
+  - - 24.0
+    - 13.25
+  - - 2.0
+    - 13.25

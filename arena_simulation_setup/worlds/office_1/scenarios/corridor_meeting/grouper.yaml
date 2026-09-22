@@ -1,0 +1,14 @@
+name: grouper
+mode: behavior_tree
+extends: adult
+desired_velocity: {mean: 1.0, std: 0.0, clip_low: 0.5, clip_high: 1.5}
+
+initial_sequence: group_chat
+
+sequences:
+  group_chat:
+    steps:
+      group_step:
+        interaction: GROUP_CONVERSATION
+        duration: {mean: 1000.0}
+    then: group_chat
