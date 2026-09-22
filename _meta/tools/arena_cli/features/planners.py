@@ -1,16 +1,19 @@
 """planners feature: per-planner submodule management."""
 
+import argparse
 import os
+import subprocess
 import sys
+from pathlib import Path
 from types import ModuleType
 
 import common
 import complete
-import features
 from common import Verb, make_verb
 from complete import Flags, Static, Union
 
 _NAME = "planners"
+_SDK_SUBDIR = "arena_planners"
 
 DESCRIPTION = (
     "Per-planner submodule management.\n\n"
@@ -63,44 +66,220 @@ _PREFLIGHT_STAGE = {
 }
 
 
-def _payload() -> str:
-    return os.path.join(features.assets_dir(_NAME), f"{_NAME}.py")
+def _registry() -> ModuleType:
+    try:
+        from arena_planners import registry
+    except ImportError as e:
+        raise common.CLIError("arena_planners is not importable, run 'arena pull' then 'arena repair'") from e
+    return registry
+
+
+def _arena() -> Path:
+    return Path(common._env("ARENA_DIR"))
 
 
 def _deps_build() -> int:
     return common._resourced("arena deps && arena build --executor sequential")
 
 
-def _payload_module() -> ModuleType:
-    import importlib.util
+def _set_git_ssh() -> None:
+    os.environ.setdefault("GIT_SSH_COMMAND", common._git_ssh_command())
 
-    spec = importlib.util.spec_from_file_location("_planners_payload", _payload())
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+
+def _git(args: list[str], arena: Path, *, check: bool = True) -> int:
+    return subprocess.run(["git", *args], cwd=arena, check=check).returncode
+
+
+def _fetch_weights(arena: Path, planner: str) -> None:
+    subprocess.run([sys.executable, "-m", "arena_planners", "fetch", planner], cwd=arena, check=False)
+
+
+def _path_planners(subs: dict[str, list[str]]) -> dict[str, set[str]]:
+    """{path: {planners tagging it}} (reverse of submodule_paths for sharing checks)."""
+    out: dict[str, set[str]] = {}
+    for planner, paths in subs.items():
+        for p in paths:
+            out.setdefault(p, set()).add(planner)
+    return out
+
+
+def _is_local_only(planner: str, subs: dict[str, list[str]]) -> bool:
+    return planner not in subs
+
+
+def cmd_ls(arena: Path, _args: argparse.Namespace) -> int:
+    return subprocess.run([sys.executable, "-m", "arena_planners", "ls"], cwd=arena, check=False).returncode
+
+
+def cmd_add(arena: Path, args: argparse.Namespace) -> int:
+    reg = _registry()
+    subs = reg.submodule_paths(arena)
+    kinds = reg.kinds(arena)
+    if args.all:
+        if args.names:
+            print("planners: --all is mutually exclusive with planner names", file=sys.stderr)
+            return 2
+        names = sorted(subs) + reg.local_planners(arena)
+    else:
+        if not args.names:
+            print("planners: specify planner name(s) or --all", file=sys.stderr)
+            return 2
+        names = args.names
+    rc = 0
+    for planner in names:
+        if _is_local_only(planner, subs):
+            local = arena / reg.PLANNERS_SUBDIR / planner
+            if (local / "planner.py").is_file():
+                _fetch_weights(arena, planner)
+            else:
+                available = sorted(subs)
+                avail_str = ", ".join(available) if available else "(none)"
+                print(
+                    f"planners: planner '{planner}' not found. Available: [{avail_str}].",
+                    file=sys.stderr,
+                )
+                rc = 1
+            continue
+        paths = subs.get(planner)
+        if paths is None:
+            available = sorted(subs)
+            avail_str = ", ".join(available) if available else "(none)"
+            msg = f"planner '{planner}' not found. Available: [{avail_str}]."
+            if available:
+                msg += f" To install: arena feature planners add {available[0]}"
+            print(f"planners: {msg}", file=sys.stderr)
+            rc = 1
+            continue
+        _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--checkout", _SDK_SUBDIR], arena)
+        sdk = arena / _SDK_SUBDIR
+        for p in paths:
+            sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
+            _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--checkout", sub_path], sdk)
+        if kinds.get(planner) == "nav2":
+            print(f"planners: '{planner}' is a native Nav2 controller")
+        else:
+            _fetch_weights(arena, planner)
+    return rc
+
+
+def cmd_rm(arena: Path, args: argparse.Namespace) -> int:
+    reg = _registry()
+    subs = reg.submodule_paths(arena)
+    if args.all:
+        if args.names:
+            print("planners: --all is mutually exclusive with planner names", file=sys.stderr)
+            return 2
+        names = sorted(subs)
+    else:
+        if not args.names:
+            print("planners: specify planner name(s) or --all", file=sys.stderr)
+            return 2
+        names = args.names
+    remove_set = set(names)
+    shared = _path_planners(subs)
+    sdk = arena / _SDK_SUBDIR
+    done: set[str] = set()
+    rc = 0
+    for planner in names:
+        if _is_local_only(planner, subs):
+            local = arena / reg.PLANNERS_SUBDIR / planner
+            if (local / "planner.py").is_file():
+                print(
+                    f"planners: '{planner}' is a local directory; remove it manually",
+                    file=sys.stderr,
+                )
+            else:
+                available = sorted(subs)
+                avail_str = ", ".join(available) if available else "(none)"
+                print(
+                    f"planners: planner '{planner}' not found. Available: [{avail_str}].",
+                    file=sys.stderr,
+                )
+            rc = 1
+            continue
+        paths = subs.get(planner)
+        if paths is None:
+            available = sorted(subs)
+            avail_str = ", ".join(available) if available else "(none)"
+            print(
+                f"planners: planner '{planner}' not found. Available: [{avail_str}].",
+                file=sys.stderr,
+            )
+            rc = 1
+            continue
+        for p in paths:
+            if p in done:
+                continue
+            # keep a shared path only if some planner outside this removal batch still tags it
+            others = shared.get(p, set()) - remove_set
+            if others and not args.force:
+                print(f"planners: keeping '{p}' (still tagged by: {', '.join(sorted(others))})")
+                continue
+            if others:
+                print(f"planners: force-removing '{p}' (also tagged by: {', '.join(sorted(others))})")
+            sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
+            _git(["submodule", "deinit", "-f", sub_path], sdk, check=False)
+            done.add(p)
+    return rc
+
+
+def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
+    sdk = arena / _SDK_SUBDIR
+    if not (sdk / ".gitmodules").is_file():
+        return 0
+    return _git(["submodule", "update", "--recursive"], sdk, check=False)
+
+
+def cmd_uninstall(arena: Path, _args: argparse.Namespace) -> int:
+    reg = _registry()
+    subs = reg.submodule_paths(arena)
+    status = reg.submodule_status(arena)
+    sdk = arena / _SDK_SUBDIR
+    for p in (p for ps in subs.values() for p in ps):
+        if status.get(p) == "init":
+            sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
+            _git(["submodule", "deinit", "-f", sub_path], sdk, check=False)
+    return 0
+
+
+def cmd_check(arena: Path, args: argparse.Namespace) -> int:
+    reg = _registry()
+    subs = reg.submodule_paths(arena)
+    status = reg.submodule_status(arena)
+    if not subs:
+        if not args.quiet:
+            print("planners: no planners registered")
+        return 0
+    rc = 0
+    for planner in sorted(subs):
+        paths = subs[planner]
+        pending = [p for p in paths if status.get(p) != "init"]
+        if pending:
+            rc = 1
+            if not args.quiet:
+                for p in pending:
+                    print(f"[ ] {planner}: {p} not initialized")
+        elif not args.quiet:
+            for p in paths:
+                print(f"[x] {planner}: {p}")
+    return rc
 
 
 def _names() -> list[str]:
-    from pathlib import Path
-
-    return sorted(_payload_module().planner_submodules(Path(common._env("ARENA_DIR"))))
+    return sorted(_registry().submodule_paths(_arena()))
 
 
 def _ready_names() -> list[str]:
     """Registered planners whose submodules are all initialized."""
-    from pathlib import Path
-
-    mod = _payload_module()
-    arena = Path(common._env("ARENA_DIR"))
-    status = mod.submodule_status(arena)
-    return sorted(name for name, paths in mod.planner_submodules(arena).items() if all(status.get(p) == "init" for p in paths))
+    reg = _registry()
+    arena = _arena()
+    status = reg.submodule_status(arena)
+    return sorted(name for name, paths in reg.submodule_paths(arena).items() if all(status.get(p) == "init" for p in paths))
 
 
 def _contestants(names: list[str]) -> list[dict]:
     """Bridge planners run under the drl adapter, anything else is a nav2 local planner."""
-    from pathlib import Path
-
-    kinds = _payload_module().planner_kinds(Path(common._env("ARENA_DIR")))
+    kinds = _registry().kinds(_arena())
     out = []
     for name in names:
         if kinds.get(name, "nav2") == "bridge":
@@ -115,41 +294,88 @@ _PREFLIGHT = Flags({"--preflight": "short start-and-drive check instead of the s
 _SELECT = Union(Static(_names), _ALL)
 
 
-def _forward(verb: str, args: list[str]) -> int:
-    import subprocess
+def _run_add(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="arena planners add")
+    ap.add_argument("names", nargs="*")
+    ap.add_argument("--all", action="store_true", help="fetch every planner")
+    args = ap.parse_args(argv)
+    _set_git_ssh()
+    rc = cmd_add(_arena(), args)
+    complete.invalidate(common._env("ARENA_WS_DIR"))
+    return rc
 
-    os.environ.setdefault("GIT_SSH_COMMAND", common._git_ssh_command())
-    rc = subprocess.run(["python3", _payload(), verb, *args], check=False).returncode
-    if verb in ("add", "rm", "update", "uninstall"):
-        complete.invalidate(common._env("ARENA_WS_DIR"))
+
+def _run_rm(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="arena planners rm")
+    ap.add_argument("names", nargs="*")
+    ap.add_argument("--all", action="store_true", help="remove every planner")
+    ap.add_argument("-f", "--force", action="store_true", help="deinit shared paths too, co-tagged planners become pending")
+    args = ap.parse_args(argv)
+    _set_git_ssh()
+    rc = cmd_rm(_arena(), args)
+    complete.invalidate(common._env("ARENA_WS_DIR"))
+    return rc
+
+
+def _run_ls(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="arena planners ls")
+    args = ap.parse_args(argv)
+    _set_git_ssh()
+    return cmd_ls(_arena(), args)
+
+
+def _run_update(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="arena planners update")
+    args = ap.parse_args(argv)
+    _set_git_ssh()
+    rc = cmd_update(_arena(), args)
+    complete.invalidate(common._env("ARENA_WS_DIR"))
+    return rc
+
+
+def _run_check(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="arena planners check")
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("-q", "--quiet", action="store_true")
+    args = ap.parse_args(argv)
+    _set_git_ssh()
+    return cmd_check(_arena(), args)
+
+
+def _run_uninstall_all(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="arena planners uninstall")
+    args = ap.parse_args(argv)
+    _set_git_ssh()
+    rc = cmd_uninstall(_arena(), args)
+    complete.invalidate(common._env("ARENA_WS_DIR"))
     return rc
 
 
 def add(argv: list[str]) -> None:
-    rc = _forward("add", argv)
+    rc = _run_add(argv)
     sys.exit(_deps_build() or rc)
 
 
 def update(argv: list[str]) -> None:
     common._reg_require(_NAME)
-    rc = _forward("update", argv)
+    rc = _run_update(argv)
     sys.exit(_deps_build() or rc)
 
 
 def rm(argv: list[str]) -> None:
-    sys.exit(_forward("rm", argv))
+    sys.exit(_run_rm(argv))
 
 
 def ls(argv: list[str]) -> None:
-    sys.exit(_forward("ls", argv))
+    sys.exit(_run_ls(argv))
 
 
 def check(argv: list[str]) -> None:
-    sys.exit(_forward("check", argv))
+    sys.exit(_run_check(argv))
 
 
 def install(argv: list[str]) -> None:
-    rc = _forward("add", argv)
+    rc = _run_add(argv)
     sys.exit(_deps_build() or rc)
 
 
@@ -199,8 +425,8 @@ def test(argv: list[str]) -> None:
 
 def uninstall(argv: list[str]) -> None:
     if argv:
-        sys.exit(_forward("rm", argv))
-    _forward("uninstall", [])
+        sys.exit(_run_rm(argv))
+    _run_uninstall_all([])
     common._reg_remove(_NAME)
     sys.exit(0)
 

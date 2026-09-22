@@ -1,12 +1,8 @@
 """Unit tests for the arena_robots feature backend's submodule map."""
 
-import importlib.util
 from pathlib import Path
 
-_SPEC = importlib.util.spec_from_file_location("arena_robots_feature", Path(__file__).resolve().parents[1] / "robots.py")
-robots = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(robots)
-
+from features import robots
 
 GITMODULES = """\
 [submodule "arena_robots/robots/mpo700/meshes"]

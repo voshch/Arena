@@ -1,6 +1,9 @@
 [tool.uv]
 package = false
 
+[tool.uv.sources]
+arena_planners = { path = "arena_planners/arena_planners", editable = true }
+
 [tool.pytest.ini_options]
 norecursedirs = ["deps", ".git", ".venv", "build", "install", "log", "_meta"]
 addopts = "-ra --strict-markers --import-mode=importlib"
@@ -67,6 +70,7 @@ dependencies = [
     "mcp>=2.0.0",
     "sounddevice>=0.5.5",
     "pyroomacoustics>=0.10.1",
+    "arena_planners",
 ]
 
 [build-system]
