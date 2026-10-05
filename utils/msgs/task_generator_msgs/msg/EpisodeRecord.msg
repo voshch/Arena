@@ -20,6 +20,8 @@ string goal_uuid
 # Goal progress of the robot that closed the least of its start distance, metres. Zero when no GoTo goal was active.
 float32 goal_dist_start
 float32 goal_dist_min
+# Distance tolerance of that robot's goal, meters.
+float32 goal_tolerance
 float32 path_length
 builtin_interfaces/Time start_time
 # False = manually mutated mid-episode.

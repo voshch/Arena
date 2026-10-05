@@ -104,6 +104,7 @@ class EpisodeRecord:
     goal_uuid: str = ""
     goal_dist_start: float = 0.0
     goal_dist_min: float = 0.0
+    goal_tolerance: float = 0.0
     path_length: float = 0.0
     integrity: bool = True
     start_time: Time = attrs.Factory(Time)
@@ -593,6 +594,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.goal_uuid = record.goal_uuid
         msg.goal_dist_start = record.goal_dist_start
         msg.goal_dist_min = record.goal_dist_min
+        msg.goal_tolerance = record.goal_tolerance
         msg.path_length = record.path_length
         msg.integrity = record.integrity
         msg.start_time = record.start_time.to_msg()
@@ -1268,13 +1270,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     def _sample_goal_progress(self) -> None:
         for manager in self._robots_manager.managers.values():
             pose = manager.pose
-            goal = manager.goal
-            if pose is None or goal is None:
+            phase = manager.goal_phase
+            if pose is None or phase is None:
                 continue
             self._goal_progress.sample(
                 manager.name,
                 (pose.position.x, pose.position.y),
-                (goal.position.x, goal.position.y),
+                (phase.pose.position.x, phase.pose.position.y),
+                phase.tolerance_radius,
                 self.sim_time.to_seconds(),
             )
         best = self._goal_progress.least_progress()
@@ -1283,6 +1286,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         record = self._episodes.current
         record.goal_dist_start = best.start_dist
         record.goal_dist_min = best.min_dist
+        record.goal_tolerance = best.goal_tolerance
         record.path_length = best.path_length
 
     async def _termination_watcher(self) -> None:
@@ -1295,7 +1299,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     continue
                 self._sample_goal_progress()
                 stall_limit = self.conf.Robot.NO_PROGRESS_TIMEOUT.value
-                if self._goal_progress.longest_stall(self.sim_time.to_seconds(), self.conf.Robot.GOAL_TOLERANCE_RADIUS.value) > stall_limit:
+                if self._goal_progress.longest_stall(self.sim_time.to_seconds()) > stall_limit:
                     self.fail_episode("no progress")
                     continue
                 if not await self._task.is_done:
