@@ -8,6 +8,8 @@ from test_rig_proportions import _xacro_path
 
 # anatomical in gait.py (see its module docstring), not on URDF axes, so their ranges are not comparable
 ANATOMICAL = {f"{side}_{axis}_shoulder" for side in "lr" for axis in "ypr"}
+# v4 wrists (JOINTS.md) are not in the human_description URDF yet, it still has a fixed wrist link
+NOT_IN_URDF = {"l_r_wrist", "l_wrist", "r_r_wrist", "r_wrist"}
 
 
 def _urdf_joints() -> dict[str, tuple[float, float, str]]:
@@ -31,13 +33,13 @@ def _urdf_joints() -> dict[str, tuple[float, float, str]]:
 
 
 def test_joint_names_match_urdf() -> None:
-    assert set(GaitGenerator.JOINT_NAMES) == set(_urdf_joints())
+    assert set(GaitGenerator.JOINT_NAMES) - NOT_IN_URDF == set(_urdf_joints())
 
 
 def test_limits_within_urdf() -> None:
     joints = _urdf_joints()
     for (lo, hi), name in zip(LIMITS, GaitGenerator.JOINT_NAMES, strict=True):
-        if name in ANATOMICAL:
+        if name in ANATOMICAL | NOT_IN_URDF:
             continue
         ulo, uhi, _ = joints[name]
         assert ulo - 1e-6 <= lo and hi <= uhi + 1e-6, f"{name} gait {lo, hi} exceeds urdf {ulo, uhi}"
