@@ -2,3 +2,8 @@ services:
   arena:
     devices:
       - "/dev/dri:/dev/dri"
+    # Device nodes use host-specific numeric groups (commonly video/render).
+    # Passing their actual GIDs lets EGL work without privileged mode.
+    group_add:
+      - "${HOST_VIDEO_GID}"
+      - "${HOST_RENDER_GID}"

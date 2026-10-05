@@ -245,7 +245,7 @@ class RobotManager(NodeInterface):
         for key, param in self.node.get_parameters_by_prefix(f"robot.{cap}").items():
             kwargs[key] = param.value
         if cap == 'mobile':
-            kwargs.setdefault('train_mode', self.node.rosparam[bool].get('train_mode', False))
+            kwargs.setdefault('train_mode', self.node.rosparam[bool].get('robot.train', False))
         return kwargs
 
     async def set_up_robot(self):

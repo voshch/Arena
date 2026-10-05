@@ -1,0 +1,31 @@
+[project]
+name = "arena_auditory"
+version = "0.0.0"
+dependencies = [
+    "attrs",
+    "huggingface-hub",
+    "librosa",
+    "matplotlib",
+    "mcap",
+    "mcap-ros2-support",
+    "numpy",
+    "pillow",
+    "pyroomacoustics>=0.10.1",
+    "pyyaml",
+    "scipy",
+    "shapely",
+    "sounddevice>=0.5.5",
+    "torch",
+]
+dynamic = ["description", "license", "maintainers", "scripts"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "ros: requires a sourced ROS2 environment",
+    "slow: long-running tests",
+]

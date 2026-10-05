@@ -33,6 +33,7 @@ _EXPORTS = {
     'Time': '.Time',
     'TimeNode': '.Time',
     'YAMLReplacer': '.yaml_replace',
+    'tf_remaps': '.Async',
 }
 
 __all__ = sorted(_EXPORTS)
@@ -67,6 +68,7 @@ if typing.TYPE_CHECKING:
     from .Async import (
         ClientWrapper as ClientWrapper,
     )
+    from .Async import tf_remaps as tf_remaps
     from .launch_params import launch_str_to_value as launch_str_to_value
     from .launch_params import param_value_to_launch_str as param_value_to_launch_str
     from .LifecycleClient import AsyncLifecycleClient as AsyncLifecycleClient

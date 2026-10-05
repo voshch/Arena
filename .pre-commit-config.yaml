@@ -3,11 +3,26 @@ repos:
     rev: v0.15.10
     hooks:
       - id: ruff
+        args: [.]
+        pass_filenames: false
+        always_run: true
   - repo: local
     hooks:
       - id: doc-links
         name: check doc links
         entry: python _meta/tools/check_doc_links.py
+        language: python
+        pass_filenames: false
+        always_run: true
+      - id: uv-workspace-lock
+        name: relock uv workspace
+        entry: python _meta/tools/uv_workspace.py hook
+        language: python
+        files: (^|/)(pyproject\.toml|setup\.py)$
+        pass_filenames: false
+      - id: uv-workspace
+        name: check uv workspace manifests
+        entry: python _meta/tools/uv_workspace.py check
         language: python
         pass_filenames: false
         always_run: true

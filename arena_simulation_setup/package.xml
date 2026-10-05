@@ -17,6 +17,8 @@
   <exec_depend>arena_bringup</exec_depend>
   <exec_depend>arena_models</exec_depend>
   <exec_depend>arena_rclpy_mixins</exec_depend>
+  <exec_depend>task_generator_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
 
   <depend>jackal_description</depend>
   <depend>realsense2_description</depend>

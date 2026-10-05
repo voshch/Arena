@@ -181,6 +181,7 @@ class DrlAdapter(MobileAdapter):
 
         import rclpy  # noqa: PLC0415
         from arena_planners.bridge.edge_node import PlannerEdgeNode  # noqa: PLC0415
+        from arena_rclpy_mixins import tf_remaps  # noqa: PLC0415
 
         node_name = "edge_node"
         ns = str(robot.namespace)
@@ -228,6 +229,7 @@ class DrlAdapter(MobileAdapter):
             velocity_limits=_limits,
             deadline_s=self._deadline_s,
             parameter_overrides=[rclpy.Parameter("planner_rate_hz", value=float(self._rate))],
+            cli_args=["--ros-args", *(arg for src, dst in tf_remaps(robot.node) for arg in ("-r", f"{src}:={dst}"))],
         )
         robot.node.executor.add_node(edge_node)
 

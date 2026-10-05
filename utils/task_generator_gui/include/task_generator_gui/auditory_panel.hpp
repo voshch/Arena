@@ -64,6 +64,8 @@ public:
     void refreshAudioListenerRouting();
     void setAudioListenerRouting();
     void updateMicrophoneListeners(const std::string &data);
+    void selectSideMicrophone(const std::string &listener_id);
+    void syncSideMicrophoneButtons();
     void syncAudioListenerRouting(
         const std::vector<rclcpp::Parameter> &parameters,
         bool available);
@@ -77,6 +79,8 @@ public:
         bool playback_available);
     void setSoundSounding(const std::string &entity, bool sounding);
     void removeSelectedSound();
+    void setArrayParameters(const std::vector<rclcpp::Parameter> &parameters);
+    void refreshArrayControls();
 
 protected:
     std::shared_ptr<rviz_common::ros_integration::RosNodeAbstractionIface> node_ptr;
@@ -87,12 +91,14 @@ protected:
     std::string human_playback_node;
     std::string environment_playback_node;
     std::string propagation_node;
+    std::string microphone_array_node;
 
     std::shared_ptr<rclcpp::AsyncParametersClient> motor_playback_parameters_client;
     std::shared_ptr<rclcpp::AsyncParametersClient> human_playback_parameters_client;
     std::shared_ptr<rclcpp::AsyncParametersClient> environment_playback_parameters_client;
     std::shared_ptr<rclcpp::AsyncParametersClient> propagation_parameters_client;
     rclcpp::Client<task_generator_msgs::srv::SetSemantic>::SharedPtr set_semantic_client;
+    std::shared_ptr<rclcpp::AsyncParametersClient> microphone_array_parameters_client;
     rclcpp::Client<task_generator_msgs::srv::RemoveMicrophone>::SharedPtr remove_microphone_client;
     rclcpp::Client<task_generator_msgs::srv::RemoveSound>::SharedPtr remove_sound_client;
 
@@ -107,10 +113,26 @@ protected:
     QGroupBox *motor_tuning_group{nullptr};
     QGroupBox *audio_listener_group{nullptr};
     QComboBox *audio_listener_id_combobox{nullptr};
+    QPushButton *left_microphone_button{nullptr};
+    QPushButton *right_microphone_button{nullptr};
+    std::string left_microphone_listener_id_;
+    std::string right_microphone_listener_id_;
     bool audio_listener_selection_pending_{false};
     QCheckBox *propagation_checkbox{nullptr};
     QCheckBox *environment_playback_checkbox{nullptr};
     QGroupBox *sounds_group{nullptr};
+    QGroupBox *microphone_array_group{nullptr};
+    QCheckBox *array_enabled_checkbox{nullptr};
+    QCheckBox *headphones_enabled_checkbox{nullptr};
+    QCheckBox *array_mute_checkbox{nullptr};
+    QCheckBox *array_visualization_checkbox{nullptr};
+    QCheckBox *array_tdoa_checkbox{nullptr};
+    QDoubleSpinBox *array_master_gain_spinbox{nullptr};
+    QDoubleSpinBox *array_monitor_gain_spinbox{nullptr};
+    QDoubleSpinBox *array_front_gain_spinbox{nullptr};
+    QDoubleSpinBox *array_rear_gain_spinbox{nullptr};
+    QComboBox *array_solo_combobox{nullptr};
+    QComboBox *array_monitor_combobox{nullptr};
     QTreeWidget *sounds_tree{nullptr};
     QPushButton *remove_sound_button{nullptr};
     std::unordered_map<std::string, QDoubleSpinBox *> motor_tuning_spinboxes;

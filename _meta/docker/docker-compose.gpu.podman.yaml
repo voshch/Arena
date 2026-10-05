@@ -1,0 +1,6 @@
+services:
+  arena:
+    devices:
+      - nvidia.com/gpu=all
+    security_opt:
+      - label=disable

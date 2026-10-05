@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from arena_simulation_setup.tree.assets.Human import HumanIdentifier, HumanView
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier, ObjectView
-from arena_simulation_setup.tree.assets.Human import HumanIdentifier, HumanView
 from arena_simulation_setup.utils.models import ModelWrapper
 
 
-def test_object_identifier_load_sdf_only(tmp_path):
+def test_object_identifier_load_sdf_only(tmp_path: Path) -> None:
     model_name = "test_model"
     model_dir = tmp_path / model_name
     model_dir.mkdir()
@@ -24,7 +22,7 @@ def test_object_identifier_load_sdf_only(tmp_path):
     assert view.model.name == model_name
 
 
-def test_object_identifier_load_empty_dir(tmp_path):
+def test_object_identifier_load_empty_dir(tmp_path: Path) -> None:
     model_name = "empty_model"
     model_dir = tmp_path / model_name
     model_dir.mkdir()
@@ -35,7 +33,7 @@ def test_object_identifier_load_empty_dir(tmp_path):
     assert isinstance(view.model, ModelWrapper)
 
 
-def test_object_identifier_load_nested_sdf(tmp_path):
+def test_object_identifier_load_nested_sdf(tmp_path: Path) -> None:
     model_name = "nested_model"
     model_dir = tmp_path / model_name
     nested_dir = model_dir / f"{model_name}.sdf"
@@ -48,7 +46,7 @@ def test_object_identifier_load_nested_sdf(tmp_path):
     assert isinstance(view.model, ModelWrapper)
 
 
-def test_pedestrian_identifier_load_sdf(tmp_path):
+def test_pedestrian_identifier_load_sdf(tmp_path: Path) -> None:
     model_name = "pedestrian_test"
     model_dir = tmp_path / model_name
     model_dir.mkdir()
@@ -61,7 +59,7 @@ def test_pedestrian_identifier_load_sdf(tmp_path):
     assert view.model.name == model_name
 
 
-def test_material_identifier_load_no_tint(tmp_path):
+def test_material_identifier_load_no_tint(tmp_path: Path) -> None:
     mat_name = "TestMat"
     mat_dir = tmp_path / mat_name
     mat_dir.mkdir()
@@ -74,7 +72,7 @@ def test_material_identifier_load_no_tint(tmp_path):
     assert mat.name == mat_name
 
 
-def test_material_identifier_load_tint_no_textures(tmp_path):
+def test_material_identifier_load_tint_no_textures(tmp_path: Path) -> None:
     mat_name = "TintedMat"
     mat_dir = tmp_path / mat_name
     mat_dir.mkdir()

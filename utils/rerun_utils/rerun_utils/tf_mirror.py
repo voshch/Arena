@@ -1,4 +1,4 @@
-"""Subscribe to /tf and /tf_static, mirror transforms into rerun's transform tree."""
+"""Subscribe to the env's tf and tf_static, mirror transforms into rerun's transform tree."""
 
 from __future__ import annotations
 
@@ -12,20 +12,20 @@ from rerun_utils.entity_paths import tf_path
 
 
 class TFMirror:
-    """Long-lived /tf subscriber that logs each transform to rerun under env_<id>/tf/<frame>."""
+    """Long-lived `<tf_namespace>/tf` subscriber that logs each transform to rerun under env_<id>/tf/<frame>."""
 
-    def __init__(self, node: rclpy.node.Node, env_id: int) -> None:
+    def __init__(self, node: rclpy.node.Node, env_id: int, tf_namespace: str = "") -> None:
         self._node = node
         self._env_id = env_id
         self._dyn_sub = node.create_subscription(
             TFMessage,
-            "/tf",
+            f"{tf_namespace}/tf",
             self._on_tf,
             rclpy.qos.QoSProfile(depth=100),
         )
         self._static_sub = node.create_subscription(
             TFMessage,
-            "/tf_static",
+            f"{tf_namespace}/tf_static",
             self._on_tf_static,
             rclpy.qos.QoSProfile(
                 depth=100,

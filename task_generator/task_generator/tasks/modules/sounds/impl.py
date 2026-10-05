@@ -11,6 +11,7 @@ import rclpy
 import tf2_ros
 import yaml
 from ament_index_python.packages import get_package_share_directory
+from arena_auditory.qos_profiles import continuous_audio_qos
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
 from arena_simulation_setup.tree.World import WorldDescription, WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import Scenario
@@ -21,7 +22,6 @@ from rclpy.clock import Clock, ClockType
 from task_generator_msgs.msg import ContinuousAudioSourceState
 from task_generator_msgs.srv import RemoveSound, SpawnSound
 
-from task_generator.auditory.qos_profiles import continuous_audio_qos
 from task_generator.tasks.modules import TM_Module
 
 
@@ -80,6 +80,25 @@ def _merge_params(cfgs: Sequence[SemanticCfg]) -> dict:
     for cfg in cfgs:
         params.update(cfg.params)
     return params
+
+
+def _has_initial_sounding(cfgs: Sequence[SemanticCfg]) -> bool:
+    """True when a sound_on regime or an explicit sounding value decides whether the sound plays."""
+    if _merge_params(cfgs).get("sound_on"):
+        return True
+    return any(cfg.name == "sounding" and cfg.value is not None for cfg in cfgs)
+
+
+def _sounding_by_default(snd: Sound) -> Sound:
+    """Launch-defined sounds play from the start unless the entry decides otherwise."""
+    if _has_initial_sounding(snd.semantics):
+        return snd
+    sounding = next((cfg for cfg in snd.semantics if cfg.name == "sounding"), None)
+    if sounding is None:
+        sounding = SemanticCfg(role="predicate", name="sounding")
+        snd.semantics.append(sounding)
+    sounding.value = True
+    return snd
 
 
 def _sound_group_id(cfgs: Sequence[SemanticCfg], realized_name: str) -> str:
@@ -166,8 +185,9 @@ class Mod_Sounds(TM_Module):
         self._sound_state: dict[str, _SoundState] = {}
         self._attached: set[str] = set()
         self._runtime: set[str] = set()
+        self._warned_inert: set[str] = set()
 
-        catalog_path = Path(get_package_share_directory("task_generator")) / "config" / "auditory" / "acoustic_assets.yaml"
+        catalog_path = Path(get_package_share_directory("arena_auditory")) / "config" / "acoustic_assets.yaml"
         self._catalog = _parse_catalog(yaml.safe_load(catalog_path.read_text()))
 
         self._source_publisher = self.node.create_publisher(
@@ -207,12 +227,14 @@ class Mod_Sounds(TM_Module):
         for level_id, level in world.levels.items():
             for snd in level.all_sounds:
                 realized_name = self.node._realizer.realize(snd, level_id).name
+                self._warn_if_inert(snd, realized_name)
                 resolved[realized_name] = self._resolve_and_build(snd, world, indexed_entities, level_id, realized_name)
 
         attached: set[str] = set()
         episode_sounds = list(scenario.sounds) if scenario is not None else []
         for snd in [*episode_sounds, *self._configured_sounds()]:
             realized_name = self.node._realizer.realize(snd).name
+            self._warn_if_inert(snd, realized_name)
             resolved[realized_name] = self._resolve_and_build(snd, world, indexed_entities, None, realized_name)
             self.node._simulator.attach_semantics("sound", realized_name, snd.semantics)
             attached.add(realized_name)
@@ -260,15 +282,21 @@ class Mod_Sounds(TM_Module):
         )
 
     def _configured_sounds(self) -> list[Sound]:
-        if not self.node.has_parameter("static_sounds"):
+        if not self.node.has_parameter("auditory.static_sounds"):
             return []
-        raw = str(self.node.get_parameter("static_sounds").value).strip()
+        raw = str(self.node.get_parameter("auditory.static_sounds").value).strip()
         parsed = yaml.safe_load(raw) if raw else []
         if parsed is None:
             parsed = []
         if not isinstance(parsed, list):
-            raise ValueError("static_sounds must be a YAML list of sound entries")
-        return converter.structure(parsed, list[Sound])
+            raise ValueError("auditory.static_sounds must be a YAML list of sound entries")
+        return [_sounding_by_default(snd) for snd in converter.structure(parsed, list[Sound])]
+
+    def _warn_if_inert(self, snd: Sound, realized_name: str) -> None:
+        if _has_initial_sounding(snd.semantics) or realized_name in self._warned_inert:
+            return
+        self._warned_inert.add(realized_name)
+        self._logger.warning(f"sound {snd.name!r} has neither sound_on nor a sounding value, so it stays silent until toggled: ros2 service call {self.node.service_namespace('semantics', 'set')} task_generator_msgs/srv/SetSemantic \"{{entity: {realized_name}, field: sounding, value: 'true'}}\"")
 
     def _spawn_sound(
         self,

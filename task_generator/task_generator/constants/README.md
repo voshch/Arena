@@ -50,29 +50,30 @@ Config.General.RNG.stream("obstacles", "random")   # independent numpy Generator
 
 | Attribute | ROS param | Default | Notes |
 | --- | --- | --- | --- |
-| `WAIT_FOR_SERVICE_TIMEOUT` | `timeout_wait_for_service` | `30` | seconds |
-| `MAX_RESET_FAIL_TIMES` | `max_reset_fail_times` | `10` | |
-| `DESIRED_EPISODES` | `episodes` | `-1` | parsed to `inf` when negative |
+| `MAX_RESET_FAIL_TIMES` | `task.episode.reset.max_fails` | `10` | |
+| `DESIRED_EPISODES` | `task.episode.count` | `-1` | parsed to `inf` when negative |
 
 `RNG` is not a ROS param: it is an `EpisodeRng` re-rooted each reset on the
 per-episode seed (derived from the `run_seed` param via blake2b). Call
 `RNG.stream(*key)` for an independent, reproducible generator keyed by a stable
 label, so draw order and concurrency cannot affect a given stream.
 
+Every `task.episode.*` param is also a launch arg (empty = node default), listed with its description in `EPISODE_PARAMS`. The pre-`task.episode` names still work: `migrate_deprecated_params` copies each one found at startup onto its replacement and warns, per the `DEPRECATED_PARAMS` table.
+
 ### `Config.Obstacles`
 
 | Attribute | ROS param | Default | Notes |
 | --- | --- | --- | --- |
-| `OBSTACLE_MAX_RADIUS` | `obstacle_max_radius` | `15` | metres; `inf` when negative |
+| `OBSTACLE_MAX_RADIUS` | `task.episode.spawn.obstacle_max_radius` | `15` | metres; `inf` when negative |
 
 ### `Config.Robot`
 
 | Attribute | ROS param | Default | Notes |
 | --- | --- | --- | --- |
-| `GOAL_TOLERANCE_RADIUS` | `goal_tolerance_radius` | `1.0` | metres |
-| `GOAL_TOLERANCE_ANGLE` | `goal_tolerance_angle` | 30 degrees (in radians) | |
-| `SPAWN_ROBOT_SAFE_DIST` | `robot_safe_dist` | `0.25` | metres |
-| `TIMEOUT` | `timeout` | `-1` | parsed to `inf` when negative; sim seconds since episode reset, past which the episode ends FAILED with info `"timeout"` |
+| `GOAL_TOLERANCE_RADIUS` | `task.episode.goto_pose.tolerance.radius` | `1.0` | metres |
+| `GOAL_TOLERANCE_ANGLE` | `task.episode.goto_pose.tolerance.angle` | 30 degrees (in radians) | |
+| `SPAWN_ROBOT_SAFE_DIST` | `task.episode.spawn.robot_clearance` | `0.25` | metres |
+| `TIMEOUT` | `task.episode.timeout` | `-1` | parsed to `inf` when negative; sim seconds since episode reset, past which the episode ends FAILED with info `"timeout"` |
 | `MOBILE_ADAPTER` | `robot.mobile_adapter` | `'nav2'` | default mobile-cap adapter kind, overridden per robot via scenario `mobile:` |
 | `ARM_ADAPTER` | `robot.arm_adapter` | `'moveit'` | default arm-cap adapter kind, overridden per robot via scenario `arm:` |
 
@@ -84,16 +85,16 @@ Declared directly on `TaskGenerator` at construction time, not via `Configuratio
 
 | ROS param | Default | Notes |
 | --- | --- | --- |
-| `auto_reset` | `true` | `true` = standalone (node auto-advances); `false` = managed (external controller drives resets via `lifecycle/reset_episode`) |
+| `task.episode.auto_reset` | `true` | `true` = standalone (node auto-advances); `false` = managed (external controller drives resets via `lifecycle/reset_episode`) |
 | `run_seed` | random uuid hex | Hex string for per-episode blake2b seed derivation |
 | `episode_history_size` | `10` | Bounded history length for `state/episode` |
 
-`train_mode` is declared at the launch level (`robot.train`) and exposed on the task_generator node's param store for robot adapters (`rosnav_rl`, `nav2`) to read, the node itself does not branch on it. For managed (external-controller-driven) resets pass `task.auto_reset:=false` explicitly, there is no auto-derivation from `train_config`.
+`robot.train` is declared at the launch level and exposed on the task_generator node's param store for robot adapters (`rosnav_rl`, `nav2`) to read, the node itself does not branch on it. For managed (external-controller-driven) resets pass `task.episode.auto_reset:=false` explicitly, there is no auto-derivation from `train_config`.
 
 ### `Config.TaskMode`
 
 | Attribute | ROS param | Default | Type |
 | --- | --- | --- | --- |
-| `TM_ROBOTS` | `tm_robots` | `random` | `Constants.TaskMode.TM_Robots` |
-| `TM_OBSTACLES` | `tm_obstacles` | `random` | `Constants.TaskMode.TM_Obstacles` |
-| `TM_MODULES` | `tm_modules` | `''` | `set[Constants.TaskMode.TM_Module]`; comma-separated string |
+| `TM_ROBOTS` | `task.robots` | `random` | `Constants.TaskMode.TM_Robots` |
+| `TM_OBSTACLES` | `task.obstacles` | `random` | `Constants.TaskMode.TM_Obstacles` |
+| `TM_MODULES` | `task.modules` | `''` | `set[Constants.TaskMode.TM_Module]`; comma-separated string |

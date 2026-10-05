@@ -1,5 +1,5 @@
-# arena update checks out the pinned commit, then force-resets <branch> onto it (git switch -C).
-# Unpushed commits on a submodule's branch fall off at update, recover via reflog.
+# arena update checks out the pinned commit, then moves <branch> onto it (git switch -C).
+# A branch with unpushed commits the pin lacks is kept: switched to when it is ahead of the pin, else left beside a detached pin.
 [submodule "arena_tools"]
 	path = arena_tools
 	url = https://github.com/voshch/arena-tools.git
@@ -13,7 +13,7 @@
 [submodule "arena_isaac"]
 	path = arena_isaac
 	url = https://github.com/Arena-Rosnav/arena-isaac
-	branch = isaac6.0.0
+	branch = isaac6.1.0
 	update = checkout
 [submodule "arena_training"]
 	path = arena_training

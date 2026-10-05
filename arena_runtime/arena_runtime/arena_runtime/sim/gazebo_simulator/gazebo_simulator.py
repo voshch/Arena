@@ -81,6 +81,7 @@ _ENTITY_ID_POLL = 0.25
 _RTF_BOOST = 1e6
 _SET_PHYSICS_TIMEOUT_MS = 5000
 _SET_PHYSICS_ATTEMPTS = 3
+_CLEANUP_ATTEMPTS = 5
 
 _LATCHED_QOS = QoSProfile(
     depth=1,
@@ -246,24 +247,34 @@ class GazeboHost(SimLifecycle):
                 raise RuntimeError(f"step_seconds({seconds}) service call failed")
 
     async def cleanup_namespace(self, prefix: str) -> int:
-        names = await self._list_models()
-        targets = [n for n in names if n.startswith(prefix)]
-        if not targets:
-            return 0
+        removed = 0
+        for attempt in range(_CLEANUP_ATTEMPTS + 1):
+            try:
+                names = await self._list_models()
+            except SimUnavailable:
+                if attempt == _CLEANUP_ATTEMPTS:
+                    raise
+                await asyncio.sleep(1.0 + attempt)
+                continue
+            targets = [n for n in names if n.startswith(prefix)]
+            if not targets:
+                return removed
+            if attempt == _CLEANUP_ATTEMPTS:
+                break
+            results = await asyncio.gather(*(self._delete_model(n) for n in targets))
+            removed += sum(1 for r in results if r)
+        raise SimUnavailable(f"cleanup_namespace {prefix!r}: {len(targets)} model(s) left after {_CLEANUP_ATTEMPTS} attempts")
 
-        async def _del(name: str) -> bool:
-            req = DeleteEntity.Request()
-            req.entity = EntityMsg(name=name, type=EntityMsg.MODEL)
-            async with self._semaphore:
-                try:
-                    res = await self._service_delete_entity.call_timeout(req)
-                except Exception as e:
-                    self._logger.warning(f"cleanup_namespace: delete {name} raised: {e!r}")
-                    return False
-            return bool(res) and res.success
-
-        results = await asyncio.gather(*(_del(n) for n in targets))
-        return sum(1 for r in results if r)
+    async def _delete_model(self, name: str) -> bool:
+        req = DeleteEntity.Request()
+        req.entity = EntityMsg(name=name, type=EntityMsg.MODEL)
+        async with self._semaphore:
+            try:
+                res = await self._service_delete_entity.call_timeout(req)
+            except Exception as e:
+                self._logger.warning(f"cleanup_namespace: delete {name} raised: {e!r}")
+                return False
+        return bool(res) and res.success
 
     async def _list_models(self) -> list[str]:
         proc = await asyncio.create_subprocess_exec(
@@ -274,10 +285,11 @@ class GazeboHost(SimLifecycle):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise SimUnavailable(f"gz model --list failed: {stderr.decode().strip()}")
+        out = stdout.decode()
+        if proc.returncode != 0 or 'Available models:' not in out:
+            raise SimUnavailable(f"gz model --list failed: {(stderr.decode() or out).strip()}")
         names: list[str] = []
-        for line in stdout.decode().splitlines():
+        for line in out.splitlines():
             stripped = line.strip()
             if stripped.startswith('- '):
                 names.append(stripped[2:].strip())

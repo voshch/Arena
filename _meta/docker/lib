@@ -8,13 +8,18 @@ arena_podman(){
     { docker --version; arena_docker version --format '{{range .Server.Components}}{{.Name}} {{end}}'; } 2>/dev/null | grep -qi podman
 }
 
-ARENA_PROJECT_NAME="arena-$(basename "${HOST_ARENA_WS_DIR:-$ARENA_WS_DIR}")"
-export ARENA_PROJECT_NAME
-export ARENA_IMAGE_TAG="$ARENA_PROJECT_NAME"
+ARENA_IMAGE_TAG="arena-$(basename "${HOST_ARENA_WS_DIR:-$ARENA_WS_DIR}")"
+export ARENA_IMAGE_TAG
+export ARENA_PROJECT_NAME="$ARENA_IMAGE_TAG${ARENA_FORK:+-$ARENA_FORK}"
 export ARENA_IMAGE="arena:${ARENA_IMAGE_TAG}"
 arena_podman && export ARENA_IMAGE="localhost/$ARENA_IMAGE"
 
 export ARENA_ENV_FILE="${ARENA_WS_DIR:-$HOST_ARENA_WS_DIR}/.env"
+
+HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0 2>/dev/null || printf '%s' "$HOST_GID")
+export HOST_VIDEO_GID
+HOST_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128 2>/dev/null || printf '%s' "$HOST_VIDEO_GID")
+export HOST_RENDER_GID
 
 [ -n "${ARENA_GPU+x}" ] && export ARENA_GPU
 
@@ -27,6 +32,13 @@ arena_gpu(){
     elif [ -n "${ARENA_GPU+x}" ]; then
         raw=$ARENA_GPU
         source=environment
+    elif command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+        # A later plain `source arena` must not recreate a GPU-backed
+        # container without its NVIDIA devices.  Auto-enable the existing GPU
+        # compose overlay when the host driver reports a usable device; users
+        # can still opt out explicitly with ARENA_GPU=0.
+        raw=1
+        source=auto-detected-nvidia
     else
         source=unset
     fi
@@ -44,7 +56,7 @@ arena_gpu(){
 # ${ARENA_WS_DIR} client-side, $HOST_ARENA_WS_DIR for volume sources
 _arena_compose_file(){
     local f
-    for f in "$1" ${podman:+"${1%.yaml}.podman.yaml"}; do
+    for f in "$1" ${podman:+"${1%.yaml}.podman.yaml"} ${ARENA_RELEASE:+"${1%.yaml}.fork.yaml"}; do
         [ -f "$f" ] || continue
         files="${files:+$files:}$f"
     done
@@ -168,7 +180,10 @@ arena_podman_env(){
         echo "arena: podman API socket $sock is not running, run: $ctl enable --now podman.socket" >&2
         return 1
     fi
-    ARENA_USERNS_MODE=host
-    [ "$rootless" = true ] && ARENA_USERNS_MODE=keep-id
-    export ARENA_DOCKER_SOCK=$sock ARENA_USERNS_MODE
+    ARENA_USERNS_MODE=host ARENA_CONTAINER_USER=$HOST_UID
+    [ "$rootless" = true ] && ARENA_USERNS_MODE="" ARENA_CONTAINER_USER=0
+    if grep -qE '^(ARENA_USERNS_MODE|ARENA_DOCKER_SOCK)=' "$ARENA_ENV_FILE" 2>/dev/null; then
+        sed -i -E '/^(ARENA_USERNS_MODE|ARENA_DOCKER_SOCK)=/d' "$ARENA_ENV_FILE"
+    fi
+    export ARENA_DOCKER_SOCK=$sock ARENA_USERNS_MODE ARENA_CONTAINER_USER
 }

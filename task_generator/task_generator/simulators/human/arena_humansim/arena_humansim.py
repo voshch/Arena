@@ -81,8 +81,9 @@ from geometry_msgs.msg import Pose as PoseMsg
 from geometry_msgs.msg import (
     Pose2D as Pose2DMsg,
 )
+from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterType
-from rcl_interfaces.srv import GetParameters, SetParameters
+from rcl_interfaces.srv import GetParameters, SetParametersAtomically
 from rclpy.parameter import Parameter as RclParameter
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -100,6 +101,8 @@ from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObst
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
+    PARAM_NAMESPACE = Constants.HUMAN_PARAM_NAMESPACES[Constants.HumanSimulator.ARENA]
+
     @classmethod
     def _register_task_modes(cls):
         from task_generator.tasks.obstacles.prompt import NS, declare_schema
@@ -206,6 +209,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             Feedback,
             self.node.service_namespace(self.SERVICE_FEEDBACK),
         )
+        self._set_params_client: ClientWrapper = self.node.create_client_wrapper(
+            SetParametersAtomically,
+            self.node.service_namespace("arena_humansim", "set_parameters_atomically"),
+        )
         self._publish_pending = False
         self._notify_stimulus_client: ClientWrapper = self.node.create_client_wrapper(
             NotifyStimulus,
@@ -213,7 +220,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         self._next_id: int = 1
-        self._set_params_client: ClientWrapper | None = None
         self._contact_config: tuple[str, float] = ("enabled", 1.2)  # humansim launch defaults
         self._gesture_config: str = "enabled"
 
@@ -400,39 +406,40 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         if self._contact_config == (mode, standing_distance):
             return
-        if self._set_params_client is None:
-            self._set_params_client = self.node.create_client_wrapper(
-                SetParameters,
-                self.node.service_namespace("arena_humansim", "set_parameters"),
-            )
-        request = SetParameters.Request(
+        request = SetParametersAtomically.Request(
             parameters=[
                 RclParameter("contact_mode", value=mode).to_parameter_msg(),
                 RclParameter("locomotion_standing_distance", value=float(standing_distance)).to_parameter_msg(),
             ],
         )
         response = await self._set_params_client.call_timeout(request)
-        if response is None or not all(r.successful for r in response.results):
-            reasons = "; ".join(r.reason for r in response.results if not r.successful) if response is not None else "timeout"
-            raise RuntimeError(f"arena_humansim rejected contact_mode={mode!r} standing_distance={standing_distance}: {reasons}")
+        if response is None or not response.result.successful:
+            reason = response.result.reason if response is not None else "timeout"
+            raise RuntimeError(f"arena_humansim rejected contact_mode={mode!r} standing_distance={standing_distance}: {reason}")
         self._contact_config = (mode, standing_distance)
         self._logger.info(f"contact_mode={mode} standing_distance={standing_distance}")
 
     async def configure_gestures(self, mode: str) -> None:
         if self._gesture_config == mode:
             return
-        if self._set_params_client is None:
-            self._set_params_client = self.node.create_client_wrapper(
-                SetParameters,
-                self.node.service_namespace("arena_humansim", "set_parameters"),
-            )
-        request = SetParameters.Request(parameters=[RclParameter("gesture_mode", value=mode).to_parameter_msg()])
+        request = SetParametersAtomically.Request(parameters=[RclParameter("gesture_mode", value=mode).to_parameter_msg()])
         response = await self._set_params_client.call_timeout(request)
-        if response is None or not all(r.successful for r in response.results):
-            reasons = "; ".join(r.reason for r in response.results if not r.successful) if response is not None else "timeout"
-            raise RuntimeError(f"arena_humansim rejected gesture_mode={mode!r}: {reasons}")
+        if response is None or not response.result.successful:
+            reason = response.result.reason if response is not None else "timeout"
+            raise RuntimeError(f"arena_humansim rejected gesture_mode={mode!r}: {reason}")
         self._gesture_config = mode
         self._logger.info(f"gesture_mode={mode}")
+
+    async def _configure_impl(self, params: Sequence[ParameterMsg]) -> set[str]:
+        accepted: set[str] = set()
+        if params:
+            response = await self._set_params_client.call_timeout(SetParametersAtomically.Request(parameters=list(params)))
+            if response is not None and response.result.successful:
+                accepted = {p.name for p in params}
+            elif response is not None:
+                self._logger.error(f"engine rejected human params {[p.name for p in params]}: {response.result.reason}")
+        await self._reset_client.call_timeout(ResetSimulation.Request(soft=True))
+        return accepted
 
     async def setup(self):
         await asyncio.gather(
@@ -458,6 +465,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     self._get_profile_client,
                     self._feedback_client,
                     self._notify_stimulus_client,
+                    self._set_params_client,
                 )
             )
         )

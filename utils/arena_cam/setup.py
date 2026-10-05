@@ -7,7 +7,6 @@ package_name = 'arena_cam'
 
 setup(
     name=package_name,
-    version='0.0.0',
     packages=find_packages(
         where='.',
         include=[f'{package_name}*'],
@@ -21,10 +20,6 @@ setup(
         (os.path.join('share', package_name, 'configs', 'cam', 'shots'),
          glob('configs/cam/shots/*.yaml')),
     ],
-    install_requires=['setuptools', 'pyyaml'],
-    extras_require={
-        'test': ['pytest>=7'],
-    },
     zip_safe=True,
     maintainer='voshch',
     maintainer_email='dev@voshch.dev',

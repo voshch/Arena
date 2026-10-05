@@ -7,7 +7,6 @@ package_name = 'task_generator_mcp'
 
 setup(
     name=package_name,
-    version='0.0.1',
     packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -16,7 +15,6 @@ setup(
         (os.path.join('share', package_name, 'launch'),
          glob(os.path.join('launch', '*.launch.py'))),
     ],
-    install_requires=['setuptools', 'mcp>=2.0'],
     zip_safe=True,
     author='voshch',
     author_email='voshch@arena-rosnav.org',

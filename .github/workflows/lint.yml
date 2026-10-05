@@ -11,7 +11,55 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - run: git -C arena_training submodule update --init deps/rosnav_rl
       - uses: pre-commit/action@v3.0.1
+
+  per-commit:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install pre-commit
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: lint every new commit and post its status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          walk=()
+          if [ "$GITHUB_EVENT_NAME" = push ]; then walk=(--first-parent); fi
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            shas=$(git rev-list --reverse "${walk[@]}" "$BASE..$HEAD")
+          else
+            shas=$HEAD
+          fi
+          failed=0
+          for sha in $shas; do
+            echo "::group::$(git log -1 --format='%h %s' "$sha")"
+            git checkout -q -f --detach "$sha"
+            git submodule update -q --init --force
+            git -C arena_training submodule update -q --init --force deps/rosnav_rl
+            if pre-commit run --all-files; then state=success; else state=failure; failed=1; fi
+            echo "::endgroup::"
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state="$state" -f context="lint / per commit" -f target_url="$RUN_URL" > /dev/null
+          done
+          exit $failed

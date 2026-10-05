@@ -19,6 +19,12 @@ class Constants:
         HUNAV = "hunav"
         ARENA = "arena"
 
+    class AuditorySimulator(Enum):
+        NONE = "none"
+        ARENA = "arena"
+    HUMAN_PARAM_NAMESPACES = {HumanSimulator.ARENA: "humansim"}
+    HUMAN_PARAM_RESERVED = "human"
+
     class TaskMode:
         @enum.unique
         class TM_Obstacles(enum.Enum):
@@ -27,10 +33,6 @@ class Constants:
             SCENARIO = "scenario"
             ENVIRONMENT = "environment"
             PROMPT = "prompt"
-
-            @classmethod
-            def prefix(cls, *args: object) -> Namespace:
-                return Namespace("tm_obstacles")(*args)
 
             @classmethod
             def default(cls) -> "Constants.TaskMode.TM_Obstacles":
@@ -48,10 +50,6 @@ class Constants:
             CHARACTERIZATION = "characterization"
 
             @classmethod
-            def prefix(cls, *args: object) -> Namespace:
-                return Namespace("tm_robots")(*args)
-
-            @classmethod
             def default(cls) -> "Constants.TaskMode.TM_Robots":
                 return cls.RANDOM
 
@@ -62,10 +60,6 @@ class Constants:
             CLEAR_FORBIDDEN_ZONES = "clear_forbidden_zones"
             RVIZ_UI = "rviz_ui"
             SOUNDS = "sounds"
-
-            @classmethod
-            def prefix(cls, *args: object) -> Namespace:
-                return Namespace("tm_module")(*args)
 
             @classmethod
             def default(cls) -> set["Constants.TaskMode.TM_Module"]:

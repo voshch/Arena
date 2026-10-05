@@ -43,7 +43,7 @@ class CollisionTrackerNode(rclpy.node.Node):
 
     Reads RobotManager.pose + EnvironmentManager.collision_grid. The footprint
     defines a collision: it feeds `collision_events` and, under
-    `fail_on_collision`, the episode outcome. The cap polygons only feed
+    `task.episode.fail_on_collision`, the episode outcome. The cap polygons only feed
     `collision_monitor_state`. Tick timer uses sim time, so it is gated during
     pauses.
     """
@@ -189,7 +189,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         evmsg.events = events
         self._pub_events.publish(evmsg)
 
-        if events and self._rm.node.rosparam[bool].get_unsafe('fail_on_collision'):
+        if events and self._rm.node.rosparam[bool].get_unsafe('task.episode.fail_on_collision'):
             self._rm.node.fail_episode('collision')
 
     def _pedestrians(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, float, float]]:

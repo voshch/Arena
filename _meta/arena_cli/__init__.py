@@ -1,0 +1,1 @@
+"""The arena shell command."""

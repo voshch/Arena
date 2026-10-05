@@ -176,6 +176,7 @@ arena launch \
 | Arg | Implication |
 |---|---|
 | `env.n:=3` | Three task-generator instances under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
+| `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
 
 Slot positions are placed by the shelf packer in `arena_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_node` (default 5 m).
 
@@ -235,6 +236,7 @@ via `/arena/spawn_env`.
 | `headless` | `false` | `true` = hide the sim GUI (server-only mode for Gazebo). Implicitly sets `viz:=false` unless `viz:=true` is explicit. |
 | `viz` | `true` | Controls whether `arena viz --all` is called after envs come up. Ignored when `headless:=true` unless overridden. |
 | `human.steering` | `auto` | Per-env `human_steering` panel. `auto` = attach when the resolved `human` backend is `dummy` (and not headless). `true` = always attach, wins over `headless`. `false` = never. |
+| `humansim.<arg>` | engine default | Any launch arg of the `arena` human backend. The prefix is stripped and the arg is forwarded to [arena_humansim.launch.py](../humansim/arena_humansim/launch/arena_humansim.launch.py), e.g. `humansim.local_planner:=orca`, `humansim.local_planner.relaxation_time:=0.7` or `humansim.global_planner.resolution:=0.1` (finer planning grid, opens 1 m doors to pedestrians). The same keys work per episode as `QueueEpisode.human_params`. `mode`, `use_sim_time`, `rviz`, and `namespace` are pinned. |
 | `humansim.markers` | `2` | Debug marker level of the `arena` human backend: `0` = off (also hides its rviz panels), `1` = agent bodies, headings and infrastructure, `2` = adds goals, paths, waypoints, vision cones and force vectors. Lower it to cut per-tick marker cost in crowded scenarios. |
 | `viz.view` | `map` | Camera view in rviz: `map` (TopDownOrtho), `robot` (Orbit on robot base), `robot3p` (ThirdPersonFollower on robot base). |
 | `viz.robot` | `0` | Robot index in the fleet for `viz.view:=robot*`. `all` spawns one rviz window per robot. Ignored when `view=map`. |
@@ -341,7 +343,7 @@ log_level:=debug     # verbose output from all nodes
 use_sim_time:=false  # real-time clock (unusual, only for real robots)
 complexity:=2        # AMCL (position unknown); 3 = SLAM
 record.dir:=/tmp/arena_run  # enable data recording (record.auto:=false keeps the recorder off)
-task.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
+task.episode.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
 ```
 
 ### sim:=
@@ -406,7 +408,7 @@ shapes of argument:
 | `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from `caps/<cap>.yaml`. |
 | `<adapter-kwarg>:=<val>` | `global_planner:=smac`, `global_planner:=nav2/navfn` | `robot.<cap>.<key>` (via the adapter's launch file) | Adapter-internal launch kwargs (nav2 planner names, or the `<family>/<kind>` form consumed by the `drl` adapter). |
 
-One robot-level timeout also takes the `robot.` prefix: `robot.ready_timeout`
+One adapter-readiness timeout lives under the task namespace: `task.episode.timeout.robot_ready`
 (adapter readiness, default unbounded, `-1` means unbounded).
 
 The cap-scoped form is the recommended style because it's self-documenting and
@@ -470,11 +472,14 @@ given) and will be removed in a future release.
 | `tm_obstacles` | `task.obstacles` |
 | `tm_modules` | `task.modules` |
 | `task_config` | `task.config` |
-| `scenario_file` | `task.scenario` |
+| `scenario_file`, `task.scenario` | `task.scenario.file` |
 | `parameter_file` | `task.params` |
-| `episodes` | `task.episodes` |
-| `auto_reset` | `task.auto_reset` |
-| `fail_on_collision` | `task.fail_on_collision` |
+| `episodes` | `task.episode.count` |
+| `auto_reset` | `task.episode.auto_reset` |
+| `fail_on_collision` | `task.episode.fail_on_collision` |
+| `task.episodes` | `task.episode.count` |
+| `task.auto_reset` | `task.episode.auto_reset` |
+| `task.fail_on_collision` | `task.episode.fail_on_collision` |
 | `mobile`, `mobile.<key>` | `robot.mobile`, `robot.mobile.<key>` |
 | `arm`, `arm.<key>` | `robot.arm`, `robot.arm.<key>` |
 | `planner` | `robot.planner` |
@@ -495,6 +500,7 @@ common entry points. Verbs relevant to bringup:
 | `arena robot <model>\|rm\|ls` | `runtime/spawn_robot`, `runtime/despawn_robot`, `state/robots` | Spawn, despawn, or list robots in a running fleet; see [arena robot](#arena-robot). |
 | `arena cleanup <env_id>` | `/arena/cleanup_namespace` service | Force-clean an env's namespace by id (calls the service for both the `env_<id>_` and `env_<id>/` prefixes, covering gazebo and isaac layouts). |
 | `arena train [args]` | `arena_training` feature launcher | RL training entry, see section 7 above. |
+| `arena fork new\|ls\|exec\|down` | fork containers in `build/.forks` | Isolated containers on snapshots of the dev tree, see [Forks](../README.md#forks). |
 
 None of these verbs killall anything. `arena launch` checks for an existing
 runtime via `/arena/register_env`: if present, it attaches additively
@@ -524,6 +530,12 @@ Benchmark runs are driven by the `arena evaluation benchmark` CLI verb. Requires
 
 ```bash
 arena evaluation benchmark sim:=gazebo headless:=true suite:=basic contest:=basic
+```
+
+`--lanes N` runs one benchmark across N lanes, each in its own fork, see [Shared Runs](../arena_evaluation/arena_evaluation/arena_evaluation/benchmark/README.md#shared-runs).
+
+```bash
+arena evaluation benchmark sim:=gazebo suite:=basic contest:=basic --lanes 4
 ```
 
 Suite and contest config, runner semantics, and output layout are documented in

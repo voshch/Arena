@@ -1,3 +1,29 @@
+[project]
+name = "task_generator"
+version = "0.0.0"
+dependencies = [
+    "attrs",
+    "chromadb",
+    "filelock",
+    "google-genai",
+    "matplotlib",
+    "numpy",
+    "openai",
+    "pillow",
+    "pyyaml",
+    "rospkg",
+    "scipy",
+    "shapely",
+    "tqdm",
+    "transformers>=5.5.4",
+    "typing-extensions",
+    "watchdog",
+]
+dynamic = ["description", "license", "maintainers", "scripts"]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"

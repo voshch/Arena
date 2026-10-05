@@ -7,7 +7,6 @@ package_name = 'rerun_utils'
 
 setup(
     name=package_name,
-    version='0.0.0',
     packages=[
         package_name,
         f'{package_name}.renderers',
@@ -19,15 +18,6 @@ setup(
         (os.path.join('share', package_name, 'launch'),
          glob(os.path.join('launch', '*.launch.py'))),
     ],
-    install_requires=[
-        'setuptools',
-        'rerun-sdk>=0.21',
-        'numpy',
-    ],
-    extras_require={
-        'urdf': ['rerun-loader-urdf-python'],
-        'test': ['pytest>=7'],
-    },
     zip_safe=True,
     maintainer='voshch',
     maintainer_email='dev@voshch.dev',

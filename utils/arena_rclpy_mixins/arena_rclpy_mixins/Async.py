@@ -8,6 +8,7 @@ import typing
 import warnings
 
 import launch
+import launch_ros.actions
 import rclpy.action
 import rclpy.action.client
 import rclpy.client
@@ -17,6 +18,13 @@ import rclpy.qos
 from arena_rclpy_mixins.Time import TimeNode
 
 T = typing.TypeVar('T')
+
+TF_TOPICS = ('/tf', '/tf_static')
+
+
+def tf_remaps(node: rclpy.node.Node) -> list[tuple[str, str]]:
+    """The node's /tf and /tf_static remaps that change the topic."""
+    return [(topic, resolved) for topic in TF_TOPICS if (resolved := node.resolve_topic_name(topic)) != topic]
 
 
 class LaunchHandle:
@@ -95,16 +103,19 @@ class AsyncNode(TimeNode, rclpy.node.Node):
                     return False
             await asyncio.sleep(interval)
 
+    def _inherit_tf(self, launch_description: launch.LaunchDescription) -> launch.LaunchDescription:
+        return launch.LaunchDescription([*(launch_ros.actions.SetRemap(src, dst) for src, dst in tf_remaps(self)), launch_description])
+
     async def do_launch(self, launch_description: launch.LaunchDescription) -> None:
         async def _launcher():
-            await self._launch_manager.launch_description(launch_description)
+            await self._launch_manager.launch_description(self._inherit_tf(launch_description))
 
         asyncio.run_coroutine_threadsafe(_launcher(), self.__loop)
 
     async def do_launch_tracked(self, launch_description: launch.LaunchDescription) -> LaunchHandle:
         """Like do_launch, but returns a handle so the caller can gracefully shut down just
         this launch group (terminating its child processes) on demand."""
-        return await self._launch_manager.launch_description(launch_description)
+        return await self._launch_manager.launch_description(self._inherit_tf(launch_description))
 
     async def kill_launches(self) -> None:
         await self._launch_manager.kill_all()

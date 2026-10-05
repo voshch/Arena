@@ -129,3 +129,11 @@ def test_meta_accessible_without_invoking_loader():
     meta = MODULE_MODES.meta(Constants.TaskMode.TM_Module.STAGED)
     assert meta is not None
     assert meta.schema is None
+
+
+def test_registry_refuses_the_episode_namespace():
+    from task_generator.tasks.registry import _REGISTRY_NAMESPACE, TaskModeRegistry
+
+    registry = TaskModeRegistry()
+    with pytest.raises(ValueError, match="task.episode"):
+        registry.register("episode", namespace=_REGISTRY_NAMESPACE("episode"))

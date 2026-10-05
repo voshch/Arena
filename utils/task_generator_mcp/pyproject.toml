@@ -1,0 +1,10 @@
+[project]
+name = "task_generator_mcp"
+version = "0.0.1"
+dependencies = [
+    "mcp>=2.0.0",
+]
+dynamic = ["authors", "description", "license", "maintainers", "scripts"]
+
+[tool.uv]
+package = false

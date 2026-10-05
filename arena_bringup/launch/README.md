@@ -22,6 +22,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `robot.arm` | string | `moveit` | Arm adapter kind |
 | `robot.planner` | string | `` (empty) | Top-level planner selector; resolves to `robot.mobile:=<adapter> robot.mobile.<selector>:=<name>` via `arena_planners.resolver` |
 | `robot.train` | bool string | `false` | Training mode: robot adapters route `cmd_vel` from the RL agent |
+| `robot.hearing` | `none` \| `bus` \| `srp` \| `seld` | `none` | Robot-side hearing layer ([arena_auditory.hearing](../../arena_auditory/README.md)): belief grid, Nav2 speed-filter mask merged into the robot's nav2 params, RViz displays. `bus` consumes simulator bus events, `srp` runs the untrained energy-onset + GCC-PHAT front-end, `seld` runs the SELDnet front-end, both on the four-mic array. Needs `auditory:=arena`. |
+| `robot.hearing.policy` | `belief` \| `listen` \| `full` | `full` | Hearing mask layers: belief only, plus the corner listen cap, plus creep-yield at blind bends ([arena_auditory.hearing](../../arena_auditory/README.md)). |
 | `robot.mobile.<key>:=<val>` | adapter-scoped | - | Override any kwarg the bound mobile adapter accepts. Lands as ROS param `robot.mobile.<key>` and overlays the cap-file YAML. Examples: `robot.mobile.local_planner:=teb`, `robot.mobile.global_planner:=smac`, `robot.mobile.agent:=jackal_pretrained`. |
 | `robot.arm.<key>:=<val>` | adapter-scoped | - | Same shape for the arm cap. |
 | `sim` | string | `gazebo` | Physics simulator: `dummy`, `gazebo`, or `isaac`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
@@ -35,25 +37,26 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `task.config` | string | `` (empty) | Path to a [TaskModeSpec YAML](../configs/tasks/README.md); empty -> synthesize from `task.robots` (wins if both set) |
 | `task.obstacles` | string | `random` | Obstacle task mode |
 | `task.modules` | string | `rviz_ui` | Comma-separated task modules to load |
-| `task.scenario` | string | `` (empty) | Sets the `task.scenario.file` ROS param (empty = use the `task.params` default) |
+| `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = use the `task.params` default) |
 | `task.params` | string | `configs/task_generator.yaml` | Task-generator ROS parameter YAML |
-| `task.episodes` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
-| `task.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
+| `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
+| `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/` |
-| `auditory` | `none` \| `arena` | `none` | Auditory pipeline: sound propagation, robot hearing, robot and human sound emission. Sub-keys below take effect only when not `none`; see [auditory/README.md](../../task_generator/launch/human/auditory/README.md). |
+| `auditory` | `none` \| `arena` | `none` | Auditory pipeline: sound propagation, robot hearing, robot and human sound emission. Sub-keys below take effect only when not `none`; see [arena_auditory/README.md](../../arena_auditory/README.md). |
 | `auditory.playback` | string | `auto` | PortAudio output device for workstation playback; `auto` tries `pulse`, `pipewire`, `default`, then the PortAudio default, `none` starts no playback nodes. |
 | `auditory.viz` | bool string | `false` | Publish propagation markers. |
 | `auditory.ped_hearing` | bool string | `true` | Pedestrians are propagation listeners and receive sound stimuli through the human simulator. |
 | `auditory.static_sounds` | YAML string | `[]` | World-independent `sound` entities (radios, alarms), as a flat list of the same `Sound` schema used in `world.yaml`. Non-empty adds `sounds` to `task.modules` (already on whenever `auditory` is not `none`). |
 | `auditory.motor` | `off` \| `wav` \| `procedural` | `procedural` | Robot motor audio source. |
 | `auditory.environment_playback` | bool string | `true` | Play propagated environment audio locally without disabling simulated emission. |
-| `auditory.block_size` | int string | `2048` | PortAudio callback size; raise to `4096` on repeated underflows. |
+| `microphone_mode` | `stereo` \| `four_mic` | `stereo`, `four_mic` when `robot.hearing` is `srp` or `seld` | Receiver layout; `four_mic` starts the synchronized Jackal raw PCM/hearing/headphone pipeline. |
+| `auditory.block_size` | int string | `2048` | Legacy playback callback size; the four-mic renderer uses its 320-frame configuration and reports/retries underflows itself. |
 | `auditory.assets` / `auditory.sound_dir` | paths | bundled files | Asset catalog and WAV directory shared by all playback nodes. |
 | `use_sim_time` | bool string | `true` | Use sim clock instead of wall clock |
 | `env.n` | int string | `1` | Number of task-generator environments `arena launch` will spawn this invocation. Additive: if the runtime already has envs, these add to them rather than replace. |
 | `env_d` | float string | `50` | Spacing (metres) between environments on the snail grid |
 | `debug` | bool string | `False` | Enable debug features |
-| `task.auto_reset` | bool expression | `true` | `true` = standalone: node auto-advances episodes; `false` = managed: external controller drives resets via `lifecycle/reset_episode` |
+| `task.episode.auto_reset` | bool expression | `true` | `true` = standalone: node auto-advances episodes; `false` = managed: external controller drives resets via `lifecycle/reset_episode` |
 | `optim` | comma-separated tokens | `$ARENA_OPTIM` or `` (empty) | Strip matching `<sensor>` blocks from each robot's URDF after xacro expansion (affects both Gazebo and Isaac via [`urdf.py`](../../arena_simulation_setup/src/arena_simulation_setup/utils/models/urdf.py)). Tokens: `no_camera` (strips `camera`/`depth`/`rgbd_camera`), `no_lidar` (strips `ray`/`gpu_lidar`). Unknown tokens warn and are ignored. Default reads `$ARENA_OPTIM` so you can set `export ARENA_OPTIM=no_camera,no_lidar` once per shell; CLI `optim:=...` overrides. |
 
 ## Log level

@@ -1,0 +1,179 @@
+# Earshot: the default hospital crowd with the robot idle at the hallway junction, heard from above.
+robots:
+- start:
+  - 10.0
+  - 11.5
+  - 1.5708
+  phases: []
+dynamic:
+- name: doctor_1
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: exam_room_1
+  agent:
+    agent_type: adult
+    desired_velocity: 1.4
+  waypoints:
+  - central_hallway
+  - patient_ward
+  - central_hallway
+  - exam_room_1
+- name: doctor_2
+  model: Hospital/nurse_female_caucasian_young
+  pose: patient_ward
+  agent:
+    agent_type: adult
+    desired_velocity: 1.5
+  waypoints:
+  - central_hallway
+  - operating_room
+  - central_hallway
+  - patient_ward
+- name: doctor_3
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: laboratory
+  agent:
+    agent_type: adult
+    desired_velocity: 1.3
+  waypoints:
+  - central_hallway
+  - exam_room_1
+  - central_hallway
+  - laboratory
+regions:
+  main_entrance_visitors:
+    type: source
+    polygon:
+    - x: 9.25
+      y: 0.2
+    - x: 10.75
+      y: 0.2
+    - x: 10.75
+      y: 1.2
+    - x: 9.25
+      y: 1.2
+    config:
+      rate_profile:
+      - t: 0.0
+        rate: 0.1
+      - t: 30.0
+        rate: 0.5
+      - t: 120.0
+        rate: 0.3
+      max_concurrent: 8
+      max_total: -1
+      agent:
+        agent_type: adult
+        desired_velocity:
+          min: 1.0
+          max: 1.6
+        sink_affinity:
+        - sink: reception_sink
+          weight: 3.0
+        - sink: waiting_sink
+          weight: 1.5
+        - sink: pharmacy_sink
+          weight: 0.5
+  ward_patients:
+    type: source
+    polygon:
+    - x: 8.2
+      y: 13.35
+    - x: 9.2
+      y: 13.35
+    - x: 9.2
+      y: 14.85
+    - x: 8.2
+      y: 14.85
+    config:
+      rate_profile:
+      - t: 0.0
+        rate: 0.05
+      - t: 30.0
+        rate: 0.2
+      max_concurrent: 3
+      max_total: 20
+      agent:
+        agent_type: elder
+        sink_affinity:
+        - sink: reception_sink
+          weight: 1.0
+        - sink: pharmacy_sink
+          weight: 2.0
+  staff_hallway:
+    type: source
+    polygon:
+    - x: 11.0
+      y: 16.6
+    - x: 11.8
+      y: 16.6
+    - x: 11.8
+      y: 18.1
+    - x: 11.0
+      y: 18.1
+    config:
+      rate_profile:
+      - t: 0.0
+        rate: 0.05
+      - t: 20.0
+        rate: 0.15
+      max_concurrent: 2
+      agent:
+        agent_type: adult
+        desired_velocity:
+          min: 1.3
+          max: 1.8
+        sink_affinity:
+        - sink: nurse_rest_sink
+          weight: 1.0
+  reception_sink:
+    type: sink
+    polygon:
+    - x: 5.6
+      y: 1.0
+    - x: 7.4
+      y: 1.0
+    - x: 7.4
+      y: 4.0
+    - x: 5.6
+      y: 4.0
+    config:
+      capacity: -1
+  waiting_sink:
+    type: sink
+    polygon:
+    - x: 21.2
+      y: 4.6
+    - x: 22.8
+      y: 4.6
+    - x: 22.8
+      y: 7.8
+    - x: 21.2
+      y: 7.8
+    config:
+      capacity: 8
+  pharmacy_sink:
+    type: sink
+    polygon:
+    - x: 5.8
+      y: 27.0
+    - x: 7.5
+      y: 27.0
+    - x: 7.5
+      y: 28.3
+    - x: 5.8
+      y: 28.3
+    config:
+      capacity: 5
+  nurse_rest_sink:
+    type: sink
+    polygon:
+    - x: 14.3
+      y: 6.0
+    - x: 16.3
+      y: 6.0
+    - x: 16.3
+      y: 9.0
+    - x: 14.3
+      y: 9.0
+    config:
+      capacity: 3

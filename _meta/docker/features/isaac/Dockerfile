@@ -1,5 +1,5 @@
 # --- Stage 1: Builder (Python 3.12 + ROS Jazzy) ---
-# Isaac Sim 6.0 bundles Python 3.12, matching Jazzy's native interpreter, so the
+# Isaac Sim 6.1 bundles Python 3.12, matching Jazzy's native interpreter, so the
 # messages are built against the system python3 with no deadsnakes/venv detour.
 FROM docker.io/osrf/ros:jazzy-desktop AS builder
 
@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     python3 python3-dev python3-venv python3-pip \
     python3-colcon-common-extensions && rm -rf /var/lib/apt/lists/*
 
-# STRICT CHECK: Fail build if version is not 3.12 (Isaac Sim 6.0 ABI)
+# STRICT CHECK: Fail build if version is not 3.12 (Isaac Sim 6.1 ABI)
 RUN python3 --version && \
     python3 -c "import sys; assert sys.version_info[:2] == (3, 12), 'ERROR: Python version is not 3.12!'"
 
@@ -30,7 +30,7 @@ RUN . /opt/ros/jazzy/setup.sh && \
     -DROSIDL_GENERATOR_PY_PYTHON_EXECUTABLE=/usr/bin/python3
 
 # --- Stage 2: Final Isaac Sim Image ---
-FROM nvcr.io/nvidia/isaac-sim:6.0.0
+FROM nvcr.io/nvidia/isaac-sim:6.1.0
 
 # 6. Switch to root to fix system libs and paths
 USER root
@@ -38,7 +38,7 @@ USER root
 # Install cattrs directly into Isaac's internal site-packages to ensure it persists
 RUN /isaac-sim/python.sh -m pip install cattrs pyyaml
 
-# Copy the libpython3.12 library from builder (ABI match for the bundled Isaac 6.0 python)
+# Copy the libpython3.12 library from builder (ABI match for the bundled Isaac 6.1 python)
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libpython3.12.so.1.0 /usr/lib/x86_64-linux-gnu/
 RUN ldconfig
 

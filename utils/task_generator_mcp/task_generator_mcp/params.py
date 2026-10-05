@@ -1,9 +1,9 @@
 EPISODE_PARAMS: tuple[str, ...] = (
-    "timeout",
-    "goal_tolerance_radius",
-    "robot_safe_dist",
-    "auto_reset",
-    "episodes",
+    "task.episode.timeout",
+    "task.episode.goto_pose.tolerance.radius",
+    "task.episode.spawn.robot_clearance",
+    "task.episode.auto_reset",
+    "task.episode.count",
 )
 
 STATIC_CONFIG_PARAMS: tuple[str, ...] = (

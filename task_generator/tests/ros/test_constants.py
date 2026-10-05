@@ -11,62 +11,6 @@ def _ros_gate():
         pytest.skip("ROS2 not available")
 
 
-def test_tm_obstacles_prefix_no_args():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Obstacles.prefix()
-    assert str(ns) == "tm_obstacles"
-
-
-def test_tm_obstacles_prefix_one_arg():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Obstacles.prefix("file")
-    assert "tm_obstacles" in str(ns)
-    assert "file" in str(ns)
-
-
-def test_tm_obstacles_prefix_two_args():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Obstacles.prefix("a", "b")
-    s = str(ns)
-    assert "tm_obstacles" in s
-    assert "a" in s
-    assert "b" in s
-
-
-def test_tm_robots_prefix_no_args():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Robots.prefix()
-    assert str(ns) == "tm_robots"
-
-
-def test_tm_robots_prefix_one_arg():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Robots.prefix("foo")
-    assert "tm_robots" in str(ns)
-    assert "foo" in str(ns)
-
-
-def test_tm_module_prefix_no_args():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Module.prefix()
-    assert str(ns) == "tm_module"
-
-
-def test_tm_module_prefix_one_arg():
-    from task_generator.constants import Constants
-
-    ns = Constants.TaskMode.TM_Module.prefix("bar")
-    s = str(ns)
-    assert "tm_module" in s
-    assert "bar" in s
-
-
 def test_tm_obstacles_default_returns_random():
     from task_generator.constants import Constants
 

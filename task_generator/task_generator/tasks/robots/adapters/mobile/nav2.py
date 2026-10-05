@@ -27,6 +27,9 @@ if TYPE_CHECKING:
     from task_generator.shared import Pose
     from task_generator.tasks.robots.adapters import ResetContext
 
+_COSTMAP_TIMEOUT_S = 20.0
+_REDISPATCH_MIN_S = 2.0
+
 
 @AdapterMeta.attach(
     accepts={TaskKind.GOTO_POSE},
@@ -71,6 +74,7 @@ class Nav2Adapter(MobileAdapter):
     def __init__(self, *args: object, **kwargs: object):
         super().__init__(*args, **kwargs)
         self._costmap_clients: dict[str, ClientWrapper] = {}
+        self._last_redispatch: float = -_REDISPATCH_MIN_S
 
     async def teardown(self) -> None:
         for cli in self._costmap_clients.values():
@@ -110,13 +114,24 @@ class Nav2Adapter(MobileAdapter):
         msg.pose = phase.pose.to_msg()
         return msg
 
+    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
+        if phase.is_satisfied(robot):
+            return True
+        if not super().is_phase_done(phase, robot):
+            return False
+        now = robot.node.sim_time.to_seconds()
+        if now - self._last_redispatch >= _REDISPATCH_MIN_S:
+            self._last_redispatch = now
+            robot.node.event_loop.create_task(self.dispatch_phase(phase, robot))
+        return False
+
     async def wait_until_ready(
         self,
         robot: RobotManager,
         node_paths: set[str],
     ) -> None:
         # TMP: remove once rosnavrl decoupled from nav
-        if robot.node.rosparam[bool].get("train_mode", False):
+        if robot.node.rosparam[bool].get("robot.train", False):
             await super().wait_until_ready(robot, node_paths)
             return
         bt_node_path = str(robot.namespace("bt_navigator"))
@@ -167,7 +182,7 @@ class Nav2Adapter(MobileAdapter):
             req = ClearCostmapAroundRobot.Request()
             req.reset_distance = reset_distance
 
-        state = await robot.node.get_lifecycle_state_async(node_name)
+        state = await robot.node.get_lifecycle_state_async(node_name, timeout=_COSTMAP_TIMEOUT_S)
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
@@ -175,9 +190,10 @@ class Nav2Adapter(MobileAdapter):
         if cli is None:
             cli = robot.node.create_client_wrapper(srv_type, srv_name)
             self._costmap_clients[srv_name] = cli
-        await cli.ensure()
+        if not await cli.ensure(timeout_sec=_COSTMAP_TIMEOUT_S):
+            raise TimeoutError(f"{srv_name} not available after {_COSTMAP_TIMEOUT_S}s")
 
-        result = await cli.call_timeout(req)
+        result = await cli.call_timeout(req, timeout_sec=_COSTMAP_TIMEOUT_S)
         if result is None:
             robot.node.get_logger().error(f"service call failed for {srv_name}")
             return False

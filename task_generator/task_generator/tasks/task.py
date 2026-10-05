@@ -54,9 +54,6 @@ class Task(NodeInterface):
     __reset_start: rclpy.publisher.Publisher
     __reset_end: rclpy.publisher.Publisher
 
-    PARAM_TM_ROBOTS = "tm_robots"
-    PARAM_TM_OBSTACLES = "tm_obstacles"
-
     __param_tm_robots: Constants.TaskMode.TM_Robots | None
     __param_tm_obstacles: Constants.TaskMode.TM_Obstacles
     __param_tm_config: str = ""
@@ -245,12 +242,13 @@ class Task(NodeInterface):
 
             try:
                 self.node._apply_staged_params()
+                await self.node._apply_staged_human_params()
 
                 if new_tm_config := self.node.conf.TaskMode.TM_CONFIG.value:
                     if new_tm_config != self.__param_tm_config or frozenset(self._ctx.robots.keys()) != self.__composite_fleet:
                         await self.set_tm_robots_from_config(new_tm_config)
                     elif (new_tm_robots := self.node.conf.TaskMode.TM_ROBOTS.value) != self.__param_tm_robots:
-                        self._logger.warning(f"tm_robots ignored while task config {new_tm_config} is bound")
+                        self._logger.warning(f"task.robots ignored while task config {new_tm_config} is bound")
                         self.__param_tm_robots = new_tm_robots
                 elif (new_tm_robots := self.node.conf.TaskMode.TM_ROBOTS.value) != self.__param_tm_robots:
                     await self.set_tm_robots(new_tm_robots)

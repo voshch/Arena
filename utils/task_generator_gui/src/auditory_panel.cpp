@@ -1,6 +1,7 @@
 #include "task_generator_gui/auditory_panel.hpp"
 #include "rviz_common/display_context.hpp"
 
+#include <QHBoxLayout>
 #include <QJsonArray>
 
 #include <array>
@@ -103,6 +104,8 @@ namespace task_generator_gui
             task_generator_node + "/environment_sound_playback");
         propagation_node = normalizeNodePath(
             task_generator_node + "/sound_propagation_node");
+        microphone_array_node = normalizeNodePath(
+            task_generator_node + "/microphone_array_node");
 
         motor_playback_parameters_client =
             std::make_shared<rclcpp::AsyncParametersClient>(
@@ -123,6 +126,10 @@ namespace task_generator_gui
         set_semantic_client =
             node->create_client<task_generator_msgs::srv::SetSemantic>(
                 task_generator_node + "/semantics/set");
+        microphone_array_parameters_client =
+            std::make_shared<rclcpp::AsyncParametersClient>(
+                node,
+                microphone_array_node);
         remove_microphone_client =
             node->create_client<task_generator_msgs::srv::RemoveMicrophone>(
                 task_generator_node + "/runtime/remove_microphone");
@@ -300,7 +307,13 @@ namespace task_generator_gui
                 }
                 if (msg->node == propagation_node)
                 {
+                    refreshAudioListenerRouting();
                     refreshAuditoryControls();
+                    return;
+                }
+                if (msg->node == microphone_array_node)
+                {
+                    refreshArrayControls();
                     return;
                 }
             });
@@ -311,12 +324,9 @@ namespace task_generator_gui
             },
             [this]() { refreshMotorPlayback(); });
         whenReady(
-            [this]()
+            [client = propagation_parameters_client]()
             {
-                return motor_playback_parameters_client->service_is_ready()
-                    && human_playback_parameters_client->service_is_ready()
-                    && environment_playback_parameters_client->service_is_ready()
-                    && propagation_parameters_client->service_is_ready();
+                return client->service_is_ready();
             },
             [this]()
             {
@@ -324,14 +334,115 @@ namespace task_generator_gui
                     setAudioListenerRouting();
                 else
                     refreshAudioListenerRouting();
+                refreshAuditoryControls();
             });
         whenReady(
-            [this]()
+            [client = environment_playback_parameters_client]()
             {
-                return propagation_parameters_client->service_is_ready()
-                    && environment_playback_parameters_client->service_is_ready();
+                return client->service_is_ready();
             },
             [this]() { refreshAuditoryControls(); });
+        whenReady(
+            [client = microphone_array_parameters_client]()
+            {
+                return client->service_is_ready();
+            },
+            [this]() { refreshArrayControls(); });
+    }
+
+    void AuditoryPanel::setArrayParameters(
+        const std::vector<rclcpp::Parameter> &parameters)
+    {
+        if (!microphone_array_parameters_client
+            || !microphone_array_parameters_client->service_is_ready())
+        {
+            refreshArrayControls();
+            return;
+        }
+        microphone_array_parameters_client->set_parameters(
+            parameters,
+            [this](auto) { refreshArrayControls(); });
+    }
+
+    void AuditoryPanel::refreshArrayControls()
+    {
+        const bool available = microphone_array_parameters_client
+            && microphone_array_parameters_client->service_is_ready();
+        if (!available)
+        {
+            if (microphone_array_group)
+                microphone_array_group->setEnabled(false);
+            if (audio_listener_group)
+                audio_listener_group->setVisible(true);
+            return;
+        }
+        microphone_array_parameters_client->get_parameters(
+            {"enabled", "headphones_enabled", "mute_all", "master_gain",
+             "monitor_gain_db", "headphone_front_gain", "headphone_rear_gain",
+             "solo_channel", "monitor_mode", "visualization_enabled",
+             "tdoa_enabled"},
+            [this](std::shared_future<std::vector<rclcpp::Parameter>> future)
+            {
+                try
+                {
+                    const auto values = future.get();
+                    if (values.size() != 11)
+                        return;
+                    QMetaObject::invokeMethod(this, [this, values]()
+                    {
+                        if (!microphone_array_group)
+                            return;
+                        microphone_array_group->setEnabled(true);
+                        if (audio_listener_group)
+                            audio_listener_group->setVisible(false);
+                        const std::array<QCheckBox *, 5> boxes{
+                            array_enabled_checkbox, headphones_enabled_checkbox,
+                            array_mute_checkbox, array_visualization_checkbox,
+                            array_tdoa_checkbox};
+                        const std::array<bool, 5> states{
+                            values[0].as_bool(), values[1].as_bool(),
+                            values[2].as_bool(), values[9].as_bool(),
+                            values[10].as_bool()};
+                        for (std::size_t index = 0; index < boxes.size(); ++index)
+                        {
+                            QSignalBlocker blocker(boxes[index]);
+                            boxes[index]->setChecked(states[index]);
+                        }
+                        {
+                            QSignalBlocker blocker(array_master_gain_spinbox);
+                            array_master_gain_spinbox->setValue(values[3].as_double());
+                        }
+                        {
+                            QSignalBlocker blocker(array_monitor_gain_spinbox);
+                            array_monitor_gain_spinbox->setValue(values[4].as_double());
+                        }
+                        {
+                            QSignalBlocker blocker(array_front_gain_spinbox);
+                            array_front_gain_spinbox->setValue(values[5].as_double());
+                        }
+                        {
+                            QSignalBlocker blocker(array_rear_gain_spinbox);
+                            array_rear_gain_spinbox->setValue(values[6].as_double());
+                        }
+                        {
+                            QSignalBlocker blocker(array_solo_combobox);
+                            const auto text = QString::fromStdString(values[7].as_string());
+                            const int index = array_solo_combobox->findData(text);
+                            if (index >= 0) array_solo_combobox->setCurrentIndex(index);
+                        }
+                        {
+                            QSignalBlocker blocker(array_monitor_combobox);
+                            const auto text = QString::fromStdString(values[8].as_string());
+                            const int index = array_monitor_combobox->findData(text);
+                            if (index >= 0) array_monitor_combobox->setCurrentIndex(index);
+                        }
+                    }, Qt::QueuedConnection);
+                }
+                catch (const std::exception &exception)
+                {
+                    RCLCPP_WARN(node->get_logger(), "reading microphone array controls failed: %s", exception.what());
+                }
+            });
     }
 
     void AuditoryPanel::whenReady(std::function<bool()> ready_check,
@@ -444,6 +555,13 @@ namespace task_generator_gui
                 }
                 refreshMotorPlayback();
             });
+        if (microphone_array_parameters_client
+            && microphone_array_parameters_client->service_is_ready())
+        {
+            microphone_array_parameters_client->set_parameters(
+                {rclcpp::Parameter("motor_enabled", enabled)},
+                [](auto) {});
+        }
     }
 
     void AuditoryPanel::syncMotorPlaybackCheckbox(
@@ -503,6 +621,13 @@ namespace task_generator_gui
                 }
                 refreshMotorPlayback();
             });
+        if (microphone_array_parameters_client
+            && microphone_array_parameters_client->service_is_ready())
+        {
+            microphone_array_parameters_client->set_parameters(
+                {rclcpp::Parameter(name, value)},
+                [](auto) {});
+        }
     }
 
     void AuditoryPanel::syncMotorTuningControls(
@@ -567,19 +692,20 @@ namespace task_generator_gui
                 }
                 refreshMotorPlayback();
             });
+        if (microphone_array_parameters_client
+            && microphone_array_parameters_client->service_is_ready())
+        {
+            microphone_array_parameters_client->set_parameters(
+                parameters,
+                [](auto) {});
+        }
     }
 
     void AuditoryPanel::refreshAudioListenerRouting()
     {
         if (audio_listener_selection_pending_)
         {
-            if (motor_playback_parameters_client
-                && human_playback_parameters_client
-                && environment_playback_parameters_client
-                && propagation_parameters_client
-                && motor_playback_parameters_client->service_is_ready()
-                && human_playback_parameters_client->service_is_ready()
-                && environment_playback_parameters_client->service_is_ready()
+            if (propagation_parameters_client
                 && propagation_parameters_client->service_is_ready())
             {
                 setAudioListenerRouting();
@@ -591,13 +717,7 @@ namespace task_generator_gui
             }, Qt::QueuedConnection);
             return;
         }
-        if (!motor_playback_parameters_client
-            || !human_playback_parameters_client
-            || !environment_playback_parameters_client
-            || !propagation_parameters_client
-            || !motor_playback_parameters_client->service_is_ready()
-            || !human_playback_parameters_client->service_is_ready()
-            || !environment_playback_parameters_client->service_is_ready()
+        if (!propagation_parameters_client
             || !propagation_parameters_client->service_is_ready())
         {
             QMetaObject::invokeMethod(this, [this]()
@@ -606,8 +726,8 @@ namespace task_generator_gui
             }, Qt::QueuedConnection);
             return;
         }
-        motor_playback_parameters_client->get_parameters(
-            {"listener_id"},
+        propagation_parameters_client->get_parameters(
+            {"active_microphone_id"},
             [this](std::shared_future<std::vector<rclcpp::Parameter>> future)
             {
                 std::vector<rclcpp::Parameter> parameters;
@@ -671,17 +791,140 @@ namespace task_generator_gui
             if (selected_index >= 0)
                 audio_listener_id_combobox->setCurrentIndex(selected_index);
         }
+        syncSideMicrophoneButtons();
         if (audio_listener_id_combobox->currentText() != selected)
             setAudioListenerRouting();
+    }
+
+    void AuditoryPanel::selectSideMicrophone(
+        const std::string &listener_id)
+    {
+        if (!audio_listener_id_combobox || listener_id.empty())
+            return;
+        const int index = audio_listener_id_combobox->findText(
+            QString::fromStdString(listener_id));
+        if (index < 0)
+            return;
+        if (audio_listener_id_combobox->currentIndex() == index)
+        {
+            syncSideMicrophoneButtons();
+            return;
+        }
+        audio_listener_id_combobox->setCurrentIndex(index);
+    }
+
+    void AuditoryPanel::syncSideMicrophoneButtons()
+    {
+        if (!audio_listener_id_combobox
+            || !left_microphone_button
+            || !right_microphone_button)
+        {
+            return;
+        }
+
+        constexpr auto left_suffix = "_left_mic";
+        constexpr auto right_suffix = "_right_mic";
+        const QString selected = audio_listener_id_combobox->currentText();
+        QString preferred_prefix;
+        if (selected.endsWith(left_suffix))
+        {
+            preferred_prefix = selected;
+            preferred_prefix.chop(QString(left_suffix).size());
+        }
+        else if (selected.endsWith(right_suffix))
+        {
+            preferred_prefix = selected;
+            preferred_prefix.chop(QString(right_suffix).size());
+        }
+        else if (selected.endsWith("_mic"))
+        {
+            preferred_prefix = selected;
+            preferred_prefix.chop(4);
+        }
+
+        auto pair_exists = [this, left_suffix, right_suffix](
+                               const QString &prefix)
+        {
+            return !prefix.isEmpty()
+                && audio_listener_id_combobox->findText(
+                    prefix + left_suffix) >= 0
+                && audio_listener_id_combobox->findText(
+                    prefix + right_suffix) >= 0;
+        };
+
+        if (!pair_exists(preferred_prefix))
+        {
+            const QString previous_left = QString::fromStdString(
+                left_microphone_listener_id_);
+            if (previous_left.endsWith(left_suffix))
+            {
+                QString previous_prefix = previous_left;
+                previous_prefix.chop(QString(left_suffix).size());
+                if (pair_exists(previous_prefix))
+                    preferred_prefix = previous_prefix;
+            }
+        }
+        if (!pair_exists(preferred_prefix))
+        {
+            preferred_prefix.clear();
+            for (int index = 0;
+                 index < audio_listener_id_combobox->count();
+                 ++index)
+            {
+                QString candidate = audio_listener_id_combobox->itemText(index);
+                if (!candidate.endsWith(left_suffix))
+                    continue;
+                candidate.chop(QString(left_suffix).size());
+                if (pair_exists(candidate))
+                {
+                    preferred_prefix = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (pair_exists(preferred_prefix))
+        {
+            left_microphone_listener_id_ =
+                (preferred_prefix + left_suffix).toStdString();
+            right_microphone_listener_id_ =
+                (preferred_prefix + right_suffix).toStdString();
+        }
+        else
+        {
+            left_microphone_listener_id_.clear();
+            right_microphone_listener_id_.clear();
+        }
+
+        const bool pair_available = !left_microphone_listener_id_.empty()
+            && !right_microphone_listener_id_.empty();
+        {
+            QSignalBlocker blocker(left_microphone_button);
+            left_microphone_button->setEnabled(pair_available);
+            left_microphone_button->setChecked(
+                selected.toStdString() == left_microphone_listener_id_);
+            left_microphone_button->setToolTip(
+                pair_available
+                    ? QString::fromStdString(left_microphone_listener_id_)
+                    : "Waiting for a robot left microphone.");
+        }
+        {
+            QSignalBlocker blocker(right_microphone_button);
+            right_microphone_button->setEnabled(pair_available);
+            right_microphone_button->setChecked(
+                selected.toStdString() == right_microphone_listener_id_);
+            right_microphone_button->setToolTip(
+                pair_available
+                    ? QString::fromStdString(right_microphone_listener_id_)
+                    : "Waiting for a robot right microphone.");
+        }
     }
 
     void AuditoryPanel::setAudioListenerRouting()
     {
         if (!audio_listener_id_combobox)
             return;
-        if (!motor_playback_parameters_client->service_is_ready()
-            || !human_playback_parameters_client->service_is_ready()
-            || !environment_playback_parameters_client->service_is_ready()
+        if (!propagation_parameters_client
             || !propagation_parameters_client->service_is_ready())
         {
             audio_listener_selection_pending_ = true;
@@ -699,6 +942,8 @@ namespace task_generator_gui
                                   const std::shared_ptr<rclcpp::AsyncParametersClient> &client,
                                   const char *node_name)
         {
+            if (!client || !client->service_is_ready())
+                return;
             client->set_parameters(
                 parameters,
                 [this, node_name](
@@ -757,6 +1002,7 @@ namespace task_generator_gui
             audio_listener_id_combobox->findText(selected);
         if (selected_index >= 0)
             audio_listener_id_combobox->setCurrentIndex(selected_index);
+        syncSideMicrophoneButtons();
     }
 
     void AuditoryPanel::refreshAuditoryControls()
@@ -1006,7 +1252,98 @@ namespace task_generator_gui
         auditory_controls_group->setLayout(auditory_controls_layout);
         root_layout->addWidget(auditory_controls_group);
 
-        audio_listener_group = new QGroupBox("Audio Playback Microphone");
+        microphone_array_group = new QGroupBox("Jackal Four-Mic Hearing");
+        microphone_array_group->setEnabled(false);
+        auto array_layout = new QFormLayout();
+        array_enabled_checkbox = new QCheckBox("Enable microphone array");
+        headphones_enabled_checkbox = new QCheckBox("Enable headphone playback");
+        headphones_enabled_checkbox->setToolTip(
+            "Enables the two-channel monitor derived from the four raw microphones.");
+        array_mute_checkbox = new QCheckBox("Mute all array outputs");
+        array_mute_checkbox->setToolTip(
+            "Silences FL, FR, RL, RR and every product derived from them.");
+        array_visualization_checkbox = new QCheckBox("Show microphone visualization");
+        array_tdoa_checkbox = new QCheckBox("Enable TDoA diagnostics");
+        connect(array_enabled_checkbox, &QCheckBox::toggled, this,
+            [this](bool value) { setArrayParameters({rclcpp::Parameter("enabled", value)}); });
+        connect(headphones_enabled_checkbox, &QCheckBox::toggled, this,
+            [this](bool value) { setArrayParameters({rclcpp::Parameter("headphones_enabled", value)}); });
+        connect(array_mute_checkbox, &QCheckBox::toggled, this,
+            [this](bool value) { setArrayParameters({rclcpp::Parameter("mute_all", value)}); });
+        connect(array_visualization_checkbox, &QCheckBox::toggled, this,
+            [this](bool value) { setArrayParameters({rclcpp::Parameter("visualization_enabled", value)}); });
+        connect(array_tdoa_checkbox, &QCheckBox::toggled, this,
+            [this](bool value) { setArrayParameters({rclcpp::Parameter("tdoa_enabled", value)}); });
+        array_layout->addRow(array_enabled_checkbox);
+        array_layout->addRow(headphones_enabled_checkbox);
+        array_layout->addRow(array_mute_checkbox);
+
+        array_master_gain_spinbox = new QDoubleSpinBox();
+        array_monitor_gain_spinbox = new QDoubleSpinBox();
+        array_front_gain_spinbox = new QDoubleSpinBox();
+        array_rear_gain_spinbox = new QDoubleSpinBox();
+        for (auto spinbox : {array_master_gain_spinbox, array_front_gain_spinbox, array_rear_gain_spinbox})
+        {
+            spinbox->setRange(0.0, 4.0);
+            spinbox->setSingleStep(0.05);
+            spinbox->setDecimals(2);
+        }
+        array_monitor_gain_spinbox->setRange(0.0, 60.0);
+        array_monitor_gain_spinbox->setSingleStep(1.0);
+        array_monitor_gain_spinbox->setDecimals(1);
+        connect(array_master_gain_spinbox, &QDoubleSpinBox::editingFinished, this,
+            [this]() { setArrayParameters({rclcpp::Parameter("master_gain", array_master_gain_spinbox->value())}); });
+        connect(array_monitor_gain_spinbox, &QDoubleSpinBox::editingFinished, this,
+            [this]() { setArrayParameters({rclcpp::Parameter("monitor_gain_db", array_monitor_gain_spinbox->value())}); });
+        connect(array_front_gain_spinbox, &QDoubleSpinBox::editingFinished, this,
+            [this]() { setArrayParameters({rclcpp::Parameter("headphone_front_gain", array_front_gain_spinbox->value())}); });
+        connect(array_rear_gain_spinbox, &QDoubleSpinBox::editingFinished, this,
+            [this]() { setArrayParameters({rclcpp::Parameter("headphone_rear_gain", array_rear_gain_spinbox->value())}); });
+        array_layout->addRow("Master gain", array_master_gain_spinbox);
+        array_layout->addRow("Monitor preamp (dB)", array_monitor_gain_spinbox);
+        array_layout->addRow("Front contribution", array_front_gain_spinbox);
+        array_layout->addRow("Rear contribution", array_rear_gain_spinbox);
+
+        array_solo_combobox = new QComboBox();
+        array_solo_combobox->addItem("Listen to all four", "");
+        array_solo_combobox->addItem("Solo FL", "front_left");
+        array_solo_combobox->addItem("Solo FR", "front_right");
+        array_solo_combobox->addItem("Solo RL", "rear_left");
+        array_solo_combobox->addItem("Solo RR", "rear_right");
+        array_solo_combobox->setToolTip(
+            "Diagnostic monitor routing only; raw_array always retains FL, FR, RL and RR.");
+        connect(array_solo_combobox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int index) { setArrayParameters({rclcpp::Parameter("solo_channel", array_solo_combobox->itemData(index).toString().toStdString())}); });
+        array_layout->addRow("Channels", array_solo_combobox);
+
+        array_monitor_combobox = new QComboBox();
+        array_monitor_combobox->addItem("Spatial stereo (normal)", "headphones");
+        array_monitor_combobox->addItem("Mono detection preview", "hearing");
+        array_monitor_combobox->setToolTip(
+            "Spatial stereo maps FL/RL to the left ear and FR/RR to the right. "
+            "Mono preview duplicates the highest-energy microphone into both ears for diagnostics.");
+        connect(array_monitor_combobox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int index) { setArrayParameters({rclcpp::Parameter("monitor_mode", array_monitor_combobox->itemData(index).toString().toStdString())}); });
+        array_layout->addRow("Headphone output", array_monitor_combobox);
+        array_layout->addRow(array_visualization_checkbox);
+        array_layout->addRow(array_tdoa_checkbox);
+        auto reset_array_button = new QPushButton("Reset gains and routing");
+        connect(reset_array_button, &QPushButton::clicked, this, [this]()
+        {
+            setArrayParameters({
+                rclcpp::Parameter("master_gain", 0.8),
+                rclcpp::Parameter("monitor_gain_db", 36.0),
+                rclcpp::Parameter("headphone_front_gain", 1.0),
+                rclcpp::Parameter("headphone_rear_gain", 0.75),
+                rclcpp::Parameter("solo_channel", std::string("")),
+                rclcpp::Parameter("monitor_mode", std::string("headphones")),
+                rclcpp::Parameter("mute_all", false)});
+        });
+        array_layout->addRow(reset_array_button);
+        microphone_array_group->setLayout(array_layout);
+        root_layout->addWidget(microphone_array_group);
+
+        audio_listener_group = new QGroupBox("Legacy Audio Playback Microphone");
         audio_listener_group->setEnabled(false);
         auto audio_listener_layout = new QFormLayout();
         audio_listener_id_combobox = new QComboBox();
@@ -1016,11 +1353,40 @@ namespace task_generator_gui
             this,
             [this](const QString &)
             {
+                syncSideMicrophoneButtons();
                 setAudioListenerRouting();
             });
         audio_listener_layout->addRow(
             "Listen through",
             audio_listener_id_combobox);
+        auto side_microphone_layout = new QHBoxLayout();
+        left_microphone_button = new QPushButton("Left microphone");
+        left_microphone_button->setCheckable(true);
+        left_microphone_button->setEnabled(false);
+        connect(
+            left_microphone_button,
+            &QPushButton::clicked,
+            this,
+            [this]()
+            {
+                selectSideMicrophone(left_microphone_listener_id_);
+            });
+        right_microphone_button = new QPushButton("Right microphone");
+        right_microphone_button->setCheckable(true);
+        right_microphone_button->setEnabled(false);
+        connect(
+            right_microphone_button,
+            &QPushButton::clicked,
+            this,
+            [this]()
+            {
+                selectSideMicrophone(right_microphone_listener_id_);
+            });
+        side_microphone_layout->addWidget(left_microphone_button);
+        side_microphone_layout->addWidget(right_microphone_button);
+        audio_listener_layout->addRow(
+            "Robot side",
+            side_microphone_layout);
         if (!microphone_listener_registry_.empty())
             updateMicrophoneListeners(microphone_listener_registry_);
         audio_listener_group->setLayout(audio_listener_layout);

@@ -1,0 +1,10 @@
+# High, slightly tilted view over a fixed world point; hold.
+params:
+  cx: 10.0
+  cy: 11.5
+  cye: 6.0
+  h: 16.0
+  duration: 20.0
+timeline:
+  - look: { eye: ["${cx}", "${cye}", "${h}"], target: ["${cx}", "${cy}", 0.5] }
+  - hold: { duration: "${duration}" }

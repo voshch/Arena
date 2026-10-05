@@ -1,0 +1,20 @@
+services:
+  isaac:
+    volumes: !override
+      - "${ARENA_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
+      - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+      - "shared:/tmp/shared"
+      - "fork_venv:/opt/venv"
+      - "fork_src:/opt/arena_ws/src"
+      - "fork_build:/opt/arena_ws/build"
+      - "fork_install:/opt/arena_ws/install"
+      - "$HOST_ARENA_WS_DIR/src/Arena/_assets:/opt/arena_ws/src/Arena/_assets"
+      - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
+      - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/root/Documents/Kit/shared/screenshots"
+      - "$HOST_ARENA_WS_DIR/.isaac-cache/kit:/isaac-sim/kit/cache"
+      - "$HOST_ARENA_WS_DIR/.isaac-cache/ov:/root/.cache/ov"
+      - "$HOST_ARENA_WS_DIR/.isaac-cache/computecache:/root/.nv/ComputeCache"
+    environment:
+      - DISPLAY

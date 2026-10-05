@@ -1,0 +1,19 @@
+# Earshot video intro (20 s take). The robot is parked in the middle corridor facing east.
+# One pedestrian comes up the west link behind the robot, passes on its left, walks east and
+# leaves through the east link into the north corridor (out of frame for the rest of the
+# take). The take script sends the robot goal once the pedestrian is ahead, so the footsteps
+# are heard first and the drivetrain later. Robot pose is applied via task.robots:=stationary.
+robots:
+  - start: [3.5, 6.5, 0.0]
+    phases: []
+static: []
+dynamic:
+  - name: passer
+    model: casual_female_caucasian_young
+    pose: [1.5, 3.2, 1.5708]
+    agent: {agent_type: adult, desired_velocity: 1.2}
+    waypoints:
+      - [1.5, 6.6, 1.5708]
+      - [8.5, 6.6, 0.0]
+      - [8.5, 11.5, 1.5708]
+      - [1.5, 11.5, 3.14159]

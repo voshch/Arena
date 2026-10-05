@@ -70,7 +70,8 @@ do_uninstall(){
         origin="workspace layout"
     fi
 
-    local targets="" data_dir="" tree
+    local targets="" data_dir="" tree build_dir
+    build_dir=$(_uninstall_resolve "$mounts" /opt/arena_ws/build "$ARENA_WS_DIR/build")
     for tree in src build install log; do
         targets="${targets}$(_uninstall_resolve "$mounts" "/opt/arena_ws/$tree" "$ARENA_WS_DIR/$tree")"$'\n'
     done
@@ -80,9 +81,7 @@ do_uninstall(){
         targets="${targets}$(_uninstall_resolve "$mounts" /opt/arena_ws/.env "$ARENA_WS_DIR/.env")"$'\n'
     fi
     if [ "$cache" -eq 1 ]; then
-        for tree in .uv-cache .uv-python; do
-            targets="${targets}$(_uninstall_resolve "$mounts" "/opt/arena_ws/$tree" "$ARENA_WS_DIR/$tree")"$'\n'
-        done
+        targets="${targets}$(_uninstall_resolve "$mounts" /opt/arena_ws/.uv-python "$ARENA_WS_DIR/.uv-python")"$'\n'
     fi
     targets=$(printf '%s' "$targets" | sed '/^$/d')
 
@@ -98,7 +97,7 @@ do_uninstall(){
     if [ "$cache" -eq 1 ]; then
         volumes=$(docker volume ls -q --filter "$project_filter" 2>/dev/null)
     else
-        volumes=$(docker volume ls -q --filter "$project_filter" --filter name=_shared 2>/dev/null)
+        volumes=$(docker volume ls -q --filter "$project_filter" 2>/dev/null | grep '_shared$')
     fi
     links=$(find "$ARENA_WS_DIR" -maxdepth 1 -type l ! -name data 2>/dev/null)
 
@@ -111,6 +110,7 @@ do_uninstall(){
     _uninstall_list images "$image_rows"
     _uninstall_list volumes "$volumes"
     _uninstall_list paths "$targets"
+    [ "$cache" -eq 1 ] || _uninstall_list kept "$build_dir/.uv-cache"
     _uninstall_list symlinks "$links"
 
     if [ "$dry" -eq 1 ]; then
@@ -163,7 +163,11 @@ do_uninstall(){
     local target
     while IFS= read -r target; do
         [ -n "$target" ] || continue
-        rm -rf "${target:?}"
+        if [ "$cache" -eq 0 ] && [ "$target" = "$build_dir" ]; then
+            find "$target" -mindepth 1 -maxdepth 1 ! -name .uv-cache -exec rm -rf {} +
+        else
+            rm -rf "${target:?}"
+        fi
     done <<< "$targets"
 
     if [ -n "$links" ]; then
@@ -189,7 +193,11 @@ mkdir -p "$ARENA_WS_DIR/build"
 mkdir -p "$ARENA_WS_DIR/install"
 mkdir -p "$ARENA_WS_DIR/log"
 mkdir -p "$ARENA_WS_DIR/.uv-python"
-mkdir -p "$ARENA_WS_DIR/.uv-cache"
+if [ -d "$ARENA_WS_DIR/.uv-cache" ] && [ ! -e "$ARENA_WS_DIR/build/.uv-cache" ]; then
+    mv "$ARENA_WS_DIR/.uv-cache" "$ARENA_WS_DIR/build/.uv-cache"
+fi
+mkdir -p "$ARENA_WS_DIR/build/.uv-cache"
+mkdir -p "$ARENA_WS_DIR"/.isaac-cache/{kit,ov,computecache}
 
 if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
     touch "$ARENA_WS_DIR/.env"
@@ -249,7 +257,29 @@ do_run(){
             ;;
     esac
 
-    if [ -t 0 ] && [ -t 1 ]; then
+    if [ -n "$arena_fork" ]; then
+        local fork
+        fork=$(arena_docker_compose exec -T "$arena_service" /entrypoint.sh bash --norc -c '
+            set -o pipefail
+            source /opt/arena_ws/source >/dev/null || exit 1
+            out=$(arena fork new ${1:+"$1"} | tee /dev/stderr) || exit $?
+            out=${out##*$'"'"'\n'"'"'}
+            printf "%s\n" "${out%%:*}"
+        ' bash "$arena_fork_id" </dev/null) || return $?
+        if [ -n "$arena_code" ]; then
+            local name hex
+            name=$(arena_docker ps --filter "label=com.docker.compose.project=$ARENA_IMAGE_TAG-$fork" --filter label=com.docker.compose.service=arena --format '{{.Names}}' | head -n1)
+            hex=$(printf '{"containerName":"/%s"}' "$name" | od -An -tx1 | tr -d ' \n')
+            code --folder-uri "vscode-remote://attached-container+$hex/opt/arena_ws/src/Arena"
+            return $?
+        fi
+        local fork_script='source /opt/arena_ws/source >/dev/null || exit 1; fork=$1; shift; arena fork exec "$fork" ${1:+bash} "$@"'
+        if [ -t 0 ] && [ -t 1 ] && [ "$#" -eq 0 ]; then
+            arena_docker_compose exec "$arena_service" /entrypoint.sh bash --norc -c "$fork_script" bash "$fork"
+        else
+            arena_docker_compose exec -T "$arena_service" /entrypoint.sh bash --norc -c "$fork_script" bash "$fork" "$@"
+        fi
+    elif [ -t 0 ] && [ -t 1 ]; then
         arena_docker_compose exec "$arena_service" /entrypoint.sh \
             bash --rcfile /opt/arena_ws/src/Arena/_meta/docker/features/docker/rcfile -i
     else
@@ -262,4 +292,32 @@ do_run(){
     return $?
 }
 
+_fork_usage(){
+    echo "usage: source arena --fork [<fork>] [--code] [-c <command>]" >&2
+    echo "  --fork [<fork>]  enter fork <fork> (lowercase letters, digits, '-', '_'), forking the dev tree into it if it does not exist," >&2
+    echo "                   or into the lowest free pN when no fork is given" >&2
+    echo "  --code           open the fork in VS Code (Dev Containers attach) instead of a shell" >&2
+    echo "  a fork stays until 'arena fork down <fork>', its edits never touch the dev tree" >&2
+}
+
+arena_fork="" arena_fork_id="" arena_code=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --fork)
+            arena_fork=1
+            shift
+            if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
+                arena_fork_id=$1
+                shift
+            fi
+            ;;
+        --code) arena_code=1 ; shift ;;
+        *) break ;;
+    esac
+done
+if [ -n "$arena_code" ] && [ -z "$arena_fork" ]; then
+    echo "arena: --code needs --fork" >&2
+    _fork_usage
+    return 2 2>/dev/null || exit 2
+fi
 do_run "$@"

@@ -6,7 +6,6 @@ package_name = 'rviz_utils'
 
 setup(
     name=package_name,
-    version='0.0.0',
     # Packages to export
     packages=[package_name, f'{package_name}.renderers', f'{package_name}.hri'],
     # Files we want to install, specifically launch files
@@ -25,10 +24,6 @@ setup(
          glob(os.path.join('config', '*'))),
     ],
     # This is important as well
-    install_requires=['setuptools'],
-    extras_require={
-        'test': ['pytest>=7', 'hypothesis>=6'],
-    },
     zip_safe=True,
     author='ROS 2 Developer',
     author_email='ros2@ros.com',

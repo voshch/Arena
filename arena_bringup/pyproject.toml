@@ -1,3 +1,14 @@
+[project]
+name = "arena_bringup"
+version = "0.0.0"
+dependencies = [
+    "pyyaml",
+]
+dynamic = ["description", "entry-points", "license", "maintainers"]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"

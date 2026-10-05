@@ -22,7 +22,10 @@ class IsolatedGroupAction(launch.actions.GroupAction):
 
 class _ClearLaunchConfigurations(launch.Action):
     def execute(self, context: launch.LaunchContext) -> None:
+        remaps = context.launch_configurations.get('ros_remaps')
         context.launch_configurations.clear()
+        if remaps:
+            context.launch_configurations['ros_remaps'] = list(remaps)
         return None
 
 
@@ -30,10 +33,10 @@ class IsolatedIncludeLaunchDescription(launch.Action):
     """IncludeLaunchDescription with symmetric LaunchConfiguration scope.
 
     Substitutions in `args` are resolved against the parent context first, then the live
-    launch_configurations dict is cleared so the child sees only the resolved `args` plus
-    its own DeclareLaunchArgument defaults. Parent state is restored on exit. Use when
-    the included launch reuses generic arg names (e.g. ``global_planner``) that would
-    otherwise leak in from the parent context.
+    launch_configurations dict is cleared so the child sees only the resolved `args`, the
+    parent's SetRemap rules, and its own DeclareLaunchArgument defaults. Parent state is
+    restored on exit. Use when the included launch reuses generic arg names (e.g.
+    ``global_planner``) that would otherwise leak in from the parent context.
     """
 
     def __init__(

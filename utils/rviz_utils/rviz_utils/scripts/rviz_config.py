@@ -34,6 +34,7 @@ class ConfigFileGenerator(ArenaMixinNode):
     _display_set_pub: rclpy.publisher.Publisher
     _frame_prefix: str
     _env_id: int
+    _tf_namespace: str
 
     def __init__(self, TASKGEN_NODE: str = '/task_generator_node'):
         super().__init__('rviz_config_generator')
@@ -71,6 +72,7 @@ class ConfigFileGenerator(ArenaMixinNode):
 
         self._frame_prefix = (await self._await_param(get_parameters_cli, 'prefix')).string_value
         self._env_id = (await self._await_param(get_parameters_cli, 'env_id')).integer_value
+        self._tf_namespace = (await self._await_param(get_parameters_cli, 'tf_namespace')).string_value
         self._robots = []
         self._viz_manifest = None
         self._node_params = []
@@ -106,6 +108,7 @@ class ConfigFileGenerator(ArenaMixinNode):
                         namespace=self._TASKGEN_NODE,
                         arguments=['-d', config_file],
                         parameters=rviz_parameters,
+                        remappings=[(topic, self._tf_namespace + topic) for topic in ('/tf', '/tf_static')] if self._tf_namespace else None,
                         output="screen",
                     ),
                 ]

@@ -1,0 +1,8 @@
+#!/bin/sh
+dir=$(pwd)
+while [ "$dir" != / ]; do
+    if [ -f "$dir/_meta/tools/uv_workspace.py" ]; then
+        exec python3 "$dir/_meta/tools/uv_workspace.py" --root "$dir" hook
+    fi
+    dir=$(dirname "$dir")
+done

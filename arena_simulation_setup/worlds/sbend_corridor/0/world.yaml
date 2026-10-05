@@ -1,6 +1,9 @@
 zones:
   - name: corridor_south
     description: Southern corridor, traversed westbound
+    material:
+      - Oak_Planks
+      - {}
     corners:
       - [0.0, 0.0]
       - [10.0, 0.0]
@@ -24,6 +27,9 @@ zones:
 
   - name: link_west
     description: Western gap joining the southern and middle corridors
+    material:
+      - Oak_Planks
+      - {}
     corners:
       - [0.0, 3.0]
       - [3.0, 3.0]
@@ -41,6 +47,9 @@ zones:
 
   - name: corridor_middle
     description: Middle corridor, traversed eastbound
+    material:
+      - Oak_Planks
+      - {}
     corners:
       - [0.0, 5.0]
       - [10.0, 5.0]
@@ -60,6 +69,9 @@ zones:
 
   - name: link_east
     description: Eastern gap joining the middle and northern corridors
+    material:
+      - Oak_Planks
+      - {}
     corners:
       - [7.0, 8.0]
       - [10.0, 8.0]
@@ -77,6 +89,9 @@ zones:
 
   - name: corridor_north
     description: Northern corridor, traversed westbound to the goal
+    material:
+      - Oak_Planks
+      - {}
     corners:
       - [0.0, 10.0]
       - [10.0, 10.0]

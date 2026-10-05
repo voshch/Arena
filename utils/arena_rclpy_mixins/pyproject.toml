@@ -1,3 +1,17 @@
+[project]
+name = "arena_rclpy_mixins"
+version = "0.0.0"
+dependencies = [
+    "aiomonitor>=0.7.1",
+    "attrs",
+    "pyyaml",
+    "typing-extensions",
+]
+dynamic = ["authors", "classifiers", "description", "keywords", "license", "maintainers", "scripts"]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"

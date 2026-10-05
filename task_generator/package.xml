@@ -23,6 +23,7 @@
   <exec_depend>arena_planners</exec_depend>
   <exec_depend>arena_runtime</exec_depend>
   <exec_depend>arena_runtime_msgs</exec_depend>
+  <exec_depend>arena_auditory</exec_depend>
   <exec_depend>arena_robots</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>task_generator_msgs</exec_depend>

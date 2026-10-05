@@ -35,7 +35,6 @@ def recursive_walk(base_dir, *, destination=None, relative_to=None):
 
 setup(
     name=package_name,
-    version='0.0.0',
     packages=find_packages(where='.', include=[f'{package_name}*']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -44,16 +43,11 @@ setup(
         *recursive_walk('launch'),
         *recursive_walk('configs'),
     ],
-    install_requires=['setuptools'],
-    extras_require={
-        'test': ['pytest>=7', 'hypothesis>=6'],
-    },
     zip_safe=True,
     maintainer='voshch',
     maintainer_email='dev@voshch.dev',
     description='Arena bringup package',
     license='MIT',
-    tests_require=['pytest'],
     entry_points={
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

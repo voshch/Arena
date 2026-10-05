@@ -6,16 +6,16 @@ import time
 
 import launch
 import launch.event_handlers
+import launch.launch_description_sources
 import launch.substitutions
 import launch_ros.actions
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from arena_bringup.actions import IsolatedGroupAction
-from arena_rclpy_mixins import launch_str_to_value
-from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+from arena_bringup.actions import IsolatedGroupAction, IsolatedIncludeLaunchDescription
 from arena_bringup.defaults import default_human
+from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
-from task_generator.utils.flags import expand_flag_namespace, truthy
+from arena_rclpy_mixins import launch_str_to_value
 from launch.actions import (
     ExecuteProcess,
     IncludeLaunchDescription,
@@ -25,6 +25,8 @@ from launch.actions import (
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
+from task_generator.constants.runtime import EPISODE_PARAMS
+from task_generator.utils.flags import expand_flag_namespace, truthy
 
 _REGISTER_RETRY_SEC = 1.0
 _REGISTER_LOG_INTERVAL_SEC = 10.0
@@ -78,7 +80,7 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
         node.destroy_node()
 
 
-def generate_launch_description():
+def generate_launch_description() -> launch.LaunchDescription:
     bringup_dir = get_package_share_directory("arena_bringup")
 
     ld_items = []
@@ -113,6 +115,12 @@ def generate_launch_description():
         default_value="",
         description="empty = adopt the runtime's sim; explicit [dummy, gazebo, isaac] must match the runtime",
     )
+    env_tf = LaunchArgument(
+        name="env.tf",
+        choices=["auto", "env", "global"],
+        default_value="auto",
+        description="tf topics: env = <env ns>/tf and <env ns>/tf_static, global = /tf and /tf_static, auto = global for sim isaac or robot.train, env otherwise.",
+    )
     # human/mobile defaults derive from arena's authoritative `sim` (the RegisterEnv
     # response, or the sim arg arena passes for managed envs). Empty here means
     # "use arena_sim". User can still override by passing e.g. human:=dummy explicitly.
@@ -144,18 +152,23 @@ def generate_launch_description():
     )
     auditory_assets = LaunchArgument(
         name="auditory.assets",
-        default_value=PathJoinSubstitution([
-            FindPackageShare("task_generator"),
-            "config", "auditory", "acoustic_assets.yaml",
-        ]),
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("arena_auditory"),
+                "config",
+                "acoustic_assets.yaml",
+            ]
+        ),
         description="Acoustic asset catalog used by all playback nodes.",
     )
     auditory_sound_dir = LaunchArgument(
         name="auditory.sound_dir",
-        default_value=PathJoinSubstitution([
-            FindPackageShare("task_generator"),
-            "sounds",
-        ]),
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("arena_auditory"),
+                "sounds",
+            ]
+        ),
         description="Directory containing WAV files named by the catalog.",
     )
     auditory_propagation = LaunchArgument(
@@ -184,6 +197,11 @@ def generate_launch_description():
         default_value="true",
         description="Let robots emit motor audio (robots stay listeners regardless).",
     )
+    auditory_source_volume_db = LaunchArgument(
+        name="auditory.source_volume_db",
+        default_value="45.0",
+        description="Drivetrain (robot motor) source level in dB; lower it to attenuate ego-noise (39.0 = 6 dB down).",
+    )
     auditory_motor = LaunchArgument(
         name="auditory.motor",
         choices=["off", "wav", "procedural"],
@@ -195,6 +213,16 @@ def generate_launch_description():
         choices=["sequence", "single_loop"],
         default_value="sequence",
         description="WAV motor audio: start/loop/stop sequence, or a single repeating loop.",
+    )
+    auditory_motor_volume = LaunchArgument(
+        name="auditory.motor.volume_db",
+        default_value="-15.020599913279624",
+        description="Four-microphone procedural motor drivetrain level in dB; lower it to attenuate ego-noise (-21.04 = 6 dB down).",
+    )
+    auditory_motor_mems_calibration = LaunchArgument(
+        name="auditory.motor.mems_calibration_db",
+        default_value="-40.0",
+        description="Four-microphone procedural motor calibration in dB; less negative is louder.",
     )
     auditory_environment_playback = LaunchArgument(
         name="auditory.environment_playback",
@@ -216,6 +244,11 @@ def generate_launch_description():
         default_value="[]",
         description="YAML list of robot microphone mappings (owner, robot, placement, frame, index).",
     )
+    microphone_mode = LaunchArgument(
+        name="microphone_mode",
+        default_value="",
+        description="Robot receiver layout, stereo or four_mic; four_mic enables synchronized Jackal raw PCM. Empty = stereo, or four_mic when robot.hearing is srp or seld.",
+    )
     auditory_viewport_height = LaunchArgument(
         name="auditory.viewport_height",
         default_value="1.6",
@@ -228,15 +261,17 @@ def generate_launch_description():
         default_value="",
         description="Task config file (task_modes list). Overrides task.robots. Bare names resolve under arena_bringup/configs/tasks.",
     )
-    episodes = LaunchArgument(
-        name='task.episodes',
-        default_value='-1',
-        description='Stop the env after N episodes (-1 = run forever).',
-    )
+    for name, description in EPISODE_PARAMS.items():
+        LaunchArgument(name=name, default_value='', description=f'{description} Empty = node default.')
     scenario_file = LaunchArgument(
-        name='task.scenario',
+        name='task.scenario.file',
         default_value='',
-        description='Sets task.scenario.file ROS param (empty = use task.params default).',
+        description='Scenario for the scenario task modes (empty = use task.params default).',
+    )
+    scenario_linger = LaunchArgument(
+        name='task.scenario.linger_after_completion',
+        default_value='false',
+        description='Keep a completed scenario robot task alive until timeout/external cancellation.',
     )
     tm_obstacles = LaunchArgument(name="task.obstacles", default_value="random")
     tm_modules = LaunchArgument(name="task.modules", default_value="rviz_ui")
@@ -251,6 +286,18 @@ def generate_launch_description():
         name="robot.planner",
         default_value="",
         description="top-level planner selector; resolves to robot.mobile:=<adapter> robot.mobile.<selector>:=<name> via arena_planners.resolver",
+    )
+    hearing = LaunchArgument(
+        name="robot.hearing",
+        choices=["none", "bus", "srp", "seld"],
+        default_value="none",
+        description="Robot-side hearing layer (arena_auditory.hearing): belief grid, Nav2 speed-filter mask merged into the robot's nav2 params, RViz displays. Event source: the simulator bus, the untrained onset + GCC-PHAT front-end, or the live SELDnet front-end, both on the four-mic array. Needs auditory:=arena.",
+    )
+    hearing_policy = LaunchArgument(
+        name="robot.hearing.policy",
+        choices=["belief", "listen", "full"],
+        default_value="full",
+        description="Hearing mask layers: belief only, plus the corner listen cap, plus yield.",
     )
     arm = LaunchArgument(
         name="robot.arm",
@@ -271,16 +318,6 @@ def generate_launch_description():
         name="debug",
         default_value="",
         description="comma list of debug tokens (e.g. aiomonitor,map_server); also debug.<token>:=true",
-    )
-    auto_reset = LaunchArgument(
-        name="task.auto_reset",
-        default_value="true",
-        description=("true = standalone: node auto-advances episodes. false = managed: external controller drives resets via lifecycle/reset_episode."),
-    )
-    fail_on_collision = LaunchArgument(
-        name="task.fail_on_collision",
-        default_value="false",
-        description="true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, or pedestrian.",
     )
     train_mode = LaunchArgument(name="robot.train", default_value="false")
     parameter_file = LaunchArgument(
@@ -308,14 +345,28 @@ def generate_launch_description():
 
         atexit.register(_restore_terminal_titles)
 
+        env_tf_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(env_tf.substitution))
+        if env_tf_val == "auto":
+            train_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(train_mode.substitution))
+            env_tf_val = "global" if arena_sim == "isaac" or truthy(train_val) else "env"
+        if env_tf_val == "env" and arena_sim == "isaac":
+            raise RuntimeError("env.tf:=env is not supported with sim isaac, its robot odom tf is published on /tf")
+        env_ns = os.path.dirname(allocated_ns).strip("/")
+        tf_namespace = f"/{env_ns}" if env_tf_val == "env" and env_ns else ""
+        tf_remaps = [launch_ros.actions.SetRemap(topic, tf_namespace + topic) for topic in ("/tf", "/tf_static")] if tf_namespace else []
+
         human_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(human.substitution)) or default_human(arena_sim)
+        auditory_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(auditory.substitution))
+        hearing_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(hearing.substitution))
+        hearing_policy_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(hearing_policy.substitution))
+        microphone_mode_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(microphone_mode.substitution)) or ("four_mic" if hearing_val in ("srp", "seld") else "stereo")
+        if hearing_val != "none" and auditory_val == "none":
+            raise RuntimeError(f"robot.hearing:={hearing_val} needs auditory:=arena")
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
         tm_modules_val = launch.utilities.perform_substitutions(
             context,
-            launch.utilities.normalize_to_list_of_substitutions(
-                tm_modules.substitution
-            ),
+            launch.utilities.normalize_to_list_of_substitutions(tm_modules.substitution),
         )
         configured_modules = [
             value.strip()
@@ -327,10 +378,6 @@ def generate_launch_description():
             launch.utilities.normalize_to_list_of_substitutions(
                 auditory_static_sounds.substitution
             ),
-        ).strip()
-        auditory_val = launch.utilities.perform_substitutions(
-            context,
-            launch.utilities.normalize_to_list_of_substitutions(auditory.substitution),
         ).strip()
         sounds_enabled = auditory_val != "none" or static_sounds_val not in ("", "[]")
         if sounds_enabled and "sounds" not in configured_modules:
@@ -367,13 +414,25 @@ def generate_launch_description():
             launch_arguments={
                 "simulator": human_val,
                 "namespace": allocated_ns,
+            }.items(),
+        )
+
+        auditory_launch = IncludeLaunchDescription(
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("task_generator"),
+                    "launch",
+                    "auditory",
+                    "auditory.launch.py",
+                ]
+            ),
+            launch_arguments={
+                "simulator": auditory_val,
+                "namespace": allocated_ns,
                 # Launch substitutions preserve a relative value as relative
                 # to each node namespace.  Keep this explicitly absolute so
                 # auditory nodes do not resolve it below task_generator_node.
-                "environment_namespace": (
-                    "/" + os.path.dirname(allocated_ns).strip("/")
-                ),
-                **auditory.dict,
+                "environment_namespace": ("/" + os.path.dirname(allocated_ns).strip("/")),
                 **auditory_viz.dict,
                 **auditory_playback.dict,
                 **auditory_block_size.dict,
@@ -384,13 +443,35 @@ def generate_launch_description():
                 **auditory_rir_in_propagation.dict,
                 **auditory_ped_hearing.dict,
                 **auditory_robot_sound.dict,
+                **auditory_source_volume_db.dict,
                 **auditory_motor.dict,
                 **auditory_motor_playback.dict,
+                **auditory_motor_volume.dict,
+                **auditory_motor_mems_calibration.dict,
                 **auditory_environment_playback.dict,
                 **auditory_listener.dict,
                 **auditory_microphones.dict,
+                "microphone_mode": microphone_mode_val,
                 **auditory_viewport_height.dict,
             }.items(),
+        )
+
+        # isolated: the parent's robot:=auto must not leak into the hearing nodes' robot binding
+        hearing_launch = launch.actions.GroupAction(
+            [
+                IsolatedIncludeLaunchDescription(
+                    launch.launch_description_sources.PythonLaunchDescriptionSource(
+                        os.path.join(get_package_share_directory("arena_auditory"), "launch", "hearing.launch.py"),
+                    ),
+                    args={
+                        "env_namespace": "/" + os.path.dirname(allocated_ns).strip("/"),
+                        "tg_node": os.path.basename(allocated_ns),
+                        "source": hearing_val,
+                        "policy": hearing_policy_val,
+                    },
+                )
+            ],
+            condition=launch.conditions.IfCondition(str(hearing_val != "none").lower()),
         )
 
         pedestrian_marker_node = launch_ros.actions.Node(
@@ -408,6 +489,10 @@ def generate_launch_description():
         declared = {a.name for a in ld_items}
         dotted_overrides: dict[str, object] = {}
         for k, v in context.launch_configurations.items():
+            if k in EPISODE_PARAMS:
+                if v:
+                    dotted_overrides[k] = yaml.safe_load(v)
+                continue
             if k in declared:
                 continue
             if k.startswith(("task.", "robot.")):
@@ -415,6 +500,8 @@ def generate_launch_description():
                 # RobotManager._adapter_kwargs_for, overlaying the cap-file
                 # YAML for the bound adapter.
                 dotted_overrides[k] = launch_str_to_value(v)
+        if hearing_val != "none" and "robot.mobile.params_overlay" not in dotted_overrides:
+            dotted_overrides["robot.mobile.params_overlay"] = os.path.join(get_package_share_directory("arena_auditory"), "config", "hearing", "nav2_overlay.yaml")
         if _planner_selector_override is not None:
             sel_key, sel_val = _planner_selector_override
             param_key = f"robot.mobile.{sel_key}"
@@ -465,23 +552,26 @@ def generate_launch_description():
                     "use_sim_time": True,
                     "sim": arena_sim,
                     "human": human_val,
+                    "auditory": auditory_val,
                     "robot.mobile_adapter": mobile_val,
+                    "robot.hearing": hearing_val,
                     "robot.arm_adapter": arm_val,
                     **robot.str_param,
-                    "tm_robots": tm_robots.param_value(str),
-                    "tm_obstacles": tm_obstacles.param_value(str),
-                    "tm_config": tm_config_val,
-                    "tm_modules": tm_modules_val,
+                    "task.robots": tm_robots.param_value(str),
+                    "task.obstacles": tm_obstacles.param_value(str),
+                    "task.config": tm_config_val,
+                    "task.modules": tm_modules_val,
                     **world.str_param,
-                    "static_sounds": auditory_static_sounds.param_value(str),
-                    "auto_reset": auto_reset.param_value(bool),
-                    "fail_on_collision": fail_on_collision.param_value(bool),
-                    "train_mode": train_mode.param_value(bool),
+                    "auditory.static_sounds": auditory_static_sounds.param_value(str),
+                    "robot.train": train_mode.param_value(bool),
                     "env_id": allocated_id,
                     "prefix": prefix_val,
+                    "tf_namespace": tf_namespace,
                 },
                 parameter_file.substitution,
-                {"episodes": episodes.param_value(int)},
+                {
+                    "task.scenario.linger_after_completion": scenario_linger.param_value(bool),
+                },
                 *overrides_files,
             ],
         )
@@ -527,7 +617,7 @@ def generate_launch_description():
         )
 
         env_actions: list[launch.LaunchDescriptionEntity] = [
-            IsolatedGroupAction([human_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
+            IsolatedGroupAction([*tf_remaps, human_launch, auditory_launch, hearing_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
         ]
         if truthy(debug_flags.get("debug.aiomonitor")):
             env_actions.append(launch.actions.RegisterEventHandler(debug_window_cb))

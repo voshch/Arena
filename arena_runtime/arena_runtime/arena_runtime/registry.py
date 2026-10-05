@@ -45,7 +45,7 @@ class EnvRegistry:
 
     `reserve()` allocates an env_id and namespace without committing to a slot.
     `place()` runs the shelf packer to size and position a slot for the requested rectangle.
-    `unplace()` frees the footprint so it can be repacked (used on rect change or eviction).
+    `unplace()` drops the record's slot on rect change or eviction, live slots never move.
     """
 
     def __init__(self, slot_buffer: float = 5.0) -> None:
@@ -149,28 +149,6 @@ class EnvRegistry:
         record.reference = (0.0, 0.0)
         record.slot_extent = (0.0, 0.0)
         record.prespawn = (0.0, 0.0)
-        self._reflow()
-
-    def _reflow(self) -> None:
-        """Rebuild shelves and recompute reference/prespawn for every placed record, in env_id order."""
-        placed = sorted(
-            (r for r in self._records.values() if r.placed),
-            key=lambda r: r.env_id,
-        )
-        self._shelves = []
-        for r in placed:
-            slot_w, slot_h = r.slot_extent
-            x, y = self._pack(slot_w, slot_h)
-            slot_cx = x + slot_w / 2.0
-            slot_cy = y + slot_h / 2.0
-            bbox_cx = (r.extent.x_min + r.extent.x_max) / 2.0
-            bbox_cy = (r.extent.y_min + r.extent.y_max) / 2.0
-            buffer = self._slot_buffer
-            r.reference = (slot_cx - bbox_cx, slot_cy - bbox_cy)
-            r.prespawn = (
-                r.reference[0] + r.extent.x_max + buffer / 2.0,
-                r.reference[1] + bbox_cy,
-            )
 
     def _pack(self, w: float, h: float) -> tuple[float, float]:
         """First-fit shelf pack. Shelves grow along +x; new shelves stack along +y."""

@@ -27,6 +27,7 @@ class RerunBridge(ArenaMixinNode):
     viz_manifest: AdapterVizManifest
     _frame_prefix: str
     _env_id: int
+    _tf_namespace: str
 
     def __init__(self, TASKGEN_NODE: str = '/task_generator_node') -> None:
         super().__init__('rerun_bridge')
@@ -77,6 +78,7 @@ class RerunBridge(ArenaMixinNode):
         await self._await_param(cli, 'initialized', lambda x: x.bool_value)
         self._frame_prefix = (await self._await_param(cli, 'prefix')).string_value
         self._env_id = (await self._await_param(cli, 'env_id')).integer_value
+        self._tf_namespace = (await self._await_param(cli, 'tf_namespace')).string_value
         self.robots = [
             state.descriptor
             for state in (await self._await_latched(
@@ -101,7 +103,7 @@ class RerunBridge(ArenaMixinNode):
         viewer_url = f"http://localhost:{web_port}/?url={urllib.parse.quote(grpc_uri, safe='')}"
         self.get_logger().info(f"rerun web viewer: open {viewer_url}")
 
-        self._tf_mirror = TFMirror(self, self._env_id)
+        self._tf_mirror = TFMirror(self, self._env_id, self._tf_namespace)
         self._ctx = RendererCtx(env_id=self._env_id, node=self)
         self._dispatch_manifest()
 

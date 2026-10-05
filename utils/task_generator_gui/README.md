@@ -50,9 +50,11 @@ All service paths are relative to the task_generator node namespace (default `/t
 
 Sibling panel with the same `Target` config key. Its parameter clients target
 `<Target>/robot_sound_node`, `<Target>/human_sound_playback`,
-`<Target>/environment_sound_playback`, and `<Target>/sound_propagation_node`;
-every group stays disabled until the matching node's parameter service appears,
-so the panel is inert under `auditory:=none`.
+`<Target>/environment_sound_playback`, and `<Target>/sound_propagation_node`.
+Each group becomes available when its matching node appears. Microphone routing
+uses propagation as its authoritative state and updates every playback node
+that is currently available, so one missing local playback node does not
+disable the microphone controls. The panel is inert under `auditory:=none`.
 
 `Play robot motor audio on this workstation` controls the live
 `enable_motor_playback` parameter on `<Target>/robot_sound_node`. It mutes
@@ -65,6 +67,21 @@ and rechecks the value on each `state/episode` update.
 mechanical-noise level, velocity response, and response smoothing controls.
 Edits are applied to active procedural drivetrain voices without restarting an
 episode. `Reset motor tuning` restores the quieter procedural defaults.
+
+`Legacy Audio Playback Microphone` includes **Left microphone** and **Right
+microphone** quick-selection buttons when the registry contains a robot side
+pair. They route human, robot, and environment playback through that listener.
+Both side microphones remain active propagation listeners; the buttons only
+choose the mono workstation playback feed. With multiple robots, the buttons
+follow the pair belonging to the currently selected robot, or the first
+complete pair when no robot listener is selected.
+
+With `microphone_mode:=four_mic`, that legacy group is hidden. **Jackal
+Four-Mic Hearing** instead provides **Spatial stereo (normal)**, which maps
+FL/RL to the left headphone and FR/RR to the right, plus a diagnostic **Mono
+detection preview**. FL/FR/RL/RR solo choices affect monitoring only; they do
+not alter the canonical four-channel array or its semantic robot-hearing
+fusion.
 
 ## SpawnPedestrianTool
 
@@ -85,7 +102,7 @@ Set `Attach TF Frame` to a frame from the RViz TF tree to make the listener
 follow that frame. The clicked point is converted into an offset in the named
 frame. Leaving the property empty creates a fixed listener.
 
-The new ID appears in the Auditory panel's **Audio Playback Microphone**
+The new ID appears in the Auditory panel's **Legacy Audio Playback Microphone**
 dropdown. Choose it under **Listen through** to route propagation and playback
 through that microphone only. Runtime-spawned microphones are cleared on an
 episode or world change. Every live robot also contributes

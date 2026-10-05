@@ -121,9 +121,9 @@ allocation and:
    [`TM_Composite`](composite.py), whose `done` is `all(sub.done)` and
    whose `set_position` / `set_goal` fan out.
 
-Entry point: the `tm_config` node param (launch arg `task.config`), read by
+Entry point: the `task.config` node param, read by
 `Task.create` and at every reset. A set config takes precedence over
-`tm_robots`. The composite is rebound when the config path changes or the
+`task.robots`. The composite is rebound when the config path changes or the
 fleet's robot names differ from the last allocation.
 
 ## Integration points

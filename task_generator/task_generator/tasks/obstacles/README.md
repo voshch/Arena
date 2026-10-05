@@ -46,6 +46,8 @@ Parameters live under `task.<mode>.<leaf>` (e.g. `task.random.static.n`).
 
 All `task.*` writes go through `config/queue_episode`. The request carries the mode change and a leaf-keyed `obstacles_params` / `robots_params` payload (`rcl_interfaces/Parameter[]`, names **relative to the mode**, no `task.<mode>.` prefix). The server stages them and applies at the next `lifecycle/reset_episode` boundary. Failures warn, never abort. Last-write-wins on duplicate leaf keys within an axis between resets.
 
+The same request carries `human_params`, which are staged and applied at the same boundary in every obstacle mode. A name is `<backend namespace>.<param>`, e.g. `humansim.global_planner.resolution`, which is also the key of the launch arg. The request is rejected when a name sits under the reserved `human.` prefix or under no known namespace (`Constants.HUMAN_PARAM_NAMESPACES`). The active backend applies the names under its own namespace and skips the rest, so one suite runs unchanged under another backend. A set value stays until a later request overwrites it. See [simulators/human/README.md](../../simulators/human/README.md#arena-adapter-humanarena).
+
 A leaf is what's left after stripping `task.<mode>.`. For `task.random.static.n` the leaf is `static.n`; for `task.scenario.file` the leaf is `file`. The active mode is taken from the request's `tm_obstacles` / `tm_robots`; sending `task.scenario.file` as a param name (full path) results in the server constructing `task.<mode>.task.scenario.file` and dropping it as undeclared.
 
 Because all parameters are forward-declared at startup, raw `SetParameters` also works at any time for the full `task.<mode>.<leaf>` path; no activation ordering constraint.

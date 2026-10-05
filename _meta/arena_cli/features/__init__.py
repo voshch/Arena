@@ -1,0 +1,136 @@
+"""Python feature groups, one module per feature."""
+
+import importlib
+import os
+import subprocess
+import sys
+from collections.abc import Callable
+from types import ModuleType
+
+from arena_cli.common import CLIError, Verb, _env, _reg_add, _reg_has, _reg_pull, _reg_remove, _reg_require, make_verb
+
+HOST_FEATURES = ("evaluation", "gazebo", "isaac", "planners", "robots", "training")
+CONTAINER_FEATURES = (*HOST_FEATURES, "docker", "vllm")
+
+
+def in_container() -> bool:
+    """True inside the arena container, where source.container exports ARENA_CONTAINER."""
+    return bool(os.environ.get("ARENA_CONTAINER"))
+
+
+def available() -> tuple[str, ...]:
+    """Feature names that exist in the current context."""
+    return CONTAINER_FEATURES if in_container() else HOST_FEATURES
+
+
+def load(name: str) -> ModuleType | None:
+    """Return the feature's python module (COMMANDS + DESCRIPTION), or None if no such feature."""
+    if name not in available():
+        return None
+    try:
+        return importlib.import_module(f"arena_cli.features.{name}")
+    except ImportError:
+        return None
+
+
+def assets_dir(name: str) -> str:
+    """The feature's asset directory under _meta/docker/features."""
+    return os.path.join(_env("ARENA_DIR"), "_meta", "docker", "features", name)
+
+
+def compose(args: list[str], env: dict[str, str] | None = None) -> int:
+    """Run the arena_docker_compose bash function exported by _meta/docker/lib."""
+    return subprocess.run(["bash", "-c", 'arena_docker_compose "$@"', "arena_docker_compose", *args], env=env, check=False).returncode
+
+
+def build(services: list[str]) -> int:
+    """Build compose services, bypassing compose under podman."""
+    return _lib("arena_compose_build", *services).returncode
+
+
+def _lib(fn: str, *args: str, capture: bool = False, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a bash function exported by _meta/docker/lib."""
+    return subprocess.run(["bash", "-c", f'{fn} "$@"', fn, *args], capture_output=capture, text=True, check=False, env=env)
+
+
+def engine(args: list[str]) -> int:
+    """Run the engine cli through arena_docker."""
+    return _lib("arena_docker", *args).returncode
+
+
+def engine_output(args: list[str]) -> str | None:
+    """Like engine, but return stdout, None on failure."""
+    p = _lib("arena_docker", *args, capture=True)
+    return None if p.returncode else p.stdout
+
+
+def containers(service: str, all_states: bool = False) -> list[str]:
+    """Container ids of a compose service, running only unless all_states."""
+    flags = ["-a"] if all_states else []
+    return _lib("arena_containers", *flags, service, capture=True).stdout.split()
+
+
+def wait_healthy(*services: str, env: dict[str, str] | None = None) -> int:
+    """Block until each service is healthy or running without a healthcheck, 1 once one exits."""
+    return _lib("arena_container_wait", *services, env=env).returncode
+
+
+def remove(service: str) -> int:
+    """Force-remove every container of a service."""
+    return _lib("arena_container_rm", service).returncode
+
+
+def source_verb(emit: Callable[[], str]) -> Verb:
+    """Hidden verb printing shell init code, eval'd at `source arena` time."""
+
+    def run(argv: list[str]) -> None:
+        """Print shell init code for `source arena`."""
+        if argv:
+            raise CLIError("unexpected arguments")
+        text = emit()
+        if text:
+            print(text)
+
+    return make_verb("source", run, hidden=True)
+
+
+def default_install(name: str, update: Callable[[], int]) -> int:
+    """Pull repos, register, run update, rolling back the registration on failure."""
+    if _reg_has(name):
+        print(f"{name} is already installed.")
+        return 0
+    _reg_pull(name)
+    _reg_add(name)
+    if update() == 0:
+        print(f"Installed {name} successfully.")
+        return 0
+    _reg_remove(name)
+    print(f"Install of {name} failed during update.", file=sys.stderr)
+    return 1
+
+
+def lifecycle_verbs(name: str, update_fn: Callable[[], int], deinit: str | None = None) -> list[Verb]:
+    """Shared install/update/uninstall verbs for simple features."""
+
+    def install(argv: list[str]) -> None:
+        """Install the feature (pull repos, register, run its update)."""
+        if argv:
+            raise CLIError("unexpected arguments")
+        sys.exit(default_install(name, update_fn))
+
+    def update(argv: list[str]) -> None:
+        """Update the feature to the latest state."""
+        if argv:
+            raise CLIError("unexpected arguments")
+        _reg_require(name)
+        sys.exit(update_fn())
+
+    def uninstall(argv: list[str]) -> None:
+        """Uninstall and unregister the feature."""
+        if argv:
+            raise CLIError("unexpected arguments")
+        if deinit is not None:
+            subprocess.run(["git", "submodule", "deinit", "-f", deinit], cwd=_env("ARENA_DIR"), check=False)
+        _reg_remove(name)
+
+    return [make_verb("install", install), make_verb("update", update), make_verb("uninstall", uninstall)]

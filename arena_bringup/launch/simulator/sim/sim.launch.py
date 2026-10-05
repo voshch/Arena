@@ -65,7 +65,7 @@ def generate_launch_description():
         SimSimulator.GAZEBO.value,
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c', [
-                launch.substitutions.TextSubstitution(text='exec python3 "${ARENA_DIR:?run source arena first}/_meta/tools/arena_cli/__main__.py" feature gazebo launch use_sim_time:='),
+                launch.substitutions.TextSubstitution(text='exec env PYTHONPATH="${ARENA_DIR:?run source arena first}/_meta${PYTHONPATH:+:$PYTHONPATH}" python3 -m arena_cli feature gazebo launch use_sim_time:='),
                 use_sim_time.substitution,
                 launch.substitutions.TextSubstitution(text=' headless:='),
                 headless.substitution,
@@ -83,7 +83,7 @@ def generate_launch_description():
         SimSimulator.ISAAC.value,
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c', [
-                launch.substitutions.TextSubstitution(text='exec python3 "${ARENA_DIR:?run source arena first}/_meta/tools/arena_cli/__main__.py" feature isaac launch headless:='),
+                launch.substitutions.TextSubstitution(text='exec env PYTHONPATH="${ARENA_DIR:?run source arena first}/_meta${PYTHONPATH:+:$PYTHONPATH}" python3 -m arena_cli feature isaac launch headless:='),
                 headless.substitution,
                 launch.substitutions.TextSubstitution(text=' log_level:='),
                 launch.substitutions.LaunchConfiguration('log_level', default='debug'),

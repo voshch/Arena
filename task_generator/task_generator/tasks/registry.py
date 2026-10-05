@@ -18,6 +18,7 @@ if typing.TYPE_CHECKING:
     from task_generator.tasks.robots import TM_Robots
 
 _REGISTRY_NAMESPACE: Namespace = Namespaced._namespace("task")
+_RESERVED_NAMESPACE: Namespace = _REGISTRY_NAMESPACE("episode")
 
 
 def identifier_to_available(identifier: type[Identifier], **kwargs: object) -> Iterable[str]:
@@ -53,6 +54,8 @@ class TaskModeRegistry[K, V]:
         self._meta: dict[K, TaskModeMeta] = {}
 
     def register(self, key: K, *, namespace: Namespace, schema: _SchemaFn | None = None) -> Callable[[Callable[[], V]], Callable[[], V]]:
+        if namespace == _RESERVED_NAMESPACE:
+            raise ValueError(f"{namespace} holds the task.episode.* parameters, pick another mode name for {key}")
         meta = TaskModeMeta(namespace=namespace, schema=schema)
 
         def _dec(loader: Callable[[], V]) -> Callable[[], V]:

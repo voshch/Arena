@@ -24,19 +24,19 @@ services:
       - "$HOST_ARENA_WS_DIR/install:/opt/arena_ws/install"
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.uv-python:/opt/arena_ws/.uv-python"
-      - "$HOST_ARENA_WS_DIR/.uv-cache:/opt/arena_ws/.uv-cache"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
       - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"
       - "$HOST_ARENA_SCREENSHOTS_DIR:/home/arena/.gz/gui/pictures"
     environment:
       - QT_X11_NO_MITSHM=1
+      - HOME=/home/arena
       - TMPDIR=/tmp/shared
       - DISPLAY
       - PULSE_SERVER=unix:/tmp/pulse/native
       - UV_LINK_MODE=copy
       - UV_PYTHON_INSTALL_DIR=/opt/arena_ws/.uv-python
-      - UV_CACHE_DIR=/opt/arena_ws/.uv-cache
+      - UV_CACHE_DIR=/opt/arena_ws/build/.uv-cache
       - AMENT_CMAKE_VENV_UV_OVERRIDES=/opt/arena_ws/src/Arena/_meta/docker/uv-overrides.txt
       - ARENA_IMAGE
       - ARENA_IMAGE_TAG
@@ -44,6 +44,7 @@ services:
       - ARENA_ROS_DISTRO
       - ARENA_DOCKER_SOCK
       - ARENA_USERNS_MODE
+      - ARENA_CONTAINER_USER
       - HOST_UID
       - HOST_GID
       - HOST_ARENA_WS_DIR
@@ -62,7 +63,7 @@ services:
       - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/arena_ws/src/Arena/_meta/docker/fastdds.${ARENA_NET:-local}.xml
     env_file:
       - ${ARENA_WS_DIR}/.env
-    user: "${HOST_UID}"
+    user: "${ARENA_CONTAINER_USER:-${HOST_UID}}"
     userns_mode: ${ARENA_USERNS_MODE:-}
     group_add:
       - sudo
@@ -73,7 +74,7 @@ services:
     tty: true
     healthcheck:
       test: ["CMD", "test", "-f", "/.built"]
-      interval: 1s
+      interval: 5s
       timeout: 2s
       retries: 99999 # if you can't build by then, good juck
       start_period: 0s

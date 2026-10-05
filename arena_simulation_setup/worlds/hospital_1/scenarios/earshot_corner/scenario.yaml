@@ -1,0 +1,18 @@
+# Earshot corner clip (20 s take, hospital). The robot is parked in the central hallway facing
+# south. A nurse walks inside exam room 1 toward its door (heard through the wall), steps into
+# the hallway 4 m ahead of the robot, walks away south and leaves through the reception door.
+# Robot pose is applied via task.robots:=stationary.
+robots:
+  - start: [10.0, 11.5, -1.5708]
+    phases: []
+static: []
+dynamic:
+  - name: nurse
+    model: Hospital/nurse_female_caucasian_young
+    pose: [4.5, 7.5, 0.0]
+    agent: {agent_type: adult, desired_velocity: 1.2}
+    waypoints:
+      - [8.6, 7.55, 0.0]
+      - [10.0, 4.5, -1.5708]
+      - [8.6, 2.5, 3.14159]
+      - [1.5, 1.0, 3.14159]

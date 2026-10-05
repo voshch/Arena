@@ -1,2 +1,14 @@
+[project]
+name = "rerun_utils"
+version = "0.0.0"
+dependencies = [
+    "numpy",
+    "rerun-sdk>=0.21",
+]
+dynamic = ["description", "license", "maintainers", "scripts"]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

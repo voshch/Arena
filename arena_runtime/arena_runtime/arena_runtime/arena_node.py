@@ -190,6 +190,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         slot_buffer = self.rosparam[float].get("slot_buffer", 5.0)
 
         self._env_registry = EnvRegistry(slot_buffer=slot_buffer)
+        self._pending_cleanup: list[str] = []
 
         self._pub_paused = self.create_publisher(
             Bool,
@@ -533,11 +534,14 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
                 await env.dispose(self, grace_seconds=0.0)
                 await asyncio.sleep(2.0)  # give external env time to observe shutdown_request
 
-        try:
-            await self._lifecycle.cleanup_namespace(self._lifecycle.env_prefix(env_id))
-        except SimUnavailable as e:
-            self.get_logger().warning(f"cleanup_namespace env_{env_id} failed: {e!r}")
-            await self._lifecycle.record_failure(f"cleanup_namespace: {e!r}")
+        prefixes = [*self._pending_cleanup, self._lifecycle.env_prefix(env_id)]
+        self._pending_cleanup = []
+        for prefix in prefixes:
+            try:
+                await self._lifecycle.cleanup_namespace(prefix)
+            except SimUnavailable as e:
+                self.get_logger().warning(f"cleanup_namespace {prefix!r} failed, retrying at the next eviction: {e!r}")
+                self._pending_cleanup.append(prefix)
 
         self._env_registry.complete_eviction(env_id)
         self._publish_envs()
@@ -548,15 +552,19 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         """Acquire a hold, pausing the sim on the empty->nonempty edge if no window is open."""
         was_empty = self._holds.is_empty()
         count = self._holds.acquire(caller, reason)
+        self.get_logger().debug(f"hold + {caller}/{reason} (holds={count})")
         if was_empty and self._windows.is_empty():
             await self._lifecycle.pause()
+            self.get_logger().info(f"sim paused (first hold {caller}/{reason})")
         return count
 
     async def _release_hold(self, caller: str, reason: str) -> int:
         """Release a hold, unpausing the sim on the nonempty->empty edge if no window is open."""
         count = self._holds.release(caller, reason)
+        self.get_logger().debug(f"hold - {caller}/{reason} (holds={count})")
         if self._holds.is_empty() and self._windows.is_empty():
             await self._lifecycle.unpause()
+            self.get_logger().info(f"sim unpaused (last hold {caller}/{reason})")
         return count
 
     async def _cb_hold(
@@ -602,6 +610,9 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
                     response.success = False
                     response.error_msg = "unpause returned failure"
                     return response
+                if not self._holds.is_empty():
+                    self.get_logger().info(f"sim unpaused (window {request.caller_id})")
+            self.get_logger().debug(f"window + {request.caller_id}")
             response.success = True
             response.error_msg = ""
             return response
@@ -612,8 +623,10 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
                 response.error_msg = f"caller {request.caller_id} does not hold a window"
                 return response
             self._windows.release(request.caller_id, _WINDOW_REASON)
+            self.get_logger().debug(f"window - {request.caller_id}")
             if self._windows.is_empty() and not self._holds.is_empty():
                 await self._lifecycle.pause()
+                self.get_logger().info(f"sim paused (window {request.caller_id} closed, holds remain)")
             response.success = True
             response.error_msg = ""
             return response

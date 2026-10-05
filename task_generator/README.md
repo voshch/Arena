@@ -25,6 +25,9 @@ in [`arena_runtime/`](../arena_runtime/README.md).
   `BaseSim` and its four sub-interfaces; registered implementations.
 - [Human simulator](task_generator/simulators/human/README.md):
   `BaseHumanSimulator`, PROMPT registration, hunav default agent.
+- [Auditory simulator](../arena_auditory/README.md): `auditory:=` axis,
+  `BaseAuditorySimulator` declares the map-server requirement; nodes live in
+  the `arena_auditory` package, launch dispatch in `launch/auditory/`.
 - [Utils](task_generator/utils/README.md): generic `Registry`, arena helpers,
   GPT shim, map generator.
 - [Constants](task_generator/constants/README.md): `Configuration(server)`
@@ -52,7 +55,7 @@ callable that imports and returns the class) plus a `TaskModeMeta` (namespace
 invoking the loader, so the impl module is not imported until the mode is
 first selected.
 
-`Task.__init__` reads `tm_robots`, `tm_obstacles`, and `tm_modules` from the
+`Task.__init__` reads `task.robots`, `task.obstacles`, and `task.modules` from the
 ROS parameter server (via `node.conf.TaskMode.*`) and calls the matching
 loaders. On each reset `Task._reset_episode` re-reads the parameters, swapping
 the active mode if it changed.

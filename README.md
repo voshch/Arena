@@ -9,7 +9,7 @@ A modular ROS 2 (Jazzy) platform for researching and benchmarking autonomous rob
 
 ## Installation
 
-Prerequisites: [Docker](https://docs.docker.com/engine/install/) installation with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU support. Current user must be in group `docker`. Podman also works through the `podman-docker` alias package, with the API socket enabled (`systemctl --user enable --now podman.socket`).
+Prerequisites: [Docker](https://docs.docker.com/engine/install/) or [Podman](https://podman.io/docs/installation) installation with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU support. With Docker, the current user must be in group `docker`. With Podman, install the `podman-docker` alias package and enable the API socket (`systemctl --user enable --now podman.socket`, or `sudo systemctl enable --now podman.socket` when rootful), and for GPU support generate the CDI spec once with `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`.
 Afterwards, run the following commands to install Arena:
 
 ### Basic Installation
@@ -72,6 +72,20 @@ Place your trained agent folder inside `Arena/arena_training/agents/<agent_name>
 ### arena_planners bridge
 For research planners (DRL-VO, CrowdNav, ...) where the policy lives in its own venv, use `robot.mobile:=drl robot.mobile.planner:=<name>`. Install a planner with `arena feature planners add <name>`. The [arena_planners](arena_planners/README.md) submodule handles the bridge, observation pipeline, and HF weight fetch. Optional global plan via `robot.mobile.global_planner:=nav2/navfn`.
 
+### Forks
+A fork is an isolated container on a snapshot of your dev tree, with its own ROS domain, so you can edit, build and launch there without touching your checkout.
+
+```sh
+source arena --fork [<name>]               # enter a fork, forking the dev tree into it if new (default: lowest free pN)
+arena fork new [<name>]                    # the same without entering it
+source arena --fork <name> --code          # open it in VS Code instead
+arena fork ls                              # list forks
+arena fork down <name>                     # delete a fork and its edits
+arena evaluation benchmark ... --lanes 4   # one benchmark run across 4 lanes, each in a pool fork
+```
+
+`ARENA_FORK_CPUS`, `ARENA_FORK_MEM` and `ARENA_FORK_DOMAIN_BASE` (default 20) in `.env` tune forks.
+
 
 ## Development
 
@@ -93,6 +107,19 @@ ruff check .              # check without pre-commit
 ```
 
 If the hook auto-fixes something, the commit is aborted and the fixes are left unstaged, `git add` and re-commit.
+
+### Python dependencies
+
+Each Arena package declares the pip packages it imports in the `[project]` table of its own `pyproject.toml`. Versions and dependencies live only there, `setup.py` keeps the ament glue. `arena update` composes the packages present in your checkout into one uv workspace (`.uv-workspace/`, generated) and syncs it into the venv. Every repo tracks a `uv.lock` derived from the full-tree lock, so a submodule such as `arena_planners` reproduces the same versions standalone with `uv sync`.
+
+Locks follow manifest edits on their own: a commit that stages a `pyproject.toml` or `setup.py` relocks and stages the regenerated `uv.lock`. In this repo that runs through pre-commit, in submodules through `core.hooksPath`, which `arena update` sets. Relocking needs a full tree (all submodules initialized) and `uv` on `PATH`. Without them the hook skips and the `uv-workspace` check flags the stale lock. Locks the hook touched in other repos are listed for you to commit there.
+
+To move versions on purpose, on a full tree:
+```bash
+python3 _meta/tools/uv_workspace.py lock --upgrade-package NAME   # one package
+python3 _meta/tools/uv_workspace.py lock --upgrade                # everything
+```
+then commit the changed `uv.lock` files, submodules first.
 
 ### CI
 

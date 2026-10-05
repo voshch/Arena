@@ -19,14 +19,26 @@ dependencies = [
     "cattrs>=25.1.1",
     "pydantic>=2.11.5",
     "pillow>=11.2.1",
-    "lxml>=4.9.1",
     "colourings>=0.4.1",
-    "aiofiles>=25.1.0"
+    "aiofiles>=25.1.0",
+    "huggingface-hub",
+    "mcap",
+    "mcap-ros2-support",
+    "polars",
+    "pyarrow",
+    "pycollada",
+    "requests",
+    "scipy",
+    "typing-extensions",
+    "usd-core",
 ]
 
 [project.urls]
 Homepage = "https://github.com/voshch/Arena"
 Repository = "https://github.com/voshch/Arena"
+
+[tool.uv]
+package = false
 
 
 [tool.setuptools.packages.find]

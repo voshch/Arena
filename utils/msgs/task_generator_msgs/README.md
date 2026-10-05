@@ -9,7 +9,7 @@ Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`are
 | File | Purpose |
 |---|---|
 | `ResetEpisode.srv` | Advance to a new episode; accepts optional world and seed for replay. Resolves any in-flight `RunEpisode` goal with `Result.SKIPPED` (reason="reset"). |
-| `QueueEpisode.srv` | Stage the next episode (modes, world, robots, per-mode params); applied at the next reset. |
+| `QueueEpisode.srv` | Stage the next episode (modes, world, robots, per-mode params, human backend params). Applied at the next reset. |
 | `Pause.srv` | Toggle pause from external callers. |
 | `GetTaskModes.srv` | Return currently active task-mode strings. |
 | `QueryWorlds.srv` / `QueryScenarios.srv` / `QueryEnvironments.srv` / `QueryParametrizeds.srv` / `QueryRobots.srv` / `QueryStaticObstacles.srv` / `QueryDynamicObstacles.srv` / `QueryTaskModes.srv` | Listing of available shortnames for the corresponding asset class. |
@@ -24,7 +24,7 @@ Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`are
 
 | File | Purpose |
 |---|---|
-| `EpisodeRecord.msg` | One episode: id, world, seed, task modes, `robots[]`, `outcome_state` (`QUEUED` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED` / `FATAL`), `outcome_info` (live status string, may be republished mid-episode via `Task.set_info`), integrity flag, plus `obstacles_params` / `robots_params` (effective per-mode params, with staged dict overlay for queued records). Published latched on `state/episode` and `state/queue`. `conditions` is a JSON list of `{op, p, q, text}` episode conditions, empty when none. `goal_dist_start` / `goal_dist_min` / `path_length` track the robot that closed the least of its start-to-goal distance, sampled every 0.5s; zero when no GoTo goal was active. |
+| `EpisodeRecord.msg` | One episode: id, world, seed, task modes, `robots[]`, `outcome_state` (`QUEUED` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED` / `FATAL`), `outcome_info` (live status string, may be republished mid-episode via `Task.set_info`), integrity flag, plus `obstacles_params` / `robots_params` (effective per-mode params, with staged dict overlay for queued records) and `human_params` (namespaced human backend params the active backend accepted, same overlay). Published latched on `state/episode` and `state/queue`. `conditions` is a JSON list of `{op, p, q, text}` episode conditions, empty when none. `goal_dist_start` / `goal_dist_min` / `path_length` track the robot that closed the least of its start-to-goal distance, sampled every 0.5s. Zero when no GoTo goal was active. |
 | `RobotDescriptor.msg` | Lean per-robot identity (name, model, ns, frame); shared with `RobotQueue`, whose pending entries have no resolved caps. |
 | `RobotCap.msg` | One resolved, effective cap on a live robot: cap name, bound adapter kind, mount instance, morphology variant. |
 | `RobotState.msg` | A resolved, live fleet member: `RobotDescriptor` + resolved `RobotCap[]` + resolved morphology `params`. |

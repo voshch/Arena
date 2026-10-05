@@ -28,11 +28,11 @@ environment, works inside a container.
 The bridge follows the same lifecycle as `rviz_utils`:
 
 1. Wait for `task_generator_node`'s `initialized` param.
-2. Read `prefix` + `env_id`.
+2. Read `prefix`, `env_id` and `tf_namespace`.
 3. Wait for one latched `state/robots` (fleet) and one latched
    `state/viz_manifest` (the env + per-robot display list).
 4. Start `rr.serve_web()`.
-5. Start a `/tf` + `/tf_static` mirror that logs every transform as
+5. Start a `<tf_namespace>/tf` + `<tf_namespace>/tf_static` mirror that logs every transform as
    `rr.Transform3D` under `env_<id>/tf/<child_frame>`.
 6. Walk the manifest, dispatch each `AdapterDisplay` to its renderer.
 7. Each renderer creates a ROS subscription on the bridge node; callbacks

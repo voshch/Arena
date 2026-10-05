@@ -155,8 +155,13 @@ class _rosparam(typing.Generic[T]):
     def declare_safe(cls, param_name: str, value: object = None, *, descriptor: rcl_interfaces.msg.ParameterDescriptor | None = None, **kwargs: object) -> None:
         if cls._node.has_parameter(param_name):
             if descriptor is not None:
+                existing = cls._node.get_parameter(param_name)
                 if descriptor.type == rclpy.Parameter.Type.NOT_SET.value:
-                    descriptor.type = cls._node.get_parameter(param_name).type_.value
+                    descriptor.type = existing.type_.value
+                elif descriptor.type == rclpy.Parameter.Type.DOUBLE.value and existing.type_ == rclpy.Parameter.Type.INTEGER:
+                    cls._node.undeclare_parameter(param_name)
+                    cls._node.declare_parameter(param_name, float(existing.value), descriptor=descriptor, ignore_override=True)
+                    return
                 cls._node.set_descriptor(param_name, descriptor)
             return
 

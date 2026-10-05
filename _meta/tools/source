@@ -27,7 +27,6 @@ ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
 
 export ARENA_WS_DIR
 export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
-export ARENA_FEATURES_DIR="${ARENA_FEATURES_DIR:-$ARENA_DIR/_meta/features}"
 
 export INSTALLED="$ARENA_DIR/.installed"
 export TOOLS_DIR="$ARENA_DIR/_meta/tools"
@@ -47,10 +46,15 @@ export BENCHMARK_BUCKETS=${ARENA_BENCHMARK_BUCKETS:-}
 
 export ARENA_MODELS_FORMATS="yaml,png,jpg,mdl"
 
+_arena_cli(){
+    PYTHONPATH="$ARENA_DIR/_meta${PYTHONPATH:+:$PYTHONPATH}" python3 -m arena_cli "$@"
+}
+export -f _arena_cli 2>/dev/null || true
+
 exit(){
     echo "Failed to source feature, skipping" >&2
 }
-eval "$(python3 "$TOOLS_DIR/arena_cli/__main__.py" shellinit)"
+eval "$(_arena_cli shellinit)"
 unset -f exit
 
 
@@ -70,6 +74,9 @@ if [ -f "$ARENA_WS_DIR/.env" ] ; then
     . "$ARENA_WS_DIR/.env"
     set +a
 fi
+if [ -n "${ARENA_FORK_DOMAIN_ID:-}" ] ; then
+    export ROS_DOMAIN_ID="$ARENA_FORK_DOMAIN_ID" GZ_PARTITION="arena-$ARENA_FORK_DOMAIN_ID"
+fi
 
 # ARENA_NET scopes ROS 2 discovery: local = loopback only, lan = every interface
 case "${ARENA_NET:-local}" in
@@ -84,7 +91,8 @@ _arena_venv_provision(){
     (
         cd "$ARENA_DIR" || exit 1
         uv venv "$ARENA_VENV_DIR" --allow-existing --system-site-packages && \
-        UV_PROJECT_ENVIRONMENT="$ARENA_VENV_DIR" uv sync --inexact --project "$ARENA_DIR" "$@" && \
+        python3 "$ARENA_DIR/_meta/tools/uv_workspace.py" compose && \
+        UV_PROJECT_ENVIRONMENT="$ARENA_VENV_DIR" uv sync --inexact --all-packages --project "$ARENA_DIR/.uv-workspace" "$@" && \
         touch "$ARENA_VENV_DIR/.installed"
     )
 }
@@ -122,11 +130,6 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
     
     
     r2st(){ ros2 service call "$1" "$(ros2 service type "$1")";}
-
-    _arena_cli(){
-        python3 "$TOOLS_DIR/arena_cli/__main__.py" "$@"
-    }
-    export -f _arena_cli 2>/dev/null || true
 
     arena(){
         local verb="$1"
@@ -199,7 +202,7 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
 fi
 
 if [ "$shell" = 'zsh' ]; then
-    . "$TOOLS_DIR/completion.zsh"
+    . "$ARENA_DIR/_meta/arena_cli/completion.zsh"
 else
-    . "$TOOLS_DIR/completion.bash"
+    . "$ARENA_DIR/_meta/arena_cli/completion.bash"
 fi

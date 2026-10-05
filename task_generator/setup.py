@@ -12,7 +12,6 @@ def existing(*patterns):
 
 setup(
     name=package_name,
-    version='0.0.0',
     packages=find_packages(
         where='.',
         include=[f'{package_name}*']
@@ -29,19 +28,13 @@ setup(
          existing('launch/human/hunav/*.launch.py')),
         (os.path.join('share', package_name, 'launch', 'human', 'arena_humansim'),
          existing('launch/human/arena_humansim/*.launch.py')),
+        (os.path.join('share', package_name, 'launch', 'auditory'),
+         existing('launch/auditory/*.launch.py', 'launch/auditory/*.md')),
+        (os.path.join('share', package_name, 'launch', 'auditory', 'arena'),
+         existing('launch/auditory/arena/*.launch.py')),
         (os.path.join('share', package_name, 'simulators', 'human', 'animations'),
          existing('task_generator/simulators/human/animations/*.npy', 'task_generator/simulators/human/animations/*.npz', 'task_generator/simulators/human/animations/*.yaml')),
-        (os.path.join('share', package_name, 'config', 'auditory'),
-        existing('config/auditory/*.yaml')),
-        (os.path.join('share', package_name, 'sounds'),
-        existing('sounds/*.wav')),
-        (os.path.join('share', package_name, 'launch', 'human', 'auditory'),
-        existing('launch/human/auditory/*.launch.py', 'launch/human/auditory/*.md')),
     ],
-    install_requires=['setuptools'],
-    extras_require={
-        'test': ['pytest>=7', 'hypothesis>=6'],
-    },
     zip_safe=True,
     maintainer='Name',
     maintainer_email='your@email.com',
@@ -51,15 +44,6 @@ setup(
         'console_scripts': [
             'task_generator_node = task_generator.task_generator_node:main',
             'generate_map = task_generator.utils.map_generator:main',
-            'human_sound_playback = task_generator.simulators.human.audio_playback_node:main',
-            'environment_sound_playback = task_generator.auditory.environment_sound_playback_node:main',
-            'sound_propagation_node = task_generator.auditory.sound_propagation_node:main',
-            'human_sound_node = task_generator.auditory.human_sound_node:main',
-            'robot_sound_node = task_generator.auditory.robot_sound_node:main',
-            'robot_hearing_node = task_generator.auditory.robot_hearing_node:main',
-            'auditory_benchmark = task_generator.auditory.benchmark:main',
-            'acoustic_world_audit = task_generator.auditory.acoustic_audit:main',
-            'sound_propagation_visualizer = task_generator.auditory.sound_propagation_visualizer:main',
             # 'server = task_generator.server:main',
             # 'filewatcher = task_generator.filewatcher:main'
         ]

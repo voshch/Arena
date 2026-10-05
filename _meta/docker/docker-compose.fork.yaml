@@ -1,0 +1,45 @@
+services:
+  arena:
+    volumes: !override
+      - "${ARENA_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock"
+      - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+      - "shared:/tmp/shared"
+      - "$HOST_ARENA_WS_DIR/build/.forks/releases/$ARENA_RELEASE/.built:/.built:ro"
+      - "fork_venv:/opt/venv"
+      - "fork_src:/opt/arena_ws/src"
+      - "fork_build:/opt/arena_ws/build"
+      - "fork_install:/opt/arena_ws/install"
+      - "fork_uv_python:/opt/arena_ws/.uv-python"
+      - "$HOST_ARENA_WS_DIR/build/.uv-cache:/opt/arena_ws/build/.uv-cache"
+      - "$HOST_ARENA_WS_DIR/src:/opt/arena_ws/.dev-src:ro"
+      - "$HOST_ARENA_WS_DIR/src/Arena/_assets:/opt/arena_ws/src/Arena/_assets"
+      - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
+      - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
+      - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"
+    hostname: $ARENA_FORK
+    environment:
+      - DISPLAY
+      - ARENA_FORK
+      - ARENA_LANE=${ARENA_FORK}
+      - ARENA_RELEASE
+      - ARENA_FORK_DOMAIN_ID=${ROS_DOMAIN_ID}
+    cpus: ${ARENA_FORK_CPUS:-0}
+    mem_limit: ${ARENA_FORK_MEM:-0}
+volumes:
+  shared:
+    driver_opts: {type: tmpfs, device: tmpfs, o: "uid=0,gid=0,mode=1777"}
+  fork_src:
+    driver: local
+    driver_opts: {type: overlay, device: overlay, o: "lowerdir=$HOST_ARENA_WS_DIR/build/.forks/releases/$ARENA_RELEASE/src,upperdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/upper/src,workdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/work/src"}
+  fork_build:
+    driver: local
+    driver_opts: {type: overlay, device: overlay, o: "lowerdir=$HOST_ARENA_WS_DIR/build/.forks/releases/$ARENA_RELEASE/build,upperdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/upper/build,workdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/work/build"}
+  fork_install:
+    driver: local
+    driver_opts: {type: overlay, device: overlay, o: "lowerdir=$HOST_ARENA_WS_DIR/build/.forks/releases/$ARENA_RELEASE/install,upperdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/upper/install,workdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/work/install"}
+  fork_venv:
+    driver: local
+    driver_opts: {type: overlay, device: overlay, o: "lowerdir=$HOST_ARENA_WS_DIR/build/.forks/releases/$ARENA_RELEASE/src/Arena/.venv,upperdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/upper/venv,workdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/work/venv"}
+  fork_uv_python:
+    driver: local
+    driver_opts: {type: overlay, device: overlay, o: "lowerdir=$HOST_ARENA_WS_DIR/build/.forks/releases/$ARENA_RELEASE/uv-python,upperdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/upper/uv-python,workdir=$HOST_ARENA_WS_DIR/build/.forks/$ARENA_FORK/work/uv-python"}

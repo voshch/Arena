@@ -1,0 +1,18 @@
+# Earshot corner clip (20 s take, office). The robot is parked in the main hallway facing west.
+# A courier walks through the storage room toward its door (heard through the wall), steps into
+# the hallway ahead of the robot, walks past it and leaves into reception.
+# Robot pose is applied via task.robots:=stationary.
+robots:
+  - start: [22.0, 12.0, 3.14159]
+    phases: []
+static: []
+dynamic:
+  - name: courier
+    model: Office/office_male_african_middleage
+    pose: [14.5, 20.0, -1.5708]
+    agent: {agent_type: adult, desired_velocity: 1.2}
+    waypoints:
+      - [14.5, 12.8, -1.5708]
+      - [30.0, 12.8, 0.0]
+      - [33.5, 9.5, -1.5708]
+      - [33.5, 3.0, -1.5708]

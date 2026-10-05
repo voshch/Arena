@@ -24,9 +24,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/SemanticEntityState.msg
   msg/SemanticSnapshot.msg
   msg/AcousticPath.msg
+  msg/AudioFrame.msg
   msg/ContinuousAudioSourceState.msg
   msg/ContinuousHeardSoundState.msg
   msg/HeardSoundEvent.msg
+  msg/RenderedSoundActivity.msg
   msg/SoundEvent.msg
   srv/DespawnRobot.srv
   srv/GetTaskModes.srv

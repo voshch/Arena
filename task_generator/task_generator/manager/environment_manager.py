@@ -10,6 +10,7 @@ from arena_runtime.sim._semantics import _SEMANTIC_KINDS
 from arena_simulation_setup.shared import Ceiling
 from arena_simulation_setup.tree.World import LevelDescription, WorldDescription
 from arena_simulation_setup.tree.World.World import _render_door_polygons, _render_elevator_polygons
+from rcl_interfaces.msg import Parameter as ParameterMsg
 
 from task_generator.manager.collision_grid import CollisionGrid
 from task_generator.manager.realizer import Realizer
@@ -337,6 +338,12 @@ class EnvironmentManager(NodeInterface):
     async def configure_gestures(self, mode: str) -> None:
         """Gesture mode of the human simulator for the episode about to spawn."""
         await self._human_simulator.configure_gestures(mode)
+
+    async def configure_humans(self, params: Sequence[ParameterMsg]) -> list[ParameterMsg]:
+        """
+        Apply episode-level params on the human simulator and return the accepted ones.
+        """
+        return await self._human_simulator.configure(params)
 
     async def remove_all_regions(self) -> bool:
         """

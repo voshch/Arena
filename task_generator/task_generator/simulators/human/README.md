@@ -44,6 +44,7 @@ specialized teleport semantics (e.g. resetting an internal agent list).
 | --- | --- |
 | `pedestrian_discs()` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, reads `_ped_positions_xy`, radius is `PED_RADIUS`) |
 | `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`) |
+| `configure(params)` | `(Sequence[rcl_interfaces.msg.Parameter]) -> list[Parameter]` (async). It runs at every episode reset with `QueueEpisode.human_params`. It strips the prefix from the names under `PARAM_NAMESPACE`, sorts them, and hands them to `_configure_impl`, also when there are none. It returns the accepted ones. |
 
 ### Abstract `_impl` methods
 
@@ -285,6 +286,20 @@ fresh, and the agent resumes from right there when possession ends. Ids
 the engine does not recognize become transient external obstacles in its
 force pool instead. Either way the crowd sees and avoids a possessed ped,
 walking or parked.
+
+`PARAM_NAMESPACE` is `humansim`, and a `humansim.<param>` launch arg sets the same engine param for the whole
+run. At every episode reset `_configure_impl` sends the staged `humansim.*` names of
+`QueueEpisode.human_params` to the engine node as one `set_parameters_atomically` batch and then calls the
+engine's `reset` with `soft: true`. The batch applies as a whole or not at all, so an episode never runs on
+half of a stage's human config. The reset call is the engine's episode boundary, where it applies the params,
+moves the live agents onto them, and prunes unused planners. See
+[Runtime reconfiguration](../../../../humansim/README.md#runtime-reconfiguration). The engine rejects a batch
+that holds a param it cannot reconfigure. A rejected batch logs an error with the engine's reason and stays
+out of `EpisodeRecord.human_params`, and the episode continues.
+
+A new backend with episode-level params adds its namespace to `Constants.HUMAN_PARAM_NAMESPACES`, sets
+`PARAM_NAMESPACE` from it, and implements `_configure_impl`. The `human.` prefix is reserved for params every
+backend honors. None are defined, so `queue_episode` rejects it.
 
 The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
 the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses

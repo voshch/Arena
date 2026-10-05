@@ -31,6 +31,7 @@ def test_episode_record_fields():
     p.value.integer_value = 4
     r.obstacles_params = [p]
     r.robots_params = []
+    r.human_params = [p]
 
     assert r.episode_id == 7
     assert r.world == "map1"
@@ -47,6 +48,7 @@ def test_episode_record_fields():
     assert r.obstacles_params[0].name == "static.n"
     assert r.obstacles_params[0].value.integer_value == 4
     assert list(r.robots_params) == []
+    assert [q.name for q in r.human_params] == ["static.n"]
 
     assert EpisodeRecord.QUEUED == 0
     assert EpisodeRecord.RUNNING == 1
@@ -156,6 +158,7 @@ def test_queue_episode_srv():
     p.value.integer_value = 5
     req.obstacles_params = [p]
     req.robots_params = []
+    req.human_params = [p]
 
     assert req.action == QueueEpisode.Request.MERGE
     assert QueueEpisode.Request.MERGE == 0
@@ -166,6 +169,7 @@ def test_queue_episode_srv():
     assert req.world == "maze"
     assert len(req.obstacles_params) == 1
     assert req.obstacles_params[0].name == "static.n"
+    assert [q.name for q in req.human_params] == ["static.n"]
 
     res = QueueEpisode.Response()
     res.success = True
@@ -184,6 +188,29 @@ def test_get_task_modes_srv():
     assert res.tm_robots == "random"
     assert res.tm_obstacles == "scenario"
     assert res.tm_modules == ["benchmark"]
+
+
+def test_audio_frame_msg():
+    from geometry_msgs.msg import Point
+    from task_generator_msgs.msg import AudioFrame
+
+    msg = AudioFrame()
+    msg.header.frame_id = "jackal/base_link"
+    msg.sample_rate = 16000
+    msg.channel_count = 4
+    msg.frame_count = 2
+    msg.encoding = "32FC1"
+    msg.interleaved = True
+    msg.channel_names = ["front_left", "front_right", "rear_left", "rear_right"]
+    msg.frame_ids = ["jackal/mic_front_left", "jackal/mic_front_right", "jackal/mic_rear_left", "jackal/mic_rear_right"]
+    msg.microphone_positions = [Point(x=0.19, y=0.135, z=0.22)] * 4
+    msg.microphone_yaw_rad = [0.785398, -0.785398, 2.356194, -2.356194]
+    msg.data = [0.0] * 8
+
+    assert msg.sample_rate == 16000
+    assert msg.channel_count == 4
+    assert msg.frame_count == 2
+    assert len(msg.data) == msg.channel_count * msg.frame_count
 
 
 def test_spawn_sound_srv():

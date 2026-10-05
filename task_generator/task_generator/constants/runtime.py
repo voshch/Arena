@@ -1,10 +1,58 @@
 import numpy as np
 import rclpy
+import rclpy.node
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_runtime.constants import SimSimulator
 
 from . import Constants
 from .rng import EpisodeRng
+
+EPISODE_PARAMS: dict[str, str] = {
+    'task.episode.count': 'Stop the env after N episodes (-1 = run forever).',
+    'task.episode.auto_reset': 'true = standalone: node auto-advances episodes. false = managed: external controller drives resets via lifecycle/reset_episode.',
+    'task.episode.fail_on_collision': 'true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, or pedestrian.',
+    'task.episode.timeout': 'Episode time limit in sim seconds (-1 = none).',
+    'task.episode.timeout.robot_ready': 'Seconds to wait for robot adapters to become ready (-1 = unbounded).',
+    'task.episode.reset.max_fails': 'Consecutive reset failures before the env gives up.',
+    'task.episode.spawn.robot_clearance': 'Clearance in metres added to the robot radius when placing robot spawns and goals.',
+    'task.episode.spawn.obstacle_clearance': 'Clearance in metres around scenario obstacle placements.',
+    'task.episode.spawn.obstacle_max_radius': 'Largest obstacle radius in metres (-1 = unbounded).',
+    'task.episode.goto_pose.tolerance.radius': 'Goal position tolerance in metres for goto_pose phases.',
+    'task.episode.goto_pose.tolerance.angle': 'Goal heading tolerance in radians for goto_pose phases.',
+    'task.episode.goto_pose.timeout.no_progress': 'Fail a goto_pose episode after this many sim seconds without goal progress (-1 = off).',
+}
+
+DEPRECATED_PARAMS: dict[str, str] = {
+    'episodes': 'task.episode.count',
+    'auto_reset': 'task.episode.auto_reset',
+    'fail_on_collision': 'task.episode.fail_on_collision',
+    'timeout': 'task.episode.timeout',
+    'robot.ready_timeout': 'task.episode.timeout.robot_ready',
+    'max_reset_fail_times': 'task.episode.reset.max_fails',
+    'robot_safe_dist': 'task.episode.spawn.robot_clearance',
+    'obstacle_safe_dist': 'task.episode.spawn.obstacle_clearance',
+    'obstacle_max_radius': 'task.episode.spawn.obstacle_max_radius',
+    'goal_tolerance_radius': 'task.episode.goto_pose.tolerance.radius',
+    'goal_tolerance_angle': 'task.episode.goto_pose.tolerance.angle',
+    'no_progress_timeout': 'task.episode.goto_pose.timeout.no_progress',
+    'tm_robots': 'task.robots',
+    'tm_obstacles': 'task.obstacles',
+    'tm_config': 'task.config',
+    'tm_modules': 'task.modules',
+    'train_mode': 'robot.train',
+    'static_sounds': 'auditory.static_sounds',
+}
+
+
+def migrate_deprecated_params(node: rclpy.node.Node) -> list[str]:
+    """Copy each deprecated parameter given at startup onto its replacement unless that is set too, warn, return the deprecated names found."""
+    found = [old for old in DEPRECATED_PARAMS if node.has_parameter(old)]
+    for old in found:
+        new = DEPRECATED_PARAMS[old]
+        if not node.has_parameter(new):
+            node.declare_parameter(new, node.get_parameter(old).value)
+        node.get_logger().warning(f"parameter {old!r} is deprecated, use {new!r}")
+    return found
 
 
 def Configuration(server: ROSParamServer) -> type:
@@ -22,6 +70,8 @@ def Configuration(server: ROSParamServer) -> type:
 
             HUMAN = server.ROSParam[Constants.HumanSimulator]('human', Constants.HumanSimulator.DUMMY.value, parse=Constants.HumanSimulator)
 
+            AUDITORY = server.ROSParam[Constants.AuditorySimulator]('auditory', Constants.AuditorySimulator.NONE.value, parse=Constants.AuditorySimulator)
+
             WORLD = server.ROSParam[str](
                 'world',
                 type_=rclpy.Parameter.Type.STRING,
@@ -32,57 +82,58 @@ def Configuration(server: ROSParamServer) -> type:
             General Task Configuration
             """
 
-            WAIT_FOR_SERVICE_TIMEOUT = server.ROSParam[float](
-                'timeout_wait_for_service',
-                30,
-            )
-
             MAX_RESET_FAIL_TIMES = server.ROSParam[int](
-                'max_reset_fail_times',
+                'task.episode.reset.max_fails',
                 10,
             )
 
             RNG = EpisodeRng()
 
             DESIRED_EPISODES = server.ROSParam[float](
-                'episodes',
+                'task.episode.count',
                 -1,
                 parse=_positive_or_inf,
             )
 
         class Obstacles:
             OBSTACLE_MAX_RADIUS = server.ROSParam[float](
-                'obstacle_max_radius',
+                'task.episode.spawn.obstacle_max_radius',
                 15,
                 parse=_positive_or_inf,
             )
 
             SAFE_DIST = server.ROSParam[float](
-                'obstacle_safe_dist',
+                'task.episode.spawn.obstacle_clearance',
                 0.35,
             )
 
         class Robot:
-            GOAL_TOLERANCE_RADIUS = server.ROSParam[float]('goal_tolerance_radius', 1.0)
+            GOAL_TOLERANCE_RADIUS = server.ROSParam[float]('task.episode.goto_pose.tolerance.radius', 1.0)
 
             GOAL_TOLERANCE_ANGLE = server.ROSParam[float](
-                'goal_tolerance_angle',
+                'task.episode.goto_pose.tolerance.angle',
                 30.0 * np.pi / 180.0,
             )
 
             SPAWN_ROBOT_SAFE_DIST = server.ROSParam[float](
-                'robot_safe_dist',
+                'task.episode.spawn.robot_clearance',
                 0.25,
             )
 
             TIMEOUT = server.ROSParam[float](
-                'timeout',
+                'task.episode.timeout',
+                -1,
+                parse=_positive_or_inf,
+            )
+
+            NO_PROGRESS_TIMEOUT = server.ROSParam[float](
+                'task.episode.goto_pose.timeout.no_progress',
                 -1,
                 parse=_positive_or_inf,
             )
 
             READY_TIMEOUT = server.ROSParam[float](
-                'robot.ready_timeout',
+                'task.episode.timeout.robot_ready',
                 -1,
                 parse=_positive_or_inf,
             )
@@ -97,22 +148,27 @@ def Configuration(server: ROSParamServer) -> type:
                 'moveit',
             )
 
+            HEARING = server.ROSParam[str](
+                'robot.hearing',
+                'none',
+            )
+
         class TaskMode:
             TM_ROBOTS = server.ROSParam[Constants.TaskMode.TM_Robots](
-                'tm_robots',
+                'task.robots',
                 Constants.TaskMode.TM_Robots.default().value,
                 parse=Constants.TaskMode.TM_Robots,
             )
 
             TM_OBSTACLES = server.ROSParam[Constants.TaskMode.TM_Obstacles](
-                'tm_obstacles',
+                'task.obstacles',
                 Constants.TaskMode.TM_Obstacles.default().value,
                 parse=Constants.TaskMode.TM_Obstacles,
             )
 
-            TM_CONFIG = server.ROSParam[str]('tm_config', '')
+            TM_CONFIG = server.ROSParam[str]('task.config', '')
 
-            TM_MODULES = server.ROSParam[set[Constants.TaskMode.TM_Module]]('tm_modules', ','.join([m.value for m in Constants.TaskMode.TM_Module.default()]), parse=lambda x: {Constants.TaskMode.TM_Module(m) for m in x.split(',') if m != ''})
+            TM_MODULES = server.ROSParam[set[Constants.TaskMode.TM_Module]]('task.modules', ','.join([m.value for m in Constants.TaskMode.TM_Module.default()]), parse=lambda x: {Constants.TaskMode.TM_Module(m) for m in x.split(',') if m != ''})
 
     return Config
 

@@ -28,6 +28,7 @@ import numpy as np
 import xacro
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
+from arena_rclpy_mixins import tf_remaps
 from urdf_parser_py import urdf as urdf_parser
 
 if TYPE_CHECKING:
@@ -146,6 +147,7 @@ class BodyPool:
             f"__node:=rsp_{body_id}",
             "--remap",
             f"joint_states:={joint_states_topic}",
+            *(arg for src, dst in tf_remaps(self._node) for arg in ("--remap", f"{src}:={dst}")),
         ]
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL)
         _LOG.debug("spawned rsp pid=%d for body %s", proc.pid, body_id)

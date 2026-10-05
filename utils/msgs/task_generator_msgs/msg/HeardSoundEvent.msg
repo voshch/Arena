@@ -7,6 +7,7 @@ string source_agent_name
 string sound_type
 string label
 string asset_id
+string[] semantic_tags # Source semantics retained for material-aware playback.
 
 geometry_msgs/Point source_position
 geometry_msgs/Point listener_position

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arena_cli"
+version = "0.0.0"
+description = "The arena shell command."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["arena_cli", "arena_cli.features"]
+package-dir = { "arena_cli" = "." }
