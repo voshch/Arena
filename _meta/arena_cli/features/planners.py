@@ -277,12 +277,18 @@ def _ready_names() -> list[str]:
 
 
 def _contestants(names: list[str]) -> list[dict]:
-    """Bridge planners run under the drl adapter, anything else is a nav2 local planner."""
-    kinds = _registry().kinds(_arena())
+    """Bridge planners run under the drl adapter (vla when they declare goal_inputs), anything else is a nav2 local planner."""
+    from arena_planners.resolver import is_vla
+
+    arena = _arena()
+    reg = _registry()
+    kinds = reg.kinds(arena)
+    local = set(reg.local_planners(arena))
     out = []
     for name in names:
-        if kinds.get(name, "nav2") == "bridge":
-            out.append({"name": name, "mobile": {"driver": "drl", "planner": name}})
+        if kinds.get(name, "nav2") == "bridge" or name in local:
+            driver = "vla" if is_vla(name, workspace_root=arena) else "drl"
+            out.append({"name": name, "mobile": {"driver": driver, "planner": name}})
         else:
             out.append({"name": name, "mobile": {"driver": "nav2", "local_planner": name}})
     return out
