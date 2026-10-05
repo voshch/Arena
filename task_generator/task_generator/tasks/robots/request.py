@@ -12,6 +12,7 @@ import geometry_msgs.msg
 from arena_robots.task_kinds import TaskKind
 
 from task_generator.shared import Pose
+from task_generator.utils.park import ParkTimer
 
 if TYPE_CHECKING:
     from task_generator.manager.robot_manager.robot_manager import RobotManager
@@ -30,29 +31,57 @@ class TaskPhase(ABC):
     def is_satisfied(self, robot_manager: RobotManager) -> bool:
         """Tier-3 default completion check; must not raise when pose is unavailable."""
 
+    def with_defaults(self, robot_manager: RobotManager) -> TaskPhase:
+        """This phase with every field it left unset taken from the node's launch parameters."""
+        return self
+
 
 @attrs.define
 class GoToPhase(TaskPhase):
-    """Navigate-to-pose phase with optional per-phase tolerance overrides."""
+    """Navigate-to-pose phase, unset tolerances, hold time and signal take the node's goal_* launch parameters on submit."""
 
     kind: ClassVar[TaskKind] = TaskKind.GOTO_POSE
 
     pose: Pose
     tolerance_radius: float | None = None
     tolerance_angle: float | None = None
+    instruction: str = ""  # natural-language goal for language-conditioned planners, empty = none
+    hold_time: float | None = None
+    signal: str | None = None
+    _park: ParkTimer = attrs.field(factory=ParkTimer, init=False, eq=False, repr=False)
+
+    def with_defaults(self, robot_manager: RobotManager) -> GoToPhase:
+        conf = robot_manager.node.conf.Robot
+        return attrs.evolve(
+            self,
+            tolerance_radius=float(conf.GOAL_TOLERANCE_RADIUS.value if self.tolerance_radius is None else self.tolerance_radius),
+            tolerance_angle=float(conf.GOAL_TOLERANCE_ANGLE.value if self.tolerance_angle is None else self.tolerance_angle),
+            hold_time=float(conf.GOAL_HOLD_TIME.value if self.hold_time is None else self.hold_time),
+            signal=str(conf.GOAL_SIGNAL.value if self.signal is None else self.signal),
+        )
 
     def is_satisfied(self, robot_manager: RobotManager) -> bool:
+        assert self.hold_time is not None and self.signal is not None, "GoToPhase checked before with_defaults filled it"
         pose = robot_manager.pose
-        if pose is None:
+        if pose is None or self.signal:
             return False
 
-        conf = robot_manager.node.conf.Robot
-        tol_dist = self.tolerance_radius if self.tolerance_radius is not None else conf.GOAL_TOLERANCE_RADIUS.value
-        tol_ang = self.tolerance_angle if self.tolerance_angle is not None else conf.GOAL_TOLERANCE_ANGLE.value
+        if not self.arrived(robot_manager, pose):
+            self._park.reset()
+            return False
 
+        if self.hold_time <= 0:
+            return True
+        held = self._park.held_for(pose.position.x, pose.position.y, pose.orientation.to_yaw(), robot_manager.node.sim_time.to_seconds())
+        return held >= self.hold_time
+
+    def arrived(self, robot_manager: RobotManager, pose: Pose) -> bool:
+        """`pose` is within tolerance_radius of the goal, and within tolerance_angle for robots that control orientation."""
+        assert self.tolerance_radius is not None and self.tolerance_angle is not None, "GoToPhase checked before with_defaults filled it"
+        tol_ang = self.tolerance_angle
         dx = pose.position.x - self.pose.position.x
         dy = pose.position.y - self.pose.position.y
-        if math.hypot(dx, dy) > tol_dist:
+        if math.hypot(dx, dy) > self.tolerance_radius:
             return False
 
         if tol_ang > 0 and robot_manager.controls_orientation:

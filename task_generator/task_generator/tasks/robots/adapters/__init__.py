@@ -252,6 +252,11 @@ class Adapter(ABC):
     ) -> bool | None:
         return self.client_for(phase.kind).is_done()
 
+    @property
+    def signals(self) -> frozenset[str]:
+        """Signals the driven robot can send Arena, such as "arrived"."""
+        return frozenset()
+
     async def before_move(
         self,
         pose: Pose,

@@ -60,7 +60,16 @@ class TM_Scenario(TM_Robots):
             for phase in config.phase_list():
                 if isinstance(phase, ScenarioGotoPhase):
                     goto_pose = _to_map_frame(phase.goto, config.goal_floor)
-                    phases.append(GoToPhase(pose=goto_pose))
+                    phases.append(
+                        GoToPhase(
+                            pose=goto_pose,
+                            instruction=phase.instruction,
+                            tolerance_radius=phase.tolerance_radius,
+                            tolerance_angle=phase.tolerance_angle,
+                            hold_time=phase.hold_time,
+                            signal=phase.signal,
+                        )
+                    )
                     forbidden.append(PositionRadius(x=goto_pose.position.x, y=goto_pose.position.y, radius=robot.safe_distance))
                 elif isinstance(phase, ScenarioGesturePhase):
                     phases.append(PlayGesturePhase(gesture=None if phase.gesture in ("", "random") else phase.gesture, instance=phase.instance))

@@ -18,6 +18,8 @@ def _make_robot_manager_stub(pose, goal_tolerance_distance=0.3, goal_tolerance_a
     robot_conf = SimpleNamespace(
         GOAL_TOLERANCE_RADIUS=SimpleNamespace(value=goal_tolerance_distance),
         GOAL_TOLERANCE_ANGLE=SimpleNamespace(value=goal_tolerance_angle),
+        GOAL_HOLD_TIME=SimpleNamespace(value=0.0),
+        GOAL_SIGNAL=SimpleNamespace(value=""),
     )
     return SimpleNamespace(
         pose=pose,
@@ -38,7 +40,7 @@ def test_is_satisfied_pose_none(goal_pose):
 
     phase = GoToPhase(pose=goal_pose)
     stub = _make_robot_manager_stub(pose=None)
-    assert phase.is_satisfied(stub) is False
+    assert phase.with_defaults(stub).is_satisfied(stub) is False
 
 
 def test_is_satisfied_at_goal(goal_pose):
@@ -48,7 +50,7 @@ def test_is_satisfied_at_goal(goal_pose):
     phase = GoToPhase(pose=goal_pose)
     current = Pose(Position(1.0, 2.0), Orientation.from_yaw(0.0))
     stub = _make_robot_manager_stub(pose=current)
-    assert phase.is_satisfied(stub) is True
+    assert phase.with_defaults(stub).is_satisfied(stub) is True
 
 
 def test_is_satisfied_below_distance_threshold(goal_pose):
@@ -58,7 +60,7 @@ def test_is_satisfied_below_distance_threshold(goal_pose):
     phase = GoToPhase(pose=goal_pose, tolerance_radius=0.5)
     close = Pose(Position(1.3, 2.0), Orientation.from_yaw(0.0))
     stub = _make_robot_manager_stub(pose=close)
-    assert phase.is_satisfied(stub) is True
+    assert phase.with_defaults(stub).is_satisfied(stub) is True
 
 
 def test_is_satisfied_above_distance_threshold(goal_pose):
@@ -68,7 +70,7 @@ def test_is_satisfied_above_distance_threshold(goal_pose):
     phase = GoToPhase(pose=goal_pose, tolerance_radius=0.1)
     far = Pose(Position(2.0, 2.0), Orientation.from_yaw(0.0))
     stub = _make_robot_manager_stub(pose=far)
-    assert phase.is_satisfied(stub) is False
+    assert phase.with_defaults(stub).is_satisfied(stub) is False
 
 
 def test_is_satisfied_uses_manager_default_tolerance(goal_pose):
@@ -78,7 +80,7 @@ def test_is_satisfied_uses_manager_default_tolerance(goal_pose):
     phase = GoToPhase(pose=goal_pose)
     just_within = Pose(Position(1.0 + 0.29, 2.0), Orientation.from_yaw(0.0))
     stub = _make_robot_manager_stub(pose=just_within, goal_tolerance_distance=0.3)
-    assert phase.is_satisfied(stub) is True
+    assert phase.with_defaults(stub).is_satisfied(stub) is True
 
 
 def test_is_satisfied_per_phase_tolerance_overrides(goal_pose):
@@ -88,7 +90,7 @@ def test_is_satisfied_per_phase_tolerance_overrides(goal_pose):
     phase = GoToPhase(pose=goal_pose, tolerance_radius=0.05)
     close = Pose(Position(1.1, 2.0), Orientation.from_yaw(0.0))
     stub = _make_robot_manager_stub(pose=close, goal_tolerance_distance=5.0)
-    assert phase.is_satisfied(stub) is False
+    assert phase.with_defaults(stub).is_satisfied(stub) is False
 
 
 def test_is_satisfied_angle_within_tolerance(goal_pose):
@@ -98,7 +100,7 @@ def test_is_satisfied_angle_within_tolerance(goal_pose):
     phase = GoToPhase(pose=goal_pose, tolerance_radius=1.0, tolerance_angle=0.5)
     current = Pose(Position(1.0, 2.0), Orientation.from_yaw(0.3))
     stub = _make_robot_manager_stub(pose=current)
-    assert phase.is_satisfied(stub) is True
+    assert phase.with_defaults(stub).is_satisfied(stub) is True
 
 
 def test_is_satisfied_angle_above_tolerance(goal_pose):
@@ -108,7 +110,7 @@ def test_is_satisfied_angle_above_tolerance(goal_pose):
     phase = GoToPhase(pose=goal_pose, tolerance_radius=1.0, tolerance_angle=0.1)
     current = Pose(Position(1.0, 2.0), Orientation.from_yaw(0.5))
     stub = _make_robot_manager_stub(pose=current)
-    assert phase.is_satisfied(stub) is False
+    assert phase.with_defaults(stub).is_satisfied(stub) is False
 
 
 def test_is_satisfied_zero_angle_tolerance_skips_angle_check(goal_pose):
@@ -118,7 +120,7 @@ def test_is_satisfied_zero_angle_tolerance_skips_angle_check(goal_pose):
     phase = GoToPhase(pose=goal_pose, tolerance_radius=1.0, tolerance_angle=0.0)
     current = Pose(Position(1.0, 2.0), Orientation.from_yaw(math.pi - 0.01))
     stub = _make_robot_manager_stub(pose=current)
-    assert phase.is_satisfied(stub) is True
+    assert phase.with_defaults(stub).is_satisfied(stub) is True
 
 
 def test_is_satisfied_angle_wraps_at_pi():
@@ -129,8 +131,22 @@ def test_is_satisfied_angle_wraps_at_pi():
     phase = GoToPhase(pose=goal, tolerance_radius=1.0, tolerance_angle=0.2)
     current = Pose(Position(0.0, 0.0), Orientation.from_yaw(-math.pi + 0.05))
     stub = _make_robot_manager_stub(pose=current)
-    assert phase.is_satisfied(stub) is True
+    assert phase.with_defaults(stub).is_satisfied(stub) is True
 
+
+def test_with_defaults_fills_only_unset_fields(goal_pose):
+    from task_generator.tasks.robots.request import GoToPhase
+
+    stub = _make_robot_manager_stub(pose=None, goal_tolerance_distance=3.0, goal_tolerance_angle=0.4)
+    filled = GoToPhase(pose=goal_pose, tolerance_angle=0.1).with_defaults(stub)
+    assert (filled.tolerance_radius, filled.tolerance_angle, filled.hold_time, filled.signal) == (3.0, 0.1, 0.0, "")
+
+
+def test_signal_phase_is_never_satisfied_by_position(goal_pose):
+    from task_generator.tasks.robots.request import GoToPhase
+
+    stub = _make_robot_manager_stub(pose=goal_pose)
+    assert GoToPhase(pose=goal_pose, signal="arrived").with_defaults(stub).is_satisfied(stub) is False
 
 def test_task_request_kind_empty():
     from task_generator.tasks.robots.request import TaskRequest

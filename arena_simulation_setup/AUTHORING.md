@@ -344,7 +344,12 @@ robots:
 ```
 
 An empty scenario (robot start and phases only) is valid. Each phase is
-`{goto: <pose>}` or `{gesture: <name>}`, run in order. `goal:` is deprecated. Add static obstacles by
+`{goto: <pose>}` or `{gesture: <name>}`, run in order. A `goto` phase takes an optional
+`instruction: <text>`, the natural-language goal a language-conditioned planner receives alongside the pose
+(the pose still decides success), and optional `tolerance_radius: <m>`, `tolerance_angle: <rad>` and
+`hold_time: <s>` (park inside the tolerance that long before the goal counts) and `signal: <name>` (the robot must
+send that signal, such as `arrived`, and is judged against the tolerance at that moment). Each one left out takes the
+matching `task.episode.goto_pose.*` launch parameter (`tolerance.radius`, `tolerance.angle`, `hold_time`, `signal`). `goal:` is deprecated. Add static obstacles by
 listing `Obstacle` entries under `static:`, dynamic pedestrians under `dynamic:`.
 A static entry's flat top-level keys `type`, `capacity`, `satisfies`,
 `interaction_radius` and `formation` are forwarded to humansim as its

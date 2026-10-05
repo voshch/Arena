@@ -17,6 +17,25 @@ from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, conve
 @attrs.define
 class ScenarioGotoPhase:
     goto: Pose = attrs.field(converter=Pose.converter)
+    instruction: str = ""  # natural-language goal for language-conditioned planners, empty = none
+    tolerance_radius: float | None = None
+    tolerance_angle: float | None = None
+    hold_time: float | None = None
+    signal: str | None = None
+
+    @classmethod
+    def parse(cls, value: dict) -> "ScenarioGotoPhase":
+        def optional(key: str) -> float | None:
+            return None if value.get(key) is None else float(value[key])
+
+        return cls(
+            goto=Pose.parse(value["goto"]),
+            instruction=str(value.get("instruction", "")),
+            tolerance_radius=optional("tolerance_radius"),
+            tolerance_angle=optional("tolerance_angle"),
+            hold_time=optional("hold_time"),
+            signal=None if value.get("signal") is None else str(value["signal"]),
+        )
 
 
 @attrs.define
@@ -32,7 +51,7 @@ class ScenarioPhase(abc.ABC):
     @abc.abstractmethod
     def parse(cls, value: dict) -> "ScenarioPhase":
         if "goto" in value:
-            return ScenarioGotoPhase(goto=Pose.parse(value["goto"]))
+            return ScenarioGotoPhase.parse(value)
         if "gesture" in value:
             return ScenarioGesturePhase(gesture=str(value["gesture"]), instance=str(value.get("instance", "")))
         raise ValueError(f"ScenarioPhase requires 'goto' or 'gesture' key; got {list(value.keys())}")

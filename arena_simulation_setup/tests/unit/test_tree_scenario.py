@@ -177,6 +177,33 @@ def test_scenario_phase_parse_goto():
     assert phase.goto.position.x == pytest.approx(1.0)
 
 
+def test_scenario_phase_parse_goto_instruction():
+    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0], "instruction": "go to the blue door"})
+    assert isinstance(phase, ScenarioGotoPhase)
+    assert phase.instruction == "go to the blue door"
+
+
+def test_scenario_phase_parse_goto_without_instruction_is_empty():
+    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0]})
+    assert isinstance(phase, ScenarioGotoPhase)
+    assert phase.instruction == ""
+
+
+def test_scenario_phase_parse_goto_success_criteria():
+    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0], "tolerance_radius": 3, "tolerance_angle": 0.5, "hold_time": 2.0, "signal": "arrived"})
+    assert isinstance(phase, ScenarioGotoPhase)
+    assert phase.tolerance_radius == pytest.approx(3.0)
+    assert phase.tolerance_angle == pytest.approx(0.5)
+    assert phase.hold_time == pytest.approx(2.0)
+    assert phase.signal == "arrived"
+
+
+def test_scenario_phase_parse_goto_leaves_unset_criteria_to_launch_defaults():
+    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0]})
+    assert isinstance(phase, ScenarioGotoPhase)
+    assert (phase.tolerance_radius, phase.tolerance_angle, phase.hold_time, phase.signal) == (None, None, None, None)
+
+
 def test_scenario_phase_parse_gesture():
     phase = ScenarioPhase.parse({"gesture": "wave"})
     assert isinstance(phase, ScenarioGesturePhase)

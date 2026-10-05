@@ -35,7 +35,7 @@ if typing.TYPE_CHECKING:
     from collections.abc import Callable
 
     from task_generator.tasks.robots.adapters import Adapter, ResetContext
-    from task_generator.tasks.robots.request import TaskKind, TaskPhase, TaskRequest
+    from task_generator.tasks.robots.request import GoToPhase, TaskKind, TaskPhase, TaskRequest
 
 
 _NAV2_QUIET_NODES = (
@@ -134,16 +134,22 @@ class RobotManager(NodeInterface):
         return None if stamped is None else stamped[0]
 
     @property
-    def goal(self) -> Pose | None:
-        """Pose of the first GoToPhase in the current TaskRequest, or None."""
+    def goal_phase(self) -> GoToPhase | None:
+        """First GoToPhase in the current TaskRequest, or None."""
         from task_generator.tasks.robots.request import GoToPhase
 
         if self._current_request is None:
             return None
         for phase in self._current_request.phases:
             if isinstance(phase, GoToPhase):
-                return phase.pose
+                return phase
         return None
+
+    @property
+    def goal(self) -> Pose | None:
+        """Pose of the first GoToPhase in the current TaskRequest, or None."""
+        phase = self.goal_phase
+        return None if phase is None else phase.pose
 
     def __init__(
         self,
@@ -417,8 +423,15 @@ class RobotManager(NodeInterface):
             routed_phases.append(phase)
         request = attrs.evolve(request, phases=routed_phases)
 
-        realized_phases = [attrs.evolve(phase, pose=self._environment_manager.realize(phase.pose)) if isinstance(phase, GoToPhase) else phase for phase in request.phases]
+        realized_phases = [(attrs.evolve(phase, pose=self._environment_manager.realize(phase.pose)) if isinstance(phase, GoToPhase) else phase).with_defaults(self) for phase in request.phases]
         request = attrs.evolve(request, phases=realized_phases)
+
+        for phase in request.phases:
+            if isinstance(phase, GoToPhase) and phase.signal:
+                adapter = self._adapters.get(phase.kind)
+                signals = frozenset() if adapter is None else adapter.signals
+                if phase.signal not in signals:
+                    raise ValueError(f"robot {self.name!r}: goto phase expects signal {phase.signal!r}, its {phase.kind.name} adapter can send {sorted(signals)}")
 
         self._current_request = request
         self._phase_index = 0

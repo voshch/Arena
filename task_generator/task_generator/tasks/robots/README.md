@@ -70,8 +70,19 @@ them to `RobotManager.submit_task`:
 - `TaskPhase`: abstract; `is_satisfied(robot)` is the Tier-3 completion
   fallback when neither the request predicate nor the adapter gives a
   verdict.
-- `GoToPhase(pose, tolerance_radius?, tolerance_angle?)`: navigate to a
-  pose with optional per-phase tolerance overrides.
+- `GoToPhase(pose, tolerance_radius?, tolerance_angle?, instruction?, hold_time?, signal?)`:
+  navigate to a pose. The goal counts once the robot is within
+  `tolerance_radius` (and `tolerance_angle` for adapters that control
+  orientation) and has parked there for `hold_time` sim seconds, holding one
+  pose within 5 cm and 5 degrees (`0` = arriving suffices). With a `signal`
+  such as `arrived`, the robot itself must send that signal instead, and the
+  phase is judged against the tolerance at that moment (`hold_time` does not
+  apply). `RobotManager.submit_task` fills every field a phase leaves unset
+  from the `task.episode.goto_pose.*` launch parameters (`tolerance.radius`,
+  `tolerance.angle`, `hold_time`, `signal`) via `TaskPhase.with_defaults`, so a
+  submitted phase carries its own success criteria and the episode record and adapters read them from it.
+  `instruction` is a natural-language goal that `mobile:=vla` forwards to
+  the planner, the pose still decides success.
 - `TaskRequest(phases, done_predicate?)`: ordered phase list plus an
   optional Tier-1 completion predicate.
 
