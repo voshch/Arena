@@ -11,7 +11,7 @@ sequences:
   wave_seq:
     steps:
       settle:
-        duration: {mean: 2.0, std: 0.0}
+        duration: {mean: 22.0, std: 0.0}
       wave:
         attention:
           clip: {name: wave_high, when: always}
@@ -22,7 +22,7 @@ sequences:
     steps:
       walk_to_meet:
         kind: go_to
-        target_pose: {x: 13.0, y: 9.35, theta: 1.5708}
+        target_pose: {x: 14.0, y: 10.25, theta: 1.5708}
     then: hug_seq
   hug_seq:
     steps:

@@ -1,0 +1,16 @@
+# Waves at the camera, continuously, from the first second - so the take can start whenever.
+name: waver
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration: {mean: 0.5, std: 0.0}
+      wave:
+        attention:
+          clip: {name: wave_thanks, when: always}
+          gaze: {x: 15.0, y: 7.2, z: 1.6}
+        duration: {mean: 10000.0, std: 0.0}
+    then: seq

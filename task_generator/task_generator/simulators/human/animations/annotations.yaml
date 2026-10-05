@@ -66,3 +66,6 @@ hug_v7_hero_m: {loop: true, joints: *upper_body_wrists}
 #   hug_v7_air_w / _m    office_female_caucasian_young + worker_male_asian_middleage, separation 0.3126
 hug_v7_air_w: {loop: true, joints: *upper_body_wrists}
 hug_v7_air_m: {loop: true, joints: *upper_body_wrists}
+# Cleaned copy of wave_high for the closing wave: right-arm channels frozen (the capture wrapped 2*pi there)
+# and trimmed to a seamless loop window. See data/recordings/paper_video/scripts/make_wave_clean.py
+wave_thanks: {loop: true, joints: *upper_body}

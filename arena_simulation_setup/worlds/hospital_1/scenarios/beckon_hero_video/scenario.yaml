@@ -25,14 +25,14 @@ dynamic:
 
 - name: shaker_doctor
   model: Hospital/doctor_male_caucasian_middleage
-  pose: [8.9, 15.6, 0.0]
+  pose: [8.76, 15.6, 0.0]
   agent: {agent_type: ./shaker.yaml}
-  waypoints: [[8.9, 15.6]]
+  waypoints: [[8.76, 15.6]]
 - name: shaker_visitor
   model: Office/office_male_caucasian_middleage
-  pose: [9.5, 15.6, 3.14159]
+  pose: [9.64, 15.6, 3.14159]
   agent: {agent_type: ./shaker.yaml}
-  waypoints: [[9.5, 15.6]]
+  waypoints: [[9.64, 15.6]]
 
 - name: guide
   model: Hospital/nurse_female_caucasian_young

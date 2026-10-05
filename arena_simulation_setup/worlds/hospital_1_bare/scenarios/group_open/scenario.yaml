@@ -10,7 +10,7 @@ robots:
     - 1.5708
 dynamic:
 - name: talker_0
-  model: female_adult_business_02
+  model: male_adult_medical_01
   pose:
   - 10.94
   - 11.5
@@ -32,7 +32,7 @@ dynamic:
   - - 9.53
     - 12.31
 - name: talker_2
-  model: female_adult_business_02
+  model: female_adult_medical_01
   pose:
   - 9.53
   - 10.69

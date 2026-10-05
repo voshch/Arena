@@ -9,14 +9,14 @@ robots:
 dynamic:
 - name: hugger_w
   model: Office/office_female_caucasian_young
-  pose: [8.85, 10.0, 1.5708]
+  pose: [8.85, 10.85, 1.5708]
   agent: {agent_type: ./hugger_w.yaml}
-  waypoints: [[8.85, 10.0]]
+  waypoints: [[8.85, 10.85]]
 - name: hugger_m
   model: Common/worker_male_asian_middleage
-  pose: [9.16, 10.0, -1.5708]
+  pose: [9.16, 10.85, -1.5708]
   agent: {agent_type: ./hugger_m.yaml}
-  waypoints: [[9.16, 10.0]]
+  waypoints: [[9.16, 10.85]]
 
 - name: queue_1
   model: Common/worker_male_caucasian_middleage
