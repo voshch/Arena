@@ -16,13 +16,12 @@ from pathlib import Path
 import attrs
 import numpy as np
 
-from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.gestures import BODY_HEIGHT, Channel, GestureLayer, GestureRequest, world_to_local
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.contract import ROS_JOINT_ORDER
 
 DT = 0.05
-ANIMATIONS = Path(__file__).resolve().parents[1] / "animations"
 MAX_JOINT_STEP_RAD = 0.6  # per 50 ms tick, informational (shoulder triples may wrap)
 MAX_LINK_STEP_M = 0.25  # per 50 ms tick, wrist/elbow/head jump that reads as a snap
 MAX_COLLAR_RAD = 0.45  # clavicle elevation anywhere in a clip, the recorded template shrugs to its 0.6 limit
@@ -91,7 +90,7 @@ class _Log:
 
 def run(case: Case, *, agent_id: int = 1) -> Result:
     log = _Log()
-    mgr = AnimationManager(ANIMATIONS, logger=log, fps=20.0)
+    mgr = AnimationManager(logger=log, fps=20.0)
     layer = GestureLayer(mgr, log)
     mgr.gesture_hook = layer
     reports: list[dict] = []
@@ -172,9 +171,7 @@ def head(at: tuple[float, float, float]) -> Channel:
 
 @functools.cache
 def _database() -> AnimationManager:
-    mgr = AnimationManager(ANIMATIONS, logger=_Log(), fps=20.0)
-    mgr.cache_animations()
-    return mgr
+    return AnimationManager(logger=_Log(), fps=20.0)
 
 
 def looping_clips() -> list[str]:

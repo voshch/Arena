@@ -1,6 +1,8 @@
 """Baked PointAt: ``bake`` solves an (azimuth, elevation) hold grid offline, ``BakedPointAt`` plays it back without IK.
 
-Rebake: ``python3 -m task_generator.simulators.human.pointing.table`` (output lands next to the templates).
+The table is stored next to its template, in the template's Animation asset (``table.npz``).
+Rebake: ``python3 -m task_generator.simulators.human.pointing.table`` writes it into a local copy of the asset
+(``$ARENA_ASSETS_DIR_LOCAL/Common/Animation/<template>/``), publish with ``arena asset push animation <template>``.
 """
 
 from __future__ import annotations
@@ -8,7 +10,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import math
-import os
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -16,7 +18,7 @@ import numpy as np
 
 from . import contract as C
 from . import skeleton as S
-from .generator import FIXED_POINT_DAMPING, TEMPLATE_DIR, HoldPose, PointAtClip, PointAtGenerator, PointAtOptions, _triple_in_limits, angles_from_direction
+from .generator import FIXED_POINT_DAMPING, HoldPose, PointAtClip, PointAtGenerator, PointAtOptions, _triple_in_limits, angles_from_direction, template_asset
 
 SIDES = ("l", "r")
 AZ_STEP = 5.0
@@ -27,8 +29,22 @@ SEAM_RAD = math.radians(30.0)  # corner holds further apart than this are not bl
 FIXED_POINT_ITERS = 12  # target-point aim refinement through the baked wrist
 
 
+TABLE_FILE = "table.npz"
+
+
 def table_path(template: str) -> str:
-    return os.path.join(TEMPLATE_DIR, f"{template}.table.npz")
+    return str(template_asset(template).extra(TABLE_FILE))
+
+
+def _local_table_path(template: str) -> str:
+    """The table in the local copy of the template's asset, copied there first when the template resolved elsewhere."""
+    from arena_simulation_setup.tree import DynamicPaths
+
+    source = template_asset(template).path
+    local = DynamicPaths.ARENA.path / "Common" / "Animation" / template
+    if not local.is_dir():
+        shutil.copytree(source, local, ignore=shutil.ignore_patterns(".ttl"))
+    return str(local / TABLE_FILE)
 
 
 def _quat(m: np.ndarray) -> np.ndarray:
@@ -203,7 +219,7 @@ def bake(
     progress: bool = False,
 ) -> str:
     """Solve every grid cell for both arms and write the table. Returns the path."""
-    path = path or table_path(template)
+    path = path or _local_table_path(template)
     az = np.arange(-180.0, 180.0 + 1e-9, az_step)
     el = np.arange(-el_max, el_max + 1e-9, el_step)
     jobs = [(s, ia, ie) for s in range(len(SIDES)) for ia in range(len(az) - 1) for ie in range(len(el))]

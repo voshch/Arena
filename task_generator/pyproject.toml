@@ -30,4 +30,5 @@ addopts = "-ra --strict-markers"
 markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",
+    "clips(*names): needs these Animation assets (skipped when they cannot be resolved)",
 ]

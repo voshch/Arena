@@ -4,6 +4,8 @@ import pytest
 
 from task_generator.simulators.human.gestures import qa
 
+pytestmark = pytest.mark.clips("point_to_right", "talk_with_arm_gesture", "wave_high")
+
 
 # clips whose own motion the gate rejects, kept visible rather than silenced (see results/LAYER_QUALITY.md)
 KNOWN_BAD = {

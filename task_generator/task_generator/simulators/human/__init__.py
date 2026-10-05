@@ -4,14 +4,12 @@ import abc
 import asyncio
 import itertools
 import math
-import os
 import typing
 from collections.abc import Iterable, Mapping, Sequence
 
 import attrs
 import rclpy.publisher
 import rclpy.qos
-from ament_index_python.packages import get_package_share_directory
 from arena_auditory.qos_profiles import continuous_audio_qos
 from arena_people_msgs.msg import AnimationSlot, AnimationState, AnimationStates, Pedestrian, Pedestrians
 from arena_people_msgs.srv import MovePedestrians
@@ -33,7 +31,7 @@ from visualization_msgs.msg import MarkerArray
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Region, Robot, Wall
-from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.utils import (
@@ -120,7 +118,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
         self._ped_orientations: dict[str, QuaternionMsg] = {}
-        self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
+        self._gait = AnimationManager(logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures

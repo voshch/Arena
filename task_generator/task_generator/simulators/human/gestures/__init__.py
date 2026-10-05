@@ -15,7 +15,7 @@ from arena_rclpy_mixins.registry import ClassRegistry
 if typing.TYPE_CHECKING:
     from rclpy.impl.rcutils_logger import RcutilsLogger
 
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
 
 BODY_HEIGHT = 1.65
 RETARGET_EPS_M = 0.15

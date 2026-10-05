@@ -3,8 +3,8 @@
 Takes one of the recorded pointing clips as a *style template* (timing envelope,
 idle body, gesture arc, elbow bend and swivel) and re-targets its pointing arm
 to an arbitrary direction or 3-D point in the pedestrian-local frame, emitting a
-clip in exactly the same on-wire format as the template
-(``[{angles, root_xy_yaw, animation_state, t}, ...]`` as an object ``.npy``).
+clip in exactly the same per-frame shape as the template
+(``[{angles, root_xy_yaw, animation_state, t}, ...]``, the template is an Animation asset).
 
 Design
 ------
@@ -36,32 +36,30 @@ triples).  Arena's RViz adapter and the Isaac bone map consume them directly.
 
 from __future__ import annotations
 
-import os
+import functools
+import typing
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 
 from . import contract as C
 from . import skeleton as S
 
+if typing.TYPE_CHECKING:
+    from arena_simulation_setup.tree.assets.Animation import AnimationView
+
 TEMPLATES = ("point_to_right",)
 
 
-def _animations_dir() -> str:
-    """The recorded clips: package sibling in the source tree, ament share when installed."""
-    local = Path(__file__).resolve().parent.parent / "animations"
-    if local.is_dir():
-        return str(local)
-    try:
-        from ament_index_python.packages import get_package_share_directory
-    except ImportError:
-        return str(local)
-    return os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations")
+@functools.cache
+def template_asset(name: str) -> AnimationView:
+    """A recorded template clip, resolved as an Animation asset."""
+    from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
+
+    return AnimationIdentifier.parse(name).resolve_sync()
 
 
-TEMPLATE_DIR = _animations_dir()
 # under-relaxed wrist-to-aim fixed point: close targets do not contract otherwise
 FIXED_POINT_DAMPING = 0.55
 
@@ -98,10 +96,9 @@ class Template:
         return len(self.frames)
 
 
-def _load_frames(path: str) -> list[dict]:
-    raw = np.load(path, allow_pickle=True)
+def _load_frames(name: str) -> list[dict]:
     # recordings that predate a wire DOF (the wrists) carry it as 0.0
-    return [{**f, "angles": {**dict.fromkeys(C.ROS_JOINT_ORDER, 0.0), **f["angles"]}} for f in raw]
+    return [{**f, "angles": {**dict.fromkeys(C.ROS_JOINT_ORDER, 0.0), **f["angles"]}} for f in template_asset(name).clip.frames()]
 
 
 def _elbow_swivel(sh: np.ndarray, el: np.ndarray, aim_dir: np.ndarray) -> float:
@@ -116,12 +113,7 @@ def _elbow_swivel(sh: np.ndarray, el: np.ndarray, aim_dir: np.ndarray) -> float:
 
 
 def load_template(name: str = "point_to_right", height: float = 1.65) -> Template:
-    if name in TEMPLATES:
-        path = os.path.join(TEMPLATE_DIR, f"{name}.npy")
-    else:
-        path = name
-        name = os.path.splitext(os.path.basename(path))[0]
-    frames = _load_frames(path)
+    frames = _load_frames(name)
     body = S.Body(height)
     t = np.array([f["t"] for f in frames], dtype=float)
     dt = float(np.median(np.diff(t))) if len(t) > 1 else 0.05

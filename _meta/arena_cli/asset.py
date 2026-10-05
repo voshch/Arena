@@ -40,6 +40,7 @@ KINDS = {
     "human": Kind("human models", f"{_TREE}.assets.Human", "HumanIdentifier", "NETWORK_PROVIDERS", parse=True),
     "material": Kind("surface materials", f"{_TREE}.assets.Material", "MaterialIdentifier", "NETWORK_PROVIDERS", parse=True),
     "wall": Kind("wall kinds", f"{_TREE}.Wall", "WallIdentifier", "NETWORK_PROVIDERS", parse=True),
+    "animation": Kind("pedestrian animation clips", f"{_TREE}.assets.Animation", "AnimationIdentifier", "NETWORK_PROVIDERS", parse=True),
     "world": Kind("worlds", f"{_TREE}.World", "WorldIdentifier", "WORLD_PROVIDERS", closure="world", repo_subdir="worlds"),
     "suite": Kind("benchmark suites", _BENCH, "SuiteIdentifier", "BENCHMARK_PROVIDERS", bundle=True, closure="suite"),
     "contest": Kind("benchmark contests", _BENCH, "ContestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),

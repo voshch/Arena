@@ -19,8 +19,8 @@ and passes it to `AnimationManager.compute(..., gesture=...)`, which calls the l
 | `halt` / `halt_l` / `halt_r` | `halt` | as `arm` | the `point` swing held at a fixed 15 deg elevation on the target's bearing, palm pushed out at the target (forearm pronation plus 70 deg wrist extension, opening with the forearm's rise), shares the `arm` overlay |
 | `body` | `clip` | `clip` | |
 
-`clip` plays the manager's cached `.npy` of that name as an overlay over the joints its entry in
-[animations/annotations.yaml](../animations/annotations.yaml) lists (none listed = whole body), looping when
+`clip` plays the manager's cached Animation asset of that name as an overlay over the joints its
+`annotation.yaml` lists (none listed = whole body, see [Animation clips](../README.md#animation-clips)), looping when
 annotated so, else parking on the last frame until the channel disappears. It needs no target and no generator:
 the slot holds from the first tick and fades back into the gait on release.
 

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from task_generator.simulators.human.animation_mananager import JOINT_NAMES, Animation, AnimationManager
+from task_generator.simulators.human.animation_manager import JOINT_NAMES, Animation, AnimationManager
+from task_generator.simulators.human.clips import NoClips
 
-ANIMATIONS = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
 ARMS = {"l_y_collar", "l_p_collar", "l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "l_elbow", "r_y_collar", "r_p_collar", "r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow"}
 FPS = 20.0
 DT = 0.1
@@ -29,7 +27,7 @@ def const_frames(value: float, n: int) -> list[dict]:
 
 @pytest.fixture()
 def mgr() -> AnimationManager:
-    m = AnimationManager(ANIMATIONS, logger=StubLogger(), fps=FPS)
+    m = AnimationManager(logger=StubLogger(), fps=FPS, clips=NoClips())
     m.register_transient("zero_base", const_frames(0.0, 40), loop=True)
     m.map_state_to_animation(0, "zero_base")
     return m
@@ -43,7 +41,7 @@ def step(mgr: AnimationManager, agent: int, n: int = 1, dt: float = DT) -> dict[
 
 
 def test_state_map_defaults():
-    m = AnimationManager(ANIMATIONS, logger=StubLogger(), fps=FPS)
+    m = AnimationManager(logger=StubLogger(), fps=FPS, clips=NoClips())
     assert m.state_to_animation_map == {0: "idle", 1: "walk", 2: "run", 3: "idle", 4: "idle", 5: "idle", 6: "idle"}
     for state in range(7):
         angles = m.compute(1, state, 1.0, DT)

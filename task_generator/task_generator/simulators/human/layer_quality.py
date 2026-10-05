@@ -23,12 +23,11 @@ from pathlib import Path
 
 import numpy as np
 
-from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.gestures import BODY_HEIGHT, Channel, GestureLayer, GestureRequest, world_to_local
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.contract import ROS_JOINT_ORDER
 
-ANIMATIONS = Path(__file__).resolve().parent / "animations"
 FPS = 20.0
 DT = 1.0 / FPS
 IDLE, WALKING = 0, 1
@@ -155,7 +154,7 @@ def aim_errors(slot: str, target_local: Sequence[float], *, moving: bool, hold_s
     aims on, so the error is the solver's alone, without the parallax of the hand sitting off the body axis.
     """
     log = _Log()
-    mgr = AnimationManager(ANIMATIONS, logger=log, fps=FPS)
+    mgr = AnimationManager(logger=log, fps=FPS)
     layer = GestureLayer(mgr, log)
     mgr.gesture_hook = layer
     body = S.Body(BODY_HEIGHT)
@@ -217,11 +216,12 @@ class _Log:
 
 
 def clip_report(sources: dict[str, Path]) -> list[dict]:
-    mgr = AnimationManager(ANIMATIONS, logger=_Log(), fps=FPS)
+    mgr = AnimationManager(logger=_Log(), fps=FPS)
     body = S.Body(BODY_HEIGHT)
     rows = []
-    for name in sorted(p.stem for p in ANIMATIONS.glob("*.npy")):
-        anim = mgr.animations[name]
+    for name, anim in sorted(mgr.animations.items()):
+        if not anim.frames:  # synthesized
+            continue
         joints = anim.joints or None
         frames = anim.frames
         row: dict = {"clip": name, "frames": len(frames), "loop": anim.loop, "mask": "upper-body" if joints else "whole-body"}

@@ -80,8 +80,8 @@ only forward them (arena_humansim copies `AgentState.gestures` one to one, the p
 as-is), and `publish_arena_peds` hands them per ped to the [`GestureLayer`](gestures/__init__.py) as a
 `GestureRequest` (a `Channel(slot, at, clip, hand)` per entry, ped pose, moving flag). The layer resolves each
 aimed target into the ped frame once per clip, asks the slot's generator for frames (`head` -> `look`,
-`arm*` -> `point`, `body` -> `clip`, the cached `.npy` named on the wire over the joints
-[annotations.yaml](animations/annotations.yaml) lists for it), and plays them as independent `AnimationManager`
+`arm*` -> `point`, `body` -> `clip`, the Animation asset named on the wire over the joints its
+annotation lists, see [Animation clips](#animation-clips)), and plays them as independent `AnimationManager`
 overlay slots (`head`, `arm`, `body`) over the locomotion base. Nothing is synthesized: no channel published =
 that body part idle. See [gestures/README.md](gestures/README.md) for slots, hand resolution,
 timing, and how to add a kind.
@@ -89,6 +89,27 @@ timing, and how to add a kind.
 An empty list releases every slot, a missing entry releases that slot. Unknown slots warn once per ped and are
 ignored. Clips come from the baked pointing table and are generated inline on the publishing tick, so their
 timing is sim-deterministic under lockstep without any extra plumbing.
+
+## Animation clips
+
+Canned clips (`wave`, `hug`, the pointing template `point_to_right`, ...) are `Animation` assets
+([Animation.py](../../../../arena_simulation_setup/src/arena_simulation_setup/tree/assets/Animation.py)), not
+repo files. `AnimationManager` loads every clip it can list at startup through [`AssetClips`](clips.py), and
+`AnimationManager.clip(name)` fetches one published after launch on first request. Resolution order: the active
+world's `assets/`, `$ARENA_ASSETS_DIR_LOCAL` (= `arena_simulation_setup/assets/`), then the asset bucket (cached
+under `$ARENA_ASSETS_DIR/<bucket>/`). Both local dirs gitignore `*/Animation/`.
+
+```
+Common/Animation/<name>/
+  annotation.yaml   fps, loop, reverse, joints (a JOINT_GROUPS name from clips.py or a list; omitted = whole body), note
+  <name>.npz        joint_names (J,), angles (T, J), t (T,), root_xy_yaw (T, 3), animation_state (T,)
+  table.npz         point_to_right only: the baked pointing table (pointing/table.py)
+```
+
+Adding a clip: write it with `write_clip(Path("arena_simulation_setup/assets/Common/Animation/<name>"), frames, meta)`
+(frames are the players' `{"t", "angles", "root_xy_yaw", "animation_state"}` dicts), check it with
+`arena asset find animation <name>`, then publish it with `arena asset push animation <name>` (needs `GCS_ACCESS_TOKEN`).
+Tests that need clips carry `@pytest.mark.clips(...)` and skip when the clips cannot be resolved.
 
 ## Visualization topics
 

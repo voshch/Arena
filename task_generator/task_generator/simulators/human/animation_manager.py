@@ -2,20 +2,19 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import attrs
-import numpy as np
 import rclpy
-import yaml
 
+from .clips import AssetClips, ClipSource, joint_mask
 from .gait import GaitGenerator
 
 JOINT_NAMES = GaitGenerator.JOINT_NAMES
 
 if TYPE_CHECKING:
     import rclpy.impl.rcutils_logger
+    from arena_simulation_setup.tree.assets.Animation import AnimationClip
     from builtin_interfaces.msg import Time
     from sensor_msgs.msg import JointState
 else:
@@ -23,9 +22,6 @@ else:
         from sensor_msgs.msg import JointState
     except ImportError:
         JointState = None  # type: ignore[assignment,misc]
-
-
-ANNOTATIONS_FILE = "annotations.yaml"  # per clip: loop (bool), joints (the ones the clip moves, see gestures/annotate.py)
 
 
 @attrs.define
@@ -125,20 +121,20 @@ class AnimationManager:
 
     def __init__(
         self,
-        animation_database_path: str | Path,
         logger: rclpy.impl.rcutils_logger.RcutilsLogger,
         fps: float = 20.0,
+        clips: ClipSource | None = None,
     ) -> None:
         """
         Args:
-            animation_database_path: path to animation database.
-            fps: playback rate of the source clip (MoMask/HumanML3D clips
-                are commonly 20 fps).
+            fps: playback rate of synthesized and transient clips (MoMask/HumanML3D clips
+                are commonly 20 fps), canned clips carry their own.
+            clips: where canned clips come from, default the Animation assets.
         """
         self.logger = logger
-        self.database_path = Path(animation_database_path)
-        assert self.database_path.is_dir(), f"Path does not exist {str(self.database_path.absolute())}"
         self._fps = fps
+        self._clips = AssetClips() if clips is None else clips
+        self._unavailable: set[str] = set()  # clip() already failed to load these
 
         self.animations: dict[str, Animation] = {}
         # Default one-shot animation list
@@ -171,54 +167,51 @@ class AnimationManager:
         """
         self.state_to_animation_map[state] = anim_name
 
-    def cache_animations(self, animation_name: list[str] | None = None, loop_mapping: dict[str, bool] | None = None) -> None:
+    def cache_animations(self, animation_name: Sequence[str] | None = None, loop_mapping: dict[str, bool] | None = None) -> None:
         """
-        Load animations from database and cache them.
+        Load canned clips from the clip source and cache them.
 
         Args:
-            animation_name: List of animation names to load, default every .npy in the database.
-            loop_mapping: Loop override per clip, else annotations.yaml, else loop unless listed in one_shot_animations.
+            animation_name: Clips to load, default every clip the source has.
+            loop_mapping: Loop override per clip, else the clip's annotation, else loop unless listed in one_shot_animations.
         """
         if loop_mapping is None:
             loop_mapping = {}
 
-        annotations: dict[str, dict] = {}
-        annotations_path = self.database_path / ANNOTATIONS_FILE
-        if annotations_path.is_file():
-            with open(annotations_path) as f:
-                annotations = yaml.safe_load(f) or {}
-
-        if animation_name is None:
-            animation_name = [f.stem for f in self.database_path.glob("*.npy")]
-
         for name in self.USE_SYNTHESIS:
             self.animations[name] = Animation(name=name, frames=[], n_frames=0, duration=0.0, loop=True, fps=self._fps)
-            self.logger.info(f"Animation loaded (default, use systhesis): [{name}]")
 
-        for name in animation_name:
-            if name in self.animations.keys():
+        names = self._clips.names() if animation_name is None else list(animation_name)
+        for name, clip in self._clips.load(names).items():
+            if isinstance(clip, Exception):
+                self.logger.warning(f"Animation `{name}` could not be loaded: {clip}")
+                continue
+            if name in self.animations:
                 self.logger.warning(f"Animation `{name}` is already cached, overiding...")
+            self.animations[name] = anim = self._from_clip(name, clip, loop_mapping.get(name))
+            self.logger.info(f"Animation loaded: [{name}]: [{anim.n_frames} frames - {anim.duration}s at {anim.fps}, loop={anim.loop}{', reverse' if anim.reverse else ''}]")
 
-            path = self.database_path / f"{name}.npy"
-            assert path.is_file(), f"Animation {name} does not appear at {str(path)}"
+    def _from_clip(self, name: str, clip: AnimationClip, loop: bool | None) -> Animation:
+        meta = clip.meta
+        # recordings that predate a wire DOF (the wrists) carry it as 0.0
+        frames = [{**frame, "angles": {**dict.fromkeys(JOINT_NAMES, 0.0), **frame["angles"]}} for frame in clip.frames()]
+        n_frames = len(frames)
+        is_loop = loop if loop is not None else bool(meta.get("loop", name not in self.one_shot_animations))
+        is_reverse = bool(meta.get("reverse", False))
 
-            # recordings that predate a wire DOF (the wrists) carry it as 0.0
-            anim_frames = [{**frame, "angles": {**dict.fromkeys(JOINT_NAMES, 0.0), **frame["angles"]}} for frame in np.load(path, allow_pickle=True)]
-            n_frames = len(anim_frames)
-            duration = n_frames / self._fps
-            annotation = annotations.get(name, {})
-            is_loop = loop_mapping.get(name, annotation.get("loop", name not in self.one_shot_animations))
-            is_reverse = bool(annotation.get("reverse", False))
+        assert n_frames > 0, "Animation does not contain any frames"
+        assert not (is_reverse and not is_loop), f"Animation {name} is reverse but does not loop"
 
-            assert n_frames > 0, "Animation does not contain any frames"
-            assert duration > 0.0, f"Animation duration is invalid, got: {duration}"
-            assert not (is_reverse and not is_loop), f"Animation {name} is reverse but does not loop"
+        cycle = 2 * n_frames - 2 if is_reverse else n_frames  # a reverse cycle is the clip out and back
+        return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, joints=joint_mask(meta.get("joints")), reverse=is_reverse)
 
-            if is_reverse:
-                duration = (2 * n_frames - 2) / self._fps  # the cycle is the clip out and back
-
-            self.animations[name] = Animation(name=name, frames=anim_frames, n_frames=n_frames, duration=duration, loop=is_loop, fps=self._fps, joints=tuple(annotation.get("joints", ())), reverse=is_reverse)
-            self.logger.info(f"Animation loaded: [{name}]: [{n_frames} frames - {duration}s at {self._fps}, loop={is_loop}{', reverse' if is_reverse else ''}]")
+    def clip(self, name: str) -> Animation | None:
+        """A cached clip, loaded from the clip source on first request (a clip published after launch). Failures are not retried."""
+        if name not in self.animations and name not in self._unavailable:
+            self.cache_animations([name])
+            if name not in self.animations:
+                self._unavailable.add(name)
+        return self.animations.get(name)
 
     def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0, reverse: bool = False) -> Animation:
         """Register a generated clip (list of {"angles": ...} frames) under ``name``, optionally owned by an agent."""
@@ -311,7 +304,7 @@ class AnimationManager:
 
         # Check
         self.check_animations_cached()
-        if anim_name not in self.animations:
+        if self.clip(anim_name) is None:
             raise ValueError(f"Animation '{anim_name}' is not loaded.")
 
         # Set active base
@@ -363,9 +356,10 @@ class AnimationManager:
 
         if isinstance(overlay, str):
             self.check_animations_cached()
-            if overlay not in self.animations:
+            anim = self.clip(overlay)
+            if anim is None:
                 raise ValueError(f"Animation '{overlay}' is not loaded.")
-            overlay = self.animations[overlay]
+            overlay = anim
 
         if blend_joints is None:
             # Default to left and right arms (collar, shoulder, elbow joints)

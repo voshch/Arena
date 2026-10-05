@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from task_generator.simulators.human.animation_mananager import JOINT_NAMES, AnimationManager
+from task_generator.simulators.human.animation_manager import JOINT_NAMES, AnimationManager
 from task_generator.simulators.human.gestures import (
     BREATH_AMP_RAD,
     BREATH_HZ,
@@ -28,7 +27,7 @@ from task_generator.simulators.human.gestures.look import HEAD, LookGesture, Loo
 from task_generator.simulators.human.gestures.point import PointGesture
 from task_generator.simulators.human.pointing.contract import LIMITS, arm_dofs
 
-ANIMATIONS = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
+pytestmark = pytest.mark.clips("point_to_right", "wave", "hug", "shake_hand", "talk_with_arm_gesture")
 DT = 0.05
 POSE = (1.0, 2.0, math.pi / 2)  # facing +y: world -x is the ped's left
 
@@ -47,7 +46,7 @@ class StubLogger:
 @pytest.fixture()
 def rig() -> tuple[AnimationManager, GestureLayer, StubLogger]:
     log = StubLogger()
-    mgr = AnimationManager(ANIMATIONS, logger=log, fps=20.0)
+    mgr = AnimationManager(logger=log, fps=20.0)
     layer = GestureLayer(mgr, log)
     mgr.gesture_hook = layer
     return mgr, layer, log
@@ -761,10 +760,9 @@ def test_the_gate_covers_every_looping_canned_clip() -> None:
 
 
 def test_a_reverse_clip_keeps_its_wrap_through_the_layer() -> None:
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
     from task_generator.simulators.human.gestures.clip import ClipGesture
 
-    mgr = AnimationManager(ANIMATIONS, logger=StubLogger(), fps=20.0)
-    mgr.cache_animations(["talk_with_arm_gesture"])
+    mgr = AnimationManager(logger=StubLogger(), fps=20.0)
     clip = ClipGesture(mgr).start(np.zeros(3), {"clip": "talk_with_arm_gesture"})
     assert clip.loop and clip.reverse  # the database's wrap survives into what the layer plays

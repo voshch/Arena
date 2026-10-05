@@ -10,7 +10,7 @@ from ..gait import GaitGenerator
 from . import GestureClip
 
 if typing.TYPE_CHECKING:
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
 
 
 class ClipGesture:
@@ -33,7 +33,7 @@ class ClipGesture:
     def start(self, local: np.ndarray, opts: dict) -> GestureClip:
         del local
         name = str(opts.get("clip", ""))
-        anim = self._manager.animations.get(name)
+        anim = self._manager.clip(name)
         if anim is None or anim.n_frames == 0:
             raise ValueError(f"unknown clip {name!r}")
         last = anim.n_frames - 1
