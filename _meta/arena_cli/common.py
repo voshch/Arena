@@ -84,7 +84,10 @@ def _exec(*argv: str) -> NoReturn:
 
 def _git_ssh_command() -> str:
     """ssh that fails fast on unreachable hosts and never blocks on a prompt without a tty."""
-    opts = "-o ConnectTimeout=5" if sys.stdin.isatty() else "-o ConnectTimeout=5 -o BatchMode=yes"
+    # accept-new: a fresh container has no known_hosts, and the host key prompt hangs the first-boot update under docker's tty
+    opts = "-o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new"
+    if not sys.stdin.isatty():
+        opts += " -o BatchMode=yes"
     return f"ssh {opts}"
 
 
