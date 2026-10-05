@@ -135,19 +135,19 @@ class RobotManager(NodeInterface):
 
     @property
     def goal_phase(self) -> GoToPhase | None:
-        """First GoToPhase in the current TaskRequest, or None."""
+        """Last GoToPhase in the current TaskRequest, the episode's final goal, or None."""
         from task_generator.tasks.robots.request import GoToPhase
 
         if self._current_request is None:
             return None
-        for phase in self._current_request.phases:
+        for phase in reversed(self._current_request.phases):
             if isinstance(phase, GoToPhase):
                 return phase
         return None
 
     @property
     def goal(self) -> Pose | None:
-        """Pose of the first GoToPhase in the current TaskRequest, or None."""
+        """Pose of the last GoToPhase in the current TaskRequest, or None."""
         phase = self.goal_phase
         return None if phase is None else phase.pose
 
