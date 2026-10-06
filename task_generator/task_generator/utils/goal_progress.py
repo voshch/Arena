@@ -16,7 +16,6 @@ class GoalProgress:
     start_dist: float = 0.0
     min_dist: float = 0.0
     path_length: float = 0.0
-    goal_tolerance: float = 0.0
     _last_xy: tuple[float, float] | None = attrs.field(default=None, init=False, repr=False)
     _anchor_xy: tuple[float, float] | None = attrs.field(default=None, init=False, repr=False)
     _anchor_t: float = attrs.field(default=0.0, init=False, repr=False)
@@ -32,8 +31,7 @@ class GoalProgress:
         """Sim seconds the robot has stayed within STALL_RADIUS of one spot."""
         return t - self._anchor_t
 
-    def sample(self, xy: tuple[float, float], goal_xy: tuple[float, float], goal_tolerance: float, t: float) -> None:
-        self.goal_tolerance = goal_tolerance
+    def sample(self, xy: tuple[float, float], goal_xy: tuple[float, float], t: float) -> None:
         dist = math.hypot(xy[0] - goal_xy[0], xy[1] - goal_xy[1])
         if self._anchor_xy is None or math.hypot(xy[0] - self._anchor_xy[0], xy[1] - self._anchor_xy[1]) > STALL_RADIUS:
             self._anchor_xy = xy
@@ -48,20 +46,31 @@ class GoalProgress:
 
 
 class GoalProgressTracker:
-    """Per-robot GoalProgress keyed by robot name, reset once per episode."""
+    """Per-robot GoalProgress keyed by robot name, restarted on every phase change, reset once per episode."""
 
     def __init__(self) -> None:
         self._by_robot: dict[str, GoalProgress] = {}
+        self._phase: dict[str, object] = {}
+        self._waiting: set[str] = set()
 
     def reset(self) -> None:
         self._by_robot.clear()
+        self._phase.clear()
+        self._waiting.clear()
 
-    def sample(self, name: str, xy: tuple[float, float], goal_xy: tuple[float, float], goal_tolerance: float, t: float) -> None:
-        self._by_robot.setdefault(name, GoalProgress()).sample(xy, goal_xy, goal_tolerance, t)
+    def sample(self, name: str, xy: tuple[float, float], goal_xy: tuple[float, float], t: float, *, phase: object = None, waiting: bool = False) -> None:
+        if self._phase.get(name, phase) != phase:
+            self._by_robot.pop(name, None)
+        self._phase[name] = phase
+        if waiting:
+            self._waiting.add(name)
+        else:
+            self._waiting.discard(name)
+        self._by_robot.setdefault(name, GoalProgress()).sample(xy, goal_xy, t)
 
-    def longest_stall(self, t: float) -> float:
-        """Longest stall among robots not yet within their goal tolerance, 0.0 if there are none."""
-        return max((p.stalled_for(t) for p in self._by_robot.values() if p.min_dist > p.goal_tolerance), default=0.0)
+    def longest_stall(self, t: float, goal_radius: float) -> float:
+        """Longest stall among robots not yet within goal_radius and not holding at a reached goal, 0.0 if there are none."""
+        return max((p.stalled_for(t) for name, p in self._by_robot.items() if p.min_dist > goal_radius and name not in self._waiting), default=0.0)
 
     def least_progress(self) -> GoalProgress | None:
         """Tracked robot with the lowest closed fraction, or None if nothing was sampled."""

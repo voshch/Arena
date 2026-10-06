@@ -48,13 +48,9 @@ class VlaAdapter(DrlAdapter):
 
     def _initial_state(self, phase: GoToPhase) -> dict:
         from arena_planners import goal  # noqa: PLC0415
+        from arena_simulation_setup.shared.render import render_phase  # noqa: PLC0415
 
-        instruction = phase.instruction or self._fallback_instruction
-        if "pose" not in self._revealed and not instruction:
-            raise ValueError(
-                f"VlaAdapter: planner {self._planner_name!r} gets only the instruction but this goal has none, "
-                "set `instruction:` on the scenario goto phase or robot.mobile.instruction:=<text>"
-            )
+        instruction = phase.text or self._fallback_instruction or render_phase(phase)
         x, y, theta = phase.pose.to_2d()
         return goal.initial_state({"x": x, "y": y, "theta": theta}, instruction, self._revealed)
 

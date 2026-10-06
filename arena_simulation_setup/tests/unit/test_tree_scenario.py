@@ -7,12 +7,10 @@ import pytest
 import yaml
 
 from arena_simulation_setup.shared.conditions import EpisodeCondition
+from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, TaskPhase
 from arena_simulation_setup.tree.World.Scenario import (
     RobotGoal,
     Scenario,
-    ScenarioGesturePhase,
-    ScenarioGotoPhase,
-    ScenarioPhase,
     ScenarioView,
     TimelineEntry,
 )
@@ -167,52 +165,25 @@ def test_scenario_view_included_from_propagated(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# ScenarioPhase dispatch
+# TaskPhase dispatch
 # ---------------------------------------------------------------------------
 
 
 def test_scenario_phase_parse_goto():
-    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0]})
-    assert isinstance(phase, ScenarioGotoPhase)
-    assert phase.goto.position.x == pytest.approx(1.0)
-
-
-def test_scenario_phase_parse_goto_instruction():
-    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0], "instruction": "go to the blue door"})
-    assert isinstance(phase, ScenarioGotoPhase)
-    assert phase.instruction == "go to the blue door"
-
-
-def test_scenario_phase_parse_goto_without_instruction_is_empty():
-    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0]})
-    assert isinstance(phase, ScenarioGotoPhase)
-    assert phase.instruction == ""
-
-
-def test_scenario_phase_parse_goto_success_criteria():
-    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0], "tolerance_radius": 3, "tolerance_angle": 0.5, "hold_time": 2.0, "signal": "arrived"})
-    assert isinstance(phase, ScenarioGotoPhase)
-    assert phase.tolerance_radius == pytest.approx(3.0)
-    assert phase.tolerance_angle == pytest.approx(0.5)
-    assert phase.hold_time == pytest.approx(2.0)
-    assert phase.signal == "arrived"
-
-
-def test_scenario_phase_parse_goto_leaves_unset_criteria_to_launch_defaults():
-    phase = ScenarioPhase.parse({"goto": [1.0, 2.0, 0.0]})
-    assert isinstance(phase, ScenarioGotoPhase)
-    assert (phase.tolerance_radius, phase.tolerance_angle, phase.hold_time, phase.signal) == (None, None, None, None)
+    phase = TaskPhase.parse({"goto": [1.0, 2.0, 0.0]})
+    assert isinstance(phase, GoToPhase)
+    assert phase.pose.position.x == pytest.approx(1.0)
 
 
 def test_scenario_phase_parse_gesture():
-    phase = ScenarioPhase.parse({"gesture": "wave"})
-    assert isinstance(phase, ScenarioGesturePhase)
+    phase = TaskPhase.parse({"gesture": "wave"})
+    assert isinstance(phase, PlayGesturePhase)
     assert phase.gesture == "wave"
 
 
 def test_scenario_phase_parse_malformed_raises():
     with pytest.raises(ValueError):
-        ScenarioPhase.parse({"foo": "bar"})
+        TaskPhase.parse({"foo": "bar"})
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +196,8 @@ def test_robot_goal_phase_list_legacy_goal_deprecation():
     with pytest.warns(DeprecationWarning):
         phases = rg.phase_list()
     assert len(phases) == 1
-    assert isinstance(phases[0], ScenarioGotoPhase)
-    assert phases[0].goto.position.x == pytest.approx(3.0)
+    assert isinstance(phases[0], GoToPhase)
+    assert phases[0].pose.position.x == pytest.approx(3.0)
 
 
 def test_robot_goal_phase_list_empty_when_no_goal_no_phases():
@@ -265,14 +236,14 @@ def test_robot_goal_phase_list_mixed_phases(tmp_path):
     rg = scenario.robots[0]
     phases = rg.phase_list()
     assert len(phases) == 4
-    assert isinstance(phases[0], ScenarioGotoPhase)
-    assert phases[0].goto.position.x == pytest.approx(1.0)
-    assert isinstance(phases[1], ScenarioGesturePhase)
+    assert isinstance(phases[0], GoToPhase)
+    assert phases[0].pose.position.x == pytest.approx(1.0)
+    assert isinstance(phases[1], PlayGesturePhase)
     assert phases[1].gesture == "wave"
-    assert isinstance(phases[2], ScenarioGotoPhase)
-    assert phases[2].goto.position.x == pytest.approx(2.0)
-    assert isinstance(phases[3], ScenarioGesturePhase)
-    assert phases[3].gesture == "random"
+    assert isinstance(phases[2], GoToPhase)
+    assert phases[2].pose.position.x == pytest.approx(2.0)
+    assert isinstance(phases[3], PlayGesturePhase)
+    assert phases[3].gesture is None
 
 
 def test_robot_goal_phase_list_malformed_phase_raises(tmp_path):
@@ -305,7 +276,7 @@ def test_robot_goal_phases_takes_priority_over_goal():
     )
     phases = rg.phase_list()
     assert len(phases) == 1
-    assert isinstance(phases[0], ScenarioGesturePhase)
+    assert isinstance(phases[0], PlayGesturePhase)
 
 
 # ---------------------------------------------------------------------------

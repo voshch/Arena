@@ -343,13 +343,27 @@ robots:
       - {goto: [8.0, 8.0, 0.0]}
 ```
 
-An empty scenario (robot start and phases only) is valid. Each phase is
-`{goto: <pose>}` or `{gesture: <name>}`, run in order. A `goto` phase takes an optional
-`instruction: <text>`, the natural-language goal a language-conditioned planner receives alongside the pose
-(the pose still decides success), and optional `tolerance_radius: <m>`, `tolerance_angle: <rad>` and
-`hold_time: <s>` (park inside the tolerance that long before the goal counts) and `signal: <name>` (the robot must
-send that signal, such as `arrived`, and is judged against the tolerance at that moment). Each one left out takes the
-matching `task.episode.goto_pose.*` launch parameter (`tolerance.radius`, `tolerance.angle`, `hold_time`, `signal`). `goal:` is deprecated. Add static obstacles by
+An empty scenario (robot start and phases only) is valid. Phases run in order
+and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
+`{reach: <named target | random | pose>}`, or a hold phase with neither (the robot
+stays where it is). Every phase takes `until: "<atom>"` (completes once the atom
+holds, after arrival for a goto), `hold_time` (park seconds on a goto), `signal`
+(the robot ends the goto itself by sending that signal, such as `arrived`, and
+is judged against the tolerance at that moment), `conditions:` (clauses judged
+over this phase only), `text:` (the instruction handed to language-conditioned
+planners, `instruction:` is accepted as the same key) and `on_failure`. A robot entry may also carry
+`conditions:` judged over its whole phase list. `goal:` is deprecated.
+
+```yaml
+robots:
+  - start: [1.0, 1.0, 0.0]
+    phases:
+      - {goto: kitchen}
+      - {until: "not visitor_1 in kitchen"}
+      - {goto: sofa, hold_time: 2, conditions: [{op: never, p: "robot in hallway"}]}
+```
+
+Add static obstacles by
 listing `Obstacle` entries under `static:`, dynamic pedestrians under `dynamic:`.
 A static entry's flat top-level keys `type`, `capacity`, `satisfies`,
 `interaction_radius` and `formation` are forwarded to humansim as its

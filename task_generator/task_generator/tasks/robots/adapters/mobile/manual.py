@@ -1,9 +1,9 @@
 """Manual teleop adapter (mobile: manual).
 
 Drives the robot via rqt_robot_steering publishing Twist on the robot's
-`cmd_vel`. Task dispatch is a no-op and is_phase_done returns None so the
-phase only ends when its own predicate fires; otherwise the user-driven
-robot would be teleported back to spawn on every poll.
+`cmd_vel`. Task dispatch is a no-op, so a phase only ends when the judge
+sees its predicate hold. Otherwise the user-driven robot would be teleported
+back to spawn on every poll.
 """
 
 from __future__ import annotations
@@ -30,9 +30,6 @@ if TYPE_CHECKING:
 )
 class ManualAdapter(MobileAdapter):
     kind: ClassVar[str] = "manual"
-
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        return None
 
     async def dispatch_phase(self, phase: TaskPhase, robot: RobotManager) -> None:
         return None

@@ -27,7 +27,11 @@ class MyAdapter(Adapter):
 The base class constructor builds `self.bringup` and `self.client` from
 `bringup_cls` / `client_cls`; subclasses only implement `dispatch_phase`.
 
-`is_phase_done` polls `self.client.is_done()`. Mobile adapters inherit
+Goto completion is judged by the task runner from the robot pose. Gesture and
+reach phases complete on `self.client.is_done()`, and `on_phase_tick(phase, robot)` runs every
+judge tick while a phase is active, with the phase as `dispatch_phase` received it (Nav2
+uses it to redispatch a finished action while the judge has not seen the robot arrive,
+never while `robot.waiting`). Mobile adapters inherit
 [`MobileAdapter`](mobile/__init__.py), whose `on_reset` teleports the robot
 to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
 any post-teleport work.

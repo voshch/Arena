@@ -20,7 +20,7 @@ EPISODE_PARAMS: dict[str, str] = {
     'task.episode.goto_pose.tolerance.radius': 'Goal position tolerance in metres for goto_pose phases.',
     'task.episode.goto_pose.tolerance.angle': 'Goal heading tolerance in radians for goto_pose phases.',
     'task.episode.goto_pose.timeout.no_progress': 'Fail a goto_pose episode after this many sim seconds without goal progress (-1 = off).',
-    'task.episode.goto_pose.hold_time': 'Sim seconds a robot must park at the goal before a goto_pose phase counts (0 = arriving suffices).',
+    'task.episode.goto_pose.hold_time': 'Sim seconds a robot must park at a goto_pose goal before the phase counts as met (0 = arrival suffices).',
     'task.episode.goto_pose.signal': 'Signal the robot must send to end a goto_pose phase, such as arrived (empty = Arena judges arrival).',
 }
 

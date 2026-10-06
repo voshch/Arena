@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import json
 import random
+import re
 import threading
 import traceback
 import typing
@@ -32,6 +33,8 @@ from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
+from arena_simulation_setup.shared.conditions import parse_atom
+from arena_simulation_setup.shared.judge import Sample, atom_holds, zone_polygons
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
@@ -72,6 +75,7 @@ from . import SafeCallbackNode
 if typing.TYPE_CHECKING:
     from arena_runtime.sim._semantics import SemanticChange, SemanticEntitySnapshot
 
+    from task_generator.manager.robot_manager import RobotManager
     from task_generator.shared import SemanticCfg
     from task_generator.tasks.robots.adapters import AdapterDisplayHint
 
@@ -88,6 +92,11 @@ _EPISODE_QOS = rclpy.qos.QoSProfile(
 
 # Node tick cadence, matching the mechanism-shim sim-time tick.
 _SIM_TICK_RATE = 30.0
+_ENV_PREFIX = re.compile(r"^env_\d+/")
+
+
+def _strip_env(name: str) -> str:
+    return _ENV_PREFIX.sub("", name, count=1)
 
 
 @attrs.define
@@ -104,7 +113,6 @@ class EpisodeRecord:
     goal_uuid: str = ""
     goal_dist_start: float = 0.0
     goal_dist_min: float = 0.0
-    goal_tolerance: float = 0.0
     path_length: float = 0.0
     integrity: bool = True
     start_time: Time = attrs.Factory(Time)
@@ -244,6 +252,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline_seed: int = 0
         self._timeline_t0: float | None = None
         self._episode_conditions: list[EpisodeCondition] = []
+        self._judge_zones: dict = {}
+        self._known_subjects: set[str] = set()
+        self._sample = Sample(t=0.0)
         self._tick_loop_task: asyncio.Task | None = None
         self._semantics_dirty = False
 
@@ -594,11 +605,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.goal_uuid = record.goal_uuid
         msg.goal_dist_start = record.goal_dist_start
         msg.goal_dist_min = record.goal_dist_min
-        msg.goal_tolerance = record.goal_tolerance
         msg.path_length = record.path_length
         msg.integrity = record.integrity
         msg.start_time = record.start_time.to_msg()
         msg.conditions = json.dumps([c.serialize() for c in self._episode_conditions])
+        msg.phases = self._phases_json()
         return msg
 
     def _publish_episode_state(self) -> None:
@@ -709,6 +720,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._world_manager.publish_world_markers(snapshots)
         entities = [self._semantic_entity_state_msg(s) for s in snapshots]
         entities.extend(self._zone_semantic_states())
+        entities.extend(self._robot_semantic_states())
         msg.entities = entities
         self._pub_state_semantics.publish(msg)
 
@@ -819,7 +831,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 return "true" if snap.predicates[field] else "false"
             if field == "volume_db" and realized in self._sound_levels:
                 return self._stringify_float(self._sound_levels[realized])
-        return self._zone_field_value(realized, field)
+        zone_value = self._zone_field_value(realized, field)
+        if zone_value is not None:
+            return zone_value
+        return self._robot_field_value(realized, field)
 
     def register_sound_levels(self, levels: dict[str, float]) -> None:
         """Asset level of each episode sound, read as its volume_db while its semantics carry none."""
@@ -853,8 +868,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._semantics_dirty = True
 
     def register_conditions(self, conditions: "Sequence[EpisodeCondition]") -> None:
-        """Carry the active scenario's episode conditions through to the episode record."""
+        """Episode conditions judged on every robot and carried through to the episode record."""
         self._episode_conditions = list(conditions)
+        if self._robots_manager is not None:
+            for manager in self._robots_manager.managers.values():
+                manager.set_episode_conditions(self._episode_conditions)
 
     def _resolve_timeline_value(self, raw: str, idx: int) -> str:
         """Draw a seeded value for 'random' or a 'lo..hi' range, else return the literal verbatim."""
@@ -871,7 +889,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             return str(rng.uniform(lo_f, hi_f))
         return raw
 
-    def _when_true(self, when: dict) -> bool:
+    def _when_true(self, when: dict | str) -> bool:
+        if isinstance(when, str):
+            return atom_holds(parse_atom(when), self._sample, self._judge_zones) is True
         expected = self._norm_token(when.get("is"))
         current = self._semantic_value(str(when.get("entity", "")), str(when.get("field", "")))
         return current is not None and current == expected
@@ -920,13 +940,106 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 except asyncio.CancelledError:
                     raise
                 try:
-                    self._evaluate_timeline(self.sim_time.to_seconds())
+                    self._sample = self._build_sample()
+                    await self._tick_robots()
+                    self._evaluate_timeline(self._sample.t)
                     if self._semantics_dirty:
                         self._publish_semantics_snapshot()
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     self.get_logger().warning(f"sim tick failed: {exc!r}")
+
+    # TASK JUDGE
+
+    def _build_sample(self) -> Sample:
+        """World state of this tick in the flattened abstract frame the judge and the compacted world share."""
+        robots: dict[str, tuple[float, float, float]] = {}
+        if self._robots_manager is not None:
+            for manager in self._robots_manager.managers.values():
+                pose = manager.pose
+                if pose is None:
+                    continue
+                local = self._environment_manager.ezilear(pose)
+                robots[manager.name] = (local.position.x, local.position.y, local.orientation.to_yaw())
+        peds: dict[str, tuple[float, float]] = {}
+        for name, (x, y), _radius in self._human_simulator.pedestrian_discs():
+            local = self._environment_manager.ezilear(Pose(Position(x, y), Orientation.identity()))
+            peds[_strip_env(name)] = (local.position.x, local.position.y)
+        self._known_subjects.update(peds)
+        self._known_subjects.update(robots)
+        return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects))
+
+    async def _tick_robots(self) -> None:
+        if self._robots_manager is None:
+            return
+        managers = list(self._robots_manager.managers.values())
+        for manager in managers:
+            judged = self._sample.robots.get(manager.name)
+            if judged is not None and manager.runner.active is not None:
+                manager.publish_task_pose(Pose(Position(judged[0], judged[1]), Orientation.from_yaw(judged[2])))
+        await asyncio.gather(*(manager.tick(self._sample, self._judge_zones) for manager in managers))
+        if any(manager.runner.changed for manager in managers):
+            for manager in managers:
+                manager.runner.changed = False
+            self._semantics_dirty = True
+
+    def ped_names(self) -> list[str]:
+        """Bare names of the pedestrians the human simulator currently tracks."""
+        return [_strip_env(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
+
+    def on_task_submitted(self, manager: "RobotManager") -> None:
+        """Republish the episode record with the robot's phases and flush its semantic state."""
+        del manager
+        self._semantics_dirty = True
+        self._publish_episode_state()
+
+    def _phases_json(self) -> str:
+        if self._robots_manager is None:
+            return "{}"
+        return json.dumps({manager.name: self._robot_phases(manager) for manager in self._robots_manager.managers.values()})
+
+    def _robot_phases(self, manager: "RobotManager") -> dict:
+        """The runner's phases and condition spans plus `map_poses`, the realized goto pose per phase (null without one)."""
+        from task_generator.tasks.robots.request import GoToPhase
+
+        data = manager.runner.serialize()
+        data["map_poses"] = [list(self._environment_manager.realize(s.phase.pose).to_2d()) if isinstance(s.phase, GoToPhase) and s.phase.pose is not None else None for s in manager.runner.phases]
+        return data
+
+    @staticmethod
+    def _robot_fields(manager: "RobotManager") -> dict[str, str]:
+        runner = manager.runner
+        return {
+            "phase": "" if runner.active is None else str(runner.active),
+            "met": ",".join(map(str, runner.outcomes("met"))),
+            "failed": ",".join(map(str, runner.outcomes("failed"))),
+            "dropped": ",".join(map(str, runner.outcomes("dropped"))),
+            "violated": ",".join(runner.violated),
+        }
+
+    def _robot_semantic_states(self) -> list[task_generator_msgs.msg.SemanticEntityState]:
+        """Task progress of every robot as a `robot` entity, fields grow-only so change-driven snapshots keep every transition."""
+        states: list[task_generator_msgs.msg.SemanticEntityState] = []
+        if self._robots_manager is None:
+            return states
+        for manager in self._robots_manager.managers.values():
+            fields = self._robot_fields(manager)
+            msg = task_generator_msgs.msg.SemanticEntityState()
+            msg.entity = self._realizer.prefix(manager.name)
+            msg.kind = "robot"
+            msg.discrete_names = list(fields.keys())
+            msg.discrete_values = list(fields.values())
+            states.append(msg)
+        return states
+
+    def _robot_field_value(self, entity: str, field: str) -> str | None:
+        if self._robots_manager is None:
+            return None
+        for manager in self._robots_manager.managers.values():
+            if self._realizer.prefix(manager.name) == entity:
+                return self._robot_fields(manager).get(field)
+        return None
 
     def _publish_viz_manifest(self) -> None:
         """Publish the env-level and per-robot display manifest."""
@@ -1222,11 +1335,17 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
             record = self._episodes.current
             await self.hold("reset")
+            for manager in self._robots_manager.managers.values():
+                manager.begin_episode()
+            self._known_subjects.clear()
             try:
                 if record.world:
                     await self._world_manager.apply_world(record.world)
                 await self._task.reset(seed=record.seed)
             finally:
+                self._judge_zones = zone_polygons(self._world_manager.world_compacted())
+                for manager in self._robots_manager.managers.values():
+                    manager.set_episode_conditions(self._episode_conditions)
                 await self.release("reset")
                 self._pub_state_resetting.publish(Bool(data=False))
             record.robots = [m.model_name for m in self._robots_manager.managers.values()]
@@ -1270,15 +1389,16 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     def _sample_goal_progress(self) -> None:
         for manager in self._robots_manager.managers.values():
             pose = manager.pose
-            phase = manager.goal_phase
-            if pose is None or phase is None:
+            goal = manager.goal
+            if pose is None or goal is None:
                 continue
             self._goal_progress.sample(
                 manager.name,
                 (pose.position.x, pose.position.y),
-                (phase.pose.position.x, phase.pose.position.y),
-                phase.tolerance_radius,
+                (goal.position.x, goal.position.y),
                 self.sim_time.to_seconds(),
+                phase=manager.runner.active,
+                waiting=manager.waiting,
             )
         best = self._goal_progress.least_progress()
         if best is None:
@@ -1286,7 +1406,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         record = self._episodes.current
         record.goal_dist_start = best.start_dist
         record.goal_dist_min = best.min_dist
-        record.goal_tolerance = best.goal_tolerance
         record.path_length = best.path_length
 
     async def _termination_watcher(self) -> None:
@@ -1299,11 +1418,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     continue
                 self._sample_goal_progress()
                 stall_limit = self.conf.Robot.NO_PROGRESS_TIMEOUT.value
-                if self._goal_progress.longest_stall(self.sim_time.to_seconds()) > stall_limit:
+                if self._goal_progress.longest_stall(self.sim_time.to_seconds(), self.conf.Robot.GOAL_TOLERANCE_RADIUS.value) > stall_limit:
                     self.fail_episode("no progress")
                     continue
                 if not await self._task.is_done:
                     continue
+                for manager in self._robots_manager.managers.values():
+                    manager.finish_episode()
+                self._semantics_dirty = True
                 if self._task.abort_reason is not None:
                     fut.set_result((task_generator_msgs.action.RunEpisode.Result.FAILED, self._task.abort_reason))
                 else:

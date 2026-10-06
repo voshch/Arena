@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import math
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -356,18 +355,9 @@ class DrlAdapter(MobileAdapter):
     def signals(self) -> frozenset[str]:
         return self._signals
 
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        assert isinstance(phase, GoToPhase)
-        if not phase.signal:
-            return None
-        edge = self._edge_node
-        pose = robot.pose
-        if edge is None or edge.signal != phase.signal or pose is None:
-            return False
-        if not phase.arrived(robot, pose):
-            distance = math.hypot(pose.position.x - phase.pose.position.x, pose.position.y - phase.pose.position.y)
-            robot.node.fail_episode(f"signaled {phase.signal} {distance:.2f} m from goal")
-        return True
+    @property
+    def signal(self) -> str | None:
+        return None if self._edge_node is None else (self._edge_node.signal or None)
 
     # ------------------------------------------------------------------
     # Reset / move (mirrors Nav2Adapter pattern)
@@ -397,10 +387,9 @@ class DrlAdapter(MobileAdapter):
         pose: Pose,
         robot: RobotManager,
     ) -> None:
-        request = robot._current_request  # pylint: disable=protected-access
-        if request is None or robot._phase_index >= len(request.phases):  # pylint: disable=protected-access
-            return
-        await self.dispatch_phase(request.phases[robot._phase_index], robot)  # pylint: disable=protected-access
+        phase = robot.active_dispatch_phase()
+        if phase is not None:
+            await self.dispatch_phase(phase, robot)
 
 
 # ------------------------------------------------------------------
