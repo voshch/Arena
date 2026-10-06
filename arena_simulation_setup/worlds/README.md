@@ -397,6 +397,8 @@ An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
 is `robot` (the robot being judged), another robot's name or a pedestrian's name.
 Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
 `failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
+A world entity (zone, door, elevator, schedule, sound) is named
+`<name>/<level>`, or `<name>` alone when no other level has one.
 Clauses take an optional `on_failure` (`continue` by default, `stop_task`,
 `abort_episode`). Conditions are judged online at the node tick and replayed
 offline by arena_evaluation with the same code.

@@ -516,6 +516,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 ['record_data_dir:=', record_dir.substitution],
                 '-r',
                 ['__ns:=/', allocated_ns],
+                *(arg for topic in ("/tf", "/tf_static") if tf_namespace for arg in ('-r', f'{topic}:={tf_namespace}{topic}')),
             ],
             output='screen',
             condition=launch.conditions.IfCondition(launch.substitutions.PythonExpression(["'", record_dir.substitution, "' != '' and '", record_auto.substitution, "'.lower() in ('true', '1')"])),

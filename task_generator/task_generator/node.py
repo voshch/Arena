@@ -958,7 +958,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         if self._robots_manager is not None:
             for manager in self._robots_manager.managers.values():
                 pose = manager.pose
-                if pose is None:
+                if pose is None or not manager.placed:
                     continue
                 local = self._environment_manager.ezilear(pose)
                 robots[manager.name] = (local.position.x, local.position.y, local.orientation.to_yaw())
@@ -1423,9 +1423,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     continue
                 if not await self._task.is_done:
                     continue
-                for manager in self._robots_manager.managers.values():
-                    manager.finish_episode()
-                self._semantics_dirty = True
+                self._close_condition_scopes()
                 if self._task.abort_reason is not None:
                     fut.set_result((task_generator_msgs.action.RunEpisode.Result.FAILED, self._task.abort_reason))
                 else:
@@ -1444,12 +1442,20 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self.get_logger().info(f"Shutting down. All {int(desired)} tasks completed")
         rclpy.shutdown()
 
+    def _close_condition_scopes(self) -> None:
+        """Judge every robot's still open condition scope at episode end."""
+        for manager in self._robots_manager.managers.values():
+            manager.finish_episode()
+        self._publish_semantics_snapshot()
+
     def fail_episode(self, reason: str) -> None:
         """Abort the running episode as FAILED with ``reason``, unless it is already aborting."""
         if self._task.abort_reason is not None:
             return
         self.get_logger().warn(f"failing episode: {reason}")
         self._task.abort_episode(reason)
+        if self._robots_manager is not None:
+            self._close_condition_scopes()
         fut = self._episodes.pending_outcomes.get(self._episodes.current.episode_id)
         if fut is not None and not fut.done():
             fut.set_result((task_generator_msgs.action.RunEpisode.Result.FAILED, reason))

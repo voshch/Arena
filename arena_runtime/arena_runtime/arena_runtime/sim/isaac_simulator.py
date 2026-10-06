@@ -658,7 +658,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         self._logger.debug("All ceilings spawned successfully.")
         return res
 
-    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose) -> bool:
+    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: arena_simulation_setup.tree.assets.Material.MaterialIdentifier | None = None) -> bool:
         """Spawn an axis-aligned box using the SpawnWalls service.
 
         SpawnWalls creates a cube via create_cube(scale=(length, thickness, height)).
@@ -674,15 +674,16 @@ class IsaacSimulator(BaseSim, NodeInterface):
         start_y = cy - half * math.sin(yaw)
         end_x = cx + half * math.cos(yaw)
         end_y = cy + half * math.sin(yaw)
+        wall = Wall(
+            name=name,
+            start=geometry_msgs.msg.Point(x=start_x, y=start_y, z=cz - sz / 2.0),
+            end=geometry_msgs.msg.Point(x=end_x, y=end_y, z=cz + sz / 2.0),
+            thickness=sy,
+        )
+        if material is not None:
+            wall.material = material_to_msg(await material.resolve())
         req = SpawnWalls.Request()
-        req.walls = [
-            Wall(
-                name=name,
-                start=geometry_msgs.msg.Point(x=start_x, y=start_y, z=cz - sz / 2.0),
-                end=geometry_msgs.msg.Point(x=end_x, y=end_y, z=cz + sz / 2.0),
-                thickness=sy,
-            )
-        ]
+        req.walls = [wall]
         res = await self._clients.SpawnWalls.call_timeout(req)
         return bool(res) and bool(res.ret) and res.ret[0]
 

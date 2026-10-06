@@ -19,6 +19,7 @@ import rclpy.logging
 import rclpy.node
 import rclpy.publisher
 import rclpy.timer
+import shapely
 import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
 from arena_rclpy_mixins.shared import Namespace
@@ -237,6 +238,7 @@ class RobotManager(NodeInterface):
         )
 
         self._runner = TaskRunner(self._robot.name)
+        self._placed = False
         self._unsupported_kinds_logged: set[TaskKind] = set()
         self._abort_episode: Callable[[str], None] | None = None
 
@@ -351,6 +353,12 @@ class RobotManager(NodeInterface):
 
     def begin_episode(self) -> None:
         self._runner.begin_episode()
+        self._placed = False
+
+    @property
+    def placed(self) -> bool:
+        """Whether this episode's reset has landed the robot, before that its pose is the previous one."""
+        return self._placed
 
     def publish_task_pose(self, pose: Pose) -> None:
         """Pose the judge sees this tick, in the flattened world frame, recorded so replay judges the same pose."""
@@ -402,6 +410,8 @@ class RobotManager(NodeInterface):
         from task_generator.tasks.robots.request import GoToPhase, kind_of
 
         state = self._runner.active_state
+        if not self._placed:
+            return Transition()
         if state is None:
             return self._runner.step(sample, zones, None, (None, None))
         if not state.dispatched:
@@ -455,13 +465,19 @@ class RobotManager(NodeInterface):
         return phase
 
     def _resolve_target(self, phase: GoToPhase) -> GoToPhase:
-        """Sample a dispatch pose for a named zone target, a ped target keeps following the ped."""
+        """Give a named zone, door or elevator target its dispatch pose, a ped target keeps following the ped."""
         world = self.node._world_manager.world_compacted()
-        if phase.target is None or world.lookup_zone_polygon(phase.target) is None:
+        corners = world.lookup_zone_polygon(phase.target) if phase.target is not None else None
+        if corners is None:
             return phase
-        resolver = world.point_resolver(self.node.conf.General.RNG.stream("robots", "target", self.name))
-        pose = Pose(position=resolver.resolve(phase.target), orientation=Orientation.identity())
-        return attrs.evolve(phase, pose=pose)
+        if any(zone.name == phase.target for zone in world.zones):
+            try:
+                position = self.node._world_manager.get_position_on_map(self.safe_distance, forbid=False, polygon=shapely.Polygon([(corner.x, corner.y) for corner in corners]))
+            except RuntimeError as e:
+                raise ValueError(f"robot {self.name!r}: goto target {phase.target!r} has no free cell with {self.safe_distance:.2f} m clearance") from e
+        else:
+            position = world.point_resolver(self.node.conf.General.RNG.stream("robots", "target", self.name)).resolve(phase.target)
+        return attrs.evolve(phase, pose=Pose(position=position, orientation=Orientation.identity()))
 
     async def submit_task(self, request: TaskRequest) -> None:
         """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch."""
@@ -542,6 +558,7 @@ class RobotManager(NodeInterface):
                 outcomes[adapter.kind] = result
             else:
                 outcomes[adapter.kind] = None
+        self._placed = True
         return outcomes
 
     def _pose_stamp(self) -> rclpy.time.Time | None:

@@ -70,7 +70,7 @@ Every `task.episode.*` param is also a launch arg (empty = node default), listed
 
 | Attribute | ROS param | Default | Notes |
 | --- | --- | --- | --- |
-| `GOAL_TOLERANCE_RADIUS` | `task.episode.goto_pose.tolerance.radius` | `1.0` | metres, default `GoToPhase.tolerance_radius` |
+| `GOAL_TOLERANCE_RADIUS` | `task.episode.goto_pose.tolerance.radius` | `1.0` | meters, default `GoToPhase.tolerance_radius` |
 | `GOAL_TOLERANCE_ANGLE` | `task.episode.goto_pose.tolerance.angle` | 30 degrees (in radians) | default `GoToPhase.tolerance_angle` |
 | `GOAL_HOLD_TIME` | `task.episode.goto_pose.hold_time` | `0.0` | sim seconds, default `GoToPhase.hold_time` |
 | `GOAL_SIGNAL` | `task.episode.goto_pose.signal` | `''` | default `GoToPhase.signal`, empty = Arena judges arrival |

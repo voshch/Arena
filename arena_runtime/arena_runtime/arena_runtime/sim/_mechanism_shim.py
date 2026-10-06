@@ -567,7 +567,7 @@ async def shim_spawn_doors(mech: MechanismITF, doors: Sequence[Door]) -> bool:
         kind = _effective_kind(logger, door)
         size, closed_pose = _door_geometry(door)
         open_pose = _door_open_pose(door, closed_pose, kind)
-        if await mech.spawn_box(door.name, size, closed_pose):
+        if await mech.spawn_box(door.name, size, closed_pose, door.material):
             mech._door_primitives[door.name] = [door.name]
             mech._door_runtime[door.name] = _DoorRuntime(
                 door=door,
