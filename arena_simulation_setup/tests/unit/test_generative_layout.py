@@ -1,7 +1,6 @@
 import pytest
 import shapely
 import shapely.affinity
-from arena_simulation_setup.tree.World import describe
 from arena_simulation_setup.generative.world import WorldGenerator
 from arena_simulation_setup.generative.world.layout import (
     Area,
@@ -12,6 +11,7 @@ from arena_simulation_setup.generative.world.layout import (
     compile_layout,
     diagnostics_of,
 )
+from arena_simulation_setup.tree.World import describe
 
 
 def corridor(a, b, width=2.0):
