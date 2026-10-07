@@ -228,6 +228,8 @@ class DynamicObstacle(Entity):
     hunav: dict = attrs.field(factory=dict)
     spawn_delay: float = attrs.field(default=0.0, converter=float, validator=attrs.validators.ge(0.0))
     semantic_alias: dict[str, str] = attrs.field(factory=dict)
+    track: str = ''
+    prespawn: bool = False
 
 
 @attrs.define

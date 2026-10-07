@@ -17,6 +17,7 @@ class Constants:
         NONE = "none"
         HUNAV = "hunav"
         ARENA = "arena"
+        REPLAY = "replay"
 
     class AcousticsSimulator(Enum):
         NONE = "none"

@@ -1234,6 +1234,13 @@ async def none(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimul
     return DummyHumanSimulator(**kwargs)
 
 
+@HumanSimulatorRegistry.register(Constants.HumanSimulator.REPLAY)
+async def replay(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
+    from .replay import ReplayHumanSimulator
+
+    return ReplayHumanSimulator(**kwargs)
+
+
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.HUNAV)
 async def lazy_hunavsim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     # Imported lazily: hunav_msgs / hunav_sim are optional deps, so registering the

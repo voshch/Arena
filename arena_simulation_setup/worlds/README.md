@@ -306,7 +306,10 @@ object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: 
 humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`), `waypoint_mode` (`repeat`, `reverse`, `once`,
 `random`), `level`, the humansim `agent:` block and a `hunav:` block for the
-HuNav backend. Any other key fails the load. A waypoint is `[x, y[, z]]`,
+HuNav backend. A human's `track: ./<file>.csv` names a recorded track beside the
+scenario ([shared/track.py](../src/arena_simulation_setup/shared/track.py)), which `human:=replay` plays in
+place of simulating the pedestrian, and `prespawn: true` stands it on its first pose until the track begins.
+Any other key fails the load. A waypoint is `[x, y[, z]]`,
 `{x, y[, z][, level]}` or a zone name.
 
 `sounds` is a list of `Sound` entries, same schema as a world level's

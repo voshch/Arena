@@ -224,6 +224,7 @@ with the simulator that will animate the resulting agents.
 | `dummy` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | no-op stubs, used in test/offline contexts |
 | `none` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | `human.launch.py` starts no node, backed by the same no-op stubs for registry lookups |
 | `arena` | `ArenaHumanSimulator` | [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py) | integrates with the arena_humansim pedestrian simulator (subsystem mode) |
+| `replay` | `ReplayHumanSimulator` | [`replay.py`](replay.py) | plays the track each pedestrian entry names, `human.launch.py` starts no node |
 | `hunav` | `HunavHumanSimulator` | [`hunav/hunav.py`](hunav/hunav.py) | integrates with HuNav, see [configs/hunav/README.md](../../../../arena_simulation_setup/configs/hunav/README.md) for the per-agent schema. `hunav_msgs` is imported lazily so the registry entry loads without it installed |
 
 ## arena_humansim agent types
@@ -344,6 +345,19 @@ engine to live in, so they go out as latched
 `pedestrian_markers/static_walls` / `static_objects` MarkerArrays (ns
 `dummy_walls` / `dummy_objects`), each led by a `DELETEALL` so removals
 clear stale markers.
+
+## Replay adapter (`human:=replay`)
+
+`ReplayHumanSimulator` ([`replay.py`](replay.py)) is the dummy adapter plus recorded motion. A `dynamic:` entry
+whose `track:` key names a track file ([`shared/track.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/track.py):
+rows of `t,x,y,yaw`, seconds from episode start, meters and radians in the level frame, a `nan` row between
+segments) is played from it on the sim clock at 30 Hz, counted from the reset that spawned it and shifted by the
+env and level origin. The pedestrian is on `arena_peds` and relayed to the sim exactly while a segment covers the
+episode time: it enters with its first sample, leaves in every gap and for good after the last sample, and each
+edge calls the sim's `pedestrian_spawn` / `pedestrian_delete`. With `prespawn: true` beside `track:` it instead stands
+at rest on its first pose from the episode start until the track begins. Entries without a track stay dummy puppets, and the
+possession stream overlays both. Nothing reacts to the robot. The roster goes out on the sim clock, so a paused sim
+publishes none.
 
 ## Arena adapter (`human:=arena`)
 
