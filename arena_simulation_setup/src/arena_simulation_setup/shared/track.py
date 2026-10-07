@@ -1,15 +1,18 @@
-"""Timed ground track of one pedestrian, the file a scenario human names under track."""
+"""Timed ground track of one pedestrian, the file a scenario human names under track, and the timed legs of its stays."""
 
 from __future__ import annotations
 
 import io
 import math
 import typing
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import attrs
 import numpy as np
+
+from arena_simulation_setup.utils.cattrs import Parseable
+from arena_simulation_setup.utils.geometry import Pose, Position
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.entities import DynamicObstacle
@@ -122,3 +125,43 @@ def track_file(entry: DynamicObstacle) -> Path | None:
     if path.is_absolute() or entry.included_from is None:
         return path
     return Path(entry.included_from) / path
+
+
+@attrs.frozen
+class Leg(Parseable):
+    """Walk to a point at a speed in m/s, then stand there for dwell seconds."""
+
+    position: Position
+    speed: float
+    dwell: float = 0.0
+
+    @classmethod
+    def parse(cls, value: Leg | Sequence[float]) -> Leg:
+        if isinstance(value, Leg):
+            return value
+        x, y, speed, dwell = (float(item) for item in value)
+        return cls(Position.parse([x, y]), speed, dwell)
+
+
+@attrs.frozen
+class Stay(Parseable):
+    """One continuous stay of a recorded pedestrian: its start on the episode clock, entry pose and velocity, and the legs it walks."""
+
+    start: float
+    pose: Pose
+    velocity: tuple[float, float]
+    legs: tuple[Leg, ...]
+
+    @classmethod
+    def parse(cls, value: Stay | Mapping) -> Stay:
+        if isinstance(value, Stay):
+            return value
+        unknown = set(value) - {"start", "pose", "velocity", "legs"}
+        if unknown:
+            raise ValueError(f"stay has unknown keys {sorted(unknown)}, expected start, pose, velocity and legs")
+        vx, vy = (float(item) for item in value["velocity"])
+        return cls(float(value["start"]), Pose.parse(value["pose"]), (vx, vy), tuple(Leg.parse(leg) for leg in value["legs"]))
+
+
+def parse_stays(value: object) -> list[Stay]:
+    return [Stay.parse(item) for item in typing.cast("Sequence", value or [])]

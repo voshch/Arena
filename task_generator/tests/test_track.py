@@ -135,3 +135,23 @@ def test_prespawn_is_a_bool_field_of_the_human() -> None:
     entry = {"name": "ped", "model": "arenian", "pose": [0.0, 0.0, 0.0], "track": "./ped.csv"}
     assert converter.structure(dict(entry), DynamicObstacle).prespawn is False
     assert converter.structure({**entry, "prespawn": True}, DynamicObstacle).prespawn is True
+
+
+def test_stays_parse_into_poses_and_timed_legs() -> None:
+    import traceback
+
+    from arena_simulation_setup.shared import DynamicObstacle
+    from arena_simulation_setup.utils.cattrs import converter
+
+    entry = {"name": "ped", "model": "arenian", "pose": [0.0, 0.0, 0.0], "track": "./ped.csv"}
+    stay = {"start": 1.5, "pose": [1.0, 2.0, 0.5], "velocity": [0.3, 0.0], "legs": [[2.0, 2.0, 1.0, 0.5], [2.0, 4.0, 0.8, 0.0]]}
+    (parsed,) = converter.structure({**entry, "stays": [stay]}, DynamicObstacle).stays
+    assert parsed.start == 1.5
+    assert (parsed.pose.position.x, parsed.pose.position.y) == (1.0, 2.0)
+    assert parsed.pose.orientation.to_yaw() == pytest.approx(0.5)
+    assert parsed.velocity == (0.3, 0.0)
+    assert [(leg.position.x, leg.position.y, leg.speed, leg.dwell) for leg in parsed.legs] == [(2.0, 2.0, 1.0, 0.5), (2.0, 4.0, 0.8, 0.0)]
+    assert converter.structure(dict(entry), DynamicObstacle).stays == []
+    with pytest.raises(Exception) as caught:
+        converter.structure({**entry, "stays": [{**stay, "until": 3.0}]}, DynamicObstacle)
+    assert "stay has unknown keys ['until']" in "".join(traceback.format_exception(caught.value))

@@ -309,6 +309,8 @@ humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 HuNav backend. A human's `track: ./<file>.csv` names a recorded track beside the
 scenario ([shared/track.py](../src/arena_simulation_setup/shared/track.py)), which `human:=replay` plays in
 place of simulating the pedestrian, and `prespawn: true` stands it on its first pose until the track begins.
+Its `stays:` list the timed legs of each continuous stay of that track (`start`, entry `pose` and `velocity`,
+`legs: [[x, y, speed, dwell], ...]`), which the scenario importers write for a path follower.
 Any other key fails the load. A waypoint is `[x, y[, z]]`,
 `{x, y[, z][, level]}` or a zone name.
 

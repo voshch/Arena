@@ -358,6 +358,14 @@ edge calls the sim's `pedestrian_spawn` / `pedestrian_delete`. With `prespawn: t
 at rest on its first pose from the episode start until the track begins. Entries without a track stay dummy puppets, and the
 possession stream overlays both. Nothing reacts to the robot. The roster goes out on the sim clock, so a paused sim
 publishes none.
+`arena asset import scenario eth_ucy <eth|hotel|univ|zara01|zara02>` writes such a scenario from the ETH and UCY
+sequences and, where it is not imported yet, the world it plays in, whose floor is the concave hull of the paths their
+pedestrians walked, kept 0.5 m clear of every step and straightened into a plain polygon. Its tracks run at 10 Hz, with
+gaps up to 1 s bridged. Each entry also carries `stays:`, one per continuous stay (split at gaps and at jumps over
+0.5 m faster than 6 m/s, stays under 1 s dropped) with its `start`, entry `pose` and `velocity` (over the first 0.4 s)
+and `legs: [[x, y, speed, dwell], ...]`, corners within 0.25 m of the stay in space and time with each stop as the dwell
+of the leg before, for a path follower. zara01 and zara02 share one world, with zara02 moved 1.15 m
+along y into zara01's frame, the placement SocNavBench gives the two.
 
 ## Arena adapter (`human:=arena`)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import math
 import threading
 import time
@@ -11,6 +12,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+ITEM = "eth"
+WALKERS = {1: ((0.0, 0.0), (8.0, 0.0)), 2: ((8.0, 2.0), (0.0, 2.0)), 3: ((0.0, 5.0), (6.0, 1.0))}
+PEDS = [f"ped_{ident}" for ident in WALKERS]
 OFFSET = (10.0, -2.0)
 PREFIX = "env"
 START_S = 100.0
@@ -22,6 +26,7 @@ DEADLINE_S = 20.0
 def _ros_gate():
     pytest.importorskip("rclpy")
     pytest.importorskip("arena_people_msgs.msg")
+    pytest.importorskip("arena_assets.importers")
     pytest.importorskip("arena_simulation_setup.shared.track")
 
 
@@ -159,6 +164,70 @@ def _on_stage(body: Callable[[Stage], Awaitable[None]]) -> None:
             node.destroy_node()
 
     asyncio.run(main())
+
+
+def test_imported_recording_plays_on_the_bus_and_in_the_sim(rclpy_context, tmp_path: Path) -> None:
+    from arena_people_msgs.msg import Pedestrian
+    from arena_simulation_setup.shared.track import Track
+    from arena_simulation_setup.tree import SimplePathResolver
+    from arena_simulation_setup.tree.World import WorldIdentifier
+
+    from task_generator.adapters.eth_ucy import ETHUCY, SEQUENCES
+    from task_generator.simulators.human.gait import GaitGenerator
+    from task_generator.simulators.human.replay import WALK_SPEED
+    from task_generator.tasks.registry import identifier_to_available
+
+    entry = SEQUENCES[ITEM]
+    frames = range(round(10.0 * entry.fps) + 1)
+    columns = [(frame, ident, y0 + frame / frames[-1] * (y1 - y0), x0 + frame / frames[-1] * (x1 - x0)) for frame in frames for ident, ((x0, y0), (x1, y1)) in WALKERS.items()]
+    src = tmp_path / "cache" / entry.file
+    src.parent.mkdir(parents=True)
+    src.write_text("\n".join(",".join(str(value) for value in row) for row in zip(*columns, strict=True)) + "\n")
+    out = tmp_path / "eth_ucy"
+    world = Path(ETHUCY(cache=tmp_path / "cache").convert(ITEM, src, out)).parts[0]
+    tracks = {name: Track.load(out / world / "scenarios" / ITEM / f"{name}.csv") for name in PEDS}
+
+    def expected(t: float) -> dict[str, tuple[float, float]]:
+        return {name: (track.state(t).x + OFFSET[0], track.state(t).y + OFFSET[1]) for name, track in tracks.items()}
+
+    async def body(stage: Stage) -> None:
+        identifier = WorldIdentifier(world)
+        view = identifier.load(await SimplePathResolver(WorldIdentifier, out).resolve(identifier))
+        assert list(identifier_to_available(view.scenario)) == [ITEM]
+        scenario = view.scenario(ITEM).resolve_sync().load()
+        names = sorted(stage.realizer.prefix(name) for name in PEDS)
+        assert names == sorted(f"{PREFIX}/{name}" for name in PEDS)
+
+        await stage.play(scenario.humans)
+        assert sorted(stage.simulator.spawned[0]) == names
+        for name, xy in stage.simulator.spawned[0].items():
+            assert xy == pytest.approx(expected(0.0)[name.removeprefix(f"{PREFIX}/")], abs=1e-3)
+
+        for t in (1.035, 5.075, 9.045):
+            peds = await stage.at(t, expected(t))
+            for name, ped in peds.items():
+                state = tracks[name].state(t)
+                assert ped.pose.position.z == 0.0
+                assert (ped.twist.linear.x, ped.twist.linear.y) == pytest.approx((state.vx, state.vy), abs=1e-6)
+                assert ped.animation_state == (Pedestrian.WALKING if math.hypot(state.vx, state.vy) >= WALK_SPEED else Pedestrian.IDLE)
+                assert set(ped.joint_state.name) <= set(GaitGenerator.JOINT_NAMES)
+                assert len(ped.joint_state.name) == len(ped.joint_state.position) > 0
+            assert sorted(stage.simulator.updated[-1]) == names
+            for name, xy in stage.simulator.updated[-1].items():
+                assert xy == pytest.approx(expected(t)[name.removeprefix(f"{PREFIX}/")], abs=2e-3)
+        assert not any(stage.simulator.deleted)
+        assert len(stage.simulator.spawned) == 1
+
+        await stage.at(12.0, {})
+        assert sorted(itertools.chain.from_iterable(stage.simulator.deleted)) == names
+        stamps = [_stamp_s(msg) for msg in stage.bus]
+        assert all(later >= earlier for earlier, later in itertools.pairwise(stamps))
+        walked = [msg for msg in stage.bus if len(msg.pedestrians) == len(PEDS)]
+        first = {ped.name: ped for ped in walked[0].pedestrians}
+        last = {ped.name: ped for ped in walked[-1].pedestrians}
+        assert max(math.hypot(last[name].pose.position.x - first[name].pose.position.x, last[name].pose.position.y - first[name].pose.position.y) for name in names) > 3.0
+
+    _on_stage(body)
 
 
 def test_pedestrians_enter_and_leave_with_their_track(rclpy_context, tmp_path: Path) -> None:
