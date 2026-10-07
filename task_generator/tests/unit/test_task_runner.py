@@ -140,6 +140,18 @@ def test_serialize_lists_phases_and_condition_spans():
     assert spans == {"e0": (0, None), "r0:0": (0, 1)}
 
 
+def test_serialize_keeps_goal_inputs_and_the_instruction_per_phase():
+    runner = TaskRunner("r")
+    states = runner.submit([goto(1.0, 1.0), goto(2.0, 2.0)])
+    runner.goal_inputs = ("instruction",)
+    states[0].instruction = {"source": "route", "text": "Walk about 1 meter and stop."}
+    data = runner.serialize()
+    assert data["goal_inputs"] == ["instruction"]
+    assert data["instructions"] == [{"source": "route", "text": "Walk about 1 meter and stop."}, None]
+    runner.begin_episode()
+    assert runner.serialize()["goal_inputs"] == []
+
+
 def test_signal_phase_waits_for_the_signal_then_meets():
     runner = TaskRunner("r")
     runner.submit([goto(1.0, 1.0, signal="arrived"), goto(3.0, 3.0)])

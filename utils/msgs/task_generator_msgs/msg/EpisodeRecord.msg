@@ -32,5 +32,5 @@ rcl_interfaces/Parameter[] robots_params
 rcl_interfaces/Parameter[] human_params
 # JSON list of {op, p, q, text} episode conditions, empty when none
 string conditions
-# JSON map robot name -> {phases, conditions, map_poses} of this episode
+# JSON robot name -> {phases, conditions, map_poses, goal_inputs, instructions}
 string phases

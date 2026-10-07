@@ -77,7 +77,9 @@ share one definition. [`request.py`](request.py) re-exports them with
 - `GoToPhase(pose | target, tolerance_radius?, tolerance_angle?, hold_time?, signal?)`:
   navigate to a pose, or to a zone, door, elevator or pedestrian by name. A
   zone target dispatches to a free map cell inside the zone with the robot's
-  spawn clearance, a door or elevator to a point inside its polygon.
+  spawn clearance, a door or elevator to a point inside its polygon, and a
+  `pose` authored next to the name (`{goto: pharmacy, pose: [4.0, 27.5, 0.0]}`)
+  is kept as the dispatch pose.
   Arrival on a named zone is `robot in <zone>`, on a pedestrian
   `robot within tolerance_radius of <ped>`. `hold_time` is the park time
   (stationary within 5 cm and 5 degrees) before the phase counts as met. With
@@ -107,7 +109,9 @@ frame, published once the episode's reset has landed the robot and a phase is
 active), and the resolved phases in `EpisodeRecord.phases` together with
 `map_poses`, the realized map-frame goto pose per phase.
 [`shared/render.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/render.py)
-renders any phase list to one instruction sentence per phase.
+renders any phase list to one instruction sentence per phase, and
+[`shared/route.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/route.py)
+words a goto as walking directions through the world's doors and openings.
 
 ## Fleet manager
 

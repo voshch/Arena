@@ -50,7 +50,15 @@ any post-teleport work.
 (see [arena_planners/planners/README.md](../../../../../arena_planners/planners/README.md)).
 It reveals the goal inputs `robot.mobile.goal` selects, falls back to
 `robot.mobile.instruction` for goals without one, and refuses robots without
-an `image` sensor.
+an `image` sensor. A goto without authored `text` is worded by
+[`shared/route.py`](../../../../../arena_simulation_setup/src/arena_simulation_setup/shared/route.py):
+`robot.mobile.wording:=route` gives walking directions from the robot's pose
+through the world's doors and openings ("Walk through the main hallway, then
+take the door on your left into the pharmacy."), `robot.mobile.wording:=goal`
+names the target ("Go to the pharmacy."). Unset, a bare pose gets directions
+and a named target is named. A pose the zones do not cover falls back to its
+coordinates. `EpisodeRecord.phases` keeps the instruction and its source per
+phase.
 
 `DrlAdapter` (and so `VlaAdapter`) can send the signals its planner lists
 under `signals:` in `planner.yaml`. For a goto phase with a `signal`, it

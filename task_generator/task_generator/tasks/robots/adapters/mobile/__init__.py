@@ -47,6 +47,16 @@ class MobileAdapter(Adapter):
     def controls_orientation(self) -> bool:
         return True
 
+    @property
+    def goal_inputs(self) -> tuple[str, ...]:
+        """Goal inputs the planner receives, `pose` and/or `instruction`."""
+        return ("pose",)
+
+    @property
+    def instruction(self) -> dict[str, str] | None:
+        """`source` and `text` of the instruction given for the current phase, None without one."""
+        return None
+
     cap_displays: ClassVar[tuple[AdapterDisplayHint, ...]] = (
         *Adapter.cap_displays,
         AdapterDisplayHint(

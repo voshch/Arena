@@ -30,7 +30,7 @@ from arena_runtime.sim._interface import SimUnavailable
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.robot_manager.controller_manager_client import ControllerManagerClient
 from task_generator.manager.robot_manager.controller_transitions import next_transition
-from task_generator.manager.robot_manager.task_runner import TaskRunner, Transition
+from task_generator.manager.robot_manager.task_runner import PhaseState, TaskRunner, Transition
 from task_generator.shared import Orientation, Pose, Position, Robot
 
 if typing.TYPE_CHECKING:
@@ -402,8 +402,20 @@ class RobotManager(NodeInterface):
         if self._publish_goal_task is not None:
             self._publish_goal_task.cancel()
             self._publish_goal_task = None
+        self._note_goal_inputs(state)
         if isinstance(adapter, MobileAdapter):
             self._publish_goal_task = asyncio.create_task(adapter.publish_goal_loop())
+
+    def _note_goal_inputs(self, state: PhaseState) -> None:
+        """Record what the mobile adapter gave its planner for `state` and republish the episode record."""
+        from task_generator.tasks.robots.adapters.mobile import MobileAdapter
+        from task_generator.tasks.robots.request import kind_of
+
+        adapter = self._adapters.get(kind_of(state.phase))
+        if isinstance(adapter, MobileAdapter):
+            self._runner.goal_inputs = adapter.goal_inputs
+            state.instruction = adapter.instruction
+            self.node.on_task_submitted(self)
 
     async def tick(self, sample: Sample, zones: Zones) -> Transition:
         """Judge the active phase on one tick, applying its outcome and dispatching the next phase."""
@@ -465,9 +477,9 @@ class RobotManager(NodeInterface):
         return phase
 
     def _resolve_target(self, phase: GoToPhase) -> GoToPhase:
-        """Give a named zone, door or elevator target its dispatch pose, a ped target keeps following the ped."""
+        """Give a named zone, door or elevator target its dispatch pose unless it carries one, a ped target keeps following the ped."""
         world = self.node._world_manager.world_compacted()
-        corners = world.lookup_zone_polygon(phase.target) if phase.target is not None else None
+        corners = world.lookup_zone_polygon(phase.target) if phase.target is not None and phase.pose is None else None
         if corners is None:
             return phase
         if any(zone.name == phase.target for zone in world.zones):
@@ -559,6 +571,9 @@ class RobotManager(NodeInterface):
             else:
                 outcomes[adapter.kind] = None
         self._placed = True
+        state = self._runner.active_state
+        if state is not None and state.dispatched:
+            self._note_goal_inputs(state)
         return outcomes
 
     def _pose_stamp(self) -> rclpy.time.Time | None:

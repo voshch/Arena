@@ -11,7 +11,7 @@ try:
     from arena_rclpy_mixins.Time import Time
     from arena_simulation_setup.shared.task import GoToPhase
     from arena_simulation_setup.tree.World.World import Level, LevelDescription, WorldDescription
-    from arena_simulation_setup.utils.geometry import Position
+    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
     from task_generator.constants.rng import EpisodeRng
     from task_generator.manager.robot_manager.robot_manager import RobotManager
@@ -63,4 +63,9 @@ def test_zone_target_without_a_free_cell_names_the_zone() -> None:
 
 def test_unknown_target_is_left_for_the_ped_follower() -> None:
     phase = GoToPhase(target="pedestrian_3")
+    assert RobotManager._resolve_target(_manager(None), phase) is phase
+
+
+def test_authored_dispatch_pose_of_a_zone_target_is_kept() -> None:
+    phase = GoToPhase(target="room", pose=Pose(position=Position(2.5, 1.5), orientation=Orientation.identity()))
     assert RobotManager._resolve_target(_manager(None), phase) is phase

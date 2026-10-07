@@ -21,6 +21,7 @@ class PhaseState:
     outcome: Outcome = "pending"
     reason: str = ""
     dispatched: bool = False
+    instruction: dict[str, str] | None = None
 
 
 @attrs.define
@@ -57,10 +58,12 @@ class TaskRunner:
     scoped: list[ScopedCondition] = attrs.field(factory=list)
     violated: list[str] = attrs.field(factory=list)
     changed: bool = False
+    goal_inputs: tuple[str, ...] = ()
     _requests: int = 0
 
     def begin_episode(self) -> None:
         self.phases.clear()
+        self.goal_inputs = ()
         self.active = None
         self.scoped.clear()
         self.violated.clear()
@@ -195,6 +198,8 @@ class TaskRunner:
         return {
             "phases": [s.phase.serialize() for s in self.phases],
             "conditions": [{"id": s.id, "from": s.first, "to": s.last, **s.condition.serialize()} for s in self.scoped],
+            "goal_inputs": list(self.goal_inputs),
+            "instructions": [s.instruction for s in self.phases],
         }
 
 
