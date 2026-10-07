@@ -35,7 +35,9 @@ Unknown keys are rejected.
 
 Sounds are assets of the `Sound` kind, resolved like every other asset:
 world-local `worlds/<w>/assets/Common/Sound/<name>/`, then
-`$ARENA_ASSETS_DIR_LOCAL/Common/Sound/<name>/`, then the network providers.
+`$ARENA_ASSETS_DIR_LOCAL/Common/Sound/<name>/`, then
+`$ARENA_ASSETS_DIR_IMPORTED/Common/Sound/<name>/` (where `arena asset import sound`
+writes), then the network providers.
 Each asset directory holds `<name>.yaml` beside its wav files:
 
 ```yaml

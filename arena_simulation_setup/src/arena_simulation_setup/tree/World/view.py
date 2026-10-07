@@ -572,5 +572,6 @@ def _world_search_roots() -> list[Path]:
 WorldIdentifier.use(ComposedResolver(ARENA_ASSETS_DIR / '_composed'))
 WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _world_search_roots()))
 WorldIdentifier.use(LocalResolver(WorldIdentifier, 'worlds'))
+WorldIdentifier.use(DynamicPathResolver(WorldIdentifier, DynamicPaths.IMPORTED, fn=lambda p: p / 'worlds'))
 WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
 WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))

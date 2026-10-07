@@ -100,12 +100,14 @@ class DynamicPaths:
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
     ARENA = LocalRootPath()
+    IMPORTED = DynamicPath(Path(os.getenv('ARENA_ASSETS_DIR_IMPORTED', ARENA_ASSETS_DIR / '_imported')))
 
     @classmethod
     def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
         yield DynamicPathResolver(_T, cls.WORLD, fn=lambda p: p / 'assets')
         yield DynamicPathListResolver(_T, cls.LINKED, fn=lambda p: p / 'assets')
         yield DynamicPathResolver(_T, cls.ARENA)
+        yield DynamicPathResolver(_T, cls.IMPORTED)
 
 
 IdentifierT = typing.TypeVar('IdentifierT', bound='IdentifierProtocol')

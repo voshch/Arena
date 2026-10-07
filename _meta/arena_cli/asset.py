@@ -55,8 +55,8 @@ DESCRIPTION = """Inspect and move resolvable arena data.
 environment."""
 
 
-def _parse(argv: list[str], positionals: tuple[str, ...], flags: tuple[str, ...] = (), valued: tuple[str, ...] = (), optional: int = 0) -> tuple[list[str], dict[str, str | bool]]:
-    """Split argv into the declared positionals (the last `optional` may be absent) and options."""
+def _parse(argv: list[str], positionals: tuple[str, ...], flags: tuple[str, ...] = (), valued: tuple[str, ...] = (), optional: int = 0, variadic: bool = False) -> tuple[list[str], dict[str, str | bool]]:
+    """Split argv into the declared positionals (the last `optional` may be absent, `variadic` allows extras) and options."""
     pos: list[str] = []
     opts: dict[str, str | bool] = {}
     it = iter(argv)
@@ -72,7 +72,7 @@ def _parse(argv: list[str], positionals: tuple[str, ...], flags: tuple[str, ...]
             raise CLIError(f"No such option '{arg}'. Options: {', '.join((*flags, *valued))}")
         else:
             pos.append(arg)
-    if not len(positionals) - optional <= len(pos) <= len(positionals):
+    if len(pos) < len(positionals) - optional or (len(pos) > len(positionals) and not variadic):
         raise CLIError(f"expected {' '.join(positionals)}, got {' '.join(pos) or 'nothing'}")
     return pos, opts
 
@@ -203,10 +203,14 @@ def _net_resolver(kind: str, bucket: str) -> NetResolver:
     raise CLIError(f"{bucket} is not a configured bucket for {kind}, expected one of {', '.join(_buckets(kind))}")
 
 
-def _net(bucket: str, *args: str) -> int:
+def _assets(*args: str) -> int:
     import subprocess
 
-    return subprocess.call(["ros2", "run", "arena_assets", "arena_assets", "-s", "net", bucket, *args])
+    return subprocess.call(["ros2", "run", "arena_assets", "arena_assets", *args])
+
+
+def _net(bucket: str, *args: str) -> int:
+    return _assets("-s", "net", bucket, *args)
 
 
 def pull(argv: list[str]) -> int:
@@ -412,7 +416,42 @@ def push(argv: list[str]) -> int:
     return result
 
 
+def _import_args(pos: list[str], opts: dict[str, str | bool]) -> list[str]:
+    """argv for `arena_assets import` from the parsed verb line."""
+    if len(pos) < 2 and opts:
+        raise CLIError("options need a KIND and a SOURCE, run 'arena asset import' to list them")
+    if len(pos) > 2 and "--all" in opts:
+        raise CLIError("pass ITEM... or --all, not both")
+    args = list(pos)
+    if "--all" in opts:
+        args.append("--all")
+    if "--out" in opts:
+        args += ["--out", str(opts["--out"])]
+    return args
+
+
+def import_(argv: list[str]) -> int:
+    """Import items of one kind from an upstream dataset as local items the resolvers read.
+
+    `arena asset import [KIND] [SOURCE] [ITEM...] [--all] [--out DIR]`. Bare, it lists the
+    registered sources by kind with their license verdict (yes: public bucket with attribution,
+    nc: NC prefix only, sa: SA prefix only, no: local use only, unclear), host and granularity
+    (item, chunk, bulk). `import KIND` lists the sources of that kind, `import KIND SOURCE` lists
+    that source's items and its default target. ITEM... or --all converts those items into the
+    imported root ($ARENA_ASSETS_DIR_IMPORTED, worlds under its worlds/), which every resolver
+    reads after the curated local root, or --out DIR, each with an ATTRIBUTION.yaml beside it,
+    and prints every item's path. One source can serve several kinds: `import world barn 17` is
+    one challenge world, `import suite barn barn` the whole benchmark.
+    """
+    pos, opts = _parse(argv, ("KIND", "SOURCE"), flags=("--all",), valued=("--out",), optional=2, variadic=True)
+    return _assets("import", *_import_args(pos, opts))
+
+
+IMPORT_KINDS = ("episode", "object", "scenario", "sound", "suite", "world")
+
 _KIND = Sub({kind: Manifest(f"asset.{kind}") for kind in KINDS})
+_IMPORT_FLAGS = Flags({"--all": "import every item of the source", "--out": "target root instead of $ARENA_ASSETS_DIR_IMPORTED"}, valued=("--out",))
+_IMPORT = Sub({kind: Union(Manifest(f"asset.import.{kind}"), _IMPORT_FLAGS) for kind in IMPORT_KINDS})
 _KINDS = Static({kind: spec.description for kind, spec in KINDS.items()})
 
 COMMANDS = {
@@ -423,5 +462,6 @@ COMMANDS = {
         make_verb("pull", pull, complete=_KIND),
         make_verb("expire", expire, complete=_KIND),
         make_verb("push", push, complete=Sub(_KIND.subs, extra=Flags({"--force": "publish despite a failed preflight", "--yes": "skip the confirmation"}))),
+        make_verb("import", import_, complete=_IMPORT),
     )
 }
