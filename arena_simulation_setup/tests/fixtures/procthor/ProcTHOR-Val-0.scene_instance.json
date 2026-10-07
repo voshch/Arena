@@ -1,0 +1,3048 @@
+{
+  "stage_instance": {
+    "template_name": "stages/ProcTHOR/c/ProcTHOR-Val-0"
+  },
+  "translation_origin": "asset_local",
+  "object_instances": [
+    {
+      "template_name": "objects/Ladle_1",
+      "translation": [
+        -6.217603601511616,
+        0.7936089978505355,
+        6.623629801524953
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Vase_Flat_2",
+      "translation": [
+        -5.488131523132324,
+        0.8054594350222033,
+        6.870690394192934
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Cellphone_1",
+      "translation": [
+        -5.3062768038362265,
+        0.8063330127486552,
+        6.624041557312012
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Microwave_28",
+      "translation": [
+        -5.670411452651024,
+        0.7558637197694225,
+        6.500142194330692
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Cup_17",
+      "translation": [
+        -5.306185798719525,
+        0.7562232316649897,
+        6.870868530124426
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Kettle_1",
+      "translation": [
+        -5.852843306958675,
+        0.7588829779624939,
+        6.868996229022741
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Plate_17",
+      "translation": [
+        -5.305826511234045,
+        0.8051447649020702,
+        7.117791175842285
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/ButterKnife_1",
+      "translation": [
+        -5.67013308454528,
+        0.7703268953822355,
+        6.746984085533708
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dining_Table_203_1",
+      "translation": [
+        -5.8528439476187835,
+        0.0014072924107313423,
+        6.698879003697305
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Chair_007_4",
+      "translation": [
+        -4.956480612132603,
+        0.0004752672218999998,
+        6.750341239072369
+      ],
+      "rotation": [
+        0.7557142661585958,
+        0.0,
+        -0.6549014795557992,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Chair_007_4",
+      "translation": [
+        -6.74920728873943,
+        0.0004752672218999998,
+        6.750341296614074
+      ],
+      "rotation": [
+        -0.7254312756769781,
+        0.0,
+        -0.6882946057246652,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Chair_007_4",
+      "translation": [
+        -6.204054685190514,
+        0.0004752672218999998,
+        7.34419219584106
+      ],
+      "rotation": [
+        0.09504692146639583,
+        0.0,
+        -0.9954727935608089,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Chair_007_4",
+      "translation": [
+        -5.526910365634384,
+        0.0004752672218999998,
+        7.344192191755361
+      ],
+      "rotation": [
+        0.1753369501444854,
+        0.0,
+        -0.9845084834139471,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Soap_Bottle_12",
+      "translation": [
+        -5.606660325080156,
+        0.9430003884434699,
+        10.196867901831865
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_2",
+      "translation": [
+        -7.664844054715434,
+        0.9470489835271433,
+        9.654553537980897
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bread_12",
+      "translation": [
+        -4.997692033648491,
+        1.0089386254549026,
+        9.890783160924911
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bread_1",
+      "translation": [
+        -7.511203937232494,
+        1.0162030458450317,
+        9.57392406463623
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Knife_6",
+      "translation": [
+        -6.750480745618319,
+        0.9682266960147381,
+        10.350322839890527
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Salt_Shaker_1",
+      "translation": [
+        -6.369215963815805,
+        0.9443206857504265,
+        10.350845336914062
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Kettle_1",
+      "translation": [
+        -5.606659911572933,
+        0.9463987135887146,
+        10.426014509052038
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/coffee_machine_12",
+      "translation": [
+        -5.22054798156023,
+        0.9433641481446102,
+        10.428386650979519
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Wine_Bottle_1",
+      "translation": [
+        -7.741663932800293,
+        0.9925500214097156,
+        9.73255960457027
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pepper_Shaker_1",
+      "translation": [
+        -7.818201063608285,
+        0.9451580560928702,
+        9.970096588134766
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/CreditCard_1",
+      "translation": [
+        -6.750494003295898,
+        0.9419659518241882,
+        10.505073547363281
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Toaster_30",
+      "translation": [
+        -5.987576635181904,
+        0.9452750076958182,
+        10.349457797622442
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Egg_28",
+      "translation": [
+        -7.511028291657567,
+        1.0366961296647788,
+        9.89070188254118
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Potato_1",
+      "translation": [
+        -7.5145673751831055,
+        0.9752660542726517,
+        10.349883411079645
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Potato_17",
+      "translation": [
+        -5.3053388595581055,
+        0.9897102731544557,
+        9.891289171834096
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Countertop_C_10x4",
+      "translation": [
+        -4.846567154181811,
+        0.001176208257675171,
+        10.64482435464859
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Apple_16",
+      "translation": [
+        -8.31044764816761,
+        0.9576560724526644,
+        4.687144443392754
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Lettuce_30",
+      "translation": [
+        -8.235231406986713,
+        0.6543180979788303,
+        4.602272029966116
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Egg_28",
+      "translation": [
+        -8.37149678915739,
+        1.1484497126191855,
+        4.427943227812648
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Egg_12",
+      "translation": [
+        -8.278603915125132,
+        0.8271101035177708,
+        4.774414053186774
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Fridge_30",
+      "translation": [
+        -8.306118461752243,
+        0.004398365344075006,
+        4.683620964535913
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Spray_Bottle_1",
+      "translation": [
+        -5.840461920997166,
+        0.9673261687891128,
+        4.445340742858029
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Shelving_Unit_319_1",
+      "translation": [
+        -5.853830240310586,
+        0.005157692125067115,
+        4.426407651722432
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/bin_11",
+      "translation": [
+        -8.352507776260376,
+        0.017857128739356964,
+        7.611779550488506
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Safe_18_2",
+      "translation": [
+        -8.369284961140156,
+        0.0015915957093234623,
+        5.5772171909096375
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Television_15",
+      "translation": [
+        -1.0596296429634091,
+        1.190621807725102,
+        10.191545154340249
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Watch_1",
+      "translation": [
+        -0.7631131910015868,
+        0.7064926742205664,
+        9.98866349303862
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_remote_coolux_v",
+      "translation": [
+        -1.511079429649542,
+        0.7053021183237433,
+        9.87855529785154
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/TV_Stand_202_1",
+      "translation": [
+        -1.0596297025680539,
+        0.0035429299459792674,
+        10.208138300776483
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/pillow_5",
+      "translation": [
+        -1.481594666838646,
+        0.5350483637303114,
+        7.303412206470966
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Newspaper_3",
+      "translation": [
+        -1.0618480777561452,
+        0.4738040178384067,
+        7.063163410133275
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Sofa_214_2",
+      "translation": [
+        -1.0596297025680543,
+        0.013608627319333377,
+        7.136059992397158
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Cellphone_1",
+      "translation": [
+        -2.8122999612241983,
+        0.8063330127486552,
+        5.484034061431885
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Keychain_1",
+      "translation": [
+        -2.811838746443391,
+        0.7567386160604656,
+        4.988407767936588
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Plate_17",
+      "translation": [
+        -3.542172823101282,
+        0.8051447649020702,
+        4.990285873413086
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_1",
+      "translation": [
+        -2.995155541573193,
+        0.7605948676220974,
+        4.864940130506719
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_1",
+      "translation": [
+        -3.1775111838919186,
+        0.7605948676220974,
+        5.359338724409307
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/CreditCard_3",
+      "translation": [
+        -2.630444288253784,
+        0.7562117576614172,
+        4.866335868835449
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Houseplant_30",
+      "translation": [
+        -2.449277363717556,
+        0.754478394985199,
+        5.4853872284293175
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Laptop_17",
+      "translation": [
+        -3.360407316014479,
+        0.8084826681338954,
+        5.36066669225516
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dining_Table_203_1",
+      "translation": [
+        -2.9951554816041486,
+        0.0014072924107313423,
+        5.285597039460588
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Chair_201_1",
+      "translation": [
+        -2.9951554084643712,
+        0.01976791862398386,
+        4.64028381596362
+      ],
+      "rotation": [
+        -0.9954058146740873,
+        0.0,
+        -0.09574583078660204,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dog_Bed_1_1",
+      "translation": [
+        -3.1233627199975604,
+        0.001185660483315587,
+        7.276865159485591
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_garbage_bin_ai2_1_v",
+      "translation": [
+        -3.217712437691895,
+        3.9383769035339355e-05,
+        10.521499736905097
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Plate_1",
+      "translation": [
+        -4.196952369063593,
+        1.1200418553287819,
+        2.5903213843702435
+      ],
+      "rotation": [
+        -0.7071079110692045,
+        0.0,
+        -0.7071056513020851,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bowl_16",
+      "translation": [
+        -4.019922936108645,
+        1.0651550073234792,
+        2.455657711356885
+      ],
+      "rotation": [
+        0.38237831694137536,
+        -3.220250437410437e-08,
+        -0.9240058564387316,
+        -7.806150467555041e-08
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pen_1",
+      "translation": [
+        -4.341676683086885,
+        1.0710972615052015,
+        2.6011935323477378
+      ],
+      "rotation": [
+        0.9999999999988489,
+        0.0,
+        -1.517286439165092e-06,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dining_Table_216_1",
+      "translation": [
+        -3.8705769066572184,
+        0.002782267326292165,
+        2.6519709692001343
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Houseplant_17",
+      "translation": [
+        -3.0493111755166336,
+        -0.007711976766586304,
+        3.9851254824551297
+      ],
+      "rotation": [
+        0.7127003200114613,
+        0.0,
+        -0.7014686406786554,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Candle_2",
+      "translation": [
+        -0.2275836266544468,
+        0.046044153859348694,
+        4.072417733860655
+      ],
+      "rotation": [
+        0.7071080993818667,
+        7.251218012452685e-07,
+        -0.7071054629874607,
+        1.1520459902096304e-06
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/bin_16",
+      "translation": [
+        -0.21200134474039076,
+        0.013018641114234897,
+        4.028397834420204
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_1",
+      "translation": [
+        -2.1376228645699955,
+        0.7208169330708584,
+        4.072648561204707
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Remote_2",
+      "translation": [
+        -2.7177581787109375,
+        0.23890053534060718,
+        4.0712504386901855
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Watch_1",
+      "translation": [
+        -2.371779610984497,
+        0.24106336819029292,
+        4.184346495510544
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Candle_1",
+      "translation": [
+        -2.0258807914797217,
+        0.23815985599588624,
+        4.033634181637855
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Cellphone_2",
+      "translation": [
+        -2.0105497892946005,
+        0.7660002185592021,
+        4.114752292633057
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Keychain_1",
+      "translation": [
+        -2.488047480210662,
+        0.2391693721525371,
+        4.072778545692563
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/TV_Stand_223_1",
+      "translation": [
+        -2.3913179954351076,
+        -0.0006254017353057861,
+        4.071255272746086
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Floor_Lamp_30",
+      "translation": [
+        -4.724427988602686,
+        -0.002451255335472524,
+        2.407605798602104
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Toilet_Paper",
+      "translation": [
+        -8.057649598318253,
+        0.9519077553701707,
+        2.2680592740714514
+      ],
+      "rotation": [
+        0.7071078169123854,
+        0.0,
+        -0.7071057454591926,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dish_Sponge_1",
+      "translation": [
+        -8.245149627722594,
+        0.9519796222108037,
+        2.295551049868361
+      ],
+      "rotation": [
+        0.7071078169123854,
+        0.0,
+        -0.7071057454591926,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Spray_Bottle_1",
+      "translation": [
+        -8.056358923243407,
+        0.9512417361871841,
+        2.3760831688120705
+      ],
+      "rotation": [
+        0.7071078169123854,
+        0.0,
+        -0.7071057454591926,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Toilet_2",
+      "translation": [
+        -8.257149700079815,
+        1.7526781448395923e-07,
+        2.7348963406727917
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bathroom_Faucet_28",
+      "translation": [
+        -7.410064759891025,
+        1.0451131063115926,
+        4.179040689523324
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Sink_1",
+      "translation": [
+        -7.405693567482378,
+        9.99999993922529e-09,
+        3.9028025330305103
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/bin_3",
+      "translation": [
+        -7.1387362622243735,
+        0.040619805455207825,
+        2.299889640569687
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Plunger_2",
+      "translation": [
+        -8.44499678060679,
+        0.0009390283159268487,
+        4.172851490248508
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/pillow_9",
+      "translation": [
+        -8.844647787128059,
+        1.0805545629962996,
+        6.520249443213068
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_basketball_rhode_island_novelty_v",
+      "translation": [
+        -9.168117590248585,
+        0.7171523365987778,
+        6.712863467633724
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/BaseballBat_3",
+      "translation": [
+        -9.005881007253222,
+        0.6353602857561782,
+        6.86243365400824
+      ],
+      "rotation": [
+        0.6905686752844273,
+        -0.6905686752844274,
+        0.15203586654441473,
+        0.15203586654441476
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bed_21",
+      "translation": [
+        -9.242005004749453,
+        0.0070524660357833,
+        6.658236684963694
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Remote_3",
+      "translation": [
+        -8.714021831750834,
+        0.7037048757642508,
+        7.935022804146205
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Keychain_2",
+      "translation": [
+        -8.855563745833933,
+        0.7044550906866789,
+        8.086582086607814
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Alarm_Clock_30",
+      "translation": [
+        -8.869658699259162,
+        0.506308060334795,
+        8.151655197143555
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dresser_205_1",
+      "translation": [
+        -8.758813719940663,
+        5.183994653634727e-05,
+        7.935022777880398
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Television_2_1",
+      "translation": [
+        -11.53666933237178,
+        1.1994656170913283,
+        8.388847729802132
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/CreditCard_2",
+      "translation": [
+        -11.632438659667969,
+        0.23909268391132354,
+        8.456099510192871
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_mug_ai2_2_v",
+      "translation": [
+        -11.171809436753392,
+        0.23973305150866508,
+        8.3056335542351
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_2",
+      "translation": [
+        -11.863109607236186,
+        0.24302554781528268,
+        8.307039385454042
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Vase_Medium_2",
+      "translation": [
+        -11.517102241516113,
+        0.2863386810175143,
+        8.305633582174778
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/TV_Stand_223_1",
+      "translation": [
+        -11.536669570790359,
+        -0.0006254017353057861,
+        8.343255272746086
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Houseplant_17",
+      "translation": [
+        -10.322635519593335,
+        -0.007711976766586304,
+        10.300294244444288
+      ],
+      "rotation": [
+        0.8741118484819086,
+        0.0,
+        -0.4857246919228431,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/pillow_14",
+      "translation": [
+        -16.470346450805664,
+        0.6493750102818012,
+        5.495741829276085
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Alarm_Clock_1",
+      "translation": [
+        -16.120744705200195,
+        0.7175588086247444,
+        5.221378734335303
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Teddy_Bear_1",
+      "translation": [
+        -16.472188798957355,
+        0.6180258828528482,
+        4.939174888334278
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bed_16",
+      "translation": [
+        -16.36585820874873,
+        0.0020121687557548285,
+        5.456151613712311
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/CreditCard_3",
+      "translation": [
+        -12.913642883300781,
+        0.7308314442649634,
+        4.7218828201293945
+      ],
+      "rotation": [
+        1.3315805442188116e-07,
+        0.0,
+        -0.9999999999999911,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_1",
+      "translation": [
+        -13.234915700105228,
+        0.12504925624056668,
+        4.9285297034132265
+      ],
+      "rotation": [
+        0.9999999999999782,
+        0.0,
+        -2.0861622938585797e-07,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_vase_stilren_v",
+      "translation": [
+        -13.236507415771486,
+        0.733852097839117,
+        4.514564983546734
+      ],
+      "rotation": [
+        1.3315805442188116e-07,
+        0.0,
+        -0.9999999999999911,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dresser_325_1",
+      "translation": [
+        -13.106432837353516,
+        0.0005485117435455322,
+        5.136988887310029
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/BaseballBat_4",
+      "translation": [
+        -14.197874784636042,
+        0.27437652322306133,
+        4.338153859463521
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pen_3",
+      "translation": [
+        -14.883009560406208,
+        0.7578416729811579,
+        8.12142466683872
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pen_2",
+      "translation": [
+        -15.166690483689308,
+        0.7578414746094495,
+        8.38311861990951
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Tissue_Box_1",
+      "translation": [
+        -14.599414817988873,
+        0.7487455410033464,
+        8.317695617675781
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dog_Statue_4",
+      "translation": [
+        -14.739454752565933,
+        0.8081153383944184,
+        8.252197068082156
+      ],
+      "rotation": [
+        0.7071068282650276,
+        0.0,
+        -0.7071067341080643,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Desk_Lamp_1",
+      "translation": [
+        -14.457573890686035,
+        0.7503056202471856,
+        8.38311767578125
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Cellphone_2",
+      "translation": [
+        -14.457385063171387,
+        0.800201959777769,
+        8.186848634853959
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Book_25",
+      "translation": [
+        -15.166776806116104,
+        0.7503217288061976,
+        8.251624425817468
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Mug_1",
+      "translation": [
+        -15.02619008347392,
+        0.8007206466794015,
+        8.44839191652407
+      ],
+      "rotation": [
+        0.9999999999999964,
+        0.0,
+        8.429369371037241e-08,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Desk_229_1",
+      "translation": [
+        -14.88317299802911,
+        0.002122938632965088,
+        8.252041673898697
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Chair_201_1",
+      "translation": [
+        -16.760295486927035,
+        0.01976791862398386,
+        8.276993742823601
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/DecorativeBox4",
+      "translation": [
+        -14.832061639873102,
+        0.0013131878787481788,
+        4.4009525153923965
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Book_23",
+      "translation": [
+        -11.992845398532925,
+        0.43004174621236047,
+        2.6895086765289307
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/pillow_29",
+      "translation": [
+        -11.249074473977089,
+        0.5230476707220078,
+        3.1889869570732117
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bed_17",
+      "translation": [
+        -11.741358331203461,
+        0.0010912399156950414,
+        2.881215385927014
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Bowl_30",
+      "translation": [
+        -8.885598182678223,
+        1.3422287583351136,
+        3.964836921542883
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Cellphone_2",
+      "translation": [
+        -9.630755424499512,
+        1.3399503304251994,
+        4.077002996578813
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Tissue_Box_1",
+      "translation": [
+        -9.324466697871685,
+        0.3881371420890093,
+        3.961667060852051
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pen_1",
+      "translation": [
+        -9.183860436081886,
+        1.2950699396897107,
+        4.0770025157835335
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pen_1",
+      "translation": [
+        -9.481858864426613,
+        1.2950699396897107,
+        3.9083766841795295
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Book_16",
+      "translation": [
+        -9.041770935058594,
+        0.6828385396078631,
+        3.9176508117079734
+      ],
+      "rotation": [
+        -0.7071067811865475,
+        0.0,
+        -0.7071067811865476,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Dresser_220_1",
+      "translation": [
+        -9.183946484565736,
+        0.0018827876192517579,
+        4.020857000387821
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Houseplant_17",
+      "translation": [
+        -8.89690148906163,
+        -0.007711976766586415,
+        2.521944016384452
+      ],
+      "rotation": [
+        -0.3218163908626557,
+        0.0,
+        -0.9468020968355184,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Tissue_Box_1",
+      "translation": [
+        -9.526897430419922,
+        0.7416765493422747,
+        2.4126684740185738
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Vase_Flat_2",
+      "translation": [
+        -9.917353630065918,
+        0.7951979589823168,
+        2.4626004211604595
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Watch_2",
+      "translation": [
+        -9.624482703490495,
+        0.7478262330468006,
+        2.2136978515137944
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Pencil_1",
+      "translation": [
+        -9.429283110771802,
+        0.7504696478001674,
+        2.262229168211187
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_pen_signo_v",
+      "translation": [
+        -9.81919035807945,
+        0.7516881831991867,
+        2.363431394418954
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/CreditCard_2",
+      "translation": [
+        -9.722125053405762,
+        0.7448502988815308,
+        2.3133060932159424
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/RoboTHOR_desk_norrasen",
+      "translation": [
+        -9.722726253135743,
+        0.0003680288791656494,
+        2.3629884884357453
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/BaseballBat_2",
+      "translation": [
+        -12.55464065012224,
+        0.20794818371426724,
+        4.2066649351483045
+      ],
+      "rotation": [
+        -0.9063769630195582,
+        -0.005246482093903991,
+        0.016651046963002264,
+        0.4221090119484739
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Television_16",
+      "translation": [
+        -3.256095454863076,
+        2.1747341383173664,
+        2.1470264414450217
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Television_9",
+      "translation": [
+        -6.915014657525623,
+        2.009820367605905,
+        10.664534519030711
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Television_9",
+      "translation": [
+        -10.478526477915139,
+        1.8262231863714637,
+        2.1514654809692875
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Wall_Decor_Photo_4",
+      "translation": [
+        -2.413439828272843,
+        1.8961824456542005,
+        4.263101060380653
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Wall_Decor_Painting_1",
+      "translation": [
+        -0.7486646849717953,
+        1.6526965225073456,
+        2.1384483574203963
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Wall_Decor_Painting_5",
+      "translation": [
+        -3.294772840556433,
+        1.9476086922987523,
+        4.266892230198939
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Wall_Decor_Painting_4",
+      "translation": [
+        -5.0480413286920545,
+        1.6184573788500598,
+        4.267735159495097
+      ],
+      "rotation": [
+        6.123233995736766e-17,
+        0.0,
+        -1.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Wall_Decor_Painting_2",
+      "translation": [
+        -3.2564610391326783,
+        1.9395268179163592,
+        4.276311482332832
+      ],
+      "rotation": [
+        1.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Doorway_Double_3_open",
+      "translation": [
+        -6.408,
+        0.004590930046844521,
+        2.2350197547618555
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Doorway_1_open",
+      "translation": [
+        -1.8796016012332932,
+        0.00012815952301004074,
+        4.273237423076153
+      ],
+      "rotation": [
+        1.0,
+        -0.0,
+        0.0,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Doorway_3_open",
+      "translation": [
+        -12.816,
+        0.004590930046844521,
+        7.707834437050416
+      ],
+      "rotation": [
+        0.7071067811865476,
+        -0.0,
+        0.7071067811865475,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Doorway_Double_3_open",
+      "translation": [
+        -12.009212735096007,
+        0.004590930046844521,
+        4.272
+      ],
+      "rotation": [
+        1.0,
+        -0.0,
+        0.0,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Doorway_7_open",
+      "translation": [
+        -8.537400263495611,
+        -8.88685221862584e-05,
+        9.624179476403134
+      ],
+      "rotation": [
+        0.7071067811865476,
+        -0.0,
+        0.7071067811865475,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Doorway_3",
+      "translation": [
+        -2.3215865994558467,
+        0.004590930046844521,
+        2.136
+      ],
+      "rotation": [
+        1.0,
+        -0.0,
+        0.0,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Window_Slider_60x48",
+      "translation": [
+        -8.856653308893514e-07,
+        0.8521385134040815,
+        2.249946920904012
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Window_Bay_1",
+      "translation": [
+        -0.1353173430731379,
+        0.8342371634780865,
+        4.3339686921726095
+      ],
+      "rotation": [
+        0.7071067811865476,
+        0.0,
+        -0.7071067811865475,
+        -0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Window_Fixed_36x48",
+      "translation": [
+        -9.500475566341118,
+        0.849497851735304,
+        10.680000531399166
+      ],
+      "rotation": [
+        1.0,
+        -0.0,
+        0.0,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    },
+    {
+      "template_name": "objects/Window_Bay_1",
+      "translation": [
+        -14.298864252380076,
+        0.8342371634780865,
+        8.679317343073139
+      ],
+      "rotation": [
+        1.0,
+        -0.0,
+        0.0,
+        0.0
+      ],
+      "non_uniform_scale": [
+        1,
+        1,
+        1
+      ],
+      "motion_type": "STATIC"
+    }
+  ]
+}

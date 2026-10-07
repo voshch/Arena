@@ -436,6 +436,14 @@ shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 preflight that checks every asset it references would resolve for someone
 else.
 
+`arena asset import world procthor <split>/<index>` (such as `val/0`) writes one
+ProcTHOR-10K house as `procthor_<split>_<index>` into the same imported worlds
+root, with zones named by room type, the walls cut around every door hole and
+the furniture imported through the `ai2thor` object source and placed as static
+entities. An openable door becomes a `hinged` door, as it swings in AI2-THOR, a
+doorframe without a door leaf stays an opening, and a door that does not open
+stays wall.
+
 `WorldIdentifier('hospital_1').resolve()` returns a `WorldView`
 wrapping whichever of the above resolved first. Call `view.load()` to parse
 `world.yaml` (and `kg.yaml`) into a `World`.

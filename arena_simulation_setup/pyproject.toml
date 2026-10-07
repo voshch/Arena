@@ -5,4 +5,5 @@ addopts = "-ra --strict-markers"
 markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",
+    "network: hits the live upstream host",
 ]
