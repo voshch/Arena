@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import json
+import os
+import subprocess
 import sys
+import time
 import typing
 
 from arena_cli.common import CLIError, make_verb
-from arena_cli.complete import Flags, Manifest, Static, Sub, Union
+from arena_cli.complete import Context, Dynamic, Flags, Manifest, Static, Sub, Union
 
 if typing.TYPE_CHECKING:
     from pathlib import Path
@@ -437,7 +441,7 @@ def import_(argv: list[str]) -> int:
     registered sources by kind with their license verdict (yes: public bucket with attribution,
     nc: NC prefix only, sa: SA prefix only, no: local use only, unclear), host and granularity
     (item, chunk, bulk). `import KIND` lists the sources of that kind, `import KIND SOURCE` lists
-    that source's items and its default target. ITEM... or --all converts those items into the
+    that source's items and its default target, cached for tab completion (a day for live hosts, for good for pinned sources). ITEM... or --all converts those items into the
     imported root ($ARENA_ASSETS_DIR_IMPORTED, worlds under its worlds/), which every resolver
     reads after the curated local root, or --out DIR, each with an ATTRIBUTION.yaml beside it,
     and prints every item's path. One source can serve several kinds: `import world barn 17` is
@@ -451,7 +455,61 @@ IMPORT_KINDS = ("episode", "object", "scenario", "sound", "suite", "world")
 
 _KIND = Sub({kind: Manifest(f"asset.{kind}") for kind in KINDS})
 _IMPORT_FLAGS = Flags({"--all": "import every item of the source", "--out": "target root instead of $ARENA_ASSETS_DIR_IMPORTED"}, valued=("--out",))
-_IMPORT = Sub({kind: Union(Manifest(f"asset.import.{kind}"), _IMPORT_FLAGS) for kind in IMPORT_KINDS})
+ITEM_CANDIDATES = 500
+REFRESH_LOCK_MAX_AGE_S = 300.0
+
+
+def import_listing(kind: str, source: str) -> str | None:
+    """Item list the bare `import KIND SOURCE` caches for that source, None without ARENA_ASSETS_DIR."""
+    root = os.environ.get("ARENA_ASSETS_DIR")
+    return os.path.join(root, ".import", source, f"items.{kind}.json") if root else None
+
+
+def listed_items(path: str, now: float) -> tuple[list[str], bool]:
+    """Cached item ids and whether the list needs fetching again (missing, unreadable or expired)."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        items, expires = [str(item) for item in data["items"]], data["expires_at"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [], True
+    return items, expires is not None and now >= float(expires)
+
+
+def _refresh_listing(kind: str, source: str, path: str, now: float) -> None:
+    lock = path + ".lock"
+    try:
+        if now - os.stat(lock).st_mtime < REFRESH_LOCK_MAX_AGE_S:
+            return
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(lock, "w"):
+            pass
+        subprocess.Popen(["ros2", "run", "arena_assets", "arena_assets", "-s", "import", kind, source], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return
+
+
+def import_candidates(kind: str, words: list[str], cur: str, ctx: Context) -> dict[str, str]:
+    """Sources of the kind before the SOURCE word, then that source's cached items, a stale or missing list refreshed in the background."""
+    positional = [word for index, word in enumerate(words) if not word.startswith("--") and not (index and words[index - 1] == "--out")]
+    if not positional:
+        return ctx.values(f"asset.import.{kind}") or {}
+    path = import_listing(kind, positional[0])
+    if path is None:
+        return {}
+    now = time.time()
+    items, stale = listed_items(path, now)
+    if stale:
+        _refresh_listing(kind, positional[0], path, now)
+    taken = set(positional[1:])
+    matches = [item for item in items if item.startswith(cur) and item not in taken]
+    return dict.fromkeys(matches[:ITEM_CANDIDATES], "")
+
+
+_IMPORT = Sub({kind: Union(Dynamic(lambda words, cur, ctx, kind=kind: import_candidates(kind, words, cur, ctx)), _IMPORT_FLAGS) for kind in IMPORT_KINDS})
 _KINDS = Static({kind: spec.description for kind, spec in KINDS.items()})
 
 COMMANDS = {

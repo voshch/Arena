@@ -57,6 +57,13 @@ class Manifest:
 
 
 @dataclasses.dataclass
+class Dynamic:
+    """Values computed from the words before the cursor, the word under it and the manifest."""
+
+    values: Callable[[list[str], str, Context], Mapping[str, str]]
+
+
+@dataclasses.dataclass
 class Flags:
     """--flags with descriptions. `valued` flags take a free-form next word."""
 
@@ -114,7 +121,7 @@ class Packages:
 
 
 Source = Static | Manifest | Files | Nothing
-Spec = Source | Flags | Kv | LaunchArgs | Union | Sub | Packages
+Spec = Source | Dynamic | Flags | Kv | LaunchArgs | Union | Sub | Packages
 
 
 def walk(spec: Spec | None) -> Iterator[Spec]:
@@ -198,7 +205,7 @@ def _expand(spec: Spec, words: list[str], cur: str, ctx: Context) -> Result:
     return _expand_flat(spec, words, cur, ctx)
 
 
-def _expand_flat(spec: Source | Flags | Packages, words: list[str], cur: str, ctx: Context) -> Result:
+def _expand_flat(spec: Source | Dynamic | Flags | Packages, words: list[str], cur: str, ctx: Context) -> Result:
     r = Result()
     if isinstance(spec, Nothing) or ":=" in cur:
         return r
@@ -208,6 +215,8 @@ def _expand_flat(spec: Source | Flags | Packages, words: list[str], cur: str, ct
         r.add(spec.table())
     elif isinstance(spec, Manifest):
         r.add(ctx.values(spec.key) or {})
+    elif isinstance(spec, Dynamic):
+        r.add(dict(spec.values(words, cur, ctx)))
     elif isinstance(spec, Flags):
         if words and words[-1] in spec.valued:
             r.stop = True
