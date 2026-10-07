@@ -1,24 +1,137 @@
 import logging
 import math
+import os
+import random
+import re
 import typing
+from pathlib import Path
 
+import pydantic
 import shapely
 import shapely.affinity
 import yaml
 from shapely.geometry.base import BaseGeometry
 
+from arena_simulation_setup import ARENA_ASSETS_DIR
+from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
-from arena_simulation_setup.tree.World import Level, World, Zone
+from arena_simulation_setup.tree.Wall import PlaceWallSegmentAsset
+from arena_simulation_setup.tree.World import Level, WallPath, World, Zone
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
 
 from . import BaseConfiguration, WorldGeneratorImpl
 from .utils import to_corners, to_walls, world_of
+
+if typing.TYPE_CHECKING:
+    from arena_assets.importers import Attribution
 
 logger = logging.getLogger(__name__)
 
 Cell = tuple[int, int]
 _DIRS: list[Cell] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
 _CARDBOARD = MaterialIdentifier('Cardboard')
+
+BASE_URL = 'https://raw.githubusercontent.com/Daffan/the-barn-challenge/main'
+WORLD_DIR = 'jackal_helper/worlds/BARN'
+PROVIDER = 'barn'
+WORLDS = 300
+GRID = 30
+CORRIDOR_CELLS = 34
+CELL_M = 0.15
+CYLINDER_RADIUS_M = 0.075
+X_SHIFT_M = 4.5
+START = (-2.25 + X_SHIFT_M, 3.0, math.pi / 2)
+GOAL = (-2.25 + X_SHIFT_M, 13.0)
+ARENA_WIDTH_M = GRID * CELL_M
+ARENA_DEPTH_M = (2 * CORRIDOR_CELLS + GRID) * CELL_M
+SCENARIO = 'barn'
+LICENSE = 'MIT'
+AUTHORS = 'Daniel Perille, Abigail Truong, Xuesu Xiao, Peter Stone'
+CITATION = 'Perille et al., Benchmarking Metric Ground Navigation, SSRR 2020, arXiv:2008.13315'
+
+_CYLINDER = re.compile(r"<model name='unit_cylinder_\d+'>\s*<pose[^>]*>\s*(\S+)\s+(\S+)")
+_RADIUS = re.compile(r'<radius>([^<]+)</radius>')
+_SCALE = re.compile(r'<scale>([^<]+)</scale>')
+
+
+def world_name(index: int) -> str:
+    return f'barn_{index}'
+
+
+def world_file(index: int) -> str:
+    return f'world_{index}.world'
+
+
+def _scenario(start: tuple[float, float, float], goto: tuple[float, float, float]) -> dict:
+    return {
+        'format': SCENARIO_FORMAT,
+        'robots': [
+            {
+                'start': [round(start[0], 3), round(start[1], 3), round(start[2], 3)],
+                'phases': [{'goto': [round(goto[0], 3), round(goto[1], 3), round(goto[2], 3)]}],
+            }
+        ],
+    }
+
+
+def scenario() -> dict:
+    return _scenario(START, (*GOAL, START[2]))
+
+
+def cache_dir() -> Path:
+    return Path(os.environ.get('ARENA_ASSETS_DIR') or ARENA_ASSETS_DIR) / '.import' / PROVIDER
+
+
+def attribution() -> 'Attribution':
+    from arena_assets.importers import Attribution
+
+    return Attribution(source='BARN Challenge (the-barn-challenge)', url='https://github.com/Daffan/the-barn-challenge', license=LICENSE, authors=AUTHORS, citation=CITATION)
+
+
+def fetch_world(index: int, root: Path | None = None) -> Path:
+    from arena_assets.importers import ATTRIBUTION_FILE, write_attribution
+    from arena_assets.importers.providers import Http
+
+    root = cache_dir() if root is None else root
+    dest = Http(BASE_URL).get(f'{WORLD_DIR}/{world_file(index)}', root / 'worlds' / world_file(index))
+    sidecar = root / ATTRIBUTION_FILE
+    if not sidecar.is_file():
+        write_attribution(sidecar, attribution())
+    return dest
+
+
+def world_cells(world: Path) -> set[Cell]:
+    text = world.read_text()
+    radii = {float(radius) for radius in _RADIUS.findall(text)}
+    scales = {tuple(float(factor) for factor in scale.split()) for scale in _SCALE.findall(text)}
+    if radii - {CYLINDER_RADIUS_M} or scales - {(1.0, 1.0, 1.0)}:
+        raise ValueError(f'{world}: cylinder radii {sorted(radii)} at scales {sorted(scales)} are not all {CYLINDER_RADIUS_M} m unscaled')
+    cells: set[Cell] = set()
+    for x, y in _CYLINDER.findall(text):
+        i = (float(x) + X_SHIFT_M - CYLINDER_RADIUS_M) / CELL_M
+        k = (float(y) - CYLINDER_RADIUS_M) / CELL_M
+        if abs(i - round(i)) > 1e-3 or abs(k - round(k)) > 1e-3:
+            raise ValueError(f'{world}: cylinder at ({x}, {y}) is off the {CELL_M} m lattice')
+        cells.add((int(round(i)), int(round(k))))
+    if not cells:
+        raise ValueError(f'{world}: no unit_cylinder models found')
+    return cells
+
+
+def cell_center(cell: Cell) -> tuple[float, float]:
+    i, k = cell
+    return round((i + 0.5) * CELL_M, 4), round((k + 0.5) * CELL_M, 4)
+
+
+def cylinder_walls(x: float, y: float, radius: float = CYLINDER_RADIUS_M, thickness: float = 0.0) -> list[WallPath]:
+    """Octagon of the given radius, each side moved inward by half the wall thickness so the wall's outer face lies on it."""
+    ring = list(shapely.Point(x, y).buffer(radius, quad_segs=2).exterior.coords)
+    walls: list[WallPath] = []
+    for (ax, ay), (bx, by) in zip(ring[:-1], ring[1:], strict=True):
+        mx, my = (ax + bx) / 2 - x, (ay + by) / 2 - y
+        inset = thickness / 2 / math.hypot(mx, my)
+        walls.append(WallPath(path=[Position(x=ax - mx * inset, y=ay - my * inset), Position(x=bx - mx * inset, y=by - my * inset)]))
+    return walls
 
 
 class BarnConfiguration(BaseConfiguration):
@@ -60,22 +173,18 @@ class BarnBase(WorldGeneratorImpl):
         raise NotImplementedError
 
     def _arena(self: _BarnConfigured) -> tuple[shapely.Polygon, list]:
-        arena = shapely.box(0, 0, self.config.width, self.config.height)
+        return BarnBase._box(self.config.width, self.config.height)
+
+    @staticmethod
+    def _box(width: float, height: float) -> tuple[shapely.Polygon, list]:
+        arena = shapely.box(0, 0, width, height)
         return arena, to_walls(arena.exterior)
 
     def _set_level(self, name: str, arena: shapely.Polygon, walls: list, description: str):
         self._world = world_of(Level(zones=[Zone(name=name, polygon=to_corners(arena))], walls=walls), {name: description})
 
     def _set_scenario(self, start: tuple[float, float, float], goto: tuple[float, float, float]):
-        self._scenario = {
-            'format': SCENARIO_FORMAT,
-            'robots': [
-                {
-                    'start': [round(start[0], 3), round(start[1], 3), round(start[2], 3)],
-                    'phases': [{'goto': [round(goto[0], 3), round(goto[1], 3), round(goto[2], 3)]}],
-                }
-            ],
-        }
+        self._scenario = _scenario(start, goto)
 
 
 class WorldGeneratorBarn(BarnBase):
@@ -254,3 +363,39 @@ class WorldGeneratorBarn(BarnBase):
                 if not tile.is_empty:
                     walls += to_walls(tile.boundary, material=_CARDBOARD)
         return walls
+
+
+class WorldGeneratorBarnCanonical(BarnBase):
+    """One of the 300 BARN challenge worlds, its cylinders on the 0.15 m lattice."""
+
+    SCENARIO = 'barn'
+
+    class Configuration(BaseConfiguration):
+        index: int = pydantic.Field(ge=0, le=WORLDS - 1)
+        source: str = ''
+
+    config: Configuration
+
+    def _build(self):
+        if self._built:
+            return
+
+        index = self.config.index
+        cells = world_cells(Path(self.config.source) / world_file(index) if self.config.source else fetch_world(index))
+        arena, walls = self._box(ARENA_WIDTH_M, ARENA_DEPTH_M)
+        thickness = PlaceWallSegmentAsset().width
+        for cell in sorted(cells):
+            walls += cylinder_walls(*cell_center(cell), thickness=thickness)
+        self._set_level('barn', arena, walls, f'BARN challenge world {self.config.index}, {len(cells)} cylinders')
+        self._set_scenario(START, (*GOAL, START[2]))
+        self._built = True
+
+
+class WorldGeneratorBarnAny(WorldGeneratorImpl):
+    """The canonical world when `index` is given, the procedural passage otherwise."""
+
+    Configuration = WorldGeneratorBarn.Configuration
+
+    def __new__(cls, configuration: dict, rng: random.Random) -> WorldGeneratorImpl:
+        impl = WorldGeneratorBarnCanonical if 'index' in configuration else WorldGeneratorBarn
+        return impl(configuration, rng)

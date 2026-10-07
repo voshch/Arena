@@ -10,7 +10,7 @@ The ROS node is [`world_generator_ros.py`](world_generator_ros.py), its interfac
 |---|---|---|
 | `empty` | width, height | a bare walled box |
 | `hallway` | corridor and room sizes | a spine with rooms either side |
-| `barn` | box size, passage width, straightness | a BARN-style winding passage, pinning the episode to `tm_robots: scenario` |
+| `barn` | box size, passage width, straightness, or `index` | a BARN-style winding passage, or with `index` (0..299) the canonical BARN challenge world of that number, read from `source` (a directory of `world_<index>.world` files) or fetched from GitHub into `ARENA_ASSETS_DIR/.import/barn/worlds`. Each cylinder is an octagon of walls whose outer faces lie on the 0.075 m radius, in the challenge frame shifted by +4.5 m in x. Either way the episode is pinned to `tm_robots: scenario` |
 | `sketch` | a grid of box-drawing glyphs | corridors and rooms exactly as drawn |
 | `letter` | text | one 18-segment character cell per glyph |
 

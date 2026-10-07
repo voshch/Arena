@@ -161,9 +161,9 @@ def lazy_Hallway() -> type[WorldGeneratorImpl]:
 
 @WorldGenerator.register(WorldGeneratorType.BARN)
 def lazy_Barn() -> type[WorldGeneratorImpl]:
-    from .barn import WorldGeneratorBarn
+    from .barn import WorldGeneratorBarnAny
 
-    return WorldGeneratorBarn
+    return WorldGeneratorBarnAny
 
 
 @WorldGenerator.register(WorldGeneratorType.SKETCH)
