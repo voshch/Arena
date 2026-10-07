@@ -80,3 +80,17 @@ arena asset push sound <name>
 
 Looping files should match in waveform and level at both ends so the join
 does not click.
+
+## Imported sounds
+
+`arena asset import sound fsd50k <freesound id>` adds FSD50K clips under CC0 or
+CC BY as `Common/Sound/fsd50k_<id>`. Each clip is staged as a manifest beside
+its unchanged wav and built by the same `arena-assets db build -t sound` as
+the default sounds. [fsd50k_kinds.yaml](fsd50k_kinds.yaml) maps its AudioSet
+labels to a kind of the kinds table, and the clip takes `level_db`,
+`reference_distance_m` and `surface` from that kind's default asset, so a kind
+without one (`onset`) is not imported. Its `normalize_dbfs` is derived as for
+the default sounds: the active level of the first channel once the peak is
+scaled to -6 dBFS (-9 dBFS for environment kinds), to the nearest 0.5 dB. The
+tags carry `origin::fsd50k`, the uploader and Freesound URL sit in the
+`ATTRIBUTION.yaml` beside the manifest.

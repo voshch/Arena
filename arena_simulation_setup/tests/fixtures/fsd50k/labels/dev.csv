@@ -1,0 +1,6 @@
+fname,labels,mids,split
+386695,"Walk_and_footsteps,Bird,Bird_vocalization_and_bird_call_and_bird_song,Wild_animals,Animal","/m/07pbtc8,/m/015p6,/m/020bb7,/m/01280g,/m/0jbk",train
+182351,Alarm,/m/07pp_mv,train
+371717,Wind,/m/03m9d0z,train
+377266,"Male_speech_and_man_speaking,Speech,Human_voice","/m/05zppz,/m/09x0r,/m/09l8g",train
+336390,"Knock,Door,Domestic_sounds_and_home_sounds","/m/07r4wb8,/m/02dgv,/t/dd00071",train
