@@ -367,6 +367,18 @@ and `legs: [[x, y, speed, dwell], ...]`, corners within 0.25 m of the stay in sp
 of the leg before, for a path follower. zara01 and zara02 share one world, with zara02 moved 1.15 m
 along y into zara01's frame, the placement SocNavBench gives the two.
 
+`arena asset import scenario socnavbench <episode>` writes one of SocNavBench's curated episodes on these sequences as a
+replay scenario that also carries the robot task: `robots:` holds the episode's start and its goal as one `goto` phase,
+mapped back from SocNavBench's map frame into the frame of the eth_ucy worlds, and `humans:` holds the pedestrians
+SocNavBench plays in the episode (ids from the episode's first pedestrian on, up to the first one who enters later than
+the time budget), on tracks cut to the budget and timed from that first pedestrian's first frame. Positions are the ones
+the eth_ucy scenario plays. The world is `socnavbench_eth` or `socnavbench_zara`: the eth_ucy floor with the start and
+goal of every episode of the scene added, each 0.5 m clear of the walls. The 17 episodes on eth, zara01 and zara02 are
+importable. The 16 on hotel, univ and the double hotel are refused, because SocNavBench plays those sequences at 15 fps
+although they were recorded at 25 fps and places the hotel as a mirror image. A scenario has no field for the time
+budget: pass `task.episode.timeout:=<s>` when launching one by hand, or run the
+[SocNavBench suite](../../../../arena_evaluation/arena_evaluation/configs/benchmark/README.md#socnavbench), whose stages carry it.
+
 ## Arena adapter (`human:=arena`)
 
 `ArenaHumanSimulator` feeds possession back to the engine: a loop at the
