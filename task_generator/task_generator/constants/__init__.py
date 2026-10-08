@@ -22,6 +22,7 @@ class Constants:
     class AcousticsSimulator(Enum):
         NONE = "none"
         ARENA = "arena"
+
     HUMAN_PARAM_NAMESPACES = {HumanSimulator.ARENA: "humansim"}
     HUMAN_PARAM_RESERVED = "human"
 
