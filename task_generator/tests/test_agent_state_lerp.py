@@ -8,12 +8,12 @@ import pytest
 
 pytest.importorskip("rclpy")
 
-from arena_humansim_msgs.msg import AgentFrame, AgentGestures, AgentState, Gesture
+from arena_humansim_msgs.msg import AgentFrame, AgentGestures, AgentMeta, AgentState, Gesture
 from geometry_msgs.msg import Point
 from task_generator.manager.realizer import Realizer
 from task_generator.simulators.human.arena_humansim.arena_humansim import ArenaHumanSimulator
 
-INTERPOLATED = {"header", "x", "y", "theta", "vx", "vy"}
+INTERPOLATED = {"header", "x", "y", "theta", "vx", "vy", "gait_phase"}
 
 
 def _frame(sec: int, nanosec: int = 0, **columns: list) -> AgentFrame:
@@ -29,6 +29,7 @@ def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, ori
     adapter._curr_agent_states = curr
     adapter._agent_gestures = {}
     adapter._agent_names = {}
+    adapter._agent_types = {}
     adapter._realizer = Realizer(Realizer._Configuration(x=origin[0], y=origin[1], prefix="env_0"))
     return adapter
 
@@ -41,15 +42,36 @@ def test_lerp_preserves_every_uninterpolated_field() -> None:
         "kind": [AgentState.KIND_HUMAN],
         "animation_state": [2],
         "policy_idx": [3],
+        "gait_cadence": [1.3],
     }
-    prev = _frame(0, x=[0.0], y=[0.0], theta=[0.0], vx=[1.0], vy=[0.0], **filled)
-    curr = _frame(1, x=[2.0], y=[0.0], theta=[0.0], vx=[1.0], vy=[0.0], **filled)
+    prev = _frame(0, x=[0.0], y=[0.0], theta=[0.0], vx=[1.0], vy=[0.0], gait_phase=[1.0], **filled)
+    curr = _frame(1, x=[2.0], y=[0.0], theta=[0.0], vx=[1.0], vy=[0.0], gait_phase=[3.0], **filled)
     lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.5e9))
 
     for field in AgentFrame.get_fields_and_field_types():
         if field in INTERPOLATED:
             continue
         assert getattr(lerped, field) == getattr(curr, field), f"{field} was dropped by the lerp"
+    assert lerped.x[0] == pytest.approx(1.0)
+    assert lerped.gait_phase[0] == pytest.approx(2.0)
+
+
+def test_lerp_gait_phase_by_id_and_passes_cadence_from_curr() -> None:
+    prev = _frame(0, agent_id=[3, 1], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0], gait_phase=[6.0, 1.0], gait_cadence=[0.9, 0.8])
+    curr = _frame(1, agent_id=[1, 2, 3], x=[0.0, 0.0, 0.0], y=[0.0, 0.0, 0.0], theta=[0.0, 0.0, 0.0], vx=[0.0, 0.0, 0.0], vy=[0.0, 0.0, 0.0], gait_phase=[2.0, 5.0, 8.0], gait_cadence=[1.1, 1.2, 1.3])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.25e9))
+
+    assert list(lerped.gait_phase) == pytest.approx([1.25, 5.0, 6.5])
+    assert list(lerped.gait_cadence) == pytest.approx([1.1, 1.2, 1.3])
+
+
+def test_lerp_leaves_gait_phase_alone_when_a_frame_lacks_it() -> None:
+    prev = _frame(0, agent_id=[1], x=[0.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    curr = _frame(1, agent_id=[1], x=[2.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0], gait_phase=[4.0], gait_cadence=[1.0])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.5e9))
+
+    assert list(lerped.gait_phase) == [4.0]
+    assert list(lerped.gait_cadence) == [1.0]
     assert lerped.x[0] == pytest.approx(1.0)
 
 
@@ -132,9 +154,34 @@ def test_gestures_replace_on_each_update() -> None:
 def test_flow_obstacle_reads_pose_and_desired_velocity() -> None:
     adapter = _adapter(origin=(10.0, -5.0))
     frame = _frame(1, agent_id=[4, 9], x=[1.0, 2.0], y=[3.0, 4.0], desired_velocity=[1.1, 1.3])
-    obs = adapter._make_flow_dynamic_obstacle(frame, 1)
+    obs = adapter._make_flow_dynamic_obstacle(frame, 1, "Hospital/nurse_female_caucasian_young")
 
     assert obs.name == "flow_9"
+    assert (obs.model.domain, obs.model.name) == ("Hospital", "nurse_female_caucasian_young")
     assert obs.sim_path == "env_0/flow_9"
     assert (obs.pose.position.x, obs.pose.position.y) == (12.0, -1.0)
     assert obs.velocity == 1.3
+
+
+def test_pedestrians_carry_gait_phase_cadence_and_agent_type() -> None:
+    adapter = _adapter()
+    adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2], name=["a", "b"], handedness=["", "l"], agent_type=["elder", ""]))
+    frame = _frame(1, agent_id=[1, 2, 3], x=[0.0, 0.0, 0.0], y=[0.0, 0.0, 0.0], theta=[0.0, 0.0, 0.0], vx=[0.0, 0.0, 0.0], vy=[0.0, 0.0, 0.0], animation_state=[1, 1, 0], gait_phase=[2.5, 0.0, 7.0], gait_cadence=[1.2, 0.0, 1.9])
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+
+    assert [peds[i].gait_phase for i in (1, 2, 3)] == pytest.approx([2.5, 0.0, 7.0])
+    assert [peds[i].gait_cadence for i in (1, 2, 3)] == pytest.approx([1.2, 0.0, 1.9])
+    assert [peds[i].agent_type for i in (1, 2, 3)] == ["elder", "", ""]
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[3], name=["c"], handedness=[""], agent_type=["robot"]))
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+    assert [peds[i].agent_type for i in (1, 2, 3)] == ["", "", "robot"]
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2], name=["a", "b"], handedness=["", ""]))
+    assert adapter._agent_types == {1: "", 2: ""}
+
+
+def test_pedestrians_default_gait_fields_when_the_frame_has_none() -> None:
+    frame = _frame(1, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0], animation_state=[1, 1])
+    peds = _adapter()._agent_states_to_pedestrians(frame).pedestrians
+    assert [(p.gait_phase, p.gait_cadence, p.agent_type) for p in peds] == [(0.0, 0.0, ""), (0.0, 0.0, "")]

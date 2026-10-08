@@ -1,0 +1,8 @@
+[project]
+name = "arena_peds_pose"
+version = "0.0.0"
+dependencies = []
+dynamic = ["description", "license", "maintainers"]
+
+[tool.uv]
+package = false

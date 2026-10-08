@@ -75,7 +75,7 @@ class Robot(Entity):
 
         request: dict[str, list] = {}
         for p in self.resolved_assembly.placements:
-            request.setdefault(p.type, []).append(arena_assembly.RequestPart(variant=p.variant, mount=p.mount.name))
+            request.setdefault(p.type, []).append(arena_assembly.RequestPart(variant=p.variant, mount=p.mount.name, overrides=p.overrides))
         return request
 
     @classmethod

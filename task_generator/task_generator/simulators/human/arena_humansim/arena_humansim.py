@@ -15,6 +15,9 @@ from arena_humansim_msgs.msg import (
     AgentGestures as AgentGesturesMsg,
 )
 from arena_humansim_msgs.msg import (
+    AgentMeta as AgentMetaMsg,
+)
+from arena_humansim_msgs.msg import (
     AgentState as AgentStateMsg,
 )
 from arena_humansim_msgs.msg import (
@@ -81,6 +84,7 @@ from arena_rclpy_mixins.lazy import LazySubscription
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime.sim import BaseSim
 from arena_runtime_msgs.msg import LockstepChannel
+from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from geometry_msgs.msg import (
     Point,
     Point32,
@@ -109,7 +113,7 @@ from task_generator.constants.rng import stable_int
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator
-from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, resolve_agent_type_path
+from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, agent_type_def, resolve_agent_type_path
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -243,6 +247,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._prev_agent_states: AgentFrameMsg | None = None
         self._curr_agent_states: AgentFrameMsg | None = None
         self._agent_gestures: dict[int, list[EngineGestureMsg]] = {}
+        self._agent_types: dict[int, str] = {}
         self._arena_pedestrians: Pedestrians = Pedestrians()
         self._arena_pedestrians.header.frame_id = "map"
 
@@ -250,6 +255,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._bridge_agent_ids: set[int] = set()
         # IDs of flow agents (source/sink) with a live actor in the simulator
         self._flow_agent_ids: set[int] = set()
+        self._flow_meta_wait: dict[int, int] = {}
+        self._tagged_models: dict[tuple[str, ...], list[HumanIdentifier]] = {}
+        self._warned_untagged_types: set[str] = set()
         # agent_id → human-readable name (scenario YAML name or flow source label)
         self._agent_names: dict[int, str] = {}
 
@@ -320,6 +328,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._agent_gestures_callback,
             static_qos,
         )
+        self.node.create_subscription(
+            AgentMetaMsg,
+            self.node.service_namespace("agent_meta"),
+            self._agent_meta_callback,
+            static_qos,
+        )
 
     def _forward_debug_markers(self, msg: MarkerArray):
         self._marker_publisher.publish(lambda: self._markers_from_engine(msg))
@@ -350,6 +364,11 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         for agent_id, gesture in zip(msg.agent_id, msg.gestures, strict=True):
             grouped.setdefault(agent_id, []).append(gesture)
         self._agent_gestures = grouped
+
+    def _agent_meta_callback(self, msg: AgentMetaMsg):
+        """Latest agent type per engine agent."""
+        types = msg.agent_type if len(msg.agent_type) == len(msg.agent_id) else [""] * len(msg.agent_id)
+        self._agent_types = dict(zip(msg.agent_id, types, strict=True))
 
     async def _publish_on_receipt(self) -> None:
         self._publish_pending = False
@@ -407,7 +426,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         msg.header.stamp.nanosec = int(pose_ns % int(1e9))
         msg.header.frame_id = "map"
 
-        for field in ("x", "y", "vx", "vy"):
+        fields = ("x", "y", "vx", "vy", "gait_phase") if len(curr.gait_phase) and len(prev.gait_phase) else ("x", "y", "vx", "vy")
+        for field in fields:
             values = np.array(getattr(curr, field))
             values[ci] = inv * np.asarray(getattr(prev, field))[pi] + alpha * values[ci]
             setattr(msg, field, array.array("d", values.tobytes()))
@@ -528,6 +548,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return self._curr_agent_states
 
     TICK_RATE = 50.0  # Hz, local interpolation rate
+    FLOW_META_TICKS = 50
+    FLOW_MODEL = "default"
     FEEDBACK_RATE = 20.0  # Hz, matches the possession stream rate
 
     async def _interpolation_loop(self):
@@ -547,7 +569,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         name: str,
         pose: Pose,
         *,
-        model: str = "default",
+        model: str | HumanIdentifier = FLOW_MODEL,
         velocity: float = 0.0,
     ) -> DynamicObstacle:
         """Build a runtime DynamicObstacle with env-prefixed sim_path."""
@@ -561,13 +583,31 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         obs.sim_path = self._realizer.prefix(name)
         return obs
 
-    def _make_flow_dynamic_obstacle(self, frame: AgentFrameMsg, i: int) -> DynamicObstacle:
-        """Create a DynamicObstacle for the source-spawned agent at index i using a default model."""
+    def _make_flow_dynamic_obstacle(self, frame: AgentFrameMsg, i: int, model: str | HumanIdentifier) -> DynamicObstacle:
+        """Create a DynamicObstacle for the source-spawned agent at index i."""
         return self._runtime_obstacle(
             name=f"flow_{frame.agent_id[i]}",
             pose=Pose(Position(*self._from_engine(frame.x[i], frame.y[i]))),
+            model=model,
             velocity=frame.desired_velocity[i],
         )
+
+    async def _flow_model(self, agent_id: int) -> str | HumanIdentifier:
+        """A human model on disk carrying every asset tag of the flow agent's type, FLOW_MODEL when the type lists none or nothing matches."""
+        agent_type = self._agent_types.get(agent_id, "")
+        definition = agent_type_def(agent_type) if agent_type else None
+        if definition is None or not definition.assets:
+            return self.FLOW_MODEL
+        if definition.assets not in self._tagged_models:
+            self._tagged_models[definition.assets] = await HumanIdentifier.tagged(definition.assets)
+        matches = self._tagged_models[definition.assets]
+        if not matches:
+            if agent_type not in self._warned_untagged_types:
+                self._warned_untagged_types.add(agent_type)
+                self._logger.warning(f"agent type {agent_type!r} asks for a human model tagged {list(definition.assets)}, no bundle on disk carries them; using {self.FLOW_MODEL!r}")
+            return self.FLOW_MODEL
+        rng = self.node.conf.General.RNG.stream("humansim", "flow-model", agent_id)
+        return matches[int(rng.integers(len(matches)))]
 
     # The engine runs in the world frame (authored coordinates, levels laid out), this adapter owns the env offset:
     # everything sent in is un-shifted, everything coming out is shifted back.
@@ -629,11 +669,20 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                             index_by_id = {aid: i for i, aid in enumerate(states.agent_id)}
                             to_spawn: list[DynamicObstacle] = []
                             for aid in sorted(new_ids):
+                                waited = self._flow_meta_wait.get(aid, 0)
+                                if aid not in self._agent_types and waited < self.FLOW_META_TICKS:
+                                    self._flow_meta_wait[aid] = waited + 1
+                                    continue
+                                self._flow_meta_wait.pop(aid, None)
                                 self._flow_agent_ids.add(aid)
-                                obs = self._make_flow_dynamic_obstacle(states, index_by_id[aid])
+                                obs = self._make_flow_dynamic_obstacle(states, index_by_id[aid], await self._flow_model(aid))
                                 self._agent_names[aid] = obs.sim_path
                                 to_spawn.append(obs)
-                            await self._simulator.pedestrian_spawn(await self._ensure_spawnable(to_spawn))
+                            if to_spawn:
+                                await self._simulator.pedestrian_spawn(await self._ensure_spawnable(to_spawn))
+
+                        for aid in self._flow_meta_wait.keys() - current_ids:
+                            del self._flow_meta_wait[aid]
 
                         if gone_ids:
                             to_delete: list[DynamicObstacle] = []
@@ -694,10 +743,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         peds = Pedestrians()
         peds.header = msg.header
         gestures_by_id = self._agent_gestures
-        for agent_id, ex, ey, yaw, vx, vy, animation_state in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, strict=True):
+        n = len(msg.agent_id)
+        gait_phase = msg.gait_phase if len(msg.gait_phase) == n else [0.0] * n
+        gait_cadence = msg.gait_cadence if len(msg.gait_cadence) == n else [0.0] * n
+        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, strict=True):
             ped = Pedestrian()
             ped.id = agent_id
             ped.name = self._agent_names.get(agent_id, str(agent_id))
+            ped.gait_phase = float(phase)
+            ped.gait_cadence = float(cadence)
+            ped.agent_type = self._agent_types.get(agent_id, "")
 
             x, y = self._from_engine(ex, ey)
 
@@ -1062,11 +1117,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             response = await self._remove_client.call_timeout(request)
             self._bridge_agent_ids.clear()
             self._flow_agent_ids.clear()
+            self._flow_meta_wait.clear()
+            self._tagged_models.clear()
             self._agent_names.clear()
             self._ped_model_uris.clear()
             self._prev_agent_states = None
             self._curr_agent_states = None
             self._agent_gestures = {}
+            self._agent_types = {}
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
             if response.success:

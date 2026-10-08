@@ -13,6 +13,7 @@ members = [
     "arena-cam",
     "arena-cli",
     "arena-mujoco",
+    "arena-peds-pose",
     "arena-rclpy-mixins",
     "arena-rosnav",
     "arena-runtime",
@@ -280,6 +281,11 @@ requires-dist = [
     { name = "trimesh", specifier = ">=4,<5" },
 ]
 provides-extras = ["test"]
+
+[[package]]
+name = "arena-peds-pose"
+version = "0.0.0"
+source = { virtual = "utils/arena_peds_pose" }
 
 [[package]]
 name = "arena-rclpy-mixins"

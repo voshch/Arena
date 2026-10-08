@@ -2,7 +2,7 @@ from pathlib import Path
 
 import attrs
 import numpy as np
-from arena_humansim.core.agents import BUILTIN_AGENTS, SampledParams, sample_agent_type
+from arena_humansim.core.agents import BUILTIN_AGENTS, AgentType, SampledParams, sample_agent_type
 from arena_humansim.core.agents.loader import load_agent_type_from_file
 from arena_humansim_msgs.msg import Waypoints as WaypointsMsg
 
@@ -17,6 +17,14 @@ def resolve_agent_type_path(agent_type: str, included_from: Path | None) -> str:
     if included_from is not None and _is_path_agent_type(agent_type) and not Path(agent_type).is_absolute():
         return str((Path(included_from) / agent_type).resolve())
     return agent_type
+
+
+def agent_type_def(agent_type: str) -> AgentType | None:
+    """The agent type behind a yaml path or a builtin name, None when neither resolves."""
+    if _is_path_agent_type(agent_type):
+        path = Path(agent_type)
+        return load_agent_type_from_file(path) if path.is_file() else None
+    return BUILTIN_AGENTS.get(agent_type)
 
 
 _WAYPOINT_MODE_MAP = {
@@ -82,18 +90,11 @@ class ArenaHumanDynamicObstacle:
         return _WAYPOINT_MODE_MAP.get(str(raw).lower(), WaypointsMsg.MODE_REPEAT)
 
     def sample_params(self, rng: np.random.Generator) -> SampledParams | None:
-        if _is_path_agent_type(self.agent_type):
-            p = Path(self.agent_type)
-            if p.is_file():
-                agent_type_def = load_agent_type_from_file(p)
-            else:
-                return None
-        else:
-            agent_type_def = BUILTIN_AGENTS.get(self.agent_type)
-        if agent_type_def is None:
+        definition = agent_type_def(self.agent_type)
+        if definition is None:
             return None
 
-        params = sample_agent_type(agent_type_def, rng)
+        params = sample_agent_type(definition, rng)
 
         # Apply velocity/radius overrides
         desired_velocity = float(rng.uniform(self.desired_velocity_min, self.desired_velocity_max))

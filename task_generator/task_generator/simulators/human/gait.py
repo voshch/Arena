@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+from .profile import JOINT_NAMES, GaitProfile, PoseProfile, default_profile
+
 if TYPE_CHECKING:
     from builtin_interfaces.msg import Time
     from sensor_msgs.msg import JointState
@@ -65,90 +67,11 @@ LIMITS: tuple[tuple[float, float], ...] = (
     (-0.9, 0.6),  # r_ankle
 )
 
-# Walk-cycle joint profiles baked from the polished CMU 12_01 clip (the
-# arena_humans posture pipeline output): mean + 3 sine harmonics per signal,
-# radians, value = gain * (mean + sum amp_k * sin(k*(phi + shift) + phase_k)).
-# Limb pairs share one canonical profile evaluated half a cycle apart, so L/R
-# antiphase is exact by construction; reserved joints stay 0 per JOINTS.md.
-_WALK_PROFILE: dict[str, tuple[float, tuple[tuple[float, float], ...]]] = {
-    "hip": (+0.1875, ((0.4535, +0.0041), (0.1231, +0.7792), (0.0525, +1.6039))),
-    "knee": (-0.5526, ((0.3626, -2.2253), (0.3583, -1.7656), (0.1199, -1.6237))),
-    "p_shoulder": (+0.0250, ((0.2977, +3.1387), (0.0146, -2.8025), (0.0016, +3.0495))),
-    "elbow": (+0.3183, ((0.2007, +3.1396), (0.0085, -1.5596), (0.0069, +3.1002))),
-    "waist": (-0.0003, ((0.0027, -0.3283), (0.0118, -2.6790), (0.0009, +0.7895))),
-    "r_head": (+0.0024, ((0.0613, +0.5242), (0.0050, -1.3198), (0.0192, +2.4158))),
-    "y_head": (+0.0018, ((0.0443, -1.1709), (0.0074, +0.3561), (0.0042, +2.6086))),
-    "p_head": (-0.0007, ((0.0097, +1.5574), (0.0207, -1.9386), (0.0019, +0.0378))),
-}
-
-_PROFILE_SIDES: tuple[tuple[str, str, float], ...] = (
-    ("l_r_hip", "hip", 0.0),
-    ("r_r_hip", "hip", math.pi),
-    ("l_knee", "knee", 0.0),
-    ("r_knee", "knee", math.pi),
-    ("l_p_shoulder", "p_shoulder", 0.0),
-    ("r_p_shoulder", "p_shoulder", math.pi),
-    ("l_elbow", "elbow", 0.0),
-    ("r_elbow", "elbow", math.pi),
-    ("waist", "waist", 0.0),
-    ("r_head", "r_head", 0.0),
-    ("y_head", "y_head", 0.0),
-    ("p_head", "p_head", 0.0),
-)
-
-
-def _profile_angles(phi: float, gain: float) -> dict[str, float]:
-    out: dict[str, float] = {}
-    for joint, key, shift in _PROFILE_SIDES:
-        mean, harmonics = _WALK_PROFILE[key]
-        v = mean
-        for k, (amp, ph) in enumerate(harmonics, start=1):
-            v += amp * math.sin(k * (phi + shift) + ph)
-        out[joint] = gain * v
-    return out
-
 
 class GaitGenerator:
     """Deterministic per-agent gait synthesis emitting semantic joint angles per the JOINTS.md wire contract."""
 
-    JOINT_NAMES: tuple[str, ...] = (
-        "r_waist",
-        "y_waist",
-        "waist",
-        "r_spine",
-        "y_spine",
-        "spine",
-        "r_chest",
-        "y_chest",
-        "chest",
-        "r_head",
-        "y_head",
-        "p_head",
-        "l_y_collar",
-        "l_p_collar",
-        "l_y_shoulder",
-        "l_p_shoulder",
-        "l_r_shoulder",
-        "l_elbow",
-        "r_y_collar",
-        "r_p_collar",
-        "r_y_shoulder",
-        "r_p_shoulder",
-        "r_r_shoulder",
-        "r_elbow",
-        "l_y_hip",
-        "l_p_hip",
-        "l_r_hip",
-        "l_knee",
-        "r_y_hip",
-        "r_p_hip",
-        "r_r_hip",
-        "r_knee",
-        "l_y_ankle",
-        "l_ankle",
-        "r_y_ankle",
-        "r_ankle",
-    )
+    JOINT_NAMES: tuple[str, ...] = JOINT_NAMES
 
     def __init__(self) -> None:
         self._phase: dict[int, float] = {}
@@ -175,51 +98,60 @@ class GaitGenerator:
         animation_state: int,
         speed: float,
         dt: float,
+        *,
+        phase: float | None = None,
+        profile: PoseProfile | None = None,
     ) -> dict[str, float]:
         """Return base-joint-name -> angle for all 36 joints, clamped to limits.
 
-        Phase advances by dt each call and is keyed per agent_id.
+        Phase advances by dt each call and is keyed per agent_id, unless `phase` supplies it.
         animation_state: int matching Pedestrian.msg constants (IDLE=0, WALKING=1, RUNNING=2).
         """
+        if profile is None:
+            profile = default_profile()
         angles: dict[str, float] = {name: 0.0 for name in self.JOINT_NAMES}
 
         if animation_state == _WALKING:
-            angles = self._gait_walk(agent_id, speed, dt)
+            gait: GaitProfile | None = profile.walk
+            angles = self._gait_cycle(agent_id, speed, dt, profile.walk, phase)
         elif animation_state == _RUNNING:
-            angles = self._gait_run(agent_id, speed, dt)
+            gait = profile.run
+            angles = self._gait_cycle(agent_id, speed, dt, profile.run, phase)
+        elif profile.idle is not None:
+            gait = profile.idle
+            angles = self._gait_idle_profile(agent_id, dt, profile.idle, phase)
         else:
-            angles = self._gait_idle(agent_id, dt)
+            gait = None
+            angles = self._gait_idle(agent_id, dt, phase)
 
-        return {name: _clamp(angles.get(name, 0.0), LIMITS[i][0], LIMITS[i][1]) for i, name in enumerate(self.JOINT_NAMES)}
+        limits = gait.limits if gait is not None else {}
+        return {name: _clamp(angles.get(name, 0.0), *limits.get(name, LIMITS[i])) for i, name in enumerate(self.JOINT_NAMES)}
 
-    def _gait_walk(self, agent_id: int, speed: float, dt: float) -> dict[str, float]:
-        speed_abs = abs(speed)
-        cadence = _clamp(0.4 + 0.55 * speed_abs, 0.4, 2.2)
-        phi = self._get_phase(agent_id)
-        phi += math.copysign(2.0 * math.pi * cadence * dt, speed)
+    def _advance(self, agent_id: int, step: float, phase: float | None) -> float:
+        if phase is None:
+            phi = self._get_phase(agent_id) + step
+        else:
+            phi = phase
         self._set_phase(agent_id, phi)
+        return phi
 
-        g = _clamp(speed_abs / 1.2, 0.2, 1.0)
+    def _gait_cycle(self, agent_id: int, speed: float, dt: float, gait: GaitProfile, phase: float | None) -> dict[str, float]:
+        speed_abs = abs(speed)
+        cadence = gait.cadence(speed_abs)
+        phi = self._advance(agent_id, math.copysign(2.0 * math.pi * cadence * dt, speed), phase)
+
         angles = {name: 0.0 for name in self.JOINT_NAMES}
-        angles.update(_profile_angles(phi, g))
+        angles.update(gait.evaluate(phi, gait.gain(speed_abs)))
         return angles
 
-    def _gait_run(self, agent_id: int, speed: float, dt: float) -> dict[str, float]:
-        speed_abs = abs(speed)
-        cadence = _clamp(0.4 + 0.55 * speed_abs, 0.4, 2.2)
-        phi = self._get_phase(agent_id)
-        phi += math.copysign(2.0 * math.pi * cadence * dt, speed)
-        self._set_phase(agent_id, phi)
-
-        g = _clamp(speed_abs / 1.2, 0.2, 1.0)
+    def _gait_idle_profile(self, agent_id: int, dt: float, gait: GaitProfile, phase: float | None) -> dict[str, float]:
+        phi = self._advance(agent_id, 2.0 * math.pi * 0.25 * dt, phase)
         angles = {name: 0.0 for name in self.JOINT_NAMES}
-        angles.update(_profile_angles(phi, 1.6 * g))
+        angles.update(gait.evaluate(phi, 1.0))
         return angles
 
-    def _gait_idle(self, agent_id: int, dt: float) -> dict[str, float]:
-        phi = self._get_phase(agent_id)
-        phi += 2.0 * math.pi * 0.25 * dt
-        self._set_phase(agent_id, phi)
+    def _gait_idle(self, agent_id: int, dt: float, phase: float | None) -> dict[str, float]:
+        phi = self._advance(agent_id, 2.0 * math.pi * 0.25 * dt, phase)
 
         # breathing sway plus a slow incommensurate gaze wander
         waist = 0.03 * math.sin(phi)

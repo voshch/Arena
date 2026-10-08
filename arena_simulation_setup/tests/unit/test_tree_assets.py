@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
+from arena_simulation_setup.tree import DynamicPaths
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier, HumanView
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier, ObjectView
@@ -82,6 +84,39 @@ def test_material_identifier_load_tint_no_textures(tmp_path: Path) -> None:
     ident = MaterialIdentifier(f"{mat_name}?tint=rgb(1,0,0)")
     mat = ident.load(mat_dir)
     assert isinstance(mat, Material)
+
+
+def _human_bundle(root: Path, name: str, tags: list[str] | None) -> None:
+    bundle = root / "Common" / "Human" / name
+    bundle.mkdir(parents=True)
+    (bundle / f"{name}.sdf").write_text("<sdf/>")
+    if tags is not None:
+        (bundle / "annotation.yaml").write_text("tags:\n" + "".join(f"- {tag}\n" for tag in tags))
+
+
+def test_human_view_reads_annotation_tags(tmp_path: Path) -> None:
+    _human_bundle(tmp_path, "tagged", ["human::mobility::wheelchair", "domain::common"])
+    _human_bundle(tmp_path, "bare", None)
+    assert HumanView(tmp_path / "Common" / "Human" / "tagged").tags == {"human::mobility::wheelchair", "domain::common"}
+    assert HumanView(tmp_path / "Common" / "Human" / "bare").tags == frozenset()
+
+
+def test_human_identifier_tagged_lists_bundles_carrying_every_tag(tmp_path: Path) -> None:
+    _human_bundle(tmp_path, "zed_chair", ["probe::mobility::chair", "probe::age::old"])
+    _human_bundle(tmp_path, "amy_chair", ["probe::mobility::chair"])
+    _human_bundle(tmp_path, "walker", ["probe::age::old"])
+    _human_bundle(tmp_path, "bare", None)
+    previous = DynamicPaths.ARENA.path
+    DynamicPaths.ARENA.path = tmp_path
+    try:
+        chairs = asyncio.run(HumanIdentifier.tagged(["probe::mobility::chair"]))
+        old_chairs = asyncio.run(HumanIdentifier.tagged(["probe::mobility::chair", "probe::age::old"]))
+        nobody = asyncio.run(HumanIdentifier.tagged(["probe::mobility::scooter"]))
+    finally:
+        DynamicPaths.ARENA.path = previous
+    assert [ident.name for ident in chairs] == ["amy_chair", "zed_chair"]
+    assert [ident.name for ident in old_chairs] == ["zed_chair"]
+    assert nobody == []
 
 
 def test_material_default_floor():

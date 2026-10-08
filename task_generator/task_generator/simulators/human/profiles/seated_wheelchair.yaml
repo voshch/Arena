@@ -1,0 +1,58 @@
+name: seated_wheelchair
+symmetric: false
+phase_warp: {split: 0.5}
+cadence: {base: 0.6, per_speed: 0.4, min: 0.6, max: 1.4}
+gain: {per_speed: 1.2, min: 1.0, max: 1.0, factor: 1.0}
+limits:
+  l_r_hip: [-0.4, 2.0]
+  r_r_hip: [-0.4, 2.0]
+  l_r_shoulder: [-1.6, 3.1]
+  r_r_shoulder: [-3.1, 1.6]
+signals:
+  waist: {mean: -0.2}
+  spine: {mean: -0.1}
+  p_head: {mean: -0.3}
+  l_p_collar: {mean: -0.15}
+  r_p_collar: {mean: -0.15}
+  l_y_shoulder: {mean: 2.204}
+  r_y_shoulder: {mean: -2.204}
+  l_p_shoulder: {mean: 0.52}
+  r_p_shoulder: {mean: 0.52}
+  l_r_shoulder: {mean: 2.08}
+  r_r_shoulder: {mean: -2.08}
+  l_elbow: {mean: 0.272}
+  r_elbow: {mean: 0.272}
+  l_p_hip: {mean: -0.03}
+  r_p_hip: {mean: -0.03}
+  l_r_hip: {mean: 1.5}
+  r_r_hip: {mean: 1.5}
+  l_knee: {mean: -0.91}
+  r_knee: {mean: -0.91}
+  l_y_ankle: {mean: -0.37}
+  r_y_ankle: {mean: 0.37}
+  l_ankle: {mean: -0.43}
+  r_ankle: {mean: -0.43}
+joints:
+  waist: {signal: waist, shift: 0.0}
+  spine: {signal: spine, shift: 0.0}
+  p_head: {signal: p_head, shift: 0.0}
+  l_p_collar: {signal: l_p_collar, shift: 0.0}
+  r_p_collar: {signal: r_p_collar, shift: 0.0}
+  l_y_shoulder: {signal: l_y_shoulder, shift: 0.0}
+  r_y_shoulder: {signal: r_y_shoulder, shift: 0.0}
+  l_p_shoulder: {signal: l_p_shoulder, shift: 0.0}
+  r_p_shoulder: {signal: r_p_shoulder, shift: 0.0}
+  l_r_shoulder: {signal: l_r_shoulder, shift: 0.0}
+  r_r_shoulder: {signal: r_r_shoulder, shift: 0.0}
+  l_elbow: {signal: l_elbow, shift: 0.0}
+  r_elbow: {signal: r_elbow, shift: 0.0}
+  l_p_hip: {signal: l_p_hip, shift: 0.0}
+  r_p_hip: {signal: r_p_hip, shift: 0.0}
+  l_r_hip: {signal: l_r_hip, shift: 0.0}
+  r_r_hip: {signal: r_r_hip, shift: 0.0}
+  l_knee: {signal: l_knee, shift: 0.0}
+  r_knee: {signal: r_knee, shift: 0.0}
+  l_y_ankle: {signal: l_y_ankle, shift: 0.0}
+  r_y_ankle: {signal: r_y_ankle, shift: 0.0}
+  l_ankle: {signal: l_ankle, shift: 0.0}
+  r_ankle: {signal: r_ankle, shift: 0.0}

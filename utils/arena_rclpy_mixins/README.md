@@ -43,7 +43,7 @@ Sourced from `__init__.py` plus the submodules it re-exports.
 ```python
 class MyNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     async def setup(self) -> None: ...   # called once by run_main
-    async def teardown(self) -> None: ...  # called on SIGINT/SIGTERM
+    async def teardown(self) -> None: ...  # called on SIGINT/SIGTERM or request_shutdown()
 ```
 
 `run_main` (classmethod) is the standard entry point: `def main(): MyNode.run_main()`.
@@ -113,10 +113,15 @@ executor.
 (`rclpy.experimental.EventsExecutor`), spins it in a thread-pool worker,
 installs `SIGINT`/`SIGTERM` handlers, calls `node.setup()`, and on shutdown
 awaits `node.teardown()` (5 s timeout), cancels pending tasks, drains launches,
-and calls `rclpy.try_shutdown()`.
+and calls `rclpy.try_shutdown()`. A node that decides to exit calls
+`self.request_shutdown(reason)` from any thread to take the same path. Calling
+`rclpy.try_shutdown()` directly invalidates the context while tasks still run.
+After a signal or a request, `SIGINT` stays ignored until the process exits.
 
 `spin_node(node)` is the simpler sync equivalent for non-async nodes, and
 `spin_node(node, executor=create_executor())` runs one on the events executor.
+On `SIGINT`/`SIGTERM` it shuts the executor down from a helper thread, destroys
+the node, then shuts rclpy down. After a signal, `SIGINT` stays ignored.
 `spin_context()` is a context manager that suppresses `KeyboardInterrupt` /
 `ExternalShutdownException` and shuts down the executor and rclpy on exit.
 

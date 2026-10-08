@@ -1191,6 +1191,7 @@ def _generate_wall_sdf(name: str, boxes: list[tuple[WallSegment, dict[str, str]]
 def _generate_floor_sdf(name: str, floor: Floor, textures: dict[str, str]) -> str:
     """SDF model with one thin box link: visual raised above the level base, collision top flush with it."""
     thickness = 0.02
+    collision_depth = 0.5
     return f"""
         <sdf version="1.6">
             <model name="{name}">
@@ -1206,10 +1207,10 @@ def _generate_floor_sdf(name: str, floor: Floor, textures: dict[str, str]) -> st
                         {_wall_material_sdf(textures)}
                     </visual>
                     <collision name="collision">
-                        <pose>0 0 {-thickness / 2.0} 0 0 0</pose>
+                        <pose>0 0 {-collision_depth / 2.0} 0 0 0</pose>
                         <geometry>
                             <box>
-                                <size>{floor.x_length} {floor.y_length} {thickness}</size>
+                                <size>{floor.x_length} {floor.y_length} {collision_depth}</size>
                             </box>
                         </geometry>
                     </collision>

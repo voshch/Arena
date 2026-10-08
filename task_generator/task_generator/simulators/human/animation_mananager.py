@@ -11,6 +11,7 @@ import rclpy
 import yaml
 
 from .gait import GaitGenerator
+from .profile import PoseProfile
 
 JOINT_NAMES = GaitGenerator.JOINT_NAMES
 
@@ -448,10 +449,13 @@ class AnimationManager:
         speed: float,
         dt: float,
         gesture: object = None,
+        *,
+        phase: float | None = None,
+        profile: PoseProfile | None = None,
     ) -> dict[str, float]:
         """
         Resolves joint angles by advancing playheads and performing dynamic blending.
-        ``gesture`` is handed per agent to ``gesture_hook``.
+        ``gesture`` is handed per agent to ``gesture_hook``, ``phase`` and ``profile`` to the gait generator.
         """
         self.check_animations_cached()
         assert animation_state in self.state_to_animation_map, f"Can not map `animation_state` {animation_state} to any animation"
@@ -467,7 +471,7 @@ class AnimationManager:
         def gait() -> dict[str, float]:
             nonlocal gait_angles
             if gait_angles is None:
-                gait_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt)
+                gait_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt, phase=phase, profile=profile)
             return gait_angles
 
         if next_anim.name in self.USE_SYNTHESIS:

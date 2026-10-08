@@ -9,7 +9,7 @@ from arena_cli.features import lifecycle_verbs, source_verb
 
 NAME = "gazebo"
 
-DESCRIPTION = "Gazebo simulator (ros_gz + OpenUSD tooling)."
+DESCRIPTION = "Gazebo simulator (ros_gz + OpenUSD tooling, gz-sim overlay with per-bone actor control)."
 
 _FORMATS_SOURCE = 'case "$ARENA_MODELS_FORMATS" in *sdf*) ;; *) export ARENA_MODELS_FORMATS="${ARENA_MODELS_FORMATS},sdf" ;; esac'
 
@@ -34,12 +34,28 @@ def _source_env() -> dict[str, str]:
     return env
 
 
+_GZ_SIM_SOURCE = os.path.join("src", "tools", "gz-sim")
+
+
+def _build_gz_sim() -> int:
+    """Build the gz-sim8 overlay from src/tools/gz-sim, pulled through gazebo.repos."""
+    import sys
+
+    if not os.path.isdir(os.path.join(common._env("ARENA_WS_DIR"), _GZ_SIM_SOURCE)):
+        print(f"gz-sim source missing at {_GZ_SIM_SOURCE}, `arena feature gazebo install` pulls it", file=sys.stderr)
+        return 1
+    rc = common._cli("build", "--cmake-args", "-DBUILD_TESTING=OFF", "-DSKIP_PYBIND11=ON", env={**os.environ, "BASE_PATHS": _GZ_SIM_SOURCE})
+    if rc:
+        return rc
+    return common._cli("rebuild", "arena_gz_plugins")
+
+
 def _update() -> int:
-    """Install ros_gz packages and build OpenUSD (no-op in the container)."""
+    """Build the gz-sim overlay in the container, install ros_gz and OpenUSD on the host."""
     import subprocess
 
     if features.in_container():
-        return 0
+        return _build_gz_sim()
 
     env = _source_env()
     ws_dir = common._env("ARENA_WS_DIR")

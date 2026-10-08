@@ -14,6 +14,8 @@ from . import Model, ModelProvider, ModelType
 
 _PACKAGE_URI = "package://"
 
+ET.register_namespace("gz", "http://gazebosim.org/schema")
+
 _OPTIM_MAP: dict[str, frozenset[str]] = {
     'no_camera': frozenset({'camera', 'depth', 'rgbd_camera'}),
     'no_lidar': frozenset({'ray', 'gpu_lidar'}),

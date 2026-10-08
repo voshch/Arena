@@ -1,0 +1,43 @@
+name: walk_cmu_12_01
+symmetric: true
+phase_warp: {split: 0.5}
+cadence: {base: 0.4, per_speed: 0.55, min: 0.4, max: 2.2}
+gain: {per_speed: 1.2, min: 0.2, max: 1.0, factor: 1.0}
+signals:
+  hip:
+    mean: 0.1875
+    harmonics: [[0.4535, 0.0041], [0.1231, 0.7792], [0.0525, 1.6039]]
+  knee:
+    mean: -0.5526
+    harmonics: [[0.3626, -2.2253], [0.3583, -1.7656], [0.1199, -1.6237]]
+  p_shoulder:
+    mean: 0.025
+    harmonics: [[0.2977, 3.1387], [0.0146, -2.8025], [0.0016, 3.0495]]
+  elbow:
+    mean: 0.3183
+    harmonics: [[0.2007, 3.1396], [0.0085, -1.5596], [0.0069, 3.1002]]
+  waist:
+    mean: -0.0003
+    harmonics: [[0.0027, -0.3283], [0.0118, -2.679], [0.0009, 0.7895]]
+  r_head:
+    mean: 0.0024
+    harmonics: [[0.0613, 0.5242], [0.005, -1.3198], [0.0192, 2.4158]]
+  y_head:
+    mean: 0.0018
+    harmonics: [[0.0443, -1.1709], [0.0074, 0.3561], [0.0042, 2.6086]]
+  p_head:
+    mean: -0.0007
+    harmonics: [[0.0097, 1.5574], [0.0207, -1.9386], [0.0019, 0.0378]]
+joints:
+  l_r_hip: {signal: hip, shift: 0.0}
+  r_r_hip: {signal: hip, shift: 3.141592653589793}
+  l_knee: {signal: knee, shift: 0.0}
+  r_knee: {signal: knee, shift: 3.141592653589793}
+  l_p_shoulder: {signal: p_shoulder, shift: 0.0}
+  r_p_shoulder: {signal: p_shoulder, shift: 3.141592653589793}
+  l_elbow: {signal: elbow, shift: 0.0}
+  r_elbow: {signal: elbow, shift: 3.141592653589793}
+  waist: {signal: waist, shift: 0.0}
+  r_head: {signal: r_head, shift: 0.0}
+  y_head: {signal: y_head, shift: 0.0}
+  p_head: {signal: p_head, shift: 0.0}

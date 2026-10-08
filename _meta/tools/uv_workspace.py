@@ -429,11 +429,7 @@ def collect_pins(root: pathlib.Path, repos: dict[str, list[str]], *, allow_missi
                 print(f"warning: {lock_label(home)} locks several versions of {name}, left unpinned", file=sys.stderr)
                 continue
             owners.setdefault(name, {}).setdefault(next(iter(versions)), []).append(lock_label(home))
-    conflicts = [
-        f"  {name}: " + ", ".join(f"{version} in {' '.join(labels)}" for version, labels in sorted(by_version.items()))
-        for name, by_version in sorted(owners.items())
-        if len(by_version) > 1
-    ]
+    conflicts = [f"  {name}: " + ", ".join(f"{version} in {' '.join(labels)}" for version, labels in sorted(by_version.items())) for name, by_version in sorted(owners.items()) if len(by_version) > 1]
     if conflicts:
         raise WorkspaceError("repo locks pin different versions, " + LOCK_HINT + " on a full tree:\n" + "\n".join(conflicts))
     return {name: next(iter(by_version)) for name, by_version in owners.items()}

@@ -6,6 +6,10 @@ repos:
         args: [.]
         pass_filenames: false
         always_run: true
+      - id: ruff-format
+        args: [--diff, .]
+        pass_filenames: false
+        always_run: true
   - repo: local
     hooks:
       - id: doc-links

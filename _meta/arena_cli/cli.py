@@ -528,7 +528,7 @@ def deps(args: list[str]) -> None:
 
 @verb("update", passthrough=True)
 def update(args: list[str]) -> None:
-    """Pull the Arena repos and refresh the python env."""
+    """Pull the Arena repos, apply pending patches and refresh the python env."""
     import subprocess
 
     from arena_cli.pull import pull_main

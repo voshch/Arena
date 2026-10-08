@@ -1,0 +1,88 @@
+name: seated
+symmetric: false
+phase_warp: {split: 0.5}
+cadence: {base: 0.4, per_speed: 0.55, min: 0.4, max: 2.2}
+gain: {per_speed: 1.2, min: 0.2, max: 1.0, factor: 1.0}
+limits:
+  waist: [-0.49999999999999994, 1.0]
+  spine: [-0.1, 0.8000562266257168]
+  l_p_collar: [-0.6446165076476263, 0.6]
+  r_p_collar: [-0.6394399044404971, 0.6]
+  l_y_hip: [-0.30429633478704204, 0.6]
+  l_r_hip: [-0.4, 2.0]
+  r_r_hip: [-0.4, 2.0]
+  r_ankle: [-0.9, 0.6563729765295316]
+signals:
+  r_waist: {mean: -0.027047132291965172}
+  y_waist: {mean: 0.04198412917454706}
+  waist: {mean: -0.49999999999999994}
+  r_spine: {mean: 0.18656405006465504}
+  y_spine: {mean: 0.04198412917454706}
+  spine: {mean: 0.8000562266257168}
+  r_chest: {mean: -0.12422716163066745}
+  y_chest: {mean: -0.08206213616430569}
+  chest: {mean: 0.017528150804760743}
+  r_head: {mean: 0.0}
+  y_head: {mean: -0.02900352235675001}
+  p_head: {mean: -0.16052037089485136}
+  l_y_collar: {mean: 0.1795864385951502}
+  l_p_collar: {mean: -0.6446165076476263}
+  l_y_shoulder: {mean: 1.4001999319133522}
+  l_p_shoulder: {mean: 0.9683332467347393}
+  l_r_shoulder: {mean: 1.0148650381383957}
+  l_elbow: {mean: 0.46933156106713025}
+  r_y_collar: {mean: 0.13114543963990685}
+  r_p_collar: {mean: -0.6394399044404971}
+  r_y_shoulder: {mean: -1.3608597204855664}
+  r_p_shoulder: {mean: 0.9394835462737796}
+  r_r_shoulder: {mean: -1.2071931204442152}
+  r_elbow: {mean: 0.5314605355243214}
+  l_y_hip: {mean: -0.30429633478704204}
+  l_p_hip: {mean: -0.038475354873649656}
+  l_r_hip: {mean: 1.4211244138595862}
+  l_knee: {mean: -1.5753996126985368}
+  r_y_hip: {mean: 0.27138144899511923}
+  r_p_hip: {mean: -0.05417743700136585}
+  r_r_hip: {mean: 1.411763785966415}
+  r_knee: {mean: -1.6450226497833422}
+  l_y_ankle: {mean: -0.21701921400948074}
+  l_ankle: {mean: 0.5716714948077319}
+  r_y_ankle: {mean: 0.2067574486092747}
+  r_ankle: {mean: 0.6563729765295316}
+joints:
+  r_waist: {signal: r_waist, shift: 0.0}
+  y_waist: {signal: y_waist, shift: 0.0}
+  waist: {signal: waist, shift: 0.0}
+  r_spine: {signal: r_spine, shift: 0.0}
+  y_spine: {signal: y_spine, shift: 0.0}
+  spine: {signal: spine, shift: 0.0}
+  r_chest: {signal: r_chest, shift: 0.0}
+  y_chest: {signal: y_chest, shift: 0.0}
+  chest: {signal: chest, shift: 0.0}
+  r_head: {signal: r_head, shift: 0.0}
+  y_head: {signal: y_head, shift: 0.0}
+  p_head: {signal: p_head, shift: 0.0}
+  l_y_collar: {signal: l_y_collar, shift: 0.0}
+  l_p_collar: {signal: l_p_collar, shift: 0.0}
+  l_y_shoulder: {signal: l_y_shoulder, shift: 0.0}
+  l_p_shoulder: {signal: l_p_shoulder, shift: 0.0}
+  l_r_shoulder: {signal: l_r_shoulder, shift: 0.0}
+  l_elbow: {signal: l_elbow, shift: 0.0}
+  r_y_collar: {signal: r_y_collar, shift: 0.0}
+  r_p_collar: {signal: r_p_collar, shift: 0.0}
+  r_y_shoulder: {signal: r_y_shoulder, shift: 0.0}
+  r_p_shoulder: {signal: r_p_shoulder, shift: 0.0}
+  r_r_shoulder: {signal: r_r_shoulder, shift: 0.0}
+  r_elbow: {signal: r_elbow, shift: 0.0}
+  l_y_hip: {signal: l_y_hip, shift: 0.0}
+  l_p_hip: {signal: l_p_hip, shift: 0.0}
+  l_r_hip: {signal: l_r_hip, shift: 0.0}
+  l_knee: {signal: l_knee, shift: 0.0}
+  r_y_hip: {signal: r_y_hip, shift: 0.0}
+  r_p_hip: {signal: r_p_hip, shift: 0.0}
+  r_r_hip: {signal: r_r_hip, shift: 0.0}
+  r_knee: {signal: r_knee, shift: 0.0}
+  l_y_ankle: {signal: l_y_ankle, shift: 0.0}
+  l_ankle: {signal: l_ankle, shift: 0.0}
+  r_y_ankle: {signal: r_y_ankle, shift: 0.0}
+  r_ankle: {signal: r_ankle, shift: 0.0}

@@ -397,14 +397,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self.get_logger().error("/arena/state/envs publisher gone, self-shutting down")
         self._arena_watchdog_timer.cancel()
         self._heartbeat_stop.set()
-        rclpy.try_shutdown()
+        self.request_shutdown("arena gone")
 
     def _cb_shutdown_request(self, msg: arena_runtime_msgs.msg.ShutdownRequest) -> None:
         if msg.env_id != self._env_id:
             return
         self.get_logger().info(f"shutdown request received (reason={msg.reason!r}); shutting down")
         self._heartbeat_stop.set()
-        rclpy.try_shutdown()
+        self.request_shutdown(msg.reason)
 
     async def setup(self) -> None:
         try:
@@ -1340,7 +1340,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             return
 
         self.get_logger().info(f"Shutting down. All {int(desired)} tasks completed")
-        rclpy.shutdown()
+        self.request_shutdown("all episodes completed")
 
     def fail_episode(self, reason: str) -> None:
         """Abort the running episode as FAILED with ``reason``, unless it is already aborting."""

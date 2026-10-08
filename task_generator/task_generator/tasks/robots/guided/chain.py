@@ -40,4 +40,3 @@ def insert_after(waypoints: list[Pose], index: int) -> list[Pose]:
         y = current.position.y + INSERT_AHEAD * math.sin(yaw)
     inserted = Pose(position=Position(x, y), orientation=Orientation.from_yaw(current.orientation.to_yaw()))
     return [*waypoints[: index + 1], inserted, *waypoints[index + 1 :]]
-

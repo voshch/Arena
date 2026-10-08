@@ -27,6 +27,12 @@ sensor_msgs/JointState joint_state
 # Monotonic walk-cycle phase in rad, 0 = unknown.
 float32 gait_phase
 
+# Current cycle rate in Hz, 0 = unknown.
+float32 gait_cadence
+
+# Agent type name, empty = adult.
+string agent_type
+
 # Resolved local SDF path for this ped's actor, read once per name by the spawner.
 string model_uri
 

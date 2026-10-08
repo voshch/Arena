@@ -9,6 +9,7 @@ import errno
 import faulthandler
 import gc
 import signal
+import socket
 import threading
 import time
 import traceback
@@ -18,6 +19,7 @@ from collections.abc import Callable, Iterator
 import rclpy
 import rclpy.executors
 import rclpy.node
+import rclpy.signals
 from rclpy.exceptions import InvalidHandle
 from rclpy.executors import ExternalShutdownException
 from rclpy.experimental import EventsExecutor
@@ -66,21 +68,52 @@ def spin_context(
                 rclpy.shutdown()
 
 
+@contextlib.contextmanager
+def _shutdown_executor_on_signal(executor: rclpy.executors.Executor) -> Iterator[None]:
+    """Route SIGINT and SIGTERM to executor.shutdown() from a helper thread, and ignore SIGINT once one arrived."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    rclpy.signals.uninstall_signal_handlers()
+    previous = {sig: signal.signal(sig, lambda _signum, _frame: None) for sig in (signal.SIGINT, signal.SIGTERM)}
+    reader, writer = socket.socketpair()
+    writer.setblocking(False)
+    previous_fd = signal.set_wakeup_fd(writer.fileno(), warn_on_full_buffer=False)
+    signalled = threading.Event()
+
+    def _watch() -> None:
+        while (data := reader.recv(1)) != b"\0":
+            if data[0] in (signal.SIGINT, signal.SIGTERM):
+                signalled.set()
+                executor.shutdown()
+
+    watcher = threading.Thread(target=_watch, name="spin_signal_watch", daemon=True)
+    watcher.start()
+    try:
+        yield
+    finally:
+        signal.set_wakeup_fd(previous_fd)
+        writer.send(b"\0")
+        watcher.join()
+        reader.close()
+        writer.close()
+        signal.signal(signal.SIGTERM, previous[signal.SIGTERM])
+        signal.signal(signal.SIGINT, signal.SIG_IGN if signalled.is_set() else previous[signal.SIGINT])
+
+
 def spin_node(node: rclpy.node.Node, **kwargs: object) -> None:
     """Spin a single node until shutdown, on the given executor or the global one."""
     executor = kwargs.get("executor")
-    with spin_context():
+    if executor is None:
+        executor = rclpy.get_global_executor()
+    with _shutdown_executor_on_signal(executor), spin_context():
         try:
-            if executor is None:
-                rclpy.spin(node)
-            else:
-                executor.add_node(node)
-                executor.spin()
+            executor.add_node(node)
+            executor.spin()
         finally:
             with contextlib.suppress(KeyboardInterrupt):
-                if executor is not None:
-                    executor.shutdown()
-                    executor.remove_node(node)
+                executor.shutdown()
+                executor.remove_node(node)
                 node.destroy_node()
 
 
@@ -164,8 +197,8 @@ async def async_main(
     *,
     node_factory: Callable[[], ArenaMixinNode],
     aiomonitor: bool = False,
-) -> None:
-    """Standard rclpy+asyncio entry: build node, spin in worker, await forever, tear down."""
+) -> bool:
+    """Standard rclpy+asyncio entry: build node, spin in worker, await forever, tear down, and return whether the graceful teardown ran."""
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     loop = asyncio.get_running_loop()
     loop.set_exception_handler(_suppress_shutdown_noise)
@@ -201,11 +234,11 @@ async def async_main(
 
     teardown_started = asyncio.Event()
 
-    async def _graceful_shutdown(sig_name: str) -> None:
+    async def _graceful_shutdown(cause: str) -> None:
         if teardown_started.is_set():
             return
         teardown_started.set()
-        node.get_logger().info(f"received {sig_name}, tearing down")
+        node.get_logger().info(f"{cause}, tearing down")
         try:
             await asyncio.wait_for(node.teardown(), timeout=5.0)
         except Exception as e:
@@ -213,13 +246,19 @@ async def async_main(
         app_task.cancel()
 
     def _c_sig_handler(signum: int, _frame: object) -> None:
-        name = signal.Signals(signum).name
-        loop.call_soon_threadsafe(lambda: loop.create_task(_graceful_shutdown(name)))
+        cause = f"received {signal.Signals(signum).name}"
+        loop.call_soon_threadsafe(lambda: loop.create_task(_graceful_shutdown(cause)))
+
+    def _request_shutdown(reason: str) -> None:
+        cause = f"shutdown requested ({reason})"
+        loop.call_soon_threadsafe(lambda: loop.create_task(_graceful_shutdown(cause)))
+
+    node._shutdown_requester = _request_shutdown
 
     for sig, name in ((signal.SIGINT, "SIGINT"), (signal.SIGTERM, "SIGTERM")):
         loop.add_signal_handler(
             sig,
-            lambda n=name: loop.create_task(_graceful_shutdown(n)),
+            lambda n=name: loop.create_task(_graceful_shutdown(f"received {n}")),
         )
         signal.signal(sig, _c_sig_handler)
         signal.siginterrupt(sig, False)
@@ -270,6 +309,7 @@ async def async_main(
         _close_subprocess_transports()
         gc.collect()
         rclpy.try_shutdown()
+    return teardown_started.is_set()
 
 
 def run_main(
@@ -280,12 +320,13 @@ def run_main(
     **kwargs: object,
 ) -> None:
     """Sync entry. Use as `def main(): run_main(MyNode)` or via the classmethod."""
-    try:
-        asyncio.run(
+    signalled = True
+    with contextlib.suppress(KeyboardInterrupt):
+        signalled = asyncio.run(
             async_main(
                 node_factory=lambda: node_cls(*args, **kwargs),
                 aiomonitor=aiomonitor,
             )
         )
-    except KeyboardInterrupt:
-        pass
+    if signalled:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)

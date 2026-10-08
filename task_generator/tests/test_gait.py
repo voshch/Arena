@@ -180,3 +180,45 @@ def test_limb_pairs_exact_antiphase() -> None:
         assert math.isclose(r0[left], r180[right], abs_tol=1e-9), f"{left} vs {right} not antiphase"
     assert abs(r0["l_p_shoulder"]) > 1e-6, "l_p_shoulder should be clearly nonzero"
     assert abs(r0["l_r_hip"] - r0["r_r_hip"]) > 1e-6, "hips should differ within one agent"
+
+
+def test_explicit_phase_matches_the_driven_integrator() -> None:
+    driven = GaitGenerator()
+    for _ in range(25):
+        expected = driven.compute(agent_id=4, animation_state=_WALKING, speed=1.3, dt=0.05)
+    phi = driven.phase(4)
+    external = GaitGenerator()
+    external.compute(agent_id=4, animation_state=_WALKING, speed=0.2, dt=1.0)
+    assert external.compute(agent_id=4, animation_state=_WALKING, speed=1.3, dt=0.05, phase=phi) == expected
+    assert external.phase(4) == phi
+
+
+@pytest.mark.parametrize("state", [_IDLE, _WALKING, _RUNNING])
+def test_explicit_phase_does_not_advance_the_integrator(gen: GaitGenerator, state: int) -> None:
+    first = gen.compute(agent_id=6, animation_state=state, speed=1.0, dt=0.1, phase=2.0)
+    second = gen.compute(agent_id=6, animation_state=state, speed=1.0, dt=0.1, phase=2.0)
+    assert first == second
+    assert gen.phase(6) == 2.0
+    gen.compute(agent_id=6, animation_state=state, speed=1.0, dt=0.1)
+    assert gen.phase(6) > 2.0
+
+
+def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
+    from pathlib import Path
+
+    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.profile import resolve_pose_profile
+
+    class _Logger:
+        def info(self, msg: str) -> None:
+            pass
+
+        def warning(self, msg: str) -> None:
+            pass
+
+    animations = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
+    mgr = AnimationManager(animations, logger=_Logger(), fps=20.0)
+    profile = resolve_pose_profile({"walk": {"joints": {"knee": {"scale": 0.5}}}})
+    expected = GaitGenerator().compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile)
+    assert mgr.compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile) == expected
+    assert mgr.phase(11) == 1.25

@@ -371,8 +371,6 @@ def test_check_reports_unparsable_setup_py(tmp_path: pathlib.Path, capsys: pytes
     assert out.splitlines() == ["pkg_a: setup.py does not parse"]
 
 
-
-
 COMPOSE_ROOT = """[project]
 name = "arena-rosnav"
 version = "0.1.0"
@@ -874,7 +872,7 @@ def test_single_member_manifest_gains_root_settings_and_keeps_its_text() -> None
 
 
 def test_single_member_manifest_replaces_stale_settings_in_place() -> None:
-    text = project_toml("pkg_s") .replace('version = "0.1.0"\n', 'version = "0.1.0"\nrequires-python = ">=3.10"\n') + 'exclude-newer = "2020-01-01T00:00:00Z"\n'
+    text = project_toml("pkg_s").replace('version = "0.1.0"\n', 'version = "0.1.0"\nrequires-python = ">=3.10"\n') + 'exclude-newer = "2020-01-01T00:00:00Z"\n'
     updated = uvw.single_member_text(text, tomllib.loads(SUPER_ROOT))
     assert updated == text.replace(">=3.10", "==3.12.*").replace("2020-01-01T00:00:00Z", "2026-10-03T00:00:00Z")
 

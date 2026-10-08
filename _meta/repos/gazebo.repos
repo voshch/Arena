@@ -3,6 +3,10 @@ repositories:
     type: git
     url: https://github.com/voshch/arena_gz_plugins.git
     version: jazzy
+  tools/gz-sim:
+    type: git
+    url: https://github.com/voshch/gz-sim.git
+    version: bone-transforms
   # gazebo/ros_gz:
   #   type: git
   #   url: https://github.com/voshch/ros_gz.git

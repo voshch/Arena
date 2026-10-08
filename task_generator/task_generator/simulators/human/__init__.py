@@ -8,13 +8,15 @@ import math
 import os
 import typing
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 
 import attrs
 import rclpy.publisher
 import rclpy.qos
 import rclpy.time
 import tf2_ros
-from ament_index_python.packages import get_package_share_directory
+import yaml
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_people_msgs.srv import MovePedestrians
 from arena_rclpy_mixins.lazy import LazyPublisher
@@ -35,8 +37,10 @@ from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable
+from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
 from task_generator.simulators.human.utils import (
     KnownObstacle,
     KnownObstacles,
@@ -163,6 +167,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._ped_orientations: dict[str, QuaternionMsg] = {}
         self._gait = AnimationManager(os.path.join(get_package_share_directory("task_generator"), "simulators", "human", "animations"), logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
+        self._pose_profiles: dict[str, PoseProfile] = {}
+        self._driven = DrivenJoints()
+        self._drivers: dict[str, tuple[Roller, ...]] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
         self.node.create_subscription(
@@ -217,6 +224,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._gestures.forget(stale)
             self._gait.forget(stale)
             del self._gait_prev_stamp[stale]
+        for stale in sorted(self._driven.known() - current_ids):
+            self._driven.forget(stale)
 
         for ped in out.pedestrians:
             ped.model_uri = self._ped_model_uris.get(ped.name, "")
@@ -235,11 +244,57 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 pose=(ped.pose.position.x, ped.pose.position.y, yaw),
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
-            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture)
+            phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
+            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
 
+        for ped in out.pedestrians:
+            drivers = self._drivers_for(ped.model_uri)
+            if not drivers:
+                continue
+            yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
+            angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw)
+            ped.joint_state.name, ped.joint_state.position = with_driven(ped.joint_state.name, ped.joint_state.position, angles)
+
         self._arena_peds_publisher.publish(out)
+
+    def _drivers_for(self, model_uri: str) -> tuple[Roller, ...]:
+        """Drivers of a ped model's rig.yaml, read once per model, none when the file is rejected."""
+        drivers = self._drivers.get(model_uri)
+        if drivers is None:
+            try:
+                drivers = load_drivers(model_uri)
+            except (ValueError, OSError, yaml.YAMLError) as e:
+                self._logger.warning(f"rig drivers of {model_uri!r} rejected ({e}), its driven joints stay still")
+                drivers = ()
+            self._drivers[model_uri] = drivers
+        return drivers
+
+    def _pose_profile_for(self, agent_type: str) -> PoseProfile:
+        """Pose profile of an agent type (a yaml path or a builtin name), resolved once per type, default when empty or unknown."""
+        profile = self._pose_profiles.get(agent_type)
+        if profile is None:
+            profile = self._load_pose_profile(agent_type)
+            self._pose_profiles[agent_type] = profile
+        return profile
+
+    def _load_pose_profile(self, agent_type: str) -> PoseProfile:
+        if not agent_type:
+            return default_profile()
+        try:
+            builtin_dir: Path | None = Path(get_package_share_directory("arena_humansim")) / "config" / "agent_types"
+        except PackageNotFoundError:
+            builtin_dir = None
+        try:
+            section = agent_type_pose_section(agent_type, builtin_dir)
+            if section is None:
+                self._logger.warning(f"agent type {agent_type!r} not found, using the default pose profile")
+                return default_profile()
+            return resolve_pose_profile(section)
+        except (ValueError, OSError, yaml.YAMLError) as e:
+            self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
+            return default_profile()
 
     def publish_markers(self, markers: MarkerArray) -> None:
         """Publish a transient debug-overlay MarkerArray on `pedestrian_markers/extra`."""

@@ -1,0 +1,526 @@
+{
+  "r_waist": [
+    {
+      "bone": "LowerBack",
+      "axis": [
+        -0.0139,
+        0.1447,
+        0.9894
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "y_waist": [
+    {
+      "bone": "LowerBack",
+      "axis": [
+        0.0026,
+        0.9895,
+        -0.1447
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "waist": [
+    {
+      "bone": "LowerBack",
+      "axis": [
+        0.9999,
+        -0.0006,
+        0.0141
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_spine": [
+    {
+      "bone": "Spine",
+      "axis": [
+        -0.0226,
+        -0.0083,
+        0.9997
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "y_spine": [
+    {
+      "bone": "Spine",
+      "axis": [
+        -0.0006,
+        1.0,
+        0.0083
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "spine": [
+    {
+      "bone": "Spine",
+      "axis": [
+        0.9997,
+        0.0004,
+        0.0226
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_chest": [
+    {
+      "bone": "Spine1",
+      "axis": [
+        -0.0273,
+        0.4378,
+        0.8987
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "y_chest": [
+    {
+      "bone": "Spine1",
+      "axis": [
+        -0.01,
+        0.8988,
+        -0.4382
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "chest": [
+    {
+      "bone": "Spine1",
+      "axis": [
+        0.9996,
+        0.0209,
+        0.0202
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_head": [
+    {
+      "bone": "Head",
+      "axis": [
+        -0.0131,
+        0.1115,
+        0.9937
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "y_head": [
+    {
+      "bone": "Neck1",
+      "axis": [
+        -0.0001,
+        0.8652,
+        -0.5015
+      ],
+      "sign": 1.0,
+      "scale": 0.6
+    },
+    {
+      "bone": "Head",
+      "axis": [
+        -0.0007,
+        0.9938,
+        -0.1116
+      ],
+      "sign": 1.0,
+      "scale": 0.4
+    }
+  ],
+  "p_head": [
+    {
+      "bone": "Neck",
+      "axis": [
+        -1.0,
+        -0.0042,
+        -0.0073
+      ],
+      "sign": 1.0,
+      "scale": 0.35
+    },
+    {
+      "bone": "Head",
+      "axis": [
+        -0.9999,
+        -0.0021,
+        -0.0129
+      ],
+      "sign": 1.0,
+      "scale": 0.65
+    }
+  ],
+  "l_y_collar": [
+    {
+      "bone": "LeftShoulder",
+      "axis": [
+        0.9797,
+        0.1839,
+        0.08
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_p_collar": [
+    {
+      "bone": "LeftShoulder",
+      "axis": [
+        -0.0655,
+        -0.0831,
+        0.9944
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_y_shoulder": [
+    {
+      "bone": "LeftArm",
+      "axis": [
+        -0.0593,
+        -0.9803,
+        -0.1883
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_p_shoulder": [
+    {
+      "bone": "LeftArm",
+      "axis": [
+        0.9466,
+        -0.1151,
+        0.3013
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_r_shoulder": [
+    {
+      "bone": "LeftArm",
+      "axis": [
+        0.0593,
+        0.9803,
+        0.1883
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_elbow": [
+    {
+      "bone": "LeftForeArm",
+      "axis": [
+        0.9396,
+        0.0062,
+        -0.3421
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_y_collar": [
+    {
+      "bone": "RightShoulder",
+      "axis": [
+        0.9832,
+        -0.1643,
+        -0.0791
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_p_collar": [
+    {
+      "bone": "RightShoulder",
+      "axis": [
+        -0.0752,
+        0.0295,
+        -0.9967
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_y_shoulder": [
+    {
+      "bone": "RightArm",
+      "axis": [
+        0.0739,
+        -0.9805,
+        -0.182
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_p_shoulder": [
+    {
+      "bone": "RightArm",
+      "axis": [
+        0.9608,
+        0.1189,
+        -0.2505
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_r_shoulder": [
+    {
+      "bone": "RightArm",
+      "axis": [
+        -0.0739,
+        0.9805,
+        0.182
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_elbow": [
+    {
+      "bone": "RightForeArm",
+      "axis": [
+        0.9253,
+        -0.0049,
+        0.3791
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_y_hip": [
+    {
+      "bone": "LeftUpLeg",
+      "axis": [
+        0.0046,
+        0.9978,
+        -0.0659
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_p_hip": [
+    {
+      "bone": "LeftUpLeg",
+      "axis": [
+        0.0414,
+        -0.0661,
+        -0.997
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_r_hip": [
+    {
+      "bone": "LeftUpLeg",
+      "axis": [
+        -0.9991,
+        0.0019,
+        -0.0417
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_knee": [
+    {
+      "bone": "LeftLeg",
+      "axis": [
+        -1.0,
+        0.0046,
+        -0.0051
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_y_hip": [
+    {
+      "bone": "RightUpLeg",
+      "axis": [
+        -0.0035,
+        0.9936,
+        -0.1126
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_p_hip": [
+    {
+      "bone": "RightUpLeg",
+      "axis": [
+        0.0497,
+        0.1126,
+        0.9924
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_r_hip": [
+    {
+      "bone": "RightUpLeg",
+      "axis": [
+        -0.9988,
+        0.0021,
+        0.0497
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_knee": [
+    {
+      "bone": "RightLeg",
+      "axis": [
+        -0.9997,
+        0.0041,
+        0.0249
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_y_ankle": [
+    {
+      "bone": "LeftFoot",
+      "axis": [
+        -0.3493,
+        0.4316,
+        0.8317
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_ankle": [
+    {
+      "bone": "LeftFoot",
+      "axis": [
+        -0.937,
+        -0.1697,
+        -0.3054
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_y_ankle": [
+    {
+      "bone": "RightFoot",
+      "axis": [
+        0.3754,
+        0.4375,
+        0.8171
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_ankle": [
+    {
+      "bone": "RightFoot",
+      "axis": [
+        -0.9268,
+        0.1697,
+        0.335
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_r_wrist": [
+    {
+      "bone": "LeftHand",
+      "axis": [
+        0.1182,
+        0.9531,
+        0.2785
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_wrist": [
+    {
+      "bone": "LeftHand",
+      "axis": [
+        0.1229,
+        -0.2923,
+        0.9484
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_r_wrist": [
+    {
+      "bone": "RightHand",
+      "axis": [
+        0.1961,
+        -0.9596,
+        -0.2018
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_wrist": [
+    {
+      "bone": "RightHand",
+      "axis": [
+        0.1261,
+        0.2288,
+        -0.9653
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "l_wheel": [
+    {
+      "bone": "WheelL",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "r_wheel": [
+    {
+      "bone": "WheelR",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ]
+}
