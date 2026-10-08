@@ -15,6 +15,7 @@ from arena_robots.Sensor import SensorSpec
 from arena_mujoco import hooks
 from arena_mujoco.context import get_scene_store
 from arena_mujoco.mesh_mat import MeshPart, mesh_parts, part_material
+from arena_mujoco.rollers import add_rollers, roller_wheels
 from arena_mujoco.scene import AssetCache, RejectedBodies, sanitize_id
 
 from .utils import Service
@@ -326,6 +327,7 @@ def _spawn_urdf_cb(
         joint.armature = max(joint.armature, _JOINT_ARMATURE)
 
     joint_names = tuple(joint.name for joint in robot_spec.joints if joint.name)
+    add_rollers(robot_spec, roller_wheels(ET.parse(request.urdf_path).getroot()))
 
     prefix = f'{sanitize_id(request.name)}_'
     pos, quat = _pose_to_mujoco(request.pose)
