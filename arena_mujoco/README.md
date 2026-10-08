@@ -244,12 +244,14 @@ When the display renders GL in software (llvmpipe under xrdp, VNC or `ssh -X`) a
 
 ---
 
-## Open items
+## Viewport camera
 
-- **Untextured assets.** 105 of the 148 database objects carry no texture in their DAE (43 do). They render in the DAE's plain diffuse color, black for some.
-- **No robot declares a `contact` sensor.** The publisher has no user yet. Gazebo would bridge the same `ros_gz_interfaces/Contacts`, but `arena_robots` leaves `contact` out of its bridge table on purpose. Isaac publishes `isaacsim_msgs/ContactSensor`.
-- **One executor thread.** Service and subscription callbacks, the pumps and the publishing run on the server's single executor thread. Physics steps (`SceneStore.step`, up to 16 workers), large ray fans and convex decomposition run on thread pools. With 8 jackal envs at real time the thread is 56 % busy.
-- **More than about 4 envs in one runtime.** 4 jackal envs with nav2 come up in 21 s and hold real time (server 34 % of a core, lockstep rtf 2.0). At 8 the per-env ROS stacks fail first: nav2 lifecycle calls time out and episodes abort while the server is still half idle.
+The server advertises the viewport contract `arena cam` drives on every sim, under `/arena/viewport` (`viewport/surface.py`): `set_view`, `set_reference_frame`, `set_projection` and `capture` services, the `cmd_view` keyframe stream and the `camera_pose` topic (10 Hz, `map` frame). It is a free camera over env 0 with poses in body axes (forward +X, up +Z), driven by the same drive model as the Isaac backend (`viewport/controller.py`).
+
+- **Capture** renders offscreen at 1920x1080 at the exact requested pose, roll and horizontal field of view included, so `arena cam ... --sim --record` also works with `headless:=True`. A request with `min_sim_time` is answered once the sim clock reaches it (15 s wall at most), which is what `--lockstep` takes rely on. Ceilings are hidden, as in the viewer.
+- **Viewer.** While the passive viewer is open its free camera follows the driven pose, without roll and with the viewer's own lens. Moving the viewer camera by hand hands the view back and releases a tracked entity.
+- **Tracked entities** resolve as a body of env 0 by its ROS name first (`env_0/jackal/base_link` is the body `env_0_jackal_base_link`), else as a TF frame against `map`. The TF listener is created on the first entity that is not a body.
+- **Orthographic** projection keeps the horizontal field of view's width at the ground plane (10 m ahead when the view never meets the ground).
 
 ## Debugging
 

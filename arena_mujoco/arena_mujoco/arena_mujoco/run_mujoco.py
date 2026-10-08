@@ -29,6 +29,7 @@ from arena_mujoco.services.SpawnCeilings import CEILING_GROUP  # noqa: E402
 from arena_mujoco.services.SpawnPedestrians import release_pedestrians, reset_env, update_pedestrians  # noqa: E402
 from arena_mujoco.services.SpawnUrdf import forget_robots  # noqa: E402
 from arena_mujoco.services.utils import SERVICE_QOS  # noqa: E402
+from arena_mujoco.viewport.surface import Viewport  # noqa: E402
 
 try:
     import mujoco.viewer as _mj_viewer
@@ -115,6 +116,7 @@ class MujocoController(rclpy.node.Node):
 
         self._peds_sub = self.create_subscription(Pedestrians, '/mujoco/arena_peds', self._cb_peds, 10)
         self._clock_pub = self.create_publisher(rosgraph_msgs.msg.Clock, '/clock', 10)
+        self._viewport = Viewport(self, scene_store, _VIEWER_ENV, lambda: self._viewer)
         self.create_timer(_STEP_PERIOD_S, self._tick)
 
     def _cb_pause(
@@ -187,6 +189,8 @@ class MujocoController(rclpy.node.Node):
             hooks.run_pumps()
         else:
             self._advance(_STEPS_PER_TICK)
+        self._viewport.release()
+        self._viewport.apply()
         self._update_viewer()
 
     def _advance(self, n: int) -> None:
@@ -197,6 +201,7 @@ class MujocoController(rclpy.node.Node):
             hooks.run_pumps()
             self._publish_clock()
             n -= chunk
+        self._viewport.release()
 
     def _publish_clock(self) -> None:
         sim_time = self._scene_store.time

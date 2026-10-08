@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 import mujoco
 import numpy as np
 
+from arena_mujoco.viewport.camera import CAPTURE_HEIGHT, CAPTURE_WIDTH
+
 _ID_BAD = re.compile(r'[^0-9A-Za-z_]+')
 
 _MOCAP_PARK = (0.0, 0.0, -1000.0)
@@ -108,6 +110,8 @@ def _new_world_spec() -> mujoco.MjSpec:
     spec.option.timestep = PHYSICS_DT
     spec.stat.extent = _RENDER_EXTENT_M
     spec.visual.map.znear = _RENDER_ZNEAR_M / _RENDER_EXTENT_M
+    spec.visual.global_.offwidth = CAPTURE_WIDTH
+    spec.visual.global_.offheight = CAPTURE_HEIGHT
     spec.visual.headlight.ambient = [0.5, 0.5, 0.5]
     spec.visual.headlight.diffuse = [0.4, 0.4, 0.4]
     spec.visual.headlight.specular = [0.1, 0.1, 0.1]

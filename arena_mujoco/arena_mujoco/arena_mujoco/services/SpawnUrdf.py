@@ -150,6 +150,15 @@ def get_robot(env_id: int, name: str) -> RobotEntry | None:
     return _robots.get((env_id, name))
 
 
+def frame_body(env_id: int, frame: str) -> str | None:
+    """Body id of the robot link a TF frame id names, None when no robot of env_id owns the frame."""
+    for (robot_env, _), entry in _robots.items():
+        if robot_env == env_id and entry.tf_prefix and frame.startswith(entry.tf_prefix):
+            prefix = entry.prim_name[: len(entry.prim_name) - len(entry.base_frame)]
+            return f'{prefix}{frame[len(entry.tf_prefix) :].replace("-", "_")}'
+    return None
+
+
 def forget_robots(env_id: int, prefix: str) -> None:
     """Fire the despawn hooks for every robot of env_id whose root body id starts with prefix."""
     key = sanitize_id(prefix) if prefix else ''
@@ -406,4 +415,4 @@ spawn_urdf_service = Service(
     callback=_spawn_urdf_cb,
 )
 
-__all__ = ['get_robot', 'spawn_urdf_service']
+__all__ = ['frame_body', 'get_robot', 'spawn_urdf_service']
