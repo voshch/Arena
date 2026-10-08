@@ -1,3 +1,6 @@
+from collections.abc import Callable
+
+import rclpy
 import rclpy.node
 
 from .Async import AsyncNode
@@ -11,6 +14,8 @@ from .Time import TimeNode
 class ArenaMixinNode(ROSParamServer, LifecycleClient, AsyncLifecycleClient, ServiceNamespace, AsyncNode, TimeNode, rclpy.node.Node):
     """Megaclass composing every arena_rclpy_mixins mixin onto rclpy.node.Node."""
 
+    _shutdown_requester: Callable[[str], None] | None = None
+
     async def setup(self) -> None:
         """Called by `async_main` once the node is constructed and the executor is spinning.
         Override for non-lifecycle subclasses; lifecycle subclasses leave this as a no-op
@@ -22,6 +27,13 @@ class ArenaMixinNode(ROSParamServer, LifecycleClient, AsyncLifecycleClient, Serv
         Override to run cleanup that requires the executor still spinning,
         e.g. final service calls to peer nodes.
         """
+
+    def request_shutdown(self, reason: str) -> None:
+        """Start the `async_main` teardown from any thread, as SIGINT would, or shut rclpy down outside `async_main`."""
+        if self._shutdown_requester is None:
+            rclpy.try_shutdown()
+            return
+        self._shutdown_requester(reason)
 
     def aiomonitor_config(self) -> dict[str, object] | None:
         """Override to customize aiomonitor.start_monitor kwargs, or return None to disable.

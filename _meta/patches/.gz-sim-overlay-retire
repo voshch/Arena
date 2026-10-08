@@ -1,0 +1,17 @@
+#!/bin/sh
+ws="${ARENA_WS_DIR:?}"
+src="$ws/src/tools/gz-sim"
+[ -e "$src" ] || [ -e "$ws/build/gz-sim8" ] || [ -e "$ws/install/gz-sim8" ] || exit 0
+header="/opt/ros/$ARENA_ROS_DISTRO/opt/gz_sim_vendor/include/gz/sim8/gz/sim/components/Actor.hh"
+if ! grep -q BoneTransforms "$header" 2>/dev/null; then
+    echo "the image's gz-sim has no BoneTransforms yet, the gz-sim overlay stays until the image is rebuilt" >&2
+    exit 1
+fi
+GIT_CEILING_DIRECTORIES="$(dirname "$src")"
+export GIT_CEILING_DIRECTORIES
+if [ -e "$src/.git" ] && { [ -n "$(git -C "$src" status --porcelain)" ] || [ "$(git -C "$src" rev-list --count HEAD --not --remotes)" != 0 ]; }; then
+    echo "src/tools/gz-sim has local changes or cannot be read, move them out and delete it" >&2
+    exit 1
+fi
+rm -rf "$ws/build/gz-sim8" "$ws/install/gz-sim8" "$ws/build/arena_gz_plugins" "$ws/install/arena_gz_plugins" && rm -rf "$src" || exit 1
+echo "removed the gz-sim overlay, arena build rebuilds arena_gz_plugins against the image's gz-sim"

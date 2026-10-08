@@ -318,3 +318,28 @@ def test_urdf_load_uses_xacro_wrapper_instead_of_model_xacro(tmp_path):
     # The temp wrapper file is cleaned up, only the rendered-URDF temp file remains.
     assert model.path is not None
     assert model.path.suffix == ".urdf"
+
+
+def test_urdf_load_keeps_gz_namespace_prefix(tmp_path):
+    model_dir = tmp_path / "mecanum_model"
+    urdf_dir = model_dir / "urdf"
+    urdf_dir.mkdir(parents=True)
+    (urdf_dir / "mecanum_model.urdf.xacro").write_text("""<?xml version="1.0"?>
+<robot name="mecanum_model" xmlns:xacro="http://www.ros.org/wiki/xacro" xmlns:gz="http://gazebosim.org/schema">
+  <link name="base_footprint"/>
+  <gazebo reference="wheel_link">
+    <collision>
+      <surface>
+        <friction>
+          <ode>
+            <fdir1 gz:expressed_in="base_footprint">0.70710678 0.70710678 0</fdir1>
+          </ode>
+        </friction>
+      </surface>
+    </collision>
+  </gazebo>
+</robot>
+""")
+    model = asyncio.run(ModelProvider_URDF.load(model_dir, "mecanum_model", None))
+    assert 'gz:expressed_in="base_footprint"' in model.description
+    assert "ns0:" not in model.description

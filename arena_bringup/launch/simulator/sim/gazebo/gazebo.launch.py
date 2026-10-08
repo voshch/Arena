@@ -171,6 +171,19 @@ def generate_launch_description():
         else_value=desired_world,
     )
 
+    def _bone_map_path() -> str | None:
+        """Absolute path of arena_peds_pose's installed bone_map.json, None when unresolvable."""
+        try:
+            spec = importlib.util.find_spec('arena_peds_pose')
+            path = os.path.join(next(iter(spec.submodule_search_locations)), 'bone_map.json')
+        except Exception as exc:
+            print(f'[gazebo.launch] bone_map.json resolution failed: {exc}', file=sys.stderr)
+            return None
+        if not os.path.isfile(path):
+            print(f'[gazebo.launch] bone_map.json missing at {path}', file=sys.stderr)
+            return None
+        return path
+
     def _inject_ped_skeleton_plugin(world_sdf_path: str, enabled: bool) -> str:
         """Return a patched world SDF path with PedSkeletonPlugin injected.
 
@@ -193,6 +206,10 @@ def generate_launch_description():
             plugin_el.set('name', 'arena_gz_plugins::PedSkeletonPlugin')
             enabled_el = ET.SubElement(plugin_el, 'enabled')
             enabled_el.text = 'true'
+            bone_map = _bone_map_path()
+            if bone_map is not None:
+                bone_map_el = ET.SubElement(plugin_el, 'bone_map')
+                bone_map_el.text = bone_map
 
             tmp = tempfile.NamedTemporaryFile(
                 mode='wb', suffix='.sdf', delete=False,

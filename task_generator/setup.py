@@ -17,6 +17,7 @@ setup(
         include=[f'{package_name}*']
     ),
     package_dir={'': '.'},
+    package_data={package_name: ['simulators/human/profiles/*.yaml']},
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),

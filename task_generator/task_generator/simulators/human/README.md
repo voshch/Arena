@@ -73,6 +73,38 @@ the outgoing message it checks `ped.joint_state.name`:
 
 The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac and Gazebo pedestrian rigs.
 
+A model whose bundle ships a `rig.yaml` with `drivers:` (wheelchair bundles: `l_wheel`, `r_wheel`) gets those joints
+set on top, whoever filled the field: [`drivers.py`](drivers.py) rolls each wheel over the distance its contact
+point covered since the last message, see the Driven joints section of [`JOINTS.md`](JOINTS.md).
+
+## Fitting a gait profile from a clip
+
+The walk and run poses `GaitGenerator` emits come from the gait profiles in [`profiles/`](profiles/)
+([`profile.py`](profile.py): a mean plus harmonics per joint, read at the gait phase). [`fit.py`](fit.py) turns a
+walking clip into such a profile:
+
+```
+python3 -m task_generator.simulators.human.fit walk_slow.npy -o walk_slow.yaml --speed 0.8 --report walk_slow.json
+```
+
+The clip is a `.npy` in the layout of [`animations/`](animations/) (an object array of frames, each
+`{"angles": {<joint>: <rad>}}` with bare `JOINT_NAMES`) holding at least two whole cycles of steady walking. The
+fitter takes the cycle from the sagittal hips (`l_r_hip`, `r_r_hip`), sets phase 0 so the left hip lines up with
+`walk_cmu_12_01`, and fits every joint over whole cycles. It writes one signal per limb pair when the right side is
+the left half a cycle later (within 5 percent of the pair's amplitude), per-side signals with `symmetric: false`
+otherwise, a `phase_warp.split` when the two half-cycles differ in length by more than 0.02, and `limits` for
+joints the clip takes past `GaitGenerator.LIMITS`. The printed report lists the rms error per joint, the cycles
+used, the measured cadence, the split and the worst joint.
+
+| Option | Meaning |
+| --- | --- |
+| `-o PROFILE.yaml` | Output profile. Move it into `profiles/`, the library goes by file stem, then name it from an agent type as `pose: {walk: {base: <stem>}}`. |
+| `--fps F` | Frame rate of the clip, default `20` (the rate `AnimationManager` plays the shipped clips at). |
+| `--harmonics N` | Harmonics per joint, `1` to `8`, default `3`. |
+| `--speed V` | Walking speed of the clip in m/s: the cadence law keeps the default base and takes `per_speed` through the measured point. Without it the law is fixed at the measured cadence. |
+| `--report REPORT.json` | Also write the report as json. |
+| `--name NAME` | `name:` field of the profile, default the output stem. |
+
 ## Gestures
 
 `Pedestrian.gestures` (`arena_people_msgs/Gesture[]`: `slot` in `head|arm|arm_l|arm_r|body`, `at` world-frame
@@ -188,6 +220,8 @@ dynamic:
 `waypoint_mode` is a sibling key of `agent:` (not nested inside it), one of `repeat` (default), `reverse`, `once`, `random`: it controls how the entry's `waypoints:` list is replayed once exhausted.
 
 A `regions:` source entry's `config.agent:` block uses a different, wider schema for continuously spawning pedestrians: `agent_type`, `desired_velocity: {min, max}`, `agent_radius` (note: `agent_radius`, not `radius`, here), `behavior_tree`, and `sink_affinity: [{sink, weight}]`. See `_add_source_region` in [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py).
+
+A scripted entry renders with its `model:`. A source-spawned agent has none, so it takes a model from its agent type: when the type lists `assets:` tags, one of the human bundles on disk (world-local, shared-local or already cached) whose `annotation.yaml` carries every tag is drawn per agent from the episode seed. A type without `assets:`, or tags no bundle carries (warned once per type), keeps the default model.
 
 ### Static world objects
 

@@ -93,7 +93,7 @@ arena evaluation benchmark ... --lanes 4   # one benchmark run across 4 lanes, e
 
 ### Linting
 
-Linting is handled by [Ruff](https://docs.astral.sh/ruff/), driven by [pre-commit](https://pre-commit.com/). Config lives in root [`pyproject.toml`](pyproject.toml); the hook pin is in [`.pre-commit-config.yaml`](.pre-commit-config.yaml). Auto-formatting is intentionally not enforced.
+Linting is handled by [Ruff](https://docs.astral.sh/ruff/), driven by [pre-commit](https://pre-commit.com/). Config lives in root [`pyproject.toml`](pyproject.toml); the hook pin is in [`.pre-commit-config.yaml`](.pre-commit-config.yaml). Formatting is enforced: the `ruff-format` hook fails on any file `ruff format` would change and prints the diff, across the metarepo and its checked-out submodules.
 
 **One-time setup:**
 ```bash
@@ -106,6 +106,7 @@ pre-commit install
 pre-commit run            # staged files only
 pre-commit run -a         # entire repo
 ruff check .              # check without pre-commit
+ruff format .             # apply the formatting the hook enforces
 ```
 
 If the hook auto-fixes something, the commit is aborted and the fixes are left unstaged, `git add` and re-commit.

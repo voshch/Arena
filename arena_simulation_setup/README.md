@@ -38,7 +38,7 @@ Scripts live under [scripts/](scripts). To fetch a single asset by identifier, u
 `arenian` is the default pedestrian. Like every other human it is an `arena_humans`
 bundle (MakeHuman skin, CMU clips, `cmu_mb` rig) fetched from the asset bucket, not
 shipped in the repo. The SDF `<actor>` form is required so Gazebo registers the skinned
-mesh and the clips that `PedSkeletonPlugin` scrubs.
+mesh and the clips that `PedSkeletonPlugin` poses.
 
 **gpu_lidar implication.** Arena's lidar sensor is `gpu_lidar`, a rendering
 sensor that forces a server-side render scene even in headless mode.  Because
@@ -48,13 +48,16 @@ the in-sim animation perceptually load-bearing in headless RL training, not only
 cosmetic.
 
 `PedSkeletonPlugin` (package `arena_gz_plugins`) is the gz-sim 8 C++ plugin that
-subscribes `arena_peds`, positions each actor via `TrajectoryPose`, and scrubs the
-`walk` clip via `AnimationTime` phased to the ped's speed.  gz-sim 8 has no
-supported per-bone path for actors, so the true articulated gait stays the
-ROS4HRI/rviz and Isaac view.  Enabled by default via the `ped_skeleton_enabled`
-launch arg in `arena_bringup`.  The plugin lives in its own repo,
-[arena_gz_plugins](https://github.com/voshch/arena_gz_plugins), pulled into the
-workspace via `_meta/repos/gazebo.repos`.
+subscribes `arena_peds`, positions each actor via `TrajectoryPose`, and poses its
+skeleton per bone via `BoneTransforms` from the wire `joint_state`, through the
+same bone map as the Isaac provider (`utils/arena_peds_pose/bone_map.json`), so
+both simulators render the same articulated gait.  `BoneTransforms` is an Arena
+addition to gz-sim carried by the `gz-sim` overlay in `_meta/repos/gazebo.repos`
+and built by `arena feature gazebo update`.  Without the overlay or a bone map the
+plugin falls back to scrubbing the `walk` clip via `AnimationTime`.  Enabled by
+default via the `ped_skeleton_enabled` launch arg in `arena_bringup`.  The plugin
+lives in its own repo, [arena_gz_plugins](https://github.com/voshch/arena_gz_plugins),
+pulled into the workspace via `_meta/repos/gazebo.repos`.
 
 ## Internals
 

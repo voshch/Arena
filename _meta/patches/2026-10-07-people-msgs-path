@@ -1,0 +1,15 @@
+#!/bin/sh
+stale="$ARENA_WS_DIR/src/deps/hunav/people_msgs"
+[ -d "$stale" ] || exit 0
+GIT_CEILING_DIRECTORIES="$(dirname "$stale")"
+export GIT_CEILING_DIRECTORIES
+if [ -L "$ARENA_WS_DIR/src/deps/people_msgs" ]; then
+    echo "deps/people_msgs is a symlink, replace it with the checkout and delete deps/hunav/people_msgs" >&2
+    exit 1
+fi
+if [ -e "$stale/.git" ] && { [ -n "$(git -C "$stale" status --porcelain)" ] || [ "$(git -C "$stale" rev-list --count HEAD --not --remotes)" != 0 ]; }; then
+    echo "deps/hunav/people_msgs has local changes or cannot be read, move them to deps/people_msgs and delete it" >&2
+    exit 1
+fi
+rm -rf "$ARENA_WS_DIR/build/people_msgs" && rm -rf "$stale" || exit 1
+echo "removed stale deps/hunav/people_msgs"

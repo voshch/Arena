@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import time
+import traceback
 
 import rclpy
 import rclpy.node
@@ -17,6 +18,7 @@ from std_srvs.srv import SetBool
 _STALL_S = 12.0
 _DEADLINE_BLOCK_S = 5.0
 _DEADLINE_S = 1.5
+_SLOW_PUBLISH_S = 0.005
 
 
 class Storm(ArenaMixinNode):
@@ -35,6 +37,40 @@ class Storm(ArenaMixinNode):
 
     async def _publish_once(self) -> None:
         self._pub.publish(String(data="tick"))
+
+
+class SlowTeardown(Storm):
+    """Storm whose teardown announces itself and takes a second."""
+
+    async def teardown(self) -> None:
+        print("TEARDOWN", flush=True)
+        await asyncio.sleep(1.0)
+
+
+class Requester(ArenaMixinNode):
+    """Keepalive publish loop, with a sync timer callback that requests shutdown, the shape of the task generator."""
+
+    async def setup(self) -> None:
+        self._pub = self.create_publisher(String, "teardown_request", 10)
+        self._keepalive = asyncio.create_task(self._run())
+        self._timer = self.create_timer(0.3, self._request)
+
+    async def _run(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(0.005)
+                self._pub.publish(String(data="tick"))
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            traceback.print_exc()
+
+    def _request(self) -> None:
+        self._timer.cancel()
+        self.request_shutdown("test")
+
+    async def teardown(self) -> None:
+        print("TEARDOWN", flush=True)
 
 
 class Stall(ArenaMixinNode):
@@ -72,10 +108,11 @@ class Failing(ArenaMixinNode):
 
 
 class Plain(rclpy.node.Node):
-    """Plain node with a timer, publishers and a service, spun on the events executor."""
+    """Plain node with a timer, publishers and a service."""
 
-    def __init__(self) -> None:
+    def __init__(self, publish_delay_s: float = 0.0) -> None:
         super().__init__("teardown_plain")
+        self._publish_delay_s = publish_delay_s
         self._pubs = [self.create_publisher(String, f"teardown_plain_{i}", 10) for i in range(40)]
         self.create_service(SetBool, "teardown_plain_flag", lambda req, res: res)
         self._ready = False
@@ -84,15 +121,51 @@ class Plain(rclpy.node.Node):
     def _tick(self) -> None:
         for pub in self._pubs:
             pub.publish(String(data="tick"))
+            time.sleep(self._publish_delay_s)
         if not self._ready:
             self._ready = True
             print("READY", flush=True)
 
 
+class Idle(rclpy.node.Node):
+    """Node that reports ready from a one-shot timer and then leaves the executor idle."""
+
+    def __init__(self) -> None:
+        super().__init__("teardown_idle")
+        self._timer = self.create_timer(0.05, self._ready)
+
+    def _ready(self) -> None:
+        self._timer.cancel()
+        print("READY", flush=True)
+
+
+class SlowFinalizer:
+    """Hold interpreter finalization open after signal handlers are reset."""
+
+    def __del__(self, write=os.write, sleep=time.sleep) -> None:
+        write(1, b"FINALIZING\n")
+        sleep(1.0)
+
+
+_FINALIZER: SlowFinalizer | None = None
+
+
 def main() -> None:
+    global _FINALIZER
     mode = sys.argv[1]
     if mode == "async_storm":
         Storm.run_main("teardown_storm")
+    elif mode == "async_slow_teardown":
+        SlowTeardown.run_main("teardown_slow")
+    elif mode == "async_linger":
+        Storm.run_main("teardown_storm")
+        print("RETURNED", flush=True)
+        time.sleep(1.0)
+    elif mode == "async_finalize":
+        Storm.run_main("teardown_storm")
+        _FINALIZER = SlowFinalizer()
+    elif mode == "async_request":
+        Requester.run_main("teardown_request")
     elif mode == "async_stall":
         Stall.run_main("teardown_stall")
     elif mode == "watchdog_deadline":
@@ -102,6 +175,27 @@ def main() -> None:
     elif mode == "sync_events":
         rclpy.init()
         spin_node(Plain(), executor=create_executor())
+    elif mode == "sync_events_linger":
+        rclpy.init()
+        spin_node(Plain(), executor=create_executor())
+        print("RETURNED", flush=True)
+        time.sleep(1.0)
+    elif mode == "sync_global_finalize":
+        rclpy.init()
+        spin_node(Plain())
+        _FINALIZER = SlowFinalizer()
+    elif mode == "sync_events_slow":
+        rclpy.init()
+        spin_node(Plain(_SLOW_PUBLISH_S), executor=create_executor())
+    elif mode == "sync_global_slow":
+        rclpy.init()
+        spin_node(Plain(_SLOW_PUBLISH_S))
+    elif mode == "sync_events_idle":
+        rclpy.init()
+        spin_node(Idle(), executor=create_executor())
+    elif mode == "sync_global_idle":
+        rclpy.init()
+        spin_node(Idle())
     elif mode == "sync_late":
         rclpy.init()
         with spin_context():

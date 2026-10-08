@@ -1,0 +1,3 @@
+name: run
+same_as: walk_cmu_12_01
+gain: {factor: 1.6}

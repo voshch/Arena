@@ -12,6 +12,7 @@ members = [
     "arena-bringup",
     "arena-cam",
     "arena-cli",
+    "arena-peds-pose",
     "arena-rclpy-mixins",
     "arena-rosnav",
     "arena-runtime",
@@ -236,6 +237,11 @@ provides-extras = ["test"]
 name = "arena-cli"
 version = "0.0.0"
 source = { editable = "_meta/arena_cli" }
+
+[[package]]
+name = "arena-peds-pose"
+version = "0.0.0"
+source = { virtual = "utils/arena_peds_pose" }
 
 [[package]]
 name = "arena-rclpy-mixins"

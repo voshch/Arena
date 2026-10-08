@@ -1,4 +1,4 @@
-"""Workspace updater: pull repos/submodules/features, refresh rosdep and python deps."""
+"""Workspace updater: pull repos/submodules/features, apply patches, refresh rosdep and python deps."""
 
 import os
 import sys
@@ -45,8 +45,50 @@ def attach_branch(repo: str, branch: str, env: dict[str, str]) -> tuple[str, boo
     return "", True
 
 
+def apply_patches(arena_dir: str, env: dict[str, str]) -> list[str]:
+    """Run every _meta/patches script that has no .done marker beside it, returning the names that failed."""
+    import subprocess
+    from pathlib import Path
+
+    patches_dir = os.path.join(arena_dir, "_meta", "patches")
+    if not os.path.isdir(patches_dir):
+        return []
+    try:
+        names = sorted(os.listdir(patches_dir))
+    except OSError as e:
+        print(f"patches: {e}", file=sys.stderr)
+        return ["_meta/patches"]
+    failed: list[str] = []
+    for name in names:
+        path = os.path.join(patches_dir, name)
+        if name.startswith(".") or name.endswith((".done", ".md")) or not os.path.isfile(path) or os.path.exists(path + ".done"):
+            continue
+        print(f"applying patch {name}...", flush=True)
+        try:
+            rc = subprocess.run([path], cwd=arena_dir, env=env, stdin=subprocess.DEVNULL, check=False).returncode
+            if rc == 0:
+                Path(path + ".done").touch()
+        except OSError as e:
+            print(f"patch {name}: {e}", file=sys.stderr)
+            rc = 1
+        if rc:
+            failed.append(name)
+    return failed
+
+
+def restart_command(argv: list[str], skipped: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Command and environment that rerun this update on the freshly pulled code, carrying the steps skipped so far."""
+    return [sys.executable, "-m", "arena_cli", "update", *argv], {**os.environ, "ARENA_UPDATE_RESTARTED": ",".join(skipped)}
+
+
+def restarted_skips() -> list[str] | None:
+    """Steps the run before a restart skipped, None when this run is not a restart."""
+    carried = os.environ.pop("ARENA_UPDATE_RESTARTED", None)
+    return None if carried is None else [step for step in carried.split(",") if step]
+
+
 def pull_main(argv: list[str]) -> int:
-    """Pull Arena repos/submodules/features and refresh rosdep and python deps. Chdirs to ARENA_DIR for the duration."""
+    """Pull Arena repos/submodules/features, apply patches and refresh rosdep and python deps. Chdirs to ARENA_DIR for the duration."""
     import shutil
     import subprocess
 
@@ -60,16 +102,17 @@ def pull_main(argv: list[str]) -> int:
     do_git = os.environ.get("GIT", "1") == "1"
     do_rosdep = os.environ.get("ROSDEP", "1") == "1"
 
+    carried = restarted_skips()
     os.environ.setdefault("GIT_SSH_COMMAND", _git_ssh_command())
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["ROSDEP_EXCLUDES"] = "libignition-gazebo6-dev gazebo_dev gazebo_ros gazebo_plugins gazebo_ros2_control flir_ptu_description"
 
-    skipped: list[str] = []
+    skipped: list[str] = carried or []
     prev_cwd = os.getcwd()
     os.chdir(arena_dir)
     try:
-        if subprocess.run(["sudo", "apt", "update"], env=env, check=False).returncode:
+        if carried is None and subprocess.run(["sudo", "apt", "update"], env=env, check=False).returncode:
             print("apt update failed, continuing with stale package lists", file=sys.stderr)
             skipped.append("apt update")
 
@@ -77,9 +120,15 @@ def pull_main(argv: list[str]) -> int:
             print("updating Arena...")
             has_upstream = subprocess.run(["git", "rev-parse", "--verify", "-q", "@{u}"], env=env, check=False, capture_output=True).returncode == 0
             if has_upstream:
+                before = subprocess.run(["git", "rev-parse", "HEAD"], env=env, capture_output=True, text=True, check=False).stdout
                 if subprocess.run(["git", "pull", "--ff-only", "--autostash"], env=env, check=False).returncode:
                     print("Arena pull failed, continuing with current checkout", file=sys.stderr)
                     skipped.append("Arena pull")
+                if carried is None and subprocess.run(["git", "rev-parse", "HEAD"], env=env, capture_output=True, text=True, check=False).stdout != before:
+                    print("Arena moved, rerunning the update on the pulled code...", flush=True)
+                    sys.stderr.flush()
+                    cmd, restart_env = restart_command(argv, skipped)
+                    os.execvpe(cmd[0], cmd, restart_env)
             else:
                 print("no upstream for current branch, skipping Arena pull")
 
@@ -94,6 +143,9 @@ def pull_main(argv: list[str]) -> int:
             if not restore_branches(arena_dir, env):
                 print("submodule branch reset had issues, ignoring")
 
+        skipped.extend(f"patch {name}" for name in apply_patches(arena_dir, env))
+
+        if do_git:
             repos_file = os.path.join(arena_dir, "_meta", "repos", "arena.repos")
             ws_src = os.path.join(arena_ws_dir, "src")
             if subprocess.run(["vcs", "import", "--input", repos_file, "--recursive", "--ff", "--add-existing", ws_src], env=env, check=False).returncode:
