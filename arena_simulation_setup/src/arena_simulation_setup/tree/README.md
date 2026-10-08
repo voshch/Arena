@@ -80,7 +80,7 @@ given `Identifier` type: one pointing at `WORLD / 'assets'` and one at `ARENA`.
 | `ObjectIdentifier` | [tree/assets/Object.py](assets/Object.py) | `DomainAssetIdentifier[ObjectView]` | `Object` | DynamicPaths (world/assets + local), then NetResolver |
 | `HumanIdentifier` | [tree/assets/Human.py](assets/Human.py) | `DomainAssetIdentifier[HumanView]` | `Human` | DynamicPaths (world/assets + local), then NetResolver |
 | `MaterialIdentifier` | [tree/assets/Material.py](assets/Material.py) | `ModifiersDomainAssetIdentifier[Material]` | `Material` | DynamicPaths (world/assets + local), then NetResolver |
-| `SoundIdentifier` | [tree/assets/Sound.py](assets/Sound.py) | `DomainAssetIdentifier[SoundView]` | `Sound` | DynamicPaths (world/assets + local), then the bundled `arena_auditory` share `sounds/`, then NetResolver (`formats=()`, listed by `--children` under `Common/Sound`) |
+| `SoundIdentifier` | [tree/assets/Sound.py](assets/Sound.py) | `DomainAssetIdentifier[SoundView]` | `Sound` | DynamicPaths (world/assets + local), then NetResolver (`formats=()`, listed by `--children` under `Common/Sound`) |
 | `WallIdentifier` | [tree/Wall.py](Wall.py) | `DomainAssetIdentifier[WallDescription]` | `Wall` | DynamicPaths (world/assets + local), then NetResolver |
 | `WorldIdentifier` | [tree/World/World.py](World/World.py) | `Identifier[MultiLevelWorldView]` | - | `ARENA_WORLD_PATH` roots, then `ASS_DIR / 'worlds'` (existence-checked), then a `NetResolver` per `WORLD_BUCKETS` provider, then `FallbackResolver` (write target only) |
 | `EnvironmentIdentifier` | [tree/configs/environment.py](configs/environment.py) | `Identifier[EnvironmentDescription]` | - | `EnvironmentResolver` → `ASS_DIR / 'configs' / 'environment'` |
@@ -106,9 +106,14 @@ Default materials per context: `wall` → `Marble`, `floor` → `Porcelain_Tile_
 ### `SoundIdentifier`
 
 Resolves `domain/Sound/name/` and wraps it in a `SoundView` whose `.manifest`
-is the parsed `name.yaml` beside the wav files. The package copy shipped by
-`arena_auditory` resolves after world-local and shared-local assets and before
-the network. `arena_auditory.assets.SoundLibrary` parses the manifest.
+is the parsed `name.yaml` beside the wav files.
+[tree/assets/sound_catalog.py](assets/sound_catalog.py) parses the manifests:
+`SoundLibrary` merges the kinds table (`configs/sounds/kinds.yaml`, `kinds_file()`)
+with the `kinds:` fragments of local manifests, resolves assets lazily and picks
+variants deterministically (`SoundAsset.select`, `selection_seed`). It imports
+neither numpy nor scipy, decoding lives in the acoustics backend. The kinds
+table and the manifest schema are documented in
+[configs/sounds/README.md](../../../configs/sounds/README.md).
 
 ### `WallIdentifier`
 

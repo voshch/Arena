@@ -395,8 +395,8 @@ class RobotManager(NodeInterface):
 
         return await self._advance_to_next_phase(request)
 
-    async def submit_task(self, request: TaskRequest) -> None:
-        """Validate and dispatch phase 0 of a typed TaskRequest. Phase poses are abstract, realized to map here."""
+    async def submit_task(self, request: TaskRequest, start: Pose | None = None) -> None:
+        """Validate and dispatch phase 0 of a typed TaskRequest. Phase poses are abstract, realized to map here. `start` is the abstract pose the robot begins from, its current pose when omitted."""
         from task_generator.tasks.robots.request import GoToPhase
 
         if not request.phases:
@@ -405,14 +405,18 @@ class RobotManager(NodeInterface):
         # Inject elevator-boarding subgoals for goals on a different level than the robot.
         # The robot drives into the cabin, is teleported across, then the next leg becomes reachable.
         world_manager = self.node._world_manager
-        current_level = world_manager.level_of_point(self._start_pos.position.x, self._start_pos.position.y)
+        if start is None:
+            observed = self.pose
+            start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
+        current_level = world_manager.level_of_point(start.position.x, start.position.y)
+        boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
         routed_phases = []
         for phase in request.phases:
             if isinstance(phase, GoToPhase):
                 goal_level = world_manager.level_of_point(phase.pose.position.x, phase.pose.position.y)
                 if current_level and goal_level and goal_level != current_level:
-                    for elevator_position in world_manager.elevator_route(current_level, goal_level):
-                        routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_angle=math.pi))
+                    for elevator_position, boarding_radius in world_manager.elevator_route(current_level, goal_level, self.radius):
+                        routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_radius=min(boarding_tolerance, boarding_radius), tolerance_angle=math.pi))
                     current_level = goal_level
             routed_phases.append(phase)
         request = attrs.evolve(request, phases=routed_phases)

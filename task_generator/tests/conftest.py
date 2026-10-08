@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 _ROS_SKIP_REASON = "ROS2 not discoverable: source install/setup.bash to enable"
@@ -38,3 +40,28 @@ def rclpy_context():
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def _skip_without(package: str, feature: str) -> None:
+    if importlib.util.find_spec(package) is None:
+        pytest.skip(f"{package} not installed: arena feature {feature} install")
+
+
+@pytest.fixture()
+def requires_auditory() -> None:
+    _skip_without("arena_auditory", "auditory")
+
+
+@pytest.fixture()
+def requires_hearing() -> None:
+    _skip_without("arena_hearing", "hearing")
+
+
+@pytest.fixture()
+def radio_loop():
+    from arena_simulation_setup.tree.assets.sound_catalog import SoundLibrary
+
+    try:
+        return SoundLibrary.default().asset("radio_loop")
+    except KeyError as exc:
+        pytest.skip(f"sound asset radio_loop does not resolve: {exc}")

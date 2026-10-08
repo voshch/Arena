@@ -151,7 +151,11 @@ def _supervisor(*argv: str) -> None:
 
 _LAUNCH_FILES = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
 RUNTIME_ARGS = LaunchArgs("arena_bringup", "arena_runtime.launch.py", _LAUNCH_FILES)
-ENV_ARGS = LaunchArgs("task_generator", "task_generator.launch.py", _LAUNCH_FILES)
+ENV_ARGS = Union(
+    LaunchArgs("task_generator", "task_generator.launch.py", _LAUNCH_FILES),
+    LaunchArgs("arena_auditory", "arena_auditory.launch.py", prefix="auditory.", exclude=("namespace", "env.ns", "hearing")),
+    LaunchArgs("arena_hearing", "hearing.launch.py", exclude=("env.ns", "tg_node", "frontend", "policy")),
+)
 SUPERVISOR_KNOBS = Kv(
     {
         "env.n": None,
@@ -427,14 +431,14 @@ def lockstep(args: list[str]) -> None:
     )
 
 
-@verb("preload", passthrough=True, complete=Union(Manifest("world"), Flags({"--no-scenarios": "skip scenario assets", "--dry-run": "report what is missing without downloading"})))
+@verb("preload", passthrough=True, complete=Union(Manifest("world"), Flags({"--no-scenarios": "skip scenario assets", "--dry-run": "report what is missing without downloading", "--sounds": "also preload the default sound of every sound kind"})))
 def preload(args: list[str]) -> None:
     """Preload a world's assets ahead of launch. `arena launch` does this for you.
 
-    `arena preload <world_name> [--no-scenarios] [--dry-run]`.
+    `arena preload [<world_name>] [--no-scenarios] [--dry-run] [--sounds]`.
     """
     if not args:
-        raise CLIError("missing argument WORLD")
+        raise CLIError("missing argument WORLD (or --sounds)")
     _exec("ros2", "run", "arena_simulation_setup", "preload_world", *args)
 
 

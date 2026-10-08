@@ -35,7 +35,7 @@ def test_known_static_obstacle_respawn_moves_instead_of_spawning(rclpy_context):
 
     from task_generator.manager.realizer import Realizer
     from task_generator.shared import Obstacle, Orientation, Pose, Position
-    from task_generator.simulators.auditory.noop import NoopAuditorySimulator
+    from task_generator.simulators.acoustics.noop import NoopAcousticsSimulator
     from task_generator.simulators.human.noop import NoopHumanSimulator
 
     class _Node(ServiceNamespace, AsyncNode):
@@ -65,8 +65,8 @@ def test_known_static_obstacle_respawn_moves_instead_of_spawning(rclpy_context):
         try:
             realizer = Realizer(Realizer._Configuration(x=0.0, y=0.0, prefix=""))
             simulator = _RecordingSim(node=node, namespace=ns, realizer=realizer)
-            auditory = NoopAuditorySimulator(node=node, namespace=ns)
-            human = NoopHumanSimulator(node=node, namespace=ns, simulator=simulator, realizer=realizer, auditory=auditory)
+            acoustics = NoopAcousticsSimulator(node=node, namespace=ns)
+            human = NoopHumanSimulator(node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
             crate = Obstacle(name="crate", model="box", pose=Pose(Position(1.0, 1.0), orientation=Orientation.from_yaw(0.0)))
             await human.spawn_obstacles([crate])
             await human.spawn_obstacles([attrs.evolve(crate, pose=Pose(Position(2.0, 3.0), orientation=Orientation.from_yaw(0.0)))])

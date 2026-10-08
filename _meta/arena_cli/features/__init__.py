@@ -9,7 +9,7 @@ from types import ModuleType
 
 from arena_cli.common import CLIError, Verb, _env, _reg_add, _reg_has, _reg_pull, _reg_remove, _reg_require, make_verb
 
-HOST_FEATURES = ("auditory", "evaluation", "gazebo", "isaac", "mujoco", "planners", "robots", "training")
+HOST_FEATURES = ("auditory", "evaluation", "gazebo", "hearing", "isaac", "mujoco", "planners", "robots", "training")
 CONTAINER_FEATURES = (*HOST_FEATURES, "docker", "vllm")
 
 

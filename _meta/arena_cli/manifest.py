@@ -116,14 +116,10 @@ def _values() -> tuple[dict[str, list[str]], list[str]]:
 
 
 def _uninstalled_robots(arena: Path) -> set[str]:
-    import importlib.util
+    from arena_cli.features import robots
 
-    payload = arena / "_meta" / "features" / "robots" / "robots.py"
-    spec = importlib.util.spec_from_file_location("_robots_payload", payload)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    status = mod.submodule_status(arena)
-    return {name for name, paths in mod.robot_submodules(arena).items() if any(status.get(p) == "uninit" for p in paths)}
+    status = robots.submodule_status(arena)
+    return {name for name, paths in robots.robot_submodules(arena).items() if any(status.get(p) == "uninit" for p in paths)}
 
 
 def _installed_planners(arena: Path) -> list[str]:

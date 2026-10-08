@@ -87,6 +87,23 @@ representations.
   `.declare_safe(name, value)`: lightweight one-shot param access without a
   persistent descriptor.
 
+## Parameter groups
+
+`param_groups.py` declares node parameters as typed `Param[T]` class
+attributes of a `ParamGroup`. A group instance declares them on a
+`ROSParamServer` node and exposes the live `ROSParam`, the class keeps the
+declaration (default, `parse` coercer, launch `description`). `PerRole` gives a
+parameter a default per role name, picked by the group's `role`.
+`configure(config, *groups)` builds an attrs config from live values or
+defaults, `declare_launch_arguments(params, prefix=...)` turns the described
+parameters into empty-default launch arguments. The coercers (`finite`,
+`within`, `positive`, `non_negative`, `count`, `positive_count`, `floats`,
+`names`) validate values on set.
+
+`transforms.ThreadedTransformListener` feeds a `tf2_ros.Buffer` from its own
+node and executor thread, so `/tf` traffic never wakes the owning node's
+executor.
+
 ## Spin and lifecycle
 
 `spin.py` owns process-level startup and teardown.

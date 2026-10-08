@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import math
 import traceback
 import typing
@@ -10,26 +9,25 @@ import attrs
 import rclpy
 import tf2_ros
 import yaml
-from arena_rclpy_mixins.qos import best_effort
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
+from arena_simulation_setup.tree.assets.sound_catalog import AgentKind, SoundLibrary, selection_seed
 from arena_simulation_setup.tree.World import WorldDescription, WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import Scenario
 from arena_simulation_setup.utils.cattrs import converter
-from builtin_interfaces.msg import Time as TimeMsg
 from geometry_msgs.msg import Point, Vector3
 from geometry_msgs.msg import Pose as PoseMsg
 from rclpy.clock import Clock, ClockType
+from task_generator_msgs.srv import RemoveSound, SpawnSound
 from visualization_msgs.msg import Marker
 
 from task_generator.interactive import Apply, Menu, planar_marker, visual
 from task_generator.shared import Orientation
+from task_generator.simulators.acoustics import SoundEmission
 from task_generator.tasks.modules import TM_Module
+from task_generator.tasks.modules.sounds import REMOVE_SOUND, SPAWN_SOUND
 
 if typing.TYPE_CHECKING:
-    from arena_auditory_msgs.msg import ContinuousAudioSourceState
-    from arena_auditory_msgs.srv import RemoveSound, SpawnSound
-
-    from arena_auditory.api import SoundAsset
+    from arena_simulation_setup.tree.assets.sound_catalog import SoundAsset
 
 
 def _index_static_entities(world: WorldDescription, scenario_static: Sequence[Obstacle] = ()) -> dict[str, list[tuple[str, Obstacle]]]:
@@ -152,30 +150,19 @@ class _SoundState:
 
 
 class Mod_Sounds(TM_Module):
-    """Render engine-owned sound state (world, launch-configured and runtime-spawned) onto the wire.
+    """Hand engine-owned sound state (world, launch-configured and runtime-spawned) to the acoustics simulator.
 
     All state lives on the node's event loop: service and timer callbacks run there via ros_callback."""
 
     def __init__(self, **kwargs: object) -> None:
-        from arena_auditory_msgs.msg import ContinuousAudioSourceState
-        from arena_auditory_msgs.srv import RemoveSound, SpawnSound
-
-        from arena_auditory.api import CONTINUOUS_AUDIO_SOURCES, REMOVE_SOUND, SPAWN_SOUND, SoundLibrary
-
         super().__init__(**kwargs)
         self._sounds: dict[str, _ResolvedSound] = {}
         self._sound_state: dict[str, _SoundState] = {}
         self._attached: set[str] = set()
         self._runtime: set[str] = set()
-        self._retiring: dict[str, tuple[_ResolvedSound, _SoundState, int]] = {}
         self._warned_inert: set[str] = set()
         self._library = SoundLibrary.default()
 
-        self._source_publisher = self.node.create_publisher(
-            ContinuousAudioSourceState,
-            self.node.service_namespace(CONTINUOUS_AUDIO_SOURCES),
-            best_effort(64),
-        )
         self._spawn_service = self.node.create_service(
             SpawnSound,
             self.node.service_namespace(SPAWN_SOUND),
@@ -197,7 +184,7 @@ class Mod_Sounds(TM_Module):
             self.node._simulator.detach_semantics(entity)
         self._sound_state.clear()
         self._runtime.clear()
-        self._retiring.clear()
+        self.node._acoustics_simulator.clear_sounds()
 
         world_name = self._ctx.world_manager.loaded_world
         world_view = WorldIdentifier(world_name).resolve_sync()
@@ -259,8 +246,6 @@ class Mod_Sounds(TM_Module):
         return self._build_resolved(snd, asset, realized_name, map_position.to_msg(), yaw, "map")
 
     def _build_resolved(self, snd: Sound, asset: SoundAsset, realized_name: str, position: Point, yaw: float, frame_id: str) -> _ResolvedSound:
-        from arena_auditory.api import WAV_MODELS, selection_seed
-
         group_id = _sound_group_id(snd.semantics, realized_name)
         seed = selection_seed(group_id)
         variant = asset.select(context={}, seed=seed)
@@ -270,7 +255,7 @@ class Mod_Sounds(TM_Module):
             asset_id=asset.id,
             kind=asset.kind,
             variant_id=variant.id,
-            model="wav_loop" if variant.model in WAV_MODELS else variant.model,
+            model=variant.model,
             tags=variant.tags,
             loop=snd.loop,
             reference_distance_m=snd.reference_distance_m,
@@ -304,7 +289,8 @@ class Mod_Sounds(TM_Module):
         response: SpawnSound.Response,
     ) -> SpawnSound.Response:
         try:
-            return await self._spawn_sound_impl(request, response)
+            async with self.node._reset_lock:
+                return await self._spawn_sound_impl(request, response)
         except ValueError as exc:
             self._logger.error(f"spawning runtime sound failed:\n{traceback.format_exc()}")
             response.error_msg = f"{type(exc).__name__}: {exc}"
@@ -315,8 +301,6 @@ class Mod_Sounds(TM_Module):
         request: SpawnSound.Request,
         response: SpawnSound.Response,
     ) -> SpawnSound.Response:
-        from arena_auditory.api import AgentKind
-
         kind = str(request.kind).strip().lower()
         accepted = self._library.kinds_of(AgentKind.ENVIRONMENT)
         if kind not in accepted:
@@ -484,14 +468,10 @@ class Mod_Sounds(TM_Module):
         self._sounds[entity] = attrs.evolve(resolved, position=pose.position, yaw=Orientation.from_msg(pose.orientation).to_yaw())
 
     def _remove_runtime(self, entity: str) -> bool:
-        from arena_auditory.api import INACTIVE_REPEATS
-
         if entity not in self._runtime:
             return False
-        resolved = self._sounds.pop(entity, None)
-        state = self._sound_state.pop(entity, None)
-        if resolved is not None and state is not None and state.last_sounding:
-            self._retiring[entity] = (resolved, state, INACTIVE_REPEATS)
+        self._sounds.pop(entity, None)
+        self._sound_state.pop(entity, None)
         self._attached.discard(entity)
         self._runtime.discard(entity)
         self.node.markers.erase(entity)
@@ -504,7 +484,9 @@ class Mod_Sounds(TM_Module):
         response: RemoveSound.Response,
     ) -> RemoveSound.Response:
         entity_name = str(request.entity).strip()
-        if not self._remove_runtime(entity_name):
+        async with self.node._reset_lock:
+            removed = self._remove_runtime(entity_name)
+        if not removed:
             response.error_msg = f"unknown or non-removable sound {entity_name!r}"
             return response
         response.success = True
@@ -554,17 +536,12 @@ class Mod_Sounds(TM_Module):
 
     async def _publish_sources(self) -> None:
         try:
-            await self._publish_sources_impl()
+            self.node._acoustics_simulator.emit_sounds(await self._emissions())
         except (TypeError, ValueError):
             self._logger.error(f"publishing static audio state failed:\n{traceback.format_exc()}")
 
-    async def _publish_sources_impl(self) -> None:
-        for msg in await self._source_msgs():
-            self._source_publisher.publish(msg)
-
-    async def _source_msgs(self) -> list[ContinuousAudioSourceState]:
-        stamp = self.node.get_clock().now().to_msg()
-        msgs: list[ContinuousAudioSourceState] = []
+    async def _emissions(self) -> list[SoundEmission]:
+        emissions: list[SoundEmission] = []
         for snap in self.node._simulator.semantics_snapshot():
             if snap.kind != "sound":
                 continue
@@ -577,46 +554,25 @@ class Mod_Sounds(TM_Module):
                 state.program_start_ns = self.node.get_clock().now().nanoseconds
             state.last_sounding = sounding
             state.volume_db = float(snap.continuous.get("volume_db", resolved.level_db))
-            msgs.append(self._source_msg(snap.entity, resolved, state, stamp, active=sounding))
-        for entity, (resolved, state, left) in tuple(self._retiring.items()):
-            msgs.append(self._source_msg(entity, resolved, state, stamp, active=False))
-            if left > 1:
-                self._retiring[entity] = (resolved, state, left - 1)
-            else:
-                del self._retiring[entity]
-        return msgs
-
-    def _source_msg(self, entity: str, resolved: _ResolvedSound, state: _SoundState, stamp: TimeMsg, *, active: bool) -> ContinuousAudioSourceState:
-        from arena_auditory_msgs.msg import ContinuousAudioSourceState
-
-        from arena_auditory.api import AgentKind, SourceSpec
-
-        source = SourceSpec(
-            id=f"environment:{entity}",
-            group_id=resolved.group_id,
-            kind=resolved.kind,
-            asset_id=resolved.asset_id,
-            variant_id=resolved.variant_id,
-            model=resolved.model,
-            agent_kind=AgentKind.ENVIRONMENT,
-            agent_id=self._numeric_id(entity),
-            agent_name=resolved.name,
-            tags=resolved.tags,
-            position=(resolved.position.x, resolved.position.y, resolved.position.z),
-            yaw_rad=resolved.yaw,
-            level_db=state.volume_db,
-            reference_distance_m=resolved.reference_distance_m,
-            loop=resolved.loop,
-            active=active,
-            program_start_ns=state.program_start_ns,
-            seed=resolved.seed,
-        )
-        msg = ContinuousAudioSourceState(source=source.to_msg())
-        msg.header.stamp = stamp
-        msg.header.frame_id = resolved.frame_id
-        return msg
-
-    @staticmethod
-    def _numeric_id(source_id: str) -> int:
-        digest = hashlib.blake2b(source_id.encode(), digest_size=4).digest()
-        return int.from_bytes(digest, "little") & 0x7FFFFFFF
+            emissions.append(
+                SoundEmission(
+                    entity=snap.entity,
+                    name=resolved.name,
+                    group_id=resolved.group_id,
+                    kind=resolved.kind,
+                    asset_id=resolved.asset_id,
+                    variant_id=resolved.variant_id,
+                    model=resolved.model,
+                    tags=resolved.tags,
+                    loop=resolved.loop,
+                    reference_distance_m=resolved.reference_distance_m,
+                    level_db=state.volume_db,
+                    seed=resolved.seed,
+                    frame_id=resolved.frame_id,
+                    position=(resolved.position.x, resolved.position.y, resolved.position.z),
+                    yaw=resolved.yaw,
+                    active=sounding,
+                    program_start_ns=state.program_start_ns,
+                )
+            )
+        return emissions

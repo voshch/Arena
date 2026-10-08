@@ -1,7 +1,8 @@
 #! /usr/bin/env python
 """Preload all assets referenced by a world via the standard arena_models resolvers.
 
-Resolves every identifier that the world description and its scenarios reference.
+Resolves every identifier that the world description and its scenarios reference,
+with --sounds also the default sound asset of every sound kind.
 The normal resolver chain (world-local → shared local → network provider) downloads
 any missing assets to disk under ``ARENA_ASSETS_DIR/<provider>``.
 """
@@ -13,7 +14,11 @@ import sys
 import traceback
 from pathlib import Path
 
+import yaml
+
 from arena_simulation_setup.tree import DynamicPaths, Identifier, Verdict
+from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
+from arena_simulation_setup.tree.assets.sound_catalog import SoundLibrary
 from arena_simulation_setup.tree.World import MultiLevelWorldView, WorldIdentifier
 
 
@@ -59,27 +64,44 @@ async def _probe_all(identifiers: list[Identifier]) -> tuple[int, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('world_name', help='Name of the world to preload.')
+    parser.add_argument('world_name', nargs='?', help='Name of the world to preload, optional with --sounds.')
     parser.add_argument('--no-scenarios', action='store_true', help='Skip scenario assets.')
     parser.add_argument('--dry-run', action='store_true', help='Report what is missing without downloading.')
+    parser.add_argument('--sounds', action='store_true', help='Also preload the default sound asset of every sound kind.')
     args = parser.parse_args()
+    if args.world_name is None and not args.sounds:
+        parser.error('give a world name, --sounds, or both')
 
-    try:
-        world: MultiLevelWorldView = WorldIdentifier(args.world_name).resolve_sync()
-    except FileNotFoundError as exc:
-        print(exc, file=sys.stderr)
-        return 1
+    identifiers: list[Identifier] = []
+    if args.world_name is not None:
+        try:
+            world: MultiLevelWorldView = WorldIdentifier(args.world_name).resolve_sync()
+        except FileNotFoundError as exc:
+            print(exc, file=sys.stderr)
+            return 1
 
-    DynamicPaths.WORLD.path = world.path
+        DynamicPaths.WORLD.path = world.path
 
-    try:
-        identifiers = list(world.identifiers(scenarios=not args.no_scenarios))
-    except Exception:
-        print(f'failed to load {world.path}:', file=sys.stderr)
-        traceback.print_exc()
-        return 1
+        try:
+            identifiers = list(world.identifiers(scenarios=not args.no_scenarios))
+        except Exception:
+            print(f'failed to load {world.path}:', file=sys.stderr)
+            traceback.print_exc()
+            return 1
 
-    print(f'world {args.world_name}: {len(identifiers)} unique asset(s)')
+    if args.sounds:
+        try:
+            kinds = SoundLibrary.default().kinds().values()
+        except (ValueError, OSError, yaml.YAMLError) as exc:
+            print(f'sound kinds unreadable, default sounds not preloaded: {exc}', file=sys.stderr)
+            kinds = ()
+        named = {ident.shortname for ident in identifiers}
+        for kind in kinds:
+            if kind.default_asset and (default := SoundIdentifier.parse(kind.default_asset)).shortname not in named:
+                named.add(default.shortname)
+                identifiers.append(default)
+
+    print(f'world {args.world_name or "(none)"}: {len(identifiers)} unique asset(s)')
 
     n_ok, n_total = asyncio.run(_probe_all(identifiers) if args.dry_run else _resolve_all(identifiers))
     print(f'resolved {n_ok}/{n_total}')

@@ -28,7 +28,8 @@ source arena
 arena feature isaac install # optional
 arena feature gazebo install # optional
 arena feature training install # optional
-arena feature auditory install # optional: sound simulation and robot hearing (auditory:=arena, robot.hearing)
+arena feature auditory install # optional: sound simulation (acoustics:=arena)
+arena feature hearing install # optional: robot hearing (robot.hearing)
 arena feature vllm install # optional: local LLM backend
 arena feature docker gpu on # optional: NVIDIA GPU passthrough, needed for training
 arena settings net lan # optional: let ROS 2 traffic leave this host

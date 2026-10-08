@@ -44,8 +44,7 @@ from task_generator.simulators.human.utils import (
 )
 
 if typing.TYPE_CHECKING:
-    from task_generator.simulators.auditory import BaseAuditorySimulator
-    from task_generator.simulators.auditory.arena import PedestrianHearing
+    from task_generator.simulators.acoustics import BaseAcousticsSimulator, PedestrianHearing
 
 PED_RADIUS = 0.3
 
@@ -113,7 +112,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         task modes specific to their simulator (e.g. TM_Prompt).
         """
 
-    def __init__(self, *args: object, namespace: Namespace, simulator: BaseSim, realizer: Realizer, auditory: BaseAuditorySimulator, **kwargs: object) -> None:
+    def __init__(self, *args: object, namespace: Namespace, simulator: BaseSim, realizer: Realizer, acoustics: BaseAcousticsSimulator, **kwargs: object) -> None:
         """
         Initialize human simulator.
 
@@ -121,7 +120,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             namespace: global namespace
             simulator: Simulator instance
             realizer: per-env Realizer (used to stamp sim_path on runtime-spawned obstacles)
-            auditory: auditory simulator, the source of pedestrian hearing
+            acoustics: acoustics simulator, the source of pedestrian hearing
         """
         super().__init__(*args, **kwargs)
         self._register_task_modes()
@@ -192,7 +191,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._cb_human_move,
         )
 
-        self._hearing: PedestrianHearing | None = auditory.pedestrian_hearing(self)
+        self._hearing: PedestrianHearing | None = acoustics.pedestrian_hearing(self)
 
         self._simulator.attach_human_simulator(self)
 

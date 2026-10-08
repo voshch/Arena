@@ -25,11 +25,19 @@ in [`arena_runtime/`](../arena_runtime/README.md).
   `BaseSim` and its four sub-interfaces; registered implementations.
 - [Human simulator](task_generator/simulators/human/README.md):
   `BaseHumanSimulator`, PROMPT registration, hunav default agent.
-- [Auditory simulator](../arena_auditory/README.md): `auditory:=` axis,
-  `BaseAuditorySimulator` declares the map-server requirement and the RViz
-  displays. The nodes live in the `arena_auditory` package (`arena feature
-  auditory install`), [launch dispatch](launch/auditory/README.md) in
-  `launch/auditory/`.
+- [Acoustics simulator](launch/acoustics/README.md): `acoustics:=` axis,
+  `BaseAcousticsSimulator` declares the map-server requirement, the RViz
+  displays, panels and tools, the recorded topics and pedestrian hearing, and
+  receives the sounds module's `SoundEmission`s. The `arena` backend
+  (`simulators/acoustics/arena/`) is the only code importing
+  [arena_auditory](../arena_auditory/README.md) (`arena feature auditory
+  install`).
+- [Robot hearing](launch/hearing/README.md): `robot.hearing:=` axis,
+  `BaseHearing` declares the per-robot RViz displays and recorded topics,
+  `nav2_overlay()` the Nav2 params overlay. The `arena` backend
+  (`simulators/hearing/arena/`) is the only code importing
+  [arena_hearing](../arena_hearing/README.md) (`arena feature hearing
+  install`).
 - [Utils](task_generator/utils/README.md): generic `Registry`, arena helpers,
   GPT shim, map generator.
 - [Constants](task_generator/constants/README.md): `Configuration(server)`

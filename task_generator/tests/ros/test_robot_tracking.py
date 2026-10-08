@@ -12,7 +12,6 @@ def _ros_gate():
     pytest.importorskip("rclpy")
     pytest.importorskip("tf2_ros")
     pytest.importorskip("arena_people_msgs.msg")
-    pytest.importorskip("arena_auditory")
 
 
 def _base_at(frame: str, x: float, y: float, stamp_ms: int):
@@ -43,7 +42,7 @@ def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop",
     from arena_rclpy_mixins.shared import Namespace
     from arena_runtime.sim.dummy_simulator import DummySimulator
     from task_generator.manager.realizer import Realizer
-    from task_generator.simulators.auditory.arena import ArenaAuditorySimulator
+    from task_generator.simulators.acoustics.noop import NoopAcousticsSimulator
     from task_generator.simulators.human.noop import NoopHumanSimulator
 
     if backend == "arena":
@@ -70,8 +69,8 @@ def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop",
             node.tf_buffer = tf2_ros.Buffer()
             realizer = Realizer(Realizer._Configuration(x=offset[0], y=offset[1], prefix=""))
             simulator = DummySimulator(node=node, namespace=ns, realizer=realizer)
-            auditory = ArenaAuditorySimulator(node=node, namespace=ns)
-            human = Human(node=node, namespace=ns, simulator=simulator, realizer=realizer, auditory=auditory)
+            acoustics = NoopAcousticsSimulator(node=node, namespace=ns)
+            human = Human(node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
             await scenario(human, node.tf_buffer)
         finally:
             node.destroy_node()

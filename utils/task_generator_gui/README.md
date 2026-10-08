@@ -7,7 +7,9 @@ RViz2 plugins for the Arena-Rosnav task generator. Ships:
 
 The auditory panel and the spawn microphone and spawn sound tools live in the
 `arena_auditory_viz` package of the auditory feature, see the
-[arena_auditory README](../../arena_auditory/README.md#rviz-plugins).
+[arena_auditory README](../../arena_auditory/README.md#rviz-plugins). The
+`acoustics:=arena` backend declares them in the viz manifest's `plugins`, and
+`rviz_config.py` adds every declared panel and tool to the generated config.
 
 ## Service contract
 

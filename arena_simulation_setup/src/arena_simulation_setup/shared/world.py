@@ -11,6 +11,9 @@ from arena_simulation_setup.utils.geometry import Position
 from .entities import Named
 from .semantics import SemanticCfg, parse_semantics
 
+CABIN_DOOR_INSET = 0.05
+CABIN_DOOR_WIDTH = 0.05
+
 
 def _activation_distance_converter(x: float | typing.Sequence[float]) -> tuple[float, float]:
     if isinstance(x, (int, float)):
@@ -34,6 +37,10 @@ class Elevator(Named):
     accept_outside_calls: bool = True
     recall_on: str | None = None
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+    def boarding_radius(self, agent_radius: float) -> float:
+        """Largest distance from the cabin center at which a disc of agent_radius stays inside the cabin and clear of its door."""
+        return min(self.size[0], self.size[1]) / 2.0 - CABIN_DOOR_INSET - CABIN_DOOR_WIDTH / 2.0 - agent_radius
 
     def cabin_corners(self) -> list[Position]:
         cx, cy = self.position.x, self.position.y

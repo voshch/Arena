@@ -122,18 +122,18 @@ class WorldManager(NodeInterface):
                 return level_id
         return ""
 
-    def _elevator_position(self, level_id: str, elevator_name: str) -> Position | None:
+    def _elevator_boarding(self, level_id: str, elevator_name: str, agent_radius: float) -> tuple[Position, float] | None:
         level = self._world.get_level(level_id)
         if level is None:
             return None
         ox, oy = self._map.level_origins.get(level_id, (0.0, 0.0))
         for elevator in level.all_elevators:
             if elevator.name == elevator_name:
-                return Position(x=elevator.position.x + ox, y=elevator.position.y + oy, z=elevator.position.z)
+                return Position(x=elevator.position.x + ox, y=elevator.position.y + oy, z=elevator.position.z), elevator.boarding_radius(agent_radius)
         return None
 
-    def elevator_route(self, from_level: str, to_level: str) -> list[Position]:
-        """Boarding-elevator positions (map frame) to ride from from_level to to_level, BFS over the elevator graph.
+    def elevator_route(self, from_level: str, to_level: str, agent_radius: float) -> list[tuple[Position, float]]:
+        """Boarding-elevator positions (map frame) with their boarding radius for a disc of agent_radius, to ride from from_level to to_level, BFS over the elevator graph.
 
         Empty when the levels are the same or no elevator path connects them.
         """
@@ -164,12 +164,12 @@ class WorldManager(NodeInterface):
             hops.append((source_level, boarding))
             cursor = source_level
         hops.reverse()
-        positions: list[Position] = []
+        stops: list[tuple[Position, float]] = []
         for source_level, boarding in hops:
-            position = self._elevator_position(source_level, boarding)
-            if position is not None:
-                positions.append(position)
-        return positions
+            stop = self._elevator_boarding(source_level, boarding, agent_radius)
+            if stop is not None:
+                stops.append(stop)
+        return stops
 
     @property
     def map(self) -> WorldMap:

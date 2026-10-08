@@ -1,4 +1,4 @@
-"""auditory feature: sound simulation and robot hearing."""
+"""auditory feature: sound simulation."""
 
 import os
 import sys
@@ -9,7 +9,7 @@ from arena_cli.features import lifecycle_verbs
 
 NAME = "auditory"
 
-DESCRIPTION = "arena_auditory for sound simulation and robot hearing.\n\nThis enables:\n\n\b\n- auditory:=arena (sound propagation, microphones, robot and human sound emission, playback)\n- robot.hearing:=bus|srp|seld (belief grid, SELDnet front-end, Nav2 speed-filter mask)\n- auditory.static_sounds and the sounds task module"
+DESCRIPTION = "arena_auditory for sound simulation.\n\nThis enables:\n\n\b\n- acoustics:=arena (sound propagation, microphones, robot and human sound emission, playback)\n- the simulator bus detections behind robot.hearing:=bus (robot hearing itself is the hearing feature)\n- audible auditory.static_sounds and runtime-spawned sounds"
 
 
 def _update() -> int:

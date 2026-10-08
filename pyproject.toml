@@ -115,6 +115,7 @@ known-first-party = [
     "arena_auditory",
     "arena_cli",
     "arena_evaluation",
+    "arena_hearing",
     "arena_isaac",
     "arena_training",
     "isaac_utils",

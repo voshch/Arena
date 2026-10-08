@@ -386,7 +386,7 @@ asset further. Five asset kinds can be shipped this way:
 | `Human` | 3D model files (SDF) | `model:` on a HumanSim pedestrian entry |
 | `Material` | `<name>.mdl` plus its texture files | `material:` on a zone or wall entry |
 | `Wall` | `<name>.yaml`, a `WallDescription` (see [configs/walls/README.md](configs/walls/README.md)) | `kind:` on a `walls:` entry |
-| `Sound` | `<name>.yaml` (a sound manifest) plus its wav files | `asset_id:` on a `sounds:` entry |
+| `Sound` | `<name>.yaml` (a sound manifest, see [configs/sounds/README.md](configs/sounds/README.md)) plus its wav files | `asset_id:` on a `sounds:` entry |
 
 To ship a custom wall style:
 

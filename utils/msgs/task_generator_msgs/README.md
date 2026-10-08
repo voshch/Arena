@@ -4,7 +4,7 @@ rosidl interfaces consumed and published by `task_generator` (the per-env episod
 
 Runtime types (env registry, holds, world confirm, cleanup, purge) live in [`arena_runtime_msgs`](../../../arena_runtime/arena_runtime_msgs/README.md) instead.
 
-Auditory types (sound sources and receptions, room impulses, audio frames, detections, runtime sound and microphone services) live in `arena_auditory_msgs` (the `arena_auditory` submodule).
+Audio frames and sound detections live in `arena_robots_msgs`. Types of the arena acoustics backend (sound sources, events and receptions, room impulses, runtime microphone services) live in `arena_auditory_msgs` (the `arena_auditory` submodule).
 
 ## Services (`srv/`)
 
@@ -16,6 +16,7 @@ Auditory types (sound sources and receptions, room impulses, audio frames, detec
 | `GetTaskModes.srv` | Return currently active task-mode strings. |
 | `QueryWorlds.srv` / `QueryScenarios.srv` / `QueryEnvironments.srv` / `QueryParametrizeds.srv` / `QueryRobots.srv` / `QueryStaticObstacles.srv` / `QueryDynamicObstacles.srv` / `QueryTaskModes.srv` | Listing of available shortnames for the corresponding asset class. |
 | `SpawnStatic.srv` / `SpawnDynamic.srv` / `SpawnRobot.srv` | Inject a static obstacle / dynamic pedestrian / additional robot into the running episode via `TM_Obstacles.extend` / `TM_Robots.extend`. `SpawnRobot` accepts an optional `args` (`diagnostic_msgs/KeyValue[]`) forwarded to `Robot.parse` (e.g. `mobile`, `mobile.local_planner`, `mobile.agent`), and an `immediate` flag that provisions the robot into the live world now (idle) instead of committing on the next reset. |
+| `SpawnSound.srv` / `RemoveSound.srv` | Spawn an environment sound of a kind (default asset, or `asset_id` and playback when `customize_playback`) at a pose via `runtime/spawn_sound`, optionally attached to the pose's frame, and remove it by the returned `entity` via `runtime/remove_sound`. |
 | `MoveEntity.srv` | Move a runtime-spawned static obstacle or sound by the handle its spawn returned, or any robot by name, to a map-frame pose via `runtime/move`. The same path the rviz drag handles use. |
 | `DespawnRobot.srv` | Single fleet-removal surface: stages a live robot for teardown on the next reset, un-stages a queued despawn, or cancels a queued spawn (toggles `state/robots/pending`). |
 | `SetSemantic.srv` | Write one semantic field value on an entity via `semantics/set`; one of three writer paths into semantics state (timeline, modules, external). |
@@ -30,6 +31,8 @@ Auditory types (sound sources and receptions, room impulses, audio frames, detec
 | `RobotState.msg` | A resolved, live fleet member: `RobotDescriptor` + resolved `RobotCap[]` + resolved morphology `params`. |
 | `RobotFleet.msg` | All currently-active `RobotState`s in the env. Published latched on `state/robots`. |
 | `RobotQueue.msg` | Robots staged for spawn/despawn (the pending fleet delta, as lean `RobotDescriptor`s), applied on the next reset. Published latched on `state/robots/pending`. |
+| `AdapterVizManifest.msg` | Per-env viz manifest: env-level `AdapterDisplay[]`, per-robot `AdapterEntry[]` and the rviz panels and tools backends contribute as `AdapterPlugin[]` (`role`, pluginlib `class_name`, panel `name`, `properties_json`). Published latched on `state/viz_manifest`. |
+| `RecordedTopics.msg` | Topics the recorder subscribes to beyond its own, as `RecordedTopic[]` rows (`key`, `topic` template with `{ns}` and `{tg}`, `msg_type`, `robot_scoped`, `throttled`, `qos_transient_local`, `reliable`, `depth` (0 = the recorder default), `recorded`). Published latched (`TRANSIENT_LOCAL`, depth 1) on `state/recorded_topics`. |
 | `SemanticSnapshot.msg` | Full latched semantic state of the env: stamp, world, `SemanticEntityState[]`. Published on `state/semantics` (`TRANSIENT_LOCAL`), republished on any quantum-passing change (attach/detach/reset/write). |
 | `SemanticEntityState.msg` | One semantic entity: `kind`, index-aligned discrete/continuous/predicate name-value arrays, `members` (committed occupant ids). |
 

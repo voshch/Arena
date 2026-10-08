@@ -10,6 +10,8 @@ from collections.abc import Sequence
 
 import attrs
 import rclpy.impl.rcutils_logger
+from arena_simulation_setup.shared.world import CABIN_DOOR_INSET as DOOR_INSET
+from arena_simulation_setup.shared.world import CABIN_DOOR_WIDTH
 from task_generator.shared import Door, Elevator, Orientation, Pose, Position
 
 from ._interface import _BOX_FLOOR_CLEARANCE
@@ -18,7 +20,6 @@ if typing.TYPE_CHECKING:
     from ._interface import MechanismITF
 
 MECHANISM_TICK_RATE = 30.0  # Hz, sim time
-DOOR_INSET = 0.05
 WALL_THICKNESS = 0.05
 
 Disc = tuple[str, tuple[float, float], float]
@@ -225,7 +226,7 @@ def _elevator_synthesized_door(elevator: Elevator) -> Door:
         start=start,
         end=end,
         kind='sliding',
-        width=0.05,
+        width=CABIN_DOOR_WIDTH,
         height=elevator.size[2],
         activation_distance=(elevator.activation_distance, elevator.activation_distance),
         transition_time=elevator.transition_time,
