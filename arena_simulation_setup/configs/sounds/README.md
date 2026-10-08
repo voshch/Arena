@@ -94,3 +94,9 @@ the default sounds: the active level of the first channel once the peak is
 scaled to -6 dBFS (-9 dBFS for environment kinds), to the nearest 0.5 dB. The
 tags carry `origin::fsd50k`, the uploader and Freesound URL sit in the
 `ATTRIBUTION.yaml` beside the manifest.
+
+`arena asset import sound cmu_arctic <voice>_<utterance>` (such as `bdl_a0001`)
+adds CMU ARCTIC read speech the same way, as `Common/Sound/cmu_arctic_<item>` of
+kind `speech` with the prompt text as `desc`. The seven voices are awb, bdl,
+clb, jmk, ksp, rms and slt, about 1,130 utterances each, and the tags carry the
+voice, gender and accent.
