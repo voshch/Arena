@@ -29,4 +29,4 @@ class TM_Random(TM_Robots):
                 ReachPhase(random=True, planning_time=2.0),
                 ReachPhase(named_target="stow", planning_time=2.0),
             ]
-            await robot.submit_task(TaskRequest(phases=phases))
+            await robot.submit_task(TaskRequest(phases=phases), start)

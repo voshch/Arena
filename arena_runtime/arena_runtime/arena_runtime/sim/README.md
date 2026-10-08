@@ -148,7 +148,7 @@ render block, 20 ms for `auditory.array.spec:=four_mic`) and renders off
 `/clock` for the same reason as the humansim engine below.
 `robot.hearing:=srp|seld` also registers `hearing/<robot>` per fleet robot
 (hard, one front-end hop, `LockstepHeartbeat` stamped with the audio
-consumed), and the hearing stack registers `belief/<robot>` and
+consumed), and the arena_hearing stack registers `belief/<robot>` and
 `policy/<robot>` per fleet robot (hard, their publish periods) so the sim
 never runs ahead of a belief grid or a speed mask.
 The arena_robots task_server registers per-robot beats only while a goal is

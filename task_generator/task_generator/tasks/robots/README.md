@@ -33,11 +33,15 @@ levels), with start and goal sampled anywhere. Which levels exist is set at load
 (`world:=name` loads all, `world:=name[0,3]` loads only 0 and 3), not per reset.
 
 Crossing floors is handled below the task mode, in `RobotManager.submit_task`: when a
-`GoToPhase` targets a different level than the robot's current one, it injects
+`GoToPhase` targets a different level than the one the task starts on, it injects
 elevator-boarding subgoals (`WorldManager.elevator_route` BFS over the elevator graph)
-ahead of it. The robot drives into each cabin, the mechanism shim teleports it across,
-and the next leg becomes reachable. Routing starts from the robot's current pose, so a
-request submitted mid-episode is routed from where the robot is.
+ahead of it. The starting level comes from the `start` pose a task mode passes along
+with the request (a reset submits before the robot is moved there), or from the
+robot's live pose when none is given, so a request submitted mid-episode is routed
+from where the robot is. A boarding subgoal counts as reached only within the cabin's
+`boarding_radius`, where the whole robot is inside and clear of the cabin door, capped
+by the configured goal tolerance. The robot drives into each cabin, the mechanism shim
+teleports it across, and the next leg becomes reachable.
 
 ## Task modes (`TM_Robots` subclasses)
 

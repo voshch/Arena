@@ -213,13 +213,13 @@ def wait_until(
 
 def preload_world(args: argparse.Namespace) -> None:
     """Warm the asset cache once, before N envs race the same cold fetch."""
-    world = next((a.split(':=', 1)[1] for a in (*args.runtime_args, *args.env_args) if a.startswith('world:=')), None)
-    if world is None:
+    world = next((a.split(':=', 1)[1].partition('[')[0] for a in (*args.runtime_args, *args.env_args) if a.startswith('world:=')), None)
+    sounds = 'acoustics:=arena' in args.env_args
+    if not world and not sounds:
         return
-    world = world.partition('[')[0]
-    result = subprocess.run(['ros2', 'run', 'arena_simulation_setup', 'preload_world', world], check=False)
+    result = subprocess.run(['ros2', 'run', 'arena_simulation_setup', 'preload_world', *([world] if world else []), *(['--sounds'] if sounds else [])], check=False)
     if result.returncode != 0:
-        sys.stderr.write(f'arena launch: preload of world {world!r} incomplete, continuing\n')
+        sys.stderr.write(f'arena launch: preload of {"world " + repr(world) if world else "the default sounds"} incomplete, continuing\n')
 
 
 def run(args: argparse.Namespace, sup: Supervisor) -> int:

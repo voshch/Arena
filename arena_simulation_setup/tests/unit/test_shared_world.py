@@ -37,6 +37,12 @@ def test_elevator_cabin_corners_centered():
     assert ys == pytest.approx([-4.0, -2.0])  # cy +- hh
 
 
+def test_elevator_boarding_radius_fits_the_narrow_side_behind_the_door():
+    e = Elevator(name="elev", position=Position(5.0, -3.0, 0.0), size=[4.0, 2.0, 2.5])
+    assert e.boarding_radius(0.3) == pytest.approx(1.0 - 0.05 - 0.025 - 0.3)
+    assert e.boarding_radius(0.5) < e.boarding_radius(0.3)
+
+
 # ---------------------------------------------------------------------------
 # Door
 # ---------------------------------------------------------------------------

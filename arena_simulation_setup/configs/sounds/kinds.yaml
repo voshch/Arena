@@ -1,0 +1,8 @@
+version: 2
+kinds:
+  footstep: {height_m: 0.05, agent: pedestrian, stem: pedestrian, detect: true, marker: true, color: [1.0, 0.8, 0.25], default_asset: footstep}
+  speech: {height_m: 1.60, agent: pedestrian, stem: pedestrian, detect: true, marker: true, color: [0.2, 0.75, 1.0], default_asset: greeting}
+  music: {height_m: 0.0, agent: environment, stem: ambient, default_asset: radio_loop}
+  alarm: {height_m: 0.0, agent: environment, stem: ambient, color: [1.0, 0.15, 0.1], default_asset: alarm_loop}
+  motor: {height_m: 0.25, agent: robot, stem: motor, marker: true, color: [1.0, 0.35, 0.08], default_asset: motor}
+  onset: {height_m: 0.0, stem: ambient, detect: true}

@@ -77,11 +77,13 @@ class Kv:
 
 @dataclasses.dataclass
 class LaunchArgs:
-    """Every argument of a launch file (via the manifest). `values` overrides per-arg value sources."""
+    """Every argument of a launch file (via the manifest), offered as `prefix` + name, `exclude` left out. `values` overrides per-arg value sources."""
 
     package: str
     file: str
     values: dict[str, Source] = dataclasses.field(default_factory=dict)
+    prefix: str = ""
+    exclude: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass
@@ -221,7 +223,8 @@ def _expand_kv(spec: Kv | LaunchArgs, cur: str, ctx: Context) -> Result:
         keys: dict[str, str] = {k: "" for k in spec.keys}
         sources: Mapping[str, Source | None] = spec.keys
     else:
-        args = ctx.launch_args(spec.package, spec.file) or {k: {} for k in spec.values}
+        declared = ctx.launch_args(spec.package, spec.file) or {k: {} for k in spec.values}
+        args = {spec.prefix + k: a for k, a in declared.items() if k not in spec.exclude}
         keys = {k: a.get("desc", "") for k, a in args.items()}
         sources = {k: _launch_source(spec, k, a, ctx) for k, a in args.items()}
     if ":=" not in cur:

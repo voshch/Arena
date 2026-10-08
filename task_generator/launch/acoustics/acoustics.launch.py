@@ -19,18 +19,18 @@ def generate_launch_description() -> launch.LaunchDescription:
         name='environment_namespace',
     )
 
-    launch_auditory_simulator = SelectAction(launch.substitutions.LaunchConfiguration('simulator'))
+    launch_acoustics_simulator = SelectAction(launch.substitutions.LaunchConfiguration('simulator'))
 
-    launch_auditory_simulator.add(Constants.AuditorySimulator.NONE.value, launch.actions.GroupAction([]))
+    launch_acoustics_simulator.add(Constants.AcousticsSimulator.NONE.value, launch.actions.GroupAction([]))
 
-    launch_auditory_simulator.add(
-        Constants.AuditorySimulator.ARENA.value,
+    launch_acoustics_simulator.add(
+        Constants.AcousticsSimulator.ARENA.value,
         launch.actions.IncludeLaunchDescription(
             PathJoinSubstitution(
                 [
                     FindPackageShare('task_generator'),
                     'launch',
-                    'auditory',
+                    'acoustics',
                     'arena',
                     'arena.launch.py',
                 ]
@@ -44,13 +44,13 @@ def generate_launch_description() -> launch.LaunchDescription:
 
     simulator = LaunchArgument(
         name='simulator',
-        choices=launch_auditory_simulator.keys,
+        choices=launch_acoustics_simulator.keys,
     )
 
     ld = launch.LaunchDescription(
         [
             *ld,
-            launch_auditory_simulator,
+            launch_acoustics_simulator,
         ]
     )
     return ld

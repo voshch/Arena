@@ -47,7 +47,7 @@ from rclpy.impl.implementation_singleton import rclpy_implementation
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.parameter import Parameter
 from std_msgs.msg import Bool, Int16, String
-from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest
+from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest, RecordedTopics
 
 from task_generator.constants import Constants
 from task_generator.constants.runtime import Configuration, migrate_deprecated_params
@@ -61,7 +61,8 @@ from task_generator.manager.world_manager.world_manager_ros import (
     WorldManagerROS as WorldManager,
 )
 from task_generator.shared import Orientation, Pose, Position
-from task_generator.simulators.auditory import AuditorySimulatorRegistry, BaseAuditorySimulator
+from task_generator.simulators.acoustics import AcousticsSimulatorRegistry, BaseAcousticsSimulator
+from task_generator.simulators.hearing import BaseHearing, HearingRegistry
 from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorRegistry
 from task_generator.tasks import identifier_to_available, identifier_to_available_async
 from task_generator.tasks.obstacles import ObstacleKind
@@ -154,7 +155,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     _world_manager: WorldManager
     _human_simulator: BaseHumanSimulator
-    _auditory_simulator: BaseAuditorySimulator
+    _acoustics_simulator: BaseAcousticsSimulator
+    _hearing: BaseHearing
     _environment_manager: EnvironmentManager
     _robots_manager: RobotsManager | None = None
     _simulator: BaseSim
@@ -295,6 +297,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             _LATCHED,
         )
 
+        self._pub_state_recorded_topics = self.create_publisher(
+            RecordedTopics,
+            self.service_namespace("state", "recorded_topics"),
+            _LATCHED,
+        )
+
         self._pub_state_robots_pending = self.create_publisher(
             task_generator_msgs.msg.RobotQueue,
             self.service_namespace("state", "robots", "pending"),
@@ -412,6 +420,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     async def setup(self) -> None:
         try:
+            await self._set_up_acoustics()
             await self._set_up_services()
             await self._arena_hold_client.ensure()
             await self._arena_unpause_window_client.ensure()
@@ -433,7 +442,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 )
 
                 await self._world_manager.sync()
-                if flag_enabled(self, "debug", "map_server") or self._auditory_simulator.requires_map_server:
+                if flag_enabled(self, "debug", "map_server") or self._acoustics_simulator.requires_map_server:
                     await self._world_manager.require_map_server()
                 await self._robots_manager.launch_pending()
             finally:
@@ -515,6 +524,23 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             rel.caller_id = self.get_fully_qualified_name()
             await self._arena_unpause_window_client.call_timeout(rel)
 
+    async def _set_up_acoustics(self):
+        self._logger.info("Setting up acoustics simulator")
+        self._acoustics_simulator = await AcousticsSimulatorRegistry.get(
+            self.conf.Arena.ACOUSTICS.value,
+            node=self,
+            namespace=self._namespace,
+        )
+
+        self._logger.info("Setting up robot hearing")
+        self._hearing = await HearingRegistry.get(
+            self.conf.Robot.HEARING.value,
+            node=self,
+            namespace=self._namespace,
+        )
+        self._pub_state_recorded_topics.publish(RecordedTopics(topics=[*self._acoustics_simulator.recorded_topics(), *self._hearing.recorded_topics()]))
+        self._pub_state_viz_manifest.publish(AdapterVizManifest(plugins=list(self._acoustics_simulator.plugins())))
+
     async def _set_up_managers(self):
         self._logger.info("Setting up managers")
 
@@ -532,12 +558,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             env_id=self._env_id,
         )
         self._simulator.set_semantics_callback(self._on_semantics_changed)
-        self._logger.info("Setting up auditory simulator")
-        self._auditory_simulator = await AuditorySimulatorRegistry.get(
-            self.conf.Arena.AUDITORY.value,
-            node=self,
-            namespace=self._namespace,
-        )
 
         self._logger.info("Setting up human simulator")
         self._human_simulator = await HumanSimulatorRegistry.get(
@@ -546,7 +566,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             namespace=self._namespace,
             simulator=self._simulator,
             realizer=realizer,
-            auditory=self._auditory_simulator,
+            acoustics=self._acoustics_simulator,
         )
 
         self._logger.info("Setting up environment manager")
@@ -1149,7 +1169,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             )
         )
 
-        env_displays.extend(self._auditory_simulator.displays())
+        env_displays.extend(self._acoustics_simulator.displays())
         entries: list[AdapterEntry] = []
         self.robot_colors.retain(self._robots_manager.managers)
         for mgr in self._robots_manager.managers.values():
@@ -1180,14 +1200,18 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         displays=sensor_displays,
                     )
                 )
-            if auditory_displays := self._auditory_simulator.robot_displays(robot_value, hearing=self.conf.Robot.HEARING.value != 'none'):
-                entries.append(
-                    AdapterEntry(
-                        robot_ns=ns_value,
-                        adapter_kind="_auditory",
-                        displays=list(auditory_displays),
+            for adapter_kind, backend_displays in (
+                ("_acoustics", self._acoustics_simulator.robot_displays(robot_value)),
+                ("_hearing", self._hearing.robot_displays(robot_value)),
+            ):
+                if backend_displays:
+                    entries.append(
+                        AdapterEntry(
+                            robot_ns=ns_value,
+                            adapter_kind=adapter_kind,
+                            displays=list(backend_displays),
+                        )
                     )
-                )
 
             for adapter in mgr._adapter_instances:
 
@@ -1217,7 +1241,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         displays=displays,
                     )
                 )
-        self._pub_state_viz_manifest.publish(AdapterVizManifest(env_displays=env_displays, entries=entries))
+        self._pub_state_viz_manifest.publish(AdapterVizManifest(env_displays=env_displays, entries=entries, plugins=list(self._acoustics_simulator.plugins())))
 
     def set_episode_info(self, info: str) -> None:
         self._episodes.current.outcome_info = info

@@ -1,0 +1,4 @@
+string entity               # realized name of a runtime sound, not its group id
+---
+bool success
+string error_msg

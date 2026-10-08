@@ -70,7 +70,7 @@ class TM_Scenario(TM_Robots):
             # timeout (or until another non-idle robot finishes) so that
             # recordings can capture pedestrians passing a parked robot.
             if phases:
-                await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)))
+                await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)), start_pose)
             else:
                 self._idle_robots.add(robot.name)
             self._ctx.world_manager.forbid(forbidden)

@@ -119,7 +119,7 @@ class TM_Demo(TM_Robots):
                 phases.append(GoToPhase(pose=v))
                 phases.append(PlayGesturePhase(gesture=_pick_gesture(gesture_name)))
             phases.append(GoToPhase(pose=center_pose))
-            await robot.submit_task(TaskRequest(phases=phases))
+            await robot.submit_task(TaskRequest(phases=phases), center_pose)
             self._ctx.world_manager.forbid(
                 [
                     PositionRadius(center.x, center.y, biggest_robot),

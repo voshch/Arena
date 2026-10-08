@@ -33,7 +33,7 @@ human-sim `_*_impl` methods:
 | `remove_robot(robots)` | remove from physics sim, stop tracking, then call `_remove_robot_impl` |
 | `move_robot(robots)` | move in physics sim, set the tracked pose at rest, then call `_move_robot_impl` |
 | `tracked_robots()` | every spawned robot as a `TrackedRobot`: map-frame pose from the `map` to base-frame TF and the velocity between its last two TF stamps |
-| `notify_stimulus(agent_id, stimulus, intensity)` | stimulus seam, no-op by default, fed edge-triggered from `continuous_heard_sounds` for `agent:<id>` listeners |
+| `notify_stimulus(agent_id, stimulus, intensity)` | stimulus seam, no-op by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) |
 
 ### `HumanSimulator` Protocol surface
 

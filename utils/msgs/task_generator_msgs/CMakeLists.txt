@@ -13,8 +13,11 @@ ament_auto_find_build_dependencies()
 rosidl_generate_interfaces(${PROJECT_NAME}
   msg/AdapterDisplay.msg
   msg/AdapterEntry.msg
+  msg/AdapterPlugin.msg
   msg/AdapterVizManifest.msg
   msg/EpisodeRecord.msg
+  msg/RecordedTopic.msg
+  msg/RecordedTopics.msg
   msg/RobotCap.msg
   msg/RobotDescriptor.msg
   msg/RobotFleet.msg
@@ -35,10 +38,12 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/QueryTaskModes.srv
   srv/QueryWorlds.srv
   srv/QueueEpisode.srv
+  srv/RemoveSound.srv
   srv/ResetEpisode.srv
   srv/SetSemantic.srv
   srv/SpawnDynamic.srv
   srv/SpawnRobot.srv
+  srv/SpawnSound.srv
   srv/SpawnStatic.srv
   action/RunEpisode.action
   DEPENDENCIES geometry_msgs diagnostic_msgs builtin_interfaces rcl_interfaces

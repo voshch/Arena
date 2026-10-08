@@ -8,6 +8,9 @@ if typing.TYPE_CHECKING:
 
 _NS = _REGISTRY_NAMESPACE("sounds")
 
+SPAWN_SOUND = "runtime/spawn_sound"
+REMOVE_SOUND = "runtime/remove_sound"
+
 
 @MODULE_MODES.register(
     Constants.TaskMode.TM_Module.SOUNDS,

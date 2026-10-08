@@ -58,16 +58,20 @@ semantics that clears all per-level forbidden zones.
 
 ### `Mod_Sounds`
 
-[`sounds/impl.py:154`](sounds/impl.py#L154)
+[`sounds/impl.py:152`](sounds/impl.py#L152)
 
 A pure renderer, not an owner of state. After each reset it resolves every
 `sound` entity from the loaded world, the active scenario's episode-scoped
 `sounds:` and the world-independent `static_sounds` launch configuration
-through the task generator realizer, and publishes
-`ContinuousAudioSourceState` for propagation from the live
-`sounding`/`volume_db` semantics the engine already tracks. It serves
-`runtime/spawn_sound` and `runtime/remove_sound` for
-RViz-driven runtime sources. Toggling a declared sound is a `SetSemantic`
+through the task generator realizer against the sound catalog
+(`arena_simulation_setup.tree.assets.sound_catalog`), and every 0.1 s hands
+one `SoundEmission` per resolved entity, built from the live
+`sounding`/`volume_db` semantics the engine already tracks, to the acoustics
+simulator's `emit_sounds`. The wire format and retired-source repeats belong
+to the acoustics backend, a removed sound is simply no longer listed. With
+`acoustics:=none` the noop backend drops them. It serves
+`runtime/spawn_sound` and `runtime/remove_sound` (`task_generator_msgs/srv`)
+for RViz-driven runtime sources. Toggling a declared sound is a `SetSemantic`
 write, not a module service. A runtime sound not attached to a TF frame gets a
 drag handle with a Remove menu. Dragging moves the source in place while the
 handle moves, so it keeps its entity name and keeps playing.

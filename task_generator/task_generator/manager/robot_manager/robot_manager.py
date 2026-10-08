@@ -491,17 +491,19 @@ class RobotManager(NodeInterface):
             position = world.point_resolver(self.node.conf.General.RNG.stream("robots", "target", self.name)).resolve(phase.target)
         return attrs.evolve(phase, pose=Pose(position=position, orientation=Orientation.identity()))
 
-    async def submit_task(self, request: TaskRequest) -> None:
-        """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch."""
+    async def submit_task(self, request: TaskRequest, start: Pose | None = None) -> None:
+        """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted."""
         from task_generator.tasks.robots.request import GoToPhase, kind_of
 
         if not request.phases:
             raise ValueError(f"TaskRequest has no phases; nothing to dispatch (robot={self.name!r})")
 
         world_manager = self.node._world_manager
-        pose = self.pose
-        anchor = self._environment_manager.ezilear(pose) if pose is not None else self._start_pos
-        current_level = world_manager.level_of_point(anchor.position.x, anchor.position.y)
+        if start is None:
+            observed = self.pose
+            start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
+        current_level = world_manager.level_of_point(start.position.x, start.position.y)
+        boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
         routed_phases: list[TaskPhase] = []
         for phase in request.phases:
             if isinstance(phase, GoToPhase):
@@ -509,8 +511,8 @@ class RobotManager(NodeInterface):
                 if phase.pose is not None:
                     goal_level = world_manager.level_of_point(phase.pose.position.x, phase.pose.position.y)
                     if current_level and goal_level and goal_level != current_level:
-                        for elevator_position in world_manager.elevator_route(current_level, goal_level):
-                            routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_angle=math.pi))
+                        for elevator_position, boarding_radius in world_manager.elevator_route(current_level, goal_level, self.radius):
+                            routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_radius=min(boarding_tolerance, boarding_radius), tolerance_angle=math.pi))
                         current_level = goal_level
             routed_phases.append(phase)
 

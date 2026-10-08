@@ -23,6 +23,7 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     _door_open_pose,
     _door_slot,
     _DoorRuntime,
+    _elevator_synthesized_door,
     _DoorState,
     _elevator_wall_geometries,
     _ElevatorRuntime,
@@ -951,6 +952,22 @@ def test_door_slot_plus_x_inset():
     assert start.y == pytest.approx(5.0 - 1.0 + DOOR_INSET)
     assert end.y == pytest.approx(5.0 + 1.0 - DOOR_INSET)
     assert start.z == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("door_side", ["+x", "-x", "+y", "-y"])
+def test_robot_within_the_boarding_radius_never_blocks_the_cabin_door(door_side):
+    e = _make_elevator(position=(10.0, 5.0, 0.0), size=(2.0, 3.0, 2.5), door_side=door_side)
+    runtime = _door_runtime(_elevator_synthesized_door(e))
+    radius = 0.3
+    reach = e.boarding_radius(radius)
+    outward = {"+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+y": (0.0, 1.0), "-y": (0.0, -1.0)}[door_side]
+
+    def at(distance: float) -> tuple[float, float]:
+        return (10.0 + outward[0] * distance, 5.0 + outward[1] * distance)
+
+    assert _inside_cabin(e, at(reach))
+    assert not _swept_slab_blocked(runtime, 1.0, 0.0, [("robot", at(reach - 1e-6), radius)])
+    assert _swept_slab_blocked(runtime, 1.0, 0.0, [("robot", at(reach + 0.01), radius)]) is (door_side in ("+x", "-x"))
 
 
 def test_door_slot_minus_y_inset():

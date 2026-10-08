@@ -347,3 +347,73 @@ def test_run_episode_action_feedback():
     fb.state = RunEpisode.Feedback.STARTED
     assert fb.state == RunEpisode.Feedback.STARTED
     assert RunEpisode.Feedback.STARTED == 1
+
+
+def test_spawn_sound_srv():
+    from task_generator_msgs.srv import SpawnSound
+
+    req = SpawnSound.Request()
+    req.pose.header.frame_id = "map"
+    req.kind = "music"
+    req.customize_playback = True
+    req.asset_id = "custom_radio"
+    req.source_volume_db = 70.0
+    req.loop = True
+    req.initially_active = False
+    assert req.pose.header.frame_id == "map"
+    assert req.kind == "music"
+    assert req.asset_id == "custom_radio"
+    assert req.initially_active is False
+
+    res = SpawnSound.Response()
+    res.entity = "runtime_music_1"
+    res.success = True
+    assert res.entity == "runtime_music_1"
+    assert res.success is True
+
+
+def test_remove_sound_srv():
+    from task_generator_msgs.srv import RemoveSound
+
+    req = RemoveSound.Request()
+    req.entity = "runtime_music_1"
+    res = RemoveSound.Response()
+    res.success = True
+
+    assert req.entity == "runtime_music_1"
+    assert res.success is True
+
+
+def test_adapter_viz_manifest_plugins():
+    from task_generator_msgs.msg import AdapterPlugin, AdapterVizManifest
+
+    panel = AdapterPlugin(role="panel", class_name="arena_auditory_viz::AuditoryPanel", name="Auditory", properties_json='{"Node": "/env_0/task_generator_node"}')
+    tool = AdapterPlugin(role="tool", class_name="arena_auditory_viz::SoundTool", properties_json="{}")
+    manifest = AdapterVizManifest(plugins=[panel, tool])
+
+    assert [plugin.role for plugin in manifest.plugins] == ["panel", "tool"]
+    assert manifest.plugins[0].name == "Auditory"
+    assert manifest.plugins[1].name == ""
+    assert list(manifest.env_displays) == []
+    assert list(manifest.entries) == []
+
+
+def test_recorded_topics_msg():
+    from task_generator_msgs.msg import RecordedTopic, RecordedTopics
+
+    row = RecordedTopic(
+        key="sound_events",
+        topic="{tg}/sound_events",
+        msg_type="arena_auditory_msgs/msg/SoundEvent",
+        robot_scoped=False,
+        throttled=False,
+        qos_transient_local=False,
+        recorded=True,
+    )
+    robot_row = RecordedTopic(key="heard_sound", topic="{ns}/heard_sound", msg_type="arena_auditory_msgs/msg/HeardSoundEvent", robot_scoped=True)
+    msg = RecordedTopics(topics=[row, robot_row])
+
+    assert [topic.key for topic in msg.topics] == ["sound_events", "heard_sound"]
+    assert msg.topics[0].recorded is True
+    assert msg.topics[1].robot_scoped is True
+    assert msg.topics[1].qos_transient_local is False

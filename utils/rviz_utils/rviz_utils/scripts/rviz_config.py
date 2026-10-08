@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -29,6 +30,7 @@ from rviz_utils.renderers import REGISTRY
 
 class ConfigFileGenerator(ArenaMixinNode):
     _robots: list[RobotDescriptor]
+    _fleet_seen: bool
     _viz_manifest: AdapterVizManifest | None
     _node_params: list[rcl_interfaces.msg.Parameter]
     _display_set_pub: rclpy.publisher.Publisher
@@ -75,24 +77,36 @@ class ConfigFileGenerator(ArenaMixinNode):
         self._env_id = (await self._await_param(get_parameters_cli, 'env_id')).integer_value
         self._tf_namespace = (await self._await_param(get_parameters_cli, 'tf_namespace')).string_value
         self._robots = []
+        self._fleet_seen = False
         self._viz_manifest = None
         self._node_params = []
 
         _manifest_qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
         self._display_set_pub = self.create_publisher(DisplaySet, os.path.join(self._TASKGEN_NODE, 'state', 'display_set'), qos_profile=_manifest_qos)
 
+        manifest_topic = os.path.join(self._TASKGEN_NODE, 'state', 'viz_manifest')
         self.create_subscription(
             AdapterVizManifest,
-            os.path.join(self._TASKGEN_NODE, 'state', 'viz_manifest'),
+            manifest_topic,
             self._on_viz_manifest,
             qos_profile=_manifest_qos,
         )
+        fleet_topic = os.path.join(self._TASKGEN_NODE, 'state', 'robots')
         self.create_subscription(
             RobotFleet,
-            os.path.join(self._TASKGEN_NODE, 'state', 'robots'),
+            fleet_topic,
             self._on_robots,
             qos_profile=_manifest_qos,
         )
+
+        while self._viz_manifest is None:
+            self.get_logger().info(f'waiting for {manifest_topic}')
+            await asyncio.sleep(1.0)
+        self.get_logger().info(f'{manifest_topic} received')
+        if str(self.get_parameter('view').value) in ('robot', 'robot3p'):
+            while not self._fleet_seen:
+                self.get_logger().info(f'waiting for {fleet_topic}')
+                await asyncio.sleep(1.0)
 
         config_file = self.create_config()
 
@@ -146,6 +160,7 @@ class ConfigFileGenerator(ArenaMixinNode):
 
     def _on_robots(self, msg: RobotFleet) -> None:
         self._robots = [state.descriptor for state in msg.robots]
+        self._fleet_seen = True
         self._node_params = self._build_node_params()
         self._rebuild_display_set()
 
@@ -236,35 +251,28 @@ class ConfigFileGenerator(ArenaMixinNode):
     def create_config(self) -> str:
         skeleton = self._read_default_file()
         skeleton["Visualization Manager"]["Views"]["Current"] = self._build_view()
-        self._add_auditory_plugins(skeleton)
+        self._add_plugins(skeleton)
         file_path = self._tmp_config_file(skeleton, prefix=f"env{self._env_id}_")
         self.get_logger().info(f'created config file at {file_path}')
         return file_path
 
-    def _add_auditory_plugins(self, skeleton: dict[str, object]) -> None:
-        """Append the arena_auditory_viz panel and tools when that package is installed."""
-        try:
-            get_package_share_directory("arena_auditory_viz")
-        except PackageNotFoundError:
-            return
-        skeleton["Panels"].append({"Class": "arena_auditory_viz::AuditoryPanel", "Name": "AuditoryPanel", "Target": self._TASKGEN_NODE})
-        skeleton["Visualization Manager"]["Tools"].extend(
-            [
-                {"Class": "arena_auditory_viz::SpawnMicrophoneTool", "Target": self._TASKGEN_NODE, "Height": 1.5, "Attach TF Frame": ""},
-                {
-                    "Class": "arena_auditory_viz::SpawnSoundTool",
-                    "Target": self._TASKGEN_NODE,
-                    "Kind": "music",
-                    "Height": 1.2,
-                    "Custom Playback": False,
-                    "Asset ID": "",
-                    "Source Volume": 62.0,
-                    "Loop": True,
-                    "Start Immediately": True,
-                },
-            ]
-        )
-        skeleton["Window Geometry"]["AuditoryPanel"] = {"collapsed": False}
+    def _add_plugins(self, skeleton: dict[str, object]) -> None:
+        """Append the panels and tools the viz manifest declares."""
+        for plugin in self._viz_manifest.plugins:
+            package = plugin.class_name.partition("::")[0]
+            try:
+                get_package_share_directory(package)
+            except PackageNotFoundError:
+                self.get_logger().warning(f"rviz plugin package {package!r} not installed, skipping {plugin.class_name!r}")
+                continue
+            properties = json.loads(plugin.properties_json) if plugin.properties_json else {}
+            if plugin.role == "panel":
+                skeleton["Panels"].append({"Class": plugin.class_name, "Name": plugin.name, **properties})
+                skeleton["Window Geometry"][plugin.name] = {"collapsed": False}
+            elif plugin.role == "tool":
+                skeleton["Visualization Manager"]["Tools"].append({"Class": plugin.class_name, **properties})
+            else:
+                self.get_logger().warning(f"unknown rviz plugin role {plugin.role!r}, skipping {plugin.class_name!r}")
 
     def _target_robot_frame(self) -> str | None:
         if not self._robots:

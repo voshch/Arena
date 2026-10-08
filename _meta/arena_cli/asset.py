@@ -227,7 +227,6 @@ def pull(argv: list[str]) -> int:
 def _world_dangling(view: MultiLevelWorldView, source: Path) -> list[str]:
     """World references that would dangle once published: resolvable only from a local-only source."""
     from arena_simulation_setup.tree import DynamicPathResolver, DynamicPaths, NetResolver
-    from arena_simulation_setup.tree.assets.Sound import BUNDLED_SOUNDS
 
     # world-local assets only resolve once WORLD points at the world being published
     DynamicPaths.WORLD.path = source
@@ -243,7 +242,7 @@ def _world_dangling(view: MultiLevelWorldView, source: Path) -> list[str]:
             continue
         if isinstance(hit.resolver, NetResolver):
             continue
-        if isinstance(hit.resolver, DynamicPathResolver) and (hit.path.is_relative_to(source) or hit.path.is_relative_to(BUNDLED_SOUNDS.path)):
+        if isinstance(hit.resolver, DynamicPathResolver) and hit.path.is_relative_to(source):
             continue
         dangling.append(f"{identifier.shortname} (only at {hit.path})")
     return dangling
