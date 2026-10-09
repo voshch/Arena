@@ -8,13 +8,13 @@ extends: adult
 sequences:
   default:
     attention:
-      halt: {at: [grid_1, grid_2, grid_3], advance: unreachable, hold: keep}
-      gaze:  {at: [grid_1, grid_2, grid_3], advance: unreachable, hold: keep}
+      halt: { at: [grid_1, grid_2, grid_3], advance: unreachable, hold: keep }
+      gaze: { at: [grid_1, grid_2, grid_3], advance: unreachable, hold: keep }
     steps:
-      leg_1: {kind: go_to, target_pose: {x: 25.0, y: 3.0}}
-      leg_2: {kind: go_to, target_pose: {x: 25.0, y: 15.0}}
-      leg_3: {kind: go_to, target_pose: {x: 5.0, y: 15.0}}
-      leg_4: {kind: go_to, target_pose: {x: 5.0, y: 3.0}}
+      leg_1: { kind: go_to, target_pose: { x: 25.0, y: 3.0 } }
+      leg_2: { kind: go_to, target_pose: { x: 25.0, y: 15.0 } }
+      leg_3: { kind: go_to, target_pose: { x: 5.0, y: 15.0 } }
+      leg_4: { kind: go_to, target_pose: { x: 5.0, y: 3.0 } }
     then: default
 
 initial_sequence: default

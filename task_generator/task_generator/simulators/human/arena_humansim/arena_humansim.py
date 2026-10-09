@@ -242,6 +242,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         self._spawns_in_flight: int = 0
+        self._contact_config: tuple[str, float] = ("enabled", 1.2)  # humansim launch defaults
+        self._gesture_config: str = "enabled"
 
         self._agents_lock: asyncio.Lock = asyncio.Lock()
         self._prev_agent_states: AgentFrameMsg | None = None
@@ -468,6 +470,33 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return values[0].double_value
         self._logger.warning(f"engine dt param unavailable, assuming {self._ENGINE_DT_DEFAULT}")
         return self._ENGINE_DT_DEFAULT
+
+    async def configure_contact(self, mode: str, standing_distance: float) -> None:
+        if self._contact_config == (mode, standing_distance):
+            return
+        request = SetParametersAtomically.Request(
+            parameters=[
+                Parameter("contact_mode", value=mode).to_parameter_msg(),
+                Parameter("locomotion_standing_distance", value=float(standing_distance)).to_parameter_msg(),
+            ],
+        )
+        response = await self._set_params_client.call_timeout(request)
+        if response is None or not response.result.successful:
+            reason = response.result.reason if response is not None else "timeout"
+            raise RuntimeError(f"arena_humansim rejected contact_mode={mode!r} standing_distance={standing_distance}: {reason}")
+        self._contact_config = (mode, standing_distance)
+        self._logger.info(f"contact_mode={mode} standing_distance={standing_distance}")
+
+    async def configure_gestures(self, mode: str) -> None:
+        if self._gesture_config == mode:
+            return
+        request = SetParametersAtomically.Request(parameters=[Parameter("gesture_mode", value=mode).to_parameter_msg()])
+        response = await self._set_params_client.call_timeout(request)
+        if response is None or not response.result.successful:
+            reason = response.result.reason if response is not None else "timeout"
+            raise RuntimeError(f"arena_humansim rejected gesture_mode={mode!r}: {reason}")
+        self._gesture_config = mode
+        self._logger.info(f"gesture_mode={mode}")
 
     async def _configure_impl(self, params: Sequence[ParameterMsg]) -> set[str]:
         accepted: set[str] = set()
@@ -761,7 +790,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         n = len(msg.agent_id)
         gait_phase = msg.gait_phase if len(msg.gait_phase) == n else [0.0] * n
         gait_cadence = msg.gait_cadence if len(msg.gait_cadence) == n else [0.0] * n
-        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, strict=True):
+        # the active interaction per agent, for group-aware consumers (arena_social_cost_layer); a frame without it reads as none
+        interaction_ids = msg.interaction_id if len(msg.interaction_id) == n else [-1] * n
+        interaction_types = msg.interaction_type if len(msg.interaction_type) == n else [0] * n
+        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence, interaction_id, interaction_type in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, interaction_ids, interaction_types, strict=True):
             ped = Pedestrian()
             ped.id = agent_id
             ped.name = self._agent_names.get(agent_id, str(agent_id))
@@ -789,6 +821,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
             ped.animation_state = animation_state
             ped.gestures = gestures
+            ped.interaction_id = int(interaction_id)
+            ped.interaction_type = int(interaction_type)
 
             peds.pedestrians.append(ped)
         return peds

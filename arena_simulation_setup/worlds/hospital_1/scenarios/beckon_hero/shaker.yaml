@@ -1,0 +1,18 @@
+name: shaker
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration: {mean: 1.0, std: 0.0}
+      interact:
+        interaction: SHAKE_HAND
+        formation_spec: {type: dyad, anchor_kind: centroid, params: {separation: 0.8}}
+        attention:
+          clip: {name: shake_hand_v3, when: bound}
+          gaze: partner
+        duration: {mean: 10000.0, std: 0.0}
+    then: seq
+    

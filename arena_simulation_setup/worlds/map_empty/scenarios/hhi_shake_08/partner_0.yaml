@@ -1,0 +1,32 @@
+name: hhi_shake_08_partner_0
+mode: behavior_tree
+extends: adult
+initial_sequence: contact_seq
+sequences:
+  contact_seq:
+    steps:
+      wait:
+        duration:
+          mean: 8.323
+          std: 0.0
+      approach:
+        kind: go_to
+        target_pose:
+          x: 11.816
+          y: 12.365
+      contact:
+        interaction: SHAKE_HAND
+        attention:
+          gaze: partner
+        duration:
+          mean: 5.147
+          std: 0.0
+      separate:
+        kind: go_to
+        target_pose:
+          x: 12.034
+          y: 6.17
+      rest:
+        duration:
+          mean: 10000.0
+          std: 0.0

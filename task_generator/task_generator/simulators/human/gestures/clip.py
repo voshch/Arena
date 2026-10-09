@@ -10,7 +10,7 @@ from ..gait import GaitGenerator
 from . import GestureClip
 
 if typing.TYPE_CHECKING:
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
 
 
 class ClipGesture:
@@ -33,14 +33,14 @@ class ClipGesture:
     def start(self, local: np.ndarray, opts: dict) -> GestureClip:
         del local
         name = str(opts.get("clip", ""))
-        anim = self._manager.animations.get(name)
+        anim = self._manager.clip(name)
         if anim is None or anim.n_frames == 0:
             raise ValueError(f"unknown clip {name!r}")
         last = anim.n_frames - 1
         # a looping clip has no wind-up to protect, it may release from frame 0
         hold_start = 0 if anim.loop else last
         joints = frozenset(anim.joints) if anim.joints else None
-        return GestureClip(frames=list(anim.frames), fps=anim.fps, hold_start=hold_start, hold_end=last, side="", hold=name, report={}, joints=joints, loop=anim.loop)
+        return GestureClip(frames=list(anim.frames), fps=anim.fps, hold_start=hold_start, hold_end=last, side="", hold=name, report={}, joints=joints, loop=anim.loop, reverse=anim.reverse)
 
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         del hold

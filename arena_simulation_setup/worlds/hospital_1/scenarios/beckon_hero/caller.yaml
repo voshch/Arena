@@ -1,0 +1,16 @@
+# In scenario mode the robot pose reaches humansim only at spawn, so a robot:<name> ref expires after 2 s.
+# The call is aimed at the junction point the robot turns through instead.
+# beckon_v3 is the hero-figure come-here call authored for the Isaac rig (data/recordings/hero_anim/make_beckon_v3.py).
+name: caller
+mode: behavior_tree
+extends: adult
+initial_sequence: call_seq
+sequences:
+  call_seq:
+    steps:
+      call:
+        attention:
+          clip: beckon_v3
+          gaze: {x: 12.2, y: 11.3, z: 0.4}
+        duration: {mean: 1000.0, std: 0.0}
+    then: call_seq

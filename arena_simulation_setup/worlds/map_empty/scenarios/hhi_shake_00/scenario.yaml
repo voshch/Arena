@@ -1,0 +1,28 @@
+robots:
+- start:
+  - 2.5
+  - 10.905
+  - 0.028
+  goal:
+  - 27.5
+  - 11.612
+  - 0.028
+dynamic:
+- name: partner_0
+  model: female_adult_business_02
+  pose:
+  - 7.573
+  - 6.892
+  - 0.806
+  agent:
+    agent_type: ./partner_0.yaml
+    desired_velocity: 1.2
+- name: partner_1
+  model: male_adult_construction_01
+  pose:
+  - 16.078
+  - 15.762
+  - 3.948
+  agent:
+    agent_type: ./partner_1.yaml
+    desired_velocity: 1.2

@@ -1,0 +1,18 @@
+name: person_1
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration:
+          mean: 2.0
+          std: 0.0
+      interact:
+        interaction: HUG
+        attention:
+          gaze: partner
+        duration:
+          mean: 10000.0
+          std: 0.0

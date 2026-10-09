@@ -1,0 +1,15 @@
+name: talker
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration: {mean: 1.0, std: 0.0}
+      interact:
+        interaction: TALK_TO
+        attention:
+          gaze: partner
+        duration: {mean: 10000.0, std: 0.0}
+    then: seq

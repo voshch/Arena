@@ -1,0 +1,40 @@
+# map_empty: a row of people facing the camera and waving, for the closing thank-you card.
+# The robot stands at the left end of the row. Camera sits at (15.0, 7.2, 1.62) looking at the middle of the line.
+# The robot drives slowly along the FRONT of the row (1 m nearer the camera than the wavers). A near-zero goal
+# made the episode complete instantly and auto-reset in a loop, which tore down the recorder's lockstep hold.
+robots:
+- start: [10.1, 11.0, 0.0]
+  phases:
+  - goto: [19.5, 11.0, 0.0]
+
+dynamic:
+- name: waver_0
+  model: Hospital/nurse_female_caucasian_young
+  pose: [11.5, 12.0, 1.5708]
+  agent: {agent_type: ./waver.yaml}
+  waypoints: [[11.5, 12.0]]
+- name: waver_1
+  model: Office/office_male_african_middleage
+  pose: [12.9, 12.0, 1.5708]
+  agent: {agent_type: ./waver.yaml}
+  waypoints: [[12.9, 12.0]]
+- name: waver_2
+  model: Common/casual_female_african_young
+  pose: [14.3, 12.0, 1.5708]
+  agent: {agent_type: ./waver.yaml}
+  waypoints: [[14.3, 12.0]]
+- name: waver_3
+  model: Common/worker_male_asian_middleage
+  pose: [15.7, 12.0, 1.5708]
+  agent: {agent_type: ./waver.yaml}
+  waypoints: [[15.7, 12.0]]
+- name: waver_4
+  model: Office/office_female_caucasian_young
+  pose: [17.1, 12.0, 1.5708]
+  agent: {agent_type: ./waver.yaml}
+  waypoints: [[17.1, 12.0]]
+- name: waver_5
+  model: arenian
+  pose: [18.5, 12.0, 1.5708]
+  agent: {agent_type: ./waver.yaml}
+  waypoints: [[18.5, 12.0]]

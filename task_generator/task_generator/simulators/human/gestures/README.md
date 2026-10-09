@@ -16,11 +16,11 @@ and passes it to `AnimationManager.compute(..., gesture=...)`, which calls the l
 | `head` | `look` | `at` | |
 | `arm` | `point` | `at`, `hand` (default `r`) | resolved once at slot start: `hand` within the 20 deg midline band, else the target-side arm |
 | `arm_l` / `arm_r` | `point` | `at` | forced left / right |
-| `halt` / `halt_l` / `halt_r` | `halt` | as `arm` | the `point` swing held at a fixed 15 deg elevation on the target's bearing, shares the `arm` overlay |
+| `halt` / `halt_l` / `halt_r` | `halt` | as `arm` | the `point` swing held at a fixed 15 deg elevation on the target's bearing, palm pushed out at the target (forearm pronation plus 70 deg wrist extension, opening with the forearm's rise), shares the `arm` overlay |
 | `body` | `clip` | `clip` | |
 
-`clip` plays the manager's cached `.npy` of that name as an overlay over the joints its entry in
-[animations/annotations.yaml](../animations/annotations.yaml) lists (none listed = whole body), looping when
+`clip` plays the manager's cached Animation asset of that name as an overlay over the joints its
+`annotation.yaml` lists (none listed = whole body, see [Animation clips](../README.md#animation-clips)), looping when
 annotated so, else parking on the last frame until the channel disappears. It needs no target and no generator:
 the slot holds from the first tick and fades back into the gait on release.
 
@@ -90,7 +90,8 @@ once per clip from the bus pose. Generator reports that flag `ok=False`, `near_t
 are logged once per (ped, kind) and the clip still plays.
 
 Blend joints come from `Gesture.joints(side, moving)`. `point` blends the pointing arm always and the spine
-(yaw, pitch, roll of waist, spine, chest) only while the ped is idle, so walking gaits keep their torso sway. `look` blends the head triple.
+(yaw, pitch, roll of waist, spine, chest) only while the ped is idle, so walking gaits keep their torso sway. `halt` adds the
+wrist pair of its arm, the only kind that touches the wrists. `look` blends the head triple.
 When `moving` flips on a live slot the layer recomputes the set and swaps it in place through
 `AnimationManager.set_overlay_joints(..., fade_s=FADE_S)`: leaving joints ramp their weight to 0 and entering
 joints ramp to 1, playhead and envelope untouched, no reinstall.
