@@ -34,7 +34,7 @@ FLAT_RMS = 1e-6
 _TAU = 2.0 * math.pi
 _PAIR_KEYS = {"r_hip": "hip"}
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_CLIP_LAYOUT = "a .npy object array of frames, each {'angles': {<joint from JOINT_NAMES>: <rad>}}, the layout of simulators/human/animations/*.npy"
+_CLIP_LAYOUT = "a .npy object array of frames, each {'angles': {<joint from JOINT_NAMES>: <rad>}}, the per-frame layout AnimationClip.frames() gives (arena_simulation_setup.tree.assets.Animation)"
 _EXAMPLE = "python3 -m task_generator.simulators.human.fit walk_slow.npy -o walk_slow.yaml --speed 0.8 --report walk_slow.json"
 
 

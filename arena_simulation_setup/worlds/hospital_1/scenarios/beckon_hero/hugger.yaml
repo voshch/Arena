@@ -1,0 +1,17 @@
+# hug_v2 is the hero-figure copy of the kind's clip (data/recordings/hero_anim/make_hero_clips.py).
+name: hugger
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration: {mean: 1.0, std: 0.0}
+      interact:
+        interaction: HUG
+        attention:
+          clip: {name: hug_v2, when: bound}
+          gaze: partner
+        duration: {mean: 10000.0, std: 0.0}
+    then: seq

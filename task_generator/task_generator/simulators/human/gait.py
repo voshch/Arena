@@ -27,7 +27,9 @@ _WALKING = 1
 _RUNNING = 2
 # PANIC=3, SURPRISED=4, CURIOUS=5, THREATENING=6 -> treated as idle
 
-# Advisory generator-side joint limits: (lo, hi) in radians, ordered to match JOINT_NAMES.
+WRIST_JOINTS: tuple[str, ...] = ("l_r_wrist", "l_wrist", "r_r_wrist", "r_wrist")
+
+# Advisory generator-side joint limits: (lo, hi) in radians, ordered to match GaitGenerator.JOINT_NAMES.
 LIMITS: tuple[tuple[float, float], ...] = (
     (-0.6, 0.6),  # r_waist
     (-0.8, 0.8),  # y_waist
@@ -65,13 +67,18 @@ LIMITS: tuple[tuple[float, float], ...] = (
     (-0.9, 0.6),  # l_ankle
     (-0.6, 0.6),  # r_y_ankle
     (-0.9, 0.6),  # r_ankle
+    (-1.4, 1.4),  # l_r_wrist
+    (-1.3, 1.3),  # l_wrist
+    (-1.4, 1.4),  # r_r_wrist
+    (-1.3, 1.3),  # r_wrist
 )
 
 
 class GaitGenerator:
     """Deterministic per-agent gait synthesis emitting semantic joint angles per the JOINTS.md wire contract."""
 
-    JOINT_NAMES: tuple[str, ...] = JOINT_NAMES
+    # the profiled joints, then the wrists: wire DOFs the gait never moves (0.0, see JOINTS.md, Wrists)
+    JOINT_NAMES: tuple[str, ...] = (*JOINT_NAMES, *WRIST_JOINTS)
 
     def __init__(self) -> None:
         self._phase: dict[int, float] = {}
@@ -102,7 +109,7 @@ class GaitGenerator:
         phase: float | None = None,
         profile: PoseProfile | None = None,
     ) -> dict[str, float]:
-        """Return base-joint-name -> angle for all 36 joints, clamped to limits.
+        """Return base-joint-name -> angle for all 40 joints, clamped to limits.
 
         Phase advances by dt each call and is keyed per agent_id, unless `phase` supplies it.
         animation_state: int matching Pedestrian.msg constants (IDLE=0, WALKING=1, RUNNING=2).

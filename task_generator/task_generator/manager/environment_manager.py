@@ -474,6 +474,14 @@ class EnvironmentManager(NodeInterface):
         """
         return await self._human_simulator.setup_regions(regions)
 
+    async def configure_contact(self, mode: str, standing_distance: float) -> None:
+        """Contact mode of the human simulator for the episode about to spawn."""
+        await self._human_simulator.configure_contact(mode, standing_distance)
+
+    async def configure_gestures(self, mode: str) -> None:
+        """Gesture mode of the human simulator for the episode about to spawn."""
+        await self._human_simulator.configure_gestures(mode)
+
     async def configure_humans(self, params: Sequence[ParameterMsg]) -> list[ParameterMsg]:
         """
         Apply episode-level params on the human simulator and return the accepted ones.

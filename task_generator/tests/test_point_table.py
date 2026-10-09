@@ -11,6 +11,8 @@ from task_generator.simulators.human.pointing import contract as C
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.table import COLLAR_SCALE, anchor_index, table_path
 
+pytestmark = pytest.mark.clips("point_to_right")
+
 
 @pytest.fixture(scope="module")
 def gen() -> PointAtGenerator:

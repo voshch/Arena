@@ -1,4 +1,4 @@
-"""Wire-contract constants (JOINTS.md v3, 36 DOF) as the PointAt generator needs them."""
+"""Wire-contract constants (JOINTS.md v4, 40 DOF) as the PointAt generator needs them."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ ROS_JOINT_ORDER: list[str] = list(GaitGenerator.JOINT_NAMES)
 
 # advisory per-joint limits (rad), JOINTS.md / GaitGenerator.LIMITS
 LIMITS: dict[str, tuple[float, float]] = dict(zip(ROS_JOINT_ORDER, _LIMITS, strict=True))
-assert len(ROS_JOINT_ORDER) == 36
+assert len(ROS_JOINT_ORDER) == 40
 
 SPINE_SEGMENTS = ("waist", "spine", "chest")
 
@@ -51,6 +51,11 @@ def arm_dofs(side: str) -> list[str]:
         f"{side}_r_shoulder",
         f"{side}_elbow",
     ]
+
+
+def wrist_dofs(side: str) -> list[str]:
+    """Pronation, then extension (JOINTS.md Wrists). Pointing leaves both at 0."""
+    return [f"{side}_r_wrist", f"{side}_wrist"]
 
 
 def clamp(name: str, value: float, limits: dict[str, tuple[float, float]] = EMIT_LIMITS) -> float:

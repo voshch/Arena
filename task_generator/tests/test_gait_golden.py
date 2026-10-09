@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from task_generator.simulators.human.gait import GaitGenerator
+from task_generator.simulators.human.gait import WRIST_JOINTS, GaitGenerator
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "gait_grid.json"
 AGENT_IDS = (1, 2, 7)
@@ -30,6 +30,8 @@ def test_default_profile_matches_golden_grid(agent_id: int, state: int, speed: f
     gen = GaitGenerator()
     for step, frame in enumerate(expected):
         angles = gen.compute(agent_id, state, speed, DT)
-        assert list(angles) == list(frame)
+        # the grid predates the wrists: the recorded joints replay bit-exact, the wrists the gait never moves stay 0.0
+        assert list(angles) == [*frame, *WRIST_JOINTS]
         for name, value in frame.items():
             assert angles[name] == float(value), f"{name} at step {step}"
+        assert all(angles[name] == 0.0 for name in WRIST_JOINTS)

@@ -1,0 +1,34 @@
+robots:
+- start:
+  - 10.0
+  - 2.0
+  - 1.5708
+  phases:
+  - goto:
+    - 10.0
+    - 10.0
+    - 1.5708
+  - goto:
+    - 10.0
+    - 20.0
+    - 1.5708
+  - goto:
+    - 10.0
+    - 28.0
+    - 1.5708
+  - goto:
+    - 10.0
+    - 2.0
+    - -1.5708
+dynamic:
+- name: caller
+  model: female_adult_business_02
+  pose:
+  - 16.0
+  - 11.0
+  - 3.14159
+  agent:
+    agent_type: ./caller.yaml
+  waypoints:
+  - - 16.0
+    - 11.0

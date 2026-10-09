@@ -1,0 +1,32 @@
+name: hhi_hug_02_partner_1
+mode: behavior_tree
+extends: adult
+initial_sequence: contact_seq
+sequences:
+  contact_seq:
+    steps:
+      wait:
+        duration:
+          mean: 14.818
+          std: 0.0
+      approach:
+        kind: go_to
+        target_pose:
+          x: 13.795
+          y: 11.62
+      contact:
+        interaction: HUG
+        attention:
+          gaze: partner
+        duration:
+          mean: 6.377
+          std: 0.0
+      separate:
+        kind: go_to
+        target_pose:
+          x: 11.307
+          y: 7.323
+      rest:
+        duration:
+          mean: 10000.0
+          std: 0.0

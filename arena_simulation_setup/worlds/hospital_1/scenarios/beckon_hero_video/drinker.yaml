@@ -1,0 +1,16 @@
+name: drinker
+mode: behavior_tree
+extends: adult
+initial_sequence: seq
+sequences:
+  seq:
+    steps:
+      settle:
+        duration: {mean: 1.5, std: 0.0}
+      queue_and_drink:
+        target: fountain
+        interaction: USE
+        duration: {mean: 6.0, std: 1.0, clip_low: 4.0, clip_high: 8.0}
+      linger:
+        duration: {mean: 4.0, std: 1.0, clip_low: 2.0, clip_high: 6.0}
+    then: seq

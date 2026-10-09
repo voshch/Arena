@@ -37,8 +37,6 @@ setup(
          existing('launch/hearing/*.launch.py', 'launch/hearing/*.md')),
         (os.path.join('share', package_name, 'launch', 'hearing', 'arena'),
          existing('launch/hearing/arena/*.launch.py')),
-        (os.path.join('share', package_name, 'simulators', 'human', 'animations'),
-         existing('task_generator/simulators/human/animations/*.npy', 'task_generator/simulators/human/animations/*.npz', 'task_generator/simulators/human/animations/*.yaml')),
     ],
     zip_safe=True,
     maintainer='Name',

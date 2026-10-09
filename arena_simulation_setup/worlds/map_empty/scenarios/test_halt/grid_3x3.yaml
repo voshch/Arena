@@ -10,7 +10,7 @@ extends: adult
 sequences:
   default:
     steps:
-      grid: {attention: {point: {at: [{azimuth: 20, elevation: 18}, {azimuth: 20, elevation: -18}, {azimuth: -20, elevation: 18}, {azimuth: -20, elevation: -18}, {azimuth: 20, elevation: 0}, {azimuth: -20, elevation: 0}, {azimuth: 0, elevation: 18}, {azimuth: 0, elevation: -18}, {azimuth: 0, elevation: 0}], dwell: 1.5}}}
+      grid: {attention: {halt: {at: [{azimuth: 20, elevation: 18}, {azimuth: 20, elevation: -18}, {azimuth: -20, elevation: 18}, {azimuth: -20, elevation: -18}, {azimuth: 20, elevation: 0}, {azimuth: -20, elevation: 0}, {azimuth: 0, elevation: 18}, {azimuth: 0, elevation: -18}, {azimuth: 0, elevation: 0}], dwell: 1.5}}}
       rest: {duration: {mean: 1.0}}
     then: default
 

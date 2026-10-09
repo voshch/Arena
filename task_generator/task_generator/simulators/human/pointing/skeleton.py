@@ -1,4 +1,4 @@
-"""URDF-faithful forward kinematics + collision proxies for the 36-DOF human.
+"""URDF-faithful forward kinematics + collision proxies for the 40-DOF human.
 
 Mirrors ``human_description/urdf/human-tpl.xacro`` (branch ``arena-v2``)
 exactly: same bone lengths as a function of ``height``, same joint axes, same
@@ -42,6 +42,10 @@ HIP_AXES = {
 }
 ELBOW_AXIS = np.array([0.0, -1.0, 0.0])
 REFLECT = {"l": 1.0, "r": -1.0}
+WRIST_AXES = {  # (pronation axis, extension axis), mirrored like the collars
+    "l": (np.array([0.0, 0.0, -1.0]), np.array([1.0, 0.0, 0.0])),
+    "r": (np.array([0.0, 0.0, 1.0]), np.array([-1.0, 0.0, 0.0])),
+}
 
 
 def rot_axis(axis: np.ndarray | list[float] | tuple[float, ...], angle: float) -> np.ndarray:
@@ -201,6 +205,9 @@ def fk(angles: dict, body: Body, root_xy_yaw: tuple[float, float, float] = (0.0,
         f_r = s_r @ rot_axis(ELBOW_AXIS, a[f"{side}_elbow"])
         frames[f"{side}_forearm"] = f_r
         pos[f"{side}_wrist"] = el + body.forearm * (f_r @ DOWN)
+        # hand: fingers along -z, palm toward -y*REFLECT (the thigh) at rest
+        pronation, extension = WRIST_AXES[side]
+        frames[f"{side}_hand"] = f_r @ rot_axis(pronation, a.get(f"{side}_r_wrist", 0.0)) @ rot_axis(extension, a.get(f"{side}_wrist", 0.0))
 
     for side in ("l", "r"):
         hip = pelvis + root_r @ np.array([0.0, REFLECT[side] * body.waist_length / 2, 0.0])

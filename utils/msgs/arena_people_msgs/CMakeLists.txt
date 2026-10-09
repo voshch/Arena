@@ -23,6 +23,9 @@ set(srv_files
 
 set(msg_files
   "msg/FaceView.msg"
+  "msg/AnimationSlot.msg"
+  "msg/AnimationState.msg"
+  "msg/AnimationStates.msg"
   "msg/Gesture.msg"
   "msg/Pedestrian.msg"
   "msg/Pedestrians.msg"

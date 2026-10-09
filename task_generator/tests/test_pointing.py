@@ -14,6 +14,8 @@ from task_generator.simulators.human.pointing import (
 from task_generator.simulators.human.pointing import contract as C
 from task_generator.simulators.human.pointing import skeleton as S
 
+pytestmark = pytest.mark.clips("point_to_right")
+
 
 def aim_of(clip, body, i):
     pos, _ = S.fk(clip.frames[i]["angles"], body)

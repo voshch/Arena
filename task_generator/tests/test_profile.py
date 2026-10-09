@@ -298,7 +298,7 @@ def test_seated_wheelchair_library_entry_is_a_mirrored_held_posture() -> None:
         assert lo <= value <= hi, joint
     profile = resolve_pose_profile({"idle": {"base": "seated_wheelchair"}})
     idle = GaitGenerator().compute(4, _IDLE, 0.0, 0.1, profile=profile)
-    assert idle == {joint: mean.get(joint, 0.0) for joint in JOINT_NAMES}
+    assert idle == {joint: mean.get(joint, 0.0) for joint in GaitGenerator.JOINT_NAMES}
 
 
 def test_shipped_wheelchair_manual_pose_strokes_both_arms_together_on_the_held_seat() -> None:
@@ -325,7 +325,7 @@ def test_shipped_wheelchair_manual_pose_strokes_both_arms_together_on_the_held_s
     assert max(pose["l_p_shoulder"] for pose in poses) - min(pose["l_p_shoulder"] for pose in poses) > 0.1
     assert gen.compute(9, _RUNNING, 0.9, 0.0, phase=1.0, profile=profile) == gen.compute(9, _WALKING, 0.9, 0.0, phase=1.0, profile=profile)
     idle = gen.compute(9, _IDLE, 0.0, 0.0, phase=1.0, profile=profile)
-    assert idle == {joint: seat.get(joint, 0.0) for joint in JOINT_NAMES}
+    assert idle == {joint: seat.get(joint, 0.0) for joint in GaitGenerator.JOINT_NAMES}
 
 
 def test_idle_builtin_rejects_overrides() -> None:
@@ -360,7 +360,7 @@ def test_wheelchair_section_keeps_the_seat_and_swings_both_arms_in_phase() -> No
             assert run == walk
     for phi in (0.0, 2.5):
         idle = gen.compute(9, _IDLE, 0.0, 0.0, phase=phi, profile=profile)
-        assert idle == {joint: seated[joint] for joint in JOINT_NAMES}
+        assert idle == {joint: seated.get(joint, 0.0) for joint in GaitGenerator.JOINT_NAMES}  # the wrists are not profiled, 0.0
     assert profile.run.gain == GainLaw(lo=1.0, hi=1.0, factor=1.0)
     assert profile.run.limits == profile.walk.limits
 

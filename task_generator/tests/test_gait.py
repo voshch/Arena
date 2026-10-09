@@ -15,7 +15,7 @@ _SURPRISED = 4
 _CURIOUS = 5
 _THREATENING = 6
 
-_JOINT_COUNT = 36
+_JOINT_COUNT = 40
 
 
 @pytest.fixture()
@@ -90,6 +90,10 @@ _LIMITS: tuple[tuple[float, float], ...] = (
     (-0.9, 0.6),
     (-0.6, 0.6),
     (-0.9, 0.6),
+    (-1.4, 1.4),
+    (-1.3, 1.3),
+    (-1.4, 1.4),
+    (-1.3, 1.3),
 )
 
 
@@ -204,9 +208,8 @@ def test_explicit_phase_does_not_advance_the_integrator(gen: GaitGenerator, stat
 
 
 def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
-    from pathlib import Path
-
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
+    from task_generator.simulators.human.clips import NoClips
     from task_generator.simulators.human.profile import resolve_pose_profile
 
     class _Logger:
@@ -216,8 +219,7 @@ def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
         def warning(self, msg: str) -> None:
             pass
 
-    animations = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
-    mgr = AnimationManager(animations, logger=_Logger(), fps=20.0)
+    mgr = AnimationManager(logger=_Logger(), fps=20.0, clips=NoClips())  # walking is synthesized, no canned clip involved
     profile = resolve_pose_profile({"walk": {"joints": {"knee": {"scale": 0.5}}}})
     expected = GaitGenerator().compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile)
     assert mgr.compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile) == expected

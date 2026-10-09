@@ -1,0 +1,44 @@
+robots:
+- start:
+  - 10.0
+  - 22.0
+  - 1.5708
+  phases:
+  - goto:
+    - 10.0
+    - 30.0
+    - 1.5708
+dynamic:
+- name: person_0
+  model: female_adult_business_02
+  pose:
+  - 10.94
+  - 26.0
+  - 3.142
+  agent:
+    agent_type: ./person_0.yaml
+  waypoints:
+  - - 10.94
+    - 26.0
+- name: person_1
+  model: male_adult_construction_01
+  pose:
+  - 9.53
+  - 26.814
+  - 5.236
+  agent:
+    agent_type: ./person_1.yaml
+  waypoints:
+  - - 9.53
+    - 26.814
+- name: person_2
+  model: female_adult_business_02
+  pose:
+  - 9.53
+  - 25.186
+  - 7.33
+  agent:
+    agent_type: ./person_2.yaml
+  waypoints:
+  - - 9.53
+    - 25.186
