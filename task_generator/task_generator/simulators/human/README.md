@@ -109,6 +109,9 @@ Common/Animation/<name>/
 Adding a clip: write it with `write_clip(Path("arena_simulation_setup/assets/Common/Animation/<name>"), frames, meta)`
 (frames are the players' `{"t", "angles", "root_xy_yaw", "animation_state"}` dicts), check it with
 `arena asset find animation <name>`, then publish it with `arena asset push animation <name>` (needs `GCS_ACCESS_TOKEN`).
+A scenario's clips (`ScenarioView.agent_clips`) are resolved when the scenario task loads it: bucket clips are
+fetched before the first agent plays one, and missing ones are named in one warning. Publishing a world
+(`arena asset push world`) refuses clips that only resolve locally.
 Tests that need clips carry `@pytest.mark.clips(...)` and skip when the clips cannot be resolved.
 
 ## Visualization topics

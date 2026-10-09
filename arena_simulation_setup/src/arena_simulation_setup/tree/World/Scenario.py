@@ -4,13 +4,14 @@ import itertools
 import os
 import typing
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import attrs
 import yaml
 
 from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Obstacle, Pose, Position, Sound
 from arena_simulation_setup.tree import Identifier, PathView
+from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier, referenced_clips
 from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, converter
 
 
@@ -151,11 +152,25 @@ class ScenarioView(PathView):
         )
 
     def identifiers(self, converter: ArenaConverter = converter) -> Iterable[Identifier]:
-        """Every asset this scenario references. Pass the world's zone converter to read a
-        scenario that addresses zones by name."""
+        """Every asset this scenario references, the animation clips its agents play included. Pass the world's
+        zone converter to read a scenario that addresses zones by name."""
         scenario = self.load(converter=converter)
         for obstacle in itertools.chain(scenario.static, scenario.dynamic):
             yield obstacle.model
+        for obstacle in scenario.dynamic:
+            for name in self.agent_clips(obstacle.extra.get('agent')):
+                yield AnimationIdentifier.parse(name)
+
+    def agent_clips(self, agent: object) -> Iterator[str]:
+        """Clip names an agent entry plays: its inline config, then the scenario-local agent file it names
+        (``agent_type: ./caller.yaml``). Built-in agent types (adult, elder) carry no clips."""
+        if not isinstance(agent, dict):
+            return
+        yield from referenced_clips(agent)
+        agent_type = agent.get('agent_type')
+        if isinstance(agent_type, str) and agent_type.endswith(('.yaml', '.yml')):
+            with open(self.path / agent_type) as f:
+                yield from referenced_clips(yaml.safe_load(f))
 
     def load(self, converter: ArenaConverter = converter) -> Scenario:
         raw: object = None

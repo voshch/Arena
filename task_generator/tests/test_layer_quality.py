@@ -63,11 +63,13 @@ def test_masked_joints_are_the_only_ones_played() -> None:
     assert not np.allclose(masked["r_wrist"], rest["r_wrist"])
 
 
+@pytest.mark.clips("point_to_right")
 def test_point_hold_is_on_target() -> None:
     res = LQ.aim_errors("arm", (3.0, 1.0, 1.2), moving=False)
     assert res is not None and res["median_deg"] < 5.0
 
 
+@pytest.mark.clips("point_to_right")
 def test_halt_is_on_its_bearing_from_the_body() -> None:
     near = (1.5, 0.0, 1.2)
     body = LQ.aim_errors("halt", near, moving=False, origin="body")

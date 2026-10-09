@@ -11,6 +11,8 @@ from task_generator.simulators.human.gestures.point import PointGesture
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.contract import ROS_JOINT_ORDER, SPINE_SEGMENTS, wrist_dofs
 
+pytestmark = pytest.mark.clips("point_to_right")
+
 BODY = S.Body(BODY_HEIGHT)
 TARGETS = ((3.0, 0.0, 1.0), (3.0, -2.0, 1.0), (0.0, 3.0, 1.0), (-1.0, -3.0, 1.0))
 

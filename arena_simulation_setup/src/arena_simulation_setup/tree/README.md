@@ -79,6 +79,7 @@ given `Identifier` type: one pointing at `WORLD / 'assets'` and one at `ARENA`.
 |---|---|---|---|---|
 | `ObjectIdentifier` | [tree/assets/Object.py](assets/Object.py) | `DomainAssetIdentifier[ObjectView]` | `Object` | DynamicPaths (world/assets + local), then NetResolver |
 | `HumanIdentifier` | [tree/assets/Human.py](assets/Human.py) | `DomainAssetIdentifier[HumanView]` | `Human` | DynamicPaths (world/assets + local), then NetResolver |
+| `AnimationIdentifier` | [tree/assets/Animation.py](assets/Animation.py) | `DomainAssetIdentifier[AnimationView]` | `Animation` | DynamicPaths (world/assets + local), then NetResolver (`formats=()`) |
 | `MaterialIdentifier` | [tree/assets/Material.py](assets/Material.py) | `ModifiersDomainAssetIdentifier[Material]` | `Material` | DynamicPaths (world/assets + local), then NetResolver |
 | `WallIdentifier` | [tree/Wall.py](Wall.py) | `DomainAssetIdentifier[WallDescription]` | `Wall` | DynamicPaths (world/assets + local), then NetResolver |
 | `WorldIdentifier` | [tree/World/World.py](World/World.py) | `Identifier[MultiLevelWorldView]` | - | `ARENA_WORLD_PATH` roots, then `ASS_DIR / 'worlds'` (existence-checked), then a `NetResolver` per `WORLD_BUCKETS` provider, then `FallbackResolver` (write target only) |
@@ -91,6 +92,23 @@ given `Identifier` type: one pointing at `WORLD / 'assets'` and one at `ARENA`.
 `HumanView`) whose `.model` property is a `ModelWrapper`.
 `ObjectIdentifier` provides both SDF and USD providers; `HumanIdentifier`
 provides SDF only.
+
+### `AnimationIdentifier`
+
+A pedestrian animation clip: `<domain>/Animation/<name>/` holds `annotation.yaml` (fps, loop, reverse, joint
+mask, provenance note; it is also the bucket's listing sentinel) and `<name>.npz` (`joint_names (J,)`,
+`angles (T, J)`, `t`, `root_xy_yaw`, `animation_state`, loaded with `allow_pickle=False`). Derived files sit
+next to the clip and are reached through `AnimationView.extra(filename)` (the pointing table is
+`point_to_right/table.npz`). `.load()` returns an `AnimationView`: `.meta` is the annotation, `.clip` an
+`AnimationClip` whose `.frames()` gives the per-frame dicts the players consume. `write_clip(directory, frames, meta)`
+writes one. Clips never ship in the repo: both local asset dirs gitignore `*/Animation/`.
+
+Scenarios name clips as strings inside humansim agent configs, so `ScenarioView.identifiers()` reads them
+out: `referenced_clips()` collects every attention `clip` (a name or `{name, when}`) of the inline `agent:`
+entry and of the scenario-local agent file it names (`agent_type: ./caller.yaml`), plus the default clip of
+each `interaction:` step that sets none (humansim's `InteractionKind.clip`, skipped without `arena_humansim`).
+That puts clips in the world closure, so `arena asset push world` refuses a world whose clips only resolve
+locally, and an unreadable agent file raises rather than passing as clip-free.
 
 ### `MaterialIdentifier`
 

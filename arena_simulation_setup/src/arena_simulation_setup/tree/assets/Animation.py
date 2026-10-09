@@ -11,7 +11,8 @@ asset bucket (`arena asset push animation <name>` publishes one).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import functools
+from collections.abc import Iterator, Sequence
 from functools import cached_property
 from pathlib import Path
 
@@ -110,6 +111,41 @@ def write_clip(directory: Path, frames: Sequence[dict], meta: dict) -> Path:
     )
     (directory / ANNOTATION).write_text(yaml.safe_dump({'name': name, 'path': f'Animation/{name}', **meta}, sort_keys=False))
     return directory
+
+
+def referenced_clips(config: object) -> Iterator[str]:
+    """Clip names a humansim agent config plays: every attention ``clip`` (a name or {name, when}), plus the
+    default clip of each interaction step that sets none of its own. Repeats are not filtered."""
+    if isinstance(config, list):
+        for item in config:
+            yield from referenced_clips(item)
+        return
+    if not isinstance(config, dict):
+        return
+    for key, value in config.items():
+        if key == 'clip':
+            name = value.get('name') if isinstance(value, dict) else value
+            if isinstance(name, str) and name:
+                yield name
+        else:
+            yield from referenced_clips(value)
+    interaction, attention = config.get('interaction'), config.get('attention')
+    if isinstance(interaction, str) and not (isinstance(attention, dict) and attention.get('clip') is not None):
+        if default := _interaction_clip(interaction):
+            yield default
+
+
+@functools.cache
+def _interaction_clip(interaction: str) -> str | None:
+    """The clip an interaction kind plays while bound (humansim's InteractionKind.clip), None without arena_humansim."""
+    try:
+        from arena_humansim.core.interaction_kinds import InteractionType
+    except ImportError:
+        return None
+    try:
+        return InteractionType[interaction].kind.clip or None
+    except KeyError:
+        return None
 
 
 AnimationIdentifier.use(*DynamicPaths.as_resolvers(AnimationIdentifier))
