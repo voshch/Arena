@@ -44,6 +44,7 @@ from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Obstacle as ObstacleDefinition
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
 from task_generator.shared import Ceiling as CeilingDefinition
 from task_generator.shared import (
@@ -582,20 +583,18 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self._logger.debug("All ceilings spawned successfully.")
         return res
 
-    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose) -> bool:
-        """Spawn an axis-aligned box as a single primitive Prim (empty mesh, scale = size)."""
+    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None) -> bool:
+        """Spawn an axis-aligned box as a single primitive Prim (empty mesh, scale = size), in its material when one is given."""
         sx, sy, sz = size
-        req = SpawnPrims.Request(
-            env_id=self._env_id,
-            prims=[
-                Prim(
-                    name=name,
-                    pose=pose.to_msg(),
-                    scale=Scale(x=sx, y=sy, z=sz),
-                    mesh_path="",
-                )
-            ],
+        prim = Prim(
+            name=name,
+            pose=pose.to_msg(),
+            scale=Scale(x=sx, y=sy, z=sz),
+            mesh_path="",
         )
+        if material is not None:
+            prim.material = material_to_msg(await material.resolve())
+        req = SpawnPrims.Request(env_id=self._env_id, prims=[prim])
         res = await self._clients.SpawnPrims.call_timeout(req)
         return bool(res) and bool(res.ret) and res.ret[0]
 

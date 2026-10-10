@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 import pytest
 import trimesh
-from arena_mujoco_msgs.msg import Material
+from arena_mujoco_msgs.msg import Material, Prim, Scale
 from PIL import Image
 
 from arena_mujoco.mesh_mat import COLLISION_GROUP, add_box_body, add_hull_geoms, add_mesh_body, collision_hulls, ensure_material, mesh_parts, scale_body
@@ -239,6 +239,23 @@ def test_material_without_images_takes_its_declared_diffuse_color(store: SceneSt
     model, material = _material(store, tmp_path, 'export material Sample(\n    color diffuse_tint = color(0.838f, 0.802f, 0.775f) [[\n')
     assert model.mat_texid[material, mujoco.mjtTextureRole.mjTEXROLE_RGB] == -1
     assert model.mat_rgba[material] == pytest.approx((0.838, 0.802, 0.775, 1.0))
+
+
+def test_box_prim_wears_its_material_and_a_bare_one_stays_plain(store: SceneStore, tmp_path: Path):
+    from arena_mujoco import context
+    from arena_mujoco.services.SpawnPrims import _add_prim
+
+    Image.new('RGB', (8, 8), (200, 30, 30)).save(tmp_path / 'base.png')
+    (tmp_path / 'Door.mdl').write_text('diffuse_texture: texture_2d("./base.png", ::tex::gamma_srgb),\n')
+    context.set_scene_store(store)
+    assert _add_prim(0, Prim(name='door', scale=Scale(x=1.0, y=0.1, z=2.0), material=Material(name='Door', path=str(tmp_path / 'Door.mdl'))))
+    assert _add_prim(0, Prim(name='crate', scale=Scale(x=1.0, y=1.0, z=1.0)))
+    store.recompile(0)
+    model = store.get_model(0)
+    door, crate = (model.geom_matid[model.body_geomadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)]] for name in ('door', 'crate'))
+    texture = model.mat_texid[door, mujoco.mjtTextureRole.mjTEXROLE_RGB]
+    assert tuple(model.tex_data[model.tex_adr[texture] : model.tex_adr[texture] + 3]) == (200, 30, 30)
+    assert crate == -1
 
 
 def test_link_visual_with_a_missing_mesh_is_dropped_and_the_robot_still_loads(tmp_path: Path):

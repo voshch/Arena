@@ -7,7 +7,7 @@ from arena_mujoco_msgs.srv import SpawnPrims
 
 from arena_mujoco import hooks
 from arena_mujoco.context import get_scene_store
-from arena_mujoco.mesh_mat import add_box_body, add_mesh_body, prepare_hulls
+from arena_mujoco.mesh_mat import add_box_body, add_mesh_body, ensure_material, prepare_hulls
 from arena_mujoco.scene import RejectedBodies
 
 from .utils import Service
@@ -25,6 +25,8 @@ def _add_prim(env_id: int, prim: Prim) -> bool:
     try:
         if mesh_path:
             store.add_body(env_id, lambda spec: add_mesh_body(spec, cache, prim.name, pos, quat, mesh_path, scale))
+        elif prim.material.name or prim.material.path:
+            store.add_body(env_id, lambda spec: add_box_body(spec, prim.name, pos, quat, scale, ensure_material(spec, cache, prim.material)))
         else:
             store.add_body(env_id, lambda spec: add_box_body(spec, prim.name, pos, quat, scale))
     except Exception as exc:  # noqa: BLE001 - one unreadable asset must not fail the batch
