@@ -52,6 +52,11 @@ def test_completion_offers_every_importer_kind() -> None:
     assert tuple(_IMPORT.table()) == IMPORT_KINDS
 
 
+def test_import_kinds_are_the_registered_importer_kinds() -> None:
+    importers = pytest.importorskip("arena_assets.importers")
+    assert importers.IMPORTERS.kinds() == list(IMPORT_KINDS)
+
+
 def test_out_needs_a_value() -> None:
     with pytest.raises(CLIError, match="needs a value"):
         parse(["object", "gso", "--out"])

@@ -4,6 +4,7 @@ import io
 from pathlib import Path
 
 import pytest
+from arena_assets.importers.material import Maps, stage
 from PIL import Image
 
 from arena_simulation_setup.utils.material import Color, ImgUtil, MdlUtil
@@ -132,6 +133,19 @@ def test_mdlutil_texture_normal_slot(tmp_path):
     mdl_file = tmp_path / "mat.mdl"
     mdl_file.write_text(mdl_content)
     assert MdlUtil(mdl_file).texture("normalmap_texture").name == "Mat_N.png"
+
+
+def test_mdlutil_texture_reads_the_slots_of_an_imported_material(tmp_path):
+    color, normal, orm = (tmp_path / name for name in ("c.jpg", "n.jpg", "arm.jpg"))
+    for file in (color, normal, orm):
+        file.write_bytes(file.name.encode())
+    source = stage("Oak", Maps(color=color, normal=normal, orm=orm), "", [], tmp_path / "dataset")
+    util = MdlUtil(source / "Oak.mdl")
+    assert util.texture("diffuse_texture") == source / "Oak" / "Oak_BaseColor.jpg"
+    assert util.texture("normalmap_texture") == source / "Oak" / "Oak_N.jpg"
+    assert util.texture("ORM_texture") == source / "Oak" / "Oak_ORM.jpg"
+    assert all(path.is_file() for path in (util.texture("diffuse_texture"), util.texture("normalmap_texture")))
+    assert list(util.diffuse_texture_paths) == [source / "Oak" / "Oak_BaseColor.jpg"]
 
 
 def test_mdlutil_texture_empty_slot_returns_none(tmp_path):
