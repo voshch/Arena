@@ -4,7 +4,8 @@ import math
 
 import pytest
 
-from arena_simulation_setup.tree.Wall import PositionalNumber, SubWall, TilingAsset, PlaceWallSegmentAsset
+from arena_simulation_setup.tree.Wall import PlaceObstacleAsset, PositionalNumber, SubWall, TilingAsset, PlaceWallSegmentAsset, WallDescription
+from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Position
 
 
@@ -143,3 +144,52 @@ def test_tiling_asset_realize_normal_tiling():
     walls = list(walls_iter)
     # Should produce some tiles in a 5m wall with every=1m
     assert len(walls) > 0
+
+
+# ---------------------------------------------------------------------------
+# PlaceWallSegmentAsset flags
+# ---------------------------------------------------------------------------
+
+
+def test_wall_segment_flags_default_to_true():
+    (segment,), obstacles = PlaceWallSegmentAsset().realize(Position(0.0, 0.0, 0.0), Position(4.0, 0.0, 0.0))
+    assert (segment.visible, segment.solid, segment.shadows) == (True, True, True)
+    assert list(obstacles) == []
+
+
+def test_wall_segment_flags_reach_the_realized_segment():
+    asset = PlaceWallSegmentAsset(visible=False, solid=False, shadows=False)
+    (segment,), _ = asset.realize(Position(0.0, 0.0, 0.0), Position(4.0, 0.0, 0.0))
+    assert (segment.visible, segment.solid, segment.shadows) == (False, False, False)
+
+
+def test_wall_description_structures_segment_flags_from_yaml_data():
+    description = converter.structure(
+        {
+            'main': [
+                {'material': 'Plaster_Wall', 'height': 2.5, 'visible': False, 'shadows': False},
+                {'material': 'Plaster_Wall', 'height': 2.6, 'y': -0.35, 'solid': False, 'shadows': False},
+                {'model': 'splat_room', 'at': '50%'},
+            ]
+        },
+        WallDescription,
+    )
+    line, backdrop, splat = description.main
+    assert isinstance(line, PlaceWallSegmentAsset) and isinstance(backdrop, PlaceWallSegmentAsset)
+    assert isinstance(splat, PlaceObstacleAsset)
+    assert (line.visible, line.solid, line.shadows) == (False, True, False)
+    assert (backdrop.visible, backdrop.solid, backdrop.shadows) == (True, False, False)
+
+    segments, obstacles = description.realize(Position(4.0, 0.0, 0.0), Position(0.0, 0.0, 0.0))
+    segments = list(segments)
+    assert [(s.visible, s.solid, s.shadows) for s in segments] == [(False, True, False), (True, False, False)]
+    assert segments[1].start.y == pytest.approx(0.35, abs=1e-6)
+    assert [o.model.name for o in obstacles] == ['splat_room']
+
+
+def test_wall_segment_flags_survive_unstructure_and_structure():
+    asset = PlaceWallSegmentAsset(visible=False, solid=False, shadows=False)
+    data = converter.unstructure(asset)
+    assert (data['visible'], data['solid'], data['shadows']) == (False, False, False)
+    restored = converter.structure(data, PlaceWallSegmentAsset)
+    assert (restored.visible, restored.solid, restored.shadows) == (False, False, False)

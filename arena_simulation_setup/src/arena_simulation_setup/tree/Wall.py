@@ -178,6 +178,9 @@ class PlaceWallSegmentAsset(SubWall):
     height: float = attrs.field(converter=float, default=2.0)
     width: float = attrs.field(converter=float, default=0.05)
     name: str = ""
+    visible: bool = True  # drawn for cameras, false keeps lidar, depth and collision
+    solid: bool = True  # has collision
+    shadows: bool = True  # casts shadows
 
     def identifiers(self) -> Iterable[Identifier]:
         return (self.material,)
@@ -192,6 +195,9 @@ class PlaceWallSegmentAsset(SubWall):
                 height=self.height,
                 width=self.width,
                 material=self.material,
+                visible=self.visible,
+                solid=self.solid,
+                shadows=self.shadows,
             ),
         ), ()
 
@@ -215,6 +221,9 @@ class WallSegment:
         converter=MaterialIdentifier.converter,
         default=Material.default('wall'),
     )
+    visible: bool = True
+    solid: bool = True
+    shadows: bool = True
 
 
 WallRealization = tuple[Iterable[WallSegment], Iterable[Obstacle]]

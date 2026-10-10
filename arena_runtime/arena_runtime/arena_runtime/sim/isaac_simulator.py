@@ -578,6 +578,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     end=end,
                     material=material_to_msg(await segment.material.resolve()),
                     thickness=segment.width,
+                    visible=segment.visible,
+                    solid=segment.solid,
+                    shadows=segment.shadows,
                 )
 
             except Exception as e:
