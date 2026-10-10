@@ -1249,18 +1249,20 @@ def _generate_wall_sdf(name: str, boxes: list[tuple[WallSegment, dict[str, str]]
                         <size>{length} {thickness} {height}</size>
                     </box>
                 </geometry>
+                <cast_shadows>{cast_shadows}</cast_shadows>
                 {material}
             </visual>
-            <collision name="collision">
+            {collision}
+            <pose>{x} {y} {z} 0 0 {orientation}</pose>
+        </link>
+        """
+    collision_template = """<collision name="collision">
                 <geometry>
                     <box>
                         <size>{length} {thickness} {height}</size>
                     </box>
                 </geometry>
-            </collision>
-            <pose>{x} {y} {z} 0 0 {orientation}</pose>
-        </link>
-        """
+            </collision>"""
     links = []
     for i, (segment, textures) in enumerate(boxes):
         x1, y1, x2, y2 = segment.start.x, segment.start.y, segment.end.x, segment.end.y
@@ -1279,6 +1281,8 @@ def _generate_wall_sdf(name: str, boxes: list[tuple[WallSegment, dict[str, str]]
                 z=segment.start.z + segment.height / 2.0,
                 orientation=orientation,
                 material=_wall_material_sdf(textures),
+                cast_shadows=str(segment.shadows).lower(),
+                collision=collision_template.format(length=length, thickness=segment.width, height=segment.height) if segment.solid else "",
             )
         )
 

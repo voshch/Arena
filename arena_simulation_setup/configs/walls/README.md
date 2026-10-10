@@ -16,7 +16,7 @@ Sub-wall types (see
 
 | Type | Discriminator | Fields | Effect |
 |---|---|---|---|
-| `PlaceWallSegmentAsset` | has `material` key | `material`, `height`, `width`, `name`, `x/y/z` offset | Places a single wall segment |
+| `PlaceWallSegmentAsset` | has `material` key | `material`, `height`, `width`, `name`, `visible`, `solid`, `shadows`, `x/y/z` offset | Places a single wall segment |
 | `PlaceObstacleAsset` | has `model` key | `model`, `at` (position along wall, default `50%`), `orientation`, `name`, `x/y/z` offset | Places a single obstacle |
 | `TilingAsset` | has `tile` key | `tile` (list of sub-walls), `every` (spacing [m]), `width` (half-width [m]) | Repeats `tile` contents every N meters |
 | `FillAsset` | has `fill` key | `fill` (list of sub-walls), `start`, `end` (positions along wall) | Applies `fill` over a slice of the wall |
@@ -60,6 +60,51 @@ main:
     every: 5
     width: 3
 ```
+
+### Segment flags
+
+Three booleans on a wall segment, all `true` by default:
+
+| Flag | `false` means | Isaac | Gazebo |
+|---|---|---|---|
+| `visible` | not drawn for cameras, still returned by lidar and depth, still solid | `primvars:hideForCamera` | ignored, the segment stays drawn (gpu_lidar renders visuals, so a camera-only hide does not exist) |
+| `solid` | no collision | no `CollisionAPI` | no `<collision>` |
+| `shadows` | casts no shadows | `primvars:doNotCastShadows` | `<cast_shadows>false</cast_shadows>` |
+
+The occupancy map and the human simulators work from the wall line in
+`world.yaml`, so the flags do not change them.
+
+In Isaac a segment with both `visible: false` and `shadows: false` returns no
+lidar: RTX drops a prim that is hidden from cameras and casts no shadows from
+its sensor rays. Each flag alone keeps the return.
+
+### Example: splat wall
+
+A captured wall (a 3D Gaussian splat built with `arena-assets splat`, see the
+[arena_assets README](../../../arena_assets/README.md)) is an Object asset whose
+only model is USD. It is placed like any other wall object. Isaac renders it,
+the other simulators skip it and draw the wall.
+
+```yaml
+main:
+  - material: Plaster_Wall    # the wall: collision, lidar, map, backdrop of the capture
+    height: 2.6
+    shadows: false
+  - model: my_wall_capture    # the splat
+    at: 50%
+```
+
+- The segment is an ordinary drawn wall on the wall line. The splat bundle has
+  its origin at the back of the capture, so everything captured lies in front
+  of the segment, which shows through the holes of the capture.
+- `shadows: false` keeps simulator shadows off the capture, whose lighting is
+  already baked in.
+- Lidar and depth cameras see the splat. Captured geometry is therefore sensed
+  but has no collision: robots stop at the segment. `arena-assets splat` keeps
+  5 cm in front of the captured wall plane unless told otherwise.
+- Do not hide the segment and put the capture behind it. A camera-hidden
+  segment in front of a splat either shadows it or, with `shadows: false`,
+  loses its lidar return.
 
 ## How world.yaml references a wall preset
 

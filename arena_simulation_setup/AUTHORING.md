@@ -502,6 +502,14 @@ kinds follow the same `assets/<domain>/<Type>/<name>/` layout. Objects, humans
 and materials carry model or material files instead of a preset YAML, a sound
 carries its `<name>.yaml` manifest beside the wav files.
 
+A wall style can also carry a captured look: a 3D Gaussian splat that Isaac
+renders in front of the wall. The
+[splat wall example](configs/walls/README.md#example-splat-wall) shows the wall
+kind, the [arena_assets README](../arena_assets/README.md) how to build the asset.
+A captured object (`arena-assets splat --object`) is placed like any other
+static object, and it is visual only: Isaac renders it and its sensors see it,
+but robots drive through it.
+
 ## 6. Generate with the AI pipeline (alternative)
 
 [scripts/generate_world](scripts/generate_world) posts a
