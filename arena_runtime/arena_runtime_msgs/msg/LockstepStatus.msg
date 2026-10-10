@@ -7,3 +7,5 @@ builtin_interfaces/Time tick    # sim time being gated on
 LockstepRegistration[] registrations
 string[] waiting_on             # hard channels stalling the tick (populated after 1s)
 string[] arrived
+uint64 gated_ticks              # ticks gated on a hard channel, cumulative per run
+LockstepChannelCount[] counts   # per-channel counters, cumulative per run

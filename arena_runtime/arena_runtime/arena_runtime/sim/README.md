@@ -211,7 +211,10 @@ in the background). `sim_lifecycle/lockstep/pause` /
 `sim_lifecycle/lockstep/resume` freeze and unfreeze the clock within a run
 without ending it. Status is the latched `/arena/state/lockstep` topic
 (LockstepStatus): `active`, `paused`, `ungated`, `target_rtf`,
-`measured_rtf`, `tick`, `registrations`, `waiting_on`, `arrived`.
+`measured_rtf`, `tick`, `registrations`, `waiting_on`, `arrived`, and the
+run's cumulative counters: `gated_ticks` (ticks that waited on a hard
+channel) and `counts` (per channel topic, the ticks it was `due` on and
+the messages `received`), both reset when a run starts.
 
 `lockstep.autostart`/`lockstep.channels`/`lockstep.target_rtf`/
 `lockstep.paused` params are read once at bringup (launch args

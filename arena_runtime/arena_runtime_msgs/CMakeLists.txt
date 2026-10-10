@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/HoldEntry.msg
   msg/HoldRegistry.msg
   msg/LockstepChannel.msg
+  msg/LockstepChannelCount.msg
   msg/LockstepHeartbeat.msg
   msg/LockstepRegistration.msg
   msg/LockstepStatus.msg

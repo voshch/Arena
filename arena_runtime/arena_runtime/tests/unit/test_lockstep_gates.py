@@ -347,3 +347,38 @@ def test_due_survives_float_accumulation() -> None:
         ledger.complete(due)
     for ch in ledger.channels.values():
         assert expected[ch.topic] == pytest.approx(ledger.now / ch.period, abs=1)
+
+
+def test_counts_gated_ticks_dues_and_receipts() -> None:
+    ledger = GateLedger(dt=DT, base=0.0)
+    ledger.refresh(_desired(_spec("beat", 0.1), _spec("chatty", 0.1), _spec("peds", 0.04, hard=False)))
+    beat, chatty = ledger.channels["/beat"], ledger.channels["/chatty"]
+    for _ in range(20):
+        ledger.advance(ledger.next_delta())
+        due = ledger.due()
+        if any(ch.hard for ch in due):
+            ledger.observe(beat, ledger.tick)
+            ledger.observe(chatty, ledger.tick)
+            ledger.observe(chatty, ledger.tick)
+        ledger.complete(due)
+    gated = ledger.gated_ticks
+    assert gated == int(ledger.now / 0.1 + 1e-9)
+    assert (ledger.counts["/beat"].due, ledger.counts["/beat"].received) == (gated, gated)
+    assert (ledger.counts["/chatty"].due, ledger.counts["/chatty"].received) == (gated, 2 * gated)
+    assert ledger.counts["/peds"].received == 0
+    assert ledger.counts["/peds"].due > gated
+
+
+def test_counts_survive_channel_removal_and_readd() -> None:
+    ledger = GateLedger(dt=DT, base=0.0)
+    spec = _spec("beat", 0.1)
+    ledger.refresh(_desired(spec))
+    hard_due = _tick(ledger)
+    ledger.observe(hard_due[0], ledger.tick)
+    ledger.complete(hard_due)
+    ledger.refresh({})
+    ledger.refresh(_desired(spec))
+    hard_due = _tick(ledger)
+    ledger.observe(hard_due[0], ledger.tick)
+    ledger.complete(hard_due)
+    assert (ledger.gated_ticks, ledger.counts["/beat"].due, ledger.counts["/beat"].received) == (2, 2, 2)
