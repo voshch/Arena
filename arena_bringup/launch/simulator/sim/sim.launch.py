@@ -45,6 +45,7 @@ def generate_launch_description():
             ('dlss', '', 'DLSS mode: auto | quality | balanced | performance. Empty keeps the preset value.'),
             ('lighting', '', 'Lighting rig: lights_off | camera_light | stage_lights | colored_lights | default | grey_studio. Empty keeps the preset value.'),
             ('overlays', '', 'Viewport overlays to show, comma list of axis,grid,bbox or none. Empty keeps the preset value.'),
+            ('ceilings', '', 'Room ceilings: auto | on | off. Empty is auto, hidden so the GUI looks into the rooms from above unless the world declares lights.'),
         )
     }
 

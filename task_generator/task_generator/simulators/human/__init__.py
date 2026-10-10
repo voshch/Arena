@@ -818,6 +818,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         if purge >= ObstacleLayer.WORLD:
             await self._simulator.remove_mechanisms()
+            await self._simulator.remove_lights()
             futures.append(self._simulator.remove_world())
 
         if stale_walls:

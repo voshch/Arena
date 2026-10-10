@@ -28,9 +28,6 @@ if TYPE_CHECKING:
 class NoneAdapter(MobileAdapter):
     kind: ClassVar[str] = "none"
 
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        return None
-
     async def dispatch_phase(
         self,
         phase: TaskPhase,

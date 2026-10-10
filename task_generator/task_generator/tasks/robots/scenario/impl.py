@@ -1,13 +1,13 @@
 import asyncio
 
+import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
-from arena_simulation_setup.tree.World.Scenario import ScenarioGesturePhase, ScenarioGotoPhase
 
 from task_generator.shared import Pose, Position, PositionRadius
 from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
-from task_generator.tasks.robots.request import GoToPhase, PlayGesturePhase, TaskRequest
+from task_generator.tasks.robots.request import GoToPhase, TaskPhase, TaskRequest
 
 
 class TM_Scenario(TM_Robots):
@@ -53,17 +53,16 @@ class TM_Scenario(TM_Robots):
             start_pose = _to_map_frame(config.start, config.start_floor)
             self._start_poses[robot.name] = start_pose
 
-            phases: list[GoToPhase | PlayGesturePhase] = []
+            phases: list[TaskPhase] = []
             forbidden: list[PositionRadius] = [
                 PositionRadius(x=start_pose.position.x, y=start_pose.position.y, radius=robot.safe_distance),
             ]
             for phase in config.phase_list():
-                if isinstance(phase, ScenarioGotoPhase):
-                    goto_pose = _to_map_frame(phase.goto, config.goal_floor)
-                    phases.append(GoToPhase(pose=goto_pose))
+                if isinstance(phase, GoToPhase) and phase.pose is not None:
+                    goto_pose = _to_map_frame(phase.pose, config.goal_floor)
+                    phase = attrs.evolve(phase, pose=goto_pose)
                     forbidden.append(PositionRadius(x=goto_pose.position.x, y=goto_pose.position.y, radius=robot.safe_distance))
-                elif isinstance(phase, ScenarioGesturePhase):
-                    phases.append(PlayGesturePhase(gesture=None if phase.gesture in ("", "random") else phase.gesture, instance=phase.instance))
+                phases.append(phase)
 
             # An empty phase list intentionally describes a stationary robot.
             # Do not submit it to RobotManager: an empty TaskRequest has no
@@ -71,7 +70,7 @@ class TM_Scenario(TM_Robots):
             # timeout (or until another non-idle robot finishes) so that
             # recordings can capture pedestrians passing a parked robot.
             if phases:
-                await robot.submit_task(TaskRequest(phases=phases), start_pose)
+                await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)), start_pose)
             else:
                 self._idle_robots.add(robot.name)
             self._ctx.world_manager.forbid(forbidden)

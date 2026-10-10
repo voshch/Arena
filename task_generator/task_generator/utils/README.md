@@ -47,6 +47,15 @@ hallway, door gaps, wall YAML, zones YAML, `map.yaml`, and a PNG image. The
 output directory is `$ARENA_WS_DIR/src/arena/simulation-setup/worlds/<map_name>`.
 Not used at runtime by the task-generator core; invoked as a standalone tool.
 
+## `static_tf.py`
+
+[`static_tf.py`](static_tf.py)
+
+`StaticTransformBroadcaster`: the node's latched `/tf_static` publisher. It
+keeps one transform per child frame and a resend replaces it, so the
+`map -> env_<n>/map` anchor follows a world swap (the tf2_ros broadcaster
+keeps the first transform it sent for a child frame).
+
 ## `taskgen_srvs.py`
 
 [`taskgen_srvs.py`](taskgen_srvs.py)

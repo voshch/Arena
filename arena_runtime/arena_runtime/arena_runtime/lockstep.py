@@ -121,6 +121,7 @@ class LockstepScheduler:
         self._resume_task: asyncio.Task | None = None
         self._measured_rtf = 0.0
         self._waiting: list[str] = []
+        self._ledger: GateLedger | None = None
         self._resume = asyncio.Event()
         self._resume.set()
         self._arrived = asyncio.Event()
@@ -261,6 +262,7 @@ class LockstepScheduler:
         dt = self._node.rosparam[float].get('physics_dt', 0.0333)
         await self._await_quiet_clock()
         ledger = GateLedger(dt=dt, base=self._node.sim_time.to_seconds())
+        self._ledger = ledger
         subs: dict[str, rclpy.subscription.Subscription] = {}
         loop = asyncio.get_running_loop()
         window_start = loop.time()
@@ -326,6 +328,7 @@ class LockstepScheduler:
             self._publish_status()
         finally:
             self._waiting = []
+            self._ledger = None
             for sub in subs.values():
                 self._node.destroy_subscription(sub)
 
@@ -407,6 +410,7 @@ class LockstepScheduler:
     ) -> None:
         """Status reflects the live gate: a publish from register/drop mid-stall keeps waiting_on."""
         config = self._config
+        ledger = self._ledger
         self._pub_status.publish(
             arena_runtime_msgs.msg.LockstepStatus(
                 active=config is not None,
@@ -418,5 +422,7 @@ class LockstepScheduler:
                 registrations=self._snapshot_registrations(),
                 waiting_on=list(waiting_on) if waiting_on is not None else list(self._waiting),
                 arrived=list(arrived),
+                gated_ticks=ledger.gated_ticks if ledger is not None else 0,
+                counts=[arena_runtime_msgs.msg.LockstepChannelCount(name=count.name, topic=topic, due=count.due, received=count.received) for topic, count in (ledger.counts.items() if ledger is not None else ())],
             )
         )

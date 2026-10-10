@@ -164,6 +164,12 @@ def generate_launch_description() -> launch.LaunchDescription:
     tm_modules = LaunchArgument(name="task.modules", default_value="rviz_ui")
     LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""))
     world = LaunchArgument(name="world", default_value="map_empty")
+    world_lighting = LaunchArgument(
+        name="world.lighting",
+        default_value="authored",
+        choices=["authored", "auto"],
+        description="authored: the lights the world declares. auto: also a calibrated ceiling rig in every zone with a ceiling and no lights of its own.",
+    )
     mobile = LaunchArgument(
         name="robot.mobile",
         default_value="",
@@ -445,6 +451,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "task.config": tm_config_val,
                     "task.modules": tm_modules_val,
                     **world.str_param,
+                    "world.lighting": world_lighting.param_value(str),
                     "auditory.static_sounds": auditory_static_sounds.param_value(str),
                     "robot.train": train_mode.param_value(bool),
                     "env_id": allocated_id,
@@ -487,6 +494,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 ['record_data_dir:=', record_dir.substitution],
                 '-r',
                 ['__ns:=/', allocated_ns],
+                *(arg for topic in ("/tf", "/tf_static") if tf_namespace for arg in ('-r', f'{topic}:={tf_namespace}{topic}')),
             ],
             output='screen',
             condition=launch.conditions.IfCondition(launch.substitutions.PythonExpression(["'", record_dir.substitution, "' != '' and '", record_auto.substitution, "'.lower() in ('true', '1')"])),

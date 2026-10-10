@@ -114,16 +114,13 @@ class Nav2Adapter(MobileAdapter):
         msg.pose = phase.pose.to_msg()
         return msg
 
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        if phase.is_satisfied(robot):
-            return True
-        if not super().is_phase_done(phase, robot):
-            return False
+    def on_phase_tick(self, phase: TaskPhase, robot: RobotManager) -> None:
+        if robot.waiting or not self.client.is_done():
+            return
         now = robot.node.sim_time.to_seconds()
         if now - self._last_redispatch >= _REDISPATCH_MIN_S:
             self._last_redispatch = now
             robot.node.event_loop.create_task(self.dispatch_phase(phase, robot))
-        return False
 
     async def wait_until_ready(
         self,
@@ -159,10 +156,9 @@ class Nav2Adapter(MobileAdapter):
     ) -> None:
         await self._clear_costmap(robot, "local")
 
-        request = robot._current_request
-        if request is None or robot._phase_index >= len(request.phases):
-            return
-        await self.dispatch_phase(request.phases[robot._phase_index], robot)
+        phase = robot.active_dispatch_phase()
+        if phase is not None:
+            await self.dispatch_phase(phase, robot)
 
     async def _clear_costmap(
         self,

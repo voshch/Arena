@@ -88,12 +88,14 @@ zones:
   schedules: []                  # list of Schedule (M2 standalone), see AUTHORING.md
   signals: []                    # list of Signal (M2 standalone), see AUTHORING.md
   sounds: []                     # list of Sound (M2 standalone), see AUTHORING.md
+  lights: []                     # list of local Light fixtures, see AUTHORING.md#lights
   entities:
     static: []                   # list of Obstacle, same schema as scenario static:
     dynamic: []                  # list of DynamicObstacle, same schema as scenario dynamic:
   ceiling: true                  # true by default, false to leave the zone open
   ceiling_height: 2.0            # top height (m), derived from wall stack when absent
   ceiling_cast_shadows: false    # false by default, true to occlude light
+  ceiling_lights: null           # ceiling rig {fixture, spacing, lumens, ...}, see AUTHORING.md#lights
   ceiling_material:              # MaterialIdentifier, defaults to Concrete_Smooth
   - Concrete_Smooth
   - {}
@@ -103,9 +105,10 @@ zones:
 ```
 
 Field aliases: `material`/`mat`, `ceiling_material`/`ceiling_mat`,
-`wall_material`/`wall_mat`. `schedules:`, `signals:`, `sounds:` and the
-semantics `preset:` mechanism (`gate`, `pressure_plate`, `occupancy_cap`,
-`signal`, `schedule`, `sound`) are documented in
+`wall_material`/`wall_mat`. `schedules:`, `signals:`, `sounds:`, `lights:`,
+`ceiling_lights:` and the semantics `preset:` mechanism (`gate`,
+`pressure_plate`, `occupancy_cap`, `signal`, `schedule`, `sound`, `light`) are
+documented in
 [AUTHORING.md](../AUTHORING.md#m2-kinds-params-and-timelines). The scenario
 `static:`/`dynamic:` schema referenced above is in
 [`scenarios/<name>/` schema](#scenariosname-schema).
@@ -167,6 +170,12 @@ microphones:
 `(zone, placement, index)` forms the listener id and must be unique across
 the whole world. See `WorldMicrophone` in
 [tree/World/World.py](../src/arena_simulation_setup/tree/World/World.py).
+
+### `lights`
+
+A sibling of `zones:` at the level root, the ambient lights of the level
+(`fixture: dome` or `sun`, with `lux`). Zone-local fixtures go in a zone's
+`lights:` instead. See [AUTHORING.md](../AUTHORING.md#lights).
 
 ## Semantic annotations
 
@@ -294,13 +303,22 @@ robots:
   - start: [x, y, yaw]           # required. [x,y], [x,y,yaw], {x,y,yaw} or a zone name
     start_floor: ""              # optional, multi-level worlds
     goal_floor: ""               # optional, floor for goto phases
-    phases:                      # ordered. each entry is exactly one of:
+    phases:                      # ordered. each entry is one of:
       - {goto: [x, y, yaw]}      #   navigate to pose (same formats as start)
+      - {goto: kitchen}          #   navigate into a zone, door, elevator or to a pedestrian by name
       - {gesture: wave}          #   arm gesture, "random" allowed, optional instance: <mount>
+      - {reach: stow}            #   arm reach: named target, "random", or a pose (optional frame:)
+      - {until: "door_1.open == true"}  # hold where the robot is until the atom holds
+    conditions: []               # optional, clauses judged over this robot's whole phase list
 ```
 
+Every phase also takes `until: "<atom>"` (completes once the atom holds, after
+arrival for a goto), `hold_time: <s>` (park time at a goto goal), `conditions:`
+(clauses judged over this phase only), `text:` (instruction for
+language-conditioned planners) and `on_failure: continue | stop_task | abort_episode`.
 A pose given as a bare string samples a point inside that zone with identity
-orientation. `goal: [x, y, yaw]` is deprecated and rewritten to a single
+orientation, and a named `goto` is judged met by zone membership rather than by
+distance to the sampled point. `goal: [x, y, yaw]` is deprecated and rewritten to a single
 `goto` phase with a warning. Which robot model and adapter runs is not part of
 the scenario, see
 [arena_robots setup](../../arena_robots/arena_robots/config/setup/README.md).
@@ -315,7 +333,8 @@ behavior (sequences, interactions, needs) — see
 `humansim/arena_humansim/config/agent_types/README.md` and the
 `hospital_1/scenarios/showcase` scenario for a worked example.
 
-`static` (`Obstacle`) also takes `scale: [x, y, z]` (default identity) and
+`static` (`Obstacle`) also takes `light: {lit, light_on, level}` for the lights its
+object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: [x, y, z]` (default identity) and
 `level_id` (multi-level worlds). `dynamic` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`) and `level_id`. `pos:` is a deprecated alias
 for `pose:` on both, rewritten on parse. Any other key on a `static`/`dynamic`
@@ -382,8 +401,17 @@ conditions:
 | `q` | second atom, required for `before`/`never_during`, rejected (parse error) with any other `op` |
 | `text` | human-readable description, optional |
 
-An atom is one of two bare forms (no `env_N/` prefix): `<entity>.<field> ==
-<value>` (an entity field test) or `<subject> in <zone>` (zone membership).
+An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
+<value>` (an entity field test), `<subject> in <zone>` (zone membership),
+`<subject> within <r> of <subject>` (planar distance) and `not <atom>`. A subject
+is `robot` (the robot being judged), another robot's name or a pedestrian's name.
+Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
+`failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
+A world entity (zone, door, elevator, schedule, sound) is named
+`<name>/<level>`, or `<name>` alone when no other level has one.
+Clauses take an optional `on_failure` (`continue` by default, `stop_task`,
+`abort_episode`). Conditions are judged online at the node tick and replayed
+offline by arena_evaluation with the same code.
 Schema: [shared/conditions.py](../src/arena_simulation_setup/shared/conditions.py).
 
 ## `assets/` directory

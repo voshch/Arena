@@ -9,12 +9,14 @@ import math
 import time
 import traceback
 import typing
+import xml.etree.ElementTree
 from collections.abc import Sequence
 from pathlib import Path
 
 import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
+import gz.transport13
 import launch
 import launch_ros
 import rclpy.impl.rcutils_logger
@@ -24,11 +26,13 @@ from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
-from arena_simulation_setup.shared import Ceiling
+from arena_simulation_setup.shared import Ceiling, Light, cct_to_rgb
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.material import MdlUtil
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from geometry_msgs.msg import Pose as RosPose
+from gz.msgs10 import light_pb2, material_color_pb2
 from launch import LaunchDescription
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from ros_gz_interfaces.msg import Entity as EntityMsg
@@ -87,6 +91,26 @@ _LATCHED_QOS = QoSProfile(
     depth=1,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
+
+
+async def _list_models() -> list[str]:
+    proc = await asyncio.create_subprocess_exec(
+        'gz',
+        'model',
+        '--list',
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    out = stdout.decode()
+    if proc.returncode != 0 or 'Available models:' not in out:
+        raise SimUnavailable(f"gz model --list failed: {(stderr.decode() or out).strip()}")
+    names: list[str] = []
+    for line in out.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('- '):
+            names.append(stripped[2:].strip())
+    return names
 
 
 class GazeboHost(SimLifecycle):
@@ -250,7 +274,7 @@ class GazeboHost(SimLifecycle):
         removed = 0
         for attempt in range(_CLEANUP_ATTEMPTS + 1):
             try:
-                names = await self._list_models()
+                names = await _list_models()
             except SimUnavailable:
                 if attempt == _CLEANUP_ATTEMPTS:
                     raise
@@ -276,25 +300,6 @@ class GazeboHost(SimLifecycle):
                 return False
         return bool(res) and res.success
 
-    async def _list_models(self) -> list[str]:
-        proc = await asyncio.create_subprocess_exec(
-            'gz',
-            'model',
-            '--list',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        out = stdout.decode()
-        if proc.returncode != 0 or 'Available models:' not in out:
-            raise SimUnavailable(f"gz model --list failed: {(stderr.decode() or out).strip()}")
-        names: list[str] = []
-        for line in out.splitlines():
-            stripped = line.strip()
-            if stripped.startswith('- '):
-                names.append(stripped[2:].strip())
-        return names
-
 
 class GazeboSimulator(BaseSim):
     SIM_NAME = 'gazebo'
@@ -314,6 +319,13 @@ class GazeboSimulator(BaseSim):
         self.entities: dict[str, Entity] = {}
         self._walls_entities: list[str] = []
         self._wall_counter = itertools.count()
+        self._light_entities: dict[str, list[str]] = {}
+        self._default_lights_scaled = False
+        self._gz_node = gz.transport13.Node()
+        self._light_publisher = self._gz_node.advertise(_LIGHT_CONFIG_TOPIC, light_pb2.Light)
+        self._material_publisher = self._gz_node.advertise(_MATERIAL_COLOR_TOPIC, material_color_pb2.MaterialColor)
+        self._glow_visuals: dict[str, tuple[str, dict[str, tuple[str, tuple[float, float, float]]]]] = {}
+        self._glow_lights: dict[str, tuple[Light, float]] = {}
         self._material_texture_cache: dict[str, dict[str, str]] = {}
         self._spawned_names: set[str] = set()
         self._entity_ids: dict[str, int] = {}
@@ -472,6 +484,90 @@ class GazeboSimulator(BaseSim):
             self._walls_entities.append(name)
         return True
 
+    def _light_config(self, request: light_pb2.Light) -> bool:
+        return self._light_publisher.has_connections() and self._light_publisher.publish(request)
+
+    async def _light_link(self) -> bool:
+        deadline = time.monotonic() + _LIGHT_LINK_TIMEOUT
+        while not self._light_publisher.has_connections():
+            if time.monotonic() > deadline:
+                self._logger.warning(f"no subscriber on {_LIGHT_CONFIG_TOPIC}")
+                return False
+            await asyncio.sleep(0.05)
+        return True
+
+    @property
+    def _owns_ambient(self) -> bool:
+        return self._realizer.realize("light") == f"{_GZ_AMBIENT_ENV}/light"
+
+    def _scale_default_lights(self, scale: float) -> bool:
+        if not self._owns_ambient:
+            return True
+        return all([self._light_config(_default_light_request(name, direction, scale)) for name, direction in _GZ_DEFAULT_LIGHTS])
+
+    async def _spawn_light_entity(self, name: str, params: dict[str, typing.Any]) -> bool:
+        async with self._semaphore:
+            x, y, z = params['pose']
+            return await self._spawn_sdf(name, _generate_light_sdf(name, params), Pose(position=Position(x=x, y=y, z=z)))
+
+    async def _spawn_lights(self, lights: Sequence[Light]) -> bool:
+        dome = next((light for light in lights if light.fixture == 'dome'), None)
+        ok = await self._light_link()
+        if any(not light.intrinsic for light in lights):
+            ok = self._scale_default_lights(_gz_dome_scale(dome.lux, 1.0) if dome is not None else 0.0) and ok
+            self._default_lights_scaled = self._owns_ambient
+        spawns = []
+        for light in lights:
+            if light.fixture == 'dome' or (light.spec.ambient and not self._owns_ambient):
+                continue
+            level = 0.0 if light.lit is False else light.level
+            names = []
+            for params in _light_params(light, level, light.alive(light.dead_fraction)):
+                names.append(self._realizer.realize(f"light_{next(self._wall_counter)}"))
+                spawns.append(self._spawn_light_entity(names[-1], params))
+            self._light_entities[light.name] = names
+            self._glow(light, level)
+        return all(await asyncio.gather(*spawns)) and ok
+
+    async def _remove_lights(self, lights: Sequence[Light]) -> bool:
+        results = [await self._delete_entity(name, EntityMsg.LIGHT) for light in lights for name in self._light_entities.pop(light.name, ())]
+        for light in lights:
+            self._glow_lights.pop(light.name, None)
+        if self._default_lights_scaled and any(not light.intrinsic for light in lights):
+            self._default_lights_scaled = False
+            results.append(self._scale_default_lights(1.0))
+        return all(results)
+
+    def _glow(self, light: Light, level: float) -> None:
+        if not light.glow:
+            return
+        self._glow_lights[light.name] = (light, level)
+        sim_path, visuals = self._glow_visuals.get(light.owner, ('', {}))
+        if light.glow in visuals:
+            visual, base = visuals[light.glow]
+            self._material_publisher.publish(_glow_request(f'{sim_path}::{visual}', base, light.cct_K, level))
+
+    async def _move_light(self, light: Light, position: Position, yaw: float) -> None:
+        for name in self._light_entities.get(light.name, ()):
+            request = SetEntityPose.Request()
+            request.entity = EntityMsg(name=name, type=EntityMsg.LIGHT)
+            request.pose = Pose(position=position, orientation=Orientation.from_yaw(yaw)).to_msg()
+            self._service_set_entity_pose.client.call_async(request)
+
+    async def _apply_light(self, light: Light, level: float, alive: Sequence[bool]) -> None:
+        if light.fixture == 'dome':
+            if not self._scale_default_lights(_gz_dome_scale(light.lux, level)):
+                raise RuntimeError(f"light {light.name!r} did not take its state")
+            return
+        self._glow(light, level)
+        names = self._light_entities.get(light.name)
+        if not names:
+            return
+        pose = self._light_poses.get(light.name)
+        params = _light_params(light, level, alive, pose[0] if pose is not None else None)
+        if not all([self._light_config(_light_request(name, p)) for name, p in zip(names, params, strict=True)]):
+            raise RuntimeError(f"light {light.name!r} did not take its state")
+
     async def set_robot_pose(self, sim_path: str, pose: Pose) -> bool:
         if sim_path not in self._agent_robots:
             return False
@@ -485,8 +581,8 @@ class GazeboSimulator(BaseSim):
             self._logger.warning(f"set_robot_pose({sim_path!r}) failed: {e}")
             return False
 
-    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose) -> bool:
-        sdf = _generate_box_sdf(name, size)
+    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None) -> bool:
+        sdf = _generate_box_sdf(name, size, textures=await self._resolve_wall_textures(material))
         async with self._semaphore:
             return await self._spawn_sdf(name, sdf, pose)
 
@@ -650,6 +746,8 @@ class GazeboSimulator(BaseSim):
                 ok = await self._spawn_model(entity.sim_path, model, entity.pose)
                 if ok and (model.path is None or model.type is ModelType.URDF):
                     self.entities[entity.name] = entity
+                if ok and model.path and model.type is not ModelType.URDF:
+                    self._bind_glow(entity, _sdf_file(model.path))
                 return ok
 
             except SimUnavailable:
@@ -659,20 +757,21 @@ class GazeboSimulator(BaseSim):
                 traceback.print_exc()
                 return False
 
+    def _bind_glow(self, entity: Entity, sdf_path: Path) -> None:
+        visuals = _glow_visuals(sdf_path) if sdf_path.is_file() else {}
+        if not visuals:
+            self._glow_visuals.pop(entity.name, None)
+            return
+        self._glow_visuals[entity.name] = (entity.sim_path, visuals)
+        for light, level in list(self._glow_lights.values()):
+            if light.owner == entity.name:
+                self._glow(light, level)
+
     async def _spawn_model(self, name: str, model: Model, pose: Pose) -> bool:
         """Spawn an already-resolved model under `name` at `pose`. Caller holds self._semaphore."""
         if model.path and model.type not in (ModelType.URDF,):
             # direct path available, use gz cli call
-            sdf_path = model.path
-            # Resolve directory to actual SDF file (Gazebo requires a file, not a directory)
-            if sdf_path.is_dir():
-                candidate = sdf_path / f"{sdf_path.name}.sdf"
-                if candidate.exists():
-                    sdf_path = candidate
-                else:
-                    candidates = list(sdf_path.glob("*.sdf"))
-                    if candidates:
-                        sdf_path = candidates[0]
+            sdf_path = _sdf_file(model.path)
 
             req_payload = f'sdf_filename: "{sdf_path}", name: "{name}", pose: {{   position: {{ x: {pose.position.x}, y: {pose.position.y}, z: {pose.position.z} }}   orientation: {{ x: {pose.orientation.x}, y: {pose.orientation.y}, z: {pose.orientation.z}, w: {pose.orientation.w} }} }}'
 
@@ -689,7 +788,7 @@ class GazeboSimulator(BaseSim):
             # Reconcile against the live model list: track it if it exists, else
             # best-effort delete in case the create lands just after this check,
             # so a slow ack never leaves an orphan that survives every reset.
-            if name in await self._list_models():
+            if name in await _list_models():
                 self._spawned_names.add(name)
                 return True
 
@@ -721,7 +820,7 @@ class GazeboSimulator(BaseSim):
             self._spawned_names.add(name)
             return True
 
-        if name in await self._list_models():
+        if name in await _list_models():
             self._spawned_names.add(name)
             return True
 
@@ -1248,6 +1347,173 @@ def _generate_ceiling_sdf(name: str, ceiling: Ceiling, textures: dict[str, str])
         """
 
 
+_LIGHT_CONFIG_TOPIC = '/world/default/light_config'
+_MATERIAL_COLOR_TOPIC = '/world/default/material_color'
+_GLOW_VISUAL_PREFIX = 'glow_'
+_GZ_GLOW_RESPONSE = 0.65
+_LIGHT_LINK_TIMEOUT = 5.0
+_GZ_AMBIENT_ENV = 'env_0'
+_GZ_DEFAULT_LIGHTS = (
+    ('sun', (-1.0, 0.0, -0.35)),
+    ('fill_west', (1.0, 0.0, -0.35)),
+    ('fill_north', (0.0, -1.0, -0.35)),
+    ('fill_south', (0.0, 1.0, -0.35)),
+)
+_GZ_DEFAULT_DIFFUSE = 0.45
+_GZ_DOME_REFERENCE_LUX = 400.0
+_GZ_LUX_GAIN = 0.004
+_GZ_FIXTURE_CONE = 2.6
+_GZ_FIXTURE_RANGE = 8.0
+_GZ_RIG_CELL_FIXTURES = 2
+_GZ_BOUNCE_REFLECTANCE = 0.4
+_GZ_LIGHT_TYPES = {'point': light_pb2.Light.POINT, 'spot': light_pb2.Light.SPOT, 'directional': light_pb2.Light.DIRECTIONAL}
+
+
+def _gz_dome_scale(lux: float | None, level: float) -> float:
+    return (lux or 0.0) * level / _GZ_DOME_REFERENCE_LUX
+
+
+def _rig_cells(light: Light) -> list[list[int]]:
+    """Fixture indices of a rig grouped into square cells of neighboring fixtures."""
+    points = [(p.x, p.y) for p in light.fixtures]
+    pitches = [math.dist(a, b) for i, a in enumerate(points) for b in points[i + 1 :]]
+    cell = _GZ_RIG_CELL_FIXTURES * min((d for d in pitches if d > 0.0), default=1.0)
+    x_min = min(x for x, _ in points)
+    y_min = min(y for _, y in points)
+    cells: dict[tuple[int, int], list[int]] = {}
+    for index, (x, y) in enumerate(points):
+        cells.setdefault((int((x - x_min + 1e-6) // cell), int((y - y_min + 1e-6) // cell)), []).append(index)
+    return list(cells.values())
+
+
+def _rig_bounce(light: Light, level: float, alive: Sequence[bool]) -> dict[str, typing.Any]:
+    """Unshadowed fill at the room center standing in for the light the room surfaces reflect, which ogre2 does not trace."""
+    xs = [p.x for p in light.fixtures]
+    ys = [p.y for p in light.fixtures]
+    pitches = [math.dist((a.x, a.y), (b.x, b.y)) for i, a in enumerate(light.fixtures) for b in light.fixtures[i + 1 :]]
+    pitch = min((d for d in pitches if d > 0.0), default=2.0)
+    length = max(xs) - min(xs) + pitch
+    width = max(ys) - min(ys) + pitch
+    height = light.fixtures[0].z
+    surface = 2.0 * (length * width + length * height + width * height)
+    live = sum(1 for index in range(len(light.fixtures)) if index >= len(alive) or alive[index])
+    flux = (light.lumens or 0.0) * live * level
+    reflected_lux = _GZ_BOUNCE_REFLECTANCE * flux / (surface * (1.0 - _GZ_BOUNCE_REFLECTANCE))
+    reach = 0.6 * math.hypot(length, width, height)
+    return {'type': 'point', 'pose': (sum(xs) / len(xs), sum(ys) / len(ys), height / 2.0), 'intensity': reflected_lux / _GZ_DOME_REFERENCE_LUX, 'range': reach, 'constant': 1.0, 'quadratic': 0.0, 'cone': None, 'cast_shadows': False}
+
+
+def _light_params(light: Light, level: float, alive: Sequence[bool], position: Position | None = None) -> list[dict[str, typing.Any]]:
+    """One parameter set per gz light: a rig becomes a point light per cell of fixtures."""
+    r, g, b = cct_to_rgb(light.cct_K)
+    params: dict[str, typing.Any] = {'diffuse': (r, g, b), 'cast_shadows': light.cast_shadows, 'direction': light.direction}
+    if light.fixture == 'sun':
+        return [params | {'type': 'directional', 'pose': (0.0, 0.0, 10.0), 'intensity': _gz_dome_scale(light.lux, level), 'range': 1000.0, 'constant': 1.0, 'quadratic': 0.0, 'cone': None}]
+    if light.rig:
+        result = []
+        for cell in _rig_cells(light):
+            live = sum(1 for index in cell if index >= len(alive) or alive[index])
+            x = sum(light.fixtures[index].x for index in cell) / len(cell)
+            y = sum(light.fixtures[index].y for index in cell) / len(cell)
+            intensity = _GZ_LUX_GAIN * (light.lumens or 0.0) * live * level / math.tau
+            result.append(params | {'type': 'point', 'pose': (x, y, light.fixtures[cell[0]].z), 'intensity': intensity, 'range': _GZ_FIXTURE_RANGE, 'constant': 1.0, 'quadratic': 1.0, 'cone': None})
+        return [*result, params | _rig_bounce(light, level, alive)]
+    if position is None:
+        position = light.position if light.position is not None else light.offset
+    if light.spec.shape == 'sphere':
+        return [params | {'type': 'point', 'pose': (position.x, position.y, position.z), 'intensity': _GZ_LUX_GAIN * (light.lumens or 0.0) * level / (4.0 * math.pi), 'range': _GZ_FIXTURE_RANGE, 'constant': 1.0, 'quadratic': 1.0, 'cone': None}]
+    cone = math.radians(light.spec.cone_deg) if light.spec.cone_deg < 180.0 else _GZ_FIXTURE_CONE
+    solid_angle = 2.0 * math.pi * (1.0 - math.cos(cone / 2.0))
+    return [params | {'type': 'spot', 'pose': (position.x, position.y, position.z), 'intensity': _GZ_LUX_GAIN * (light.lumens or 0.0) * level / solid_angle, 'range': _GZ_FIXTURE_RANGE, 'constant': 1.0, 'quadratic': 1.0, 'cone': cone}]
+
+
+def _generate_light_sdf(name: str, p: dict[str, typing.Any]) -> str:
+    r, g, b = p['diffuse']
+    dx, dy, dz = p['direction']
+    x, y, z = p['pose']
+    spot = f"<spot><inner_angle>{p['cone'] * 0.5}</inner_angle><outer_angle>{p['cone']}</outer_angle><falloff>1</falloff></spot>" if p['cone'] is not None else ''
+    return f"""
+        <sdf version="1.9">
+            <light type="{p['type']}" name="{name}">
+                <pose>{x} {y} {z} 0 0 0</pose>
+                <cast_shadows>{'true' if p['cast_shadows'] else 'false'}</cast_shadows>
+                <diffuse>{r} {g} {b} 1</diffuse>
+                <specular>0 0 0 1</specular>
+                <intensity>{p['intensity']}</intensity>
+                <direction>{dx} {dy} {dz}</direction>
+                <attenuation><range>{p['range']}</range><constant>{p['constant']}</constant><linear>0</linear><quadratic>{p['quadratic']}</quadratic></attenuation>
+                {spot}
+            </light>
+        </sdf>
+        """
+
+
+def _light_request(name: str, p: dict[str, typing.Any]) -> light_pb2.Light:
+    msg = light_pb2.Light(
+        name=name,
+        type=_GZ_LIGHT_TYPES[p['type']],
+        range=p['range'],
+        attenuation_constant=p['constant'],
+        attenuation_quadratic=p['quadratic'],
+        cast_shadows=p['cast_shadows'],
+        intensity=p['intensity'],
+        is_light_off=p['intensity'] <= 0.0,
+    )
+    msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = p['pose']
+    msg.pose.orientation.w = 1.0
+    msg.diffuse.r, msg.diffuse.g, msg.diffuse.b = p['diffuse']
+    msg.diffuse.a = 1.0
+    msg.specular.a = 1.0
+    msg.direction.x, msg.direction.y, msg.direction.z = p['direction']
+    if p['cone'] is not None:
+        msg.spot_inner_angle = p['cone'] * 0.5
+        msg.spot_outer_angle = p['cone']
+        msg.spot_falloff = 1.0
+    return msg
+
+
+def _sdf_file(path: Path) -> Path:
+    """The SDF file of a model path, Gazebo takes a file and not a directory."""
+    if not path.is_dir():
+        return path
+    candidate = path / f"{path.name}.sdf"
+    if candidate.exists():
+        return candidate
+    return next(iter(path.glob("*.sdf")), path)
+
+
+def _glow_visuals(sdf_path: Path) -> dict[str, tuple[str, tuple[float, float, float]]]:
+    """Per glow material of a model SDF, the scoped name of its visual below the model and its base color."""
+    result: dict[str, tuple[str, tuple[float, float, float]]] = {}
+    for link in xml.etree.ElementTree.parse(sdf_path).getroot().iter('link'):
+        for visual in link.iter('visual'):
+            name = visual.get('name', '')
+            if not name.startswith(_GLOW_VISUAL_PREFIX):
+                continue
+            diffuse = visual.findtext('material/diffuse')
+            red, green, blue = (float(channel) for channel in diffuse.split()[:3]) if diffuse else (1.0, 1.0, 1.0)
+            result[name.removeprefix(_GLOW_VISUAL_PREFIX)] = (f"{link.get('name', '')}::{name}", (red, green, blue))
+    return result
+
+
+def _glow_request(entity: str, base: tuple[float, float, float], cct_K: float, level: float) -> material_color_pb2.MaterialColor:
+    msg = material_color_pb2.MaterialColor(entity_match=material_color_pb2.MaterialColor.FIRST)
+    msg.entity.name = entity
+    emissive = tuple(level**_GZ_GLOW_RESPONSE * channel for channel in cct_to_rgb(cct_K))
+    for color, (red, green, blue) in ((msg.ambient, base), (msg.diffuse, base), (msg.specular, (0.0, 0.0, 0.0)), (msg.emissive, emissive)):
+        color.r, color.g, color.b, color.a = red, green, blue, 1.0
+    return msg
+
+
+def _default_light_request(name: str, direction: tuple[float, float, float], scale: float) -> light_pb2.Light:
+    msg = light_pb2.Light(name=name, type=light_pb2.Light.DIRECTIONAL, intensity=scale, is_light_off=scale <= 0.0)
+    msg.diffuse.r = msg.diffuse.g = msg.diffuse.b = _GZ_DEFAULT_DIFFUSE
+    msg.diffuse.a = 1.0
+    msg.specular.a = 1.0
+    msg.direction.x, msg.direction.y, msg.direction.z = direction
+    return msg
+
+
 _BOX_SDF_TEMPLATE = """
 <sdf version="1.6">
     <model name="{name}">
@@ -1267,7 +1533,7 @@ _BOX_SDF_TEMPLATE = """
 """
 
 
-def _generate_box_sdf(name: str, size: tuple[float, float, float], center: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> str:
+def _generate_box_sdf(name: str, size: tuple[float, float, float], center: tuple[float, float, float] = (0.0, 0.0, 0.0), textures: dict[str, str] | None = None) -> str:
     sx, sy, sz = size
     cx, cy, cz = center
-    return _BOX_SDF_TEMPLATE.format(name=name, sx=sx, sy=sy, sz=sz, cx=cx, cy=cy, cz=cz, material=_wall_material_sdf(None))
+    return _BOX_SDF_TEMPLATE.format(name=name, sx=sx, sy=sy, sz=sz, cx=cx, cy=cy, cz=cz, material=_wall_material_sdf(textures))

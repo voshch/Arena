@@ -245,12 +245,23 @@ class Adapter(ABC):
         robot: RobotManager,
     ) -> None: ...
 
-    def is_phase_done(
+    def on_phase_tick(
         self,
         phase: TaskPhase,
         robot: RobotManager,
-    ) -> bool | None:
-        return self.client_for(phase.kind).is_done()
+    ) -> None:
+        """Called every judge tick while `phase` is active and not yet met, `phase` as `dispatch_phase` received it (goto poses in the map frame)."""
+        return None
+
+    @property
+    def signals(self) -> frozenset[str]:
+        """Signals the driven robot can send Arena, such as "arrived"."""
+        return frozenset()
+
+    @property
+    def signal(self) -> str | None:
+        """The signal the robot has sent for the active phase, None until it does."""
+        return None
 
     async def before_move(
         self,

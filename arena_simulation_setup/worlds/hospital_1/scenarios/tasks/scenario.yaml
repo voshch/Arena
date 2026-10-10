@@ -1,0 +1,24 @@
+robots:
+- start: [10.0, 2.0, 3.1416]
+  phases:
+  - {goto: reception, text: "Go to the reception."}
+  - {until: "not ped_1 in reception", text: "Wait at the reception until the visitor has left it."}
+  - {goto: pharmacy, hold_time: 2.0, conditions: [{op: never, p: "robot in operating_room"}], text: "Go to the pharmacy and park there for two seconds, staying out of the operating room."}
+  conditions:
+  - {op: eventually, p: "robot in central_hallway"}
+- start: [10.0, 30.0, 0.0]
+  phases:
+  - {goto: laboratory}
+  - {until: "jackal_0.phase == 2", text: "Wait in the laboratory until the first robot heads for the pharmacy."}
+
+dynamic:
+- model: Office/office_female_caucasian_young
+  name: ped_1
+  pose: [3.0, 2.5, 0.0]
+  waypoints:
+  - [3.0, 2.5, 0.0]
+  - [21.0, 5.0, 0.0]
+  - [21.0, 8.0, 0.0]
+
+conditions:
+- {op: never, p: "robot in operating_room", text: "Stay out of the operating room."}

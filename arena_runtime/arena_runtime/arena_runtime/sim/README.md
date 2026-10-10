@@ -65,12 +65,23 @@ Defined in [`_interface.py`](_interface.py):
 
 | Primitive (override required for default behavior) | Signature |
 | --- | --- |
-| `spawn_box` | `(name, size, pose) -> bool` |
+| `spawn_box` | `(name, size, pose, material=None) -> bool` |
 | `move_box` | `(name, pose) -> bool` |
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |
 
 Robot tracking is not a primitive to override: call `_register_agent_robot(robot, model_params)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+
+Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` keep the light table, and every tick pushes each `light` semantic entity whose output changed, after moving frame-anchored lights that moved more than 2 cm or 0.02 rad. A simulator renders lights by overriding four no-op hooks:
+
+| Light hook | Signature | Purpose |
+| --- | --- | --- |
+| `_spawn_lights` | `(Sequence[Light]) -> bool` | create the light entities, dome and sun replacing the default lighting |
+| `_remove_lights` | `(Sequence[Light]) -> bool` | delete them and restore the default lighting |
+| `_apply_light` | `(light, level, alive) -> None` | render at `level` in 0..1 with the per-fixture alive mask |
+| `_move_light` | `(light, position, yaw) -> None` | place a frame-anchored light, its direction turned by `yaw` |
+
+A light with `glow` also makes that material of its `owner` entity emit the light's color at `level`: Gazebo recolors the model's `glow_<material>` visual over `/world/default/material_color`, Isaac sets the material's emissive color on the session layer.
 
 The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 
@@ -205,7 +216,10 @@ in the background). `sim_lifecycle/lockstep/pause` /
 `sim_lifecycle/lockstep/resume` freeze and unfreeze the clock within a run
 without ending it. Status is the latched `/arena/state/lockstep` topic
 (LockstepStatus): `active`, `paused`, `ungated`, `target_rtf`,
-`measured_rtf`, `tick`, `registrations`, `waiting_on`, `arrived`.
+`measured_rtf`, `tick`, `registrations`, `waiting_on`, `arrived`, and the
+run's cumulative counters: `gated_ticks` (ticks that waited on a hard
+channel) and `counts` (per channel topic, the ticks it was `due` on and
+the messages `received`), both reset when a run starts.
 
 `lockstep.autostart`/`lockstep.channels`/`lockstep.target_rtf`/
 `lockstep.paused` params are read once at bringup (launch args

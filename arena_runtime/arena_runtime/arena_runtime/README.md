@@ -105,7 +105,8 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
 3. **Confirm world**: once the env knows its world extent, it calls
    `confirm_world`; the shelf packer places the slot and returns `reference`.
    `reallocated=true` in the response means the env must translate all entity
-   coordinates by the new `reference` offset.
+   coordinates by the new `reference` offset and republishes its latched
+   `map -> env_<n>/map` transform with it.
 4. **Heartbeat**: env publishes [`Heartbeat.msg`](../../arena_runtime_msgs/msg/Heartbeat.msg)
    on `<ns>/state/heartbeat`; `arena_node` resets the timeout clock on each tick.
    The clock starts at `reserve()` time, so an env is covered from registration.

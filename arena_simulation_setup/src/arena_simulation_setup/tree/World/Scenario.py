@@ -1,4 +1,3 @@
-import abc
 import functools
 import itertools
 import os
@@ -9,36 +8,10 @@ from collections.abc import Iterable
 import attrs
 import yaml
 
-from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Obstacle, Pose, Position, Sound
+from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, GoToPhase, Obstacle, Pose, Position, Sound, TaskPhase
+from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.tree import Identifier, PathView
 from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, converter
-
-
-@attrs.define
-class ScenarioGotoPhase:
-    goto: Pose = attrs.field(converter=Pose.converter)
-
-
-@attrs.define
-class ScenarioGesturePhase:
-    gesture: str
-    instance: str = ""  # arm cap instance (mount name), empty = sole arm
-
-
-class ScenarioPhase(abc.ABC):
-    """Discriminated union of scenario phases. Dispatch on key presence."""
-
-    @classmethod
-    @abc.abstractmethod
-    def parse(cls, value: dict) -> "ScenarioPhase":
-        if "goto" in value:
-            return ScenarioGotoPhase(goto=Pose.parse(value["goto"]))
-        if "gesture" in value:
-            return ScenarioGesturePhase(gesture=str(value["gesture"]), instance=str(value.get("instance", "")))
-        raise ValueError(f"ScenarioPhase requires 'goto' or 'gesture' key; got {list(value.keys())}")
-
-
-converter.register_structure_hook(ScenarioPhase, lambda v, _t: ScenarioPhase.parse(v))
 
 
 @attrs.define
@@ -47,7 +20,8 @@ class RobotGoal(Parseable):
     start_floor: str = attrs.field(default="")
     goal_floor: str = attrs.field(default="")
     goal: Pose | None = attrs.field(default=None)
-    phases: list[ScenarioPhase] | None = attrs.field(default=None)
+    phases: list[TaskPhase] | None = attrs.field(default=None)
+    conditions: list[EpisodeCondition] = attrs.field(factory=list)
 
     @classmethod
     def parse(cls, obj: dict) -> "RobotGoal":
@@ -55,9 +29,9 @@ class RobotGoal(Parseable):
             raise ValueError("RobotGoal requires 'start' field")
 
         raw_phases = obj.get("phases")
-        phases: list[ScenarioPhase] | None = None
+        phases: list[TaskPhase] | None = None
         if raw_phases is not None:
-            phases = [ScenarioPhase.parse(p) for p in raw_phases]
+            phases = [TaskPhase.parse(p) for p in raw_phases]
 
         raw_goal = obj.get("goal")
         goal: Pose | None = Pose.parse(raw_goal) if raw_goal is not None else None
@@ -68,9 +42,10 @@ class RobotGoal(Parseable):
             start=Pose.parse(obj["start"]),
             goal=goal,
             phases=phases,
+            conditions=[EpisodeCondition.parse(c) for c in obj.get("conditions", [])],
         )
 
-    def phase_list(self) -> list[ScenarioPhase]:
+    def phase_list(self) -> list[TaskPhase]:
         if self.phases is not None and len(self.phases) > 0:
             return self.phases
         if self.goal is not None:
@@ -79,7 +54,7 @@ class RobotGoal(Parseable):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            return [ScenarioGotoPhase(goto=self.goal)]
+            return [GoToPhase(pose=self.goal)]
         return []
 
 
@@ -99,12 +74,17 @@ class TimelineEntry(Parseable):
     every: float | None = None
     offset: float = 0.0
     until: float | None = None
-    when: dict | None = None
+    when: dict | str | None = None
 
     def __attrs_post_init__(self) -> None:
         triggers = [name for name, value in (("at", self.at), ("every", self.every), ("when", self.when)) if value is not None]
         if len(triggers) != 1:
             raise ValueError(f"timeline entry must set exactly one of 'at', 'every', 'when'; got {triggers}")
+        if isinstance(self.when, str):
+            parse_atom(self.when)
+
+
+converter.register_structure_hook_func(lambda t: t == dict | str | None, lambda v, _t: v)
 
 
 _MODERN_ONLY_KEYS: frozenset[str] = frozenset({"conditions", "timeline", "regions"})

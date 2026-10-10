@@ -15,12 +15,23 @@ can render animated skeletons.
 
 Body and joint frames are published on `<env_ns>/humans/tf`. Nodes that
 listen only to the env's `/tf` never receive them. `hri_producer` subscribes
-to `arena_peds` only while that topic has a subscriber (checked once per
-second), so an unwatched env costs it no roster work and no `joint_states`
-traffic. A consumer that needs pedestrians in the world tree subscribes
+to `arena_peds` only while `humans/tf` or `humans/faces/tracked` has a subscriber
+(checked once per second), so an unwatched env costs it no roster work and no
+`joint_states` traffic. A consumer that needs pedestrians in the world tree subscribes
 both: `rviz_config` relays the env `/tf` and `<env_ns>/humans/tf` into
 `<env_ns>/viewer/tf` for rviz, and the evaluation recorder merges both into
 `/tf` in the bag.
+
+**Faces.** Each body is also a REP-155 face with the same id, listed on
+`humans/faces/tracked`. While a face's `humans/faces/<id>/view` has a subscriber, `hri_producer` computes `face_<id>` (origin between the two URDF eye
+visuals of `head_<id>`, x forward, z up) by forward kinematics of the neck chain
+from the tick's rig joint positions ([`hri/face.py`](rviz_utils/hri/face.py)), adds
+`gaze_<id>` (same origin, optical convention) and publishes both on the global
+`/tf`, plus `humans/tf` when the env remaps its `/tf`. The view (`arena_people_msgs/FaceView`) carries a
+square pinhole `CameraInfo` of `view.fov_deg` (default 60) in `gaze_<id>` and
+`clip_near`, `view.clip_near` (default 0.15 m), the near clip that hides the
+pedestrian's own head but not its hands. `arena cam pov` and
+the `cam drive` panel look through it.
 
 **Relay mode (primary path).** When `arena_peds.joint_state.name` is non-empty,
 `hri_producer` re-suffixes each bare semantic joint name with the body ID

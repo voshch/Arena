@@ -37,12 +37,11 @@ Crossing floors is handled below the task mode, in `RobotManager.submit_task`: w
 elevator-boarding subgoals (`WorldManager.elevator_route` BFS over the elevator graph)
 ahead of it. The starting level comes from the `start` pose a task mode passes along
 with the request (a reset submits before the robot is moved there), or from the
-robot's live pose when none is given. A boarding subgoal counts as reached only within
-the cabin's `boarding_radius`, where the whole robot is inside and clear of the cabin
-door, capped by the configured goal tolerance. The robot drives into each cabin, the
-mechanism shim teleports it across, and the next leg becomes reachable. No explicit
-wait phase: the robot cannot path to the disconnected goal until the teleport, then
-proceeds.
+robot's live pose when none is given, so a request submitted mid-episode is routed
+from where the robot is. A boarding subgoal counts as reached only within the cabin's
+`boarding_radius`, where the whole robot is inside and clear of the cabin door, capped
+by the configured goal tolerance. The robot drives into each cabin, the mechanism shim
+teleports it across, and the next leg becomes reachable.
 
 ## Task modes (`TM_Robots` subclasses)
 
@@ -67,18 +66,56 @@ the enum, they are only reachable via `set_tm_robots_composite`.
 
 ## Request types
 
-`TM_Robots` subclasses build [`TaskRequest`](request.py) values and hand
-them to `RobotManager.submit_task`:
+`TM_Robots` subclasses build `TaskRequest` values and hand them to
+`RobotManager.submit_task`. The types live in
+[`arena_simulation_setup.shared.task`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/task.py)
+so scenario YAML, runtime generators, the episode record and arena_evaluation
+share one definition. [`request.py`](request.py) re-exports them with
+`kind_of(phase) -> TaskKind`, the action kind an adapter dispatches.
 
-- `TaskKind`: canonical vocabulary of phase kinds (currently just
-  `GOTO_POSE`).
-- `TaskPhase`: abstract; `is_satisfied(robot)` is the Tier-3 completion
-  fallback when neither the request predicate nor the adapter gives a
-  verdict.
-- `GoToPhase(pose, tolerance_radius?, tolerance_angle?)`: navigate to a
-  pose with optional per-phase tolerance overrides.
-- `TaskRequest(phases, done_predicate?)`: ordered phase list plus an
-  optional Tier-1 completion predicate.
+- `TaskPhase`: one step. Every phase takes `on_failure`
+  (`continue` | `stop_task` | `abort_episode`), `until` (an atom in the
+  `conditions:` grammar, the phase completes once it holds, counted from
+  arrival for a goto), `conditions` (clauses judged over the phase only) and
+  `text` (an authored instruction overriding the rendered one).
+- `GoToPhase(pose | target, tolerance_radius?, tolerance_angle?, hold_time?, signal?)`:
+  navigate to a pose, or to a zone, door, elevator or pedestrian by name. A
+  zone target dispatches to a free map cell inside the zone with the robot's
+  spawn clearance, a door or elevator to a point inside its polygon, and a
+  `pose` authored next to the name (`{goto: pharmacy, pose: [4.0, 27.5, 0.0]}`)
+  is kept as the dispatch pose.
+  Arrival on a named zone is `robot in <zone>`, on a pedestrian
+  `robot within tolerance_radius of <ped>`. `hold_time` is the park time
+  (stationary within 5 cm and 5 degrees) before the phase counts as met. With
+  a `signal` such as `arrived` the robot itself ends the phase by sending that
+  signal (read from `Adapter.signal`) and is judged against the tolerance at
+  that moment: within it the phase is met, elsewhere the phase fails and the
+  episode is aborted as `signaled <signal> <d> m from goal`. `submit_task`
+  rejects a signal the robot's adapter cannot send (`Adapter.signals`). With
+  neither pose nor target the phase holds the robot where it starts.
+- `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
+  result.
+- `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
+  over the whole request.
+
+Unset tolerances, hold time and signal take the `task.episode.goto_pose.*` launch
+parameters at submit. Phase indices are episode-wide: a second `submit_task`
+appends its phases and marks the unfinished ones of the previous request
+dropped. Everything is judged by the task runner
+([`manager/robot_manager/task_runner.py`](../../manager/robot_manager/task_runner.py))
+on the node's 30 Hz sim tick from a `Sample` of robot poses, ped positions and
+semantic fields, with the same predicate code arena_evaluation replays offline
+([`shared/judge.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/judge.py)).
+The robot's progress is published as a `robot` semantic entity (`phase`, `met`,
+`failed`, `dropped`, `violated`), its judged pose on `<robot_ns>/task_pose` (the
+flattened world frame the judge and the compacted world share, not the env's map
+frame, published once the episode's reset has landed the robot and a phase is
+active), and the resolved phases in `EpisodeRecord.phases` together with
+`map_poses`, the realized map-frame goto pose per phase.
+[`shared/render.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/render.py)
+renders any phase list to one instruction sentence per phase, and
+[`shared/route.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/route.py)
+words a goto as walking directions through the world's doors and openings.
 
 ## Fleet manager
 
@@ -134,8 +171,8 @@ fleet's robot names differ from the last allocation.
 ## Integration points
 
 - **`RobotManager`** ([`manager/robot_manager/robot_manager.py`](../../manager/robot_manager/robot_manager.py)):
-  one per spawned robot. Owns the bound adapter, the current `TaskRequest`,
-  the phase index, the goal-republish loop, and the tf-backed `pose`
+  one per spawned robot. Owns the bound adapters, the task runner with this
+  episode's phases, the goal-republish loop, and the tf-backed `pose`
   property. Entry points used from here: `submit_task`, `move`, `is_done`,
   `accepts`.
 - **`RobotsManager`** ([`manager/robot_manager/robots_manager.py`](../../manager/robot_manager/robots_manager.py)):

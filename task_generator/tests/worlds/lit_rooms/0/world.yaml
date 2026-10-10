@@ -1,0 +1,36 @@
+lights:
+  - {name: ambient, fixture: dome, lux: 5}
+zones:
+  - name: hall
+    description: Lit hall with an emergency strip over the east exit
+    material:
+      - Oak_Planks
+      - {}
+    corners:
+      - [0.0, 0.0]
+      - [8.0, 0.0]
+      - [8.0, 6.0]
+      - [0.0, 6.0]
+    ceiling_height: 2.6
+    ceiling_lights: {fixture: panel, spacing: 2.4, lumens: 3600, cct_K: 4000, light_on: "!blackout"}
+    lights:
+      - {name: exit_strip, position: {x: 7.8, y: 3.0, z: 2.2}, fixture: tube, lumens: 300, cct_K: 6500, light_on: blackout}
+      - {name: headlight, frame: turtlebot/base_link, offset: {x: 0.15, y: 0.0, z: 0.25}, fixture: spot, direction: [1.0, 0.0, -0.15], lumens: 1500, cct_K: 5000, lit: false}
+    walls:
+      - start: {x: 0.0, y: 0.0}
+        end: {x: 8.0, y: 0.0}
+      - start: {x: 8.0, y: 0.0}
+        end: {x: 8.0, y: 6.0}
+      - start: {x: 8.0, y: 6.0}
+        end: {x: 0.0, y: 6.0}
+      - start: {x: 0.0, y: 6.0}
+        end: {x: 0.0, y: 0.0}
+    doors: []
+    elevators: []
+    schedules:
+      - name: power
+        semantics:
+          - {preset: schedule, params: {windows: [{start: 20, end: 40, value: out}], regime: blackout}}
+    entities:
+      static: []
+      dynamic: []

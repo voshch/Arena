@@ -11,6 +11,7 @@ from arena_cli import features as _features
 from arena_cli import fork as _fork_mod
 from arena_cli import human as _human_mod
 from arena_cli import robot as _robot_mod
+from arena_cli import semantics as _semantics_mod
 from arena_cli import settings as _settings_mod
 from arena_cli import viz as _viz_mod
 from arena_cli.common import (
@@ -201,13 +202,28 @@ def runtime(args: list[str]) -> None:
     _exec("ros2", "launch", "arena_bringup", "arena_runtime.launch.py", *args)
 
 
-@verb("env", passthrough=True, complete=ENV_ARGS)
-def env_(args: list[str]) -> None:
-    """Attach one task-generator env to a running runtime.
+ENV_HELP = f"""Attach one task-generator env, or act on a running one.
 
-    Waits forever (10s warning cadence) for /arena/register_env if the
-    runtime is not up yet.
-    """
+Usage:
+  arena env [KEY:=VALUE ...]              attach a new env to the running runtime
+  arena env [ENV] semantics [...]         read and set the semantic state of a running env
+
+Attaching waits forever (10s warning cadence) for /arena/register_env if the
+runtime is not up yet, KEY:=VALUE tokens go to task_generator.launch.py.
+
+{_semantics_mod.HELP}"""
+
+ENV_SUBCOMMANDS = {"semantics": _semantics_mod.HELP.splitlines()[0]}
+
+
+@verb("env", passthrough=True, help_text=ENV_HELP, complete=Sub({"semantics": _semantics_mod.FLAGS}, fallback=Union(ENV_ARGS, Sub({"semantics": _semantics_mod.FLAGS}))))
+def env_(args: list[str]) -> int | None:
+    split = _semantics_mod.split_env(args)
+    if split is not None:
+        return _semantics_mod.run(*split)
+    stray = [a for a in args if ":=" not in a and not a.startswith("-")]
+    if stray:
+        raise CLIError(f"arena env: {stray[0]!r} is neither a launch argument (KEY:=VALUE) nor an env followed by a subcommand. Subcommands:\n{_listing(list(ENV_SUBCOMMANDS.items()))}\nRun 'arena env --help' for the forms.")
     _exec("ros2", "launch", "task_generator", "task_generator.launch.py", *args)
 
 
@@ -288,6 +304,7 @@ def cam(args: list[str]) -> None:
       cam tour --record tour --sim --viz 0
       cam orbit radius=4 duration=8 --record --lockstep
       cam drive --record           record the flight from the start, --lockstep frame by frame
+      cam pov face=env_0_agent_1 duration=10   look through a pedestrian's eyes
 
     FILE lands under $ARENA_DATA_DIR/recordings (.mp4 if no suffix), bare --record names
     it <name>_<YYYYmmdd-HHMMSS>. Each camera records its own file, tagged -sim / -viz<env>

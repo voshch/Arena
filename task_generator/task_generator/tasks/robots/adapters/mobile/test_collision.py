@@ -32,8 +32,5 @@ if TYPE_CHECKING:
 class TestCollisionAdapter(MobileAdapter):
     kind: ClassVar[str] = "test-collision"
 
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        return False
-
     async def dispatch_phase(self, phase: TaskPhase, robot: RobotManager) -> None:
         return None

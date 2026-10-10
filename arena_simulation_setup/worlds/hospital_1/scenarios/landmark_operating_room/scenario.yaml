@@ -1,0 +1,4 @@
+robots:
+- start: [10.0, 10.9, 1.5708]
+  phases:
+  - {goto: operating_room, pose: [13.5, 14.1, 0.0], tolerance_radius: 3.0}

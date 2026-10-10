@@ -4,12 +4,13 @@ import abc
 import asyncio
 import math
 import typing
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 
 import rclpy.time
 import tf2_ros
 from arena_people_msgs.msg import Pedestrians
-from arena_simulation_setup.shared import Ceiling
+from arena_simulation_setup.shared import Ceiling, Light
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.utils.geometry import Orientation, Position
 from task_generator.shared import (
     Door,
@@ -289,6 +290,9 @@ class MechanismITF:
         _agent_robots: dict[str, tuple[str, float]]
         _mechanism_tf_buffer: tf2_ros.Buffer | None
         _mechanism_tf_listener: tf2_ros.TransformListener | None
+        _lights: dict[str, Light]
+        _light_outputs: dict[str, tuple[float, float]]
+        _light_poses: dict[str, tuple[Position, float]]
 
     SIM_NAME: typing.ClassVar[str]
 
@@ -308,6 +312,9 @@ class MechanismITF:
         self._agent_robots = {}
         self._mechanism_tf_buffer = None
         self._mechanism_tf_listener = None
+        self._lights = {}
+        self._light_outputs = {}
+        self._light_poses = {}
 
     def _register_agent_robot(self, robot: Robot, model_params: "arena_robots.Robot.ModelParams") -> None:
         """Track a spawned robot for disc and pose reads, bringing up the TF machinery on first use."""
@@ -365,6 +372,24 @@ class MechanismITF:
         ok = await self.remove_elevators(tuple(self._elevator_runtime))
         return await self.remove_doors(tuple(self._door_runtime)) and ok
 
+    async def spawn_lights(self, lights: Sequence[Light]) -> bool:
+        """Spawn lights, their semantic output reaches the renderer on the mechanism tick."""
+        ok = await self._spawn_lights(lights)
+        for light in lights:
+            self._lights[light.name] = light
+        return ok
+
+    async def remove_lights(self, names: Collection[str] | None = None) -> bool:
+        """Remove the named spawned lights, every one without names."""
+        lights = tuple(light for name, light in self._lights.items() if names is None or name in names)
+        for light in lights:
+            self._lights.pop(light.name, None)
+            self._light_outputs.pop(light.name, None)
+            self._light_poses.pop(light.name, None)
+        if not lights:
+            return True
+        return await self._remove_lights(lights)
+
     def semantics_snapshot(self) -> "list[SemanticEntitySnapshot]":
         return self._semantics.snapshot()
 
@@ -402,8 +427,8 @@ class MechanismITF:
         self._mechanism_loop_task = None
 
     # primitives: simulators must implement these.
-    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose) -> bool:
-        """Spawn a static box primitive."""
+    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None) -> bool:
+        """Spawn a static box primitive, with the simulator's plain look when `material` is unset."""
         raise NotImplementedError
 
     async def move_box(self, name: str, pose: Pose) -> bool:
@@ -417,6 +442,34 @@ class MechanismITF:
     async def set_robot_pose(self, sim_path: str, pose: Pose) -> bool:
         """Teleport a robot to the given pose."""
         raise NotImplementedError
+
+    async def _spawn_lights(self, lights: Sequence[Light]) -> bool:
+        """Create the light entities. No-op by default."""
+        return True
+
+    async def _remove_lights(self, lights: Sequence[Light]) -> bool:
+        """Delete the light entities. No-op by default."""
+        return True
+
+    async def _apply_light(self, light: Light, level: float, alive: Sequence[bool]) -> None:
+        """Render a light at level in 0..1 with the given per-fixture alive mask. No-op by default."""
+        return
+
+    async def _move_light(self, light: Light, position: Position, yaw: float) -> None:
+        """Place a frame-anchored light at a map position, its direction turned by yaw. No-op by default."""
+        return
+
+    def frame_pose(self, frame: str) -> tuple[Position, float] | None:
+        """Map-frame position and yaw of a TF frame, None while it is unknown."""
+        if self._mechanism_tf_buffer is None:
+            return None
+        try:
+            t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            return None
+        tr = t.transform.translation
+        rot = t.transform.rotation
+        return Position(x=tr.x, y=tr.y, z=tr.z), Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z).to_yaw()
 
     def robot_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
         """Yield (sim_path, (x, y), footprint radius) for each tracked robot."""

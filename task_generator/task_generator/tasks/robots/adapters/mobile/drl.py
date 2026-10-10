@@ -49,8 +49,12 @@ class DrlAdapter(MobileAdapter):
         observations: dict | None = None,
         rate: float | None = None,
         deadline: float | None = None,
+        config: dict | None = None,
         **bringup_kwargs: object,
     ) -> None:
+        config_override: dict = dict(config) if config else {}
+        for key in [k for k in bringup_kwargs if k.startswith("config.")]:
+            config_override[key.removeprefix("config.")] = bringup_kwargs.pop(key)
         super().__init__(robot_manager, **bringup_kwargs)
 
         from arena_planners.resolver import ResolverError, planner_dir, resolve  # noqa: PLC0415
@@ -77,6 +81,10 @@ class DrlAdapter(MobileAdapter):
         if self._observations_override:
             manifest_dict.setdefault("observations", {})
             _deep_merge(manifest_dict["observations"], self._observations_override)
+        if config_override:
+            manifest_dict.setdefault("config", {})
+            _deep_merge(manifest_dict["config"], config_override)
+        manifest_dict = self._adapt_manifest(manifest_dict)
         self._manifest: dict = manifest_dict
         self._rate: float = float(rate if rate is not None else manifest_dict.get("rate_hz", 10.0))
         self._deadline_s: float = float(deadline) if deadline is not None else 0.0
@@ -84,6 +92,7 @@ class DrlAdapter(MobileAdapter):
         depends = manifest_dict.get("depends") or {}
         self._depends_global_plan: bool = bool(depends.get("global_plan", False))
         self._controls_orientation: bool = bool(manifest_dict.get("controls_orientation", True))
+        self._signals: frozenset[str] = frozenset(str(s) for s in manifest_dict.get("signals") or ())
         self._global_planner: str = str(bringup_kwargs.get("global_planner", "nav2/navfn"))
 
         self._handler_metadata: dict = {}
@@ -109,6 +118,27 @@ class DrlAdapter(MobileAdapter):
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+
+    def _adapt_manifest(self, manifest: dict) -> dict:
+        """Planner manifest as the edge receives it."""
+        from arena_planners import goal  # noqa: PLC0415
+        from arena_planners.resolver import ResolverError  # noqa: PLC0415
+
+        if goal.declared(manifest) is not None:
+            raise ResolverError(f"DrlAdapter: planner {self._planner_name!r} declares goal_inputs, run it with robot.mobile:=vla")
+        return manifest
+
+    def _initial_state(self, phase: GoToPhase) -> dict:
+        """Reset payload announcing `phase` to the planner."""
+        x, y, theta = phase.pose.to_2d()
+        return {"goal_pose": {"x": x, "y": y, "theta": theta}}
+
+    def _reset_payload(self, phase: GoToPhase) -> dict:
+        """`_initial_state` plus the signal `phase` expects, if any."""
+        state = self._initial_state(phase)
+        if phase.signal:
+            state["signal"] = phase.signal
+        return state
 
     def _needs_global_plan(self) -> bool:
         return self._depends_global_plan and self._global_planner != "none"
@@ -296,12 +326,9 @@ class DrlAdapter(MobileAdapter):
             raise RuntimeError(f"DRL run_loop for {robot.robot.name!r} is dead: {task.exception()!r}")
 
         if self._edge_node is not None:
-            x, y, theta = phase.pose.to_2d()
             await self._edge_node.request_reset(
                 episode_id=str(id(phase)),
-                initial_state={
-                    "goal_pose": {"x": x, "y": y, "theta": theta},
-                },
+                initial_state=self._reset_payload(phase),
             )
 
         if self.client.is_done() is False:
@@ -324,8 +351,13 @@ class DrlAdapter(MobileAdapter):
         msg.pose = phase.pose.to_msg()
         return msg
 
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        return None
+    @property
+    def signals(self) -> frozenset[str]:
+        return self._signals
+
+    @property
+    def signal(self) -> str | None:
+        return None if self._edge_node is None else (self._edge_node.signal or None)
 
     # ------------------------------------------------------------------
     # Reset / move (mirrors Nav2Adapter pattern)
@@ -336,9 +368,10 @@ class DrlAdapter(MobileAdapter):
             self.client.cancel()
         await super().on_reset(robot, ctx)
         if self._edge_node is not None and self._current_phase is not None:
+            assert isinstance(self._current_phase, GoToPhase)
             await self._edge_node.request_reset(
                 episode_id=str(uuid.uuid4().hex),
-                initial_state=None,
+                initial_state=self._reset_payload(self._current_phase),
             )
 
     async def before_move(
@@ -354,10 +387,9 @@ class DrlAdapter(MobileAdapter):
         pose: Pose,
         robot: RobotManager,
     ) -> None:
-        request = robot._current_request  # pylint: disable=protected-access
-        if request is None or robot._phase_index >= len(request.phases):  # pylint: disable=protected-access
-            return
-        await self.dispatch_phase(request.phases[robot._phase_index], robot)  # pylint: disable=protected-access
+        phase = robot.active_dispatch_phase()
+        if phase is not None:
+            await self.dispatch_phase(phase, robot)
 
 
 # ------------------------------------------------------------------

@@ -91,6 +91,11 @@ _PRESETS: dict[str, list[dict]] = {
         {'predicate': 'sounding'},
         {'state': 'volume_db'},
     ],
+    'light': [
+        {'predicate': 'lit'},
+        {'state': 'level'},
+        {'state': 'dead_fraction'},
+    ],
 }
 
 

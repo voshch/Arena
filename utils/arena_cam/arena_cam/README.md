@@ -167,6 +167,16 @@ Change fov only, eye and aim fixed. fov cannot be read back from the sim, so
 `from_fov=None` takes the current fov if a verb set one, else `FOV_DEFAULT`
 (1.047).
 
+**`pov`** -- `face`, `duration=10.0`, `fov=None`
+Look through a pedestrian's eyes: track its `face_<id>` frame in `full` mode and
+hold the camera at the face origin (the sellion) looking along the face's x axis.
+`face` is a face id (`env_0_agent_1`), its frame name (`face_env_0_agent_1`) or a
+bare agent number when exactly one env has it. `fov=None` takes the central-vision
+fov from the face's `view`, and the view's `clip_near` hides the pedestrian's own
+head for the segment, restored to each camera's default afterwards. When the segment
+ends the reference is latched where the face last was, since the face frame stops being published once
+nobody watches it (see [Pedestrian faces](#pedestrian-faces)).
+
 `ease` choices: `linear`, `in`, `out`, `inout` (default), `sine_inout`.
 
 **`play()`**
@@ -318,7 +328,7 @@ registered verb and shot works in YAML automatically. All angles are
 
 ### Timeline verb parameters
 
-Every param except `track`'s `entity` has a default (`arena cam show <verb>`
+Every param except `track`'s `entity` and `pov`'s `face` has a default (`arena cam show <verb>`
 prints them), so each verb runs bare.
 
 | verb | required | optional |
@@ -338,6 +348,7 @@ prints them), so each verb runs bare.
 | `pan` | | `sweep` (rad) or `sweep_deg`, `duration`, `ease` |
 | `tilt` | | `sweep` (rad) or `sweep_deg`, `duration`, `ease` |
 | `zoom` | | `from_fov`, `to_fov`, `duration`, `ease` |
+| `pov` | `face` | `duration`, `fov` |
 
 ### Full example
 
@@ -484,7 +495,12 @@ slower than the frame rate, and plays back smooth.
 
 Framing sets the reference frame to the entity and orbits its local origin, so the
 camera follows it as it drives. The target picker lists live robot frames
-(`env_0/jackal/base_link`); any other TF frame or native entity name can be typed in.
+(`env_0/jackal/base_link`) and pedestrian faces (`face_env_0_agent_1`); any other TF
+frame or native entity name can be typed in. `F` on a face looks through it instead
+of orbiting: `full` reference on the face, camera at its origin looking forward in fly
+mode, fov and near clip from the face's view. The keys then move the eye within the head frame, `H`
+leaves. While the panel is open it subscribes every env's face roster, which keeps
+hri_producer working for those envs.
 
 Two behaviours differ from scripted playback:
 
@@ -556,8 +572,35 @@ gated at `1/fps`, and without one it takes its own sim hold and steps physics by
 `1/fps` between frames. Either way a frame is captured only once the scene has
 reached that sim time. Lockstep works under Gazebo and Isaac, filmed from the sim
 camera or from an rviz camera. rviz has no scene time of its own, so it gates on
-`/clock` and draws one more update before the grab. Isaac steps slowly under a
-hold, expect a couple of seconds per frame.
+`/clock` and draws one more update before the grab. Under PhysX, Isaac renders a
+due capture at once, expect about a second per frame. Under Newton it waits out
+an idle grace after each step, expect several seconds per frame.
+
+---
+
+## Pedestrian faces
+
+hri_producer (rviz_utils) publishes, per env:
+
+| topic / frame | what |
+| --- | --- |
+| `<env_ns>/humans/faces/tracked` | `hri_msgs/IdsList` of face ids, the body ids (`env_0_agent_1`) |
+| `<env_ns>/humans/faces/<id>/view` | `arena_people_msgs/FaceView`: central-vision `CameraInfo` in `gaze_<id>` and `clip_near` |
+| `face_<id>` | REP-155 face: origin between the URDF eyes, x forward, z up, parent `map` |
+| `gaze_<id>` | the same origin in the optical convention (z forward, y down) |
+
+The frames go onto the global `/tf`, where every viewport backend resolves them, and
+also onto `<env_ns>/humans/tf` when the env remaps its `/tf`. A face's frames and
+view are published only while its `view` has a subscriber, and the
+whole roster only while `faces/tracked` (or `humans/tf`) has one, so `pov` and the
+panel hold both. The fov is hri_producer's `view.fov_deg` (default 60, a central
+cone, not the full human field). `clip_near` is its `view.clip_near` (default 0.15 m):
+the face origin sits inside the rendered head, whose nose, brow and hair reach a few
+cm ahead of it, while a gesturing hand is 0.3 m or more away.
+
+Every viewport message (`set_view`, `cmd_view`, `capture`) carries `clip_near` in m:
+0 keeps the camera's current near clip, `< 0` restores its default. `cam` stamps its
+current value on each, which is 0 except inside a `pov`.
 
 ---
 

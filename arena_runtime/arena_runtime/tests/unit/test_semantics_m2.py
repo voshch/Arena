@@ -22,6 +22,7 @@ from arena_runtime.sim._semantics import (  # noqa: E402
     DoorSemantics,
     ElevatorSemantics,
     GateSemantics,
+    LightSemantics,
     OccupancyCapSemantics,
     PressurePlateSemantics,
     ScheduleSemantics,
@@ -1053,3 +1054,322 @@ def test_writable_sets_per_kind():
     assert SoundSemantics.WRITABLE == frozenset({"sounding", "volume_db"})
     assert DoorSemantics.WRITABLE == frozenset()
     assert ElevatorSemantics.WRITABLE == frozenset()
+
+
+def _light_cfgs(light_on=None, lit=None, level=None, dead_fraction=None):
+    params = {}
+    if light_on is not None:
+        params["light_on"] = light_on
+    cfgs = [
+        _MCfg("predicate", "lit", value=lit, params=params),
+        _MCfg("state", "level", value=level),
+    ]
+    if dead_fraction is not None:
+        cfgs.append(_MCfg("state", "dead_fraction", value=dead_fraction))
+    return cfgs
+
+
+def _attach_light(mech, cfgs, entity="lamp"):
+    return LightSemantics.attach(mech, entity, cfgs)
+
+
+def test_regime_leading_bang_negates():
+    mech = _Mech()
+    mgr = _manager(mech)
+    assert mgr.regime("r") is False
+    assert mgr.regime("!r") is True
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="r"), entity="src")
+    mgr._instances["src"] = [sched]
+    assert mgr.regime("r") is True
+    assert mgr.regime("!r") is False
+    assert mgr._regime_stack == set()
+
+
+def test_light_attach_defaults_lit_at_full_level():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs())
+    snap = lamp.snapshot()
+    assert snap.kind == "light"
+    assert snap.predicates == {"lit": True}
+    assert snap.continuous == {"level": 1.0}
+    assert lamp.output() == (1.0, 0.0)
+    assert lamp.asserts_regime("lit") is False
+
+
+def test_light_snapshot_lists_only_requested_fields():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, [_MCfg("predicate", "lit")])
+    snap = lamp.snapshot()
+    assert snap.predicates == {"lit": True}
+    assert snap.continuous == {}
+    assert snap.discrete == {}
+
+
+def test_light_lit_follows_light_on_regime_and_its_negation():
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="r"), entity="src")
+    follower = _attach_light(mech, _light_cfgs(light_on="r"), entity="follower")
+    inverse = _attach_light(mech, _light_cfgs(light_on="!r"), entity="inverse")
+    mgr._instances.update({"src": [sched], "follower": [follower], "inverse": [inverse]})
+    for now, asserted in ((0.0, False), (5.0, False), (15.0, True), (25.0, False)):
+        mgr.step(now)
+        assert mgr.regime("r") is asserted
+        assert follower.snapshot().predicates["lit"] is asserted
+        assert inverse.snapshot().predicates["lit"] is (not asserted)
+        assert follower.output() == ((1.0 if asserted else 0.0), 0.0)
+        assert inverse.output() == ((0.0 if asserted else 1.0), 0.0)
+
+
+def test_light_lit_write_overrides_until_regime_flips():
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="r"), entity="src")
+    lamp = _attach_light(mech, _light_cfgs(light_on="r"))
+    mgr._instances.update({"src": [sched], "lamp": [lamp]})
+    mgr.step(0.0)
+    assert lamp.snapshot().predicates["lit"] is False
+    lamp.set_value("lit", "true")
+    assert lamp.snapshot().predicates["lit"] is True
+    mgr.step(2.0)
+    assert lamp.snapshot().predicates["lit"] is True
+    mgr.step(15.0)
+    assert lamp.snapshot().predicates["lit"] is True
+    mgr.step(25.0)
+    assert lamp.snapshot().predicates["lit"] is False
+
+
+def test_light_lit_write_overrides_negated_regime_until_it_flips():
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="blackout"), entity="src")
+    lamp = _attach_light(mech, _light_cfgs(light_on="!blackout"))
+    mgr._instances.update({"src": [sched], "lamp": [lamp]})
+    mgr.step(0.0)
+    assert lamp.snapshot().predicates["lit"] is True
+    lamp.set_value("lit", "false")
+    mgr.step(2.0)
+    assert lamp.snapshot().predicates["lit"] is False
+    mgr.step(15.0)
+    assert lamp.snapshot().predicates["lit"] is False
+    mgr.step(25.0)
+    assert lamp.snapshot().predicates["lit"] is True
+
+
+def test_light_level_write_in_range_reaches_output_and_snapshot():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs(level=0.75))
+    assert lamp.snapshot().continuous["level"] == pytest.approx(0.75)
+    assert lamp.output() == pytest.approx((0.75, 0.0))
+    for value in ("0", "0.25", "1"):
+        lamp.set_value("level", value)
+        assert lamp.snapshot().continuous["level"] == pytest.approx(float(value))
+        assert lamp.output() == pytest.approx((float(value), 0.0))
+
+
+def test_light_level_write_rejects_out_of_range_and_non_numeric():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs(level=0.75))
+    for value in ("-0.1", "1.5", "nan", "inf", "bright", ""):
+        with pytest.raises(ValueError, match="malformed value"):
+            lamp.set_value("level", value)
+    assert lamp.snapshot().continuous["level"] == pytest.approx(0.75)
+    assert lamp.output() == pytest.approx((0.75, 0.0))
+
+
+def test_light_output_level_is_zero_while_unlit():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs(lit=False, level=0.5, dead_fraction=0.25))
+    assert lamp.snapshot().predicates["lit"] is False
+    assert lamp.snapshot().continuous["level"] == pytest.approx(0.5)
+    assert lamp.output() == pytest.approx((0.0, 0.25))
+    lamp.set_value("lit", "true")
+    assert lamp.output() == pytest.approx((0.5, 0.25))
+    lamp.set_value("lit", "false")
+    assert lamp.output() == pytest.approx((0.0, 0.25))
+
+
+def test_light_lit_write_rejects_non_boolean():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs())
+    with pytest.raises(ValueError, match="malformed value"):
+        lamp.set_value("lit", "dim")
+    assert lamp.snapshot().predicates["lit"] is True
+
+
+def test_light_dead_fraction_write_rejected_when_not_declared():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs())
+    with pytest.raises(ValueError, match="dead_fraction not declared on this light"):
+        lamp.set_value("dead_fraction", "0.5")
+    assert "dead_fraction" not in lamp.snapshot().continuous
+    assert lamp.output() == (1.0, 0.0)
+
+
+def test_light_dead_fraction_write_reported_when_declared():
+    mech = _Mech()
+    _manager(mech)
+    rig = _attach_light(mech, _light_cfgs(dead_fraction=0.25), entity="hall")
+    assert rig.snapshot().continuous["dead_fraction"] == pytest.approx(0.25)
+    assert rig.output() == pytest.approx((1.0, 0.25))
+    for value in ("0", "0.5", "1"):
+        rig.set_value("dead_fraction", value)
+        assert rig.snapshot().continuous["dead_fraction"] == pytest.approx(float(value))
+        assert rig.output() == pytest.approx((1.0, float(value)))
+
+
+def test_light_dead_fraction_write_rejects_out_of_range_and_non_numeric():
+    mech = _Mech()
+    _manager(mech)
+    rig = _attach_light(mech, _light_cfgs(dead_fraction=0.25), entity="hall")
+    for value in ("-0.01", "1.01", "nan", "half"):
+        with pytest.raises(ValueError, match="malformed value"):
+            rig.set_value("dead_fraction", value)
+    assert rig.snapshot().continuous["dead_fraction"] == pytest.approx(0.25)
+
+
+def test_light_write_to_unknown_field_rejected():
+    mech = _Mech()
+    _manager(mech)
+    lamp = _attach_light(mech, _light_cfgs())
+    with pytest.raises(ValueError, match="field not writable"):
+        lamp.set_value("color", "red")
+
+
+def test_light_reset_restores_lit_level_and_dead_fraction():
+    mech = _Mech()
+    _manager(mech)
+    rig = _attach_light(mech, _light_cfgs(lit=False, level=0.75, dead_fraction=0.25), entity="hall")
+    rig.set_value("lit", "true")
+    rig.set_value("level", "0.5")
+    rig.set_value("dead_fraction", "1")
+    assert rig.output() == pytest.approx((0.5, 1.0))
+    rig.reset()
+    snap = rig.snapshot()
+    assert snap.predicates["lit"] is False
+    assert snap.continuous["level"] == pytest.approx(0.75)
+    assert snap.continuous["dead_fraction"] == pytest.approx(0.25)
+    assert rig.output() == pytest.approx((0.0, 0.25))
+
+
+def test_light_reset_clears_lit_override_under_light_on():
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 0.0, "end": 100.0, "value": "v"}], regime="r"), entity="src")
+    mgr._instances["src"] = [sched]
+    lamp = _attach_light(mech, _light_cfgs(light_on="r"))
+    mgr._instances["lamp"] = [lamp]
+    assert lamp.snapshot().predicates["lit"] is True
+    lamp.set_value("lit", "false")
+    assert lamp.snapshot().predicates["lit"] is False
+    lamp.reset()
+    assert lamp.snapshot().predicates["lit"] is True
+
+
+def test_light_lit_value_with_light_on_raises():
+    mech = _Mech()
+    _manager(mech)
+    for lit in (True, False):
+        with pytest.raises(ValueError, match="exclusive"):
+            _attach_light(mech, _light_cfgs(light_on="r", lit=lit))
+
+
+def test_light_unknown_cfg_name_raises():
+    mech = _Mech()
+    _manager(mech)
+    with pytest.raises(ValueError, match="unknown field"):
+        _attach_light(mech, [*_light_cfgs(), _MCfg("state", "color")])
+
+
+def test_light_attaches_on_dummy():
+    mech = _Mech()
+    mgr = _manager(mech, sim="dummy")
+    assert LightSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy"})
+    assert mgr.attach("light", "lamp", _light_cfgs()) is True
+    assert [snap.kind for snap in mgr.snapshot()] == ["light"]
+    assert mgr.light_outputs() == {"lamp": (1.0, 0.0)}
+
+
+def test_manager_light_outputs_lists_exactly_attached_lights():
+    mech = _Mech()
+    mgr = _manager(mech)
+    assert mgr.light_outputs() == {}
+    mgr.attach("schedule", "sc", _schedule_cfgs([]))
+    mgr.attach("sound", "snd", _sound_cfgs())
+    mgr.attach("light", "lamp", _light_cfgs(level=0.5))
+    mgr.attach("light", "hall", _light_cfgs(lit=False, dead_fraction=0.25))
+    assert mgr.light_outputs() == {"lamp": (0.5, 0.0), "hall": (0.0, 0.25)}
+    mgr.detach("lamp")
+    assert mgr.light_outputs() == {"hall": (0.0, 0.25)}
+
+
+def test_manager_set_value_light_emits_level_and_lit_changes():
+    mech = _Mech()
+    mgr = _manager(mech)
+    batches = []
+    mgr.set_change_callback(lambda b: batches.append(list(b)))
+    mgr.attach("light", "lamp", _light_cfgs())
+    mgr.step(0.0)
+    assert mgr.set_value("lamp", "level", "0.5") is True
+    assert mgr.set_value("lamp", "lit", "false") is True
+    assert [(c.field, c.current) for batch in batches[1:] for c in batch] == [("level", "0.5"), ("lit", "false")]
+    assert mgr.light_outputs() == {"lamp": (0.0, 0.0)}
+    with pytest.raises(ValueError, match="malformed value"):
+        mgr.set_value("lamp", "level", "2")
+
+
+def test_sound_on_negated_regime_follows_complement():
+    mech = _Mech()
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="r"), entity="src")
+    snd = _attach_sound(mech, _sound_cfgs(sound_on="!r"), entity="hum")
+    mgr._instances.update({"src": [sched], "hum": [snd]})
+    for now, asserted in ((0.0, False), (15.0, True), (25.0, False)):
+        mgr.step(now)
+        assert mgr.regime("r") is asserted
+        assert snd.snapshot().predicates["sounding"] is (not asserted)
+
+
+def test_plate_press_on_negated_regime_follows_complement():
+    mech = _Mech(robots=[])
+    mgr = _manager(mech)
+    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="r"), entity="src")
+    plate = PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="!r"))
+    mgr._instances.update({"src": [sched], "p": [plate]})
+    for now, asserted in ((0.0, False), (15.0, True), (25.0, False)):
+        mgr.step(now)
+        assert mgr.regime("r") is asserted
+        assert plate.snapshot().predicates["pressed"] is (not asserted)
+
+
+def test_sound_self_latch_raises_for_negated_sound_on():
+    mech = _Mech()
+    with pytest.raises(ValueError, match="self-latch"):
+        SoundSemantics.attach(mech, "snd", _sound_cfgs(sound_on="!a", regime="a"))
+
+
+def test_plate_self_latch_raises_for_negated_press_on():
+    mech = _Mech()
+    with pytest.raises(ValueError, match="self-latch"):
+        PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="!a", regime="a"))
+
+
+def test_regime_negated_consult_cycle_resolves_false():
+    mech = _Mech()
+    mgr = _manager(mech)
+    a = _attach_sound(mech, _sound_cfgs(sound_on="!y", regime="x"), entity="a")
+    b = _attach_sound(mech, _sound_cfgs(sound_on="x", regime="y"), entity="b")
+    mgr._instances["a"] = [a]
+    mgr._instances["b"] = [b]
+    assert mgr.regime("y") is False
+    assert mgr.regime("x") is True
+    mgr.step(0.0)
+    assert len(mgr.snapshot()) == 2
+    assert mgr._regime_stack == set()

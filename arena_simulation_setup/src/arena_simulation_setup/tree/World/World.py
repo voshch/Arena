@@ -5,7 +5,8 @@ import os
 import tarfile
 import time
 import typing
-from collections.abc import Iterator, Mapping
+import zlib
+from collections.abc import Iterable, Iterator, Mapping
 from copy import deepcopy
 from pathlib import Path
 
@@ -16,17 +17,21 @@ from typing_extensions import Self
 
 from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.shared import (
+    LIGHT_FIXTURES,
     Ceiling,
+    CeilingLights,
     Door,
     DynamicObstacle,
     Elevator,
     Floor,
+    Light,
     Obstacle,
     Schedule,
     SemanticCfg,
     Signal,
     Sound,
     Wall,
+    object_light,
 )
 from arena_simulation_setup.shared.semantics import parse_semantics
 from arena_simulation_setup.tree import (
@@ -48,6 +53,9 @@ from arena_simulation_setup.utils.geometry import PointResolver, Position
 from .Map import Map
 from .Scenario import RegionAssignment, ScenarioView
 
+if typing.TYPE_CHECKING:
+    import shapely
+
 MICROPHONE_PLACEMENT_TOLERANCE_M = 0.05
 
 
@@ -65,6 +73,45 @@ class WorldMicrophone:
     @property
     def listener_id(self) -> str:
         return f'microphone:zone:{self.zone}:{self.placement}:{self.index}'
+
+
+async def entity_lights(entity: Obstacle) -> list[Light]:
+    """Lights the object annotation of an entity carries, placed on the entity."""
+    try:
+        view = await entity.model.resolve()
+    except FileNotFoundError:
+        return []
+    entries = (view.annotation or {}).get('lights') or []
+    return [_place_on(object_light(entity.name, entry, entity.light), entity) for entry in entries]
+
+
+def _place_on(light: Light, entity: Obstacle) -> Light:
+    """Place a light at its offset on a static entity, offset scaled and turned with the entity."""
+    pose = entity.pose
+    scale = entity.scale
+    yaw = float(pose.orientation.to_yaw())
+    cos_yaw = math.cos(yaw)
+    sin_yaw = math.sin(yaw)
+    ox, oy, oz = light.offset.x, light.offset.y, light.offset.z
+    if scale is not None:
+        ox, oy, oz = ox * scale.x, oy * scale.y, oz * scale.z
+    dx, dy, dz = light.direction
+    return attrs.evolve(
+        light,
+        entity_ref='',
+        owner=entity.name,
+        position=Position(
+            x=pose.position.x + cos_yaw * ox - sin_yaw * oy,
+            y=pose.position.y + sin_yaw * ox + cos_yaw * oy,
+            z=pose.position.z + oz,
+        ),
+        offset=Position(0.0, 0.0, 0.0),
+        direction=(cos_yaw * dx - sin_yaw * dy, sin_yaw * dx + cos_yaw * dy, dz),
+    )
+
+
+WORLD_LIGHTING_MODES = ('authored', 'auto')
+AUTO_CEILING_LIGHTS = CeilingLights(fixture='panel', spacing=2.4, lumens=7200.0, cct_K=6500.0)
 
 
 @attrs.define
@@ -101,6 +148,7 @@ class LevelDescription:
         schedules: list[Schedule] = attrs.field(factory=list)
         signals: list[Signal] = attrs.field(factory=list)
         sounds: list[Sound] = attrs.field(factory=list)
+        lights: list[Light] = attrs.field(factory=list)
         entities: WorldEntities = attrs.field(factory=WorldEntities)
         ceiling: bool = attrs.field(default=True)
         ceiling_height: float | None = attrs.field(default=None)
@@ -109,6 +157,7 @@ class LevelDescription:
             converter=MaterialIdentifier.converter,
             default=Material.default('ceiling'),
         )
+        ceiling_lights: CeilingLights | None = attrs.field(default=None)
         wall_material: MaterialIdentifier = attrs.field(
             converter=MaterialIdentifier.converter,
             default=Material.default('wall'),
@@ -128,10 +177,40 @@ class LevelDescription:
 
     zones: list[Zone] = attrs.field(factory=list)
     microphones: list[WorldMicrophone] = attrs.field(factory=list)
+    lights: list[Light] = attrs.field(factory=list)
 
     @property
     def all_walls(self) -> typing.Iterable[Wall]:
         return (wall for zone in self.zones for wall in zone.walls if wall.material is None or wall.material.name)
+
+    def with_lighting(self, mode: str) -> Self:
+        """The level under a world.lighting mode: auto gives every zone with a ceiling and no lights of its own the calibrated ceiling rig."""
+        if mode not in WORLD_LIGHTING_MODES:
+            raise ValueError(f'world.lighting {mode!r} is not one of {", ".join(WORLD_LIGHTING_MODES)}')
+        if mode == 'authored':
+            return self
+        return attrs.evolve(
+            self,
+            zones=[attrs.evolve(zone, ceiling_lights=AUTO_CEILING_LIGHTS) if zone.ceiling and zone.ceiling_material.name and not zone.lights and zone.ceiling_lights is None else zone for zone in self.zones],
+        )
+
+    async def closed_walls(self) -> list[Wall]:
+        """Walls of every zone, those of a zone with a ceiling raised to meet it."""
+        result: list[Wall] = []
+        for zone in self.zones:
+            top = await self._ceiling_z(zone) if zone.ceiling and zone.ceiling_material.name else None
+            result.extend(attrs.evolve(wall, top=top) for wall in zone.walls if wall.material is None or wall.material.name)
+        return result
+
+    async def door_lintels(self) -> list[Wall]:
+        """Visual-only wall pieces above the doors of a zone with a ceiling higher than the door."""
+        result: list[Wall] = []
+        for zone in self.zones:
+            if not zone.ceiling or not zone.ceiling_material.name:
+                continue
+            top = await self._ceiling_z(zone)
+            result.extend(Wall(start=door.start, end=door.end, material=zone.wall_material, top=top, bottom=door.start.z + door.height) for door in zone.doors if door.start.z + door.height < top - 1e-6)
+        return result
 
     @property
     def all_doors(self) -> typing.Iterable[Door]:
@@ -157,6 +236,16 @@ class LevelDescription:
     def all_floors(self) -> typing.Iterable[Floor]:
         return (zone.floor for zone in self.zones if zone.material.name)
 
+    async def _ceiling_z(self, zone: Zone) -> float:
+        if zone.ceiling_height is not None:
+            return zone.ceiling_height
+        z = 2.0
+        for wall in zone.walls:
+            segments, _ = await wall.assets()
+            for segment in segments:
+                z = max(z, segment.start.z + segment.height)
+        return z
+
     async def all_ceilings(self) -> list[Ceiling]:
         result: list[Ceiling] = []
         for zone in self.zones:
@@ -173,14 +262,7 @@ class LevelDescription:
             pos = Position(x=(x_min + x_max) / 2, y=(y_min + y_max) / 2)
             x_length = x_max - x_min
             y_length = y_max - y_min
-            if zone.ceiling_height is not None:
-                z = zone.ceiling_height
-            else:
-                z = 2.0
-                for wall in zone.walls:
-                    segments, _ = await wall.assets()
-                    for segment in segments:
-                        z = max(z, segment.start.z + segment.height)
+            z = await self._ceiling_z(zone)
             result.append(
                 Ceiling(
                     name=zone.name,
@@ -192,6 +274,76 @@ class LevelDescription:
                     material=zone.ceiling_material,
                 )
             )
+        return result
+
+    def _ceiling_rig(self, zone: Zone, cfg: CeilingLights, ceiling_z: float) -> Light:
+        import shapely
+
+        spec = LIGHT_FIXTURES[cfg.fixture]
+        polygon = shapely.Polygon([(corner.x, corner.y) for corner in zone.corners])
+        x_min = min(corner.x for corner in zone.corners)
+        y_min = min(corner.y for corner in zone.corners)
+        x_max = max(corner.x for corner in zone.corners)
+        y_max = max(corner.y for corner in zone.corners)
+        nx = max(1, int((x_max - x_min) // cfg.spacing))
+        ny = max(1, int((y_max - y_min) // cfg.spacing))
+        z = ceiling_z - 0.02
+        fixtures: list[Position] = []
+        for iy in range(ny):
+            y = (y_min + y_max) / 2 + (iy - (ny - 1) / 2) * cfg.spacing
+            for ix in range(nx):
+                x = (x_min + x_max) / 2 + (ix - (nx - 1) / 2) * cfg.spacing
+                if spec.shape == 'rect':
+                    footprint = shapely.box(x - spec.x_length / 2, y - spec.y_length / 2, x + spec.x_length / 2, y + spec.y_length / 2)
+                else:
+                    footprint = shapely.Point(x, y).buffer(spec.radius)
+                if polygon.covers(footprint):
+                    fixtures.append(Position(x, y, z))
+        if not fixtures:
+            point = polygon.representative_point()
+            fixtures.append(Position(point.x, point.y, z))
+        return Light(
+            name=zone.name,
+            fixture=cfg.fixture,
+            lumens=cfg.lumens,
+            cct_K=cfg.cct_K,
+            cast_shadows=cfg.cast_shadows,
+            light_on=cfg.light_on,
+            lit=cfg.lit,
+            level=cfg.level,
+            dead_fraction=cfg.dead_fraction,
+            rig=True,
+            fixtures=fixtures,
+            fixture_ranks=[zlib.crc32(f'{zone.name}:{i}'.encode()) / 2**32 for i in range(len(fixtures))],
+        )
+
+    def _anchor_light(self, light: Light) -> Light:
+        """Resolve an entity_ref light onto its static entity."""
+        if not light.entity_ref:
+            return light
+        matches = [entity for entity in self.all_static_entities if entity.name == light.entity_ref]
+        if len(matches) != 1:
+            raise ValueError(f"light {light.name!r} references {'an ambiguous' if matches else 'an unknown'} static entity {light.entity_ref!r}")
+        return _place_on(light, matches[0])
+
+    async def _object_lights(self) -> list[Light]:
+        result: list[Light] = []
+        for entity in self.all_static_entities:
+            result.extend(await entity_lights(entity))
+        return result
+
+    async def all_lights(self) -> list[Light]:
+        result: list[Light] = [*self.lights, *(self._anchor_light(light) for zone in self.zones for light in zone.lights)]
+        for zone in self.zones:
+            if zone.ceiling_lights is None:
+                continue
+            result.append(self._ceiling_rig(zone, zone.ceiling_lights, await self._ceiling_z(zone)))
+        names = {light.name for light in result}
+        for light in await self._object_lights():
+            if light.name in names:
+                raise ValueError(f'object light {light.name!r} collides with another light of that name')
+            names.add(light.name)
+            result.append(light)
         return result
 
     @property
@@ -227,6 +379,9 @@ class LevelDescription:
         for microphone in self.microphones:
             if microphone.frame.strip('/') == 'map':
                 microphone.position = microphone.position + diff
+        for light in [*self.lights, *(light for zone in self.zones for light in zone.lights)]:
+            if light.position is not None:
+                light.position = light.position + diff
 
     def validate_microphones(self) -> None:
         zones = {zone.name: zone for zone in self.zones}
@@ -273,6 +428,32 @@ class LevelDescription:
                 )
             ):
                 raise ValueError(f'microphone {listener_id!r} z={microphone.position.z} does not match ceiling height {zone.ceiling_height}')
+
+    def validate_lights(self) -> None:
+        names: set[str] = set()
+        for light in self.lights:
+            if not light.spec.ambient:
+                raise ValueError(f'level light {light.name!r} uses fixture {light.fixture!r}, level lights take only dome or sun')
+            if light.name in names:
+                raise ValueError(f'duplicate light {light.name!r}')
+            names.add(light.name)
+        for zone in self.zones:
+            for light in zone.lights:
+                if light.spec.ambient:
+                    raise ValueError(f'light {light.name!r} in zone {zone.name!r} uses fixture {light.fixture!r}, which belongs in the level lights')
+                self._anchor_light(light)
+                if light.name in names:
+                    raise ValueError(f'duplicate light {light.name!r}')
+                names.add(light.name)
+            if zone.ceiling_lights is None:
+                continue
+            if not zone.ceiling or not zone.ceiling_material.name:
+                raise ValueError(f'zone {zone.name!r} has ceiling_lights but no ceiling')
+            if len(zone.corners) < 3:
+                raise ValueError(f'zone {zone.name!r} has ceiling_lights but no polygon')
+            if zone.name in names:
+                raise ValueError(f'duplicate light {zone.name!r}')
+            names.add(zone.name)
 
     def lookup_zone_polygon(self, name: str) -> list[Position] | None:
         """Look up a zone, door, or elevator by name and return its polygon vertices."""
@@ -345,6 +526,7 @@ class LevelDescription:
         default_asset_bbox: tuple[tuple[float, float], tuple[float, float]] | None = None,
         asset_color: str | None = None,
         asset_name_color: str | None = None,
+        static_objects: Iterable[tuple[str, 'shapely.Polygon']] = (),
     ) -> dict[str, typing.Any]:
         import shapely
         import shapely.affinity
@@ -357,7 +539,7 @@ class LevelDescription:
         }
 
         if asset_color is not None:
-            static_objects: list[tuple[str, shapely.Polygon]] = []
+            footprints: list[tuple[str, shapely.Polygon]] = list(static_objects)
             for entity in self.all_static_entities:
                 bbox = entity.asdict(expand_extra=True).get('bbox') or default_asset_bbox
                 if bbox is None:
@@ -374,9 +556,9 @@ class LevelDescription:
                 poly = shapely.box(x_min, y_min, x_max, y_max)
                 poly = shapely.affinity.rotate(poly, entity.pose.orientation.to_yaw(), use_radians=True)
                 poly = shapely.affinity.translate(poly, entity.pose.position.x, entity.pose.position.y)
-                static_objects.append((entity.name, poly))
+                footprints.append((entity.name, poly))
 
-            map_kwargs["static_objects"] = static_objects
+            map_kwargs["static_objects"] = footprints
             map_kwargs["asset_color"] = asset_color
             map_kwargs["asset_name_color"] = asset_name_color
 
@@ -422,14 +604,16 @@ class LevelDescription:
         default_asset_bbox: tuple[tuple[float, float], tuple[float, float]] | None = None,
         asset_color: str | None = None,
         asset_name_color: str | None = None,
+        static_objects: Iterable[tuple[str, 'shapely.Polygon']] = (),
     ) -> tuple[np.ndarray, tuple[float, float]]:
-        """Like `render` but returns a uint8 numpy array (255=free, 0=occupied) + origin."""
+        """Like `render` but returns a uint8 numpy array (255=free, 0=occupied) + origin, drawing `static_objects` (name, map-frame polygon) alongside the entity bboxes."""
         return Map.rasterize(
             resolution=resolution,
             **self._rasterize_kwargs(
                 default_asset_bbox=default_asset_bbox,
                 asset_color=asset_color,
                 asset_name_color=asset_name_color,
+                static_objects=static_objects,
             ),
         )
 
@@ -540,6 +724,7 @@ class Level(LevelDescription):
         return cls(
             zones=level_description.zones,
             microphones=level_description.microphones,
+            lights=level_description.lights,
         )
 
 
@@ -602,6 +787,7 @@ class WorldDescription:
                 _level.shift_all_positions(*origin)
                 out.zones.extend(_level.zones)
                 out.microphones.extend(_level.microphones)
+                out.lights.extend(_level.lights)
 
             except KeyError as e:
                 raise KeyError(f"when creating compacted single world from WorldDescription, the origin for level {level_id} was not given") from e
@@ -616,6 +802,7 @@ class WorldDescription:
         microphone_ids: set[str] = set()
         for level_id, level in self.levels.items():
             level.validate_microphones()
+            level.validate_lights()
             for microphone in level.microphones:
                 if microphone.listener_id in microphone_ids:
                     raise RuntimeError(f'microphone {microphone.listener_id!r} appears in multiple levels')
@@ -888,6 +1075,7 @@ class WorldDescription:
             level_desc = LevelDescription(
                 zones=list(level.zones),
                 microphones=list(level.microphones),
+                lights=list(level.lights),
             )
             level_yaml = yaml.safe_dump(converter.unstructure(level_desc), sort_keys=False)
             files[f'{level_id}/world.yaml'] = level_yaml.encode('utf-8')

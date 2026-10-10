@@ -183,8 +183,6 @@ def _release() -> str:
     os.makedirs(root, exist_ok=True)
     with open(os.path.join(root, ".lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        release = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        tmp = os.path.join(root, f".tmp-{release}")
         latest = _latest()
         prev = os.path.join(root, latest) if latest else None
         venvs = {pkg for pkg in os.listdir(os.path.join(ws, "build")) if os.path.isfile(os.path.join(ws, "build", pkg, "venv", "pyvenv.cfg"))}
@@ -214,6 +212,14 @@ def _release() -> str:
             else:
                 print(f"release: {latest} matches the dev tree (build {t_build:.0f}s, compare {time.monotonic() - t1:.0f}s)", flush=True)
                 return latest
+        for name in os.listdir(root):
+            if name.startswith(".tmp-"):
+                shutil.rmtree(os.path.join(root, name))
+        release = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        while os.path.exists(os.path.join(root, release)):
+            time.sleep(0.2)
+            release = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        tmp = os.path.join(root, f".tmp-{release}")
         stores.clear()
         parts: dict[str, _Part] = {}
         for name, (dest, path, entries, link_source) in sources.items():
@@ -503,8 +509,6 @@ def run_shared(n: int, args: list[str]) -> None:
     _require_dev()
     if _flag(args, "--shared") is not None:
         raise CLIError("--lanes sets --shared itself")
-    if "--resume" in args and _flag(args, "--resume") is None:
-        raise CLIError("--lanes needs an explicit run id, --resume <run_id>")
     run_id = _flag(args, "--resume") or _flag(args, "--run-id")
     if run_id is None:
         suite = _flag(args, "--suite") or "basic"

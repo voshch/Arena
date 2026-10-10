@@ -27,7 +27,11 @@ class MyAdapter(Adapter):
 The base class constructor builds `self.bringup` and `self.client` from
 `bringup_cls` / `client_cls`; subclasses only implement `dispatch_phase`.
 
-`is_phase_done` polls `self.client.is_done()`. Mobile adapters inherit
+Goto completion is judged by the task runner from the robot pose. Gesture and
+reach phases complete on `self.client.is_done()`, and `on_phase_tick(phase, robot)` runs every
+judge tick while a phase is active, with the phase as `dispatch_phase` received it (Nav2
+uses it to redispatch a finished action while the judge has not seen the robot arrive,
+never while `robot.waiting`). Mobile adapters inherit
 [`MobileAdapter`](mobile/__init__.py), whose `on_reset` teleports the robot
 to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
 any post-teleport work.
@@ -39,6 +43,30 @@ any post-teleport work.
 | `nav2.py` | `Nav2Bringup` | `GotoPoseClient` |
 | `none.py` | `NoneBringup` | `GotoPoseClient` |
 | `external.py` | `ExternalBringup` | `GotoPoseClient` |
+| `drl.py` | `DrlBringup` | `GotoPoseClient` |
+| `vla.py` | `DrlBringup` | `GotoPoseClient` |
+
+`VlaAdapter` is a `DrlAdapter` for planners that declare `goal_inputs`
+(see [arena_planners/planners/README.md](../../../../../arena_planners/planners/README.md)).
+It reveals the goal inputs `robot.mobile.goal` selects, falls back to
+`robot.mobile.instruction` for goals without one, and refuses robots without
+an `image` sensor. A goto without authored `text` is worded by
+[`shared/route.py`](../../../../../arena_simulation_setup/src/arena_simulation_setup/shared/route.py):
+`robot.mobile.wording:=route` gives walking directions from the robot's pose
+through the world's doors and openings ("Walk through the main hallway, then
+take the door on your left into the pharmacy."), `robot.mobile.wording:=goal`
+names the target ("Go to the pharmacy."). Unset, a bare pose gets directions
+and a named target is named. A pose the zones do not cover falls back to its
+coordinates. `EpisodeRecord.phases` keeps the instruction and its source per
+phase.
+
+`DrlAdapter` (and so `VlaAdapter`) can send the signals its planner lists
+under `signals:` in `planner.yaml`. For a goto phase with a `signal`, it
+passes the expected signal to the planner in the reset payload and ends the
+phase when that signal arrives: within the phase's tolerance it succeeds,
+otherwise the episode fails as `signaled <signal> <d> m from goal`.
+`RobotManager.submit_task` rejects a phase whose signal the robot's adapter
+cannot send.
 
 `ExternalBringup` reads `goal_topic`, `cmd_vel_topic`, `launch_file`,
 `requires`, and `extra` from `caps/mobile.yaml > external:`, configure them

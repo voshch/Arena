@@ -11,9 +11,10 @@ from __future__ import annotations
 import math
 
 import rclpy
-from arena_people_msgs.msg import Pedestrian, Pedestrians
+from arena_people_msgs.msg import FaceView, Pedestrian, Pedestrians
 from arena_rclpy_mixins.lazy import LazyPublisher, LazySubscription
 from arena_rclpy_mixins.spin import create_executor, spin_node
+from builtin_interfaces.msg import Time
 from geometry_msgs.msg import TransformStamped
 from hri_msgs.msg import EngagementLevel, IdsList
 from rclpy.node import Node
@@ -23,15 +24,17 @@ from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
 )
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import CameraInfo, JointState
 from std_msgs.msg import Bool, Float32, String
 from task_generator.simulators.human.gait import GaitGenerator
 from tf2_msgs.msg import TFMessage
 
 from rviz_utils.hri import BodyPool
+from rviz_utils.hri.face import GAZE_IN_FACE, FaceChain, matrix_from_pose, pinhole_k, quat_from_matrix, root_drop
 from rviz_utils.hri.rig import semantic_to_rig
 
 _DEFAULT_HEIGHT = 1.65
+_VIEW_SIZE = 512
 
 _PEDS_QOS = QoSProfile(
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -80,9 +83,20 @@ class HriProducer(Node):
 
         self.declare_parameter("max_bodies", 32)
         max_bodies: int = self.get_parameter("max_bodies").value
+        self.declare_parameter("view.fov_deg", 60.0)
+        self.declare_parameter("view.clip_near", 0.15)
+        self._view_k = pinhole_k(math.radians(self.get_parameter("view.fov_deg").value), _VIEW_SIZE)
+        self._view_clip_near: float = self.get_parameter("view.clip_near").value
         self._humans_ns = f"{self._ns}/humans"
 
         self._tf_pub: LazyPublisher[TFMessage] = LazyPublisher(self.create_publisher(TFMessage, f"{self._humans_ns}/tf", 100))
+        self._env_tf_remapped = self.resolve_topic_name("/tf") != "/tf"
+        self._world_node = Node(f"{self.get_name()}_world_tf", namespace=self.get_namespace(), use_global_arguments=False, start_parameter_services=False)
+        self._world_tf_pub = self._world_node.create_publisher(TFMessage, "/tf", 100)
+        self._faces_tracked_pub: LazyPublisher[IdsList] = LazyPublisher(self.create_publisher(IdsList, f"{self._humans_ns}/faces/tracked", _LIVE_QOS))
+        self._face_view_pub: dict[str, LazyPublisher[FaceView]] = {}
+        self._face_chain: dict[str, FaceChain] = {}
+        self._root_drop: dict[str, float] = {}
         self._pool = BodyPool(self, self._humans_ns, max_bodies=max_bodies)
         self._gait = GaitGenerator()
         self._prev_stamp_sec: dict[str, float] = {}
@@ -103,7 +117,7 @@ class HriProducer(Node):
 
         self._peds_sub = LazySubscription(
             self,
-            self._tf_pub,
+            (self._tf_pub, self._faces_tracked_pub),
             Pedestrians,
             f"{self._ns}/arena_peds",
             self._on_peds,
@@ -126,6 +140,9 @@ class HriProducer(Node):
             f"{self._humans_ns}/bodies/{body_id}/joint_states",
             _LIVE_QOS,
         )
+        self._face_view_pub[body_id] = LazyPublisher(
+            self.create_publisher(FaceView, f"{self._humans_ns}/faces/{body_id}/view", _LIVE_QOS)
+        )
         # libhri reads the body URDF from this latched topic, not the param.
         urdf_pub = self.create_publisher(
             String, f"{self._humans_ns}/bodies/{body_id}/urdf", _LATCHED_QOS
@@ -147,6 +164,10 @@ class HriProducer(Node):
             pub = registry.pop(body_id, None)
             if pub is not None:
                 self.destroy_publisher(pub)
+        view = self._face_view_pub.pop(body_id, None)
+        if view is not None:
+            self.destroy_publisher(view.publisher)
+        self._face_chain.pop(body_id, None)
 
     def _ensure_person_publishers(self, person_id: str) -> None:
         if person_id in self._person_body_id_pub:
@@ -184,8 +205,10 @@ class HriProducer(Node):
         ids_list = IdsList(ids=sorted(current_ids))
         self._bodies_tracked_pub.publish(ids_list)
         self._persons_tracked_pub.publish(ids_list)
+        self._faces_tracked_pub.publish(lambda: ids_list)
 
         transforms: list[TransformStamped] = []
+        faces: list[TransformStamped] = []
 
         for ped in msg.pedestrians:
             bid = self._body_id(ped.id)
@@ -199,7 +222,9 @@ class HriProducer(Node):
             tf.child_frame_id = f"body_{bid}"
             tf.transform.translation.x = ped.pose.position.x
             tf.transform.translation.y = ped.pose.position.y
-            tf.transform.translation.z = ped.pose.position.z + self._pool.foot_offset(bid)
+            if ped.model_uri not in self._root_drop:
+                self._root_drop[ped.model_uri] = root_drop(ped.model_uri)
+            tf.transform.translation.z = ped.pose.position.z + self._pool.foot_offset(bid) + self._root_drop[ped.model_uri]
             tf.transform.rotation = ped.pose.orientation
             transforms.append(tf)
 
@@ -234,13 +259,60 @@ class HriProducer(Node):
                 js.position = semantic_to_rig(bare_js.name, bare_js.position)
                 self._body_js_pub[bid].publish(js)
 
+            view = self._face_view_pub[bid]
+            if view.wanted:
+                face = self._face_tf(bid, tf, dict(zip(js.name, js.position, strict=True)))
+                if face is not None:
+                    faces.extend(face)
+                    view.publish(lambda bid=bid: FaceView(info=self._camera_info(bid, stamp), clip_near=self._view_clip_near))
+
             self._person_conf_pub[bid].publish(Float32(data=1.0))
             self._person_eng_pub[bid].publish(_engagement_level(ped.animation_state))
 
-        self._tf_pub.publish(lambda: TFMessage(transforms=transforms))
+        self._tf_pub.publish(lambda: TFMessage(transforms=transforms + faces if self._env_tf_remapped else transforms))
+        if faces:
+            self._world_tf_pub.publish(TFMessage(transforms=faces))
+
+    def _face_tf(self, bid: str, body: TransformStamped, positions: dict[str, float]) -> list[TransformStamped] | None:
+        """face_<id> in the body's parent frame and gaze_<id> under it, None while the body has no URDF."""
+        chain = self._face_chain.get(bid)
+        if chain is None:
+            urdf = self._pool.urdf_for(bid)
+            if urdf is None:
+                return None
+            chain = self._face_chain[bid] = FaceChain.from_urdf(urdf, bid)
+        t, q = body.transform.translation, body.transform.rotation
+        world = matrix_from_pose((t.x, t.y, t.z), (q.w, q.x, q.y, q.z)) @ chain.pose(positions)
+        face = TransformStamped()
+        face.header = body.header
+        face.child_frame_id = f"face_{bid}"
+        face.transform.translation.x, face.transform.translation.y, face.transform.translation.z = (float(v) for v in world[:3, 3])
+        r = face.transform.rotation
+        r.w, r.x, r.y, r.z = quat_from_matrix(world)
+        gaze = TransformStamped()
+        gaze.header.stamp = body.header.stamp
+        gaze.header.frame_id = face.child_frame_id
+        gaze.child_frame_id = f"gaze_{bid}"
+        g = gaze.transform.rotation
+        g.w, g.x, g.y, g.z = GAZE_IN_FACE
+        return [face, gaze]
+
+    def _camera_info(self, bid: str, stamp: Time) -> CameraInfo:
+        info = CameraInfo()
+        info.header.stamp = stamp
+        info.header.frame_id = f"gaze_{bid}"
+        info.width = info.height = _VIEW_SIZE
+        info.distortion_model = "plumb_bob"
+        info.d = [0.0] * 5
+        info.k = self._view_k
+        info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        f, c = self._view_k[0], self._view_k[2]
+        info.p = [f, 0.0, c, 0.0, 0.0, f, c, 0.0, 0.0, 0.0, 1.0, 0.0]
+        return info
 
     def destroy_node(self) -> None:
         self._pool.teardown()
+        self._world_node.destroy_node()
         super().destroy_node()
 
 

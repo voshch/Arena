@@ -323,6 +323,13 @@ the engine does not recognize become transient external obstacles in its
 force pool instead. Either way the crowd sees and avoids a possessed ped,
 walking or parked.
 
+Every tracked robot goes out twice under one agent id: under its own name
+(`jackal`, `jackal_1`) and under `robot_<i>`, its index in spawn order. The
+engine binds both names to the same agent, so an agent-type file reaches the
+robot of any model through an attention ref such as `point: robot:robot_0`.
+An index name that is already a robot's own name is left out. In a fleet
+`robot_0` is the first spawned robot, not the one nearest to the ped.
+
 `PARAM_NAMESPACE` is `humansim`, and a `humansim.<param>` launch arg sets the same engine param for the whole
 run. At every episode reset `_configure_impl` sends the staged `humansim.*` names of
 `QueueEpisode.human_params` to the engine node as one `set_parameters_atomically` batch and then calls the

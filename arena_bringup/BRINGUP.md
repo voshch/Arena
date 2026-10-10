@@ -368,6 +368,7 @@ Default is `gazebo`. Valid values:
 | `sim.isaac.viewport.dlss` | preset | DLSS mode, `auto`, `quality`, `balanced` or `performance`. |
 | `sim.isaac.viewport.lighting` | preset | Lighting rig, `lights_off`, `camera_light`, `stage_lights`, `colored_lights`, `default` or `grey_studio`. |
 | `sim.isaac.viewport.overlays` | preset | Overlays drawn in the viewport, comma list of `axis`, `grid`, `bbox`, or `none`. |
+| `sim.isaac.viewport.ceilings` | `auto` | Room ceilings, `auto`, `on` or `off`. `auto` hides them so the GUI looks into the rooms from above, except while the world declares lights, where they close the rooms. `on` shows them to every camera and sensor. At runtime `ros2 service call /isaac/ShowCeilings std_srvs/srv/SetBool "{data: true}"` switches them. |
 
 The viewport keys act on the GUI viewport only, so they have no effect under
 `headless:=true`. Robot camera sensors render through their own products and
@@ -510,6 +511,7 @@ common entry points. Verbs relevant to bringup:
 | `arena launch [args]` | bash composite | All-in-one: `arena runtime` + N × `arena env` + optional `arena viz --all`. |
 | `arena runtime [args]` | `arena_runtime.launch.py` | Runtime-only launch (sim + `arena_node`, no envs). |
 | `arena env [args]` | `task_generator.launch.py` | Attach one task-generator env to a running runtime. |
+| `arena env [ENV] semantics ...` | `state/semantics`, `semantics/set` | List, inspect, set or watch the semantic entities of a running env (lights, doors, signals, sounds, zones) by authored name: `arena env 0 semantics hall level=0.3`, `arena env --all semantics --kind light lit=false`. `arena env semantics --help` lists the forms. |
 | `arena viz [target]` | `ros2 run rviz_utils rviz_config` | Attach rviz to a running env; see [arena viz](#arena-viz). |
 | `arena human [target]` | `rqt --standalone human_steering` | Attach the pedestrian-steering panel to a running env. Target/`--ns` resolution matches [arena viz](#arena-viz). Interactive control works on any backend serving `human/*`: driving a ped possesses it, the engine reclaims it about a second after you stop, `human:=dummy` is the engine-less puppet stage. `arena launch` auto-attaches one panel per env whenever the resolved human backend is `dummy`, unless `headless:=true`. This verb re-attaches after closing it. |
 | `arena robot <model>\|rm\|ls` | `runtime/spawn_robot`, `runtime/despawn_robot`, `state/robots` | Spawn, despawn, or list robots in a running fleet; see [arena robot](#arena-robot). |

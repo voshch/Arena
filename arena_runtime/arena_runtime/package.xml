@@ -11,6 +11,8 @@
   <depend>geometry_msgs</depend>
   <depend>ros_gz_sim</depend>
   <depend>ros_gz_interfaces</depend>
+  <depend>gz_transport_vendor</depend>
+  <depend>gz_msgs_vendor</depend>
 
   <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_robots</exec_depend>

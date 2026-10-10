@@ -20,6 +20,8 @@ from arena_simulation_setup.utils.cattrs import (
 from arena_simulation_setup.utils.geometry import Pose, Position, Scale
 from arena_simulation_setup.utils.resolution import resolve_zone_point
 
+from .light_state import ObjectLightSettings
+
 if TYPE_CHECKING:
     import shapely
 
@@ -123,6 +125,7 @@ class Entity(Named, Parseable, Serializable):
 class Obstacle(Entity):
     scale: Scale | None = None
     level_id: str | None = None
+    light: ObjectLightSettings | None = None
 
     async def footprint(self) -> shapely.Polygon | None:
         """Map-frame 2D footprint from the asset's annotated bounds, None when unannotated."""

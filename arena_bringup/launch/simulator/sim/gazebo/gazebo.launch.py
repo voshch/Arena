@@ -224,6 +224,42 @@ def generate_launch_description():
             print(f'[gazebo.launch] PedSkeletonPlugin injection failed: {exc}', file=sys.stderr)
             return world_sdf_path
 
+    def _world_declares_lights(world_name: str, lighting: str) -> bool:
+        """True when any level or zone of the named world declares a light under the world.lighting mode."""
+        from arena_simulation_setup.tree.World import WorldIdentifier
+
+        try:
+            description = WorldIdentifier(world_name).resolve_sync().load(validate=False)
+        except Exception as exc:
+            print(f'[gazebo.launch] light check of world {world_name!r} failed: {exc}', file=sys.stderr)
+            return False
+        return any(
+            level.lights or any(zone.lights or zone.ceiling_lights is not None for zone in level.zones)
+            for level in (level.with_lighting(lighting) for level in description.levels.values())
+        )
+
+    def _darken_scene(world_sdf_path: str) -> str:
+        """Return a world SDF whose scene adds no ambient, sky or background light."""
+        tree = ET.parse(world_sdf_path)
+        scene = tree.getroot().find('world/scene')
+        if scene is None:
+            return world_sdf_path
+        ambient = scene.find('ambient')
+        if ambient is None:
+            ambient = ET.SubElement(scene, 'ambient')
+        ambient.text = '0 0 0 1'
+        background = scene.find('background')
+        if background is None:
+            background = ET.SubElement(scene, 'background')
+        background.text = '0 0 0 1'
+        sky = scene.find('sky')
+        if sky is not None:
+            scene.remove(sky)
+        tmp = tempfile.NamedTemporaryFile(mode='wb', suffix='.sdf', delete=False, prefix='arena_world_lit_')
+        tree.write(tmp, xml_declaration=True, encoding='utf-8')
+        tmp.close()
+        return tmp.name
+
     def _render_gui_config(engine: str) -> str:
         """Render a --gui-config temp file from the user's own ~/.gz layout (else the
         stock config) with the engine pinned and the ViewportCamera plugin ensured."""
@@ -253,6 +289,8 @@ def generate_launch_description():
         headless_val = context.perform_substitution(headless.substitution)
         skeleton_val = context.perform_substitution(ped_skeleton_enabled.substitution)
         skeleton_on = skeleton_val.lower() not in ('false', '0')
+        if _world_declares_lights(context.perform_substitution(world.substitution), context.launch_configurations.get('world.lighting', 'authored') or 'authored'):
+            resolved_world = _darken_scene(resolved_world)
         resolved_world = _inject_ped_skeleton_plugin(resolved_world, skeleton_on)
         engine = _select_render_engine()
         gz_args = resolved_world + f" -r --render-engine {engine}"

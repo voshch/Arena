@@ -1,0 +1,4 @@
+robots:
+- start: [10.0, 23.5, 1.5708]
+  phases:
+  - {goto: pharmacy, pose: [3.75, 26.65, 0.0], tolerance_radius: 3.0}

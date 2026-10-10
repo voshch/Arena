@@ -31,9 +31,6 @@ if TYPE_CHECKING:
 class ExternalAdapter(MobileAdapter):
     kind: ClassVar[str] = "external"
 
-    def is_phase_done(self, phase: TaskPhase, robot: RobotManager) -> bool | None:
-        return None
-
     async def dispatch_phase(
         self,
         phase: TaskPhase,

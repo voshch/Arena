@@ -18,10 +18,12 @@ synchronously, so the output is deterministic. Each endpoint records to its own 
 from __future__ import annotations
 
 import asyncio
+import collections
 import typing
 from pathlib import Path
 
 import rclpy
+from arena_people_msgs.msg import FaceView
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Time import Time
 from arena_runtime.lockstep import register_channels
@@ -34,6 +36,7 @@ from arena_runtime_msgs.msg import (
 from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep
 from builtin_interfaces.msg import Time as RosTime
 from geometry_msgs.msg import Point, PoseStamped
+from hri_msgs.msg import IdsList
 from rclpy.duration import Duration
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import (
@@ -43,7 +46,7 @@ from viewport_control_msgs.srv import (
     ViewportSetView,
 )
 
-from . import curves, surfaces
+from . import curves, faces, surfaces
 from .curves import Quat, Vec3
 from .record import Recorder, claim, tagged
 from .surfaces import TargetSelection
@@ -66,6 +69,7 @@ class Steered(typing.NamedTuple):
     quat: Quat
     fov: float
     referenced: bool
+    clip_near: float = 0.0
 
 
 # cmd_view publish rate for streamed segments (Hz, wall-clock LIVE mode).
@@ -78,6 +82,8 @@ LEAD = 0.3
 
 # Horizontal fov (rad) assumed while no verb has set one.
 FOV_DEFAULT = 1.047
+
+FACE_TIMEOUT = 15.0
 
 # A fresh node discovers the GUI processes one by one, measured up to 1.5 s apart,
 # so the target set counts as complete once it has stood still this long.
@@ -116,6 +122,22 @@ class _Endpoint:
         return ((x + self._ox, y + self._oy, z), q)
 
 
+class FaceWatch:
+    """A face being looked through, holding the subscriptions that keep its frames published."""
+
+    def __init__(self, node: rclpy.node.Node, face_id: str, view: FaceView, subscriptions: list[rclpy.subscription.Subscription]) -> None:
+        self.frame = faces.frame(face_id)
+        self.fov = faces.fov(view)
+        self.clip_near = view.clip_near
+        self._node = node
+        self._subscriptions = subscriptions
+
+    def close(self) -> None:
+        for sub in self._subscriptions:
+            self._node.destroy_subscription(sub)
+        self._subscriptions = []
+
+
 class CamNode(ArenaMixinNode):
     """Standalone node that plays a `Camera` timeline against the selected viewports."""
 
@@ -140,6 +162,8 @@ class CamNode(ArenaMixinNode):
         self._lockstep = lockstep and record is not None
         self._env_refs: dict[int, tuple[float, float]] = {}
         self._endpoints: list[_Endpoint] = []
+        # 0 keeps each camera's near clip, < 0 restores its default
+        self.clip_near = 0.0
         # True once a reference frame is set: from then on poses are relative to it and
         # must not be localized. Until then the reference is identity and the env offset
         # is what maps an absolute shot into each env.
@@ -183,6 +207,7 @@ class CamNode(ArenaMixinNode):
             names = ", ".join(endpoint.ns for endpoint in self._endpoints)
             self.get_logger().info(f"viewport connected ({names}), {'recording' if self._record else 'playing'} shot")
             await self.arrives(f"{self._endpoints[0].ns}/viewport/camera_pose", PoseStamped)  # seed the cursor
+            await self._timeline.prepare(self)
             try:
                 if self._lockstep and self._scheduler_active:
                     await self._run_follower()
@@ -319,6 +344,34 @@ class CamNode(ArenaMixinNode):
         names = [name for name, _types in self.get_service_names_and_types()]
         return surfaces.find_targets(names, self._selection, self._env_refs)
 
+    async def watch_face(self, face: str, timeout: float = FACE_TIMEOUT) -> FaceWatch | None:
+        """Wake the face rosters, resolve `face` on them and subscribe its view, None after `timeout` s."""
+        rosters: dict[str, list[str]] = {}
+        subs: dict[str, rclpy.subscription.Subscription] = {}
+        views: collections.deque[FaceView] = collections.deque(maxlen=1)
+        target: tuple[str, str] | None = None
+        error = f"no face roster answered within {timeout:.0f} s, is hri_producer running?"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
+            for topic in faces.tracked_topics(name for name, _types in self.get_topic_names_and_types()):
+                if topic not in subs:
+                    subs[topic] = self.create_subscription(IdsList, topic, lambda msg, topic=topic: rosters.__setitem__(topic, list(msg.ids)), 10)
+            if rosters and target is None:
+                try:
+                    target = faces.match(rosters, face)
+                except LookupError as e:
+                    error = str(e)
+                else:
+                    subs[faces.view_topic(*target)] = self.create_subscription(FaceView, faces.view_topic(*target), lambda msg: views.append(msg), 10)
+            if target is not None and views:
+                return FaceWatch(self, target[1], views[-1], list(subs.values()))
+            await asyncio.sleep(0.2)
+        for sub in subs.values():
+            self.destroy_subscription(sub)
+        self.get_logger().error(f"cam: {error}")
+        return None
+
     def ok(self) -> bool:
         """False once the rclpy context is shutting down, so streaming stops cleanly."""
         return rclpy.ok()
@@ -347,6 +400,7 @@ class CamNode(ArenaMixinNode):
             req.eye = Point(x=float(eye_local[0]), y=float(eye_local[1]), z=float(eye_local[2]))
             req.target = Point(x=float(target_local[0]), y=float(target_local[1]), z=float(target_local[2]))
             req.fov = float(fov)
+            req.clip_near = float(self.clip_near)
             ok = await self._call(endpoint.set_view, req) and ok
         return ok
 
@@ -382,6 +436,7 @@ class CamNode(ArenaMixinNode):
             msg.pose = surfaces.ros_pose(self._local(endpoint, position), quat)
             msg.world_orientation = bool(world_orientation)
             msg.fov = float(fov)
+            msg.clip_near = float(self.clip_near)
             endpoint.cmd_view.publish(msg)
 
     async def drive(self, duration: float, world_orientation: bool, frame_at: Frame) -> None:
@@ -423,6 +478,7 @@ class CamNode(ArenaMixinNode):
             if frame is None:
                 return
             self._referenced = frame.referenced
+            self.clip_near = frame.clip_near
             if not await self._record_frame(frame.position, frame.quat, False, frame.fov):
                 return
 
@@ -431,6 +487,7 @@ class CamNode(ArenaMixinNode):
         req.pose = surfaces.ros_pose(self._local(endpoint, position), quat)
         req.world_orientation = bool(world_orientation)
         req.fov = float(fov)
+        req.clip_near = float(self.clip_near)
         if min_sim_time is not None:
             req.min_sim_time = min_sim_time
         try:
