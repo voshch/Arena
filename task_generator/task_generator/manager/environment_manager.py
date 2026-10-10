@@ -1,20 +1,25 @@
 import asyncio
+import json
 import typing
 from collections.abc import Callable, Collection, Sequence
 from typing import Any
 
+import attrs
+import rclpy.qos
 import shapely
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim import BaseSim
 from arena_runtime.sim._semantics import _SEMANTIC_KINDS
-from arena_simulation_setup.shared import Ceiling
+from arena_simulation_setup.shared import Ceiling, Light
 from arena_simulation_setup.tree.World import LevelDescription, WorldDescription
-from arena_simulation_setup.tree.World.World import _render_door_polygons, _render_elevator_polygons
+from arena_simulation_setup.tree.World.World import _render_door_polygons, _render_elevator_polygons, entity_lights
 from rcl_interfaces.msg import Parameter as ParameterMsg
+from std_msgs.msg import String
 
 from task_generator.manager.collision_grid import CollisionGrid
 from task_generator.manager.realizer import Realizer
 from task_generator.manager.world_manager.utils import WorldMap
+from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
 from task_generator.shared import (
     Door,
     DynamicObstacle,
@@ -59,6 +64,42 @@ def _route_semantics(cfgs: Sequence[SemanticCfg], host_kind: str) -> dict[str, l
 _OCCUPANCY_CAP_VOCAB = _kind_vocab(_SEMANTIC_KINDS["occupancy_cap"])
 
 
+def authored_statics(level: LevelDescription) -> LevelDescription:
+    """The level with its static entities under their authored names, as lights and their entity_ref name them."""
+    return attrs.evolve(
+        level,
+        zones=[attrs.evolve(zone, entities=attrs.evolve(zone.entities, static=[attrs.evolve(entity, name=entity.name.removeprefix(WORLD_ENTITY_PREFIX)) for entity in zone.entities.static])) for zone in level.zones],
+    )
+
+
+async def world_lights(level: LevelDescription) -> list[Light]:
+    """The lights of a level under authored names, each owner under the name its static entity spawns with."""
+    return [attrs.evolve(light, owner=f'{WORLD_ENTITY_PREFIX}{light.owner}') if light.owner else light for light in await authored_statics(level).all_lights()]
+
+
+STAGE_AMBIENT_TOPIC = '/arena/stage_ambient'
+STAGE_AMBIENT_ENV = 'env_0'
+
+
+def stage_ambient(lights: Sequence[Light]) -> list[dict]:
+    """The dome and sun lights of a world as comparable settings, sorted, names left out."""
+    return sorted(
+        ({'fixture': light.fixture, 'lux': light.lux, 'cct_K': light.cct_K, 'direction': list(light.direction), 'level': light.level, 'lit': light.lit, 'light_on': light.light_on} for light in lights if light.spec.ambient),
+        key=json.dumps,
+    )
+
+
+def stage_ambient_conflict(env: str, mine: list[dict], stage: list[dict]) -> str | None:
+    """Why an env renders under other dome and sun lights than its world declares, None when they agree."""
+    if mine == stage:
+        return None
+
+    def described(ambient: list[dict]) -> str:
+        return ', '.join(f"{a['fixture']} {a['lux']:g} lux" for a in ambient) or 'no dome or sun (default lighting)'
+
+    return f'dome and sun light the whole stage and {STAGE_AMBIENT_ENV} sets them: {env} renders under {described(stage)}, its world declares {described(mine)}'
+
+
 class EnvironmentManager(NodeInterface):
     _human_simulator: BaseHumanSimulator
     _simulator: BaseSim
@@ -84,6 +125,42 @@ class EnvironmentManager(NodeInterface):
         self._collision_grid = None
         self._static_polygons = {}
         self._attached_semantic_entities: set[str] = set()
+        self._world_light_names: set[str] = set()
+        self._world_level_ids: list[str] = []
+        self._episode_lights: dict[str, list[str]] = {}
+        self._episode_light_owners: set[str] | None = None
+        self._stage_ambient: list[dict] | None = None
+        self._own_ambient: list[dict] | None = None
+        self._stage_ambient_warned: tuple[str, str] | None = None
+        qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
+        if self._env_name == STAGE_AMBIENT_ENV:
+            self._stage_ambient_pub = self.node.create_publisher(String, STAGE_AMBIENT_TOPIC, qos)
+        else:
+            self._stage_ambient_sub = self.node.create_subscription(String, STAGE_AMBIENT_TOPIC, self._on_stage_ambient, qos)
+
+    @property
+    def _env_name(self) -> str:
+        return str(self._realizer.prefix()).strip('/')
+
+    def _on_stage_ambient(self, msg: String) -> None:
+        self._stage_ambient = json.loads(msg.data)
+        self._check_stage_ambient()
+
+    def _declare_ambient(self, lights: Sequence[Light]) -> None:
+        self._own_ambient = stage_ambient(lights)
+        if self._env_name == STAGE_AMBIENT_ENV:
+            self._stage_ambient_pub.publish(String(data=json.dumps(self._own_ambient)))
+            return
+        self._check_stage_ambient()
+
+    def _check_stage_ambient(self) -> None:
+        if self._own_ambient is None or self._stage_ambient is None:
+            return
+        conflict = stage_ambient_conflict(self._env_name, self._own_ambient, self._stage_ambient)
+        key = (json.dumps(self._own_ambient), json.dumps(self._stage_ambient))
+        if conflict is not None and key != self._stage_ambient_warned:
+            self._logger.warning(conflict)
+            self._stage_ambient_warned = key
 
     def _detach_extra_semantics(self) -> None:
         """Detach the non-door/non-elevator semantics attached for the previous world."""
@@ -169,16 +246,22 @@ class EnvironmentManager(NodeInterface):
         _world = WorldDescription.from_levels(world) if isinstance(world, LevelDescription) else world
 
         self._detach_extra_semantics()
+        await self._simulator.remove_lights()
+        self._episode_lights.clear()
+        self._world_light_names.clear()
+        self._world_level_ids = [str(fid) for fid in _world.levels if _match_level_id(fid)]
         self.node._clear_semantic_entities()
         # (kind, realized entity, cfgs, polygon) attaches deferred until geometry exists.
         pending: list[tuple[str, str, list[SemanticCfg], list[tuple[float, float]] | None]] = []
 
         walls_list: list[Wall] = []
         collision_walls: list[Wall] = []
+        lintels: list[Wall] = []
         for fid, level in _world.levels.items():
             if not _match_level_id(fid):
                 continue
-            walls_list.extend(self._realizer.realize(w, fid) for w in level.all_walls)
+            walls_list.extend(self._realizer.realize(w, fid) for w in await level.closed_walls())
+            lintels.extend(self._realizer.realize(w, fid) for w in await level.door_lintels())
             if detected_walls and detected_walls.get(fid):
                 collision_walls.extend(self._realizer.realize(w, fid) for w in detected_walls[fid])
         walls = tuple(walls_list)
@@ -200,6 +283,16 @@ class EnvironmentManager(NodeInterface):
                 continue
             for ceiling in await level.all_ceilings():
                 ceilings.append(self._realizer.realize(ceiling, fid))
+        lights: list[Light] = []
+        for fid, level in _world.levels.items():
+            if not _match_level_id(fid):
+                continue
+            for light in await world_lights(level.with_lighting(self.node.conf.Arena.WORLD_LIGHTING.value or 'authored')):
+                realized_l = self._realizer.realize(light, fid)
+                self.node._register_semantic_entity(light.name, realized_l.name)
+                self._world_light_names.add(light.name)
+                lights.append(realized_l)
+                pending.append(("light", realized_l.name, realized_l.semantics, None))
         elevators_list: list[Elevator] = []
         for fid, level in _world.levels.items():
             if not _match_level_id(fid):
@@ -251,11 +344,16 @@ class EnvironmentManager(NodeInterface):
             futures.append(self._simulator.spawn_ceilings(ceilings))
         if walls or doors or collision_walls:
             futures.append(self._human_simulator.spawn_world(walls, doors, collision_walls=tuple(collision_walls)))
+        if lintels:
+            futures.append(self._simulator.spawn_walls(lintels, clear_existing=False))
         futures.append(self._human_simulator.spawn_obstacles(statics, layer=ObstacleLayer.WORLD))
         if elevators:
             futures.append(self._simulator.spawn_elevators(elevators))
 
         await asyncio.gather(*futures)
+        if lights:
+            await self._simulator.spawn_lights(lights)
+        self._declare_ambient(lights)
 
         # Door/elevator kinds self-attach inside their spawn helpers. The scripted,
         # position, and zone kinds have no geometry spawn, so attach them here once
@@ -280,6 +378,41 @@ class EnvironmentManager(NodeInterface):
         realized = tuple(self._realizer.realize(obstacle, obstacle.level_id or "") for obstacle in setups)
         await self._cache_polygons(realized)
         await self._human_simulator.spawn_obstacles(realized)
+        await self._spawn_episode_lights(setups)
+
+    async def _spawn_episode_lights(self, setups: Collection[Obstacle]) -> None:
+        """Spawn the lights the objects of episode obstacles carry, replacing those of an obstacle spawned before."""
+        await self._remove_episode_lights([obstacle.name for obstacle in setups if obstacle.name in self._episode_lights])
+        lights: list[Light] = []
+        for obstacle in setups:
+            if obstacle.name.startswith(WORLD_ENTITY_PREFIX):
+                continue
+            if self._episode_light_owners is not None:
+                self._episode_light_owners.add(obstacle.name)
+            names: list[str] = []
+            for light in await entity_lights(obstacle):
+                if light.name in self._world_light_names:
+                    self._logger.warning(f"light {light.name!r} of obstacle {obstacle.name!r} is also a world light, skipped")
+                    continue
+                realized = self._realizer.realize(light, obstacle.level_id or (self._world_level_ids[0] if len(self._world_level_ids) == 1 else ""))
+                self.node._register_semantic_entity(light.name, realized.name)
+                lights.append(realized)
+                names.append(realized.name)
+            if names:
+                self._episode_lights[obstacle.name] = names
+        if not lights:
+            return
+        await self._simulator.spawn_lights(lights)
+        for light in lights:
+            self._simulator.attach_semantics("light", light.name, light.semantics)
+
+    async def _remove_episode_lights(self, owners: Collection[str]) -> None:
+        names = [name for owner in owners for name in self._episode_lights.pop(owner, ())]
+        if not names:
+            return
+        for name in names:
+            self._simulator.detach_semantics(name)
+        await self._simulator.remove_lights(names)
 
     async def move_obstacles(self, setups: Collection[Obstacle]):
         """Moves already spawned static obstacles and rebuilds the collision grid without their old footprints."""
@@ -314,7 +447,12 @@ class EnvironmentManager(NodeInterface):
         @callback: Function to call between unuse and remove
         """
         await self._human_simulator.unuse_obstacles()
-        await callback()
+        self._episode_light_owners = set()
+        try:
+            await callback()
+        finally:
+            owners, self._episode_light_owners = self._episode_light_owners, None
+        await self._remove_episode_lights([owner for owner in self._episode_lights if owner not in owners])
         await self._human_simulator.remove_obstacles(purge=ObstacleLayer.UNUSED)
         self._sync_static_polygons()
 
@@ -353,6 +491,7 @@ class EnvironmentManager(NodeInterface):
         Unuse and remove all obstacles
         """
         await self._human_simulator.remove_obstacles(purge=purge)
+        await self._remove_episode_lights(list(self._episode_lights))
         self._sync_static_polygons()
         if purge >= ObstacleLayer.WORLD:
             self._collision_grid = None

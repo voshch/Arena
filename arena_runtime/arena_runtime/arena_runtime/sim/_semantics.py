@@ -110,6 +110,7 @@ class SemanticKind(abc.ABC):
     QUANTA: ClassVar[dict[str, float]] = {}
     # Writable field names for the M2 write path. Empty means read-only.
     WRITABLE: ClassVar[frozenset[str]] = frozenset()
+    RANGES: ClassVar[dict[str, tuple[float, float]]] = {}
 
     def __init__(self, entity: str, discrete: tuple[str, ...], continuous: tuple[str, ...], predicates: tuple[str, ...]) -> None:
         self._entity = entity
@@ -629,7 +630,7 @@ class PressurePlateSemantics(SemanticKind):
         position = (float(pos[0]), float(pos[1]))
         press_on = params.get('press_on')
         regime = params.get('regime')
-        if press_on is not None and press_on == regime:
+        if press_on is not None and press_on.removeprefix('!') == regime:
             raise ValueError(f"pressure_plate {entity!r}: press_on cannot equal regime (self-latch)")
         return cls(
             mech,
@@ -738,7 +739,7 @@ class SoundSemantics(SemanticKind):
         params = _merge_params(cfgs)
         sound_on = params.get('sound_on')
         regime = params.get('regime')
-        if sound_on is not None and sound_on == regime:
+        if sound_on is not None and sound_on.removeprefix('!') == regime:
             raise ValueError(f"sound {entity!r}: sound_on cannot equal regime (self-latch)")
         initial_sounding = False
         initial_volume: float | None = None
@@ -791,6 +792,114 @@ class SoundSemantics(SemanticKind):
             predicates['sounding'] = self._live_sounding()
         if 'volume_db' in self._continuous and self._volume is not None:
             continuous['volume_db'] = self._volume
+        return SemanticEntitySnapshot(self._entity, self.KIND, {}, continuous, predicates)
+
+
+@semantic_kind('light')
+class LightSemantics(SemanticKind):
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+
+    CONTINUOUS = ('level', 'dead_fraction')
+    PREDICATES = ('lit',)
+    QUANTA = {'level': 0.01, 'dead_fraction': 0.01}
+    WRITABLE = frozenset({'lit', 'level', 'dead_fraction'})
+    RANGES = {'level': (0.0, 1.0), 'dead_fraction': (0.0, 1.0)}
+
+    def __init__(
+        self,
+        mech: MechanismITF,
+        entity: str,
+        light_on: str | None,
+        initial_lit: bool,
+        initial_level: float,
+        initial_dead_fraction: float,
+        discrete: tuple[str, ...],
+        continuous: tuple[str, ...],
+        predicates: tuple[str, ...],
+    ) -> None:
+        super().__init__(entity, discrete, continuous, predicates)
+        self._mech = mech
+        self._light_on = light_on
+        self._initial_lit = initial_lit
+        self._initial_level = initial_level
+        self._initial_dead_fraction = initial_dead_fraction
+        self._level = initial_level
+        self._dead_fraction = initial_dead_fraction
+        self._override_lit: bool | None = None
+        self._last_natural_lit = self._natural()
+
+    @classmethod
+    def attach(cls, mech: MechanismITF, entity: str, cfgs: Sequence[SemanticCfg], *, polygon: Sequence[tuple[float, float]] | None = None) -> SemanticKind:
+        discrete, continuous, predicates = cls._classify(cfgs)
+        params = _merge_params(cfgs)
+        light_on = params.get('light_on')
+        initial_lit = True
+        initial_level = 1.0
+        initial_dead_fraction = 0.0
+        for cfg in cfgs:
+            if cfg.value is None:
+                continue
+            if cfg.name == 'level':
+                initial_level = float(cfg.value)
+            elif cfg.name == 'dead_fraction':
+                initial_dead_fraction = float(cfg.value)
+            elif cfg.name == 'lit':
+                if light_on is not None:
+                    raise ValueError(f"light {entity!r}: lit value and light_on are exclusive")
+                initial_lit = bool(cfg.value)
+        return cls(mech, entity, light_on, initial_lit, initial_level, initial_dead_fraction, discrete, continuous, predicates)
+
+    def _natural(self) -> bool:
+        return self._mech._semantics.regime(self._light_on) if self._light_on is not None else self._initial_lit
+
+    def _live_lit(self) -> bool:
+        return self._override_lit if self._override_lit is not None else self._natural()
+
+    def settle(self) -> None:
+        natural = self._natural()
+        if natural != self._last_natural_lit:
+            self._override_lit = None
+        self._last_natural_lit = natural
+
+    def reset(self) -> None:
+        self._override_lit = None
+        self._last_natural_lit = self._natural()
+        self._level = self._initial_level
+        self._dead_fraction = self._initial_dead_fraction
+
+    def set_value(self, field: str, value: str) -> None:
+        if field not in self.WRITABLE:
+            raise ValueError('field not writable')
+        if field == 'dead_fraction' and field not in self._continuous:
+            raise ValueError('dead_fraction not declared on this light')
+        coerced = _coerce(self, field, value)
+        if field == 'lit':
+            self._override_lit = bool(coerced)
+            return
+        fraction = float(coerced)
+        low, high = self.RANGES[field]
+        if not low <= fraction <= high:
+            raise ValueError('malformed value')
+        if field == 'level':
+            self._level = fraction
+        else:
+            self._dead_fraction = fraction
+
+    def output(self) -> tuple[float, float]:
+        """Rendered (level, dead fraction), level 0.0 while unlit."""
+        level = self._level if self._live_lit() else 0.0
+        dead_fraction = self._dead_fraction if 'dead_fraction' in self._continuous else 0.0
+        return level, dead_fraction
+
+    def snapshot(self) -> SemanticEntitySnapshot:
+        continuous: dict[str, float] = {}
+        predicates: dict[str, bool] = {}
+        if 'lit' in self._predicates:
+            predicates['lit'] = self._live_lit()
+        if 'level' in self._continuous:
+            continuous['level'] = self._level
+        if 'dead_fraction' in self._continuous:
+            continuous['dead_fraction'] = self._dead_fraction
         return SemanticEntitySnapshot(self._entity, self.KIND, {}, continuous, predicates)
 
 
@@ -975,14 +1084,17 @@ class SemanticsManager:
         return True
 
     def regime(self, name: str) -> bool:
-        """OR of every scripted instance currently asserting the named regime. A consult cycle resolves to False."""
-        if name in self._regime_stack:
+        """OR of every scripted instance currently asserting the named regime, negated by a leading '!'. A consult cycle resolves to False."""
+        negated = name.startswith('!')
+        bare = name.removeprefix('!')
+        if bare in self._regime_stack:
             return False
-        self._regime_stack.add(name)
+        self._regime_stack.add(bare)
         try:
-            return any(instance.asserts_regime(name) for instances in self._instances.values() for instance in instances)
+            asserted = any(instance.asserts_regime(bare) for instances in self._instances.values() for instance in instances)
         finally:
-            self._regime_stack.discard(name)
+            self._regime_stack.discard(bare)
+        return asserted != negated
 
     def trigger_allowed(self, door_name: str, now: float) -> bool:
         """HOOK-A: True with no gate on this door, else gate clearance."""
@@ -1000,3 +1112,7 @@ class SemanticsManager:
         """HOOK-C: True when a recall regime registered for this elevator currently asserts."""
         recall = self._recall.get(elev_name)
         return recall is not None and self.regime(recall)
+
+    def light_outputs(self) -> dict[str, tuple[float, float]]:
+        """Current (output level, dead fraction) of every attached light, keyed by entity."""
+        return {entity: instance.output() for entity, instances in self._instances.items() for instance in instances if isinstance(instance, LightSemantics)}

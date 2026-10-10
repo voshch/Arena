@@ -47,9 +47,9 @@ class Rig:
 
 
 async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]]) -> None:
-    import rclpy.executors
     import rclpy.qos
     from arena_rclpy_mixins.Async import AsyncNode
+    from arena_rclpy_mixins.spin import create_executor
     from arena_rclpy_mixins.Time import Time
     from arena_runtime_msgs.msg import LockstepHeartbeat, LockstepRegistration, LockstepStatus
     from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LockstepRegister, LockstepStart
@@ -116,7 +116,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]]) -> None
             response = await self.stop.call_timeout(Trigger.Request())
             assert response is not None and response.success
 
-    executor = rclpy.executors.MultiThreadedExecutor()
+    executor = create_executor()
     arena = ArenaNode()
     arena.declare_parameter("physics_dt", DT)
     probe = Probe()

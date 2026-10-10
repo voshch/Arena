@@ -9,8 +9,8 @@ sequences:
     steps:
       point_robot:
         attention:
-          point: [robot:robot_0, robot:robot, robot]
-          gaze: [robot:robot_0, robot:robot, robot]
+          point: robot:robot_0
+          gaze: robot:robot_0
         duration: {mean: 6.0, std: 0.0}
       point_person:
         attention:

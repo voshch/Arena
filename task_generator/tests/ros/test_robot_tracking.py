@@ -28,11 +28,11 @@ def _base_at(frame: str, x: float, y: float, stamp_ms: int):
     return t
 
 
-def _robot(x: float, y: float):
+def _robot(x: float, y: float, name: str = "rob"):
     from arena_robots.Robot import RobotIdentifier
     from task_generator.shared import Pose, Position, Robot
 
-    return Robot(name="rob", pose=Pose(Position(x=x, y=y)), model=RobotIdentifier.parse("jackal"), adapters={"mobile": "nav2"}, extra={})
+    return Robot(name=name, pose=Pose(Position(x=x, y=y)), model=RobotIdentifier.parse("jackal"), adapters={"mobile": "nav2"}, extra={})
 
 
 def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop", offset: tuple[float, float] = (0.0, 0.0)) -> None:
@@ -170,11 +170,14 @@ def test_arena_adapter_streams_robot_pose_and_velocity_in_the_engine_frame(rclpy
 
         msg = published()
         assert msg is not None
-        (agent,) = msg.agents
+        agent, alias = msg.agents
         assert agent.name == "rob"
         assert agent.agent_id == stable_int("rob") & 0x7FFFFFFF
         assert (agent.pose.x, agent.pose.y) == pytest.approx((1.05, 1.98))
         assert (agent.velocity.x, agent.velocity.y) == pytest.approx((1.0, -0.4))
+        assert alias.name == "robot_0"
+        assert alias.agent_id == agent.agent_id
+        assert (alias.pose, alias.velocity, alias.radius) == (agent.pose, agent.velocity, agent.radius)
 
         msg = published()
         assert msg is not None
@@ -184,6 +187,79 @@ def test_arena_adapter_streams_robot_pose_and_velocity_in_the_engine_frame(rclpy
         assert published() is None
 
     _with_human(scenario, backend="arena", offset=(10.0, -5.0))
+
+
+def test_arena_adapter_skips_an_index_alias_that_is_a_robot_name(rclpy_context):
+    async def scenario(human, tf_buffer) -> None:
+        del tf_buffer
+        import rclpy
+        from arena_humansim_msgs.msg import AgentStates
+        from task_generator.constants.rng import stable_int
+
+        received: list[AgentStates] = []
+        human.node.create_subscription(AgentStates, str(human.node.service_namespace("world_state")), received.append, 10)
+        await human.spawn_robot((_robot(0.0, 0.0, name="robot_1"), _robot(3.0, 0.0)))
+        for _ in range(10):
+            rclpy.spin_once(human.node, timeout_sec=0.02)
+        received.clear()
+        human._publish_world_state()
+        for _ in range(50):
+            rclpy.spin_once(human.node, timeout_sec=0.02)
+            if received:
+                break
+
+        first, second = (stable_int(name) & 0x7FFFFFFF for name in ("robot_1", "rob"))
+        assert [(a.name, a.agent_id) for a in received[-1].agents] == [("robot_1", first), ("rob", second), ("robot_0", first)]
+
+    _with_human(scenario, backend="arena")
+
+
+def test_engine_binds_the_index_alias_to_the_robot(rclpy_context):
+    pytest.importorskip("arena_humansim.core.agent_manager")
+
+    async def scenario(human, tf_buffer) -> None:
+        del tf_buffer
+        from arena_humansim.core.agent_manager import AgentManager
+        from arena_humansim.core.pool import KIND_ROBOT
+        from rclpy.executors import SingleThreadedExecutor
+        from rclpy.parameter import Parameter
+        from task_generator.constants.rng import stable_int
+
+        engine = AgentManager(
+            namespace=human.node.get_fully_qualified_name(),
+            parameter_overrides=[Parameter("mode", value=AgentManager.MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
+        )
+        executor = SingleThreadedExecutor()
+        executor.add_node(human.node)
+        executor.add_node(engine)
+
+        def feed_robots() -> None:
+            for _ in range(200):
+                human._publish_world_state()
+                executor.spin_once(timeout_sec=0.02)
+                if engine._latest_world_state is not None:
+                    engine.tick()
+                    return
+            raise AssertionError("engine never received world_state")
+
+        try:
+            await human.spawn_robot((_robot(1.0, 2.0), _robot(4.0, 2.0, name="rob_1")))
+            feed_robots()
+            feed_robots()
+            first, second = (engine._external_entities[stable_int(name) & 0x7FFFFFFF].agent_id for name in ("rob", "rob_1"))
+            assert first != second
+            assert engine._lookup_agent_name("rob", KIND_ROBOT) == first
+            assert engine._lookup_agent_name("robot_0", KIND_ROBOT) == first
+            assert engine._lookup_agent_name("rob_1", KIND_ROBOT) == second
+            assert engine._lookup_agent_name("robot_1", KIND_ROBOT) == second
+            pool = engine._pool
+            assert sorted(int(aid) for aid, kind in zip(pool.agent_ids[: pool.n], pool.kind[: pool.n], strict=True) if int(kind) == KIND_ROBOT) == sorted((first, second))
+            assert (engine._agents[first].state.pose.x, engine._agents[second].state.pose.x) == pytest.approx((1.0, 4.0))
+        finally:
+            executor.shutdown()
+            engine.destroy_node()
+
+    _with_human(scenario, backend="arena")
 
 
 def test_pedestrian_spawned_after_the_robot_gets_its_own_engine_agent(rclpy_context):

@@ -70,6 +70,7 @@ from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_
 from task_generator.tasks.task import Task
 from task_generator.utils.flags import flag_enabled
 from task_generator.utils.goal_progress import GoalProgressTracker
+from task_generator.utils.static_tf import StaticTransformBroadcaster
 
 from . import SafeCallbackNode
 
@@ -183,7 +184,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-        self._static_tf_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
+        self._static_tf_broadcaster = StaticTransformBroadcaster(self)
 
         Task.declare_parameters(self)
 

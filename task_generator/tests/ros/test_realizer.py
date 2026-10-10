@@ -286,6 +286,46 @@ def test_realize_signal_prefixes_name(realizer):
     assert [(cfg.role, cfg.name) for cfg in result.semantics] == [(cfg.role, cfg.name) for cfg in s.semantics]
 
 
+def test_realize_light_translates_position_and_prefixes_name(realizer):
+    from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.geometry import Position
+
+    light = Light(name="exit_strip", fixture="tube", position=Position(7.8, 3.0, 2.2), lumens=300.0, light_on="blackout")
+    result = realizer.realize(light)
+    assert "exit_strip" in result.name
+    assert "world" in result.name
+    assert (result.position.x, result.position.y, result.position.z) == (8.8, 5.0, 2.2)
+    assert result.light_on == "blackout"
+
+
+def test_realize_light_rig_translates_every_fixture(realizer):
+    from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.geometry import Position
+
+    rig = Light(name="hall", fixture="panel", lumens=3600.0, rig=True, fixtures=[Position(1.0, 1.0, 2.58), Position(3.4, 1.0, 2.58)], fixture_ranks=[0.2, 0.7])
+    result = realizer.realize(rig)
+    assert [(p.x, p.y, p.z) for p in result.fixtures] == [(2.0, 3.0, 2.58), (4.4, 3.0, 2.58)]
+    assert result.fixture_ranks == [0.2, 0.7]
+    assert result.position is None
+
+
+def test_realize_light_prefixes_its_frame_once(realizer):
+    from arena_simulation_setup.shared import Light
+
+    bare = realizer.realize(Light(name="headlight", fixture="spot", frame="jackal/base_link", lumens=800.0))
+    assert bare.frame.endswith("/jackal/base_link")
+    assert "world" in bare.frame
+    assert realizer.realize(Light(name="headlight", fixture="spot", frame=bare.frame, lumens=800.0)).frame == bare.frame
+
+
+def test_realize_ambient_light_keeps_no_position(realizer):
+    from arena_simulation_setup.shared import Light
+
+    result = realizer.realize(Light(name="ambient", fixture="dome", lux=5.0))
+    assert result.position is None
+    assert result.fixtures == []
+
+
 def test_realize_polygon_translates_corners(realizer):
     from arena_simulation_setup.utils.geometry import Position
 

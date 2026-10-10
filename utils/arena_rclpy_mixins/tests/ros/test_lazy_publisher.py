@@ -73,3 +73,20 @@ def test_subscription_follows_the_publisher_it_feeds():
         assert not relay.active
     finally:
         node.destroy_node()
+
+
+def test_subscription_lives_while_any_fed_publisher_is_wanted():
+    node = rclpy.create_node("lazy_subscription_fanout")
+    try:
+        upstream = node.create_publisher(String, "lazy_fanout_in", 10)
+        first: LazyPublisher[String] = LazyPublisher(node.create_publisher(String, "lazy_fanout_a", 10))
+        second: LazyPublisher[String] = LazyPublisher(node.create_publisher(String, "lazy_fanout_b", 10))
+        relay = LazySubscription(node, (first, second), String, "lazy_fanout_in", lambda _m: None, 10, period_s=0.05)
+        assert not relay.active
+        viewer = node.create_subscription(String, "lazy_fanout_b", lambda _m: None, 10)
+        assert _spin_until(node, lambda: upstream.get_subscription_count() == 1)
+        node.destroy_subscription(viewer)
+        assert _spin_until(node, lambda: upstream.get_subscription_count() == 0)
+        assert not relay.active
+    finally:
+        node.destroy_node()

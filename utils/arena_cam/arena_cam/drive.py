@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import math
 import threading
 import typing
 
+from arena_people_msgs.msg import FaceView
 from arena_runtime_msgs.msg import EnvRegistry
 from geometry_msgs.msg import PoseStamped
+from hri_msgs.msg import IdsList
 from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from task_generator_msgs.msg import RobotFleet
@@ -32,16 +35,17 @@ from viewport_control_msgs.srv import (
     ViewportSetView,
 )
 
-from . import record, surfaces
+from . import curves, faces, record, surfaces
 from .camera import Camera
 from .client import CamNode, Steered
-from .fly import Fly, Intent, View
+from .fly import Fly, Intent, Mode, View
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     import rclpy.node
+    import rclpy.subscription
 
     from .curves import Quat, Vec3
     from .surfaces import TargetSelection
@@ -93,7 +97,7 @@ class _Surface:
 
 
 class EntityRoster:
-    """Live robot base frames (`env_0/jackal/base_link`), TF frame ids a reference can track."""
+    """Live robot base frames (`env_0/jackal/base_link`) and pedestrian `face_<id>` frames, TF frame ids a reference can track."""
 
     def __init__(self, node: rclpy.node.Node) -> None:
         self._node = node
@@ -101,12 +105,27 @@ class EntityRoster:
         self._names: dict[str, list[str]] = {}
 
     def refresh(self) -> None:
-        for name, _types in self._node.get_topic_names_and_types():
+        topics = [name for name, _types in self._node.get_topic_names_and_types()]
+        for name in topics:
             if name.endswith(ROBOTS_SUFFIX) and name not in self._subs:
                 self._subs[name] = self._node.create_subscription(RobotFleet, name, lambda msg, topic=name: self._on_fleet(topic, msg), surfaces.ENVS_QOS)
+        for name in faces.tracked_topics(topics):
+            if name not in self._subs:
+                self._subs[name] = self._node.create_subscription(IdsList, name, lambda msg, topic=name: self._on_faces(topic, msg), 10)
 
     def _on_fleet(self, topic: str, msg: RobotFleet) -> None:
         self._names[topic] = [robot.descriptor.base_frame for robot in msg.robots if robot.descriptor.base_frame]
+
+    def _on_faces(self, topic: str, msg: IdsList) -> None:
+        self._names[topic] = [faces.frame(face_id) for face_id in msg.ids]
+
+    def view_topic(self, frame: str) -> str | None:
+        """The view topic of a listed `face_<id>` frame, None for any other name."""
+        face_id = faces.face_id(frame)
+        for topic, names in self._names.items():
+            if face_id is not None and topic.endswith(faces.TRACKED_SUFFIX) and frame in names:
+                return faces.view_topic(topic, face_id)
+        return None
 
     def names(self) -> list[str]:
         return sorted({name for names in self._names.values() for name in names})
@@ -157,8 +176,12 @@ class _Recording:
 class Driver:
     """Drives the selected viewport surfaces from live intent. Qt-free, tick it from anywhere."""
 
-    def __init__(self, node: rclpy.node.Node, selection: TargetSelection, *, lead: float = DRIVE_LEAD, take: Take | None = None) -> None:
+    def __init__(self, node: rclpy.node.Node, selection: TargetSelection, *, lead: float = DRIVE_LEAD, take: Take | None = None, roster: EntityRoster | None = None) -> None:
         self._node = node
+        self._roster = roster
+        self._view: rclpy.subscription.Subscription | None = None
+        self._view_pending = False
+        self._clip_near = 0.0
         self._selection = selection
         self.lead = lead
         self._take = take or Take()
@@ -287,6 +310,7 @@ class Driver:
             msg.pose = surfaces.ros_pose(self._local(surface, pos), quat)
             msg.world_orientation = False
             msg.fov = float(fov)
+            msg.clip_near = self._clip_near
             surface.cmd_view.publish(msg)
 
     def _local(self, surface: _Surface, pos: Vec3) -> Vec3:
@@ -318,14 +342,42 @@ class Driver:
             self.toggle_recording()
 
     def frame(self) -> None:
-        """Orbit the target entity in its own frame, so the camera follows it."""
+        """Orbit the target entity in its own frame, so the camera follows it. A face is looked through instead."""
         if not self.entity:
             self.status = "no target entity selected"
+            return
+        self._drop_view()
+        view = self._roster.view_topic(self.entity) if self._roster is not None else None
+        if view is not None:
+            self._look_through(view)
             return
         self._call_reference(self.entity, None, self.reference_mode)
         self.anchor = self.entity
         self.fly.frame((0.0, 0.0, 0.0), self.fly.radius)
         self.status = f"framing {self.entity} ({self.reference_mode})"
+
+    def _look_through(self, view: str) -> None:
+        """Fly from the face origin along its view axis, the face's frame as full reference."""
+        self._view = self._node.create_subscription(FaceView, view, self._on_view, 10)
+        self._view_pending = True
+        self._call_reference(self.entity, None, "full")
+        self.anchor = self.entity
+        self.fly.set_mode(Mode.FLY)
+        self.fly.seed((0.0, 0.0, 0.0), curves.look_at_quat((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)))
+        self.status = f"looking through {self.entity}, waiting for its view"
+
+    def _on_view(self, msg: FaceView) -> None:
+        if self._view_pending:
+            self._view_pending = False
+            self.fly.fov = faces.fov(msg)
+            self._clip_near = msg.clip_near
+            self.status = f"looking through {self.anchor}, fov {math.degrees(self.fly.fov):.0f} deg"
+
+    def _drop_view(self) -> None:
+        if self._view is not None:
+            self._node.destroy_subscription(self._view)
+            self._view = None
+            self._clip_near = -1.0
 
     def cycle_reference_mode(self) -> None:
         index = REFERENCE_MODES.index(self.reference_mode)
@@ -341,6 +393,7 @@ class Driver:
         # last entity-local keyframe against the world origin and teleport there
         pose = self.world_pose()
         self._call_reference("", ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)), "full")
+        self._drop_view()
         self.anchor = ""
         if pose is not None:
             self.fly.seed(*pose)
@@ -360,6 +413,7 @@ class Driver:
         req.pose = surfaces.ros_pose(self._local(surface, pos), quat)
         req.world_orientation = False
         req.fov = float(fov)
+        req.clip_near = self._clip_near
         surface.capture.call_async(req).add_done_callback(self._on_still)
 
     # recording ------------------------------------------------------------
@@ -392,7 +446,7 @@ class Driver:
         if self._stopping:
             return None
         pos, quat, fov = self.fly.tick(dt, self._intent)
-        return Steered(pos, quat, fov, self._referenced)
+        return Steered(pos, quat, fov, self._referenced, self._clip_near)
 
     def finish_recording(self) -> None:
         """Blocking stop for host shutdown: the files close and a lockstep hold is released."""

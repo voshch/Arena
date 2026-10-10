@@ -107,7 +107,10 @@ With `ceiling_height` absent, the height is the tallest wall top in the zone
 (`max(segment.start.z + segment.height)` over the zone walls), falling back to
 `2.0` m when the zone has no walls.
 
-Ceilings are opaque from below and transparent from above. They are visual-only
+Ceilings are opaque from below and transparent from above. Isaac hides them
+unless the world declares lights, `sim.isaac.viewport.ceilings:=on|off` forces
+them. The walls of a zone with a ceiling reach it, and a door lower than the
+ceiling gets a visual-only lintel above it. They are visual-only
 (no collision). With `ceiling_cast_shadows` false the ceiling does not occlude
 the sun, so interiors stay lit without global illumination.
 
@@ -181,6 +184,7 @@ serialize when empty):
 | `pressure_plate` | a `doors:`/`elevators:` entry (own `position`) | `pressed` | `position` (`[x, y]`), `radius`, `drives`, `latch`, `press_on`, `regime` |
 | `occupancy_cap` | a `zones:` entry | `occupancy`, `cap`, `over_cap` | `cap` |
 | `sound` | a standalone `sounds:` entry (zone- or scenario-level) | `sounding`, `volume_db` | `sound_on`, `regime`, `sounding`/`volume_db` (initial values) |
+| `light` | every `lights:` entry and every zone `ceiling_lights:` rig, attached from the light's own fields | `lit`, `level`, `dead_fraction` (rigs only) | `light_on` |
 
 `signal`, `schedule`, and `sound` have no wall/door geometry of their own, so
 a zone carries them as sibling lists to `doors:`/`elevators:`. A `sound`
@@ -224,6 +228,83 @@ A scenario may carry its own `sounds:` list with the same schema. Those are
 episode-scoped: attached at reset, gone at the next one, and their
 `entity_ref` may also name one of the scenario's own `static:` obstacles.
 
+#### Lights
+
+A light is one fixture, an ambient light, or a zone's ceiling rig. Each is a
+`light` semantic entity with `lit` (on/off), `level` (dimming in 0..1) and,
+for rigs, `dead_fraction` (share of dead fixtures), all writable through
+`semantics/set` and the scenario timeline and recorded with every other kind.
+Worlds that declare no light render as before. A world that declares any
+light gets no default lighting at all, so what it declares is all there is
+and a blackout is dark. Lights that objects carry (below) do not count as
+declared, so a lamp adds its light on top of the default lighting.
+
+| Where | Fixtures | Placement |
+| --- | --- | --- |
+| level `lights:` | `dome`, `sun` | none, `sun` takes `direction` |
+| zone `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `position`, `entity_ref` or `frame`, plus `offset`, as for a `sound` |
+| zone `ceiling_lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
+| object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `offset` in the object frame, moved, turned and scaled with every placement |
+
+`Light` fields: `name`, `fixture`, `lumens` (local fixtures, per fixture for a
+rig) or `lux` (`dome`, `sun`), `cct_K` (default 6500), `cast_shadows` (default
+false), `direction` (all but `bulb` and `dome`, default straight down),
+`cone_deg` (`spot` only, default 40), and one
+of `light_on` (a regime, `!` negates) or `lit` (initial value, default true),
+plus `level` (default 1.0). `ceiling_lights:` takes `fixture` (default
+`panel`), `spacing` (default 2.4), `lumens`, `cct_K`, `cast_shadows`,
+`light_on`/`lit`, `level` and `dead_fraction`, needs a ceiling, and its rig is
+named after the zone. The same fixtures of a rig die at the same
+`dead_fraction` in every run, and raising it only adds dead ones. A frame
+light follows its TF frame, so `frame: jackal/base_link` is a headlight.
+
+A world without lights can still run lit: `world.lighting:=auto` gives every
+zone that has a ceiling and no `lights:` or `ceiling_lights:` of its own a rig
+of 7200 lm panels at 2.4 m spacing, without touching the world file. The
+default `world.lighting:=authored` renders exactly what the world declares.
+
+```yaml
+lights:
+- {name: ambient, fixture: dome, lux: 5}
+zones:
+- name: central_hallway
+  ceiling_lights: {fixture: panel, spacing: 2.4, lumens: 3600, light_on: "!blackout"}
+  lights:
+  - {name: exit_strip, position: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, cct_K: 6500, light_on: blackout}
+  schedules:
+  - name: power
+    semantics:
+    - {preset: schedule, params: {windows: [{start: 60, end: 90, value: out}], regime: blackout}}
+```
+
+An object's `annotation.yaml` can carry `lights:` entries with `name` (default
+`light`), `fixture` (default `bulb`), `offset`, `direction`, `lumens`, `cct_K`,
+`cone_deg` and `glow`. `arena_assets` writes them when it builds an object whose
+source model contains lights (hand-written entries win, and the built models
+carry no light themselves). `glow` names the material that glows with the
+light, a lamp shade for instance: both simulators make it emit the light's
+color scaled by its level, and it is dark while the light is off. Every placement of the object, in a zone's
+`static:` list, a scenario's `static:` list or by an obstacle mode, then gets
+the light `<entity>_<name>` for as long as the placement exists, and a
+`light:` key on the placement sets its `lit`, `light_on` or `level`:
+
+```yaml
+static:
+- {name: desk_lamp, model: Residential/Desk_Lamp, pose: {position: [2, 1, 0.75]}, light: {light_on: "!daylight"}}
+```
+
+A scenario dims the hall with `{entity: central_hallway, field: level, value:
+"0.3..1.0"}` in its timeline. Isaac renders every fixture as an area light, and
+shades asset materials that only emit a texture by that texture, so they
+darken with the lights.
+Gazebo renders a rig as one shadowless point light per 2 by 2 block of
+fixtures, plus one unattenuated fill at the room center for the light the
+room surfaces reflect (40 % reflectance), since its renderer traces no
+indirect light.
+Dome and sun light the whole stage, so the first env's world sets them for
+every env of a runtime, and an env whose world declares other ones logs a
+warning naming both.
+
 #### Pedestrian stimuli
 
 A sound that propagation marks audible for a pedestrian reaches humansim as a
@@ -258,7 +339,9 @@ doors:
 A `regime` (or its per-kind alias `unlock_on`/`press_on`) names a boolean
 asserted by a scripted kind's driving predicate. Other kinds (gate,
 pressure_plate) consult that name without a direct wire between the two
-entities. A `sound` consumes a regime the same way, via its `sound_on` alias.
+entities. A `sound` consumes a regime the same way, via its `sound_on` alias,
+and a light via `light_on`. Every follower field accepts a leading `!` for the
+negation, so `light_on: "!blackout"` is lit unless `blackout` is asserted.
 An elevator's `recall_on` field is the same regime-consult
 mechanism, just wired as a first-class `Elevator` field instead of a
 `semantics:` alias, since recall is mechanism configuration rather than
@@ -463,4 +546,55 @@ Load a scenario:
 ```python
 scenario = world.scenario('default').resolve_sync()
 print(scenario.load())
+```
+
+### Reachability (NAV@r)
+
+`nav_at_r` reports how much of the floor a robot of footprint radius `r` can
+reach, the NAV@r metric of the IndoorBench paper:
+
+```bash
+ros2 run arena_simulation_setup nav_at_r my_world
+ros2 run arena_simulation_setup nav_at_r my_world --robot jackal --walls-only
+ros2 run arena_simulation_setup nav_at_r /path/to/world --radius 0.3 --start 2.0,3.5 --json
+```
+
+`--image map.png` paints the result onto the map: the dominant component in
+green, every stranded component in another color, free cells with clearance
+below `r` in light grey, entities in brown and walls in black.
+
+Each level is rasterized at 0.05 m per cell with the map rasterizer, walls
+plus the footprint of every static entity (its `bbox`, else the
+`bounding_box` of its model's `annotation.yaml`, entities whose box starts
+above 2 m are skipped). A cell is traversable when its clearance is at least
+`r` (default 0.267 m, the Jackal radius), and traversable cells group into
+8-connected components. With `m_i` the share of traversable cells in component
+`i` and `w_i` its share of spawn cells (clearance of at least 0.45 m), NAV@r is
+`sum_i w_i * m_i`: 1.0 when every traversable cell is reachable from every
+spawn, lower the more floor is stranded in other components.
+
+| Column | Meaning |
+|---|---|
+| `NAV@r` | the expectation above, `n/a` when no cell admits a spawn |
+| `components` | number of traversable components |
+| `largest` | share of traversable cells in the largest (dominant) component |
+| `start` | with `--start X,Y` (level frame, meters): share of the component holding the start, snapped to the nearest traversable cell |
+| `no bbox` | static entities without a resolvable bounding box, out of all static entities. They are not rasterized |
+| `cut-off zones` | zones of at least 2 m2 with no cell in the dominant component although they are traversable on walls only |
+
+`--walls-only` drops the static entities. A zone that stays cut off there has a
+layout fault (a missing, misplaced or too narrow door), one that is cut off
+only in the furnished run is blocked by furniture. `--robot` takes a robot name
+from the installed `arena_robots` package or a robot directory and reads
+`radius` from its `caps/mobile.yaml`. A world name resolves like at runtime,
+and `name[0,1]` restricts the levels.
+
+The same numbers are available in Python:
+
+```python
+from arena_simulation_setup.metrics.nav_at_r import nav_at_r, resolve_world
+
+view, levels = resolve_world('my_world')
+for level_id, result in nav_at_r(view, radius=0.267, levels=levels).items():
+    print(level_id, result.value, result.components, result.cut_off_zones)
 ```

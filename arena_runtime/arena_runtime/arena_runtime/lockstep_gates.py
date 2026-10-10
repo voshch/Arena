@@ -114,12 +114,21 @@ class Channel:
         return self.spec.hard
 
 
+@dataclasses.dataclass
+class ChannelCount:
+    name: str
+    due: int = 0
+    received: int = 0
+
+
 class GateLedger:
     def __init__(self, dt: float, base: float) -> None:
         self.dt = dt
         self.base = base
         self.now = 0.0
         self.channels: dict[str, Channel] = {}
+        self.gated_ticks = 0
+        self.counts: dict[str, ChannelCount] = {}
 
     @property
     def tick(self) -> float:
@@ -149,6 +158,7 @@ class GateLedger:
             period = max(spec.period_s, self.dt)
             channel = Channel(spec=spec, name=display, topic=topic, period=period, next_due=self.now + period)
             self.channels[topic] = channel
+            self.counts.setdefault(topic, ChannelCount(name=display)).name = display
             added.append(channel)
         return removed, added
 
@@ -172,10 +182,16 @@ class GateLedger:
 
     def observe(self, channel: Channel, stamp: float) -> None:
         channel.latest_stamp = stamp - self.base
+        self.counts[channel.topic].received += 1
 
     def waiting(self, channels: Iterable[Channel]) -> list[Channel]:
         return [ch for ch in channels if not self.covers(ch)]
 
     def complete(self, channels: Iterable[Channel]) -> None:
+        gated = False
         for ch in channels:
             ch.next_due += ch.period
+            self.counts[ch.topic].due += 1
+            gated = gated or ch.hard
+        if gated:
+            self.gated_ticks += 1

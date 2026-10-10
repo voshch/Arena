@@ -30,7 +30,7 @@ float32 gait_phase
 # Current cycle rate in Hz, 0 = unknown.
 float32 gait_cadence
 
-# Agent type name, empty = adult.
+# Agent type, a builtin name or a yaml path, empty = adult.
 string agent_type
 
 # Resolved local SDF path for this ped's actor, read once per name by the spawner.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from arena_humansim_msgs.msg import AgentFrame, AgentGestures, AgentMeta, AgentS
 from geometry_msgs.msg import Point
 from task_generator.manager.realizer import Realizer
 from task_generator.simulators.human.arena_humansim.arena_humansim import ArenaHumanSimulator
+from task_generator.simulators.human.profile import default_profile
 
 INTERPOLATED = {"header", "x", "y", "theta", "vx", "vy", "gait_phase"}
 
@@ -30,6 +32,8 @@ def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, ori
     adapter._agent_gestures = {}
     adapter._agent_names = {}
     adapter._agent_types = {}
+    adapter._agent_type_paths = {}
+    adapter._pose_profiles = {}
     adapter._realizer = Realizer(Realizer._Configuration(x=origin[0], y=origin[1], prefix="env_0"))
     return adapter
 
@@ -179,6 +183,27 @@ def test_pedestrians_carry_gait_phase_cadence_and_agent_type() -> None:
 
     adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2], name=["a", "b"], handedness=["", ""]))
     assert adapter._agent_types == {1: "", 2: ""}
+
+
+def test_path_based_agent_type_resolves_its_pose_profile_from_the_file(tmp_path: Path) -> None:
+    named = tmp_path / "rider.yaml"
+    named.write_text("name: watcher\nextends: wheelchair_manual\n")
+    unnamed = tmp_path / "roller.yaml"
+    unnamed.write_text("extends: wheelchair_manual\n")
+    adapter = _adapter()
+    for agent_type in (str(named), str(unnamed), "elder", str(tmp_path / "missing.yaml")):
+        adapter._remember_agent_type_path(agent_type)
+    assert adapter._agent_type_paths == {"watcher": str(named), "roller": str(unnamed)}
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2, 3], name=["a", "b", "c"], handedness=["", "", ""], agent_type=["watcher", "roller", "elder"]))
+    frame = _frame(1, agent_id=[1, 2, 3], x=[0.0, 0.0, 0.0], y=[0.0, 0.0, 0.0], theta=[0.0, 0.0, 0.0], vx=[0.0, 0.0, 0.0], vy=[0.0, 0.0, 0.0], animation_state=[1, 1, 1])
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+    assert [peds[i].agent_type for i in (1, 2, 3)] == [str(named), str(unnamed), "elder"]
+
+    seated = adapter._pose_profile_for("wheelchair_manual")
+    assert seated != default_profile()
+    assert adapter._pose_profile_for(peds[1].agent_type) == seated
+    assert adapter._pose_profile_for(peds[2].agent_type) == seated
 
 
 def test_pedestrians_default_gait_fields_when_the_frame_has_none() -> None:

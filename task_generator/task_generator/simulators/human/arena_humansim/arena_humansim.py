@@ -113,7 +113,7 @@ from task_generator.constants.rng import stable_int
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator
-from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, agent_type_def, resolve_agent_type_path
+from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, agent_type_def, path_agent_type_name, resolve_agent_type_path
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -248,6 +248,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._curr_agent_states: AgentFrameMsg | None = None
         self._agent_gestures: dict[int, list[EngineGestureMsg]] = {}
         self._agent_types: dict[int, str] = {}
+        self._agent_type_paths: dict[str, str] = {}
         self._arena_pedestrians: Pedestrians = Pedestrians()
         self._arena_pedestrians.header.frame_id = "map"
 
@@ -369,6 +370,17 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Latest agent type per engine agent."""
         types = msg.agent_type if len(msg.agent_type) == len(msg.agent_id) else [""] * len(msg.agent_id)
         self._agent_types = dict(zip(msg.agent_id, types, strict=True))
+
+    def _remember_agent_type_path(self, agent_type: str) -> None:
+        """File a path-based agent type under the name the engine reports for it."""
+        name = path_agent_type_name(agent_type)
+        if name is not None:
+            self._agent_type_paths[name] = agent_type
+
+    def _agent_type_of(self, agent_id: int) -> str:
+        """Agent type of an engine agent, the spawned yaml path when its type came from a file."""
+        name = self._agent_types.get(agent_id, "")
+        return self._agent_type_paths.get(name, name)
 
     async def _publish_on_receipt(self) -> None:
         self._publish_pending = False
@@ -594,7 +606,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     async def _flow_model(self, agent_id: int) -> str | HumanIdentifier:
         """A human model on disk carrying every asset tag of the flow agent's type, FLOW_MODEL when the type lists none or nothing matches."""
-        agent_type = self._agent_types.get(agent_id, "")
+        agent_type = self._agent_type_of(agent_id)
         definition = agent_type_def(agent_type) if agent_type else None
         if definition is None or not definition.assets:
             return self.FLOW_MODEL
@@ -711,7 +723,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"Error in feedback loop: {e}\n{traceback.format_exc()}")
 
     def _publish_world_state(self):
-        """Publish robot and possessed pedestrian poses and velocities as AgentStates on world_state topic."""
+        """Publish robot and possessed pedestrian poses and velocities as AgentStates on world_state topic, each robot also as `robot_<i>` by spawn order."""
         robots = self.tracked_robots()
         possessed = self.possessed_peds()
         if not robots and not possessed:
@@ -719,10 +731,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         msg = AgentStatesMsg()
         msg.header.stamp = self.node.sim_time.to_msg()
         msg.header.frame_id = "map"
-        for tracked in robots:
+        named = [(tracked.robot.name, tracked) for tracked in robots]
+        own_names = {name for name, _ in named}
+        named += [(alias, tracked) for i, tracked in enumerate(robots) if (alias := f"robot_{i}") not in own_names]
+        for name, tracked in named:
             a = AgentStateMsg()
             a.agent_id = stable_int(tracked.robot.name) & 0x7FFFFFFF
-            a.name = tracked.robot.name
+            a.name = name
             a.pose = self._engine_pose(tracked.pose)
             a.velocity.x, a.velocity.y = tracked.velocity
             a.radius = 0.3
@@ -752,7 +767,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.name = self._agent_names.get(agent_id, str(agent_id))
             ped.gait_phase = float(phase)
             ped.gait_cadence = float(cadence)
-            ped.agent_type = self._agent_types.get(agent_id, "")
+            ped.agent_type = self._agent_type_of(agent_id)
 
             x, y = self._from_engine(ex, ey)
 
@@ -837,6 +852,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         tmpl.agent_radius = raw_tmpl.get("agent_radius", 0.35)
         tmpl.behavior_tree = raw_tmpl.get("behavior_tree", "default")
         tmpl.agent_type = resolve_agent_type_path(raw_tmpl.get("agent_type", "adult"), region.included_from)
+        self._remember_agent_type_path(tmpl.agent_type)
         for sa in raw_tmpl.get("sink_affinity", []):
             tmpl.sink_affinity.append(SinkAffinityMsg(sink_name=sa.get("sink", ""), weight=sa.get("weight", 1.0)))
         src_msg.agent = tmpl
@@ -1028,6 +1044,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 agent_msg.repulsion_range = lp.get("repulsion_range", 0.0)
                 agent_msg.agent_type = parsed.agent_type
                 agent_msg.handedness = params.handedness
+                self._remember_agent_type_path(parsed.agent_type)
             else:
                 agent_msg.desired_velocity = float(obstacle.velocity)
                 agent_msg.radius = 0.35

@@ -27,6 +27,14 @@ def agent_type_def(agent_type: str) -> AgentType | None:
     return BUILTIN_AGENTS.get(agent_type)
 
 
+def path_agent_type_name(agent_type: str) -> str | None:
+    """The name the engine reports for a path-based agent type, None for a builtin name or a missing file."""
+    if not _is_path_agent_type(agent_type):
+        return None
+    definition = agent_type_def(agent_type)
+    return definition.name if definition is not None else None
+
+
 _WAYPOINT_MODE_MAP = {
     "repeat": WaypointsMsg.MODE_REPEAT,
     "reverse": WaypointsMsg.MODE_REVERSE,

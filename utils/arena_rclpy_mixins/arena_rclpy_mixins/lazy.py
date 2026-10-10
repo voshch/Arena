@@ -1,6 +1,6 @@
 """Publishers and subscriptions that skip the work of a message nobody subscribes to."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import rclpy.logging
 import rclpy.node
@@ -36,11 +36,11 @@ class LazyPublisher[T]:
 
 
 class LazySubscription[T]:
-    """Subscription that exists only while the publisher it feeds is wanted, checked every period_s of wall time."""
+    """Subscription that exists only while a publisher it feeds is wanted, checked every period_s of wall time."""
 
-    def __init__(self, node: rclpy.node.Node, feeds: LazyPublisher, msg_type: type[T], topic: str, callback: Callable[[T], None], qos_profile: QoSProfile | int, period_s: float = 1.0) -> None:
+    def __init__(self, node: rclpy.node.Node, feeds: LazyPublisher | Sequence[LazyPublisher], msg_type: type[T], topic: str, callback: Callable[[T], None], qos_profile: QoSProfile | int, period_s: float = 1.0) -> None:
         self._node = node
-        self._feeds = feeds
+        self._feeds = (feeds,) if isinstance(feeds, LazyPublisher) else tuple(feeds)
         self._args = (msg_type, topic, callback, qos_profile)
         self._subscription: rclpy.subscription.Subscription | None = None
         self._timer = node.create_timer(period_s, self._sync, clock=Clock(clock_type=ClockType.STEADY_TIME))
@@ -51,7 +51,7 @@ class LazySubscription[T]:
         return self._subscription is not None
 
     def _sync(self) -> None:
-        wanted = self._feeds.wanted
+        wanted = any(feed.wanted for feed in self._feeds)
         if wanted and self._subscription is None:
             self._subscription = self._node.create_subscription(*self._args)
         elif not wanted and self._subscription is not None:

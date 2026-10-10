@@ -30,21 +30,28 @@ from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
+from arena_simulation_setup.shared import Light as LightDefinition
 from arena_simulation_setup.shared import Obstacle as ObstacleDefinition
+from arena_simulation_setup.shared import cct_to_rgb
 from arena_simulation_setup.tree.Wall import WallSegment
 from isaacsim_msgs.msg import (
     Ceiling,
     Floor,
+    Light,
+    LightState,
     Material,
     Prim,
     Wall,
 )
 from isaacsim_msgs.srv import (
+    DeleteLights,
     DeletePrims,
     EditPrims,
     ResetWorld,
+    SetLights,
     SpawnCeilings,
     SpawnFloors,
+    SpawnLights,
     SpawnPrims,
     SpawnUrdf,
     SpawnUsd,
@@ -154,6 +161,7 @@ def _transform_urdf_for_bridge(
 
 # matches World(physics_dt=rendering_dt=1/60) pinned in run_isaacsim.py
 _ISAAC_PHYSICS_HZ = 60.0
+_ISAAC_EXPOSURE_GAIN = 5.0
 
 
 class IsaacHost(SimLifecycle):
@@ -250,18 +258,22 @@ class IsaacSimulator(BaseSim, NodeInterface):
         self._NS_WALL = Namespace(env_prefix)('Walls')
         self._NS_FLOOR = Namespace(env_prefix)('Floors')
         self._NS_CEILING = Namespace(env_prefix)('Ceilings')
+        self._NS_LIGHT = Namespace(env_prefix)('Lights')
 
         self.wall_counter = itertools.count()
         self.floor_counter = itertools.count()
         self._clients = types.SimpleNamespace(
+            DeleteLights=self.node.create_client_wrapper(DeleteLights, "/isaac/DeleteLights"),
             DeletePedestrians=self.node.create_client_wrapper(DeletePedestrians, "/isaac/DeletePedestrians"),
             DeletePrims=self.node.create_client_wrapper(DeletePrims, "/isaac/DeletePrims"),
             EditPrims=self.node.create_client_wrapper(EditPrims, "/isaac/EditPrims"),
             MovePedestrians=self.node.create_client_wrapper(MovePedestrians, "/isaac/MovePedestrians"),
             ResetWorld=self.node.create_client_wrapper(ResetWorld, "/isaac/ResetWorld"),
+            SetLights=self.node.create_client_wrapper(SetLights, "/isaac/SetLights"),
             UpdatePedestrians=self.node.create_client_wrapper(UpdatePedestrians, "/isaac/UpdatePedestrians"),
             SpawnCeilings=self.node.create_client_wrapper(SpawnCeilings, "/isaac/SpawnCeilings"),
             SpawnFloors=self.node.create_client_wrapper(SpawnFloors, "/isaac/SpawnFloors"),
+            SpawnLights=self.node.create_client_wrapper(SpawnLights, "/isaac/SpawnLights"),
             SpawnPedestrians=self.node.create_client_wrapper(SpawnPedestrians, "/isaac/SpawnPedestrians"),
             SpawnPrims=self.node.create_client_wrapper(SpawnPrims, "/isaac/SpawnPrims"),
             SpawnUrdf=self.node.create_client_wrapper(SpawnUrdf, "/isaac/SpawnUrdf"),
@@ -271,6 +283,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         self._peds_publisher = self.node.create_publisher(arena_people_msgs.msg.Pedestrians, "/isaac/arena_peds", 10)
 
         self._robot_prims: dict[str, str] = {}
+        self._shared_lights: set[str] = set()
 
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
@@ -657,6 +670,68 @@ class IsaacSimulator(BaseSim, NodeInterface):
         res = bool(ceilings_res) and all(ceilings_res.ret)
         self._logger.debug("All ceilings spawned successfully.")
         return res
+
+    def _light_name(self, light: LightDefinition) -> str:
+        if light.spec.ambient:
+            return Namespace('Ambient')(os.path.basename(light.name))
+        return self._NS_LIGHT(light.name)
+
+    def _light_msg(self, light: LightDefinition) -> Light:
+        spec = light.spec
+        if spec.shape == 'dome':
+            intensity = light.lux / math.pi
+        elif spec.shape == 'distant':
+            intensity = light.lux
+        else:
+            intensity = light.lumens / (math.pi * spec.area)
+            if spec.cone_deg < 180.0:
+                intensity /= math.sin(math.radians(spec.cone_deg) / 2.0) ** 2
+        return Light(
+            name=self._light_name(light),
+            shape=spec.shape,
+            x_length=spec.x_length,
+            y_length=spec.y_length,
+            radius=spec.radius,
+            cone_deg=spec.cone_deg,
+            positions=[position.to_msg() for position in (light.fixtures if light.rig else [light.position if light.position is not None else light.offset])],
+            direction=geometry_msgs.msg.Vector3(x=light.direction[0], y=light.direction[1], z=light.direction[2]),
+            intensity=_ISAAC_EXPOSURE_GAIN * intensity,
+            cct_k=light.cct_K,
+            cast_shadows=light.cast_shadows,
+            level=0.0 if light.lit is False else light.level,
+            alive=light.alive(light.dead_fraction),
+            intrinsic=light.intrinsic,
+            glow_prim=self._NS_PRIM(light.owner) if light.glow else '',
+            glow=light.glow,
+            glow_color=cct_to_rgb(light.cct_K),
+        )
+
+    async def _spawn_lights(self, lights: Sequence[LightDefinition]) -> bool:
+        res = await self._clients.SpawnLights.call_timeout(SpawnLights.Request(lights=[self._light_msg(light) for light in lights]))
+        if res is None:
+            return False
+        self._shared_lights.update(light.name for light, shared in zip(lights, res.shared, strict=True) if shared)
+        return all(res.ret)
+
+    async def _remove_lights(self, lights: Sequence[LightDefinition]) -> bool:
+        names = [self._light_name(light) for light in lights if light.name not in self._shared_lights]
+        self._shared_lights.difference_update(light.name for light in lights)
+        if not names:
+            return True
+        res = await self._clients.DeleteLights.call_timeout(DeleteLights.Request(names=names))
+        return bool(res) and all(res.ret)
+
+    async def _move_light(self, light: LightDefinition, position: Position, yaw: float) -> None:
+        state = LightState(name=self._light_name(light), move=True, position=position.to_msg(), yaw=yaw)
+        res = await self._clients.SetLights.call_timeout(SetLights.Request(states=[state]))
+        if res is None or not all(res.ret):
+            raise RuntimeError(f"light {light.name!r} did not move")
+
+    async def _apply_light(self, light: LightDefinition, level: float, alive: Sequence[bool]) -> None:
+        state = LightState(name=self._light_name(light), level=level, alive=list(alive))
+        res = await self._clients.SetLights.call_timeout(SetLights.Request(states=[state]))
+        if res is None or not all(res.ret):
+            raise RuntimeError(f"light {light.name!r} did not take its state")
 
     async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: arena_simulation_setup.tree.assets.Material.MaterialIdentifier | None = None) -> bool:
         """Spawn an axis-aligned box using the SpawnWalls service.

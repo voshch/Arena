@@ -15,7 +15,7 @@ import math
 from collections.abc import Callable, Sequence
 
 from . import curves
-from .client import FOV_DEFAULT, CamNode, Steered, TargetSelection
+from .client import FOV_DEFAULT, CamNode, FaceWatch, Steered, TargetSelection
 from .curves import Quat, Vec3
 from .record import default_name, record_path
 from .registry import primitive
@@ -60,6 +60,9 @@ class _Action:
 
     async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
         raise NotImplementedError
+
+    async def prepare(self, node: CamNode) -> None:
+        """Set up what must exist before a lockstep hold freezes the sim, a no-op for most verbs."""
 
 
 # discrete framing -----------------------------------------------------------
@@ -445,6 +448,46 @@ class _Zoom(_Segment):
         return sample, _Cursor(pos, quat, self.to_fov)
 
 
+@primitive("pov")
+class _Pov(_Action):
+    """Look through a pedestrian's face frame for `duration` s, then latch where the face last was."""
+
+    def __init__(self, face: str | int, duration: float = 10.0, fov: float | None = None) -> None:
+        self.face = str(int(face)) if isinstance(face, float) and face.is_integer() else str(face)
+        self.duration = max(0.0, float(duration))
+        self.fov = fov
+        self._prepared = False
+        self._watch: FaceWatch | None = None
+
+    @classmethod
+    def from_params(cls, params: dict) -> _Pov:
+        return cls(face=params["face"], **_pick(params, ("duration", "fov")))
+
+    async def prepare(self, node: CamNode) -> None:
+        self._watch = await node.watch_face(self.face)
+        self._prepared = True
+
+    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
+        watch = self._watch if self._prepared else await node.watch_face(self.face)
+        self._watch, self._prepared = None, False
+        if watch is None:
+            return cursor
+        try:
+            fov = self.fov if self.fov is not None else watch.fov
+            node.get_logger().info(f"cam: pov {watch.frame}, fov {math.degrees(fov):.0f} deg")
+            pose = ((0.0, 0.0, 0.0), curves.look_at_quat((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)), fov)
+            node.clip_near = watch.clip_near
+            await node.set_reference(watch.frame, None, "full")
+            await node.drive(self.duration, False, lambda _t: pose)
+            node.clip_near = -1.0
+            node.stream(pose[0], pose[1], False, fov)
+            await node.set_reference("", None, "full")
+        finally:
+            node.clip_near = 0.0
+            watch.close()
+        return _Cursor(*pose)
+
+
 class _Steer(_Action):
     verb = "steer"
 
@@ -498,6 +541,11 @@ class Camera:
         """
         path = record_path(out or default_name("take"))
         CamNode.run_main(timeline=self, targets=self._targets, record=(str(path), float(fps)), force=bool(force), lockstep=bool(lockstep))
+
+    async def prepare(self, node: CamNode) -> None:
+        """Let each queued action set up against a connected node before the timeline runs."""
+        for action in self._actions:
+            await action.prepare(node)
 
     async def run(self, node: CamNode) -> None:
         """Execute the queued actions against a connected node (called by CamNode.setup)."""

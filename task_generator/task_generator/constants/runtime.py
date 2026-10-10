@@ -79,6 +79,8 @@ def Configuration(server: ROSParamServer) -> type:
                 type_=rclpy.Parameter.Type.STRING,
             )
 
+            WORLD_LIGHTING = server.ROSParam[str]('world.lighting', 'authored')
+
         class General:
             """
             General Task Configuration

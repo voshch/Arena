@@ -47,7 +47,7 @@ _MODE_ROWS = {
 _COMMON_ROWS = (
     ("Shift / Ctrl", "boost / crawl"),
     ("[ / ]", "hold to widen / narrow fov"),
-    ("F / Shift+F", "frame target / cycle reference mode"),
+    ("F / Shift+F", "frame target (face_: look through) / cycle reference mode"),
     ("H", "back to world"),
     ("1 / 3 / 7", "front / right / top"),
     ("Space", "brake, drop the carried momentum"),
@@ -158,8 +158,8 @@ class Panel(QWidget):
     # lifecycle ------------------------------------------------------------
 
     def attach(self, node: rclpy.node.Node) -> None:
-        self._driver = Driver(node, self._selection, take=self._take)
         self._roster = EntityRoster(node)
+        self._driver = Driver(node, self._selection, take=self._take, roster=self._roster)
         self.speed.setValue(self._driver.fly.speed)
         self.reference_mode.setCurrentText(self._driver.reference_mode)
         self._set_active(self.isActiveWindow())

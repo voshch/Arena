@@ -88,12 +88,14 @@ zones:
   schedules: []                  # list of Schedule (M2 standalone), see AUTHORING.md
   signals: []                    # list of Signal (M2 standalone), see AUTHORING.md
   sounds: []                     # list of Sound (M2 standalone), see AUTHORING.md
+  lights: []                     # list of local Light fixtures, see AUTHORING.md#lights
   entities:
     static: []                   # list of Obstacle, same schema as scenario static:
     dynamic: []                  # list of DynamicObstacle, same schema as scenario dynamic:
   ceiling: true                  # true by default, false to leave the zone open
   ceiling_height: 2.0            # top height (m), derived from wall stack when absent
   ceiling_cast_shadows: false    # false by default, true to occlude light
+  ceiling_lights: null           # ceiling rig {fixture, spacing, lumens, ...}, see AUTHORING.md#lights
   ceiling_material:              # MaterialIdentifier, defaults to Concrete_Smooth
   - Concrete_Smooth
   - {}
@@ -103,9 +105,10 @@ zones:
 ```
 
 Field aliases: `material`/`mat`, `ceiling_material`/`ceiling_mat`,
-`wall_material`/`wall_mat`. `schedules:`, `signals:`, `sounds:` and the
-semantics `preset:` mechanism (`gate`, `pressure_plate`, `occupancy_cap`,
-`signal`, `schedule`, `sound`) are documented in
+`wall_material`/`wall_mat`. `schedules:`, `signals:`, `sounds:`, `lights:`,
+`ceiling_lights:` and the semantics `preset:` mechanism (`gate`,
+`pressure_plate`, `occupancy_cap`, `signal`, `schedule`, `sound`, `light`) are
+documented in
 [AUTHORING.md](../AUTHORING.md#m2-kinds-params-and-timelines). The scenario
 `static:`/`dynamic:` schema referenced above is in
 [`scenarios/<name>/` schema](#scenariosname-schema).
@@ -167,6 +170,12 @@ microphones:
 `(zone, placement, index)` forms the listener id and must be unique across
 the whole world. See `WorldMicrophone` in
 [tree/World/World.py](../src/arena_simulation_setup/tree/World/World.py).
+
+### `lights`
+
+A sibling of `zones:` at the level root, the ambient lights of the level
+(`fixture: dome` or `sun`, with `lux`). Zone-local fixtures go in a zone's
+`lights:` instead. See [AUTHORING.md](../AUTHORING.md#lights).
 
 ## Semantic annotations
 
@@ -324,7 +333,8 @@ behavior (sequences, interactions, needs) — see
 `humansim/arena_humansim/config/agent_types/README.md` and the
 `hospital_1/scenarios/showcase` scenario for a worked example.
 
-`static` (`Obstacle`) also takes `scale: [x, y, z]` (default identity) and
+`static` (`Obstacle`) also takes `light: {lit, light_on, level}` for the lights its
+object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: [x, y, z]` (default identity) and
 `level_id` (multi-level worlds). `dynamic` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`) and `level_id`. `pos:` is a deprecated alias
 for `pose:` on both, rewritten on parse. Any other key on a `static`/`dynamic`

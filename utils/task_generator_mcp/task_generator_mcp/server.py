@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import rclpy
-import rclpy.executors
+from arena_rclpy_mixins.spin import create_executor
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -67,7 +67,7 @@ async def _run(bridge: RosBridge) -> None:
 
 async def _amain() -> None:
     loop = asyncio.get_running_loop()
-    executor = rclpy.executors.MultiThreadedExecutor()
+    executor = create_executor()
     bridge = RosBridge()
     executor.add_node(bridge)
     spin_task = loop.run_in_executor(None, executor.spin)

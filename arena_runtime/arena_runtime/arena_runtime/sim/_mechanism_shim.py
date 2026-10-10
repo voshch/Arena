@@ -558,6 +558,50 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
                 logger.info(f"Elevator teleport (no-op, no human sim): {len(ped_destinations)} peds {source_name!r} -> {dest_name!r}")
 
     mech._semantics.step(now)
+    await _apply_lights(mech)
+
+
+LIGHT_MOVE_EPSILON = 0.02
+
+
+def light_anchor(frame_position: Position, frame_yaw: float, offset: Position) -> Position:
+    """Map position of an offset given in a frame with the given map position and yaw."""
+    cos_yaw = math.cos(frame_yaw)
+    sin_yaw = math.sin(frame_yaw)
+    return Position(
+        x=frame_position.x + cos_yaw * offset.x - sin_yaw * offset.y,
+        y=frame_position.y + sin_yaw * offset.x + cos_yaw * offset.y,
+        z=frame_position.z + offset.z,
+    )
+
+
+def _light_moved(last: tuple[Position, float] | None, position: Position, yaw: float) -> bool:
+    if last is None:
+        return True
+    last_position, last_yaw = last
+    turn = abs(math.remainder(yaw - last_yaw, math.tau))
+    return math.dist((last_position.x, last_position.y, last_position.z), (position.x, position.y, position.z)) > LIGHT_MOVE_EPSILON or turn > LIGHT_MOVE_EPSILON
+
+
+async def _apply_lights(mech: MechanismITF) -> None:
+    """Move frame-anchored lights that moved, then push every light whose output changed since its last push."""
+    for entity, light in mech._lights.items():
+        if not light.frame:
+            continue
+        pose = mech.frame_pose(light.frame)
+        if pose is None:
+            continue
+        position = light_anchor(pose[0], pose[1], light.offset)
+        if _light_moved(mech._light_poses.get(entity), position, pose[1]):
+            await mech._move_light(light, position, pose[1])
+            mech._light_poses[entity] = (position, pose[1])
+    for entity, output in mech._semantics.light_outputs().items():
+        light = mech._lights.get(entity)
+        if light is None or mech._light_outputs.get(entity) == output:
+            continue
+        level, dead_fraction = output
+        await mech._apply_light(light, level, light.alive(dead_fraction))
+        mech._light_outputs[entity] = output
 
 
 async def shim_spawn_doors(mech: MechanismITF, doors: Sequence[Door]) -> bool:

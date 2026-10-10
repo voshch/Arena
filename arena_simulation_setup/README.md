@@ -26,6 +26,7 @@ pedestrian agents, and environment templates through the types defined here.
 |---|---|---|
 | `generate_world` | `generate_world "<prompt>" [-e endpoint] [-o outdir]` | Posts a natural-language prompt to a generation server; extracts the returned zip into `worlds/<outdir>/` |
 | `model_staging` | `model_staging <install_dir>` | Creates symlinks in `<install_dir>` for all known robot models and writes a `deps` file |
+| `nav_at_r` | `nav_at_r <world name or dir> [--robot NAME\|DIR \| --radius M] [--walls-only] [--start X,Y] [--image PNG] [--json]` | Prints the NAV@r reachability of a world per level for a footprint radius: value, traversable components, largest share and cut-off zones. See [AUTHORING.md](AUTHORING.md#reachability-navr). |
 | `preload_world` | `preload_world [<world_name>] [--no-scenarios] [--dry-run] [--sounds]` | Resolves every identifier the world and its scenarios reference, downloading what is missing. `--dry-run` reports without transferring. `--sounds` adds the default sound of every sound kind, alone or with a world, and `arena launch` passes it under `acoustics:=arena`. Reached from the CLI as `arena preload`. |
 | `touch_world` | `touch_world <world_name> [--all] [--resolution N] [--assets color] ...` | Renders a preview `map.png` + `map.yaml` into the world dir for inspection; `--all` regenerates canonical per-level `world.yaml` + maps. The runtime renders its own map in-process, so this is an authoring aid, not required after editing. |
 

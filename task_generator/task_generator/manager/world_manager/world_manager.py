@@ -87,7 +87,7 @@ def _sample_grid_positions(
     return _sample_from_candidates(available, n, safe_dist_cells, rng, max_depth=max_depth)
 
 
-ENTITY_PREFIX = 'world_'
+WORLD_ENTITY_PREFIX = 'world_'
 
 
 class WorldManager(NodeInterface):
@@ -213,7 +213,7 @@ class WorldManager(NodeInterface):
         for entity in itertools.chain(world_description.all_static_entities, world_description.all_dynamic_entities):
             if not entity.name:
                 entity.name = f'{next(counter)}_{entity.model.name}'
-            entity.name = f'{ENTITY_PREFIX}{entity.name}'
+            entity.name = f'{WORLD_ENTITY_PREFIX}{entity.name}'
 
         self._world = world_description
 

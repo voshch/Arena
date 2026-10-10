@@ -8,7 +8,7 @@ import attrs
 from arena_robots.Sensor import SensorType
 from arena_simulation_setup.shared.route import WORDINGS, instruct
 
-from task_generator.manager.world_manager.world_manager import ENTITY_PREFIX
+from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
 from task_generator.tasks.robots.adapters.mobile.drl import DrlAdapter
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 def localized_instruction(phase: GoToPhase, here: Pose | None, ezilear: Callable[[Pose], Pose], level: LevelDescription, wording: str = "", fallback: str = "") -> dict[str, str]:
     """Instruction for the env-frame `phase` worded from env-frame pose `here`, both taken into `level`'s frame by `ezilear`, `fallback` standing in for missing phase text."""
     local = attrs.evolve(phase, text=phase.text or fallback, pose=None if phase.pose is None else ezilear(phase.pose))
-    return instruct(local, level, None if here is None else ezilear(here).to_2d(), wording, ENTITY_PREFIX)
+    return instruct(local, level, None if here is None else ezilear(here).to_2d(), wording, WORLD_ENTITY_PREFIX)
 
 
 class VlaAdapter(DrlAdapter):

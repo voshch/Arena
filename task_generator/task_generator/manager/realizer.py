@@ -1,7 +1,7 @@
 import typing
 
 import attrs
-from arena_simulation_setup.shared import Ceiling, Elevator, Schedule, Signal, Sound
+from arena_simulation_setup.shared import Ceiling, Elevator, Light, Schedule, Signal, Sound
 
 from task_generator.shared import (
     Door,
@@ -199,6 +199,22 @@ class Realizer:
     def _realize_sound(self, sound: Sound, level_id: str = "") -> Sound:
         return attrs.evolve(sound, name=self._prefix(sound.name, level_id))
 
+    @typing.overload
+    def realize(self, target: Light, level_id: str = "") -> Light: ...
+
+    def _realize_light(self, light: Light, level_id: str = "") -> Light:
+        env = self._prefix().strip("/")
+        frame = light.frame
+        if frame and env and frame != env and not frame.startswith(f"{env}/"):
+            frame = f"{env}/{frame}"
+        return attrs.evolve(
+            light,
+            name=self._prefix(light.name, level_id),
+            frame=frame,
+            position=self._realize_position(light.position, level_id) if light.position is not None else None,
+            fixtures=[self._realize_position(fixture, level_id) for fixture in light.fixtures],
+        )
+
     def realize_polygon(self, corners: typing.Sequence[Position], level_id: str = "") -> list[tuple[float, float]]:
         """Env-realized xy ring for a zone polygon, for occupancy_cap attach."""
         ring: list[tuple[float, float]] = []
@@ -251,6 +267,9 @@ class Realizer:
 
         elif isinstance(target, Sound):
             res = self._realize_sound(target, level_id)
+
+        elif isinstance(target, Light):
+            res = self._realize_light(target, level_id)
 
         if res is None:
             raise TypeError(f'realization not implemented for type {type(target)}')
