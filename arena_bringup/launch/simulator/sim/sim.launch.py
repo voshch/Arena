@@ -103,6 +103,22 @@ def generate_launch_description():
         )
     )
 
+    launch_simulator.add(
+        SimSimulator.MUJOCO.value,
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c', [
+                launch.substitutions.TextSubstitution(text='exec env PYTHONPATH="${ARENA_DIR:?run source arena first}/_meta${PYTHONPATH:+:$PYTHONPATH}" python3 -m arena_cli feature mujoco launch headless:='),
+                headless.substitution,
+                launch.substitutions.TextSubstitution(text=' log_level:='),
+                launch.substitutions.LaunchConfiguration('log_level', default='info'),
+            ]],
+            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='5'),
+            sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
+            on_exit=[launch.actions.Shutdown()],
+            output='screen',
+        )
+    )
+
     sim = LaunchArgument(
         name='sim',
         choices=launch_simulator.keys,

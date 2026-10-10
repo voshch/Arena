@@ -2,6 +2,7 @@
 
 import abc
 import asyncio
+import math
 import typing
 from collections.abc import Collection, Iterable, Mapping, Sequence
 
@@ -53,6 +54,20 @@ async def resolve_obstacle_box(obstacle: Obstacle) -> tuple[tuple[float, float, 
         return None
     size, (cx, cy, cz) = view.bbox
     return size, (cx, cy, max(cz, size[2] / 2 + _BOX_FLOOR_CLEARANCE))
+
+
+def offset_pose(pose: Pose, center: tuple[float, float, float]) -> Pose:
+    """Box pose with the bbox centre applied in the obstacle's local frame."""
+    cx, cy, cz = center
+    yaw = pose.orientation.to_yaw()
+    return Pose(
+        position=Position(
+            x=pose.position.x + cx * math.cos(yaw) - cy * math.sin(yaw),
+            y=pose.position.y + cx * math.sin(yaw) + cy * math.cos(yaw),
+            z=pose.position.z + cz,
+        ),
+        orientation=pose.orientation,
+    )
 
 
 @typing.runtime_checkable

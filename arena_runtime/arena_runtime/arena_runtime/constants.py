@@ -7,3 +7,4 @@ class SimSimulator(Enum):
     GAZEBO = "gazebo"
     UNITY = "unity"
     ISAAC = "isaac"
+    MUJOCO = "mujoco"

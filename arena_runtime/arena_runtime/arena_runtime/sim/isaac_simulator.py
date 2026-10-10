@@ -5,7 +5,6 @@ import os
 import traceback
 import types
 import typing
-import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 
 import arena_people_msgs.msg
@@ -80,83 +79,14 @@ from arena_runtime.sim._control import (
     robot_controllers,
     twist_stamper_node,
 )
-from arena_runtime.sim._interface import resolve_obstacle_box
+from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
+from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable
 
 """
 IsaacHost is constructed once by arena_node and owns process-singleton resources for Isaac: the lifecycle (pause/unpause/cleanup) and the pause/unpause/delete service clients.
 IsaacSimulator is per-env on task_generator_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
 """
-
-
-def _transform_urdf_for_bridge(
-    urdf_path: str,
-    commands_topics: dict[str, str],
-    states_topic: str,
-    out_path: str,
-) -> None:
-    """Rewrite the URDF for the Isaac bridge.
-
-    - Swap gz_ros2_control/GazeboSimSystem to JointStateTopicSystem.
-    - Split each block into per-command-interface-kind blocks so JointStateTopicSystem
-      emits well-formed JointState messages (one kind per topic). Each kind goes to
-      its own commands_topics[kind].
-    - Add <state_interface name="effort"/> to every joint, because JointStateTopicSystem
-      unconditionally writes incoming effort and would otherwise crash.
-    """
-    bridge_plugin = 'joint_state_topic_hardware_interface/JointStateTopicSystem'
-    tree = ET.parse(urdf_path)
-    root = tree.getroot()
-
-    for plugin_el in root.iter('plugin'):
-        if plugin_el.text and plugin_el.text.strip() == 'gz_ros2_control/GazeboSimSystem':
-            plugin_el.text = bridge_plugin
-
-    originals = [rc for rc in root.iter('ros2_control') if (h := rc.find('hardware')) is not None and (p := h.find('plugin')) is not None and p.text and p.text.strip() == bridge_plugin]
-
-    for rc in originals:
-        parent = next(p for p in root.iter() if rc in list(p))
-        name = rc.get('name', 'bridge')
-        rc_type = rc.get('type', 'system')
-
-        by_kind: dict[str, list[ET.Element]] = {}
-        for joint in rc.findall('joint'):
-            cmd = joint.find('command_interface')
-            if cmd is None:
-                continue
-            kind = cmd.get('name')
-            if kind not in commands_topics:
-                continue
-            by_kind.setdefault(kind, []).append(joint)
-
-        rc_idx = list(parent).index(rc)
-        parent.remove(rc)
-
-        for offset, (kind, joints) in enumerate(by_kind.items()):
-            block = ET.Element('ros2_control', {'name': f'{name}_{kind}', 'type': rc_type})
-            hw = ET.SubElement(block, 'hardware')
-            ET.SubElement(hw, 'plugin').text = bridge_plugin
-            ET.SubElement(hw, 'param', {'name': 'joint_commands_topic'}).text = commands_topics[kind]
-            ET.SubElement(hw, 'param', {'name': 'joint_states_topic'}).text = states_topic
-            # No anti-spam gating on a sim bridge: publish every CM tick so Isaac sees
-            # the very first non-zero command without waiting for state to diverge.
-            ET.SubElement(hw, 'param', {'name': 'trigger_joint_command_threshold'}).text = '0.0'
-            if kind == 'velocity':
-                # physx wraps continuous joints at +-2pi
-                ET.SubElement(hw, 'param', {'name': 'sum_wrapped_joint_states'}).text = 'true'
-            for joint in joints:
-                if not any(si.get('name') == 'effort' for si in joint.findall('state_interface')):
-                    ET.SubElement(joint, 'state_interface', {'name': 'effort'})
-                # state interfaces default to NaN until the first joint_states message
-                # arrives, and a controller activated in that window errors out of its
-                # update and wedges the controller_manager, start at zero instead
-                for si in joint.findall('state_interface'):
-                    if si.find('param[@name="initial_value"]') is None:
-                        ET.SubElement(si, 'param', {'name': 'initial_value'}).text = '0.0'
-                block.append(joint)
-            parent.insert(rc_idx + offset, block)
-
-    tree.write(out_path, encoding='utf-8', xml_declaration=True)
 
 
 # matches World(physics_dt=rendering_dt=1/60) pinned in run_isaacsim.py
@@ -228,20 +158,6 @@ def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Materi
     return Material(
         name=material.name,
         path=material.path,
-    )
-
-
-def _offset_pose(pose: Pose, center: tuple[float, float, float]) -> Pose:
-    """Box pose with the bbox centre applied in the obstacle's local frame."""
-    cx, cy, cz = center
-    yaw = pose.orientation.to_yaw()
-    return Pose(
-        position=Position(
-            x=pose.position.x + cx * math.cos(yaw) - cy * math.sin(yaw),
-            y=pose.position.y + cx * math.sin(yaw) + cy * math.cos(yaw),
-            z=pose.position.z + cz,
-        ),
-        orientation=pose.orientation,
     )
 
 
@@ -352,7 +268,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     if is_ros2_control:
                         rsp_urdf_path = os.path.join('/tmp', f"arena_bridge_{robot.frame.sanitize()}.urdf")
                         ns = str(self.node.service_namespace(robot.name))
-                        _transform_urdf_for_bridge(
+                        transform_urdf_for_bridge(
                             str(model.path),
                             {
                                 'velocity': f"{ns}/isaac/joint_commands_velocity",
@@ -500,7 +416,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                 s = (obstacle.scale.x, obstacle.scale.y, obstacle.scale.z)
                 size = tuple(d * f for d, f in zip(size, s, strict=True))
                 center = tuple(c * f for c, f in zip(center, s, strict=True))
-            return bool(await self.spawn_box(self._NS_PRIM(obstacle.name), size, _offset_pose(obstacle.pose, center)))
+            return bool(await self.spawn_box(self._NS_PRIM(obstacle.name), size, offset_pose(obstacle.pose, center)))
 
         for i, ok in zip(box_indices, await asyncio.gather(*(spawn_one_box(i) for i in box_indices)), strict=True):
             results[i] = bool(ok)

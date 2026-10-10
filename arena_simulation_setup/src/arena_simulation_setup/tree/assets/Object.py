@@ -12,6 +12,7 @@ from arena_simulation_setup.tree import (
 )
 from arena_simulation_setup.utils.models import ModelWrapper
 from arena_simulation_setup.utils.models.model_loader import (
+    ModelProvider_OBJ,
     ModelProvider_SDF,
     ModelProvider_USD,
 )
@@ -32,6 +33,7 @@ class ObjectView(PathView):
             {
                 **ModelProvider_USD.asdict(self.path, self.path.name),
                 **ModelProvider_SDF.asdict(self.path, self.path.name),
+                **ModelProvider_OBJ.asdict(self.path, self.path.name),
             },
         )
 

@@ -1,0 +1,24 @@
+[project]
+name = "arena_mujoco"
+version = "0.0.0"
+dependencies = [
+    "coacd",
+    "glfw",
+    "mujoco==3.9.0",
+    "numpy",
+    "pillow",
+    "pycollada",
+    "pyopengl",
+    "trimesh>=4,<5",
+]
+dynamic = ["description", "license", "maintainers", "scripts"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"

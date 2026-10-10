@@ -114,13 +114,13 @@ def generate_launch_description() -> launch.LaunchDescription:
     sim = LaunchArgument(
         name="sim",
         default_value="",
-        description="empty = adopt the runtime's sim; explicit [dummy, gazebo, isaac] must match the runtime",
+        description="empty = adopt the runtime's sim; explicit [dummy, gazebo, isaac, mujoco] must match the runtime",
     )
     env_tf = LaunchArgument(
         name="env.tf",
         choices=["auto", "env", "global"],
         default_value="auto",
-        description="tf topics: env = <env ns>/tf and <env ns>/tf_static, global = /tf and /tf_static, auto = global for sim isaac or robot.train, env otherwise.",
+        description="tf topics: env = <env ns>/tf and <env ns>/tf_static, global = /tf and /tf_static, auto = global for sim isaac or mujoco or robot.train, env otherwise.",
     )
     # human/mobile defaults derive from arena's authoritative `sim` (the RegisterEnv
     # response, or the sim arg arena passes for managed envs). Empty here means
@@ -128,7 +128,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     human = LaunchArgument(
         name="human",
         default_value="",
-        description="empty = derive from arena_sim ({dummy: manual, gazebo|isaac: arena})",
+        description="empty = derive from arena_sim ({dummy: manual, gazebo|isaac|mujoco: arena})",
     )
     acoustics = LaunchArgument(
         name="acoustics",
@@ -241,9 +241,9 @@ def generate_launch_description() -> launch.LaunchDescription:
         env_tf_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(env_tf.substitution))
         if env_tf_val == "auto":
             train_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(train_mode.substitution))
-            env_tf_val = "global" if arena_sim == "isaac" or truthy(train_val) else "env"
-        if env_tf_val == "env" and arena_sim == "isaac":
-            raise RuntimeError("env.tf:=env is not supported with sim isaac, its robot odom tf is published on /tf")
+            env_tf_val = "global" if arena_sim in ("isaac", "mujoco") or truthy(train_val) else "env"
+        if env_tf_val == "env" and arena_sim in ("isaac", "mujoco"):
+            raise RuntimeError(f"env.tf:=env is not supported with sim {arena_sim}, its robot odom tf is published on /tf")
         env_ns = os.path.dirname(allocated_ns).strip("/")
         tf_namespace = f"/{env_ns}" if env_tf_val == "env" and env_ns else ""
         tf_remaps = [launch_ros.actions.SetRemap(topic, tf_namespace + topic) for topic in ("/tf", "/tf_static")] if tf_namespace else []

@@ -129,3 +129,21 @@ async def lazy_isaac_lifecycle(node: object, **kwargs: object) -> SimLifecycle:
     del kwargs
     assert isinstance(node, ArenaMixinNode)
     return IsaacHost(node=node)
+
+
+@SimulatorRegistry.register(SimSimulator.MUJOCO)
+async def lazy_mujoco(**kwargs: object) -> BaseSim:
+    from .mujoco_simulator import MujocoSimulator
+
+    return await MujocoSimulator.create(**kwargs)
+
+
+@LifecycleRegistry.register(SimSimulator.MUJOCO)
+async def lazy_mujoco_lifecycle(node: object, **kwargs: object) -> SimLifecycle:
+    from arena_rclpy_mixins import ArenaMixinNode
+
+    from .mujoco_simulator import MujocoHost
+
+    del kwargs
+    assert isinstance(node, ArenaMixinNode)
+    return MujocoHost(node=node)

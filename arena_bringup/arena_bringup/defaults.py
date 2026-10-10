@@ -4,6 +4,7 @@ DEFAULT_HUMAN: dict[str, str] = {
     "dummy": "dummy",
     "gazebo": "arena",
     "isaac": "arena",
+    "mujoco": "arena",
 }
 
 
