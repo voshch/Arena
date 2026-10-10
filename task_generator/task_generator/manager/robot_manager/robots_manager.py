@@ -139,8 +139,8 @@ _READINESS_CACHE: _Readiness | None = None
 
 
 def _autoselect_dispatch() -> dict[str, str]:
-    """Map mobile.kind -> ROS param key holding the planner name. Today only drl."""
-    return {"drl": "robot.mobile.planner"}
+    """Map mobile.kind -> ROS param key holding the planner name."""
+    return {"drl": "robot.mobile.planner", "vla": "robot.mobile.planner"}
 
 
 def _robot_readiness() -> _Readiness | None:

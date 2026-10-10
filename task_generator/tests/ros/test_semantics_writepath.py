@@ -99,7 +99,7 @@ def test_fire_timeline_entry_writes_sound_sounding_predicate() -> None:
         def warning(self, msg: str) -> None:
             raise AssertionError(msg)
 
-    stub = type("Stub", (), {})()
+    stub = _node_stub()
     stub._semantic_names = {"alarm_sound": "env_0/alarm_sound"}
     stub._realizer = Realizer()
     stub._simulator = simulator
@@ -168,7 +168,7 @@ def test_norm_token_booleans_render_lowercase() -> None:
 def _rng_stub(seed: str) -> object:
     from task_generator.node import TaskGenerator
 
-    stub = type("Stub", (), {})()
+    stub = _node_stub()
     stub._timeline_state = [{"rng": random.Random(seed)}]
     return stub, TaskGenerator
 
@@ -203,11 +203,16 @@ def test_resolve_timeline_value_bad_range_verbatim() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _node_stub() -> object:
+    """A bare TaskGenerator stand-in: no robots manager, so the record carries no phases."""
+    return type("Stub", (), {"_robots_manager": None, "_phases_json": lambda self: "{}"})()
+
+
 def _timeline_stub(entries: list, seed: int = 7) -> tuple[object, object, list[int]]:
     from task_generator.node import TaskGenerator
 
     fired: list[int] = []
-    stub = type("Stub", (), {})()
+    stub = _node_stub()
     stub._zone_overrides = {}
     stub._sound_levels = {}
     stub._fire_timeline_entry = lambda idx, entry: fired.append(idx)
@@ -311,7 +316,7 @@ def test_register_conditions_sets_episode_conditions() -> None:
     from arena_simulation_setup.shared.conditions import EpisodeCondition
     from task_generator.node import TaskGenerator
 
-    stub = type("Stub", (), {})()
+    stub = _node_stub()
     cond = EpisodeCondition.parse({"op": "eventually", "p": "robot in ward_a"})
     TaskGenerator.register_conditions(stub, [cond])
     assert stub._episode_conditions == [cond]
@@ -334,7 +339,7 @@ def test_record_to_msg_serializes_episode_conditions() -> None:
     from arena_simulation_setup.shared.conditions import EpisodeCondition
     from task_generator.node import EpisodeRecord, TaskGenerator
 
-    stub = type("Stub", (), {})()
+    stub = _node_stub()
     stub._episode_conditions = [
         EpisodeCondition.parse({"op": "eventually", "p": "robot in ward_a", "text": "Deliver the package."}),
     ]
@@ -347,7 +352,7 @@ def test_record_to_msg_empty_conditions_serializes_empty_list() -> None:
 
     from task_generator.node import EpisodeRecord, TaskGenerator
 
-    stub = type("Stub", (), {})()
+    stub = _node_stub()
     stub._episode_conditions = []
     msg = TaskGenerator._record_to_msg(stub, EpisodeRecord())
     assert json.loads(msg.conditions) == []

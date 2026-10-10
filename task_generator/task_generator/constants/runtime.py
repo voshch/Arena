@@ -20,6 +20,8 @@ EPISODE_PARAMS: dict[str, str] = {
     'task.episode.goto_pose.tolerance.radius': 'Goal position tolerance in metres for goto_pose phases.',
     'task.episode.goto_pose.tolerance.angle': 'Goal heading tolerance in radians for goto_pose phases.',
     'task.episode.goto_pose.timeout.no_progress': 'Fail a goto_pose episode after this many sim seconds without goal progress (-1 = off).',
+    'task.episode.goto_pose.hold_time': 'Sim seconds a robot must park at a goto_pose goal before the phase counts as met (0 = arrival suffices).',
+    'task.episode.goto_pose.signal': 'Signal the robot must send to end a goto_pose phase, such as arrived (empty = Arena judges arrival).',
 }
 
 DEPRECATED_PARAMS: dict[str, str] = {
@@ -116,6 +118,10 @@ def Configuration(server: ROSParamServer) -> type:
                 'task.episode.goto_pose.tolerance.angle',
                 30.0 * np.pi / 180.0,
             )
+
+            GOAL_HOLD_TIME = server.ROSParam[float]('task.episode.goto_pose.hold_time', 0.0)
+
+            GOAL_SIGNAL = server.ROSParam[str]('task.episode.goto_pose.signal', '')
 
             SPAWN_ROBOT_SAFE_DIST = server.ROSParam[float](
                 'task.episode.spawn.robot_clearance',

@@ -47,6 +47,16 @@ class MobileAdapter(Adapter):
     def controls_orientation(self) -> bool:
         return True
 
+    @property
+    def goal_inputs(self) -> tuple[str, ...]:
+        """Goal inputs the planner receives, `pose` and/or `instruction`."""
+        return ("pose",)
+
+    @property
+    def instruction(self) -> dict[str, str] | None:
+        """`source` and `text` of the instruction given for the current phase, None without one."""
+        return None
+
     cap_displays: ClassVar[tuple[AdapterDisplayHint, ...]] = (
         *Adapter.cap_displays,
         AdapterDisplayHint(
@@ -112,15 +122,8 @@ class MobileAdapter(Adapter):
     def _resolve_tolerances(self, phase: GoToPhase, robot: RobotManager) -> tuple[float, float]:
         """Effective (distance, yaw) tolerances, resolved exactly as the tier-3
         completion check resolves them."""
-        conf = robot.node.conf.Robot
-        dist = phase.tolerance_radius if phase.tolerance_radius is not None else conf.GOAL_TOLERANCE_RADIUS.value
-        if phase.tolerance_angle is not None:
-            ang = phase.tolerance_angle
-        elif self.controls_orientation:
-            ang = conf.GOAL_TOLERANCE_ANGLE.value
-        else:
-            ang = 0.0
-        return float(dist), float(ang)
+        assert phase.tolerance_radius is not None and phase.tolerance_angle is not None
+        return phase.tolerance_radius, phase.tolerance_angle if self.controls_orientation else 0.0
 
     async def publish_goal_loop(self) -> None:
         """Republish `<ns>/goal_pose` at 1Hz until the goal object changes. Override to noop if the adapter has its own goal transport."""
@@ -176,6 +179,13 @@ def _load_drl() -> type[Adapter]:
     from .drl import DrlAdapter
 
     return DrlAdapter
+
+
+@ADAPTERS["mobile"].register("vla")
+def _load_vla() -> type[Adapter]:
+    from .vla import VlaAdapter
+
+    return VlaAdapter
 
 
 @ADAPTERS["mobile"].register("none")

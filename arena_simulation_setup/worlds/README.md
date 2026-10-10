@@ -303,13 +303,22 @@ robots:
   - start: [x, y, yaw]           # required. [x,y], [x,y,yaw], {x,y,yaw} or a zone name
     start_floor: ""              # optional, multi-level worlds
     goal_floor: ""               # optional, floor for goto phases
-    phases:                      # ordered. each entry is exactly one of:
+    phases:                      # ordered. each entry is one of:
       - {goto: [x, y, yaw]}      #   navigate to pose (same formats as start)
+      - {goto: kitchen}          #   navigate into a zone, door, elevator or to a pedestrian by name
       - {gesture: wave}          #   arm gesture, "random" allowed, optional instance: <mount>
+      - {reach: stow}            #   arm reach: named target, "random", or a pose (optional frame:)
+      - {until: "door_1.open == true"}  # hold where the robot is until the atom holds
+    conditions: []               # optional, clauses judged over this robot's whole phase list
 ```
 
+Every phase also takes `until: "<atom>"` (completes once the atom holds, after
+arrival for a goto), `hold_time: <s>` (park time at a goto goal), `conditions:`
+(clauses judged over this phase only), `text:` (instruction for
+language-conditioned planners) and `on_failure: continue | stop_task | abort_episode`.
 A pose given as a bare string samples a point inside that zone with identity
-orientation. `goal: [x, y, yaw]` is deprecated and rewritten to a single
+orientation, and a named `goto` is judged met by zone membership rather than by
+distance to the sampled point. `goal: [x, y, yaw]` is deprecated and rewritten to a single
 `goto` phase with a warning. Which robot model and adapter runs is not part of
 the scenario, see
 [arena_robots setup](../../arena_robots/arena_robots/config/setup/README.md).
@@ -392,8 +401,17 @@ conditions:
 | `q` | second atom, required for `before`/`never_during`, rejected (parse error) with any other `op` |
 | `text` | human-readable description, optional |
 
-An atom is one of two bare forms (no `env_N/` prefix): `<entity>.<field> ==
-<value>` (an entity field test) or `<subject> in <zone>` (zone membership).
+An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
+<value>` (an entity field test), `<subject> in <zone>` (zone membership),
+`<subject> within <r> of <subject>` (planar distance) and `not <atom>`. A subject
+is `robot` (the robot being judged), another robot's name or a pedestrian's name.
+Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
+`failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
+A world entity (zone, door, elevator, schedule, sound) is named
+`<name>/<level>`, or `<name>` alone when no other level has one.
+Clauses take an optional `on_failure` (`continue` by default, `stop_task`,
+`abort_episode`). Conditions are judged online at the node tick and replayed
+offline by arena_evaluation with the same code.
 Schema: [shared/conditions.py](../src/arena_simulation_setup/shared/conditions.py).
 
 ## `assets/` directory

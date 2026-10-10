@@ -27,6 +27,7 @@ from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Ceiling, Light, cct_to_rgb
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.material import MdlUtil
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
@@ -580,8 +581,8 @@ class GazeboSimulator(BaseSim):
             self._logger.warning(f"set_robot_pose({sim_path!r}) failed: {e}")
             return False
 
-    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose) -> bool:
-        sdf = _generate_box_sdf(name, size)
+    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None) -> bool:
+        sdf = _generate_box_sdf(name, size, textures=await self._resolve_wall_textures(material))
         async with self._semaphore:
             return await self._spawn_sdf(name, sdf, pose)
 
@@ -1532,7 +1533,7 @@ _BOX_SDF_TEMPLATE = """
 """
 
 
-def _generate_box_sdf(name: str, size: tuple[float, float, float], center: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> str:
+def _generate_box_sdf(name: str, size: tuple[float, float, float], center: tuple[float, float, float] = (0.0, 0.0, 0.0), textures: dict[str, str] | None = None) -> str:
     sx, sy, sz = size
     cx, cy, cz = center
-    return _BOX_SDF_TEMPLATE.format(name=name, sx=sx, sy=sy, sz=sz, cx=cx, cy=cy, cz=cz, material=_wall_material_sdf(None))
+    return _BOX_SDF_TEMPLATE.format(name=name, sx=sx, sy=sy, sz=sz, cx=cx, cy=cy, cz=cz, material=_wall_material_sdf(textures))

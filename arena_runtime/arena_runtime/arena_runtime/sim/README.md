@@ -65,7 +65,7 @@ Defined in [`_interface.py`](_interface.py):
 
 | Primitive (override required for default behavior) | Signature |
 | --- | --- |
-| `spawn_box` | `(name, size, pose) -> bool` |
+| `spawn_box` | `(name, size, pose, material=None) -> bool` |
 | `move_box` | `(name, pose) -> bool` |
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |

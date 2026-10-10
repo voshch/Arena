@@ -9,6 +9,7 @@ import rclpy.time
 import tf2_ros
 from arena_people_msgs.msg import Pedestrians
 from arena_simulation_setup.shared import Ceiling, Light
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.utils.geometry import Orientation, Position
 from task_generator.shared import (
     Door,
@@ -411,8 +412,8 @@ class MechanismITF:
         self._mechanism_loop_task = None
 
     # primitives: simulators must implement these.
-    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose) -> bool:
-        """Spawn a static box primitive."""
+    async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None) -> bool:
+        """Spawn a static box primitive, with the simulator's plain look when `material` is unset."""
         raise NotImplementedError
 
     async def move_box(self, name: str, pose: Pose) -> bool:

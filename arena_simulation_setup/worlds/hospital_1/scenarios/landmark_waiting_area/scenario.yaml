@@ -1,0 +1,4 @@
+robots:
+- start: [10.0, 10.9, 1.5708]
+  phases:
+  - {goto: waiting_area, pose: [22.0, 6.5, 0.0], tolerance_radius: 3.0}

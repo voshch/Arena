@@ -74,3 +74,24 @@ def test_longest_stall_ignores_robots_at_the_goal():
 
     tracker.sample("stuck", (0.0, 0.0), (10.0, 0.0), 0.0)
     assert tracker.longest_stall(100.0, goal_radius=1.0) == 100.0
+
+
+def test_phase_change_restarts_the_robot_progress():
+    tracker = GoalProgressTracker()
+    tracker.sample("r", (0.0, 0.0), (10.0, 0.0), 0.0, phase=0)
+    tracker.sample("r", (0.0, 0.0), (10.0, 0.0), 50.0, phase=0)
+    assert tracker.longest_stall(50.0, goal_radius=1.0) == 50.0
+
+    tracker.sample("r", (0.0, 0.0), (20.0, 0.0), 51.0, phase=1)
+    assert tracker.longest_stall(51.0, goal_radius=1.0) == 0.0
+    assert tracker.least_progress().start_dist == 20.0
+
+
+def test_waiting_robot_is_not_stalled():
+    tracker = GoalProgressTracker()
+    tracker.sample("r", (0.0, 0.0), (10.0, 0.0), 0.0, phase=0, waiting=True)
+    tracker.sample("r", (0.0, 0.0), (10.0, 0.0), 90.0, phase=0, waiting=True)
+    assert tracker.longest_stall(90.0, goal_radius=1.0) == 0.0
+
+    tracker.sample("r", (0.0, 0.0), (10.0, 0.0), 91.0, phase=0, waiting=False)
+    assert tracker.longest_stall(91.0, goal_radius=1.0) == 91.0
