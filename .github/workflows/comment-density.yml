@@ -1,0 +1,15 @@
+name: comment density
+
+on:
+  pull_request:
+    branches: [jazzy]
+
+jobs:
+  comment-density:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+      - uses: voshch/ci/comment-density@v1
