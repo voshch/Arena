@@ -379,6 +379,16 @@ although they were recorded at 25 fps and places the hotel as a mirror image. A 
 budget: pass `task.episode.timeout:=<s>` when launching one by hand, or run the
 [SocNavBench suite](../../../../arena_evaluation/arena_evaluation/configs/benchmark/README.md#socnavbench), whose stages carry it.
 
+Dense crowds come from three more sources, their tracks resampled to 10 Hz with stays like the ETH and UCY ones.
+`arena asset import scenario juelich <set>/<run>` writes a run of the Juelich pedestrian dynamics archive (BaSiGo 2013
+corridor and 90 degree crossing, HERMES 2009 corridors, bottleneck and T-junction) in the world of its lab layout,
+`juelich_<set>_<k>`, whose floor is the layout's free area with every pillar and inner wall walled in, one world per
+distinct layout of a set. Positions are read in meters, also from the run files kept in centimeters.
+`arena asset import scenario madras <topview_1a ... topview_2f>` writes a TopView sequence of the Fete des Lumieres 2022
+in Lyon to `madras_topview`, and `arena asset import scenario glow <YYYY-mm-ddTHHMM>` a 5-minute period of the GLOW
+2019 recording in Eindhoven to `glow` (the first import indexes the 1 GB recording once). Both play on an open floor
+2 m around every point their recording tracked, as neither places its obstacles in the frame of its tracks.
+
 ## Arena adapter (`human:=arena`)
 
 `ArenaHumanSimulator` feeds possession back to the engine: a loop at the

@@ -262,6 +262,12 @@ def parse_sequence(path: Path, fps: float, shift: tuple[float, float] = (0.0, 0.
     return people(ident, (frame - frame.min()) / fps, x + shift[0], y + shift[1])
 
 
+def open_floor(points: np.ndarray, margin: float) -> World:
+    """A world whose floor is the box around every point, widened by *margin*."""
+    low, high = points.min(axis=0) - margin, points.max(axis=0) + margin
+    return compile_layout(Layout(areas=[Area(shapely.box(*low, *high))]))[0]
+
+
 def walked_area(bodies: list[Body], stops: Iterable[tuple[float, float]] = ()) -> shapely.Polygon:
     """Floor of a scene: the concave hull of every walked path and stop, widened by a footprint and straightened."""
     if not bodies:
