@@ -420,11 +420,15 @@ def push(argv: list[str]) -> int:
 
 def _import_args(pos: list[str], opts: dict[str, str | bool]) -> list[str]:
     """argv for `arena_assets import` from the parsed verb line."""
-    if len(pos) < 2 and opts:
+    if len(pos) < 2 and set(opts) - {"--json"}:
         raise CLIError("options need a KIND and a SOURCE, run 'arena asset import' to list them")
     if len(pos) > 2 and "--all" in opts:
         raise CLIError("pass ITEM... or --all, not both")
     args = list(pos)
+    if "--json" in opts:
+        if len(pos) > 2 or "--all" in opts:
+            raise CLIError("--json lists sources or items, it takes no ITEM or --all")
+        args.append("--json")
     if "--all" in opts:
         args.append("--all")
     if "--out" in opts:
@@ -435,7 +439,7 @@ def _import_args(pos: list[str], opts: dict[str, str | bool]) -> list[str]:
 def import_(argv: list[str]) -> int:
     """Import items of one kind from an upstream dataset as local items the resolvers read.
 
-    `arena asset import [KIND] [SOURCE] [ITEM...] [--all] [--out DIR]`. Bare, it lists the
+    `arena asset import [KIND] [SOURCE] [ITEM...] [--all] [--out DIR] [--json]`. Bare, it lists the
     registered sources by kind with their license verdict (yes: public bucket with attribution,
     nc: NC prefix only, sa: SA prefix only, no: local use only, unclear), host and granularity
     (item, chunk, bulk). `import KIND` lists the sources of that kind, `import KIND SOURCE` lists
@@ -444,16 +448,17 @@ def import_(argv: list[str]) -> int:
     ($ARENA_ASSETS_DIR_IMPORTED, worlds under its worlds/), which every resolver reads after the
     curated local root, or --out DIR, each with an ATTRIBUTION.yaml beside it, and prints every
     item's path. One source can serve several kinds: `import world barn 17` is one challenge
-    world, `import suite barn barn` the whole benchmark.
+    world, `import suite barn barn` the whole benchmark. --json prints a source or item listing
+    as JSON.
     """
-    pos, opts = _parse(argv, ("KIND", "SOURCE"), flags=("--all",), valued=("--out",), optional=2, variadic=True)
+    pos, opts = _parse(argv, ("KIND", "SOURCE"), flags=("--all", "--json"), valued=("--out",), optional=2, variadic=True)
     return _assets("import", *_import_args(pos, opts))
 
 
 IMPORT_KINDS = ("episode", "material", "object", "scenario", "sound", "suite", "world")
 
 _KIND = Sub({kind: Manifest(f"asset.{kind}") for kind in KINDS})
-_IMPORT_FLAGS = Flags({"--all": "import every item of the source", "--out": "target root instead of $ARENA_ASSETS_DIR_IMPORTED"}, valued=("--out",))
+_IMPORT_FLAGS = Flags({"--all": "import every item of the source", "--out": "target root instead of $ARENA_ASSETS_DIR_IMPORTED", "--json": "machine-readable source or item listing"}, valued=("--out",))
 ITEM_CANDIDATES = 500
 REFRESH_LOCK_MAX_AGE_S = 300.0
 

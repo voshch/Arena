@@ -12,7 +12,7 @@ from arena_cli.complete import Context, _expand
 
 
 def parse(argv: list[str]) -> list[str]:
-    pos, opts = _parse(argv, ("KIND", "SOURCE"), flags=("--all",), valued=("--out",), optional=2, variadic=True)
+    pos, opts = _parse(argv, ("KIND", "SOURCE"), flags=("--all", "--json"), valued=("--out",), optional=2, variadic=True)
     return _import_args(pos, opts)
 
 
@@ -41,6 +41,19 @@ def test_all_with_items_is_refused() -> None:
         parse(["object", "gso", "a", "--all"])
 
 
+def test_json_forwards_on_every_listing() -> None:
+    assert parse(["--json"]) == ["--json"]
+    assert parse(["world", "--json"]) == ["world", "--json"]
+    assert parse(["world", "barn", "--json"]) == ["world", "barn", "--json"]
+
+
+def test_json_with_items_or_all_is_refused() -> None:
+    with pytest.raises(CLIError, match="--json lists"):
+        parse(["world", "barn", "17", "--json"])
+    with pytest.raises(CLIError, match="--json lists"):
+        parse(["world", "barn", "--all", "--json"])
+
+
 def test_options_without_kind_and_source_are_refused() -> None:
     with pytest.raises(CLIError, match="KIND and a SOURCE"):
         parse(["--all"])
@@ -63,7 +76,7 @@ def test_out_needs_a_value() -> None:
 
 
 def test_unknown_option_lists_options() -> None:
-    with pytest.raises(CLIError, match="--all, --out"):
+    with pytest.raises(CLIError, match="--all, --json, --out"):
         parse(["object", "gso", "--bogus"])
 
 
