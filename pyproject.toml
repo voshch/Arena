@@ -21,6 +21,7 @@ members = [
 [tool.pytest.ini_options]
 norecursedirs = ["deps", ".git", ".venv", "build", "install", "log", "_meta"]
 addopts = "-ra --strict-markers --import-mode=importlib"
+markers = ["network: hits the live upstream host"]
 
 [project]
 name = "arena-rosnav"
@@ -114,6 +115,7 @@ ignore = ["E501", "E402", "F841", "E731", "PYI051", "E741", "UP035"]
 
 [tool.ruff.lint.isort]
 known-first-party = [
+    "arena_assets",
     "arena_auditory",
     "arena_cli",
     "arena_evaluation",
@@ -190,6 +192,7 @@ reportPrivateImportUsage = "none"
 executionEnvironments = [
     { root = "arena_isaac/arena_isaac", reportMissingImports = "none" },
     { root = "arena_assets/src/arena_assets/utils/ModelConverter", reportMissingImports = "none" },
+    { root = "arena_assets/blender/arena_assets_blender", reportMissingImports = "none" },
     { root = "_meta" },
     { root = "arena_assets/src" },
     { root = "arena_auditory/arena_auditory" },

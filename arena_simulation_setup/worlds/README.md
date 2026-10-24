@@ -306,7 +306,12 @@ object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: 
 humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`), `waypoint_mode` (`repeat`, `reverse`, `once`,
 `random`), `level`, the humansim `agent:` block and a `hunav:` block for the
-HuNav backend. Any other key fails the load. A waypoint is `[x, y[, z]]`,
+HuNav backend. A human's `track: ./<file>.csv` names a recorded track beside the
+scenario ([shared/track.py](../src/arena_simulation_setup/shared/track.py)), which `human:=replay` plays in
+place of simulating the pedestrian, and `prespawn: true` stands it on its first pose until the track begins.
+Its `stays:` list the timed legs of each continuous stay of that track (`start`, entry `pose` and `velocity`,
+`legs: [[x, y, speed, dwell], ...]`), which the scenario importers write for a path follower.
+Any other key fails the load. A waypoint is `[x, y[, z]]`,
 `{x, y[, z][, level]}` or a zone name.
 
 `sounds` is a list of `Sound` entries, same schema as a world level's
@@ -435,6 +440,32 @@ shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 `arena asset push world <name>` publishes a locally-authored world after a
 preflight that checks every asset it references would resolve for someone
 else.
+
+`arena asset import world houseexpo <plan id>` writes one HouseExpo floor plan
+as `houseexpo_<plan id>` into the imported worlds root
+(`$ARENA_ASSETS_DIR_IMPORTED/worlds`, else `$ARENA_ASSETS_DIR/_imported/worlds`),
+which `WorldIdentifier` reads after the `ARENA_WORLD_PATH` roots and before the
+shipped worlds. The plan's vertex ring is the free space and its outline the
+walls, so interior walls are the slits of the ring, doors are its gaps and
+there are no door entries. Zones are the upstream room boxes clipped to the
+floor, named `<room type>_<n>` after the n-th box of that category
+(`living_room_0`): a smaller box owns what it shares with a larger one, a box
+listed under several categories is one room named after the first of them by
+name with all of them in `description`, a piece narrower than 0.3 m joins the
+zone beside it, and floor under no box becomes `area_<n>`. All 35,126 plans
+come in one 25 MB archive, downloaded once into
+`$ARENA_ASSETS_DIR/.import/houseexpo` and indexed there, and a bare
+`arena asset import world houseexpo` lists the plan ids. The repository is MIT
+licensed and its plans are built on SUNCG, so the registry lists the source
+with license verdict `unclear`.
+
+`arena asset import world procthor <split>/<index>` (such as `val/0`) writes one
+ProcTHOR-10K house as `procthor_<split>_<index>` into the same imported worlds
+root, with zones named by room type, the walls cut around every door hole and
+the furniture imported through the `ai2thor` object source and placed as static
+entities. An openable door becomes a `hinged` door, as it swings in AI2-THOR, a
+doorframe without a door leaf stays an opening, and a door that does not open
+stays wall.
 
 `WorldIdentifier('hospital_1').resolve()` returns a `WorldView`
 wrapping whichever of the above resolved first. Call `view.load()` to parse

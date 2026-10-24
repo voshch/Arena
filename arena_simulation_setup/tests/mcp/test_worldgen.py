@@ -19,6 +19,7 @@ from arena_simulation_setup.generative.world import WorldGenerator
 from mcp.server.mcpserver import MCPServer
 
 SKETCH = "\u250c\u2500\u252c\u2500\u2510\n\u2502 \u2502 \u2502\n\u2514\u2500\u2534\u2500\u2518"
+BARN_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "barn"
 SMALL_CONFIGS = {
     "empty": {"width": 6.0, "height": 4.0},
     "hallway": {},
@@ -85,6 +86,24 @@ def test_preview_rejects_unknown_generators_fields_and_sketches_for_sketchless_g
         worldgen.worldgen_preview("empty", sketch="\u253c")
     with pytest.raises(ToolError, match="invalid empty configuration"):
         worldgen.worldgen_preview("empty", config={"width": "wide"})
+
+
+def test_barn_takes_a_challenge_index_and_source_through_the_server():
+    from arena_simulation_setup.generative.world import WorldGeneratorType
+    from arena_simulation_setup.generative.world.layout import diagnostics_of
+
+    barn = next(entry for entry in worldgen.worldgen_generators() if entry["name"] == "barn")
+    assert {"index", "source", "passage_width", "dead_ends"} <= set(barn["config_schema"]["properties"])
+    config = {"index": 0, "source": str(BARN_FIXTURES)}
+    result = _call("worldgen_preview", {"generator": "barn", "config": config, "seed": 3})
+    assert not result.is_error, result.content[0].text
+    report = json.loads(result.content[0].text)
+    canonical = diagnostics_of(WorldGenerator(WorldGeneratorType.BARN, config).compute().all_levels[0])
+    assert report["diagnostics"]["extent"] == [round(float(value), 3) for value in canonical.extent]
+    assert report["diagnostics"]["extent"] != worldgen.worldgen_preview("barn", seed=3)[0]["diagnostics"]["extent"]
+    assert report["episode_binding"] == {"tm_robots": "scenario", "robots_params": {"file": "barn"}}
+    with pytest.raises(ToolError, match="invalid barn configuration"):
+        worldgen.worldgen_preview("barn", config={"index": 300})
 
 
 def test_preview_renders_at_the_shared_preview_resolution():

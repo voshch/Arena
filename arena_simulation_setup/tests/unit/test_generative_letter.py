@@ -5,7 +5,6 @@ import unicodedata
 
 import pytest
 import shapely
-
 from arena_simulation_setup.generative.world.letter import GLYPHS, SEGMENTS, WorldGeneratorLetter, paint
 
 

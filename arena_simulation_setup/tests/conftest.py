@@ -38,3 +38,17 @@ def rclpy_context():
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+@pytest.fixture(scope="session")
+def default_sounds():
+    from arena_simulation_setup.tree.assets.sound_catalog import SoundLibrary
+
+    library = SoundLibrary.default()
+    try:
+        for kind in library.kinds().values():
+            if kind.default_asset:
+                library.asset(kind.default_asset)
+    except KeyError as exc:
+        pytest.skip(f"default sound assets do not resolve: {exc}")
+    return library

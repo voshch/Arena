@@ -1,0 +1,15 @@
+source: ProcTHOR-10K
+url: https://github.com/allenai/procthor-10k
+license: Apache-2.0
+authors: Matt Deitke, Eli VanderBilt, Alvaro Herrasti, Luca Weihs, Jordi Salvador, Kiana Ehsani, Winson Han, Eric Kolve, Ali Farhadi, Aniruddha Kembhavi, Roozbeh Mottaghi (Allen Institute for AI)
+citation: "Deitke et al., ProcTHOR: Large-Scale Embodied AI Using Procedural Generation, NeurIPS 2022"
+archive: https://media.githubusercontent.com/media/allenai/procthor-10k/main/val.jsonl.gz
+archive_sha256: d808540514e26b6726cd2790490e669b572eeb94febb5188a2f403591dd21721
+objects: AI2-THOR assets (CC-BY-4.0, as the card of https://huggingface.co/datasets/haosulab/AI2THOR states) from ai2thor.zip of https://huggingface.co/datasets/haosulab/AI2THOR at revision 1a173d5de042aaad8f1af09d4d2bc2ce4004b28a, the ManiSkill copy of the HSSD conversion hssd/ai2thor-hab
+items:
+  - val.jsonl: line 1 of the archive (house val/0, roomSpecId 7-room-3-bed), verbatim
+  - val_161.jsonl: line 162 of the archive (house val/161, roomSpecId kitchen-living-room), verbatim
+  - ProcTHOR-Val-0.scene_instance.json: member ai2thor/ai2thor-hab/configs/scenes/ProcTHOR/c/ProcTHOR-Val-0.scene_instance.json of the objects archive, the hab placement of house val/0, verbatim, sha256 849c831bc8eb670db17d6555c60fa4dc1dcf8f0792c3e134d3ae2634a5a45fd5
+  - objects/BaseballBat_3.glb: member ai2thor/ai2thorhab-uncompressed/assets/objects/BaseballBat_3.glb of the objects archive, verbatim, sha256 14b50afaa2a1d20ababe7d9934bdd4a44ccd8c0416e3044abc724e6a70ddfa16
+  - objects/Dining_Table_203_1.glb: member ai2thor/ai2thorhab-uncompressed/assets/objects/Dining_Table_203_1.glb of the objects archive, verbatim, sha256 07174a0324a77a1ea1262352b588fdea522e744c95f6f5f6ff194c3484c08af5
+  - objects/Dog_Statue_4.glb: member ai2thor/ai2thorhab-uncompressed/assets/objects/Dog_Statue_4.glb of the objects archive, verbatim, sha256 99f8cc9d37bbc8874a1e69d1902483c5e9016562fb9157a42dc69b82906b3210

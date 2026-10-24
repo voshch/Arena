@@ -21,6 +21,8 @@ def generate_launch_description() -> launch.LaunchDescription:
 
     launch_human_simulator.add(Constants.HumanSimulator.NONE.value, launch.actions.GroupAction([]))
 
+    launch_human_simulator.add(Constants.HumanSimulator.REPLAY.value, launch.actions.GroupAction([]))
+
     launch_human_simulator.add(
         Constants.HumanSimulator.HUNAV.value,
         launch.actions.IncludeLaunchDescription(

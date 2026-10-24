@@ -10,7 +10,7 @@ The ROS node is [`world_generator_ros.py`](world_generator_ros.py), its interfac
 |---|---|---|
 | `empty` | width, height | a bare walled box |
 | `hallway` | corridor and room sizes | a spine with rooms either side |
-| `barn` | box size, passage width, straightness | a BARN-style winding passage, pinning the episode to `tm_robots: scenario` |
+| `barn` | box size, passage width, straightness, or `index` | a BARN-style winding passage, or with `index` (0..299) the canonical BARN challenge world of that number, read from `source` (a directory of `world_<index>.world` files) or fetched from GitHub into `ARENA_ASSETS_DIR/.import/barn/worlds`. Each cylinder is an octagon of walls whose outer faces lie on the 0.075 m radius, in the challenge frame shifted by +4.5 m in x. Either way the episode is pinned to `tm_robots: scenario` |
 | `sketch` | a grid of box-drawing glyphs | corridors and rooms exactly as drawn |
 | `letter` | text | one 18-segment character cell per glyph |
 
@@ -20,7 +20,7 @@ Registration in [`__init__.py`](__init__.py) is lazy, so importing the package d
 - `configure(dict)` and `compute() -> World`, which sets `self.diagnostics` and appends to `self.warnings`,
 - optionally `files()` for extra artifacts written into the world directory by `save_generated`, `params()` for the episode binding, and `normalize(str)` for a canonical form of a textual input.
 
-`Configuration` fields become ROS parameters under `algorithm.<generator>.<field>` through [`schema.py`](schema.py). Only `bool`, `int`, `float`, `str` and 2-tuples of numbers are supported; `ge`/`le` become the widget's range, and `json_schema_extra={"widget": "sketch"}` asks the panel for the grid editor.
+`Configuration` fields become ROS parameters under `algorithm.<generator>.<field>` through [`schema.py`](schema.py). Only `bool`, `int`, `float`, `str` and 2-tuples of numbers are supported, an `int | None` field defaulting to None is declared as an unset integer; `ge`/`le` become the widget's range, and `json_schema_extra={"widget": "sketch"}` asks the panel for the grid editor.
 
 ## Layout IR
 

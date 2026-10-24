@@ -3,10 +3,8 @@ import math
 from collections import deque
 
 import numpy as np
-import shapely
 
-from .barn import BarnBase, BarnConfiguration
-from .utils import to_walls
+from .barn import BarnBase, BarnConfiguration, cylinder_walls
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +122,7 @@ class WorldGeneratorBarnCylinder(BarnBase):
             for i in range(nx):
                 if grid[j, i]:
                     cx, cy = cell_world(i, j)
-                    walls += to_walls(shapely.Point(cx, cy).buffer(c.cylinder_radius, quad_segs=2))
+                    walls += cylinder_walls(cx, cy, c.cylinder_radius)
                     n_cylinders += 1
 
         self._set_level('barn_cylinder', arena, walls, f'BARN cylinder field, {n_cylinders} cylinders')

@@ -90,7 +90,9 @@ jobs:
           python3 _meta/tools/uv_workspace.py compose
           uv venv --system-site-packages /opt/venv
           export VIRTUAL_ENV=/opt/venv
-          uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $PACKAGES)
+          colcon list --packages-up-to $PACKAGES --names-only > upto.txt
+          members=$(python3 -c 'import re, tomllib, pathlib; norm = lambda n: re.sub(r"[-_.]+", "-", n).lower(); ws = pathlib.Path(".uv-workspace"); upto = {norm(n) for n in pathlib.Path("upto.txt").read_text().split()}; [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if norm(n) in upto]')
+          uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $members)
           uv pip install coverage diff-cover==10.6.0
       - uses: actions/cache@v4
         if: steps.diff.outputs.gated == 'true'

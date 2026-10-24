@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 import typing
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
 import attrs
@@ -80,32 +80,50 @@ def local_root() -> Path:
     return Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local'))
 
 
-class LocalRootPath(DynamicPath):
-    """local_root() at every read, or the path assigned to it."""
+def imported_root() -> Path:
+    """The imported asset root, ARENA_ASSETS_DIR_IMPORTED else ARENA_ASSETS_DIR/_imported as set at call time, an empty value counting as unset."""
+    imported = os.getenv('ARENA_ASSETS_DIR_IMPORTED')
+    if imported:
+        return Path(imported)
+    return Path(os.getenv('ARENA_ASSETS_DIR') or ARENA_ASSETS_DIR) / '_imported'
 
-    def __init__(self) -> None:
+
+class RootPath(DynamicPath):
+    """root() at every read, or the path assigned to it."""
+
+    def __init__(self, root: Callable[[], Path]) -> None:
         super().__init__()
+        self._root = root
         self._assigned: Path | None = None
 
     @property
     def path(self) -> Path:
-        return self._assigned if self._assigned is not None else local_root()
+        return self._assigned if self._assigned is not None else self._root()
 
     @path.setter
     def path(self, value: Path) -> None:
         self._assigned = value
 
 
+class LocalRootPath(RootPath):
+    """local_root() at every read, or the path assigned to it."""
+
+    def __init__(self) -> None:
+        super().__init__(local_root)
+
+
 class DynamicPaths:
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
     ARENA = LocalRootPath()
+    IMPORTED = RootPath(imported_root)
 
     @classmethod
     def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
         yield DynamicPathResolver(_T, cls.WORLD, fn=lambda p: p / 'assets')
         yield DynamicPathListResolver(_T, cls.LINKED, fn=lambda p: p / 'assets')
         yield DynamicPathResolver(_T, cls.ARENA)
+        yield DynamicPathResolver(_T, cls.IMPORTED)
 
 
 IdentifierT = typing.TypeVar('IdentifierT', bound='IdentifierProtocol')

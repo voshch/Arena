@@ -1,5 +1,4 @@
 import pytest
-
 from arena_simulation_setup.generative.world import alphabet
 
 

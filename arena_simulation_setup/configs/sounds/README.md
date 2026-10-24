@@ -35,7 +35,9 @@ Unknown keys are rejected.
 
 Sounds are assets of the `Sound` kind, resolved like every other asset:
 world-local `worlds/<w>/assets/Common/Sound/<name>/`, then
-`$ARENA_ASSETS_DIR_LOCAL/Common/Sound/<name>/`, then the network providers.
+`$ARENA_ASSETS_DIR_LOCAL/Common/Sound/<name>/`, then
+`$ARENA_ASSETS_DIR_IMPORTED/Common/Sound/<name>/` (where `arena asset import sound`
+writes), then the network providers.
 Each asset directory holds `<name>.yaml` beside its wav files:
 
 ```yaml
@@ -78,3 +80,23 @@ arena asset push sound <name>
 
 Looping files should match in waveform and level at both ends so the join
 does not click.
+
+## Imported sounds
+
+`arena asset import sound fsd50k <freesound id>` adds FSD50K clips under CC0 or
+CC BY as `Common/Sound/fsd50k_<id>`. Each clip is staged as a manifest beside
+its unchanged wav and built by the same `arena-assets db build -t sound` as
+the default sounds. [fsd50k_kinds.yaml](fsd50k_kinds.yaml) maps its AudioSet
+labels to a kind of the kinds table, and the clip takes `level_db`,
+`reference_distance_m` and `surface` from that kind's default asset, so a kind
+without one (`onset`) is not imported. Its `normalize_dbfs` is derived as for
+the default sounds: the active level of the first channel once the peak is
+scaled to -6 dBFS (-9 dBFS for environment kinds), to the nearest 0.5 dB. The
+tags carry `origin::fsd50k`, the uploader and Freesound URL sit in the
+`ATTRIBUTION.yaml` beside the manifest.
+
+`arena asset import sound cmu_arctic <voice>_<utterance>` (such as `bdl_a0001`)
+adds CMU ARCTIC read speech the same way, as `Common/Sound/cmu_arctic_<item>` of
+kind `speech` with the prompt text as `desc`. The seven voices are awb, bdl,
+clb, jmk, ksp, rms and slt, about 1,130 utterances each, and the tags carry the
+voice, gender and accent.

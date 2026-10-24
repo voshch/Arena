@@ -224,6 +224,7 @@ with the simulator that will animate the resulting agents.
 | `dummy` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | no-op stubs, used in test/offline contexts |
 | `none` | `DummyHumanSimulator` | [`dummy.py`](dummy.py) | `human.launch.py` starts no node, backed by the same no-op stubs for registry lookups |
 | `arena` | `ArenaHumanSimulator` | [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py) | integrates with the arena_humansim pedestrian simulator (subsystem mode) |
+| `replay` | `ReplayHumanSimulator` | [`replay.py`](replay.py) | plays the track each pedestrian entry names, `human.launch.py` starts no node |
 | `hunav` | `HunavHumanSimulator` | [`hunav/hunav.py`](hunav/hunav.py) | integrates with HuNav, see [configs/hunav/README.md](../../../../arena_simulation_setup/configs/hunav/README.md) for the per-agent schema. `hunav_msgs` is imported lazily so the registry entry loads without it installed |
 
 ## arena_humansim agent types
@@ -344,6 +345,49 @@ engine to live in, so they go out as latched
 `pedestrian_markers/static_walls` / `static_objects` MarkerArrays (ns
 `dummy_walls` / `dummy_objects`), each led by a `DELETEALL` so removals
 clear stale markers.
+
+## Replay adapter (`human:=replay`)
+
+`ReplayHumanSimulator` ([`replay.py`](replay.py)) is the dummy adapter plus recorded motion. A `dynamic:` entry
+whose `track:` key names a track file ([`shared/track.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/track.py):
+rows of `t,x,y,yaw`, seconds from episode start, meters and radians in the level frame, a `nan` row between
+segments) is played from it on the sim clock at 30 Hz, counted from the reset that spawned it and shifted by the
+env and level origin. The pedestrian is on `arena_peds` and relayed to the sim exactly while a segment covers the
+episode time: it enters with its first sample, leaves in every gap and for good after the last sample, and each
+edge calls the sim's `pedestrian_spawn` / `pedestrian_delete`. With `prespawn: true` beside `track:` it instead stands
+at rest on its first pose from the episode start until the track begins. Entries without a track stay dummy puppets, and the
+possession stream overlays both. Nothing reacts to the robot. The roster goes out on the sim clock, so a paused sim
+publishes none.
+`arena asset import scenario eth_ucy <eth|hotel|univ|zara01|zara02>` writes such a scenario from the ETH and UCY
+sequences and, where it is not imported yet, the world it plays in, whose floor is the concave hull of the paths their
+pedestrians walked, kept 0.5 m clear of every step and straightened into a plain polygon. Its tracks run at 10 Hz, with
+gaps up to 1 s bridged. Each entry also carries `stays:`, one per continuous stay (split at gaps and at jumps over
+0.5 m faster than 6 m/s, stays under 1 s dropped) with its `start`, entry `pose` and `velocity` (over the first 0.4 s)
+and `legs: [[x, y, speed, dwell], ...]`, corners within 0.25 m of the stay in space and time with each stop as the dwell
+of the leg before, for a path follower. zara01 and zara02 share one world, with zara02 moved 1.15 m
+along y into zara01's frame, the placement SocNavBench gives the two.
+
+`arena asset import scenario socnavbench <episode>` writes one of SocNavBench's curated episodes on these sequences as a
+replay scenario that also carries the robot task: `robots:` holds the episode's start and its goal as one `goto` phase,
+mapped back from SocNavBench's map frame into the frame of the eth_ucy worlds, and `humans:` holds the pedestrians
+SocNavBench plays in the episode (ids from the episode's first pedestrian on, up to the first one who enters later than
+the time budget), on tracks cut to the budget and timed from that first pedestrian's first frame. Positions are the ones
+the eth_ucy scenario plays. The world is `socnavbench_eth` or `socnavbench_zara`: the eth_ucy floor with the start and
+goal of every episode of the scene added, each 0.5 m clear of the walls. The 17 episodes on eth, zara01 and zara02 are
+importable. The 16 on hotel, univ and the double hotel are refused, because SocNavBench plays those sequences at 15 fps
+although they were recorded at 25 fps and places the hotel as a mirror image. A scenario has no field for the time
+budget: pass `task.episode.timeout:=<s>` when launching one by hand, or run the
+[SocNavBench suite](../../../../arena_evaluation/arena_evaluation/configs/benchmark/README.md#socnavbench), whose stages carry it.
+
+Dense crowds come from three more sources, their tracks resampled to 10 Hz with stays like the ETH and UCY ones.
+`arena asset import scenario juelich <set>/<run>` writes a run of the Juelich pedestrian dynamics archive (BaSiGo 2013
+corridor and 90 degree crossing, HERMES 2009 corridors, bottleneck and T-junction) in the world of its lab layout,
+`juelich_<set>_<k>`, whose floor is the layout's free area with every pillar and inner wall walled in, one world per
+distinct layout of a set. Positions are read in meters, also from the run files kept in centimeters.
+`arena asset import scenario madras <topview_1a ... topview_2f>` writes a TopView sequence of the Fete des Lumieres 2022
+in Lyon to `madras_topview`, and `arena asset import scenario glow <YYYY-mm-ddTHHMM>` a 5-minute period of the GLOW
+2019 recording in Eindhoven to `glow` (the first import indexes the 1 GB recording once). Both play on an open floor
+2 m around every point their recording tracked, as neither places its obstacles in the frame of its tracks.
 
 ## Arena adapter (`human:=arena`)
 

@@ -22,6 +22,7 @@ from arena_simulation_setup.utils.geometry import Pose, Position, Scale, Vector3
 from arena_simulation_setup.utils.resolution import resolve_zone_point
 
 from .light_state import ObjectLightSettings
+from .track import Stay, parse_stays
 
 if TYPE_CHECKING:
     import geometry_msgs.msg
@@ -228,6 +229,9 @@ class DynamicObstacle(Entity):
     hunav: dict = attrs.field(factory=dict)
     spawn_delay: float = attrs.field(default=0.0, converter=float, validator=attrs.validators.ge(0.0))
     semantic_alias: dict[str, str] = attrs.field(factory=dict)
+    track: str = ''
+    prespawn: bool = False
+    stays: list[Stay] = attrs.field(factory=list, converter=parse_stays)
 
 
 @attrs.define

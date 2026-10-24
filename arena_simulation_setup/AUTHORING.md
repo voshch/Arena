@@ -907,7 +907,7 @@ reach.
 ## 5. Add world-local assets (optional)
 
 Assets placed under `worlds/$WORLD/assets/<domain>/<Type>/<name>/` are
-resolved before shared-local (`$ARENA_ASSETS_DIR_LOCAL`) and network-fetched
+resolved before shared-local (`$ARENA_ASSETS_DIR_LOCAL`), imported (`$ARENA_ASSETS_DIR_IMPORTED`) and network-fetched
 assets. `<domain>` defaults to `Common` if you have no reason to scope the
 asset further. Five asset kinds can be shipped this way:
 

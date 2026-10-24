@@ -1,0 +1,43 @@
+source: FSD50K (Freesound Dataset 50k), Hugging Face mirror Fhrozen/FSD50k, commit ccf1acaff12f3f4a4c10052dddafbb6d22152c9b
+url: https://huggingface.co/datasets/Fhrozen/FSD50k
+license: CC-BY-4.0 for the dataset tables (labels/*.csv, metadata/*.json), per-clip license on each clip below
+authors: Eduardo Fonseca, Xavier Favory, Jordi Pons, Frederic Font, Xavier Serra (Music Technology Group, Universitat Pompeu Fabra)
+citation: 'Eduardo Fonseca, Xavier Favory, Jordi Pons, Frederic Font, Xavier Serra. "FSD50K: an Open Dataset of Human-Labeled Sound Events", arXiv 2020.'
+files:
+  labels/dev.csv: rows 386695, 182351, 371717, 377266 and 336390 of labels/dev.csv, header kept
+  labels/eval.csv: row 327432 of labels/eval.csv, header kept
+  labels/vocabulary.csv: complete copy
+  metadata/dev_clips_info_FSD50K.json: entries 386695, 182351, 371717, 377266 and 336390
+  metadata/eval_clips_info_FSD50K.json: entry 327432
+clips:
+  - id: 386695
+    file: clips/dev/386695.wav
+    title: climbing steps.wav
+    uploader: tommy_mooney
+    license: CC0-1.0
+    url: https://freesound.org/s/386695/
+  - id: 182351
+    file: clips/dev/182351.wav
+    title: Alarm clock beep
+    uploader: Kesu
+    license: CC0-1.0
+    url: https://freesound.org/s/182351/
+  - id: 377266
+    file: clips/dev/377266.wav
+    title: Come.wav
+    uploader: johnnypanic
+    license: CC-BY-3.0
+    url: https://freesound.org/s/377266/
+rows_without_audio:
+  - id: 371717
+    uploader: Iamgiorgio
+    license: CC0-1.0
+    note: metadata only, labels map to no Arena kind
+  - id: 336390
+    uploader: ghaelen
+    license: CC0-1.0
+    note: metadata only, kind onset has no default asset to take a level from
+  - id: 327432
+    uploader: KamilNaidoo23
+    license: CC-BY-NC-3.0
+    note: metadata only, excluded by the license filter

@@ -16,7 +16,6 @@ import tomllib
 from collections.abc import Iterator
 
 EXCLUDED = (
-    "arena_assets",
     "arena_planners/planners",
     "arena_isaac",
     "arena_tools",

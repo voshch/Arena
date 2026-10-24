@@ -1,0 +1,14 @@
+source: CMU ARCTIC speech synthesis databases, http://festvox.org/cmu_arctic/cmu_arctic/
+url: http://festvox.org/cmu_arctic/
+license: CMU ARCTIC license (each voice's COPYING, kept complete here), any use, keep the copyright notice and the authors' names, mark modifications
+authors: John Kominek, Alan W Black (Carnegie Mellon University, Language Technologies Institute)
+citation: 'John Kominek, Alan W Black. "CMU ARCTIC databases for speech synthesis", Carnegie Mellon University, Language Technologies Institute, Tech Report CMU-LTI-03-177, 2003.'
+files:
+  cmuarctic.data: rows arctic_a0001, arctic_a0300 and arctic_a0507 of http://festvox.org/cmu_arctic/cmuarctic.data
+  cmu_arctic/cmu_us_bdl_arctic/etc/txt.done.data: rows arctic_a0001 and arctic_a0002, the voice's transcript has no arctic_a0507
+  cmu_arctic/cmu_us_awb_arctic/etc/txt.done.data: rows arctic_a0001 and arctic_a0300, both read differently from cmuarctic.data
+  cmu_arctic/cmu_us_rms_arctic/etc/txt.done.data: rows arctic_a0001 and arctic_a0002
+  cmu_arctic/cmu_us_*_arctic/COPYING: complete copies, rms is copyright 2004, bdl and awb 2003
+  cmu_arctic/cmu_us_bdl_arctic/wav/arctic_a0507.wav: unchanged
+  cmu_arctic/cmu_us_awb_arctic/wav/arctic_a0300.wav: unchanged
+  cmu_arctic/cmu_us_rms_arctic/wav/arctic_a0001.wav: unchanged

@@ -125,8 +125,8 @@ def diagnostics_of(level: Level) -> Diagnostics:
     )
 
 
-def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[World, Diagnostics]:
-    """Turn a layout into a one-level World plus what the caller should be told about it."""
+def compile_layout(layout: Layout, ceiling: bool = False, grid: float | None = None) -> tuple[World, Diagnostics]:
+    """Turn a layout into a one-level World plus what the caller should be told about it, regions cut on a *grid* in meters when given."""
     geometry = layout.geometry()
     parts = _polygons(geometry)
 
@@ -142,11 +142,11 @@ def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[World, Diagno
     zones: list[Zone] = []
     descriptions: dict[str, str] = {}
     for order, region in enumerate(layout.regions):
-        piece = region.polygon.intersection(geometry)
+        piece = region.polygon.intersection(geometry, grid_size=grid)
         assert neighbours is not None
         earlier = [taken for taken in neighbours.query(region.polygon) if taken < order]
         if earlier:
-            piece = piece.difference(shapely.union_all([claims[taken] for taken in earlier]))
+            piece = piece.difference(shapely.union_all([claims[taken] for taken in earlier]), grid_size=grid)
         for index, part in enumerate(_simple(piece)):
             suffix = '' if index == 0 else f'_{index}'
             fields: dict = {'name': f'{region.name}{suffix}', 'polygon': to_corners(part), **roof}
@@ -155,7 +155,7 @@ def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[World, Diagno
             zones.append(Zone(**fields))
             descriptions[zones[-1].name] = region.description
 
-    leftover = geometry.difference(shapely.union_all(claims)) if claims else geometry
+    leftover = geometry.difference(shapely.union_all(claims), grid_size=grid) if claims else geometry
     for index, part in enumerate(_simple(leftover)):
         zones.append(Zone(name=f'area_{index}', polygon=to_corners(part), **roof))
 

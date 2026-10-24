@@ -3,11 +3,12 @@ from __future__ import annotations
 import fnmatch
 import json
 import typing
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
 
-from arena_mcp.core import Domain, ToolError, cli
+from arena_mcp.core import Domain, Job, ToolError, cli
 
 
 def _ready() -> str | None:
@@ -21,7 +22,8 @@ def _ready() -> str | None:
 domain = Domain(
     "assets",
     """Resolvable Arena data of every kind `arena asset` moves (assets_kinds lists them) through the same code the `arena asset` verbs run.
-    find and ls show what each resolver answers, pull fetches into the local cache, push publishes to the kind's bucket after the preflight that refuses unresolvable references.""",
+    find and ls show what each resolver answers, pull fetches into the local cache, push publishes to the kind's bucket after the preflight that refuses unresolvable references.
+    import_sources lists the upstream datasets `arena asset import` converts from, import_items one dataset's importable items, and import converts chosen items into the imported root as a job.""",
     check=_ready,
 )
 
@@ -89,3 +91,47 @@ def assets_push(
         reason = (done["stderr"] + done["stdout"]).strip().splitlines()[-30:]
         raise ToolError(f"{kind} {name} was not published:\n" + "\n".join(reason), hint="bundle the missing references under the asset directory, or pass force=true")
     return {"kind": kind, "name": name, "published": done["stdout"].strip().splitlines()[-1:]}
+
+
+ImportKind = Annotated[str, Field(description="kind an import writes, assets_import_sources lists them with their sources")]
+Source = Annotated[str, Field(description="upstream dataset of that kind, assets_import_sources lists them")]
+
+
+@domain.tool(read_only=True)
+def assets_import_sources(kind: Annotated[str | None, Field(description="only the sources of this kind")] = None) -> dict[str, object]:
+    """The upstream datasets `arena asset import` converts from, with kind, license verdict, host and granularity."""
+    sources = typing.cast(list[dict[str, object]], _json("asset", "import", *((kind,) if kind else ()), "--json"))
+    return {"count": len(sources), "sources": sources}
+
+
+@domain.tool(read_only=True, open_world=True)
+def assets_import_items(
+    kind: ImportKind,
+    source: Source,
+    pattern: Annotated[str | None, Field(description="glob over the item ids")] = None,
+    limit: Annotated[int, Field(description="most item ids returned, count is the full match")] = 500,
+) -> dict[str, object]:
+    """The importable item ids of one dataset and the root they import into, the list cached like `arena asset import KIND SOURCE`."""
+    listed = typing.cast(dict[str, object], _json("asset", "import", kind, source, "--json", check=False))
+    items = [str(item) for item in typing.cast(list[object], listed["items"])]
+    if pattern is not None:
+        items = [item for item in items if fnmatch.fnmatchcase(item, pattern)]
+    return {"kind": kind, "source": source, "target": listed["target"], "count": len(items), "items": items[:limit]}
+
+
+def _imported(job: Job) -> dict[str, object]:
+    lines = job.log_path.read_text().splitlines() if job.log_path.is_file() else []
+    return {"paths": [line for line in lines if line.startswith("/") and Path(line).is_dir()]}
+
+
+@domain.tool(open_world=True, idempotent=True)
+async def assets_import(
+    kind: ImportKind,
+    source: Source,
+    items: Annotated[list[str], Field(description="item ids of that source, assets_import_items lists them", min_length=1)],
+) -> dict[str, object]:
+    """Convert items of one dataset into the imported root the resolvers read, each with an ATTRIBUTION.yaml, as a job whose result lists the item paths."""
+    if (kind, source) not in {(str(row["kind"]), str(row["name"])) for row in typing.cast(list[dict[str, object]], _json("asset", "import", "--json"))}:
+        raise ToolError(f"no {kind} import source {source!r}", hint="assets_import_sources lists the sources by kind")
+    job = await cli.job("import", f"import {kind} {source} {' '.join(items)}", "asset", "import", kind, source, *items, result=_imported)
+    return job.as_dict()

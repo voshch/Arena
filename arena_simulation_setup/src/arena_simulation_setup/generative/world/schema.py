@@ -6,6 +6,7 @@ helpers, so the descriptor mini-DSL (label/range tokens) has a single producer.
 
 from __future__ import annotations
 
+import types
 import typing
 
 import pydantic
@@ -61,7 +62,7 @@ def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls
 
         origin = typing.get_origin(annotation)
         args = typing.get_args(annotation)
-        if origin is typing.Union:
+        if origin in (typing.Union, types.UnionType):
             non_none = [a for a in args if a is not type(None)]
             if len(non_none) == 1:
                 annotation = non_none[0]
@@ -81,7 +82,7 @@ def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls
         if annotation is bool:
             declare_bool(node, name, bool(default), label=label)
         elif annotation is int:
-            declare_int(node, name, int(default), label=label, lo=int(ge) if ge is not None else None, hi=int(le) if le is not None else None)
+            declare_int(node, name, default, label=label, lo=int(ge) if ge is not None else None, hi=int(le) if le is not None else None)
         elif annotation is float:
             declare_double(node, name, float(default), label=label, lo=float(ge) if ge is not None else None, hi=float(le) if le is not None else None)
         elif annotation is str:
