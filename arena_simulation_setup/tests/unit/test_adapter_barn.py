@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import contextlib
 import functools
 import http.server
@@ -155,7 +156,7 @@ def test_cli_import_lands_where_the_world_resolver_looks(tmp_path: Path) -> None
 def test_cli_refuses_a_number_outside_the_challenge_without_a_traceback(tmp_path: Path) -> None:
     refused = subprocess.run([sys.executable, "-m", "arena_assets", "import", "world", "barn", "300", "--cache", str(tmp_path / "cache"), "--out", str(tmp_path / "out")], capture_output=True, text=True, check=False)
     assert refused.returncode == 2
-    assert "0 to 299" in " ".join(refused.stderr.replace("\u2502", " ").split())
+    assert "0 to 299" in " ".join(re.sub(r"\x1b\[[0-9;]*m", "", refused.stderr).replace("\u2502", " ").split())
     assert "Traceback" not in refused.stderr
     assert not (tmp_path / "out").exists()
 

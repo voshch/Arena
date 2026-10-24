@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import csv
 import importlib.util
 import math
@@ -500,7 +501,7 @@ def test_cli_lists_and_imports_an_episode_where_the_resolver_looks(tmp_path: Pat
     assert resolved.stdout.splitlines() == [str(target), "13.4 11.1"]
     refused = subprocess.run([*command, "t_hotel", "--cache", str(cache)], env=env, capture_output=True, text=True)
     assert refused.returncode != 0
-    assert "SocNavBench episode 't_hotel' is left out: SocNavBench plays hotel at 15 fps although hotel was recorded at 25 fps" in " ".join(refused.stderr.replace("\u2502", " ").split())
+    assert "SocNavBench episode 't_hotel' is left out: SocNavBench plays hotel at 15 fps although hotel was recorded at 25 fps" in " ".join(re.sub(r"\x1b\[[0-9;]*m", "", refused.stderr).replace("\u2502", " ").split())
 
 
 def test_imported_episode_plays_on_the_bus_from_the_window_start(rclpy_context, tmp_path: Path) -> None:

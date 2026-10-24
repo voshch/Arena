@@ -72,11 +72,12 @@ class Stage:
         names = sorted(self.realizer.prefix(name) for name in expected)
         deadline = time.monotonic() + DEADLINE_S
         while True:
-            for msg in self.bus[seen:]:
+            upto = len(self.bus)
+            for msg in self.bus[seen:upto]:
                 peds = {ped.name: ped for ped in msg.pedestrians}
                 if _stamp_s(msg) > self.start + t - 1e-6 and sorted(peds) == names and all(xy is None or math.hypot(peds[self.realizer.prefix(name)].pose.position.x - xy[0], peds[self.realizer.prefix(name)].pose.position.y - xy[1]) < 2e-3 for name, xy in expected.items()):
                     return {name: peds[self.realizer.prefix(name)] for name in expected}
-            seen = len(self.bus)
+            seen = upto
             assert time.monotonic() < deadline, f"no bus batch with {expected} at t={t}, last: {[(ped.name, ped.pose.position.x, ped.pose.position.y) for ped in self.bus[-1].pedestrians] if self.bus else None}"
             await asyncio.sleep(0.01)
 
