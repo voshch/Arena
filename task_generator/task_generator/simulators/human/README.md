@@ -421,6 +421,14 @@ whole bounding-box footprint from beside it: the farthest corner from the origin
 seats also go out with their conflicts, the pairs of sit slots that overlap, so the engine never lets two agents
 hold overlapping seats and seats as many sitters as fit together.
 
+Each seat also has the height of the surface a body rests on, sent as `WorldObjectInfo.seat_heights`: a sit slot's
+is the top of its z range, which the asset build measures; a scenario seat's is its `z`, else that of the sit slot it
+lies in or within 15 cm of, so a lying seat along a bed gives its mattress as `z`. Both add the object's own z. The
+engine parks agents on seats in 2D and, once an agent holding a `SIT_ON` or `LIE_ON` has arrived on an explicit seat,
+reports that seat's height in `AgentFrame.support_height`; the adapter passes it on as `Pedestrian.support_height`, for
+the renderer to set the body on the surface. An agent on its feet, on a generated ring slot, beside a full object or on
+a seat of unknown height gets `Pedestrian.NO_SUPPORT`, and the renderer leaves the body where the clip puts it.
+
 The adapter follows the engine's latched `interactions` frame and reports the seat indices the participants of
 every `SIT_ON` and `LIE_ON` hold on an object with annotated seats through `held_seats()`, by object sim path,
 notifying `on_held_seats_change` listeners when they change. Two held seats that overlap compromise the episode
