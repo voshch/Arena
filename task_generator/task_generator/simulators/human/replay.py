@@ -51,18 +51,26 @@ class ReplayHumanSimulator(DummyHumanSimulator):
         return self.node.sim_time.to_seconds()
 
     async def _replay_loop(self) -> None:
+        last_error = ""
         try:
             with self.node.sim_time_rate(RATE_HZ) as (done, rate):
                 while not done.is_set():
                     await rate.get()
-                    await self.replay(self._sim_seconds() - self._episode_start)
+                    try:
+                        await self.replay(self._sim_seconds() - self._episode_start)
+                    except Exception as e:
+                        if repr(e) != last_error:
+                            self._logger.error(f"Error in replay tick: {e}\n{traceback.format_exc()}")
+                        last_error = repr(e)
+                    else:
+                        last_error = ""
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self._logger.error(f"Error in replay loop: {e}\n{traceback.format_exc()}")
 
     async def _keepalive_loop(self) -> None:
-        """Nothing: the replay loop publishes the roster on the sim clock, so a paused sim repeats no roster."""
+        """Publishes nothing, the replay loop publishes the roster."""
 
     async def replay(self, t: float) -> None:
         """Put every tracked pedestrian at episode time t: on the bus and in the sim while its track holds t, gone otherwise."""
@@ -71,8 +79,8 @@ class ReplayHumanSimulator(DummyHumanSimulator):
             return
         batch = Pedestrians()
         batch.header.frame_id = "map"
-        entered: list[DynamicObstacle] = []
-        left: list[DynamicObstacle] = []
+        entered: dict[str, DynamicObstacle] = {}
+        left: dict[str, DynamicObstacle] = {}
         for name, recorded in self._recorded.items():
             if name not in self._ped_model_uris:
                 continue
@@ -80,19 +88,19 @@ class ReplayHumanSimulator(DummyHumanSimulator):
             if state is None:
                 self._cache.pop(name, None)
                 if name in self._in_sim:
-                    self._in_sim.discard(name)
-                    left.append(recorded.obstacle)
+                    left[name] = recorded.obstacle
                 continue
             ped = pedestrian(name, state)
             self._cache[name] = ped
             batch.pedestrians.append(ped)  # pyright: ignore[reportAttributeAccessIssue]
             if name not in self._in_sim:
-                self._in_sim.add(name)
-                entered.append(attrs.evolve(recorded.obstacle, pose=Pose.from_msg(ped.pose)))
+                entered[name] = attrs.evolve(recorded.obstacle, pose=Pose.from_msg(ped.pose))
         if left:
-            await self._simulator.pedestrian_delete(left)
+            await self._simulator.pedestrian_delete(list(left.values()))
+            self._in_sim.difference_update(left)
         if entered:
-            await self._simulator.pedestrian_spawn(await self._ensure_spawnable(entered))
+            await self._simulator.pedestrian_spawn(await self._ensure_spawnable(list(entered.values())))
+            self._in_sim.update(entered)
         self._publish_roster()
         if batch.pedestrians:
             await self.relay_pedestrian_update(batch)

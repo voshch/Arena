@@ -24,6 +24,7 @@ from .utils import to_corners, to_walls, world_of
 
 if typing.TYPE_CHECKING:
     from arena_assets.importers import Attribution
+    from arena_assets.importers.providers import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +45,8 @@ START = (-2.25 + X_SHIFT_M, 3.0, math.pi / 2)
 GOAL = (-2.25 + X_SHIFT_M, 13.0)
 ARENA_WIDTH_M = GRID * CELL_M
 ARENA_DEPTH_M = (2 * CORRIDOR_CELLS + GRID) * CELL_M
-SCENARIO = 'barn'
 LICENSE = 'MIT'
-AUTHORS = 'Daniel Perille, Abigail Truong, Xuesu Xiao, Peter Stone'
+AUTHORS = 'Zifan Xu, Daniel Perille, Abigail Truong, Xuesu Xiao, Peter Stone'
 CITATION = 'Perille et al., Benchmarking Metric Ground Navigation, SSRR 2020, arXiv:2008.13315'
 
 _CYLINDER = re.compile(r"<model name='unit_cylinder_\d+'>\s*<pose[^>]*>\s*(\S+)\s+(\S+)")
@@ -74,10 +74,6 @@ def _scenario(start: tuple[float, float, float], goto: tuple[float, float, float
     }
 
 
-def scenario() -> dict:
-    return _scenario(START, (*GOAL, START[2]))
-
-
 def cache_dir() -> Path:
     return Path(os.environ.get('ARENA_ASSETS_DIR') or ARENA_ASSETS_DIR) / '.import' / PROVIDER
 
@@ -88,12 +84,13 @@ def attribution() -> 'Attribution':
     return Attribution(source='BARN Challenge (the-barn-challenge)', url='https://github.com/Daffan/the-barn-challenge', license=LICENSE, authors=AUTHORS, citation=CITATION)
 
 
-def fetch_world(index: int, root: Path | None = None) -> Path:
+def fetch_world(index: int, root: Path | None = None, provider: 'Provider | None' = None) -> Path:
     from arena_assets.importers import ATTRIBUTION_FILE, write_attribution
     from arena_assets.importers.providers import Http
 
     root = cache_dir() if root is None else root
-    dest = Http(BASE_URL).get(f'{WORLD_DIR}/{world_file(index)}', root / 'worlds' / world_file(index))
+    provider = Http(BASE_URL) if provider is None else provider
+    dest = provider.get(f'{WORLD_DIR}/{world_file(index)}', root / 'worlds' / world_file(index))
     sidecar = root / ATTRIBUTION_FILE
     if not sidecar.is_file():
         write_attribution(sidecar, attribution())
@@ -394,8 +391,10 @@ class WorldGeneratorBarnCanonical(BarnBase):
 class WorldGeneratorBarnAny(WorldGeneratorImpl):
     """The canonical world when `index` is given, the procedural passage otherwise."""
 
-    Configuration = WorldGeneratorBarn.Configuration
+    class Configuration(WorldGeneratorBarn.Configuration):
+        index: int | None = pydantic.Field(None, ge=0, le=WORLDS - 1)  # None = procedural
+        source: str = ''
 
     def __new__(cls, configuration: dict, rng: random.Random) -> WorldGeneratorImpl:
-        impl = WorldGeneratorBarnCanonical if 'index' in configuration else WorldGeneratorBarn
+        impl = WorldGeneratorBarn if configuration.get('index') is None else WorldGeneratorBarnCanonical
         return impl(configuration, rng)

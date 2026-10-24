@@ -167,7 +167,10 @@ class FSD50K(SoundImporter):
                 yield item
 
     def fetch(self, item: str) -> Path:
-        return self._file(CLIP_FILE.format(split=self.clip(item).split, item=item))
+        clip = self.clip(item)
+        if clip.license is None:
+            raise ValueError(f"fsd50k clip {item!r} is not redistributable: {clip.license_url}")
+        return self._file(CLIP_FILE.format(split=clip.split, item=item))
 
     def asset_name(self, item: str) -> str:
         return asset_name(item)

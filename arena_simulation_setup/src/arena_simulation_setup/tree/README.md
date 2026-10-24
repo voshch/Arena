@@ -72,10 +72,11 @@ walks it calling `destination()`.
 | `DynamicPaths.WORLD` | `/dev/null` (set at runtime to the active world directory) |
 | `DynamicPaths.LINKED` | empty (set at runtime to the directories of the worlds the active world links levels from) |
 | `DynamicPaths.ARENA` | `$ARENA_ASSETS_DIR_LOCAL` or `$ARENA_ASSETS_DIR/local`, looked up at every read until a path is assigned |
-| `DynamicPaths.IMPORTED` | `$ARENA_ASSETS_DIR_IMPORTED` or `$ARENA_ASSETS_DIR/_imported`, where `arena asset import` writes |
+| `DynamicPaths.IMPORTED` | `$ARENA_ASSETS_DIR_IMPORTED` or `$ARENA_ASSETS_DIR/_imported` (an empty variable counts as unset), where `arena asset import` writes, looked up at every read until a path is assigned |
 
-`DynamicPaths.as_resolvers(T)` returns three resolvers for a given `Identifier`
-type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, then `ARENA`.
+`DynamicPaths.as_resolvers(T)` returns four resolvers for a given `Identifier`
+type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, `ARENA`, then
+`IMPORTED`.
 
 `point_world_assets(path, linked)` ([World/view.py](World/view.py)) points
 `WORLD` at `path` (`/dev/null` for None) and `LINKED` at `linked`, then

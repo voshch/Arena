@@ -7,7 +7,7 @@ import json
 import re
 import shutil
 import tarfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import shapely
@@ -75,6 +75,11 @@ class Plans:
             self._stream = gzip.open(self.archive)
         self._stream.seek(offset)
         return self._stream.read(size)
+
+    def close(self) -> None:
+        if self._stream is not None:
+            self._stream.close()
+            self._stream = None
 
 
 def _polygons(geometry: shapely.Geometry) -> list[shapely.Polygon]:
@@ -164,6 +169,16 @@ class HouseExpo(Importer):
 
     def items(self) -> Iterator[str]:
         return iter(self.plans.index)
+
+    def close(self) -> None:
+        if self._plans is not None:
+            self._plans.close()
+
+    def import_items(self, items: Iterable[str], out: Path) -> dict[str, Path]:
+        try:
+            return super().import_items(items, out)
+        finally:
+            self.close()
 
     def fetch(self, item: str) -> Path:
         dest = self.cache / PLANS / f"{plan_id(item)}.json"

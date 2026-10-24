@@ -8,7 +8,7 @@ from arena_simulation_setup.generative.world import (
     WorldGenerator,
     WorldGeneratorType,
 )
-from arena_simulation_setup.generative.world.barn import WorldGeneratorBarn
+from arena_simulation_setup.generative.world.barn import WorldGeneratorBarn, WorldGeneratorBarnAny
 from arena_simulation_setup.generative.world.barn_cylinder import WorldGeneratorBarnCylinder
 from arena_simulation_setup.generative.world.empty import WorldGeneratorEmpty
 from arena_simulation_setup.generative.world.hallway import WorldGeneratorHallway
@@ -38,7 +38,8 @@ def test_world_generator_type_barn_value():
 
 def test_barn_registered():
     assert WorldGeneratorType.BARN in WorldGenerator.available()
-    assert WorldGenerator.config_model(WorldGeneratorType.BARN) is WorldGeneratorBarn.Configuration
+    assert WorldGenerator.config_model(WorldGeneratorType.BARN) is WorldGeneratorBarnAny.Configuration
+    assert issubclass(WorldGeneratorBarnAny.Configuration, WorldGeneratorBarn.Configuration)
 
 
 # ---------------------------------------------------------------------------

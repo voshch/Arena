@@ -1,7 +1,7 @@
 source: BARN (Benchmark for Autonomous Robot Navigation)
 url: https://github.com/Daffan/the-barn-challenge
 license: MIT
-authors: Daniel Perille, Abigail Truong, Xuesu Xiao, Peter Stone
+authors: Zifan Xu, Daniel Perille, Abigail Truong, Xuesu Xiao, Peter Stone
 citation: Perille et al., Benchmarking Metric Ground Navigation, SSRR 2020, arXiv:2008.13315
 items:
   - world_0.world: jackal_helper/worlds/BARN/world_0.world at https://raw.githubusercontent.com/Daffan/the-barn-challenge/main/jackal_helper/worlds/BARN/world_0.world (sha256 a7a8129423b0b8fcb20b042646e929115b7dba18215f1c99ff8fa1adaec42d5c), byte-identical to BARN_dataset/world_files/world_0.world in the dataset zip

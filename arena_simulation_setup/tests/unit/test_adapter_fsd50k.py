@@ -304,6 +304,15 @@ def test_cc_by_attribution_stays_with_the_item_through_a_native_rebuild(importer
         importer.attribution("327432")
 
 
+def test_a_clip_outside_cc0_and_cc_by_is_refused_before_download(importer: FSD50K, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match=r"'327432' is not redistributable: http://creativecommons.org/licenses/by-nc/3.0/"):
+        importer.import_item("327432", tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+    assert not (importer.cache / "clips" / "eval").exists()
+    with pytest.raises(KeyError, match="Freesound ids"):
+        importer.fetch("1")
+
+
 @pytest.mark.usefixtures("default_sounds")
 def test_empty_wav_is_rejected(importer: FSD50K, tmp_path: Path) -> None:
     empty = tmp_path / "empty.wav"

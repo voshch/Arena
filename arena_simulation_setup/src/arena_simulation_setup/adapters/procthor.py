@@ -10,7 +10,7 @@ import re
 import shutil
 import typing
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Generator, Iterable, Iterator
 from pathlib import Path
 
 from arena_assets.importers import IMPORTERS, Attribution, Importer, import_root
@@ -64,22 +64,28 @@ class Houses:
 
     def __init__(self, src: Path):
         self.src = src
-        self._lines: Iterator[str] | None = None
+        self._lines: Generator[str, None, None] | None = None
         self._next = 0
 
     def house(self, index: int) -> dict:
         if self._lines is None or index < self._next:
+            self.close()
             self._lines = _lines(self.src)
             self._next = 0
         for line in self._lines:
             self._next += 1
             if self._next > index:
                 return json.loads(line)
-        self._lines = None
+        self.close()
         raise IndexError(f"{self.src} has no house {index}")
 
+    def close(self) -> None:
+        if self._lines is not None:
+            self._lines.close()
+            self._lines = None
 
-def _lines(src: Path) -> Iterator[str]:
+
+def _lines(src: Path) -> Generator[str, None, None]:
     if src.suffix == ".gz":
         with gzip.open(src, "rt") as f:
             yield from f
@@ -262,8 +268,19 @@ class ProcTHOR(Importer):
 
     def house(self, src: Path, index: int) -> dict:
         if self._houses is None or self._houses.src != src:
+            self.close()
             self._houses = Houses(src)
         return self._houses.house(index)
+
+    def close(self) -> None:
+        if self._houses is not None:
+            self._houses.close()
+
+    def import_items(self, items: Iterable[str], out: Path) -> dict[str, Path]:
+        try:
+            return super().import_items(items, out)
+        finally:
+            self.close()
 
     def convert(self, item: str, src: Path, out: Path) -> str:
         _, index = split_item(item)

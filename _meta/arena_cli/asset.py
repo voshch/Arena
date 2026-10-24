@@ -208,8 +208,6 @@ def _net_resolver(kind: str, bucket: str) -> NetResolver:
 
 
 def _assets(*args: str) -> int:
-    import subprocess
-
     return subprocess.call(["ros2", "run", "arena_assets", "arena_assets", *args])
 
 
@@ -441,11 +439,12 @@ def import_(argv: list[str]) -> int:
     registered sources by kind with their license verdict (yes: public bucket with attribution,
     nc: NC prefix only, sa: SA prefix only, no: local use only, unclear), host and granularity
     (item, chunk, bulk). `import KIND` lists the sources of that kind, `import KIND SOURCE` lists
-    that source's items and its default target, cached for tab completion (a day for live hosts, for good for pinned sources). ITEM... or --all converts those items into the
-    imported root ($ARENA_ASSETS_DIR_IMPORTED, worlds under its worlds/), which every resolver
-    reads after the curated local root, or --out DIR, each with an ATTRIBUTION.yaml beside it,
-    and prints every item's path. One source can serve several kinds: `import world barn 17` is
-    one challenge world, `import suite barn barn` the whole benchmark.
+    that source's items and its default target, cached for tab completion (a day for live hosts,
+    for good for pinned sources). ITEM... or --all converts those items into the imported root
+    ($ARENA_ASSETS_DIR_IMPORTED, worlds under its worlds/), which every resolver reads after the
+    curated local root, or --out DIR, each with an ATTRIBUTION.yaml beside it, and prints every
+    item's path. One source can serve several kinds: `import world barn 17` is one challenge
+    world, `import suite barn barn` the whole benchmark.
     """
     pos, opts = _parse(argv, ("KIND", "SOURCE"), flags=("--all",), valued=("--out",), optional=2, variadic=True)
     return _assets("import", *_import_args(pos, opts))
@@ -495,8 +494,11 @@ def _refresh_listing(kind: str, source: str, path: str, now: float) -> None:
 def import_candidates(kind: str, words: list[str], cur: str, ctx: Context) -> dict[str, str]:
     """Sources of the kind before the SOURCE word, then that source's cached items, a stale or missing list refreshed in the background."""
     positional = [word for index, word in enumerate(words) if not word.startswith("--") and not (index and words[index - 1] == "--out")]
+    sources = ctx.values(f"asset.import.{kind}") or {}
     if not positional:
-        return ctx.values(f"asset.import.{kind}") or {}
+        return sources
+    if positional[0] not in sources:
+        return {}
     path = import_listing(kind, positional[0])
     if path is None:
         return {}

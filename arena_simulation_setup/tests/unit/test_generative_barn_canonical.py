@@ -162,12 +162,9 @@ def test_start_and_goal_are_the_challenge_poses_and_clear_of_walls(generator):
 
 
 def test_scenario_file_and_episode_binding(generator):
-    from arena_simulation_setup.generative.world.barn import scenario
-
     files = generator.files()
     assert list(files) == ["scenarios/barn/scenario.yaml"]
     content = yaml.safe_load(files["scenarios/barn/scenario.yaml"])
-    assert content == scenario()
     assert content == {"format": "arena-scenario/2", "robots": [{"start": [2.25, 3.0, 1.571], "phases": [{"goto": [2.25, 13.0, 1.571]}]}]}
     assert generator.params() == {"tm_robots": "scenario", "robots_params": {"file": "barn"}}
 
@@ -222,24 +219,72 @@ def test_default_cache_is_the_import_cache():
 
 def test_index_dispatches_between_canonical_and_procedural():
     from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
-    from arena_simulation_setup.generative.world.barn import WorldGeneratorBarn, WorldGeneratorBarnCanonical
+    from arena_simulation_setup.generative.world.barn import WorldGeneratorBarn, WorldGeneratorBarnAny, WorldGeneratorBarnCanonical
 
+    model = WorldGenerator.config_model(WorldGeneratorType.BARN)
+    assert model is WorldGeneratorBarnAny.Configuration
+    assert set(model.model_fields) == set(WorldGeneratorBarn.Configuration.model_fields) | {"index", "source"}
+    defaults = model().model_dump()
+    assert (defaults["index"], defaults["source"]) == (None, "")
     canonical = WorldGenerator(WorldGeneratorType.BARN, {"index": INDEX, "source": str(FIXTURE.parent)})
     assert isinstance(canonical._active, WorldGeneratorBarnCanonical)
     assert len(_raw(canonical.compute().levels["0"])) == BOUNDARY_WALLS + SIDES * CELLS
-    procedural = WorldGenerator(WorldGeneratorType.BARN, {}, seed=0)
-    assert isinstance(procedural._active, WorldGeneratorBarn)
-    assert WorldGenerator.config_model(WorldGeneratorType.BARN) is WorldGeneratorBarn.Configuration
-    assert "index" not in WorldGeneratorBarn.Configuration.model_fields
+    every_field = WorldGenerator(WorldGeneratorType.BARN, {**defaults, "index": INDEX, "source": str(FIXTURE.parent)})
+    assert isinstance(every_field._active, WorldGeneratorBarnCanonical)
+    assert _segments(_raw(every_field.compute().levels["0"])) == _segments(_raw(canonical.compute().levels["0"]))
+    for configuration in ({}, {"index": None}, defaults):
+        procedural = WorldGenerator(WorldGeneratorType.BARN, configuration, seed=0)
+        assert isinstance(procedural._active, WorldGeneratorBarn)
+        assert _segments(_raw(procedural.compute().levels["0"])) == _segments(_raw(WorldGenerator(WorldGeneratorType.BARN, {}, seed=0).compute().levels["0"]))
+
+
+def test_ros_node_declares_index_and_source_and_dispatches_on_them():
+    pytest.importorskip("world_generator_msgs")
+    import json
+
+    import world_generator_msgs.srv
+    from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
+    from arena_simulation_setup.generative.world.barn import WorldGeneratorBarn, WorldGeneratorBarnCanonical
+    from arena_simulation_setup.generative.world.layout import diagnostics_of
+    from arena_simulation_setup.generative.world.world_generator_ros import WorldGeneratorROS
+    from rclpy.parameter import Parameter
+
+    canonical = list(diagnostics_of(WorldGenerator(WorldGeneratorType.BARN, {"index": INDEX, "source": str(FIXTURE.parent)}).compute().all_levels[0]).extent)
+    procedural = list(diagnostics_of(WorldGenerator(WorldGeneratorType.BARN, {}, seed=0).compute().all_levels[0]).extent)
+    assert canonical != pytest.approx(procedural)
+
+    def preview(config: str = "") -> world_generator_msgs.srv.GenerateWorld.Response:
+        request = world_generator_msgs.srv.GenerateWorld.Request(generator="barn", config=config, preview_only=True)
+        response = node._cb_generate_world(request, world_generator_msgs.srv.GenerateWorld.Response())
+        assert response.success, response.message
+        return response
+
+    node = WorldGeneratorROS()
+    try:
+        declared = node.get_parameters_by_prefix("algorithm.barn")
+        assert (declared["index"].value, declared["source"].value) == (None, "")
+        assert list(preview().extent) == pytest.approx(procedural)
+        assert isinstance(node._active, WorldGeneratorBarn)
+        assert list(preview(json.dumps({"index": INDEX, "source": str(FIXTURE.parent)})).extent) == pytest.approx(canonical)
+        assert isinstance(node._active, WorldGeneratorBarnCanonical)
+        node.set_parameters([Parameter("algorithm.barn.index", value=INDEX), Parameter("algorithm.barn.source", value=str(FIXTURE.parent))])
+        assert list(preview().extent) == pytest.approx(canonical)
+        assert isinstance(node._active, WorldGeneratorBarnCanonical)
+    finally:
+        node.destroy_node()
 
 
 def test_index_outside_the_challenge_is_rejected():
     import pydantic
     from arena_simulation_setup.generative.world.barn import WorldGeneratorBarnCanonical
 
+    from arena_simulation_setup.generative.world.barn import WorldGeneratorBarnAny
+
     for index in (-1, 300):
         with pytest.raises(pydantic.ValidationError):
             WorldGeneratorBarnCanonical({"index": index}, random.Random(0))
+        with pytest.raises(pydantic.ValidationError):
+            WorldGeneratorBarnAny.Configuration.model_validate({"index": index})
 
 
 def test_off_lattice_cylinder_is_rejected(tmp_path: Path):

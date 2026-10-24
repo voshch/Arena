@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
+import functools
+import http.server
 import os
 import shutil
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -59,6 +64,42 @@ def test_item_outside_the_challenge_is_refused(importer, item: str) -> None:
 
 def test_fetch_keeps_a_cached_world_file(importer) -> None:
     assert importer.fetch("0") == importer.cache / "worlds" / FIXTURE.name
+
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+@contextlib.contextmanager
+def serving(root: Path) -> Iterator[str]:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(root)))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_fetch_downloads_through_the_injected_provider_into_the_generator_cache_layout(tmp_path: Path) -> None:
+    from arena_simulation_setup.adapters.barn import BARNWorld
+    from arena_simulation_setup.generative.world.barn import WORLD_DIR, fetch_world
+
+    from arena_assets.importers import ATTRIBUTION_FILE, read_attribution
+    from arena_assets.importers.providers import Http
+
+    upstream = tmp_path / "upstream" / WORLD_DIR
+    upstream.mkdir(parents=True)
+    shutil.copy(FIXTURE, upstream / FIXTURE.name)
+    with serving(tmp_path / "upstream") as url:
+        fetched = BARNWorld(cache=tmp_path / "cache", provider=Http(url)).fetch("0")
+        assert fetch_world(0, tmp_path / "direct", Http(url)) == tmp_path / "direct" / "worlds" / FIXTURE.name
+    assert fetched == tmp_path / "cache" / "worlds" / FIXTURE.name
+    assert fetched.read_bytes() == FIXTURE.read_bytes() == (tmp_path / "direct" / "worlds" / FIXTURE.name).read_bytes()
+    assert read_attribution(tmp_path / "cache" / ATTRIBUTION_FILE) == read_attribution(tmp_path / "direct" / ATTRIBUTION_FILE)
 
 
 def test_import_writes_a_world_the_world_tree_loads(importer, tmp_path: Path) -> None:

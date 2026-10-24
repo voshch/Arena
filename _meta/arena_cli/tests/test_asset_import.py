@@ -109,6 +109,19 @@ def test_item_position_offers_the_cached_items_by_prefix(assets_dir) -> None:
     assert candidates(["world", "barn", "--out", "/tmp/x"], "2") == ["2"]
 
 
+@pytest.mark.parametrize("source", ["bogus", "../../escaped_by_completion", "barn/../houseexpo", ""])
+def test_item_position_after_an_unregistered_source_offers_nothing_and_touches_nothing(assets_dir, source: str) -> None:
+    assert candidates(["world", source]) == []
+    assert candidates(["world", source], "1") == []
+    assert os.listdir(assets_dir) == []
+    assert not os.path.exists(os.path.join(os.path.dirname(assets_dir), "escaped_by_completion"))
+
+
+def test_cached_items_of_an_unregistered_source_are_not_offered(assets_dir) -> None:
+    cache_items(assets_dir, "bogus", ["0", "1"], None)
+    assert candidates(["world", "bogus"]) == []
+
+
 def test_item_position_caps_a_long_list(assets_dir) -> None:
     cache_items(assets_dir, "houseexpo", [f"{index:032x}" for index in range(2000)], time.time() + 60)
     assert len(candidates(["world", "houseexpo"])) == ITEM_CANDIDATES

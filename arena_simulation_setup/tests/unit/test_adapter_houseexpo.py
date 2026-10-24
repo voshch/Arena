@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import math
@@ -284,6 +285,36 @@ def test_items_are_the_plan_ids_in_archive_order(importer) -> None:
     index = json.loads((importer.cache / "index.json").read_text())
     assert list(index) == [plan["id"] for plan in PLANS]
     assert all(size == len(json.dumps(plan)) for plan, (_, size) in zip(PLANS, index.values(), strict=True))
+
+
+def _open_handles(path: Path) -> int:
+    target = os.path.realpath(path)
+    count = 0
+    for fd in os.listdir("/proc/self/fd"):
+        with contextlib.suppress(OSError):
+            count += os.readlink(f"/proc/self/fd/{fd}") == target
+    return count
+
+
+def test_closing_the_plans_releases_the_archive_and_a_later_read_reopens_it(tmp_path: Path) -> None:
+    from arena_simulation_setup.adapters.houseexpo import Plans
+
+    src = archive(tmp_path / "json.tar.gz", *PLANS)
+    plans = Plans(src)
+    assert json.loads(plans.read(PINCH_ITEM)) == PINCH
+    assert json.loads(plans.read(ROOMS_ITEM)) == ROOMS
+    assert _open_handles(src) == 1
+    plans.close()
+    assert _open_handles(src) == 0
+    assert json.loads(plans.read(ITEM)) == HOUSE
+    plans.close()
+    plans.close()
+    assert _open_handles(src) == 0
+
+
+def test_importing_items_releases_the_archive(importer, tmp_path: Path) -> None:
+    assert sorted(importer.import_items([ROOMS_ITEM, ITEM], tmp_path / "worlds")) == sorted([ROOMS_ITEM, ITEM])
+    assert _open_handles(importer.cache / "json.tar.gz") == 0
 
 
 def test_archive_is_indexed_once_and_read_from_one_stream(tmp_path: Path) -> None:

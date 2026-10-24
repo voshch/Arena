@@ -9,11 +9,9 @@ from pathlib import Path
 from arena_assets.importers import IMPORTERS, Attribution, Importer, import_root
 from arena_assets.importers.providers import Http, Provider
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
-from arena_simulation_setup.generative.world.barn import BASE_URL, WORLD_DIR, WORLDS, attribution, world_file, world_name
+from arena_simulation_setup.generative.world.barn import BASE_URL, WORLDS, attribution, fetch_world, world_name
 from arena_simulation_setup.generative.world.world_generator import save_generated
 from arena_simulation_setup.tree.World import WorldView, derive
-
-SOURCES = "worlds"
 
 
 def world_index(item: str) -> int:
@@ -46,8 +44,7 @@ class BARNWorld(Importer):
         return (str(index) for index in range(WORLDS))
 
     def fetch(self, item: str) -> Path:
-        name = world_file(world_index(item))
-        return self.provider.get(f"{WORLD_DIR}/{name}", self.cache / SOURCES / name)
+        return fetch_world(world_index(item), self.cache, self.provider)
 
     def convert(self, item: str, src: Path, out: Path) -> str:
         index = world_index(item)
