@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import re
-import contextlib
-import functools
-import http.server
 import os
 import shutil
 import subprocess
 import sys
-import threading
-from collections.abc import Iterator
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -19,11 +15,6 @@ import pytest
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "barn" / "world_0.world"
 WORLD = "barn_0"
 FILES = ["ATTRIBUTION.yaml", "kg.yaml", "map/0.png", "map/0.yaml", "scenarios/barn/scenario.yaml", "world.yaml"]
-
-
-@pytest.fixture(autouse=True)
-def _gate():
-    pytest.importorskip("arena_assets.importers")
 
 
 def seed(cache: Path) -> Path:
@@ -67,25 +58,7 @@ def test_fetch_keeps_a_cached_world_file(importer) -> None:
     assert importer.fetch("0") == importer.cache / "worlds" / FIXTURE.name
 
 
-class Quiet(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args: object) -> None:
-        pass
-
-
-@contextlib.contextmanager
-def serving(root: Path) -> Iterator[str]:
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(root)))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
-
-
-def test_fetch_downloads_through_the_injected_provider_into_the_generator_cache_layout(tmp_path: Path) -> None:
+def test_fetch_downloads_through_the_injected_provider_into_the_generator_cache_layout(tmp_path: Path, serving: Callable) -> None:
     from arena_simulation_setup.adapters.barn import BARNWorld
     from arena_simulation_setup.generative.world.barn import WORLD_DIR, fetch_world
 

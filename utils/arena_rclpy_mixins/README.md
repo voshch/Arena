@@ -132,3 +132,11 @@ time. After a signal, `SIGINT` stays ignored.
 Optional `aiomonitor` integration: override `aiomonitor_config()` on the node
 to return kwargs for `aiomonitor.start_monitor`, then pass `aiomonitor=True`
 to `run_main`.
+
+## Testing
+
+`testing.py` holds the spin helpers ROS-tier tests share. `spin_until(rclpy,
+nodes, predicate, timeout_sec)` spins nodes round-robin until the predicate holds
+and raises `AssertionError` at the deadline. `spin_in_background(rclpy, node,
+stop)` spins one node on a daemon thread until the event is set. It imports rclpy,
+so test modules load it through `pytest.importorskip`.

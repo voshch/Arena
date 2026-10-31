@@ -52,14 +52,6 @@ def _world(out: Path):
     return WorldIdentifier(WORLD).load(out / WORLD)
 
 
-def test_registry_target_is_the_class() -> None:
-    from arena_assets.importers import IMPORTERS
-
-    from task_generator.adapters.madras import MADRAS
-
-    assert IMPORTERS.load("scenario", "madras") is MADRAS
-
-
 def test_items_are_the_topview_sequences(importer) -> None:
     assert list(importer.items()) == ["topview_1a", "topview_2b"]
     with pytest.raises(KeyError, match="items: topview_1a, topview_2b"):

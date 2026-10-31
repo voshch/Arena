@@ -1,15 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 def test_obstacle_layer_ordering():
     from task_generator.simulators.human.utils import ObstacleLayer

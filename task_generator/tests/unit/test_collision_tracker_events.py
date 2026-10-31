@@ -37,6 +37,7 @@ class Stage:
         self.reset_start = probe.create_publisher(std_msgs.msg.Empty, "/reset_start", 1)
         self.trackers: list = []
         self.armed_ns = 0
+        self.listened: dict[int, tuple] = {}
 
     def robot_manager(self):
         from arena_rclpy_mixins.shared import Namespace
@@ -79,6 +80,7 @@ class Stage:
         msg_type, topic, publisher = (nav2_msgs.msg.CollisionMonitorState, "collision_monitor_state", tracker._pub_state.publisher) if state else (arena_robots_msgs.msg.CollisionEvents, "collision_events", tracker._pub_events)
         self.probe.create_subscription(msg_type, f"{tracker.get_namespace()}/{topic}", received.append, 10)
         await _until(lambda: publisher.get_subscription_count() > 0, f"the {topic} subscription")
+        self.listened[id(received)] = (msg_type, publisher)
         return received
 
     async def arm(self, tracker) -> None:
@@ -111,10 +113,13 @@ class Stage:
         return list(received[-1].events)
 
     async def silent_tick(self, tracker, received: list) -> None:
+        msg_type, publisher = self.listened[id(received)]
         seen = len(received)
         tracker._tick()
-        await asyncio.sleep(0.3)
-        assert len(received) == seen
+        publisher.publish(msg_type())
+        await _until(lambda: len(received) > seen, "the marker after a silent tick")
+        assert received[seen:] == [msg_type()]
+        received.pop()
 
 
 @pytest.fixture

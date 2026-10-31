@@ -8,6 +8,8 @@ import uuid
 import pytest
 import yaml
 
+_spin_in_background = pytest.importorskip("arena_rclpy_mixins.testing").spin_in_background
+
 
 @pytest.fixture(autouse=True)
 def _ros_gate():
@@ -35,16 +37,6 @@ def lid_box(tmp_path):
     DynamicPaths.ARENA.path = tmp_path
     yield f"Storage/{name}"
     DynamicPaths.ARENA.path = previous
-
-
-def _spin_in_background(rclpy, node, stop: threading.Event) -> threading.Thread:
-    def _spin() -> None:
-        while not stop.is_set():
-            rclpy.spin_once(node, timeout_sec=0.02)
-
-    thread = threading.Thread(target=_spin, daemon=True)
-    thread.start()
-    return thread
 
 
 def test_the_human_simulator_spawns_replaces_and_removes_an_articulated_obstacle_by_its_links(rclpy_context, lid_box):

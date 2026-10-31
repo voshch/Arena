@@ -89,24 +89,18 @@ def test_is_entity_ref(value: object, expected: bool):
     assert Vocabulary(["core@2"]).is_entity_ref(value) is expected
 
 
-def test_package_file_name_must_match_declared_key(tmp_path):
+@pytest.mark.parametrize(
+    ("toml", "message"),
+    [
+        ('name = "extra"\nversion = 2\n', r"declares package 'extra@2'"),
+        ('name = "extra"\nversion = 1\n[verbs.hugs]\nfrom = ["room"]\n', r"verbs.hugs misses required key\(s\) 'to'"),
+        ('name = "extra"\nversion = 1\n[nodes.tag]\nprops = ["label"]\npropless = true\n', r"nodes.tag is propless"),
+    ],
+)
+def test_malformed_package_is_rejected(tmp_path, toml: str, message: str):
     path = tmp_path / "extra@1.toml"
-    path.write_text('name = "extra"\nversion = 2\n')
-    with pytest.raises(ValueError, match=r"declares package 'extra@2'"):
-        load_package(path)
-
-
-def test_package_verb_without_to_is_rejected(tmp_path):
-    path = tmp_path / "extra@1.toml"
-    path.write_text('name = "extra"\nversion = 1\n[verbs.hugs]\nfrom = ["room"]\n')
-    with pytest.raises(ValueError, match=r"verbs.hugs misses required key\(s\) 'to'"):
-        load_package(path)
-
-
-def test_propless_node_with_props_is_rejected(tmp_path):
-    path = tmp_path / "extra@1.toml"
-    path.write_text('name = "extra"\nversion = 1\n[nodes.tag]\nprops = ["label"]\npropless = true\n')
-    with pytest.raises(ValueError, match=r"nodes.tag is propless"):
+    path.write_text(toml)
+    with pytest.raises(ValueError, match=message):
         load_package(path)
 
 

@@ -8,6 +8,8 @@ import uuid
 
 import pytest
 
+MARKER = "quiet_marker"
+
 
 @pytest.fixture(autouse=True)
 def _ros_gate(requires_auditory):
@@ -74,6 +76,19 @@ def _with_backend(body):
     return asyncio.run(main())
 
 
+async def _flush(backend, received: list[tuple[str, bool]]) -> None:
+    """Send a marker down the source publisher until it arrives, so everything published before it has."""
+    from arena_auditory_msgs.msg import ContinuousAudioSourceState
+
+    marker = ContinuousAudioSourceState()
+    marker.source.id = MARKER
+    deadline = time.monotonic() + 5.0
+    while not any(source == MARKER for source, _ in received):
+        assert time.monotonic() < deadline, "the marker never got through"
+        backend._source_publisher.publish(marker)
+        await asyncio.sleep(0.02)
+
+
 def test_source_msg_maps_wav_variants_to_wav_loop() -> None:
     from builtin_interfaces.msg import Time
     from task_generator.simulators.acoustics.arena.arena import ArenaAcousticsSimulator
@@ -132,9 +147,9 @@ def test_a_removed_sounding_source_repeats_inactive(rclpy_context) -> None:
         while len(received) < 2 + INACTIVE_REPEATS:
             assert time.monotonic() < deadline, f"received so far: {received}"
             await asyncio.sleep(0.02)
-        await asyncio.sleep(0.2)
+        await _flush(backend, received)
         node.destroy_subscription(sub)
-        return received
+        return [entry for entry in received if entry[0] != MARKER]
 
     received = _with_backend(body)
     assert received[:2] == [("environment:env_0/radio", True), ("environment:env_0/alarm", False)]
@@ -165,8 +180,8 @@ def test_a_source_cleared_at_reset_does_not_retire(rclpy_context) -> None:
         for _ in range(INACTIVE_REPEATS + 2):
             await asyncio.sleep(0.05)
             backend.emit_sounds([])
-        await asyncio.sleep(0.5)
+        await _flush(backend, received)
         node.destroy_subscription(sub)
-        return received
+        return [entry for entry in received if entry[0] != MARKER]
 
     assert _with_backend(body) == [("environment:env_0/radio", True)]

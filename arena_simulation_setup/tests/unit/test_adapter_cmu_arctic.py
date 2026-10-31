@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import contextlib
-import functools
-import http.server
 import shutil
-import threading
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -54,24 +50,6 @@ def library(default_sounds: SoundLibrary) -> Iterator[SoundLibrary]:
         library.use_world(None)
 
 
-class Quiet(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args: object) -> None:
-        pass
-
-
-@contextlib.contextmanager
-def serving(root: Path) -> Iterator[str]:
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(root)))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
-
-
 def test_registry_loads_this_class() -> None:
     assert IMPORTERS.load("sound", "cmu_arctic") is CMUArctic
     assert CMUArctic.meta.kind == "sound"
@@ -87,13 +65,13 @@ def test_item_ids_are_a_known_voice_and_an_utterance() -> None:
             split_item(bad)
 
 
-def test_utterances_are_the_wavs_in_the_voice_directory_listing(tmp_path: Path) -> None:
+def test_utterances_are_the_wavs_in_the_voice_directory_listing(tmp_path: Path, serving: Callable) -> None:
     with serving(FIXTURE) as base:
         importer = CMUArctic(cache=tmp_path / "cache", provider=Http(base))
         assert {voice: importer.utterances(voice) for voice in ("bdl", "awb", "rms")} == {"bdl": ["a0507"], "awb": ["a0300"], "rms": ["a0001"]}
 
 
-def test_missing_utterance_names_the_listing_to_pick_from(tmp_path: Path) -> None:
+def test_missing_utterance_names_the_listing_to_pick_from(tmp_path: Path, serving: Callable) -> None:
     with serving(FIXTURE) as base:
         importer = CMUArctic(cache=tmp_path / "cache", provider=Http(base))
         with pytest.raises(KeyError, match=r"no utterance 'a0001' for voice 'bdl', .*/cmu_us_bdl_arctic/wav/ lists them"):

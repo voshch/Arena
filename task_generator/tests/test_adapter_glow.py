@@ -56,14 +56,6 @@ def _world(out: Path):
     return WorldIdentifier(WORLD).load(out / WORLD)
 
 
-def test_registry_target_is_the_class() -> None:
-    from arena_assets.importers import IMPORTERS
-
-    from task_generator.adapters.glow import GLOW
-
-    assert IMPORTERS.load("scenario", "glow") is GLOW
-
-
 def test_items_are_the_five_minute_periods_with_rows(importer) -> None:
     assert list(importer.items()) == ["2019-11-09T1800", "2019-11-09T1805"]
     assert importer.periods()["bounds"] == pytest.approx([0.0, -2.0, 9.0, 6.0])

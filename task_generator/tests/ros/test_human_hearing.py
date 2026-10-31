@@ -7,6 +7,8 @@ import uuid
 
 import pytest
 
+_spin_in_background = pytest.importorskip("arena_rclpy_mixins.testing").spin_in_background
+
 
 @pytest.fixture(autouse=True)
 def _ros_gate():
@@ -14,16 +16,6 @@ def _ros_gate():
     pytest.importorskip("arena_people_msgs.msg")
     pytest.importorskip("task_generator_msgs.msg")
     pytest.importorskip("arena_runtime_msgs.srv")
-
-
-def _spin_in_background(rclpy, node, stop: threading.Event) -> threading.Thread:
-    def _spin() -> None:
-        while not stop.is_set():
-            rclpy.spin_once(node, timeout_sec=0.02)
-
-    thread = threading.Thread(target=_spin, daemon=True)
-    thread.start()
-    return thread
 
 
 def _heard_state(listener_id: str, sound_type: str, audible: bool, *, source_id: str = "environment:alarm_0", active: bool = True):

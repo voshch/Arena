@@ -1,17 +1,8 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
 
 
 @pytest.fixture()
@@ -386,17 +377,6 @@ def test_realize_dynamic_obstacle_empty_waypoints(realizer):
     )
     result = realizer.realize(obs)
     assert result.waypoints == []
-
-
-def test_realize_position_inverse_round_trip(realizer):
-    from arena_simulation_setup.utils.geometry import Position
-
-    p = Position(x=5.0, y=-3.0, z=1.0)
-    forward = realizer._realize_position(p)
-    back = realizer._realize_position_inv(forward)
-    assert math.isclose(back.x, p.x, abs_tol=1e-9)
-    assert math.isclose(back.y, p.y, abs_tol=1e-9)
-    assert math.isclose(back.z, p.z, abs_tol=1e-9)
 
 
 def test_realize_unknown_type_raises(realizer):

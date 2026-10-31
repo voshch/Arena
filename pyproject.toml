@@ -20,7 +20,7 @@ members = [
 
 [tool.pytest.ini_options]
 norecursedirs = ["deps", ".git", ".venv", "build", "install", "log", "_meta"]
-addopts = "-ra --strict-markers --import-mode=importlib"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not network'"
 markers = ["network: hits the live upstream host"]
 
 [project]

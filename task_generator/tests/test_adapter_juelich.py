@@ -68,15 +68,6 @@ def _world(out: Path, name: str):
     return WorldIdentifier(name).load(out / name)
 
 
-def test_registry_target_is_the_class() -> None:
-    from arena_assets.importers import IMPORTERS
-
-    from task_generator.adapters.juelich import Juelich
-
-    assert IMPORTERS.load("scenario", "juelich") is Juelich
-    assert Juelich.meta.kind == "scenario"
-
-
 def test_items_name_a_set_and_a_run(importer) -> None:
     from task_generator.adapters.juelich import split_item
 

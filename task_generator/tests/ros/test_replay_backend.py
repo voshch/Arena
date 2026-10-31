@@ -20,6 +20,7 @@ PREFIX = "env"
 START_S = 100.0
 TICK_S = 1.0 / 30.0
 DEADLINE_S = 20.0
+MARKER = "quiet_marker"
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +36,7 @@ def _stamp_s(msg) -> float:
 
 
 class Stage:
-    def __init__(self, node, probe, clock, realizer, simulator, human, environment, bus: list) -> None:
+    def __init__(self, node, probe, clock, realizer, simulator, human, environment, bus: list, marker) -> None:
         self.node = node
         self.probe = probe
         self.clock = clock
@@ -44,6 +45,7 @@ class Stage:
         self.human = human
         self.environment = environment
         self.bus = bus
+        self.marker = marker
         self.now = START_S
 
     async def advance(self, t: float) -> None:
@@ -80,6 +82,26 @@ class Stage:
             seen = upto
             assert time.monotonic() < deadline, f"no bus batch with {expected} at t={t}, last: {[(ped.name, ped.pose.position.x, ped.pose.position.y) for ped in self.bus[-1].pedestrians] if self.bus else None}"
             await asyncio.sleep(0.01)
+
+    async def quiet(self) -> int:
+        """Let the wall clock run with the sim clock stopped and return the batch count, which must not grow while a marker gets through."""
+        from arena_people_msgs.msg import Pedestrians
+        from std_msgs.msg import Header
+
+        await asyncio.sleep(0.3)
+        count = len(self.bus)
+        await asyncio.sleep(0.6)
+        deadline = time.monotonic() + DEADLINE_S
+        while self.marker.get_subscription_count() == 0:
+            assert time.monotonic() < deadline, "the bus subscription never matched the marker"
+            await asyncio.sleep(0.01)
+        self.marker.publish(Pedestrians(header=Header(frame_id=MARKER)))
+        while not any(msg.header.frame_id == MARKER for msg in self.bus[count:]):
+            assert time.monotonic() < deadline, "the marker never got through the bus"
+            await asyncio.sleep(0.01)
+        assert [msg.header.frame_id for msg in self.bus[count:]] == [MARKER]
+        del self.bus[count:]
+        return count
 
 
 def _on_stage(body: Callable[[Stage], Awaitable[None]]) -> None:
@@ -150,7 +172,7 @@ def _on_stage(body: Callable[[Stage], Awaitable[None]]) -> None:
             human = await HumanSimulatorRegistry.get(Constants.HumanSimulator.REPLAY, node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
             assert type(human) is ReplayHumanSimulator
             environment = EnvironmentManager(node=node, simulator=simulator, human_simulator=human, realizer=realizer)
-            stage = Stage(node, probe, clock, realizer, simulator, human, environment, bus)
+            stage = Stage(node, probe, clock, realizer, simulator, human, environment, bus, probe.create_publisher(Pedestrians, str(ns("arena_peds")), 10))
             await stage.advance(START_S)
             await body(stage)
         finally:
@@ -310,23 +332,16 @@ def test_a_stopped_sim_clock_repeats_no_roster(rclpy_context, tmp_path: Path) ->
     stood = scenario("stood", [{"name": "idle", "model": "arenian", "pose": [7.0, 7.0, 0.0]}])
     idle = (7.0 + OFFSET[0], 7.0 + OFFSET[1])
 
-    async def quiet(stage: Stage) -> int:
-        await asyncio.sleep(0.3)
-        count = len(stage.bus)
-        await asyncio.sleep(0.6)
-        assert len(stage.bus) == count
-        return count
-
     async def body(stage: Stage) -> None:
         await stage.play(walked)
         await stage.at(1.5, {"walker": (1.5 + OFFSET[0], 3.0 + OFFSET[1])})
-        ended = await quiet(stage)
+        ended = await stage.quiet()
 
         await stage.play(stood)
-        assert await quiet(stage) == ended
+        assert await stage.quiet() == ended
         await stage.at(0.5, {"idle": idle})
         assert all(ped.name == f"{PREFIX}/idle" for msg in stage.bus[ended:] for ped in msg.pedestrians)
-        await quiet(stage)
+        await stage.quiet()
 
     _on_stage(body)
 

@@ -3,16 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 def _param(name: str):
     from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue

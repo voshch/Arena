@@ -1,15 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 def test_tm_obstacles_default_returns_random():
     from task_generator.constants import Constants

@@ -274,6 +274,7 @@ dependencies = [
 
 [package.optional-dependencies]
 test = [
+    { name = "hypothesis" },
     { name = "pytest" },
 ]
 
@@ -281,6 +282,7 @@ test = [
 requires-dist = [
     { name = "aiomonitor", specifier = ">=0.7.1" },
     { name = "attrs" },
+    { name = "hypothesis", marker = "extra == 'test'" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
     { name = "pyyaml" },
     { name = "typing-extensions" },

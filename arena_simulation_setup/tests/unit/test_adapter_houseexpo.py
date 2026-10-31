@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import io
 import json
 import math
@@ -71,11 +70,6 @@ SPIKE = {"verts": [[0, 0], [0, 4], [2, 4], [2, 6], [2, 4], [4, 4], [4, 0]], "id"
 PINCH = {"verts": [[0, 0], [0, 2], [2, 2], [2, 4], [4, 4], [4, 2], [2, 2], [2, 0]], "id": PINCH_ITEM, "room_category": {"Kitchen": [[0, 0, 2, 2]]}, "room_num": 2, "bbox": {"min": [0, 0], "max": [4, 4]}}
 FLAT = {"verts": [[0, 0], [1, 0], [2, 0], [3, 0]], "id": FLAT_ITEM, "room_category": {"Kitchen": [[0, 0, 2, 2]]}, "room_num": 1, "bbox": {"min": [0, 0], "max": [3, 0]}}
 PLANS = [HOUSE, ROOMS, SPIKE, PINCH, FLAT]
-
-
-@pytest.fixture(autouse=True)
-def _gate():
-    pytest.importorskip("arena_assets.importers")
 
 
 def archive(path: Path, *plans: dict) -> Path:
@@ -287,34 +281,25 @@ def test_items_are_the_plan_ids_in_archive_order(importer) -> None:
     assert all(size == len(json.dumps(plan)) for plan, (_, size) in zip(PLANS, index.values(), strict=True))
 
 
-def _open_handles(path: Path) -> int:
-    target = os.path.realpath(path)
-    count = 0
-    for fd in os.listdir("/proc/self/fd"):
-        with contextlib.suppress(OSError):
-            count += os.readlink(f"/proc/self/fd/{fd}") == target
-    return count
-
-
-def test_closing_the_plans_releases_the_archive_and_a_later_read_reopens_it(tmp_path: Path) -> None:
+def test_closing_the_plans_releases_the_archive_and_a_later_read_reopens_it(tmp_path: Path, open_handles) -> None:
     from arena_simulation_setup.adapters.houseexpo import Plans
 
     src = archive(tmp_path / "json.tar.gz", *PLANS)
     plans = Plans(src)
     assert json.loads(plans.read(PINCH_ITEM)) == PINCH
     assert json.loads(plans.read(ROOMS_ITEM)) == ROOMS
-    assert _open_handles(src) == 1
+    assert open_handles(src) == 1
     plans.close()
-    assert _open_handles(src) == 0
+    assert open_handles(src) == 0
     assert json.loads(plans.read(ITEM)) == HOUSE
     plans.close()
     plans.close()
-    assert _open_handles(src) == 0
+    assert open_handles(src) == 0
 
 
-def test_importing_items_releases_the_archive(importer, tmp_path: Path) -> None:
+def test_importing_items_releases_the_archive(importer, tmp_path: Path, open_handles) -> None:
     assert sorted(importer.import_items([ROOMS_ITEM, ITEM], tmp_path / "worlds")) == sorted([ROOMS_ITEM, ITEM])
-    assert _open_handles(importer.cache / "json.tar.gz") == 0
+    assert open_handles(importer.cache / "json.tar.gz") == 0
 
 
 def test_archive_is_indexed_once_and_read_from_one_stream(tmp_path: Path) -> None:

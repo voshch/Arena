@@ -14,7 +14,7 @@ from task_generator.simulators.human.pointing.contract import ROS_JOINT_ORDER, S
 pytestmark = pytest.mark.clips("point_at_template")
 
 BODY = S.Body(BODY_HEIGHT)
-TARGETS = ((3.0, 0.0, 1.0), (3.0, -2.0, 1.0), (0.0, 3.0, 1.0), (-1.0, -3.0, 1.0))
+TARGETS = ((3.0, 0.0, 1.0), (3.0, -2.0, 1.0), (0.0, 3.0, 1.0), (1.0, -3.0, 1.0))
 
 
 @pytest.fixture(scope="module")

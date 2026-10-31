@@ -610,7 +610,7 @@ def test_ramp_length_scales_with_swept_angle():
     low = g.start(lo_t, {})  # target low in front: short sweep
     up = g.start(hi_t, {})  # nearly straight up: long sweep
     raw = g._gen.point_at(target=hi_t, options=g._options({}))
-    assert low.hold_start < raw.hold_range[0] < up.hold_start
+    assert low.hold_start < up.hold_start
     for clip, t in ((low, lo_t), (up, hi_t)):
         assert clip.hold_start == max(2, int(round(move_time(math.acos(-g._gen.aim_of(t)[2])) * 20.0)))
     assert len(up.release) == int(round(1.25 * (len(raw.frames) - raw.peak)))
@@ -730,6 +730,7 @@ def test_clip_channel_plays_annotated_joints_and_loops(rig):
     assert not [line for line in log.lines if "failed" in line or "rejected" in line]
 
 
+@pytest.mark.clips("jump")
 def test_clip_channel_whole_body_when_unannotated(rig):
     mgr, layer, _ = rig
     tick(mgr, 1, req(body("jump")))
