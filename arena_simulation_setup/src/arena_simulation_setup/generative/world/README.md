@@ -13,6 +13,8 @@ The ROS node is [`world_generator_ros.py`](world_generator_ros.py), its interfac
 | `barn` | box size, passage width, straightness, or `index` | a BARN-style winding passage, or with `index` (0..299) the canonical BARN challenge world of that number, read from `source` (a directory of `world_<index>.world` files) or fetched from GitHub into `ARENA_ASSETS_DIR/.import/barn/worlds`. Each cylinder is an octagon of walls whose outer faces lie on the 0.075 m radius, in the challenge frame shifted by +4.5 m in x. Either way the episode is pinned to `tm_robots: scenario` |
 | `sketch` | a grid of box-drawing glyphs | corridors and rooms exactly as drawn |
 | `letter` | text | one 18-segment character cell per glyph |
+| `corridor` | extent, corridor width and its spread, branches, bends, wiggle and diagonal | a tree of corridors grown from the center with right-angle elbows, or with `bends` winding through kinks at 45 and 90 degrees (`diagonal` off: right angles only), branches under three corridor widths staying elbows |
+| `open` | extent, obstacle count, size and its spread, `max_tries` | a walled box with square obstacles at random positions, merged where they overlap, redrawn until the free space is one piece. Zones are vertical bands around the obstacles |
 
 Registration in [`__init__.py`](__init__.py) is lazy, so importing the package does not import every generator. An implementation subclasses `WorldGeneratorImpl` with:
 
