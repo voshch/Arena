@@ -1001,8 +1001,9 @@ robots:
       - {goto: [8.0, 8.0, 0.0]}
 ```
 
-An empty scenario (robot start and phases only) is valid. Phases run in order
-and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
+An empty scenario (robot start and phases only) is valid, and `robots:` is
+optional: a robot without an entry stays parked, an episode with only parked
+robots runs until `task.episode.timeout`. Phases run in order and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
 `{reach: <named target | random | pose>}`, or a hold phase with neither (the robot
 stays where it is), or `{loop: [<phases>], until: "<...>"}` (the phases repeated
 in order until the `until` holds, which drops the running phase and continues
