@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import math
 import typing
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -17,7 +18,7 @@ import numpy as np
 import yaml
 
 from arena_assets.utils import human
-from arena_assets.utils.human import Legs, PelvisClearance
+from arena_assets.utils.human import Legs, PelvisClearance, Proportions
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.profile import JOINT_NAMES
 
@@ -47,12 +48,16 @@ class Support:
     back: float | None = None
 
 
+TYPICAL_PROPORTIONS = Proportions(shoulders=0.46, shoulder_width=0.18, hip_width=0.105, upperarm=0.255, forearm=0.25, hand=0.195, head=0.2)
+
+
 @attrs.frozen
 class BodyMeasurements:
     """The asset annotation's measurements of a character."""
 
     clearance: PelvisClearance
     legs: Legs
+    proportions: Proportions = TYPICAL_PROPORTIONS
 
 
 TYPICAL_SEATED = (
@@ -76,26 +81,56 @@ TYPICAL_BODY = BodyMeasurements(clearance=PelvisClearance(sit=0.105, lie=0.119, 
 SEAT_FIT_STEPS = 4  # fixed-point steps between the seated pelvis height and the hip flexion it gives
 
 
+def _read_skin(path: Path) -> human.Skin | None:
+    """The skin in a COLLADA file, None when it is missing or unreadable."""
+    if not path.is_file():
+        return None
+    try:
+        return human.read_skin(path)
+    except (ET.ParseError, KeyError, ValueError):
+        return None
+
+
 def load_body(model_uri: str) -> BodyMeasurements | None:
-    """Measurements in the annotation beside an actor SDF, else measured off its skin (meshes/<name>.dae), None without either."""
+    """Measurements in the annotation beside an actor SDF, else measured off its skin (meshes/<name>.dae), None without either.
+
+    Proportions the annotation lacks come off the skin too, typical ones when it has none or an unknown rig.
+    """
     if not model_uri:
         return None
     sdf = Path(model_uri)
     path = sdf.with_name(ANNOTATION_FILE)
     annotation = (yaml.safe_load(path.read_text()) or {}) if path.is_file() else {}
-    if annotation.get("pelvis_clearance") and annotation.get("legs"):
-        return BodyMeasurements(clearance=PelvisClearance(**annotation["pelvis_clearance"]), legs=Legs(**annotation["legs"]))
     skin_path = sdf.parent / "meshes" / f"{sdf.stem}.dae"
+    skin = _read_skin(skin_path) if not (annotation.get("pelvis_clearance") and annotation.get("legs") and annotation.get("proportions")) else None
+    if annotation.get("proportions"):
+        proportions = Proportions(**annotation["proportions"])
+    else:
+        try:
+            proportions = human.proportions(skin) if skin is not None else TYPICAL_PROPORTIONS
+        except (KeyError, ValueError):
+            proportions = TYPICAL_PROPORTIONS
+    if annotation.get("pelvis_clearance") and annotation.get("legs"):
+        return BodyMeasurements(clearance=PelvisClearance(**annotation["pelvis_clearance"]), legs=Legs(**annotation["legs"]), proportions=proportions)
     forward = _FACING.get(str(annotation.get("face", "+x")))
-    if forward is None or not skin_path.is_file():
+    if forward is None or skin is None:
         return None
-    skin = human.read_skin(skin_path)
-    return BodyMeasurements(clearance=human.pelvis_clearance(skin, np.array(forward)), legs=human.legs(skin))
+    return BodyMeasurements(clearance=human.pelvis_clearance(skin, np.array(forward)), legs=human.legs(skin), proportions=proportions)
+
+
+def _skeleton(legs: Legs, proportions: Proportions | None = None) -> S.Body:
+    """The pointing skeleton with the character's legs and, given them, its trunk and arms (the template's otherwise)."""
+    body = S.Body()
+    body.thigh, body.tibia, body.hip_height = legs.thigh, legs.shin, legs.thigh + legs.shin
+    if proportions is not None:
+        body.torso_height, body.spine_segment = proportions.shoulders, proportions.shoulders / 3
+        body.neck_length, body.neck_shoulder, body.waist_length = proportions.head, proportions.shoulder_width, 2 * proportions.hip_width
+        body.upperarm, body.forearm = proportions.upperarm, proportions.forearm
+    return body
 
 
 def _leg_fk(angles: Mapping[str, float], legs: Legs) -> tuple[dict, S.Body]:
-    body = S.Body()
-    body.thigh, body.tibia, body.hip_height = legs.thigh, legs.shin, legs.thigh + legs.shin
+    body = _skeleton(legs)
     pos, _ = S.fk(dict.fromkeys(JOINT_NAMES, 0.0) | dict(angles), body)
     return pos, body
 
@@ -336,3 +371,56 @@ def supported_pose(support: Support, body: BodyMeasurements, angles: Mapping[str
         return position, _quat_mul(upright, _SUPINE)
     lift = max(0.0, support.height + body.clearance.sit_at(hip_flexion(angles)) - pelvis)
     return np.array([x + depth * math.cos(yaw), y + depth * math.sin(yaw), lift]), upright
+
+
+# m, joint centre to the skin a lying or kneeling body rests on; the pelvis takes the model's measurement
+_FLESH = {"waist": 0.11, "spine": 0.11, "chest": 0.11, "torso": 0.11, "neck": 0.07, "head": 0.1, "shoulder": 0.06, "elbow": 0.045, "wrist": 0.04, "hip": 0.09, "knee": 0.055}
+_PALM = 0.45  # of the wrist to fingertip reach, to the palm's centre
+_HAND_FLESH = (0.03, 0.01)  # m, under the palm's centre and the fingertips
+_TOE = 0.15  # m, ankle to the ball of the foot, as the skeleton's foot point
+
+
+def _rotate(q: Sequence[float] | np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Vector v (..., 3) turned by the xyzw quaternion q."""
+    u, w = np.asarray(q[:3], dtype=float), float(q[3])
+    t = 2.0 * np.cross(u, v)
+    return v + w * t + np.cross(u, t)
+
+
+def _contacts(angles: Mapping[str, float], body: BodyMeasurements) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Body frame points a body can rest on and the skin depth under each, the heel and toe sole points, the pelvis joint.
+
+    Joints carry their flesh; the hands their palm and fingertips; the feet a heel and toe point on the sole, which turn
+    with the foot as the renderers' sole points do.
+    """
+    pos, frames = S.fk(dict.fromkeys(JOINT_NAMES, 0.0) | dict(angles), _skeleton(body.legs, body.proportions))
+    points = [pos[k] for k in pos if k.split("_")[-1] in _FLESH]
+    flesh = [_FLESH[k.split("_")[-1]] for k in pos if k.split("_")[-1] in _FLESH]
+    points.append(pos["pelvis"])
+    flesh.append(body.clearance.lie)
+    soles = []
+    for side in ("l", "r"):
+        hand = frames[f"{side}_hand"]
+        for reach, depth in zip((_PALM * body.proportions.hand, body.proportions.hand), _HAND_FLESH, strict=True):
+            points.append(pos[f"{side}_wrist"] + hand @ (S.DOWN * reach))
+            flesh.append(depth)
+        foot, down = frames[f"{side}_foot"], frames[f"{side}_foot"] @ (S.DOWN * body.legs.ankle)
+        soles += [pos[f"{side}_ankle"] + down, pos[f"{side}_ankle"] + foot @ (S.FWD * _TOE) + down]
+    pelvis = pos["pelvis"] + np.array([0.0, 0.0, body.legs.hip])  # where the renderer puts the pelvis joint
+    return np.array(points), np.array(flesh), np.array(soles), pelvis
+
+
+def tilted_pose(body: BodyMeasurements, angles: Mapping[str, float], x: float, y: float, floor: float, yaw: float, tilt: Sequence[float]) -> tuple[np.ndarray, np.ndarray]:
+    """Body frame position and xyzw orientation of a ped whose clip tilts its pelvis (``tilt``, xyzw from its heading yaw).
+
+    The pelvis stays over (x, y) and the body turns about it; its height puts the lowest skin (joints less their flesh,
+    hands, soles) on the floor. The renderers plant the lowest sole point at body height 0, so upright the pose matches
+    an untilted ped's.
+    """
+    points, flesh, soles, pelvis = _contacts(angles, body)
+    turned = _rotate(tilt, np.concatenate([points, soles]) - pelvis)[:, 2]
+    height = float(np.max(np.concatenate([flesh, np.zeros(len(soles))]) - turned))
+    orientation = _quat_mul(np.array([0.0, 0.0, math.sin(yaw / 2.0), math.cos(yaw / 2.0)]), np.asarray(tilt, dtype=float))
+    lift = float(pelvis[2] - soles[:, 2].min())  # the renderer's pelvis height above the body frame origin
+    origin = np.array([x, y, floor + height]) - _rotate(orientation, np.array([0.0, 0.0, lift]))
+    return origin, orientation

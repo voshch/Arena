@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import sys
 import typing
 from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
 
-from arena_mcp.core import Domain, Job, ToolError, cli
+from arena_mcp.core import JOBS, Domain, Job, ToolError, cli
 
 
 def _ready() -> str | None:
@@ -24,6 +25,7 @@ domain = Domain(
     """Resolvable Arena data of every kind `arena asset` moves (assets_kinds lists them) through the same code the `arena asset` verbs run.
     find and ls show what each resolver answers, pull fetches into the local cache, push publishes to the kind's bucket after the preflight that refuses unresolvable references.
     import_sources lists the upstream datasets `arena asset import` converts from, import_items one dataset's importable items, and import converts chosen items into the imported root as a job.
+    retarget_animation turns SMPL-X motion files into Animation clips as a job.
     articulation shows the links, joints, named states, detents and field families of an articulated object, the values scenario objects take as `joints:`.""",
     check=_ready,
 )
@@ -82,12 +84,13 @@ def assets_pull(kind: Kind, name: Annotated[str, Field(description="asset name")
 @domain.tool(destructive=True, open_world=True)
 def assets_push(
     kind: Kind,
-    name: Annotated[str, Field(description="asset name")],
+    name: Annotated[str | None, Field(description="asset name, none publishes every local asset of the kind in one upload")],
     bucket: Bucket = None,
     force: Annotated[bool, Field(description="publish despite a failed preflight or a world that ships in the repo")] = False,
+    only: Annotated[str | None, Field(description="publish only the files matching GLOB[,GLOB], the bucket's other files stay as they are")] = None,
 ) -> dict[str, object]:
     """Publish one asset to its kind's bucket after the preflight `arena asset push` runs, which refuses references nobody else could resolve, with GCS_ACCESS_TOKEN set."""
-    done = cli.run("asset", "push", kind, name, "--yes", *(("--bucket", bucket) if bucket else ()), *(("--force",) if force else ()), timeout=3600, check=False)
+    done = cli.run("asset", "push", kind, *((name,) if name else ("--all",)), "--yes", *(("--bucket", bucket) if bucket else ()), *(("--force",) if force else ()), *(("--only", only) if only else ()), timeout=3600, check=False)
     if done["exit_code"] != 0:
         reason = (done["stderr"] + done["stdout"]).strip().splitlines()[-30:]
         raise ToolError(f"{kind} {name} was not published:\n" + "\n".join(reason), hint="bundle the missing references under the asset directory, or pass force=true")
@@ -156,6 +159,11 @@ def _imported(job: Job) -> dict[str, object]:
     return {"paths": [line for line in lines if line.startswith("/") and Path(line).is_dir()]}
 
 
+def _retargeted(job: Job) -> dict[str, object]:
+    lines = job.log_path.read_text().splitlines() if job.log_path.is_file() else []
+    return {"paths": [first for line in lines if (first := line.split(" ", 1)[0]).startswith("/") and Path(first).is_dir()]}
+
+
 @domain.tool(open_world=True, idempotent=True)
 async def assets_import(
     kind: ImportKind,
@@ -166,4 +174,20 @@ async def assets_import(
     if (kind, source) not in {(str(row["kind"]), str(row["name"])) for row in typing.cast(list[dict[str, object]], _json("asset", "import", "--json"))}:
         raise ToolError(f"no {kind} import source {source!r}", hint="assets_import_sources lists the sources by kind")
     job = await cli.job("import", f"import {kind} {source} {' '.join(items)}", "asset", "import", kind, source, *items, result=_imported)
+    return job.as_dict()
+
+
+@domain.tool(idempotent=True)
+async def assets_retarget_animation(
+    sources: Annotated[list[str], Field(description="SMPL-X .npz files or directories, absolute paths", min_length=1)],
+    out: Annotated[str, Field(description="Animation directory to write the clip folders into, absolute path")],
+    pair: Annotated[bool, Field(description="each source is a two-person interaction, written as <name>_a and <name>_b")] = False,
+    loop: Annotated[bool, Field(description="mark the clips as looping")] = False,
+) -> dict[str, object]:
+    """Retarget SMPL-X motion onto Arena's 40-DOF human wire as a job whose result lists the clip directories."""
+    if missing := [source for source in sources if not Path(source).exists()]:
+        raise ToolError(f"no such source: {', '.join(missing)}", hint="sources are absolute .npz files or directories")
+    flags = [*(["--pair"] if pair else []), *(["--loop"] if loop else [])]
+    argv = [sys.executable, "-m", "arena_simulation_setup.adapters.arena_animation_retarget", *sources, "-o", out, *flags]
+    job = await JOBS.start_process("retarget", f"retarget {' '.join(sources)}", argv, cwd=cli.ws_dir(), result=_retargeted)
     return job.as_dict()

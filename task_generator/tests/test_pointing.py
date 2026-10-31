@@ -14,7 +14,7 @@ from task_generator.simulators.human.pointing import (
 from task_generator.simulators.human.pointing import contract as C
 from task_generator.simulators.human.pointing import skeleton as S
 
-pytestmark = pytest.mark.clips("point_to_right")
+pytestmark = pytest.mark.clips("point_at_template")
 
 
 def aim_of(clip, body, i):
@@ -79,7 +79,7 @@ def test_segment_distance_vs_brute_force():
     assert err < 1e-6
 
 
-@pytest.mark.parametrize("name", ["point_to_right"])
+@pytest.mark.parametrize("name", ["point_at_template"])
 def test_template(name):
     t = load_template(name)
     assert t.w[0] == 0.0 and t.w.max() == 1.0
@@ -90,7 +90,7 @@ def test_template(name):
 
 
 def test_template_frames_carry_every_contract_joint():
-    t = load_template("point_to_right")
+    t = load_template("point_at_template")
     assert all(set(C.ROS_JOINT_ORDER) <= set(f["angles"]) for f in t.frames)
 
 

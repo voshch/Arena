@@ -46,7 +46,7 @@ from task_generator.simulators.human.gestures import Channel, GestureLayer, Gest
 from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
-from task_generator.simulators.human.support import LIE_S, SETTLE_S, SIT_CLIP, SQUAT_CLIP, TYPICAL_BODY, BodyMeasurements, SeatPlan, Support, blend_pose, load_body, plan_seat, rise_seconds, seat_depth, supported_pose
+from task_generator.simulators.human.support import LIE_S, SETTLE_S, SIT_CLIP, SQUAT_CLIP, TYPICAL_BODY, BodyMeasurements, SeatPlan, Support, blend_pose, load_body, plan_seat, rise_seconds, seat_depth, supported_pose, tilted_pose
 from task_generator.simulators.human.utils import (
     KnownObstacle,
     KnownObstacles,
@@ -307,6 +307,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         animation = AnimationStates()
         animation.header = out.header
+        tilts: dict[int, tuple[float, float, float, float]] = {}
         for ped in out.pedestrians:
             ped.model_uri = self._ped_model_uris.get(ped.name, "")
             if ped.joint_state.name:
@@ -330,6 +331,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
+            if (tilt := self._gait.root_tilt(ped.id)) is not None:
+                tilts[ped.id] = tilt
             animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
         for ped in out.pedestrians:
@@ -346,6 +349,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if ped.name in possessed:
                 self._rests.pop(ped.id, None)
                 continue
+            if ped.id in tilts and self._support(ped) is None:
+                self._tilt_body(ped, tilts[ped.id])
             self._place_resting(ped, now_sec)
 
         self._arena_peds_publisher.publish(out)
@@ -429,6 +434,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._free_poses[ped.id] = free
             return
         (x, y, z), (qx, qy, qz, qw) = pose
+        ped.pose = PoseMsg(position=PointMsg(x=float(x), y=float(y), z=float(z)), orientation=QuaternionMsg(x=float(qx), y=float(qy), z=float(qz), w=float(qw)))
+
+    def _tilt_body(self, ped: Pedestrian, tilt: tuple[float, float, float, float]) -> None:
+        """Turn the ped's body by its clip's pelvis tilt (a fall, lying on the ground), the pelvis kept over its position."""
+        p = ped.pose.position
+        angles = dict(zip(ped.joint_state.name, ped.joint_state.position, strict=True))
+        yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
+        (x, y, z), (qx, qy, qz, qw) = tilted_pose(self._body_for(ped.model_uri), angles, p.x, p.y, p.z, yaw, tilt)
         ped.pose = PoseMsg(position=PointMsg(x=float(x), y=float(y), z=float(z)), orientation=QuaternionMsg(x=float(qx), y=float(qy), z=float(qz), w=float(qw)))
 
     def _rest_pose(self, ped: Pedestrian, rest: _Rest) -> tuple[np.ndarray, np.ndarray]:

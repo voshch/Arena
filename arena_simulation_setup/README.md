@@ -55,11 +55,14 @@ The package contributes four domains to the `arena_mcp` server, listed with
   at the world generator node's pixel budget.
 - `assets` runs the `arena asset` verbs: kinds, find, ls, pull, and push with
   the preflight that refuses references nobody else could resolve (marked
-  destructive and open-world, it needs `GCS_ACCESS_TOKEN`). `assets_ls` and
+  destructive and open-world, it needs `GCS_ACCESS_TOKEN`), `only` restricting it to
+  the files matching a glob and no name publishing every local asset. `assets_ls` and
   `assets_find` with kind `world` list the worlds and every resolver's verdict.
   `assets_import_sources` lists the datasets `arena asset import` converts
   from, `assets_import_items` one dataset's item ids, and `assets_import` runs
   the import of chosen items as a job whose result lists the item paths.
+  `assets_retarget_animation` runs the `animation_retarget` tool on SMPL-X
+  files as a job whose result lists the clip directories.
   `assets_articulation` resolves one object and lists its links, joints (type,
   parent, child, limits, speed), named states, detents, field families (each
   family with its member joints) and swept box, or says it is rigid.

@@ -113,12 +113,33 @@ provides SDF only.
 ### `AnimationIdentifier`
 
 A pedestrian animation clip: `<domain>/Animation/<name>/` holds `annotation.yaml` (fps, loop, reverse, joint
-mask, provenance note; it is also the bucket's listing sentinel) and `<name>.npz` (`joint_names (J,)`,
-`angles (T, J)`, `t`, `root_xy_yaw`, `animation_state`, loaded with `allow_pickle=False`). Derived files sit
-next to the clip and are reached through `AnimationView.extra(filename)` (the pointing table is
-`point_to_right/table.npz`). `.load()` returns an `AnimationView`: `.meta` is the annotation, `.clip` an
-`AnimationClip` whose `.frames()` gives the per-frame dicts the players consume. `write_clip(directory, frames, meta)`
-writes one. Clips never ship in the repo: both local asset dirs gitignore `*/Animation/`.
+mask, provenance note; it is also the bucket's listing sentinel) and `<name>.anim`. `.load()` returns an
+`AnimationView`: `.meta` is the annotation, `.clip` an `AnimationClip` whose `.frames()` gives the per-frame dicts the
+players consume. `write_clip(directory, frames, meta)` writes one. Clips never ship in the repo: both local asset dirs
+gitignore `*/Animation/`.
+
+A `.anim` is an npz archive, read with `allow_pickle=False`, whose members are named `<group>/<member>`:
+
+| Group | Members |
+| --- | --- |
+| `anim` | `requires` (the oldest reader that can play the file), `settings` (JSON over `annotation.yaml`) |
+| `clip` | `joint_names (J,)`, `angles (T, J)`, `t`, `root_xy_yaw`, `animation_state` |
+| `root` | optional: `quat (T, 4)`, `z (T,)` |
+| `table` | optional: the baked pointing table, `point_at_template` only |
+
+The format stays compatible by these rules: readers ignore groups and members they do not know, so adding one needs no
+version change. A member never changes meaning, new meaning gets a new name, and a breaking change adds a group such as
+`clip.2` beside `clip` so an older reader still plays the file. `anim/requires` rises only when no older reader can play
+a file, a reader that sees a higher value warns and falls back to `<name>.npz`.
+
+`.meta` layers three sources, each over the one before: the annotation's top level, `anim/settings`, and the annotation's
+`anim:` block. Tuning a clip is a one-line `anim:` edit, older readers ignore the block.
+
+The bucket keeps each clip's old `<name>.npz` and `table.npz` for checkouts from before `.anim`. Those files and their
+annotations are never replaced. `NetResolver` fetches only `.anim` and `.yaml` for this kind, so one clip downloads once.
+`AnimationClip.legacy` marks a clip read from an old local or cached `.npz`, and `AnimationManager` lists those in one
+warning. `pack_anim(source, target, settings)` converts an old clip, `settings` holding what a new reader needs on top of
+the bucket's annotation.
 
 Scenarios name clips as strings inside humansim agent configs, so `ScenarioView.identifiers()` reads them
 out: `referenced_clips()` collects every attention `clip` (a name or `{name, when}`) of the inline `agent:`

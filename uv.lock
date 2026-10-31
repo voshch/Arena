@@ -418,6 +418,7 @@ dependencies = [
     { name = "requests" },
     { name = "scipy" },
     { name = "shapely" },
+    { name = "torch" },
     { name = "typing-extensions" },
     { name = "usd-core" },
 ]
@@ -437,6 +438,7 @@ requires-dist = [
     { name = "requests" },
     { name = "scipy" },
     { name = "shapely", specifier = ">=2.0.6" },
+    { name = "torch" },
     { name = "typing-extensions" },
     { name = "usd-core" },
 ]

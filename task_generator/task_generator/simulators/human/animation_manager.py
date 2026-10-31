@@ -23,6 +23,18 @@ else:
         JointState = None
 
 
+Quat = tuple[float, float, float, float]  # xyzw
+UPRIGHT: Quat = (0.0, 0.0, 0.0, 1.0)
+
+
+def nlerp(a: Sequence[float], b: Sequence[float], w: float) -> Quat:
+    """Normalized blend of xyzw quaternions a -> b by w, along the shorter arc."""
+    sign = -1.0 if sum(x * y for x, y in zip(a, b, strict=True)) < 0.0 else 1.0
+    q = [x * (1.0 - w) + sign * y * w for x, y in zip(a, b, strict=True)]
+    n = math.sqrt(sum(x * x for x in q)) or 1.0
+    return (q[0] / n, q[1] / n, q[2] / n, q[3] / n)
+
+
 class AnimationLogger(Protocol):
     def info(self, message: str, /) -> object: ...
 
@@ -44,6 +56,11 @@ class Animation:
 
     def __len__(self) -> int:
         return len(self.frames)
+
+    @property
+    def tilted(self) -> bool:
+        """Frames carry a pelvis tilt (``root_quat``): the body is pelvis-relative and the ped's pose takes the tilt."""
+        return bool(self.frames) and "root_quat" in self.frames[0]
 
     @property
     def cycle_frames(self) -> int:
@@ -166,6 +183,7 @@ class AnimationManager:
         # Pedestrian.msg IDLE/WALKING/RUNNING/PANIC/SURPRISED/CURIOUS/THREATENING
         self.state_to_animation_map: dict[int, str] = {0: "idle", 1: "walk", 2: "run", 3: "idle", 4: "idle", 5: "idle", 6: "idle"}
         self._transitions: dict[int, _Transition] = {}  # base crossfade in flight per agent
+        self._tilt: dict[int, Quat] = {}  # pelvis tilt the last compute() blended in, per agent with a tilted clip playing
 
     def map_state_to_animation(self, state: int, anim_name: str) -> None:
         """
@@ -188,27 +206,49 @@ class AnimationManager:
             self.animations[name] = Animation(name=name, frames=[], n_frames=0, duration=0.0, loop=True, fps=self._fps)
 
         names = self._clips.names() if animation_name is None else list(animation_name)
+        legacy: list[str] = []
         for name, clip in self._clips.load(names).items():
             if isinstance(clip, Exception):
                 self.logger.warning(f"Animation `{name}` could not be loaded: {clip}")
                 continue
             if name in self.animations:
                 self.logger.warning(f"Animation `{name}` is already cached, overiding...")
-            self.animations[name] = anim = self._from_clip(name, clip, loop_mapping.get(name))
+            try:
+                anim = self._from_clip(name, clip, loop_mapping.get(name))
+            except ValueError as e:
+                self.logger.warning(f"Animation `{name}` rejected: {e}")
+                continue
+            self.animations[name] = anim
+            if clip.legacy:
+                legacy.append(name)
             self.logger.info(f"Animation loaded: [{name}]: [{anim.n_frames} frames - {anim.duration}s at {anim.fps}, loop={anim.loop}{', reverse' if anim.reverse else ''}]")
+        if legacy:
+            self.logger.warning(f"{len(legacy)} clip(s) play old .npz data, run `arena asset expire` to refresh them: {', '.join(sorted(legacy))}")
 
     def _from_clip(self, name: str, clip: AnimationClip, loop: bool | None) -> Animation:
+        """A canned clip; ``loop_from`` (s) makes the frames before it an intro played once, ``release_from`` (s) cuts the frames from it off as the release, played when the gesture ends."""
         meta = clip.meta
         frames = clip.frames(JOINT_NAMES)
-        n_frames = len(frames)
         is_loop = loop if loop is not None else bool(meta.get("loop", name not in self.one_shot_animations))
         is_reverse = bool(meta.get("reverse", False))
+        release: list[dict] = []
+        if meta.get("release_from") is not None:
+            cut = round(float(meta["release_from"]) * clip.fps)
+            if not 0 < cut < len(frames):
+                raise ValueError(f"release_from {meta['release_from']} outside the clip")
+            frames, release = frames[:cut], frames[cut:]
+        n_frames = len(frames)
+        loop_from = round(float(meta.get("loop_from", 0.0)) * clip.fps)
 
         assert n_frames > 0, "Animation does not contain any frames"
         assert not (is_reverse and not is_loop), f"Animation {name} is reverse but does not loop"
+        if not 0 <= loop_from < n_frames:
+            raise ValueError(f"loop_from {meta.get('loop_from')} outside the clip")
+        if is_reverse and loop_from:
+            raise ValueError("reverse with an intro")
 
         cycle = 2 * n_frames - 2 if is_reverse and n_frames > 1 else n_frames
-        return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, joints=joint_mask(meta.get("joints")), reverse=is_reverse)
+        return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, loop_from=loop_from, joints=joint_mask(meta.get("joints")), reverse=is_reverse, release=tuple(release))
 
     def clip(self, name: str) -> Animation | None:
         """A cached clip, loaded from the clip source on first request (a clip published after launch). Failures are not retried."""
@@ -282,7 +322,12 @@ class AnimationManager:
         for name in self._transients.pop(agent_id, set()):
             self.animations.pop(name, None)
         self._transitions.pop(agent_id, None)
+        self._tilt.pop(agent_id, None)
         self.gait_generator.forget(agent_id)
+
+    def root_tilt(self, agent_id: int) -> Quat | None:
+        """Pelvis tilt (xyzw, from the ped's heading) of the pose the last compute() returned, None while no tilted clip shows."""
+        return self._tilt.get(agent_id)
 
     def phase(self, agent_id: int) -> float:
         """Fractional clip position as a 0..2pi angle, for ped.gait_phase."""
@@ -397,6 +442,13 @@ class AnimationManager:
             out.append((slot, overlay, playhead, overlay.weight * self._envelope(overlay, playhead)))
         return out
 
+    def overlay_pose(self, agent_id: int, slot: str) -> dict[str, float] | None:
+        """Angles a live overlay shows at its playhead, None without one."""
+        overlay = self._ped_blend.get(agent_id, {}).get(slot)
+        if overlay is None:
+            return None
+        return self._sample_single_animation(self._overlay_playhead.get((agent_id, slot), 0.0), overlay.anim)
+
     def set_overlay_joints(self, agent_id: int, slot: str, joints: set[str], fade_s: float = 0.0) -> None:
         """Change a live overlay's blend set in place: leaving joints ramp to 0 and entering joints ramp to 1 over fade_s, playhead and envelope untouched."""
         overlay = self._ped_blend.get(agent_id, {}).get(slot)
@@ -503,12 +555,14 @@ class AnimationManager:
                 gait_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt, phase=phase, profile=profile)
             return gait_angles
 
+        tilt: Quat | None = None
         if next_anim.name in self.USE_SYNTHESIS:
             base_angles = gait()
         else:
             playhead = self._get_playhead(agent_id) + dt
             self._playhead[agent_id] = playhead
             base_angles = self._sample_single_animation(playhead, next_anim)
+            tilt = self._sample_tilt(playhead, next_anim)
 
         transition = self._transitions.get(agent_id)
         if transition is not None:
@@ -517,12 +571,19 @@ class AnimationManager:
             w = min(transition.t / self.BASE_CROSSFADE_S, 1.0)
             from_angles = gait() if transition.anim.name in self.USE_SYNTHESIS else self._sample_single_animation(transition.playhead, transition.anim)
             base_angles = {name: from_angles[name] * (1.0 - w) + base_angles[name] * w for name in JOINT_NAMES}
+            from_tilt = None if transition.anim.name in self.USE_SYNTHESIS else self._sample_tilt(transition.playhead, transition.anim)
+            if tilt is not None or from_tilt is not None:
+                tilt = nlerp(from_tilt or UPRIGHT, tilt or UPRIGHT, w)
             if w >= 1.0:
                 del self._transitions[agent_id]
 
         if self.gesture_hook is not None:
             self.gesture_hook(agent_id, gesture, dt)
 
+        if tilt is None:
+            self._tilt.pop(agent_id, None)
+        else:
+            self._tilt[agent_id] = tilt
         return self._sample_animation_overlay(agent_id, base_angles, dt)
 
     def _sample_animation_overlay(
@@ -587,11 +648,31 @@ class AnimationManager:
             for joint in overlay.joints:
                 w = weight * overlay.joint_weight(joint)
                 base_angles[joint] = base_angles[joint] * (1 - w) + overlay_angles[joint] * w
+            tilt = self._sample_tilt(overlay_t, overlay_anim)
+            if tilt is not None:
+                self._tilt[agent_id] = nlerp(self._tilt.get(agent_id, UPRIGHT), tilt, weight)
 
         if overlay.releasing and overlay.release_elapsed >= overlay.release_s:
             self._end_overlay(agent_id, slot, overlay, drop=True)
         elif at_end:
             self._end_overlay(agent_id, slot, overlay, drop=overlay.fade_out_s > 0.0)
+
+    @staticmethod
+    def _bracket(playhead: float, anim: Animation) -> tuple[dict, dict, float]:
+        """The two frames around a playhead and the fraction of the way from the first to the second."""
+        pos = playhead * anim.fps
+        frame = int(math.floor(pos))
+        frac = pos - frame
+
+        if not anim.loop and frame >= anim.n_frames - 1:
+            return anim[-1], anim[-1], 0.0
+
+        cycle = anim.cycle_frames
+        frame %= cycle
+        next_frame = frame + 1
+        if next_frame >= cycle:
+            next_frame = anim.loop_from
+        return anim[anim.frame_index(frame)], anim[anim.frame_index(next_frame)], frac
 
     def _sample_single_animation(
         self,
@@ -599,23 +680,16 @@ class AnimationManager:
         anim: Animation,
     ) -> dict[str, float]:
         """Linearly interpolate a pose inside a single animation."""
-        pos = playhead * anim.fps
-        frame = int(math.floor(pos))
-        frac = pos - frame
-
-        if not anim.loop and frame >= anim.n_frames - 1:
-            return dict(anim[-1]["angles"])
-
-        cycle = anim.cycle_frames
-        frame %= cycle
-        next_frame = frame + 1
-        if next_frame >= cycle:
-            next_frame = anim.loop_from
-
-        current_angles = anim[anim.frame_index(frame)]["angles"]
-        next_angles = anim[anim.frame_index(next_frame)]["angles"]
-
+        current, following, frac = self._bracket(playhead, anim)
+        current_angles, next_angles = current["angles"], following["angles"]
         return {name: current_angles[name] * (1.0 - frac) + next_angles[name] * frac for name in JOINT_NAMES if name in current_angles and name in next_angles}
+
+    def _sample_tilt(self, playhead: float, anim: Animation) -> Quat | None:
+        """The clip's pelvis tilt at a playhead, None for a clip without one."""
+        if not anim.tilted:
+            return None
+        current, following, frac = self._bracket(playhead, anim)
+        return nlerp(current["root_quat"], following["root_quat"], frac)
 
     def joint_state(self, angles: dict[str, float], stamp: Time | None = None) -> JointState | None:
         """Same shape as GaitGenerator.joint_state: bare unsuffixed names."""

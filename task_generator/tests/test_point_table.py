@@ -6,12 +6,13 @@ import os
 import numpy as np
 import pytest
 
+from arena_simulation_setup.tree.assets.Animation import write_anim
 from task_generator.simulators.human.pointing import BakedPointAt, PointAtGenerator, PointAtOptions, PointTable, bake
 from task_generator.simulators.human.pointing import contract as C
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.table import COLLAR_SCALE, anchor_index, table_path
 
-pytestmark = pytest.mark.clips("point_to_right")
+pytestmark = pytest.mark.clips("point_at_template")
 
 
 @pytest.fixture(scope="module")
@@ -39,10 +40,10 @@ def max_step(clip) -> float:
 
 
 def test_table_ships_for_the_default_template():
-    path = table_path("point_to_right")
+    path = table_path("point_at_template")
     assert os.path.exists(path), f"bake it: python3 -m task_generator.simulators.human.pointing.table ({path})"
     t = PointTable(path)
-    assert t.template == "point_to_right" and t.height == pytest.approx(1.65) and t.collar_scale == COLLAR_SCALE
+    assert t.template == "point_at_template" and t.height == pytest.approx(1.65) and t.collar_scale == COLLAR_SCALE
     assert t.az[0] == -180.0 and t.az[-1] == 180.0
     assert t.ok[:, :, :].mean() > 0.5
     # the wrapped column is the first column
@@ -94,6 +95,14 @@ def test_wrong_table_is_rejected():
         BakedPointAt(height=1.80)
     with pytest.raises(ValueError, match="baked for"):
         BakedPointAt(options=PointAtOptions(collar_scale=1.0))
+
+
+def test_bake_into_an_anim_keeps_the_clip_and_reads_back(tmp_path):
+    path = write_anim(tmp_path / "t.anim", {"clip/angles": np.zeros((2, 1))})
+    table = PointTable(bake(path=str(path), collar_scale=1.0, az_step=90.0, el_step=45.0, el_max=45.0, workers=0))
+    assert table.linear.shape[:3] == (2, 5, 3) and table.collar_scale == 1.0
+    with np.load(path, allow_pickle=False) as z:
+        assert "clip/angles" in z.files and "table/az" in z.files and "az" not in z.files
 
 
 def test_bake_tiny_grid_round_trips(tmp_path):
