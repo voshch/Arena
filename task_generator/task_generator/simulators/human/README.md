@@ -89,7 +89,8 @@ The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and t
 
 A model whose bundle ships a `rig.yaml` with `drivers:` (wheelchair bundles: `l_wheel`, `r_wheel`) gets those joints
 set on top, whoever filled the field: [`drivers.py`](drivers.py) rolls each wheel over the distance its contact
-point covered since the last message, see the Driven joints section of [`JOINTS.md`](JOINTS.md).
+point covered since the last message, and electric bundles add `joystick_pitch` and `joystick_roll`, see the Driven
+joints section of [`JOINTS.md`](JOINTS.md).
 
 The same message goes out again on `<namespace>/sim_peds`, which the Gazebo pedestrian plugin reads: unchanged in a spread
 world, every ped moved into the simulator frame by `Realizer.placement()` when the levels are stacked (`world.levels`).

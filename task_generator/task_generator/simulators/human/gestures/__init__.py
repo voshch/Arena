@@ -264,6 +264,13 @@ class GestureLayer:
             return {}
         return {name: (st.kind, st.channel, st.phase, str(st.opts.get("clip", ""))) for name, st in ag.slots.items()}
 
+    def busy_joints(self, agent_id: int) -> set[str]:
+        """Joints the agent's live gesture slots blend over, releasing ones included."""
+        ag = self._agents.get(agent_id)
+        if ag is None:
+            return set()
+        return set().union(*(st.joints for st in ag.slots.values()))
+
     def forget(self, agent_id: int) -> None:
         self._agents.pop(agent_id, None)
         self._warned.pop(agent_id, None)
