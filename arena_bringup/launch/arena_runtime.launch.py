@@ -15,6 +15,7 @@ _RUNTIME_OWNED = frozenset(
         'log_level',
         'sim',
         'sim.flatsim.dynamics',
+        'sim.flatsim.physics',
         'sim.isaac.physics',
         *(f'sim.isaac.viewport.{k}' for k in ('preset', 'resolution', 'scale', 'dlss', 'lighting', 'overlays', 'ceilings')),
         'use_sim_time',

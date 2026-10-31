@@ -47,6 +47,13 @@ def generate_launch_description():
         description='sim flatsim only. rigid = walls and obstacles stop or push the robot and pedestrians touch it without pushing, kinematic = the robot passes through and only the collision tracker reports.',
     )
 
+    flatsim_physics = LaunchArgument(
+        name='sim.flatsim.physics',
+        default_value='auto',
+        choices=['auto', 'box2d', 'warp'],
+        description='sim flatsim only. Physics engine, auto = warp when GPU passthrough is on (a CUDA device is visible), else box2d.',
+    )
+
     viewport = {
         key: LaunchArgument(
             name=f'sim.isaac.viewport.{key}',
@@ -84,6 +91,8 @@ def generate_launch_description():
             cmd=['bash', '-c', [
                 launch.substitutions.TextSubstitution(text='exec env PYTHONPATH="${ARENA_DIR:?run source arena first}/_meta${PYTHONPATH:+:$PYTHONPATH}" python3 -m arena_cli feature flatsim launch dynamics:='),
                 dynamics.substitution,
+                launch.substitutions.TextSubstitution(text=' physics:='),
+                flatsim_physics.substitution,
             ]],
             sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='20'),
             sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),

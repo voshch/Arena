@@ -10,7 +10,7 @@ from arena_cli.features import lifecycle_verbs
 
 NAME = "flatsim"
 
-DESCRIPTION = "flatsim, a 2D Box2D simulator with no renderer.\n\nThis enables:\n\n\b\n- sim:=flatsim (one server for every env: odom, tf, laserscans, point clouds, IMU and contacts from geometry, no camera images)\n- sim.flatsim.dynamics:=rigid|kinematic"
+DESCRIPTION = "flatsim, a 2D simulator on Box2D or Warp with no renderer.\n\nThis enables:\n\n\b\n- sim:=flatsim (one server for every env: odom, tf, laserscans, point clouds, IMU and contacts from geometry, no camera images)\n- sim.flatsim.dynamics:=rigid|kinematic\n- sim.flatsim.physics:=auto|box2d|warp"
 
 
 def _update() -> int:

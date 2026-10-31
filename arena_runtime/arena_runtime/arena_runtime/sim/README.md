@@ -499,6 +499,9 @@ are what Arena sends it.
   every env. `rigid` (default) lets walls and obstacles stop or push the robot
   while pedestrians touch it without pushing, `kinematic` lets it pass through.
   Collision events come from the task generator's collision tracker in both.
+- `sim.flatsim.physics:=auto|box2d|warp`: a runtime argument, the engine of the
+  server. `box2d` steps on the CPU, `warp` runs physics and every ray cast on the
+  GPU, `auto` takes `warp` when GPU passthrough is on, else `box2d`.
 - Sensors: `laserscan`, `pointcloud`, `imu` and `contact` specs, each at its
   own update rate rounded to whole physics steps, and every sensor publishes
   once more when an episode reset ends (`republish`). Lidar and camera geometry
