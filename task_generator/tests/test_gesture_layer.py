@@ -783,6 +783,15 @@ def test_unlocked_loop_clips_keep_the_per_agent_stagger(rig) -> None:
     assert _body_playhead(mgr, 3) != pytest.approx(_body_playhead(mgr, 200))
 
 
+def test_sides_names_the_arm_a_live_point_moves(rig) -> None:
+    mgr, layer, _ = rig
+    tick(mgr, 1, point((1.0, 5.0, 1.2)), n=3)
+    ((slot, side),) = layer.sides(1).items()
+    assert layer.phases(1)[slot][0] == "point"
+    assert side in ("l", "r")
+    assert layer.sides(99) == {}
+
+
 def test_phases_reports_kind_channel_phase_and_clip(rig) -> None:
     mgr, layer, _ = rig
     mgr.compute(7, 0, 0.0, DT, gesture=req(body("hug", lock=True)))

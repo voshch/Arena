@@ -22,22 +22,20 @@ import math
 import os
 import subprocess
 import tempfile
-import xml.dom.minidom
 from typing import TYPE_CHECKING
 
 import numpy as np
-import xacro
 import yaml
-from ament_index_python.packages import get_package_prefix, get_package_share_directory
+from ament_index_python.packages import get_package_prefix
 from arena_rclpy_mixins import tf_remaps
 from urdf_parser_py import urdf as urdf_parser
+
+from .urdf import body_urdf
 
 if TYPE_CHECKING:
     import rclpy.node
 
 _LOG = logging.getLogger(__name__)
-
-_DEFAULT_HEIGHT = 1.65
 
 
 def _origin_matrix(origin: urdf_parser.Pose | None) -> np.ndarray:
@@ -107,14 +105,7 @@ class BodyPool:
         self._id_to_slot: dict[str, _Slot] = {}
         self._urdf: dict[str, str] = {}
         self._foot_offset: dict[str, float] = {}
-        self._hd_share: str = get_package_share_directory("human_description")
         self._rsp_bin: str = f"{get_package_prefix('robot_state_publisher')}/lib/robot_state_publisher/robot_state_publisher"
-
-    def _generate_urdf(self, body_id: str, height: float) -> str:
-        xacro_path = f"{self._hd_share}/urdf/human-tpl.xacro"
-        doc = xacro.process_file(xacro_path, mappings={"id": body_id, "height": str(height)})
-        assert isinstance(doc, xml.dom.minidom.Document)
-        return doc.toprettyxml(indent="  ")
 
     @staticmethod
     def _write_params(body_id: str, urdf: str) -> str:
@@ -173,7 +164,7 @@ class BodyPool:
         slot.body_id = None
         slot.params_file = None
 
-    def assign(self, body_id: str, height: float = _DEFAULT_HEIGHT) -> bool:
+    def assign(self, body_id: str) -> bool:
         """Assign body_id to a pool slot, starting its rsp.
 
         Returns True if assigned, False if the pool is exhausted.
@@ -181,7 +172,7 @@ class BodyPool:
         if body_id in self._id_to_slot:
             return True
 
-        urdf = self._generate_urdf(body_id, height)
+        urdf = body_urdf(body_id)
         self._urdf[body_id] = urdf
         self._foot_offset[body_id] = _hip_to_foot_offset(urdf)
 
@@ -232,14 +223,14 @@ class BodyPool:
     def active_ids(self) -> frozenset[str]:
         return frozenset(self._id_to_slot.keys())
 
-    def sync(self, current_ids: set[str], heights: dict[str, float]) -> None:
+    def sync(self, current_ids: set[str]) -> None:
         """Reconcile pool state against the current set of body ids.
 
         Assigns new ids and releases ids no longer present.
         """
         existing = self.active_ids()
         for bid in current_ids - existing:
-            self.assign(bid, heights.get(bid, _DEFAULT_HEIGHT))
+            self.assign(bid)
         for bid in existing - current_ids:
             self.release(bid)
 

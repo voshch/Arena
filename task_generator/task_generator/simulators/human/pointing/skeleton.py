@@ -1,12 +1,9 @@
-"""URDF-faithful forward kinematics + collision proxies for the 40-DOF human.
+"""Forward kinematics and collision proxies for the 40-DOF human.
 
-Mirrors ``human_description/urdf/human-tpl.xacro`` (branch ``arena-v2``)
-exactly: same bone lengths as a function of ``height``, same joint axes, same
-chain order.  Shoulder triples are interpreted in the **wire (anatomical)**
+Bone lengths as a function of ``height``, joint axes and chain order of the
+40-DOF wire skeleton.  Shoulder triples are interpreted in the **wire (anatomical)**
 convention of JOINTS.md section 1a, i.e. ``Rz(y) R((0,-1,0), p) R((0,0,-1), r)``
-relative to the collar frame -- identical to convert_v2's ``SPEC_ARM``.  This is
-what Arena's RViz adapter and the Isaac bone map consume, so a clip that renders
-correctly here renders correctly there.
+relative to the collar frame -- identical to convert_v2's ``SPEC_ARM``.
 
 Frame convention everywhere: REP-155 body frame, ``x`` forward, ``y`` left,
 ``z`` up.  The FK world origin ("ped-local") is the point on the **floor**

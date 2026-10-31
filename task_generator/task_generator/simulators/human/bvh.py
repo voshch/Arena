@@ -1,9 +1,8 @@
-"""Convert a CMU mocap BVH into an Animation clip of wire joint angles, the inverse of the renderers' bone map."""
+"""Convert a CMU mocap BVH into an Animation clip of wire joint angles."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import sys
 import xml.etree.ElementTree as ET
@@ -12,6 +11,7 @@ from pathlib import Path
 
 import attrs
 import numpy as np
+from arena_simulation_setup.shared.body import joint_angles
 
 from .profile import JOINT_NAMES
 
@@ -20,9 +20,18 @@ DEFAULT_BONES = ("LeftUpLeg", "LeftLeg", "RightUpLeg", "RightLeg", "LowerBack", 
 FEET = {"l": "LeftFoot", "r": "RightFoot"}
 SPLAY_JOINTS = ("l_y_hip", "l_p_hip", "r_y_hip", "r_p_hip")
 ROOT = "Hips"
+BONE_JOINTS = {
+    "LowerBack": "spine1",
+    "Spine": "spine2",
+    "Spine1": "spine3",
+    "LeftUpLeg": "left_hip",
+    "LeftLeg": "left_knee",
+    "LeftFoot": "left_ankle",
+    "RightUpLeg": "right_hip",
+    "RightLeg": "right_knee",
+    "RightFoot": "right_ankle",
+}
 DAE_TO_BVH = np.array([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])  # human assets stand Z up facing +x, BVH is Y up facing +z
-SOLVER_ITERATIONS = 12
-SOLVER_STEP = 1e-5
 _EXAMPLE = "python3 -m task_generator.simulators.human.bvh 22_14.bvh --skin <human asset>/meshes/<name>.dae -o arena_simulation_setup/assets/Common/Animation/squat --from 0.72 --to 1.75"
 
 
@@ -52,15 +61,6 @@ class Motion:
     joints: dict[str, Joint]
     frame_time: float
     values: np.ndarray
-
-
-@attrs.frozen
-class BoneTarget:
-    """One wire joint's share of one bone's local rotation, as in bone_map.json."""
-
-    joint: str
-    axis: tuple[float, float, float]
-    gain: float
 
 
 def parse(text: str) -> Motion:
@@ -210,56 +210,6 @@ def bind_pose(dae: Path) -> BindPose:
     return _hang_legs(BindPose(orientations=orientations, positions=positions))
 
 
-def load_bone_map(path: Path) -> dict[str, list[BoneTarget]]:
-    """bone_map.json as wire targets grouped by bone, in the order the renderers compose them."""
-    by_bone: dict[str, list[BoneTarget]] = {}
-    for joint, targets in json.loads(path.read_text()).items():
-        for target in targets:
-            by_bone.setdefault(target["bone"], []).append(BoneTarget(joint=joint, axis=tuple(target["axis"]), gain=float(target["sign"]) * float(target["scale"])))
-    return by_bone
-
-
-def _compose(targets: Sequence[BoneTarget], angles: np.ndarray) -> np.ndarray:
-    rot = np.eye(3)
-    for target, angle in zip(targets, angles, strict=True):
-        rot = rot @ _axis_rotation(target.axis, target.gain * angle)
-    return rot
-
-
-def _log(rot: np.ndarray) -> np.ndarray:
-    """Rotation vector (axis times angle) of a rotation matrix."""
-    skew = 0.5 * np.array([rot[2, 1] - rot[1, 2], rot[0, 2] - rot[2, 0], rot[1, 0] - rot[0, 1]])
-    angle = math.atan2(float(np.linalg.norm(skew)), 0.5 * (float(np.trace(rot)) - 1.0))
-    norm = float(np.linalg.norm(skew))
-    if norm < 1e-12:
-        if angle < 1e-6:
-            return np.zeros(3)
-        axis = np.sqrt(np.clip((np.diag(rot) + 1.0) / 2.0, 0.0, None))
-        return angle * axis
-    return angle * skew / norm
-
-
-def _residual(targets: Sequence[BoneTarget], angles: np.ndarray, goal: np.ndarray) -> np.ndarray:
-    return _log(goal.T @ _compose(targets, angles))
-
-
-def decompose(targets: Sequence[BoneTarget], goal: np.ndarray, start: np.ndarray) -> np.ndarray:
-    """Angles about the targets' axes whose composition comes closest to goal, by Gauss-Newton from start."""
-    angles = np.array(start, dtype=float)
-    for _ in range(SOLVER_ITERATIONS):
-        r = _residual(targets, angles, goal)
-        jac = np.empty((3, len(targets)))
-        for k in range(len(targets)):
-            step = np.zeros(len(targets))
-            step[k] = SOLVER_STEP
-            jac[:, k] = (_residual(targets, angles + step, goal) - r) / SOLVER_STEP
-        delta, *_ = np.linalg.lstsq(jac, -r, rcond=None)
-        angles += delta
-        if float(np.abs(delta).max()) < 1e-9:
-            break
-    return angles
-
-
 def bone_targets(motion: Motion, bind: BindPose, bones: Sequence[str]) -> dict[str, np.ndarray]:
     """Per bone, the world orientation (frames, 3, 3) the asset's bone takes to point where the mocap bone points."""
     worlds = upright_worlds(motion, local_rotations(motion))
@@ -271,7 +221,7 @@ def bone_targets(motion: Motion, bind: BindPose, bones: Sequence[str]) -> dict[s
     return out
 
 
-def wire_frames(motion: Motion, bone_map: Mapping[str, Sequence[BoneTarget]], bind: BindPose, bones: Sequence[str] = DEFAULT_BONES, fps: float = DEFAULT_FPS, start_s: float = 0.0, stop_s: float | None = None, parallel: bool = False) -> list[dict]:
+def wire_frames(motion: Motion, bind: BindPose, bones: Sequence[str] = DEFAULT_BONES, fps: float = DEFAULT_FPS, start_s: float = 0.0, stop_s: float | None = None, parallel: bool = False) -> list[dict]:
     """Clip frames ({"t", "angles"} over every wire joint) resampled to fps, the given bones solved and every other joint at 0.
 
     parallel holds the hips' yaw and abduction at 0. A foot left out keeps its sole flat: its ankle is -(hip + knee).
@@ -286,14 +236,11 @@ def wire_frames(motion: Motion, bone_map: Mapping[str, Sequence[BoneTarget]], bi
         parent = motion.joints[bone].parent
         assert parent is not None, f"{bone} is the root"
         parent_bind = bind.orientations[parent]
-        previous = np.zeros(len(bone_map[bone]))
         for frame, t in zip(frames, times, strict=True):
             k = min(int(round(t / motion.frame_time)), n - 1)
             parent_world = targets[parent][k] if parent in targets else parent_bind
-            goal = bind.orientations[bone].T @ parent_bind @ parent_world.T @ targets[bone][k]
-            previous = decompose(bone_map[bone], goal, previous)
-            for target, angle in zip(bone_map[bone], previous, strict=True):
-                frame["angles"][target.joint] = float(angle)
+            turn = parent_bind @ parent_world.T @ targets[bone][k] @ bind.orientations[bone].T
+            frame["angles"].update(joint_angles(BONE_JOINTS[bone], DAE_TO_BVH.T @ turn @ DAE_TO_BVH))
     if parallel:
         for frame in frames:
             frame["angles"].update(dict.fromkeys(SPLAY_JOINTS, 0.0))
@@ -320,9 +267,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("bvh", type=Path, metavar="CLIP.bvh", help="CMU BVH in the cmu_mb skeleton (Hips, LHipJoint, LeftUpLeg, ...)")
     parser.add_argument("-o", "--output", type=Path, required=True, metavar="DIR", help="Animation asset directory to write, its name is the clip name")
-    parser.add_argument("--skin", type=Path, required=True, metavar="HUMAN.dae", help="skinned mesh of any human asset (meshes/<name>.dae), whose bind frames the bone map's axes are given in")
-    parser.add_argument("--bone-map", type=Path, metavar="bone_map.json", help="wire-to-bone map, default the one arena_people_msgs installs")
-    parser.add_argument("--bones", default=",".join(DEFAULT_BONES), metavar="A,B,...", help=f"bones whose rotation is converted, default {','.join(DEFAULT_BONES)} (legs and spine, whose neutral stance is the bind pose; feet left out keep their soles flat)")
+    parser.add_argument("--skin", type=Path, required=True, metavar="HUMAN.dae", help="skinned mesh of any human asset (meshes/<name>.dae), the bind skeleton the mocap bones are aimed onto")
+    parser.add_argument("--bones", default=",".join(DEFAULT_BONES), metavar="A,B,...", help=f"bones whose rotation is converted, from {','.join(BONE_JOINTS)}, default {','.join(DEFAULT_BONES)}, feet left out keep their soles flat")
     parser.add_argument("--fps", type=float, default=DEFAULT_FPS, metavar="F", help=f"frame rate of the clip in Hz, default {DEFAULT_FPS}")
     parser.add_argument("--parallel", action="store_true", help=f"keep the legs parallel: {', '.join(SPLAY_JOINTS)} held at 0, only the sagittal leg motion taken from the mocap")
     parser.add_argument("--from", dest="start", type=float, default=0.0, metavar="S", help="first second of the BVH taken, default 0")
@@ -332,24 +278,17 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _default_bone_map() -> Path:
-    from ament_index_python.packages import get_package_share_directory
-
-    return Path(get_package_share_directory("arena_people_msgs")) / "bone_map.json"
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     from arena_simulation_setup.tree.assets.Animation import write_clip
 
     motion = parse(args.bvh.read_text())
-    bone_map = load_bone_map(args.bone_map or _default_bone_map())
     bones = [b for b in args.bones.split(",") if b]
-    unknown = [b for b in bones if b not in bone_map or b not in motion.joints]
+    unknown = [b for b in bones if b not in BONE_JOINTS or b not in motion.joints]
     if unknown:
-        print(f"bones {unknown} are not in both the bone map and the BVH, pick from {sorted(set(bone_map) & set(motion.joints))}", file=sys.stderr)
+        print(f"bones {unknown} are not both convertible and in the BVH, pick from {sorted(set(BONE_JOINTS) & set(motion.joints))}", file=sys.stderr)
         return 2
-    frames = wire_frames(motion, bone_map, bind_pose(args.skin), bones, args.fps, args.start, args.stop, args.parallel)
+    frames = wire_frames(motion, bind_pose(args.skin), bones, args.fps, args.start, args.stop, args.parallel)
     meta = {"desc": args.desc or args.bvh.stem, "fps": args.fps, "loop": False, "note": args.note or f"converted from {args.bvh.name}"}
     print(write_clip(args.output, frames, meta))
     return 0

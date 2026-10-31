@@ -32,9 +32,8 @@ from tf2_msgs.msg import TFMessage
 
 from rviz_utils.hri import BodyPool
 from rviz_utils.hri.face import GAZE_IN_FACE, FaceChain, matrix_from_pose, pinhole_k, quat_from_matrix, root_drop
-from rviz_utils.hri.rig import semantic_to_rig
+from rviz_utils.hri.rig import ped_positions, semantic_positions
 
-_DEFAULT_HEIGHT = 1.65
 _VIEW_SIZE = 512
 
 _PEDS_QOS = QoSProfile(
@@ -199,14 +198,13 @@ class HriProducer(Node):
         parent_frame = msg.header.frame_id
 
         current_ids: set[str] = {self._body_id(ped.id) for ped in msg.pedestrians}
-        heights: dict[str, float] = {self._body_id(ped.id): _DEFAULT_HEIGHT for ped in msg.pedestrians}
 
         for bid in self._pool.active_ids() - current_ids:
             self._gait.forget(self._ped_id(bid))
             self._prev_stamp_sec.pop(bid, None)
             self._destroy_body_publishers(bid)
 
-        self._pool.sync(current_ids, heights)
+        self._pool.sync(current_ids)
 
         ids_list = IdsList(ids=sorted(current_ids))
         self._bodies_tracked_pub.publish(ids_list)
@@ -242,32 +240,24 @@ class HriProducer(Node):
                 alias.transform.rotation.w = 1.0
                 transforms.append(alias)
 
-            if ped.joint_state.name:
-                js = JointState()
-                js.header.stamp = stamp
-                js.header.frame_id = ""
-                js.name = [f"{n}_{bid}" for n in ped.joint_state.name]
-                js.position = semantic_to_rig(ped.joint_state.name, ped.joint_state.position)
-                js.velocity = list(ped.joint_state.velocity)
-                js.effort = list(ped.joint_state.effort)
-                self._body_js_pub[bid].publish(js)
+            if ped.body.joints:
+                positions = ped_positions(ped, bid)
             else:
                 now_sec = stamp.sec + stamp.nanosec * 1e-9
                 prev_sec = self._prev_stamp_sec.get(bid)
                 dt = (now_sec - prev_sec) if prev_sec is not None and now_sec > prev_sec else 0.1
                 self._prev_stamp_sec[bid] = now_sec
                 speed = math.hypot(ped.twist.linear.x, ped.twist.linear.y)
-                angles = self._gait.compute(ped.id, ped.animation_state, speed, dt)
-                bare_js = self._gait.joint_state(angles, stamp=stamp)
-                js = JointState()
-                js.header = bare_js.header
-                js.name = [f"{n}_{bid}" for n in bare_js.name]
-                js.position = semantic_to_rig(list(bare_js.name), bare_js.position)
-                self._body_js_pub[bid].publish(js)
+                positions = semantic_positions(self._gait.compute(ped.id, ped.animation_state, speed, dt), ped.model_uri, bid)
+            js = JointState()
+            js.header.stamp = stamp
+            js.name = list(positions)
+            js.position = list(positions.values())
+            self._body_js_pub[bid].publish(js)
 
             view = self._face_view_pub[bid]
             if view.wanted:
-                face = self._face_tf(bid, tf, dict(zip(js.name, js.position, strict=True)))
+                face = self._face_tf(bid, tf, positions)
                 if face is not None:
                     faces.extend(face)
                     view.publish(lambda bid=bid: FaceView(info=self._camera_info(bid, stamp), clip_near=self._view_clip_near))

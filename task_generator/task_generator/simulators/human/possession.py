@@ -5,9 +5,9 @@ from __future__ import annotations
 import copy
 import typing
 
-from task_generator.simulators.human.gait import GaitGenerator
+from arena_simulation_setup.shared.body import SEMANTIC_DOFS
 
-_JOINT_NAMES: frozenset[str] = frozenset(GaitGenerator.JOINT_NAMES)
+_JOINT_NAMES: frozenset[str] = frozenset(SEMANTIC_DOFS)
 
 POSSESSION_TIMEOUT_S = 1.0
 
@@ -42,7 +42,7 @@ class _PossessableLike(_PedestrianLike, typing.Protocol):
 
 
 def bare_joint_names_valid(names: typing.Iterable[str]) -> bool:
-    """True if every name is a bare GaitGenerator.JOINT_NAMES entry (no hri_producer suffix)."""
+    """True if every name is a bare semantic DOF (no hri_producer suffix)."""
     return all(name in _JOINT_NAMES for name in names)
 
 

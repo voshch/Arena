@@ -1,13 +1,6 @@
-"""FK preview: xacro-render the human rig once, then project a composed pose.
+"""FK preview: the RViz body URDF of rviz_utils.hri.urdf, posed by composed semantic angles and projected front and side.
 
-Pipeline: one-time xacro of human_description/urdf/human-tpl.xacro (subprocess)
--> minimal xml.etree parse of joints/origins/axes -> wire-to-URDF conversion via
-rviz_utils.hri.rig -> forward kinematics -> front/side orthographic projection.
-
-The FK math itself (forward_kinematics/project_front/project_side) is plain
-Python (no numpy, no ROS) so it stays testable on a synthetic joint tree even
-where xacro/human_description/rviz_utils are not installed. Only `preview()`
-needs the real pipeline.
+The FK math (forward_kinematics/project_front/project_side) is plain Python, only `preview()` needs rviz_utils.
 """
 
 from __future__ import annotations
@@ -15,18 +8,17 @@ from __future__ import annotations
 import dataclasses
 import functools
 import math
-import os
-import subprocess
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 try:
-    from rviz_utils.hri.rig import semantic_to_rig
+    from rviz_utils.hri.rig import semantic_positions
+    from rviz_utils.hri.urdf import body_urdf
 except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
-    semantic_to_rig = None
+    semantic_positions = None
+    body_urdf = None
 
 PREVIEW_ID = "fk_preview"
-PREVIEW_HEIGHT_M = 1.65
 
 _ZERO3 = (0.0, 0.0, 0.0)
 _IDENTITY_R = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
@@ -172,27 +164,10 @@ def project_side(positions: Mapping[str, tuple[float, float, float]]) -> dict[st
     return {name: (x, z) for name, (x, _y, z) in positions.items()}
 
 
-def _share_dir(package: str) -> str:
-    from ament_index_python.packages import get_package_share_directory
-
-    return get_package_share_directory(package)
-
-
-def render_urdf(body_id: str = PREVIEW_ID, height: float = PREVIEW_HEIGHT_M) -> str:
-    """One-time xacro render of human_description/urdf/human-tpl.xacro via subprocess."""
-    xacro_path = os.path.join(_share_dir("human_description"), "urdf", "human-tpl.xacro")
-    result = subprocess.run(  # noqa: S603
-        ["xacro", xacro_path, f"id:={body_id}", f"height:={height}"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout
-
-
 @functools.lru_cache(maxsize=4)
 def _cached_tree(body_id: str) -> tuple[str, dict[str, Joint]]:
-    return parse_urdf(render_urdf(body_id))
+    assert body_urdf is not None
+    return parse_urdf(body_urdf(body_id))
 
 
 Segment = tuple[tuple[float, float], tuple[float, float]]
@@ -206,18 +181,10 @@ def preview(
     angles: Mapping[str, float],
     body_id: str = PREVIEW_ID,
 ) -> tuple[list[Segment], list[Segment]]:
-    """Full pipeline: composed semantic angles -> rig conversion -> FK -> (front, side).
-
-    angles keys are bare wire joint names (GaitGenerator.JOINT_NAMES), as read
-    back from the bus. Returns (front_bones, side_bones): each a list of 2D line
-    segments, one per URDF joint, ready to draw.
-    """
-    if semantic_to_rig is None:
+    """Front and side bone segments of the RViz body posed by semantic angles over the default stance."""
+    if semantic_positions is None:
         raise RuntimeError("rviz_utils.hri.rig is unavailable (source the ROS install)")
     root, joints = _cached_tree(body_id)
-    names: Sequence[str] = list(angles.keys())
-    raw_values = semantic_to_rig(names, [angles[n] for n in names])
-    urdf_angles = {f"{bare}_{body_id}": value for bare, value in zip(names, raw_values, strict=True)}
-    positions = forward_kinematics(root, joints, urdf_angles)
+    positions = forward_kinematics(root, joints, semantic_positions(angles, "", body_id))
     front, side = project_front(positions), project_side(positions)
     return _bone_segments(front, joints), _bone_segments(side, joints)

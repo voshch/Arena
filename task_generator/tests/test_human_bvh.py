@@ -4,6 +4,8 @@ import attrs
 import numpy as np
 import pytest
 
+from arena_simulation_setup.shared.body import axis_rotation, joint_angles
+
 from task_generator.simulators.human import bvh
 
 TWO_BONES = """HIERARCHY
@@ -38,13 +40,6 @@ STRAIGHT = bvh.BindPose(
     positions={"Hips": np.zeros(3), "LeftUpLeg": np.array([1.0, -1.0, 0.0]), "LeftLeg": np.array([1.0, -5.0, 0.0])},
 )
 
-KNEE = bvh.BoneTarget(joint="l_knee", axis=(-1.0, 0.0, 0.0), gain=1.0)
-HIP = [
-    bvh.BoneTarget(joint="l_y_hip", axis=(0.0, 1.0, 0.0), gain=1.0),
-    bvh.BoneTarget(joint="l_p_hip", axis=(0.0, 0.0, -1.0), gain=1.0),
-    bvh.BoneTarget(joint="l_r_hip", axis=(-1.0, 0.0, 0.0), gain=1.0),
-]
-
 
 def test_parse_reads_joints_channels_and_frames():
     motion = bvh.parse(TWO_BONES)
@@ -77,20 +72,19 @@ def test_upright_worlds_keep_the_root_tilt_and_drop_its_heading():
     assert tilted["LeftUpLeg"][0] == pytest.approx(bvh._axis_rotation((1, 0, 0), 0.3) @ rotations["LeftUpLeg"][0])
 
 
-def test_decompose_recovers_the_angles_of_a_composed_rotation():
-    angles = np.array([0.3, -0.2, 1.1])
-    goal = bvh._compose(HIP, angles)
-    assert bvh.decompose(HIP, goal, np.zeros(3)) == pytest.approx(angles, abs=1e-6)
+def test_hip_angles_recover_a_composed_rotation():
+    composed = axis_rotation((0.0, 0.0, -1.0), 0.3) @ axis_rotation((1.0, 0.0, 0.0), -0.2) @ axis_rotation((0.0, -1.0, 0.0), 1.1)
+    assert joint_angles("left_hip", composed) == pytest.approx({"l_y_hip": 0.3, "l_p_hip": -0.2, "l_r_hip": 1.1})
 
 
-def test_decompose_projects_onto_a_single_axis():
-    goal = bvh._axis_rotation((-1.0, 0.0, 0.0), -1.4) @ bvh._axis_rotation((0.0, 1.0, 0.0), 0.05)
-    assert bvh.decompose([KNEE], goal, np.zeros(1))[0] == pytest.approx(-1.4, abs=0.01)
+def test_knee_angle_projects_onto_its_single_axis():
+    turn = axis_rotation((0.0, -1.0, 0.0), -1.4) @ axis_rotation((0.0, 0.0, 1.0), 0.05)
+    assert joint_angles("left_knee", turn)["l_knee"] == pytest.approx(-1.4, abs=0.01)
 
 
 def test_wire_frames_resample_and_leave_unsolved_joints_at_zero():
     motion = bvh.parse(TWO_BONES)
-    frames = bvh.wire_frames(motion, {"LeftUpLeg": HIP}, STRAIGHT, bones=["LeftUpLeg"], fps=2.0)
+    frames = bvh.wire_frames(motion, STRAIGHT, bones=["LeftUpLeg"], fps=2.0)
     assert [f["t"] for f in frames] == [0.0, 0.5]
     assert frames[0]["angles"]["l_r_hip"] == pytest.approx(-math.radians(30))
     assert frames[1]["angles"]["l_knee"] == 0.0
@@ -99,26 +93,26 @@ def test_wire_frames_resample_and_leave_unsolved_joints_at_zero():
 
 def test_feet_left_out_keep_their_soles_flat():
     motion = bvh.parse(TWO_BONES.replace("0 10 0 0 0 0 0 0 30 0 0 0", "0 10 0 0 0 0 0 0 -40 0 0 70"))
-    angles = bvh.wire_frames(motion, {"LeftUpLeg": HIP, "LeftLeg": [KNEE]}, STRAIGHT, bones=["LeftUpLeg", "LeftLeg"], fps=2.0)[0]["angles"]
+    angles = bvh.wire_frames(motion, STRAIGHT, bones=["LeftUpLeg", "LeftLeg"], fps=2.0)[0]["angles"]
     assert angles["l_r_hip"] == pytest.approx(math.radians(40))
     assert angles["l_knee"] == pytest.approx(-math.radians(70))
     assert angles["l_ankle"] == pytest.approx(math.radians(30))
 
 
-def test_wire_frames_solve_in_the_bone_bind_frame():
+def test_a_bone_bind_roll_does_not_change_its_semantic_angles():
     motion = bvh.parse(TWO_BONES.replace("0 10 0 0 0 0 0 0 30 0 0 0", "0 10 0 0 0 0 0 25 0 0 0 0"))
     flipped = np.diag([1.0, -1.0, -1.0])
     turned = attrs.evolve(STRAIGHT, orientations={**STRAIGHT.orientations, "LeftUpLeg": flipped})
-    plain = bvh.wire_frames(motion, {"LeftUpLeg": HIP}, STRAIGHT, bones=["LeftUpLeg"], fps=2.0)[0]["angles"]
-    flip = bvh.wire_frames(motion, {"LeftUpLeg": HIP}, turned, bones=["LeftUpLeg"], fps=2.0)[0]["angles"]
-    assert plain["l_y_hip"] == pytest.approx(math.radians(25))
-    assert flip["l_y_hip"] == pytest.approx(-math.radians(25))
+    plain = bvh.wire_frames(motion, STRAIGHT, bones=["LeftUpLeg"], fps=2.0)[0]["angles"]
+    flip = bvh.wire_frames(motion, turned, bones=["LeftUpLeg"], fps=2.0)[0]["angles"]
+    assert plain["l_y_hip"] == pytest.approx(-math.radians(25))
+    assert flip["l_y_hip"] == pytest.approx(plain["l_y_hip"])
 
 
 def test_parallel_legs_drop_hip_yaw_and_abduction_and_keep_flexion():
     motion = bvh.parse(TWO_BONES.replace("0 10 0 0 0 0 0 0 30 0 0 0", "0 10 0 0 0 0 10 25 -40 0 0 0"))
-    open_ = bvh.wire_frames(motion, {"LeftUpLeg": HIP}, STRAIGHT, bones=["LeftUpLeg"], fps=2.0)[0]["angles"]
-    parallel = bvh.wire_frames(motion, {"LeftUpLeg": HIP}, STRAIGHT, bones=["LeftUpLeg"], fps=2.0, parallel=True)[0]["angles"]
+    open_ = bvh.wire_frames(motion, STRAIGHT, bones=["LeftUpLeg"], fps=2.0)[0]["angles"]
+    parallel = bvh.wire_frames(motion, STRAIGHT, bones=["LeftUpLeg"], fps=2.0, parallel=True)[0]["angles"]
     assert abs(open_["l_y_hip"]) > 0.1 and abs(open_["l_p_hip"]) > 0.1
     assert parallel["l_y_hip"] == parallel["l_p_hip"] == 0.0
     assert parallel["l_r_hip"] == open_["l_r_hip"]

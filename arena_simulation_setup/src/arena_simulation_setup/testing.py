@@ -8,11 +8,14 @@ import shutil
 import tempfile
 import wave
 import zlib
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import yaml
 
+from arena_assets.rig import Rig, RigDriver
 from arena_simulation_setup.tree.assets.Animation import write_clip
 
 FPS = 20.0
@@ -163,3 +166,28 @@ def install_fake_assets() -> Path:
     os.environ['ARENA_ASSETS_DIR_LOCAL'] = str(root)
     atexit.register(shutil.rmtree, root, ignore_errors=True)
     return root
+
+
+def make_rig(
+    joints: Mapping[str, tuple[str | None, Sequence[tuple[str, float, Sequence[float]]]]],
+    stance: Mapping[str, Sequence[float]] | None = None,
+    soles: Sequence[str] = (),
+    drivers: Mapping[str, Mapping[str, Any]] | None = None,
+    settings: Mapping[str, Any] | None = None,
+) -> Rig:
+    """A Rig from `{joint: (parent, [(bone, weight, offset xyzw), ...])}` listed parents first, `drivers` as `{name: {bone, axis, ...settings}}`."""
+    names = list(joints)
+    rows = [(index, bone, weight, offset) for index, name in enumerate(names) for bone, weight, offset in joints[name][1]]
+    stance = stance or {}
+    return Rig(
+        tuple(names),
+        np.array([names.index(parent) if (parent := joints[name][0]) is not None else -1 for name in names], dtype=np.int32),
+        np.array([stance.get(name, (0.0, 0.0, 0.0, 1.0)) for name in names], dtype=float).reshape(-1, 4),
+        tuple(bone for _, bone, _, _ in rows),
+        np.array([index for index, _, _, _ in rows], dtype=np.int32),
+        np.array([weight for _, _, weight, _ in rows], dtype=float),
+        np.array([offset for _, _, _, offset in rows], dtype=float).reshape(-1, 4),
+        np.array([names.index(name) for name in soles], dtype=np.int32),
+        tuple(RigDriver(name, str(spec["bone"]), np.asarray(spec["axis"], dtype=float), {key: value for key, value in spec.items() if key not in ("bone", "axis")}) for name, spec in (drivers or {}).items()),
+        settings or {},
+    )

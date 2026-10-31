@@ -43,6 +43,9 @@ class AnimationClip:
     meta: dict
     root_quat: np.ndarray | None = None  # (T, 4) xyzw pelvis orientation from the start heading, clips annotated pelvis_tilt
     legacy: bool = False  # read from the old <name>.npz
+    body_joints: tuple[str, ...] = ()  # joints of the body group, none without one
+    body_rotations: np.ndarray | None = None  # (T, J, 4) xyzw parent-relative
+    body_pelvis: np.ndarray | None = None  # (T, 3) m, body frame
 
     @property
     def fps(self) -> float:
@@ -57,6 +60,7 @@ class AnimationClip:
                 'root_xy_yaw': self.root_xy_yaw[k].tolist(),
                 'animation_state': int(self.animation_state[k]),
                 **({'root_quat': self.root_quat[k].tolist()} if self.root_quat is not None else {}),
+                **({'body': self.body_rotations[k], 'body_pelvis': self.body_pelvis[k]} if self.body_rotations is not None and self.body_pelvis is not None else {}),
             }
             for k in range(len(self.t))
         ]
@@ -149,6 +153,9 @@ class AnimationView(PathView):
                 meta=self.meta,
                 root_quat=from_start_heading(z[quat_key], root_xy_yaw[:, 2]) if tilted else None,
                 legacy=legacy,
+                body_joints=tuple(str(j) for j in z['body/joints']) if 'body/joints' in z.files else (),
+                body_rotations=z['body/rotations'] if 'body/rotations' in z.files else None,
+                body_pelvis=z['body/root_offset'] if 'body/root_offset' in z.files else None,
             )
 
     def extra(self, filename: str) -> Path:

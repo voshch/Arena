@@ -196,7 +196,7 @@ def test_imported_recording_plays_on_the_bus_and_in_the_sim(rclpy_context, tmp_p
     from arena_simulation_setup.tree.World import WorldIdentifier
 
     from task_generator.adapters.eth_ucy import ETHUCY, SEQUENCES
-    from task_generator.simulators.human.gait import GaitGenerator
+    from arena_simulation_setup.shared.body import BODY_JOINTS, DIGIT_JOINTS
     from task_generator.simulators.human.replay import WALK_SPEED
     from task_generator.tasks.registry import identifier_to_available
 
@@ -233,8 +233,9 @@ def test_imported_recording_plays_on_the_bus_and_in_the_sim(rclpy_context, tmp_p
                 assert ped.pose.position.z == 0.0
                 assert (ped.twist.linear.x, ped.twist.linear.y) == pytest.approx((state.vx, state.vy), abs=1e-6)
                 assert ped.animation_state == (Pedestrian.WALKING if math.hypot(state.vx, state.vy) >= WALK_SPEED else Pedestrian.IDLE)
-                assert set(ped.joint_state.name) <= set(GaitGenerator.JOINT_NAMES)
-                assert len(ped.joint_state.name) == len(ped.joint_state.position) > 0
+                assert list(ped.joint_state.name) == []
+                assert tuple(ped.body.joints) == BODY_JOINTS + DIGIT_JOINTS
+                assert len(ped.body.rotations) == len(ped.body.joints)
             assert sorted(stage.simulator.updated[-1]) == names
             for name, xy in stage.simulator.updated[-1].items():
                 assert xy == pytest.approx(expected(t)[name.removeprefix(f"{PREFIX}/")], abs=2e-3)

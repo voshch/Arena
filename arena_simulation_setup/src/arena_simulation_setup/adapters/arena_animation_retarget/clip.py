@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from arena_simulation_setup.shared.body import BODY_JOINTS
 from arena_simulation_setup.tree.assets.Animation import ANIM_SUFFIX, write_anim
 
 from .retarget import Clip
@@ -21,18 +22,18 @@ def write_clip(clip: Clip, out_dir: str | Path, name: str, *, loop: bool = False
     d = Path(out_dir) / name
     d.mkdir(parents=True, exist_ok=True)
     names = sorted(clip.angles)
-    write_anim(
-        d / f"{name}{ANIM_SUFFIX}",
-        {
-            "clip/joint_names": np.array(names),
-            "clip/angles": np.stack([clip.angles[k] for k in names], 1),
-            "clip/t": clip.t,
-            "clip/root_xy_yaw": clip.root_xy_yaw,
-            "clip/animation_state": np.zeros(len(clip.t), dtype=np.int16),
-            "root/z": clip.root_z,
-            "root/quat": clip.root_quat,
-        },
-    )
+    arrays = {
+        "clip/joint_names": np.array(names),
+        "clip/angles": np.stack([clip.angles[k] for k in names], 1),
+        "clip/t": clip.t,
+        "clip/root_xy_yaw": clip.root_xy_yaw,
+        "clip/animation_state": np.zeros(len(clip.t), dtype=np.int16),
+        "root/z": clip.root_z,
+        "root/quat": clip.root_quat,
+    }
+    if clip.body_rotations is not None and clip.body_pelvis is not None:
+        arrays |= {"body/joints": np.array(BODY_JOINTS), "body/rotations": clip.body_rotations, "body/root_offset": clip.body_pelvis}
+    write_anim(d / f"{name}{ANIM_SUFFIX}", arrays)
     tilt = "pelvis tilt folded into waist/hips" if clip.fold_tilt else "pelvis-relative body, apply root/quat"
     ann = {"name": name, "path": f"Animation/{name}", "desc": desc or name.replace("_", " "), "tags": list(tags or ["domain::common"]), "fps": round(clip.fps, 6), "loop": bool(loop), "note": " ".join(x for x in (note, f"Retargeted from SMPL-X by arena_animation_retarget ({tilt}; root/z, root/quat = pelvis).") if x)}
     if not clip.fold_tilt:
@@ -56,4 +57,6 @@ def load_clip(path: str | Path) -> Clip:
         root_xy_yaw=z["clip/root_xy_yaw"].astype(float),
         root_z=z["root/z"].astype(float) if "root/z" in z.files else np.zeros(n),
         root_quat=z["root/quat"].astype(float) if "root/quat" in z.files else np.tile([0.0, 0, 0, 1], (n, 1)),
+        body_rotations=z["body/rotations"].astype(float) if "body/rotations" in z.files else None,
+        body_pelvis=z["body/root_offset"].astype(float) if "body/root_offset" in z.files else None,
     )

@@ -4,61 +4,63 @@ import math
 
 import numpy as np
 import pytest
-import xacro
-from ament_index_python.packages import get_package_share_directory
+from arena_assets.rig import write_rig
+from arena_simulation_setup.shared.body import load_template
+from arena_simulation_setup.testing import make_rig
 
 from rviz_utils.hri.face import GAZE_IN_FACE, FaceChain, matrix_from_pose, pinhole_k, quat_from_matrix, root_drop
+from rviz_utils.hri.urdf import EYES, body_urdf
 
-_HEIGHT = 1.65
 _BODY = "env_0_agent_7"
 
 
-def _urdf(height: float = _HEIGHT) -> str:
-    path = f"{get_package_share_directory('human_description')}/urdf/human-tpl.xacro"
-    return xacro.process_file(path, mappings={"id": _BODY, "height": str(height)}).toprettyxml(indent="  ")
+def _head() -> np.ndarray:
+    """Head joint position relative to the pelvis at the zero pose."""
+    template = load_template()
+    point, joint = np.zeros(3), "head"
+    while template.parents[joint] is not None:
+        point += template.offsets[joint]
+        joint = template.parents[joint]
+    return point
 
 
-def _proportions(height: float) -> tuple[float, float, float]:
-    """(torso top z, neck length, head radius) from the xacro's figure-drawing units."""
-    unit = height / 7.5
-    return unit * 2.75, unit * 0.25, unit / 2
+_SELLION = np.mean(np.asarray(EYES), axis=0)
 
 
 @pytest.fixture(scope="module")
 def chain() -> FaceChain:
-    return FaceChain.from_urdf(_urdf(), _BODY)
+    return FaceChain.from_urdf(body_urdf(_BODY), _BODY)
 
 
 def test_rest_face_sits_on_the_eye_midpoint_looking_forward(chain: FaceChain):
-    torso, neck, r = _proportions(_HEIGHT)
     face = chain.pose({})
-    np.testing.assert_allclose(face[:3, 3], (r / 2 + 0.4 * r, 0.0, torso + neck + r), atol=1e-9)
+    np.testing.assert_allclose(face[:3, 3], _head() + _SELLION, atol=1e-9)
     np.testing.assert_allclose(face[:3, :3], np.eye(3), atol=1e-9)
 
 
-def test_head_yaw_swings_the_face_around_the_neck(chain: FaceChain):
-    torso, neck, r = _proportions(_HEIGHT)
-    face = chain.pose({f"y_head_{_BODY}": math.pi / 2})
-    np.testing.assert_allclose(face[:3, 3], (0.0, r / 2 + 0.4 * r, torso + neck + r), atol=1e-9)
+def test_head_yaw_swings_the_face_around_the_head(chain: FaceChain):
+    face = chain.pose({f"head_rz_{_BODY}": math.pi / 2})
+    np.testing.assert_allclose(face[:3, 3], _head() + (-_SELLION[1], _SELLION[0], _SELLION[2]), atol=1e-9)
     np.testing.assert_allclose(face[:3, 0], (0.0, 1.0, 0.0), atol=1e-9)
 
 
 def test_head_pitch_about_minus_y_tilts_the_view_up(chain: FaceChain):
-    face = chain.pose({f"p_head_{_BODY}": 0.4})
+    face = chain.pose({f"head_ry_{_BODY}": -0.4})
     np.testing.assert_allclose(face[:3, 0], (math.cos(0.4), 0.0, math.sin(0.4)), atol=1e-9)
 
 
 def test_spine_bend_carries_the_face(chain: FaceChain):
     rest = chain.pose({})
-    bent = chain.pose({f"waist_{_BODY}": 0.3})
+    bent = chain.pose({f"spine1_ry_{_BODY}": 0.3})
     assert bent[0, 3] > rest[0, 3]
     assert bent[2, 3] < rest[2, 3]
 
 
-def test_taller_body_raises_the_face():
-    tall = FaceChain.from_urdf(_urdf(1.9), _BODY).pose({})
-    torso, neck, r = _proportions(1.9)
-    assert tall[2, 3] == pytest.approx(torso + neck + r)
+def test_a_dropped_root_lowers_the_face(chain: FaceChain):
+    rest = chain.pose({})
+    seated = chain.pose({f"root_z_{_BODY}": -0.4})
+    assert seated[2, 3] == pytest.approx(rest[2, 3] - 0.4)
+    np.testing.assert_allclose(seated[:2, 3], rest[:2, 3], atol=1e-9)
 
 
 @pytest.mark.parametrize(
@@ -86,12 +88,12 @@ def test_pinhole_k_spans_the_requested_fov():
 
 
 def test_root_drop_reads_the_rig_beside_the_actor_sdf(tmp_path):
-    (tmp_path / "rig.yaml").write_text("skeleton: cmu\nroot_offset: [0.0, 0.0, -0.3316]\n")
+    write_rig(tmp_path / "seated.rig", make_rig({"pelvis": (None, [])}, settings={"root_offset": [0.0, 0.0, -0.3316]}))
     assert root_drop(str(tmp_path / "seated.sdf")) == pytest.approx(-0.3316)
 
 
 def test_root_drop_is_zero_for_a_standing_bundle(tmp_path):
-    (tmp_path / "rig.yaml").write_text("skeleton: cmu\n")
+    write_rig(tmp_path / "standing.rig", make_rig({"pelvis": (None, [])}))
     assert root_drop(str(tmp_path / "standing.sdf")) == 0.0
     assert root_drop(str(tmp_path / "missing" / "actor.sdf")) == 0.0
     assert root_drop("") == 0.0

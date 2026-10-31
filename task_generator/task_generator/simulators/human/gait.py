@@ -1,8 +1,7 @@
 """Gait synthesis for pedestrian skeleton animation.
 
-Emits semantic joint angles per the wire contract in JOINTS.md: values match the
-ros4hri human_description URDF axes for every joint except the shoulder triples, which
-are anatomical (sagittal flexion, antiphase baked into the emitted values).
+Emits semantic joint angles per the wire contract in JOINTS.md, the shoulder triples
+anatomical (sagittal flexion, antiphase baked into the emitted values).
 """
 
 from __future__ import annotations

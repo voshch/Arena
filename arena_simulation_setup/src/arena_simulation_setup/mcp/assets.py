@@ -26,6 +26,7 @@ domain = Domain(
     find and ls show what each resolver answers, pull fetches into the local cache, push publishes to the kind's bucket after the preflight that refuses unresolvable references.
     import_sources lists the upstream datasets `arena asset import` converts from, import_items one dataset's importable items, and import converts chosen items into the imported root as a job.
     retarget_animation turns SMPL-X motion files into Animation clips as a job.
+    rig_human writes rig/<name>.rig and rig/<name>.sdf into a human bundle from its skin.
     articulation shows the links, joints, named states, detents and field families of an articulated object, the values scenario objects take as `joints:`.""",
     check=_ready,
 )
@@ -191,3 +192,23 @@ async def assets_retarget_animation(
     argv = [sys.executable, "-m", "arena_simulation_setup.adapters.arena_animation_retarget", *sources, "-o", out, *flags]
     job = await JOBS.start_process("retarget", f"retarget {' '.join(sources)}", argv, cwd=cli.ws_dir(), result=_retargeted)
     return job.as_dict()
+
+
+@domain.tool(idempotent=True)
+def assets_rig_human(
+    bundle: Annotated[str, Field(description="human bundle directory holding <name>.sdf and meshes/<name>.dae, absolute path")],
+    dry_run: Annotated[bool, Field(description="return the rig without writing rig/<name>.rig")] = False,
+) -> dict[str, object]:
+    """Rig a human bundle like `rig_human`: rig/<name>.rig and rig/<name>.sdf from its skin, rig.yaml only read."""
+    from arena_simulation_setup.shared.body import load_template
+    from arena_simulation_setup.tree.assets.human_rig import build_rig, describe, write_bundle
+
+    path = Path(bundle)
+    if not path.is_dir():
+        raise ToolError(f"no such bundle: {bundle}", hint="pass the absolute bundle directory holding <name>.sdf and meshes/<name>.dae")
+    try:
+        rig = build_rig(path, load_template())
+        written = [] if dry_run else write_bundle(path, rig)
+    except (OSError, ValueError) as exc:
+        raise ToolError(str(exc), hint="a human bundle carries a cmu_mb or game_engine skin as meshes/<bundle name>.dae") from exc
+    return {"path": str(path / "rig" / f"{path.name}.rig"), "written": [str(file) for file in written], "rig": describe(rig)}
