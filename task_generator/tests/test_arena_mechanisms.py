@@ -20,6 +20,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.arena_humansim.arena_humansim import _DEFERRED_ID_BASE, ArenaHumanSimulator
+from task_generator.simulators.human.drivers import DrivenJoints, JoystickDriver
 from task_generator.simulators.human.itinerary import ItineraryDriver, Phase, Stop
 from task_generator.simulators.human.utils import KnownObstacles, ObstacleLayer
 
@@ -402,6 +403,8 @@ def test_removed_static_obstacles_leave_the_engine_by_sim_path() -> None:
 def test_unused_static_obstacles_leave_the_engine_by_sim_path() -> None:
     sim = _removal_adapter(_chair("chair_1"))
     sim._hearing = None
+    sim._driven = DrivenJoints()
+    sim._joystick = JoystickDriver()
     sim._possession = types.SimpleNamespace(clear=lambda: None)
     sim._warned_unknown = set()
     sim._warned_bad_joints = set()

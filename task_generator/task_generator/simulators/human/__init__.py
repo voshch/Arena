@@ -41,7 +41,7 @@ from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_manager import AnimationManager
-from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
+from task_generator.simulators.human.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
@@ -235,12 +235,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._driven = DrivenJoints()
-        self._drivers: dict[str, tuple[Roller, ...]] = {}
+        self._drivers: dict[str, Drivers] = {}
         self._bodies: dict[str, BodyMeasurements] = {}
         self._seat_plans: dict[int, SeatPlan] = {}
         self._rests: dict[int, _Rest] = {}
         self._free_poses: dict[int, tuple[np.ndarray, np.ndarray]] = {}
         self._warned_no_squat = False
+        self._joystick = JoystickDriver()
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
         self.node.create_subscription(
@@ -295,6 +296,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             out.header.stamp = stamp
 
         current_ids: set[int] = {ped.id for ped in out.pedestrians}
+        for stale in self._joystick.known() - current_ids:
+            self._joystick.forget(stale)
         for stale in sorted(set(self._gait_prev_stamp) - current_ids):
             self._gestures.forget(stale)
             self._gait.forget(stale)
@@ -308,6 +311,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         animation = AnimationStates()
         animation.header = out.header
         tilts: dict[int, tuple[float, float, float, float]] = {}
+        generated: set[int] = set()
         for ped in out.pedestrians:
             ped.model_uri = self._ped_model_uris.get(ped.name, "")
             if ped.joint_state.name:
@@ -330,18 +334,24 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
+            generated.add(ped.id)
             ped.gait_phase = self._gait.phase(ped.id)
             if (tilt := self._gait.root_tilt(ped.id)) is not None:
                 tilts[ped.id] = tilt
             animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
+        pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
         for ped in out.pedestrians:
             ped.pose.position.z = stair_height(self._known_stairs, ped.pose.position.x, ped.pose.position.y)
             drivers = self._drivers_for(ped.model_uri)
-            if not drivers:
+            if not drivers.rollers and not drivers.joystick:
                 continue
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
-            angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw)
+            angles = self._driven.advance(ped.id, drivers.rollers, ped.pose.position.x, ped.pose.position.y, yaw)
+            if drivers.joystick:
+                speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
+                busy = self._gestures.busy_joints(ped.id) if ped.id in generated else set(ped.joint_state.name)
+                angles.update(self._joystick.advance(ped.id, yaw, speed, pose_sec, busy=busy))
             ped.joint_state.name, ped.joint_state.position = with_driven(ped.joint_state.name, ped.joint_state.position, angles)
 
         possessed = self._possession.possessed(now_sec)
@@ -466,7 +476,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._bodies[model_uri] = body
         return body
 
-    def _drivers_for(self, model_uri: str) -> tuple[Roller, ...]:
+    def _drivers_for(self, model_uri: str) -> Drivers:
         """Drivers of a ped model's rig.yaml, read once per model, none when the file is rejected."""
         drivers = self._drivers.get(model_uri)
         if drivers is None:
@@ -474,7 +484,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 drivers = load_drivers(model_uri)
             except (ValueError, OSError, yaml.YAMLError) as e:
                 self._logger.warning(f"rig drivers of {model_uri!r} rejected ({e}), its driven joints stay still")
-                drivers = ()
+                drivers = Drivers()
             self._drivers[model_uri] = drivers
         return drivers
 
@@ -687,6 +697,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _close_stream_gate(self) -> None:
         self._stream_gate = False
+        self._driven.clear()
+        self._joystick.clear()
         self._possession.clear()
         self._warned_unknown.clear()
         self._warned_bad_joints.clear()

@@ -218,6 +218,23 @@ def test_explicit_arm_slots_force_the_side(rig):
     assert st.channel == "arm_l" and st.clip.side == "l"
 
 
+def test_busy_joints_cover_the_pointing_arm_until_its_release_ends(rig):
+    mgr, layer, _ = rig
+    assert layer.busy_joints(1) == set()
+    r = req(arm((-1.0, 4.0, 1.2), slot="arm_r"))
+    st = to_hold(mgr, layer, 1, r)
+    assert "r_elbow" in layer.busy_joints(1)
+    assert "l_elbow" not in layer.busy_joints(1)
+    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + 1)
+    tick(mgr, 1, None)
+    assert st.phase == "release" and "r_elbow" in layer.busy_joints(1)
+    drain(mgr, 1, None, st)
+    assert layer.busy_joints(1) == set()
+    to_hold(mgr, layer, 2, req(arm((2.0, 4.0, 1.2), slot="arm_l")))
+    assert "l_elbow" in layer.busy_joints(2)
+    assert "r_elbow" not in layer.busy_joints(2)
+
+
 def test_switching_arm_slot_releases_then_restarts(rig):
     mgr, layer, _ = rig
     st = to_hold(mgr, layer, 1, point((-1.0, 4.0, 1.2)))
