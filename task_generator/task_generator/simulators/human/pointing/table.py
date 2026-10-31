@@ -1,6 +1,6 @@
 """Baked PointAt: ``bake`` solves an (azimuth, elevation) hold grid offline, ``BakedPointAt`` plays it back without IK.
 
-The table is stored next to its template, in the template's Animation asset (``table.npz``).
+The table is the ``table`` group of the template's ``.anim`` (old assets keep it in a ``table.npz`` beside the clip).
 Rebake: ``python3 -m task_generator.simulators.human.pointing.table`` writes it into a local copy of the asset
 (``$ARENA_ASSETS_DIR_LOCAL/Common/Animation/<template>/``), publish with ``arena asset push animation <template>``.
 """
@@ -13,12 +13,14 @@ import math
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+from arena_simulation_setup.tree.assets.Animation import ANIM_SUFFIX, add_anim_group
 
 from . import contract as C
 from . import skeleton as S
-from .generator import FIXED_POINT_DAMPING, HoldPose, PointAtClip, PointAtGenerator, PointAtOptions, _triple_in_limits, angles_from_direction, template_asset
+from .generator import DEFAULT_TEMPLATE, FIXED_POINT_DAMPING, HoldPose, PointAtClip, PointAtGenerator, PointAtOptions, _triple_in_limits, angles_from_direction, template_asset
 
 SIDES = ("l", "r")
 AZ_STEP = 5.0
@@ -33,7 +35,9 @@ TABLE_FILE = "table.npz"
 
 
 def table_path(template: str) -> str:
-    return str(template_asset(template).extra(TABLE_FILE))
+    """The file holding the template's table: its .anim, else the old table.npz."""
+    view = template_asset(template)
+    return str(view.anim if view.anim is not None else view.extra(TABLE_FILE))
 
 
 def _local_table_path(template: str) -> str:
@@ -44,7 +48,7 @@ def _local_table_path(template: str) -> str:
     local = DynamicPaths.ARENA.path / "Common" / "Animation" / template
     if not local.is_dir():
         shutil.copytree(source, local, ignore=shutil.ignore_patterns(".ttl"))
-    return str(local / TABLE_FILE)
+    return str(local / f"{template}{ANIM_SUFFIX}")
 
 
 def _quat(m: np.ndarray) -> np.ndarray:
@@ -93,7 +97,9 @@ class PointTable:
     """The baked grid: ``cell(side, aim)`` bilinearly interpolates the four surrounding holds."""
 
     def __init__(self, path: str) -> None:
-        with np.load(path, allow_pickle=False) as z:
+        with np.load(path, allow_pickle=False) as npz:
+            prefix = "table/" if path.endswith(ANIM_SUFFIX) else ""
+            z = {key[len(prefix) :]: npz[key] for key in npz.files if key.startswith(prefix)}
             self.path = path
             self.template = str(z["template"])
             self.height = float(z["height"])
@@ -207,7 +213,7 @@ def _solve_cell(template: str, height: float, collar_scale: float, side: str, az
 
 
 def bake(
-    template: str = "point_to_right",
+    template: str = DEFAULT_TEMPLATE,
     height: float = 1.65,
     *,
     collar_scale: float = COLLAR_SCALE,
@@ -253,23 +259,26 @@ def bake(
     # az = +180 is the az = -180 column
     for arr in (linear, quat, swivel, wrist, ok, clearance, aim_error, relaxed):
         arr[:, -1] = arr[:, 0]
-    np.savez_compressed(
-        path,
-        template=np.array(template),
-        height=np.array(height),
-        collar_scale=np.array(collar_scale),
-        az=az.astype(np.float32),
-        el=el.astype(np.float32),
-        dofs=np.array([d.replace("l_", "{side}_", 1) if d.startswith("l_") else d for d in _linear_dofs("l")]),
-        linear=linear,
-        quat=quat,
-        swivel=swivel,
-        wrist=wrist,
-        ok=ok,
-        clearance=clearance,
-        aim_error=aim_error,
-        relaxed=relaxed,
-    )
+    table = {
+        "template": np.array(template),
+        "height": np.array(height),
+        "collar_scale": np.array(collar_scale),
+        "az": az.astype(np.float32),
+        "el": el.astype(np.float32),
+        "dofs": np.array([d.replace("l_", "{side}_", 1) if d.startswith("l_") else d for d in _linear_dofs("l")]),
+        "linear": linear,
+        "quat": quat,
+        "swivel": swivel,
+        "wrist": wrist,
+        "ok": ok,
+        "clearance": clearance,
+        "aim_error": aim_error,
+        "relaxed": relaxed,
+    }
+    if path.endswith(ANIM_SUFFIX):
+        add_anim_group(Path(path), "table", table)
+    else:
+        np.savez_compressed(path, **table)
     return path
 
 
@@ -281,7 +290,7 @@ def bake(
 class BakedPointAt(PointAtGenerator):
     """``PointAtGenerator`` whose clips come from the baked table instead of the solver."""
 
-    def __init__(self, template: str = "point_to_right", height: float = 1.65, options: PointAtOptions | None = None, table: PointTable | None = None) -> None:
+    def __init__(self, template: str = DEFAULT_TEMPLATE, height: float = 1.65, options: PointAtOptions | None = None, table: PointTable | None = None) -> None:
         table = table or PointTable(table_path(template))
         options = options or PointAtOptions(collar_scale=table.collar_scale)
         super().__init__(template=template, height=height, options=options)
@@ -449,7 +458,7 @@ class BakedPointAt(PointAtGenerator):
 
 def main(argv: Sequence[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="bake the PointAt hold table")
-    ap.add_argument("--template", default="point_to_right")
+    ap.add_argument("--template", default=DEFAULT_TEMPLATE)
     ap.add_argument("--height", type=float, default=1.65)
     ap.add_argument("--collar-scale", type=float, default=COLLAR_SCALE)
     ap.add_argument("--workers", type=int, default=None)

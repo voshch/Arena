@@ -104,6 +104,7 @@ class GestureClip:
     joints: frozenset[str] | None = None  # blend set fixed by the clip itself, None = ask ``Gesture.joints``
     loop: bool = False  # loop the whole clip on the hold instead of parking on ``hold_end``
     reverse: bool = False  # loop out and back
+    loop_from: int = 0  # a looping clip wraps back to this frame, the frames before it are an intro played once
 
 
 class Gesture(typing.Protocol):
@@ -473,7 +474,7 @@ class GestureLayer:
             fps=clip.fps,
             loop=loops,
             owner=agent_id,
-            loop_from=loop_from or 0,
+            loop_from=clip.loop_from if loop_from is None else loop_from,
             reverse=clip.reverse and loops and loop_from is None,
         )
         self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, fade_in_s=FADE_S if fresh else 0.0, slot=st.slot, carry_ramps=not fresh, start_s=0.0 if st.locked else None)
@@ -545,7 +546,9 @@ class GestureLayer:
         st.release_pending = False
         anim_name = f"gesture:{st.kind}:{agent_id}:{st.slot}"
         current = self._manager.animations.get(anim_name)
-        park_all = self._park(st, current.frames) if current is not None else clip.frames[clip.hold_end]["angles"]
+        # a looping clip releases from wherever its loop is, a parked one from its park pose
+        shown = self._manager.overlay_pose(agent_id, st.slot) if clip.loop else None
+        park_all = shown if shown is not None else self._park(st, current.frames) if current is not None else clip.frames[clip.hold_end]["angles"]
         n = min(int(round(TRANSITION_S * clip.fps)), len(st.release_frames) - 1)
         park = {j: park_all[j] for j in park_all if j in st.release_frames[0]["angles"]} if n > 0 else {}
         tail = blend_into(park, st.release_frames, n)

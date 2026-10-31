@@ -27,7 +27,7 @@ from task_generator.simulators.human.gestures.look import FOLLOW_OMEGA_RAD_S, HE
 from task_generator.simulators.human.gestures.point import PointGesture
 from task_generator.simulators.human.pointing.contract import LIMITS, arm_dofs
 
-pytestmark = pytest.mark.clips("point_to_right", "wave", "hug", "shake_hand", "talk_with_arm_gesture")
+pytestmark = pytest.mark.clips("point_at_template", "wave", "beckon", "hug", "shake_hand", "talk_with_arm_gesture_v1")
 DT = 0.05
 POSE = (1.0, 2.0, math.pi / 2)  # facing +y: world -x is the ped's left
 
@@ -723,8 +723,8 @@ def test_clip_channel_whole_body_when_unannotated(rig):
 
 def test_clip_channel_releases_with_fade_and_unknown_clip_drops(rig):
     mgr, layer, log = rig
-    r = req(body("wave"))
-    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.clip("wave").n_frames + 4)
+    r = req(body("beckon"))  # a loop without release frames: the slot fades out
+    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.clip("beckon").n_frames + 4)
     tick(mgr, 1, req(), n=int(FADE_S / DT) + 4)
     assert 1 not in layer._agents
     tick(mgr, 2, req(body("no_such_clip")), n=2)
@@ -761,7 +761,7 @@ def test_locked_contact_clips_play_in_phase_across_partners(rig, clip: str) -> N
 def test_unlocked_loop_clips_keep_the_per_agent_stagger(rig) -> None:
     mgr, _, _ = rig
     for agent in (3, 200):
-        mgr.compute(agent, 0, 0.0, DT, gesture=req(body("talk_with_arm_gesture")))
+        mgr.compute(agent, 0, 0.0, DT, gesture=req(body("beckon")))  # loops from its first frame, no intro
     assert _body_playhead(mgr, 3) != pytest.approx(_body_playhead(mgr, 200))
 
 
@@ -813,7 +813,7 @@ def test_a_reverse_clip_keeps_its_wrap_through_the_layer() -> None:
     from task_generator.simulators.human.gestures.clip import ClipGesture
 
     mgr = AnimationManager(logger=StubLogger(), fps=20.0)
-    clip = ClipGesture(mgr).start(np.zeros(3), {"clip": "talk_with_arm_gesture"})
+    clip = ClipGesture(mgr).start(np.zeros(3), {"clip": "talk_with_arm_gesture_v1"})
     assert clip.loop and clip.reverse
 
 
@@ -829,3 +829,23 @@ def test_a_clip_with_release_frames_plays_them_when_its_slot_ends(rig) -> None:
     knees = [tick(mgr, 4, req())["l_knee"] for _ in range(10)]
     assert st.phase == "release"
     assert knees[-1] > knees[0] + 0.5
+
+
+def test_a_looping_clip_releases_from_where_its_loop_is(rig) -> None:
+    """The release of a looping clip blends out of the pose the loop shows, not out of the clip's last frame."""
+    mgr, layer, _ = rig
+    ramp = [{"angles": {**dict.fromkeys(JOINT_NAMES, 0.0), "l_knee": -0.1 * k}} for k in range(20)]
+    rest = [{"angles": dict.fromkeys(JOINT_NAMES, 0.0)} for _ in range(6)]
+    mgr.register_transient("knee_loop", ramp, fps=20.0, loop=True, loop_from=4, release=rest)
+    body = req(Channel("body", (0.0, 0.0, 0.0), clip="knee_loop"))
+    st = to_hold(mgr, layer, 5, body, slot="body")
+    settle(mgr, 5, body, st)
+    shown = tick(mgr, 5, body)["l_knee"]
+    for _ in range(40):  # stop mid-loop, well short of the last frame's -1.9
+        if -1.0 < shown < -0.6:
+            break
+        shown = tick(mgr, 5, body)["l_knee"]
+    assert -1.0 < shown < -0.6
+    first = tick(mgr, 5, req())["l_knee"]
+    assert st.phase == "release"
+    assert first == pytest.approx(shown, abs=0.25)

@@ -4,13 +4,10 @@ import pytest
 
 from task_generator.simulators.human.gestures import qa
 
-pytestmark = pytest.mark.clips("point_to_right", "talk_with_arm_gesture", "wave_high")
+pytestmark = pytest.mark.clips("point_at_template", "talk_with_arm_gesture", "wave_high")
 
 
-KNOWN_BAD = {
-    "loop_talk_with_arm_gesture": "0.27 m on the install ramp: the clip's first pose sits far from rest",
-    "loop_wave_high": "0.29 m mid-clip: a twist wrap the retarget leaves in the source",
-}
+KNOWN_BAD: dict[str, str] = {}  # case name -> why it fails, run as a strict xfail
 
 
 @pytest.mark.parametrize("case", qa.default_cases(loops=["talk_with_arm_gesture", "wave_high"]), ids=lambda c: c.name)

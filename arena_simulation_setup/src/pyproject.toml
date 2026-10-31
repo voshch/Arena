@@ -25,6 +25,7 @@ dependencies = [
     "pycollada",
     "requests",
     "scipy",
+    "torch",
     "typing-extensions",
     "usd-core",
 ]
