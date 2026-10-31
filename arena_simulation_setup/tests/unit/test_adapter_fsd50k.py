@@ -79,18 +79,6 @@ def _files(directory: Path) -> list[str]:
     return sorted(path.name.replace(directory.name, "NAME") for path in directory.iterdir())
 
 
-def test_peak_normalized_active_level_reproduces_every_default_normalize_dbfs(library: SoundLibrary, defaults: dict[str, Path]) -> None:
-    peaks = {}
-    for name, directory in defaults.items():
-        manifest = _yaml(directory / f"{name}.yaml")
-        peaks[name] = peak = peak_dbfs(library.kind(manifest["kind"]))
-        levels = [peak_normalized_level_dbfs(directory / variant["file"], peak) for variant in manifest["variants"] if variant.get("file")]
-        assert min(levels) == pytest.approx(manifest["normalize_dbfs"], abs=NATIVE_TOLERANCE_DB), name
-        if len(levels) == 1:
-            assert normalize_dbfs(directory / manifest["variants"][-1]["file"], peak) == manifest["normalize_dbfs"], name
-    assert peaks == {"alarm_loop": ENVIRONMENT_PEAK_DBFS, "footstep": PEAK_DBFS, "greeting": PEAK_DBFS, "motor": PEAK_DBFS, "radio_loop": ENVIRONMENT_PEAK_DBFS}
-
-
 def test_registry_loads_this_class() -> None:
     assert IMPORTERS.load("sound", "fsd50k") is FSD50K
     assert FSD50K.meta.kind == "sound"

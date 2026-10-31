@@ -19,11 +19,9 @@ from arena_simulation_setup.shared.conditions import (
     MembershipAtom,
     NotAtom,
     PlaysAtom,
-    WithinAtom,
     atom_subjects,
     node_children,
     parse_atom,
-    render_atom,
 )
 from arena_simulation_setup.shared.judge import (
     PARK_DRIFT_M,
@@ -60,37 +58,6 @@ def sample(t=0.0, robot=(1.0, 1.0, 0.0), peds=None, fields=None, robots=None):
         robots["robot_0"] = robot
     values = dict(fields or {})
     return Sample(t=t, robots=robots, peds=dict(peds or {}), field=lambda entity, name: values.get((entity, name)))
-
-
-def test_parse_not_and_within_atoms():
-    assert parse_atom("not robot in kitchen") == NotAtom(MembershipAtom("robot", "kitchen"))
-    assert parse_atom("robot within 2.5 of alice") == WithinAtom("robot", 2.5, "alice")
-    assert parse_atom("not alice within 1 of robot") == NotAtom(WithinAtom("alice", 1.0, "robot"))
-
-
-@pytest.mark.parametrize("value", ["not not robot in kitchen", "robot within x of alice", "robot within -1 of alice", "robot within 2 of env_0/alice"])
-def test_parse_rejects_malformed_new_forms(value):
-    with pytest.raises(ValueError):
-        parse_atom(value)
-
-
-@pytest.mark.parametrize("text", ["door.open == true", "robot in kitchen", "robot within 2 of alice", "not alice in kitchen"])
-def test_render_atom_round_trips(text):
-    assert render_atom(parse_atom(text)) == text
-
-
-def test_atom_subjects():
-    assert atom_subjects(parse_atom("door.open == true")) == frozenset()
-    assert atom_subjects(parse_atom("not robot within 2 of alice")) == {"robot", "alice"}
-
-
-def test_condition_on_failure_round_trip():
-    cond = EpisodeCondition.parse({"op": "never", "p": "robot in hallway", "on_failure": "abort_episode"})
-    assert cond.on_failure == "abort_episode"
-    assert EpisodeCondition.parse(cond.serialize()) == cond
-    assert "on_failure" not in EpisodeCondition(op="never", p="robot in hallway").serialize()
-    with pytest.raises(ValueError):
-        EpisodeCondition.parse({"op": "never", "p": "robot in hallway", "on_failure": "explode"})
 
 
 def test_membership_robot_and_ped():

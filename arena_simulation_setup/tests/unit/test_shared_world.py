@@ -123,14 +123,17 @@ def test_door_activation_distance_tuple():
 # ---------------------------------------------------------------------------
 
 
-def test_door_semantics_default_empty():
-    d = Door(name="door", start=Position(0.0, 0.0, 0.0), end=Position(1.0, 0.0, 0.0))
-    assert d.semantics == []
-
-
-def test_door_semantics_empty_omitted_on_serialize():
-    d = Door(name="door", start=Position(0.0, 0.0, 0.0), end=Position(1.0, 0.0, 0.0))
-    assert 'semantics' not in d.serialize()
+@pytest.mark.parametrize(
+    "entity",
+    [
+        Door(name="door", start=Position(0.0, 0.0, 0.0), end=Position(1.0, 0.0, 0.0)),
+        Elevator(name="elev", position=Position(0.0, 0.0, 0.0)),
+    ],
+    ids=["door", "elevator"],
+)
+def test_semantics_default_empty_and_omitted_on_serialize(entity):
+    assert entity.semantics == []
+    assert 'semantics' not in entity.serialize()
 
 
 def test_door_semantics_preset_round_trip():
@@ -146,34 +149,14 @@ def test_door_semantics_preset_round_trip():
     assert d2.semantics == d.semantics
 
 
-def test_door_semantics_binding_joint_raises():
-    raw = {
-        'name': 'door',
-        'span': [[0.0, 0.0], [1.0, 0.0]],
-        'semantics': [{'state': 'state', 'binding': 'joint'}],
-    }
+@pytest.mark.parametrize(
+    "semantic",
+    [{'state': 'state', 'binding': 'joint'}, {'predicate': 'open', 'trigger': 'contact'}],
+    ids=["binding_joint", "trigger_contact"],
+)
+def test_door_semantics_reject_what_a_door_cannot_bind(semantic):
     with pytest.raises(Exception):
-        converter.structure(raw, Door)
-
-
-def test_door_semantics_trigger_contact_raises():
-    raw = {
-        'name': 'door',
-        'span': [[0.0, 0.0], [1.0, 0.0]],
-        'semantics': [{'predicate': 'open', 'trigger': 'contact'}],
-    }
-    with pytest.raises(Exception):
-        converter.structure(raw, Door)
-
-
-def test_elevator_semantics_default_empty():
-    e = Elevator(name="elev", position=_elev_pos())
-    assert e.semantics == []
-
-
-def test_elevator_semantics_empty_omitted_on_serialize():
-    e = Elevator(name="elev", position=_elev_pos())
-    assert 'semantics' not in e.serialize()
+        converter.structure({'name': 'door', 'span': [[0.0, 0.0], [1.0, 0.0]], 'semantics': [semantic]}, Door)
 
 
 def test_elevator_semantics_preset_round_trip():
@@ -191,14 +174,9 @@ def test_elevator_semantics_preset_round_trip():
     assert (e2.destinations, e2.destination) == (['2_elevator'], '2_elevator')
 
 
-def test_elevator_recall_on_default_none():
-    e = Elevator(name="elev", position=_elev_pos())
-    assert e.recall_on is None
-
-
-def test_elevator_recall_on_first_class_field():
-    e = Elevator(name="elev", position=_elev_pos(), recall_on="alarm")
-    assert e.recall_on == "alarm"
+def test_elevator_recall_on_is_optional():
+    assert Elevator(name="elev", position=_elev_pos()).recall_on is None
+    assert Elevator(name="elev", position=_elev_pos(), recall_on="alarm").recall_on == "alarm"
 
 
 def test_door_semantics_evolve_preserves_semantics():

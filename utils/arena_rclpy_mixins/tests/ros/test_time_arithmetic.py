@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def _t(sec: int, nanosec: int):
     from arena_rclpy_mixins.Time import Time
@@ -39,3 +41,29 @@ def test_from_float_floors_negatives():
 
     assert Time.from_float(-0.5) == _t(-1, 500_000_000)
     assert Time.from_float(1.5) == _t(1, 500_000_000)
+
+
+@pytest.mark.parametrize(
+    ("later", "earlier"),
+    [
+        pytest.param((5, 0), (4, 999_999_999), id="greater_sec_wins_over_smaller_nanosec"),
+        pytest.param((5, 500), (5, 200), id="within_the_same_second"),
+    ],
+)
+def test_ordering_is_lexicographic_on_sec_and_nanosec(later, earlier):
+    assert _t(*later) > _t(*earlier)
+    assert _t(*earlier) < _t(*later)
+    assert not _t(*later) < _t(*earlier)
+    assert not _t(*earlier) > _t(*later)
+
+
+def test_equal_times_are_neither_less_nor_greater():
+    assert not _t(5, 500) < _t(5, 500)
+    assert not _t(5, 500) > _t(5, 500)
+    assert _t(5, 500) >= _t(5, 500)
+    assert _t(5, 500) <= _t(5, 500)
+
+
+def test_sorts_monotonically_across_second_boundaries():
+    stamps = [_t(5, 0), _t(4, 999_999_999), _t(5, 1), _t(4, 0)]
+    assert sorted(stamps) == [_t(4, 0), _t(4, 999_999_999), _t(5, 0), _t(5, 1)]

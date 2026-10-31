@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("arena_cli")
 
-from arena_mcp.core import JOBS
+from arena_mcp.core import JOBS, cli
 from arena_mcp.core.errors import ToolError
 from arena_mcp.domains import workspace
 
@@ -97,6 +97,7 @@ def test_fork_and_robot_tables_parse() -> None:
 
 
 needs_arena = pytest.mark.skipif(not os.environ.get("ARENA_DIR"), reason="needs a sourced Arena environment")
+needs_cli = pytest.mark.skipif(not cli.sourced(), reason="needs a shell that sourced arena")
 
 
 @needs_arena
@@ -131,20 +132,20 @@ def test_feature_and_setting_arguments_are_validated() -> None:
         asyncio.run(workspace.workspace_fork_down("--all"))
 
 
-@needs_arena
+@needs_cli
 def test_net_setting_reads_through_the_real_verb() -> None:
     read = workspace.workspace_settings_net()
     assert read["net"] in ("local", "lan") and read["values"] == ["local", "lan"]
     assert "applies" not in read
 
 
-@needs_arena
+@needs_cli
 def test_robots_ls_reads_submodule_state() -> None:
     listed = asyncio.run(workspace.workspace_robots("ls"))
     assert listed["ready"] or listed["pending"]
 
 
-@needs_arena
+@needs_cli
 def test_fork_verbs_surface_the_cli_refusal_inside_a_fork(tmp_path: Path) -> None:
     saved = {key: os.environ.get(key) for key in ("ARENA_FORK", "ARENA_DATA_DIR")}
     os.environ.update(ARENA_FORK="mcp_test_fork", ARENA_DATA_DIR=str(tmp_path))
@@ -168,7 +169,7 @@ def test_fork_verbs_surface_the_cli_refusal_inside_a_fork(tmp_path: Path) -> Non
     assert "this is fork mcp_test_fork, manage forks from the dev container" in log
 
 
-@needs_arena
+@needs_cli
 def test_status_of_the_live_workspace() -> None:
     root = Path(os.environ["ARENA_DIR"])
     if subprocess.run(["git", "-C", str(root), "rev-parse"], capture_output=True, check=False).returncode:

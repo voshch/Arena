@@ -14,7 +14,7 @@ _NOISE = ("Traceback", "context is not valid", "context is invalid", "never retr
 
 
 def _env() -> dict[str, str]:
-    return {**os.environ, "ROS_DOMAIN_ID": os.environ.get("ROS_DOMAIN_ID", "93")}
+    return {**os.environ, "ROS_DOMAIN_ID": os.environ.get("ROS_DOMAIN_ID", str(60 + os.getpid() % 30))}
 
 
 def _run(mode: str) -> subprocess.CompletedProcess[str]:

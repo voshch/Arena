@@ -15,6 +15,7 @@ PREFIX = "env"
 START_S = 100.0
 TICK_S = 1.0 / 30.0
 DEADLINE_S = 20.0
+MARKER = "quiet_marker"
 
 
 @pytest.fixture(autouse=True)
@@ -25,11 +26,12 @@ def _ros_gate():
 
 
 class Stage:
-    def __init__(self, node, clock, environment, bus: list) -> None:
+    def __init__(self, node, clock, environment, bus: list, marker) -> None:
         self.node = node
         self.clock = clock
         self.environment = environment
         self.bus = bus
+        self.marker = marker
         self.now = START_S
 
     async def advance(self, t: float) -> None:
@@ -62,11 +64,23 @@ class Stage:
             await asyncio.sleep(0.01)
 
     async def quiet(self) -> int:
-        """Let the wall clock run with the sim clock stopped and return the batch count, which must not grow."""
+        """Let the wall clock run with the sim clock stopped and return the batch count, which must not grow while a marker gets through."""
+        from arena_people_msgs.msg import Pedestrians
+        from std_msgs.msg import Header
+
         await asyncio.sleep(0.3)
         count = len(self.bus)
         await asyncio.sleep(0.6)
-        assert len(self.bus) == count
+        deadline = time.monotonic() + DEADLINE_S
+        while self.marker.get_subscription_count() == 0:
+            assert time.monotonic() < deadline, "the bus subscription never matched the marker"
+            await asyncio.sleep(0.01)
+        self.marker.publish(Pedestrians(header=Header(frame_id=MARKER)))
+        while not any(msg.header.frame_id == MARKER for msg in self.bus[count:]):
+            assert time.monotonic() < deadline, "the marker never got through the bus"
+            await asyncio.sleep(0.01)
+        assert [msg.header.frame_id for msg in self.bus[count:]] == [MARKER]
+        del self.bus[count:]
         return count
 
 
@@ -119,7 +133,7 @@ def _on_stage(body: Callable[[Stage], Awaitable[None]]) -> None:
             human = await HumanSimulatorRegistry.get(Constants.HumanSimulator.DUMMY, node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
             assert type(human) is DummyHumanSimulator
             environment = EnvironmentManager(node=node, simulator=simulator, human_simulator=human, realizer=realizer)
-            stage = Stage(node, clock, environment, bus)
+            stage = Stage(node, clock, environment, bus, probe.create_publisher(Pedestrians, str(ns("arena_peds")), 10))
             await stage.advance(START_S)
             await body(stage)
         finally:

@@ -88,19 +88,36 @@ def test_parse_atom_plays_form():
     assert atom_subjects(parse_atom("caller plays beckon")) == {"caller"}
 
 
-@pytest.mark.parametrize("text", ["robot sees caller within 12", "robot sees caller within 2.5", "caller plays beckon", "not caller plays beckon"])
-def test_render_atom_round_trips_new_forms(text):
+def test_parse_not_and_within_atoms():
+    assert parse_atom("not robot in kitchen") == NotAtom(MembershipAtom("robot", "kitchen"))
+    assert parse_atom("robot within 2.5 of alice") == WithinAtom("robot", 2.5, "alice")
+    assert parse_atom("not alice within 1 of robot") == NotAtom(WithinAtom("alice", 1.0, "robot"))
+
+
+def test_atom_subjects():
+    assert atom_subjects(parse_atom("door.open == true")) == frozenset()
+    assert atom_subjects(parse_atom("not robot within 2 of alice")) == {"robot", "alice"}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "door.open == true",
+        "robot in kitchen",
+        "robot within 2 of alice",
+        "not alice in kitchen",
+        "robot sees caller within 12",
+        "robot sees caller within 2.5",
+        "caller plays beckon",
+        "not caller plays beckon",
+    ],
+)
+def test_render_atom_round_trips(text):
     assert render_atom(parse_atom(text)) == text
 
 
 def test_render_atom_writes_the_default_range():
     assert render_atom(parse_atom("robot sees caller")) == "robot sees caller within 12"
-
-
-@pytest.mark.parametrize("value", ["robot sees", "robot sees caller within", "robot sees caller within x", "robot sees caller within -1", "robot sees env_0/caller", "caller plays", "env_0/caller plays beckon"])
-def test_parse_atom_rejects_malformed_sees_and_plays(value):
-    with pytest.raises(ValueError):
-        parse_atom(value)
 
 
 # ---------------------------------------------------------------------------
@@ -186,26 +203,25 @@ def test_parse_until_rejects_malformed_forms(value):
         " in zone",
         "subject in ",
         "robot in ward_a in pharmacy",
+        "not not robot in kitchen",
+        "robot within x of alice",
+        "robot within -1 of alice",
+        "robot within 2 of env_0/alice",
+        "robot sees",
+        "robot sees caller within",
+        "robot sees caller within x",
+        "robot sees caller within -1",
+        "robot sees env_0/caller",
+        "caller plays",
+        "env_0/caller plays beckon",
+        "env_0/ward_a_door.open == false",
+        "env_0/blocker_1 in ward_a",
+        "robot in env_0/ward_a",
     ],
 )
 def test_parse_atom_rejects_malformed_shapes(value):
     with pytest.raises(ValueError):
         parse_atom(value)
-
-
-def test_parse_atom_rejects_env_prefixed_entity():
-    with pytest.raises(ValueError):
-        parse_atom("env_0/ward_a_door.open == false")
-
-
-def test_parse_atom_rejects_env_prefixed_subject():
-    with pytest.raises(ValueError):
-        parse_atom("env_0/blocker_1 in ward_a")
-
-
-def test_parse_atom_rejects_env_prefixed_zone():
-    with pytest.raises(ValueError):
-        parse_atom("robot in env_0/ward_a")
 
 
 def test_parse_atom_within_takes_point_literals():
@@ -238,20 +254,13 @@ def test_atom_subjects_leave_points_out():
 # ---------------------------------------------------------------------------
 
 
-def test_parse_unary_op_eventually():
-    cond = EpisodeCondition.parse({"op": "eventually", "p": "robot in ward_a"})
-    assert cond.op == "eventually"
-    assert cond.q is None
-
-
-def test_parse_unary_op_never():
-    cond = EpisodeCondition.parse({"op": "never", "p": "robot in pharmacy"})
-    assert cond.q is None
-
-
-def test_parse_unary_op_always():
-    cond = EpisodeCondition.parse({"op": "always", "p": "robot in ward_a"})
-    assert cond.q is None
+@pytest.mark.parametrize(
+    ("op", "p"),
+    [("eventually", "robot in ward_a"), ("never", "robot in pharmacy"), ("always", "robot in ward_a")],
+)
+def test_parse_unary_op_has_no_q(op, p):
+    cond = EpisodeCondition.parse({"op": op, "p": p})
+    assert (cond.op, cond.p, cond.q) == (op, p, None)
 
 
 def test_parse_binary_op_before():
@@ -265,6 +274,15 @@ def test_parse_binary_op_never_during():
     )
     assert cond.p == "robot in ward_a_doorway"
     assert cond.q == "ward_a_door.open == false"
+
+
+def test_condition_on_failure_round_trip():
+    cond = EpisodeCondition.parse({"op": "never", "p": "robot in hallway", "on_failure": "abort_episode"})
+    assert cond.on_failure == "abort_episode"
+    assert EpisodeCondition.parse(cond.serialize()) == cond
+    assert "on_failure" not in EpisodeCondition(op="never", p="robot in hallway").serialize()
+    with pytest.raises(ValueError):
+        EpisodeCondition.parse({"op": "never", "p": "robot in hallway", "on_failure": "explode"})
 
 
 def test_parse_unary_op_rejects_q():

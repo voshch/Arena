@@ -1022,13 +1022,23 @@ def test_fire_alarm_cascade_through_regime_bus():
 # ---------------------------------------------------------------------------
 
 
-def test_support_matrix_new_kinds():
-    assert SignalSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy", "flatsim"})
-    assert ScheduleSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy", "flatsim"})
-    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
-    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
-    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
-    assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy", "flatsim"})
+@pytest.mark.parametrize(
+    ("kind", "sims"),
+    [
+        (DoorSemantics, {"gazebo", "isaac", "mujoco", "flatsim"}),
+        (ElevatorSemantics, {"gazebo", "isaac", "mujoco", "flatsim"}),
+        (SignalSemantics, {"gazebo", "isaac", "mujoco", "dummy", "flatsim"}),
+        (ScheduleSemantics, {"gazebo", "isaac", "mujoco", "dummy", "flatsim"}),
+        (GateSemantics, {"gazebo", "isaac", "mujoco", "flatsim"}),
+        (PressurePlateSemantics, {"gazebo", "isaac", "mujoco", "flatsim"}),
+        (OccupancyCapSemantics, {"gazebo", "isaac", "mujoco", "flatsim"}),
+        (SoundSemantics, {"gazebo", "isaac", "mujoco", "dummy", "flatsim"}),
+        (LightSemantics, {"gazebo", "isaac", "mujoco", "dummy"}),
+    ],
+    ids=lambda value: value.__name__ if isinstance(value, type) else "",
+)
+def test_support_matrix(kind, sims):
+    assert kind.SUPPORTED_SIMS == frozenset(sims)
 
 
 def test_signal_schedule_attach_on_dummy():
@@ -1294,7 +1304,6 @@ def test_light_unknown_cfg_name_raises():
 def test_light_attaches_on_sims_without_gazebo_or_isaac(sim: str):
     mech = _Mech()
     mgr = _manager(mech, sim=sim)
-    assert LightSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy"})
     assert mgr.attach("light", "lamp", _light_cfgs()) is True
     assert [snap.kind for snap in mgr.snapshot()] == ["light"]
     assert mgr.light_outputs() == {"lamp": (1.0, 0.0)}
@@ -1328,40 +1337,37 @@ def test_manager_set_value_light_emits_dim_and_lit_changes():
         mgr.set_value("lamp", "dim", "2")
 
 
-def test_sound_on_negated_regime_follows_complement():
-    mech = _Mech()
+@pytest.mark.parametrize(
+    ("make_mech", "attach", "predicate"),
+    [
+        (_Mech, lambda mech: _attach_sound(mech, _sound_cfgs(sound_on="!r"), entity="hum"), "sounding"),
+        (lambda: _Mech(robots=[]), lambda mech: PressurePlateSemantics.attach(mech, "hum", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="!r")), "pressed"),
+    ],
+    ids=["sound", "plate"],
+)
+def test_negated_regime_follows_complement(make_mech, attach, predicate):
+    mech = make_mech()
     mgr = _manager(mech)
     sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="r"), entity="src")
-    snd = _attach_sound(mech, _sound_cfgs(sound_on="!r"), entity="hum")
-    mgr._instances.update({"src": [sched], "hum": [snd]})
+    instance = attach(mech)
+    mgr._instances.update({"src": [sched], "hum": [instance]})
     for now, asserted in ((0.0, False), (15.0, True), (25.0, False)):
         mgr.step(now)
         assert mgr.regime("r") is asserted
-        assert snd.snapshot().predicates["sounding"] is (not asserted)
+        assert instance.snapshot().predicates[predicate] is (not asserted)
 
 
-def test_plate_press_on_negated_regime_follows_complement():
-    mech = _Mech(robots=[])
-    mgr = _manager(mech)
-    sched = _attach_schedule(mech, _schedule_cfgs([{"start": 10.0, "end": 20.0, "value": "v"}], regime="r"), entity="src")
-    plate = PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="!r"))
-    mgr._instances.update({"src": [sched], "p": [plate]})
-    for now, asserted in ((0.0, False), (15.0, True), (25.0, False)):
-        mgr.step(now)
-        assert mgr.regime("r") is asserted
-        assert plate.snapshot().predicates["pressed"] is (not asserted)
-
-
-def test_sound_self_latch_raises_for_negated_sound_on():
-    mech = _Mech()
+@pytest.mark.parametrize(
+    "attach",
+    [
+        lambda mech: SoundSemantics.attach(mech, "snd", _sound_cfgs(sound_on="!a", regime="a")),
+        lambda mech: PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="!a", regime="a")),
+    ],
+    ids=["sound", "plate"],
+)
+def test_self_latch_raises_for_a_negated_trigger(attach):
     with pytest.raises(ValueError, match="self-latch"):
-        SoundSemantics.attach(mech, "snd", _sound_cfgs(sound_on="!a", regime="a"))
-
-
-def test_plate_self_latch_raises_for_negated_press_on():
-    mech = _Mech()
-    with pytest.raises(ValueError, match="self-latch"):
-        PressurePlateSemantics.attach(mech, "p", _plate_cfgs(position=(0.0, 0.0), radius=0.1, press_on="!a", regime="a"))
+        attach(_Mech())
 
 
 def test_regime_negated_consult_cycle_resolves_false():

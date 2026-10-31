@@ -8,6 +8,26 @@ import pytest
 _ROS_SKIP_REASON = "ROS2 not discoverable: source install/setup.bash to enable"
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    if importlib.util.find_spec("arena_simulation_setup") is not None:
+        from arena_simulation_setup.testing import install_fake_assets
+
+        install_fake_assets()
+
+
+@pytest.fixture(scope="session")
+def point_table() -> None:
+    from task_generator.simulators.human.pointing.table import bake
+
+    bake(az_step=30.0, el_step=15.0, el_max=75.0, workers=4)
+
+
+@pytest.fixture(autouse=True)
+def _baked_point_table(request: pytest.FixtureRequest) -> None:
+    if any("point_at_template" in marker.args for marker in request.node.iter_markers("clips")):
+        request.getfixturevalue("point_table")
+
+
 def _ros_available() -> bool:
     try:
         import rclpy  # noqa: F401

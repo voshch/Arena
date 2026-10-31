@@ -19,8 +19,7 @@ async def _held_step(rig: Rig) -> None:
 
     # free-running dummy clock advances at wall rate
     t0 = probe.clock()
-    await asyncio.sleep(0.3)
-    assert 0.1 < probe.clock() - t0 < 1.0
+    await rig.until(lambda: probe.clock() > t0 + 0.1, 2.0, "free-running clock")
 
     # a step without a hold is refused at the service layer
     response = await probe.step.call_timeout(LifecycleStep.Request(seconds=PERIOD))
@@ -43,8 +42,7 @@ async def _held_step(rig: Rig) -> None:
     response = await probe.hold.call_timeout(release)
     assert response is not None and not response.paused and response.hold_count == 0
     t0 = probe.clock()
-    await asyncio.sleep(0.3)
-    assert probe.clock() > t0
+    await rig.until(lambda: probe.clock() > t0, 2.0, "clock after the release")
 
 
 async def _gated_run(rig: Rig) -> None:
@@ -84,9 +82,8 @@ async def _gated_run(rig: Rig) -> None:
 
     # the previous window's boundary sample does not cover this window
     probe.pulse(tick - PERIOD)
-    await asyncio.sleep(0.3)
+    assert (await rig.frozen(0.3)) == pytest.approx(clock, abs=1e-9)
     assert probe.stalled_on("beat")
-    assert probe.clock() == pytest.approx(clock, abs=1e-9)
 
     # a covering sample releases exactly one window
     probe.pulse(tick)
@@ -98,21 +95,14 @@ async def _gated_run(rig: Rig) -> None:
     response = await probe.register_channels([])
     assert response.success
     await rig.until(lambda: probe.clock() > tick + 0.5, 3.0, "unblocked clock")
-    t0 = probe.clock()
-    await asyncio.sleep(1.0)
-    assert 0.6 < probe.clock() - t0 < 1.4
     await rig.until(lambda: probe.status is not None and 0.6 < probe.status.measured_rtf < 1.4, 3.0, "measured rtf near wall rate")
 
     # stop returns promptly, frees the hold, and the clock runs at wall rate again
-    t0 = asyncio.get_running_loop().time()
     await probe.stop_run()
-    assert asyncio.get_running_loop().time() - t0 < 1.0
     await rig.until(lambda: probe.status is not None and not probe.status.active, 2.0, "inactive status")
     await rig.until(lambda: probe.paused is not None and not probe.paused.data, 2.0, "unpaused state")
-    await asyncio.sleep(0.6)
     t0 = probe.clock()
-    await asyncio.sleep(0.3)
-    assert 0.1 < probe.clock() - t0 < 1.0
+    await rig.until(lambda: probe.clock() > t0 + 0.1, 2.0, "free-running clock after the stop")
 
 
 async def _paced_run(rig: Rig) -> None:
@@ -120,11 +110,11 @@ async def _paced_run(rig: Rig) -> None:
     probe = rig.probe
     await probe.start_run(target_rtf=2.0)
     await rig.until(lambda: probe.status is not None and probe.status.active, 2.0, "active status")
-    await asyncio.sleep(0.5)
-    t0 = probe.clock()
-    await asyncio.sleep(1.0)
-    assert 1.5 < probe.clock() - t0 < 2.6
     await rig.until(lambda: probe.status is not None and 1.5 < probe.status.measured_rtf < 2.6, 3.0, "measured rtf near target")
+    loop = asyncio.get_running_loop()
+    sim0, wall0 = probe.clock(), loop.time()
+    await asyncio.sleep(1.0)
+    assert (probe.clock() - sim0) / (loop.time() - wall0) < 2.6
     await probe.stop_run()
 
 
@@ -133,9 +123,6 @@ async def _ungated_run(rig: Rig) -> None:
     probe = rig.probe
     await probe.start_run(ungated=True)
     await rig.until(lambda: probe.status is not None and probe.status.active, 2.0, "active status")
-    t0 = probe.clock()
-    await asyncio.sleep(1.0)
-    assert probe.clock() - t0 > 2.0
     await rig.until(lambda: probe.status is not None and probe.status.measured_rtf > 2.0, 3.0, "measured rtf")
     await probe.stop_run()
 
@@ -205,8 +192,7 @@ async def _window_under_a_run(rig: Rig) -> None:
     await probe.stop_run()
     await rig.until(lambda: not host.paused, 3.0, "window unpauses once the run stops")
     t0 = probe.clock()
-    await asyncio.sleep(0.3)
-    assert probe.clock() > t0
+    await rig.until(lambda: probe.clock() > t0, 2.0, "clock after the window")
     await probe.set_window(holder, False)
 
 

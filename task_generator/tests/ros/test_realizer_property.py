@@ -2,17 +2,8 @@ from __future__ import annotations
 
 import math
 
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
 
 
 _floats = st.floats(min_value=-1e4, max_value=1e4, allow_nan=False, allow_infinity=False)
@@ -24,17 +15,18 @@ def _make_realizer(x, y, prefix=""):
     return Realizer(Realizer._Configuration(x=x, y=y, prefix=prefix))
 
 
-@given(_floats, _floats, _floats, _floats)
+@given(_floats, _floats, _floats, _floats, _floats)
 @settings(max_examples=100)
-def test_realize_position_inv_round_trip(ox, oy, px, py):
+def test_realize_position_inv_round_trip(ox, oy, px, py, pz):
     from arena_simulation_setup.utils.geometry import Position
 
     r = _make_realizer(ox, oy)
-    p = Position(x=px, y=py)
+    p = Position(x=px, y=py, z=pz)
     fwd = r._realize_position(p)
     back = r._realize_position_inv(fwd)
     assert math.isclose(back.x, p.x, abs_tol=1e-6)
     assert math.isclose(back.y, p.y, abs_tol=1e-6)
+    assert math.isclose(back.z, p.z, abs_tol=1e-6)
 
 
 @given(_floats, _floats, _floats, _floats)

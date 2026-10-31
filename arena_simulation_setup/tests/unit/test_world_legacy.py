@@ -203,6 +203,21 @@ def test_per_level_directories_become_levels_with_elevator_destinations(tmp_path
     assert world.elevator_levels() == {'lift_0': '0', 'lift_1a': '1', 'lift_1b': '1'}
 
 
+def test_per_level_directories_keep_their_zones(tmp_path: Path) -> None:
+    files = {f'{level}/world.yaml': f"zones:\n- {{name: room_{level}, corners: [[0, 0], [5, 0], [5, 5], [0, 5]]}}\n" for level in ('0', '1')}
+    with pytest.warns(DeprecationWarning, match='format 1'):
+        world = WorldView(_world_dir(tmp_path, files)).load(validate=False)
+    assert {level: [zone.name for zone in world.levels[level].zones] for level in world.levels} == {'0': ['room_0'], '1': ['room_1']}
+
+
+def test_root_level_file_wraps_as_level_0_and_keeps_its_zone(tmp_path: Path) -> None:
+    files = {'world.yaml': "zones:\n- {name: my_hall, corners: [[0, 0], [5, 0], [5, 5], [0, 5]]}\n"}
+    with pytest.warns(DeprecationWarning, match='format 1'):
+        world = WorldView(_world_dir(tmp_path, files)).load(validate=False)
+    assert list(world.levels) == ['0']
+    assert [zone.name for zone in world.levels['0'].zones] == ['my_hall']
+
+
 def test_root_levels_file_and_level_entities(tmp_path: Path) -> None:
     world = _load(_world_dir(tmp_path, {'world.yaml': ROOT_LEVELS}))
     assert list(world.levels) == ['0', '1']

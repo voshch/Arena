@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import pytest
@@ -9,13 +8,13 @@ import yaml
 
 pytest.importorskip("arena_mcp")
 
-from arena_mcp.core import ToolError
+from arena_mcp.core import ToolError, cli
 
 from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.mcp import assets
 
 
-sourced = pytest.mark.skipif(not os.environ.get("ARENA_WS_DIR"), reason="needs a sourced Arena workspace")
+sourced = pytest.mark.skipif(not cli.sourced(), reason="needs a shell that sourced arena")
 
 
 @sourced

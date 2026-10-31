@@ -2,16 +2,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 def _poses(*xy_yaw):
     from task_generator.shared import Orientation, Pose, Position
