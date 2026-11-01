@@ -88,6 +88,13 @@ def test_body_is_read_from_the_annotation_beside_the_actor(tmp_path):
     assert load_body("") is None
 
 
+def test_a_rigged_actor_is_measured_from_its_bundle_not_its_rig_directory(tmp_path):
+    bundle = tmp_path / "nurse"
+    (bundle / "rig").mkdir(parents=True)
+    (bundle / "annotation.yaml").write_text(yaml.safe_dump({"pelvis_clearance": {"sit": 0.12, "lie": 0.11}, "legs": {"hip": 0.015, "thigh": 0.36, "shin": 0.375, "ankle": 0.08}}))
+    assert load_body(str(bundle / "rig" / "nurse.sdf")) == load_body(str(bundle / "nurse.sdf")) == BODY
+
+
 @pytest.mark.parametrize("skin", ["not xml", "<COLLADA/>"])
 def test_annotated_body_outlives_an_unreadable_skin(tmp_path, skin):
     sdf = tmp_path / "nurse" / "model.sdf"

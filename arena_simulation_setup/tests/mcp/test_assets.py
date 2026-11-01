@@ -53,7 +53,7 @@ def test_pull_of_a_world_absent_from_the_bucket_fails():
 
 
 def test_domain_serves_only_the_arena_asset_verbs():
-    assert sorted(spec.name for spec in assets.domain.tools) == ["assets_articulation", "assets_find", "assets_import", "assets_import_items", "assets_import_sources", "assets_kinds", "assets_ls", "assets_pull", "assets_push", "assets_retarget_animation"]
+    assert sorted(spec.name for spec in assets.domain.tools) == ["assets_articulation", "assets_find", "assets_import", "assets_import_items", "assets_import_sources", "assets_kinds", "assets_ls", "assets_pull", "assets_push", "assets_retarget_animation", "assets_rig_human"]
 
 
 @sourced

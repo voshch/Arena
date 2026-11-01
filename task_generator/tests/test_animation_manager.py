@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from task_generator.simulators.human.animation_manager import JOINT_NAMES, UPRIGHT, Animation, AnimationManager, nlerp
@@ -417,3 +418,34 @@ def test_the_pelvis_tilt_follows_the_playhead_between_frames(mgr: AnimationManag
     mgr.set_ped_blend(1, fall, blend_joints=set(JOINT_NAMES), slot="body")
     step(mgr, 1, dt=0.025)  # half way from frame 0 to frame 1 at 20 fps
     assert mgr.root_tilt(1) == pytest.approx(nlerp(UPRIGHT, SUPINE, 0.5))
+
+
+def _body_clip(n: int = 4) -> list[dict]:
+    quarter = np.array([0.0, 0.0, 0.3826834, 0.9238795])
+    return [{"angles": dict.fromkeys(JOINT_NAMES, 0.0), "body": np.array([quarter, quarter]), "body_pelvis": np.array([0.0, 0.0, -0.2])} for _ in range(n)]
+
+
+def test_a_playing_clip_queues_its_body_group_with_the_slot_weight(mgr: AnimationManager) -> None:
+    mgr.animations["body_clip"] = Animation(name="body_clip", frames=_body_clip(), n_frames=4, duration=0.2, body_joints=("pelvis", "left_knee"))
+    mgr.set_ped_blend(1, "body_clip", blend_joints={"l_knee"}, slot="legs")
+    mgr.compute(1, 0, 0.0, 0.05)
+    (layer,) = mgr.body_layers(1)
+    assert set(layer.rotations) == {"left_knee"}
+    assert layer.pelvis is None
+
+
+def test_a_whole_body_clip_owns_the_joints_without_dofs_and_the_pelvis_offset(mgr: AnimationManager) -> None:
+    mgr.animations["body_clip"] = Animation(name="body_clip", frames=_body_clip(), n_frames=4, duration=0.2, body_joints=("pelvis", "left_knee"))
+    mgr.set_ped_blend(1, "body_clip", blend_joints=set(JOINT_NAMES), slot="body")
+    mgr.compute(1, 0, 0.0, 0.05)
+    (layer,) = mgr.body_layers(1)
+    assert set(layer.rotations) == {"pelvis", "left_knee"}
+    assert layer.pelvis == pytest.approx([0.0, 0.0, -0.2])
+
+
+def test_a_forgotten_agent_loses_its_body_layers(mgr: AnimationManager) -> None:
+    mgr.animations["body_clip"] = Animation(name="body_clip", frames=_body_clip(), n_frames=4, duration=0.2, body_joints=("pelvis",))
+    mgr.set_ped_blend(1, "body_clip", blend_joints=set(JOINT_NAMES), slot="body")
+    mgr.compute(1, 0, 0.0, 0.05)
+    mgr.forget(1)
+    assert mgr.body_layers(1) == []

@@ -29,6 +29,7 @@ from arena_runtime.lockstep import register_channels
 from arena_runtime.sim import BaseSim
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared import Placement, Stairs
+from arena_simulation_setup.shared.body import DEFAULT_STANCE, load_stance
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Point as PointMsg
@@ -43,6 +44,7 @@ from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Ori
 from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
+from task_generator.simulators.human.hands import POINT_CLIP, clip_pose
 from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
@@ -52,6 +54,7 @@ from task_generator.simulators.human.utils import (
     KnownObstacles,
     ObstacleLayer,
 )
+from task_generator.simulators.human.wire import fill_body
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.tree.World.Scenario import TimelineEntry
@@ -235,6 +238,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._driven = DrivenJoints()
+        self._stances: dict[str, Mapping[str, np.ndarray]] = {}
         self._drivers: dict[str, Drivers] = {}
         self._bodies: dict[str, BodyMeasurements] = {}
         self._seat_plans: dict[int, SeatPlan] = {}
@@ -283,7 +287,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         await register_channels(self.node, channels, env=str(self._namespace))
 
     def publish_arena_peds(self, msg: Pedestrians) -> None:
-        """Stamp the header, substitute possessed peds, fill bare-name joint_state for peds missing one, then publish."""
+        """Stamp the header, substitute possessed peds, fill the joint angles of peds missing them, compile them into body poses, then publish."""
         now = self.node.get_clock().now()
         now_sec = now.nanoseconds * 1e-9
         stamp = now.to_msg()
@@ -333,7 +337,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
-            ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
+            state = self._gait.joint_state(angles, stamp=stamp)
+            if state is not None:
+                hands = self._hands(ped.id, now_sec)
+                state.name = [*state.name, *hands]
+                state.position = [*state.position, *hands.values()]
+            ped.joint_state = state
             generated.add(ped.id)
             ped.gait_phase = self._gait.phase(ped.id)
             if (tilt := self._gait.root_tilt(ped.id)) is not None:
@@ -363,6 +372,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._tilt_body(ped, tilts[ped.id])
             self._place_resting(ped, now_sec)
 
+        for ped in out.pedestrians:
+            fill_body(ped, self._stance_for(ped.model_uri), self._gait.body_layers(ped.id) if ped.id in generated else ())
+
         self._arena_peds_publisher.publish(out)
         self._sim_peds_publisher.publish(placed_peds(out, self._realizer.placement()))
         self._animation_states_publisher.publish(animation)
@@ -391,6 +403,17 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 ),
             )
         return state
+
+    def _hands(self, agent_id: int, now: float) -> dict[str, float]:
+        """Digit DOFs of a generated ped's playing body clips, empty leaves its hands in their neutral stance."""
+        phases = self._gestures.phases(agent_id)
+        sides = self._gestures.sides(agent_id)
+
+        def hand(slot: str) -> str:
+            kind, _channel, _phase, clip = phases.get(slot, ("", "", "", ""))
+            return f"{POINT_CLIP}_{sides[slot]}" if kind == POINT_CLIP and slot in sides else clip
+
+        return clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now)
 
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""
@@ -476,13 +499,25 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._bodies[model_uri] = body
         return body
 
+    def _stance_for(self, model_uri: str) -> Mapping[str, np.ndarray]:
+        """Stance of a ped model, read once per model, the default one when its rig file is rejected."""
+        stance = self._stances.get(model_uri)
+        if stance is None:
+            try:
+                stance = load_stance(model_uri)
+            except (OSError, ValueError) as e:
+                self._logger.warning(f"rig stance of {model_uri!r} rejected ({e}), it uses the default stance")
+                stance = DEFAULT_STANCE
+            self._stances[model_uri] = stance
+        return stance
+
     def _drivers_for(self, model_uri: str) -> Drivers:
-        """Drivers of a ped model's rig.yaml, read once per model, none when the file is rejected."""
+        """Drivers of a ped model's .rig, read once per model, none when the file is rejected."""
         drivers = self._drivers.get(model_uri)
         if drivers is None:
             try:
                 drivers = load_drivers(model_uri)
-            except (ValueError, OSError, yaml.YAMLError) as e:
+            except (ValueError, OSError) as e:
                 self._logger.warning(f"rig drivers of {model_uri!r} rejected ({e}), its driven joints stay still")
                 drivers = Drivers()
             self._drivers[model_uri] = drivers

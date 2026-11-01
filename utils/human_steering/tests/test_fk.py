@@ -95,20 +95,12 @@ def test_parse_urdf_defaults_missing_origin_to_identity() -> None:
     assert joints["j"].rpy == (0.0, 0.0, 0.0)
 
 
-def test_preview_full_pipeline_or_skip() -> None:
-    """Exercises the real xacro/human_description/rviz_utils.hri.rig pipeline when
-    a sourced ROS install provides them, skips cleanly otherwise (this sandbox
-    has none of xacro, human_description or rviz_utils' transitive deps)."""
-    if fk.semantic_to_rig is None:
+def test_preview_projects_the_rviz_body_or_skips_without_rviz_utils() -> None:
+    if fk.semantic_positions is None:
         pytest.skip("rviz_utils.hri.rig unavailable: source the ROS install to enable")
-    try:
-        from task_generator.simulators.human.gait import GaitGenerator
-    except ImportError:
-        pytest.skip("task_generator unavailable: source the ROS install to enable")
-    angles = dict.fromkeys(GaitGenerator.JOINT_NAMES, 0.0)
-    try:
-        front, side = preview(angles)
-    except (RuntimeError, OSError, FileNotFoundError) as exc:
-        pytest.skip(f"xacro/human_description unavailable: {exc}")
-    assert front
-    assert side
+    from arena_simulation_setup.shared.body import SEMANTIC_DOFS
+
+    rest_front, _ = preview(dict.fromkeys(SEMANTIC_DOFS, 0.0))
+    bent_front, bent_side = preview(dict.fromkeys(SEMANTIC_DOFS, 0.0) | {"l_elbow": 1.2})
+    assert len(rest_front) == len(bent_front) == len(bent_side) > 52
+    assert rest_front != bent_front

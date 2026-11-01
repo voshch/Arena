@@ -264,6 +264,13 @@ class GestureLayer:
             return {}
         return {name: (st.kind, st.channel, st.phase, str(st.opts.get("clip", ""))) for name, st in ag.slots.items()}
 
+    def sides(self, agent_id: int) -> dict[str, str]:
+        """Overlay slot -> the arm ("l" or "r") its live gesture clip moves, for clips that pick one."""
+        ag = self._agents.get(agent_id)
+        if ag is None:
+            return {}
+        return {name: st.clip.side for name, st in ag.slots.items() if st.clip is not None and st.clip.side}
+
     def busy_joints(self, agent_id: int) -> set[str]:
         """Joints the agent's live gesture slots blend over, releasing ones included."""
         ag = self._agents.get(agent_id)

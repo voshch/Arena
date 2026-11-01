@@ -15,6 +15,8 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING
 
+from rviz_utils.hri.rig import wire_angles
+
 from human_steering import clips, compose, integrate
 from human_steering.clips import Clip
 
@@ -315,8 +317,8 @@ class Driver:
             self._roster_state[ped.name] = ped.animation_state
             yaw = _yaw_from_quat(ped.pose.orientation.x, ped.pose.orientation.y, ped.pose.orientation.z, ped.pose.orientation.w)
             self._intents.resync(ped.name, ped.pose.position.x, ped.pose.position.y, yaw)
-            if ped.joint_state.name:
-                self._roster_joint_state[ped.name] = dict(zip(ped.joint_state.name, ped.joint_state.position, strict=True))
+            if ped.body.joints:
+                self._roster_joint_state[ped.name] = wire_angles(ped)
         stale = set(self._roster_ids) - seen
         for name in stale:
             self._roster_ids.pop(name, None)

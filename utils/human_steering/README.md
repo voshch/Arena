@@ -103,11 +103,11 @@ target the head tracks continuously.
 | [`compose.py`](human_steering/compose.py) | none | per-joint precedence (slider > gaze > clip > gait) and gaze angle solving |
 | [`integrate.py`](human_steering/integrate.py) | none | waypoint follower and teleop dead-reckoning, dt-aware (freezes at dt=0) |
 | [`clips.py`](human_steering/clips.py) | none | wire-clip loading, cosine sampling, blending |
-| [`fk.py`](human_steering/fk.py) | none* | xacro render + forward kinematics + front/side projection for the pose preview |
+| [`fk.py`](human_steering/fk.py) | none* | forward kinematics of the RViz body URDF and front/side projection for the pose preview |
 
-\* `fk.py` shells out to `xacro` and reads `human_description`'s share
-directory at call time. It has no top-level ROS/Qt import, so it stays
-importable without a sourced install, only the real pipeline call fails.
+\* `fk.py` builds the URDF with `rviz_utils.hri.urdf` at call time. It has no
+top-level ROS/Qt import, so it stays importable without a sourced install,
+only the preview call fails.
 
 `driver.py` is Qt-free and importable on its own. Every ROS message type it
 touches is guarded the same way

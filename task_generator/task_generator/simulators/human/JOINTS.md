@@ -1,15 +1,15 @@
 # Human skeleton joint contract
 
-Frozen interface shared by the gait generator (`GaitGenerator`), the HRI producer node,
-and every pedestrian renderer (RViz, Gazebo, Isaac). `Pedestrian.joint_state` is the
-animation single source of truth (SSOT): it carries the 40 base joint names from
-`GaitGenerator.JOINT_NAMES`, and every renderer resolves its own convention from that
-one field. (Contract v2: the single torso triple became the three-triple spine stack
-of the Spine stack section. Every pre-stack recording carries 24 names and needs the
-zero-fill migration described there. Contract v4 added the two-DOF wrists, every pre-v4
-recording carries 36 names and loads with the wrists at 0.0.)
+The 52 semantic joints every pose producer speaks: the gait generator (`GaitGenerator`), gestures,
+clips and possession. Each tick the publisher compiles them into the wire pose `Pedestrian.body`
+over the ped's bundle ([BODY.md](BODY.md)), which every renderer reads. (Contract v2: the single
+torso triple became the three-triple spine stack of the Spine stack section. Every pre-stack
+recording carries 24 names and needs the zero-fill migration described there. Contract v4 added
+the two-DOF wrists, every pre-v4 recording carries 36 names and loads with the wrists at 0.0.
+Contract v5 added the twelve finger DOFs, every pre-v5 recording carries 40 names and loads with
+the fingers at 0.0.)
 
-## 1. Wire contract (normative)
+## 1. Semantic contract (normative)
 
 ### Naming convention
 
@@ -17,9 +17,9 @@ Every joint/link carries a `_<ID>` suffix where **`<ID> = str(pedestrian.id)`**.
 `sensor_msgs/JointState.name[i]` MUST be the full suffixed name (e.g. `l_r_hip_7`) so it
 matches the body's generated URDF. The gait generator takes the agent id and suffixes it.
 
-### Publish all 40
+### Publish all 52
 
-Publish a position for all 40 base joints each tick (unanimated -> 0.0) so
+Publish a position for all 52 base joints each tick (unanimated -> 0.0) so
 `robot_state_publisher` does not warn. Fixed joints (`torso`, `head`) are
 not part of the contract and never appear in `JointState`. Per-joint advisory limits
 live in `GaitGenerator.LIMITS`: generators may clamp their output to them, the stream
@@ -28,9 +28,8 @@ Section 2 table.
 
 ### Value semantics
 
-For every joint except the two shoulder triples, wire values are identical to the
-ros4hri `human_description` URDF interpretation of that joint's axis (Section 2 states
-each joint's raw meaning). This includes the whole spine stack (`r/y_waist`,
+For every joint except the two shoulder triples, a wire value is a rotation about that
+joint's raw axis (Section 2 states each joint's raw meaning). This includes the whole spine stack (`r/y_waist`,
 `r/y_spine`, `spine`, `r/y_chest`, `chest`), `l/r_ankle` and the wrists: their body-aligned URDF
 axes already coincide with the wire semantic.
 
@@ -124,10 +123,25 @@ extension (the hand swings outward). Both are mirrored in the URDF like `p_hip`
 so the raw URDF meaning coincides with the wire semantic on both sides. The `wrist`
 link keeps its ros4hri name and carries the hand.
 
+### Fingers (v5)
+
+`l/r_curl_thumb`, `l/r_curl_index`, `l/r_curl_middle`, `l/r_curl_ring`, `l/r_curl_pinky` and
+`l/r_spread`: twelve DOFs, six per hand, on the digit joints of [BODY.md](BODY.md). The rest
+hand has straight fingers beside each other, thumb forward, palm toward the thigh.
+`curl_<digit>` flexes the whole digit toward the palm (positive = closing, both sides) and
+sets the base and middle knuckles to its angle and the tip knuckle to 0.7 of it. `spread` fans the four
+fingers apart in the palm plane (positive = index toward the thumb, pinky away, both sides) with
+the weights 1, 1/3, -1/3 and -1 on the knuckles of index, middle, ring and pinky. The thumb has
+no spread. Axes are mirrored like the collars (`curl`: `(-1,0,0)` left / `(1,0,0)` right, thumb
+`(0,0,-1)` left / `(0,0,1)` right, `spread`: `(0,-1,0)` both sides, at the hanging rest), so the wire is geometric. Recordings that predate them
+carry no finger values and are read as 0.0 (the loaders zero-fill). The fingers hold the rest hand
+unless a playing body clip declares a shape in `hands.py` (handshake grip, hug, counting) or a point
+gesture curls every digit of its arm's hand but the index, each fading with its slot weight.
+
 ### Driven joints
 
-A ped whose model ships a `rig.yaml` with a `drivers:` section carries those joints
-after the 40, named by the driver keys (wheelchair bundles: `l_wheel`, `r_wheel`). A
+A ped whose model ships a `.rig` with drivers carries those joints
+after the 52, named by the driver keys (wheelchair bundles: `l_wheel`, `r_wheel`). A
 driven joint is turned by the ped's motion, not by the gait phase. A
 `from: distance` driver is a wheel of `radius` meters, `lateral` meters left of the
 root, that rolls without slipping over the path of its own contact point: a turn
@@ -138,26 +152,26 @@ frames.
 
 The publisher integrates them from successive ped poses ([`drivers.py`](drivers.py))
 and sets them on every ped of such a model, possessed ones included. The possession
-stream itself carries only the 40. Renderers resolve them through `BONE_MAP` like
-any other wire joint and skip them on a skeleton without the bone. The ros4hri URDF
-has no such joints, so the RViz skeleton ignores them.
+stream itself carries only the 52. Renderers turn each driver's `bone` about its `axis` from
+the `.rig` and skip it on a skeleton without the bone. The RViz body has no
+such joints and ignores them.
 
 A `from: velocity` driver takes its angle from the ped's forward speed and yaw
-rate instead of integrating a wheel over distance. Its rig entry contains `bone`,
+rate instead of integrating a wheel over distance. Its driver carries `bone`,
 `from` and the bone-local `axis`, without `radius` or `lateral`. Electric
 wheelchair bundles use `joystick_pitch` (Y axis, positive forward) and
 `joystick_roll` (X axis, positive right) on the same `Joystick` bone. The publisher
 computes these angles in radians, the wheel integrator leaves them untouched and
-renderers resolve their bone-map entries as usual.
+renderers read their `.rig` drivers as usual.
 
 `JoystickDriver` in `drivers.py` supplies the electric chair's two joystick
 angles after gait generation, alongside the wheel angles. It samples speed and yaw
 rate together over a 0.2 s pose-timestamp window and holds the resulting stick
 between samples, including repeated frames. Its per-agent cache is discarded on
 despawn and reset.
-The publisher enables it when the model's `rig.yaml` declares both `joystick_pitch`
+The publisher enables it when the model's `.rig` declares both `joystick_pitch`
 and `joystick_roll` with `from: velocity`, regardless of agent type. Any other
-`from: velocity` entry rejects the rig file.
+`from: velocity` entry rejects the rig.
 
 The same driver selects one of seven calibrated right-arm poses from the joystick's
 `(pitch, roll)` pair: neutral, forward, reverse, forward left/right and pivot
@@ -219,31 +233,18 @@ State selection comes from `Pedestrian.animation_state`. Speed is `hypot(twist.l
 Per-agent phase keyed by id, cleared on despawn. Seed initial `phi` from `id`
 (e.g. `(id % 360) * pi/180`) so agents are not in lockstep. Read `dt`, never wall-clock.
 
-## 2. ros4hri URDF rendering (RViz adapter)
+## 2. RViz rendering
 
-The ros4hri `human_description` package is a vendored fork at
-`src/deps/human_description` (branch `arena-v2`) carrying the spine stack, the
-collars, and the two-DOF ankles and wrists. It preserves the stock ros4hri link/frame set.
-
-### URDF generation (per body)
-
-The producer generates one URDF per body via xacro:
-
-```
-xacro <share>/human_description/urdf/human-tpl.xacro id:=<ID> height:=<H>
-```
-
-- Only `id` (string) and `height` (float, default `1.65`) are real xacro args, the other
-  proportion knobs in `create_human_urdf.py` do not map to xacro args and are inert.
-- The generated URDF is set as ROS param `human_description_<ID>` and consumed by a
-  `robot_state_publisher` for that body. Root link is `body_<ID>` (REP-155 hip-origin frame).
+`rviz_utils.hri.urdf` builds each body's URDF from the body rig template of [BODY.md](BODY.md):
+root `body_<ID>` (REP-155 hip-origin frame), a three-axis ball per rig joint, the REP-155
+body frames as fixed links. `hri_producer` poses it from `Pedestrian.body`, so RViz shows the
+same pose the sims render, fingers included.
 
 ### Mirror convention
 
-Every joint origin in `human-tpl.xacro` is `rpy="0 0 0"`, so all link frames are
-body-aligned at rest (REP-155: X forward, Y left, Z up).
+Every semantic DOF turns about a body-aligned axis at rest (REP-155: X forward, Y left, Z up).
 
-The arm macro reflects axes per side: `l_p_shoulder` axis `(1,0,0)`, `r_p_shoulder`
+The arm axes reflect per side: `l_p_shoulder` axis `(1,0,0)`, `r_p_shoulder`
 axis `(-1,0,0)`, `l_y_shoulder` `(0,0,-1)`, `r_y_shoulder` `(0,0,1)`, `l_r_shoulder`
 `(0,0,1)`, `r_r_shoulder` `(0,0,-1)`, and the collar pair per the Collars section.
 So the raw URDF meaning of `p_shoulder` is **lateral abduction** (rotation about
@@ -257,7 +258,7 @@ which coincides with the semantic meaning (gait idles both at `0.0`), so only th
 shoulder triples need the Section 1 exception. The spine stack is not reflected
 either: single links on the midline, same axes as the head triple.
 
-### Articulated joints (40 revolute, all others fixed)
+### The 40 body DOFs
 
 | # | base name | axis | limits [lo, hi] (rad) | role |
 |---|---|---|---|---|
@@ -306,59 +307,6 @@ The spine/chest limits are per-segment halves of the lumped waist range: the sta
 advisory sum intentionally exceeds the old lumped range (real spines bend further
 distributed than a single lumbar hinge).
 
-Bold = the gait-driving DOFs. * Raw URDF axis meaning, the wire-contract value carried
-in this DOF is anatomical flexion (Section 1a), the `rig.py` adapter below performs the
-conversion. Declared shoulder limits are independent of the wire advisory limits in
-`GaitGenerator.LIMITS`: `y_u`/`r_u` on `l/r_y_shoulder`/`l/r_r_shoulder` are
-ZXZ-extraction outputs, not passthrough of the wire `y`/`r`.
+Bold = the gait-driving DOFs. * Raw axis, the wire value carried in this DOF is anatomical
+flexion (Section 1a).
 
-### `rig.py` adapter obligation
-
-`rviz_utils`' `hri_producer` translates Section 1's semantic wire values into this raw
-URDF frame before `robot_state_publisher` sees them, via `rviz_utils/hri/rig.py`.
-`rig.py` stays stateless. Its obligations per DOF group:
-
-- **Spine stack (all nine DOFs), collars, ankles and wrists (both DOFs each)**: passthrough,
-  the raw URDF axis meaning already coincides with the wire semantic (see Spine
-  stack / Collars / Ankles above and Mirror convention).
-- **Shoulder triples**: the only math. `rig.py` composes `R_arm` from the wire triple
-  (Section 1a) and extracts the URDF chain values via closed-form ZXZ Euler extraction:
-  left `Rz(-y_u) Rx(p_u) Rz(r_u)`, right `Rz(y_u) Rx(-p_u) Rz(-r_u)`. Each side solves
-  its own `(y_u, p_u, r_u)`, the two triples are not shared. Every rotation has two ZXZ
-  decompositions, `(a, b, c)` and `(a+pi, -b, c+pi)`. The canonical middle-angle-in-
-  `[0,pi]` pick lands on `a=-pi/2` for backward flexion, so `rig.py` flips to the second
-  branch whenever the canonical first angle is negative, which keeps `a=c=pi/2` across
-  the whole `y=r=0` family regardless of the sign of `p`.
-
-  Degenerate branch (`|sin(middle angle)| ~ 0`): fold the full Z-rotation into the THIRD
-  angle and hold the first at `pi/2`. For both sides this is the ZXZ conjugation
-  `Rz(-pi/2) * Rx(f) * Rz(pi/2) = R((0,-1,0), f)`: the constant `pi/2` pre/post twists
-  turn the abduction DOF (`Rx`) into a rotation about `(0,-1,0)`, the same sagittal axis
-  already used by the hip/knee/elbow/ankle joints.
-
-  `robot_state_publisher` does not enforce URDF joint limits, so the exact `pi/2` on
-  `r_shoulder` (declared limit `1.5`) is intended, not a bug.
-
-## 3. Other renderers
-
-- **Isaac**: `peds` `bone_map.py` reads `BONE_MAP` from the `bone_map.json` that
-  `arena_people_msgs` installs, so a joint added there needs no Isaac change. The map
-  speaks the semantic convention (same-sign flexion, antiphase baked into the values).
-  `tests/peds/test_bone_map_parity.py` regenerates it from the contract rig: shoulder azimuth/twist on the Arm bones, the
-  spine stack 1:1 onto the LowerBack/Spine/Spine1 chain (waist triple -> LowerBack,
-  spine triple -> Spine, chest triple -> Spine1 -- the pre-stack 0.5/0.3/0.2 weighted
-  spread of the lumped waist is retired), head DOFs over neck plus head, ankles on the
-  Foot bones, wrists on the Hand bones. Axes come from the measured-probe procedure, not eyeballing.
-  `ExternalPoseProvider` replaces mapped bones with the wire pose instead of composing
-  it over the walking clip. Its neutral legs are the skin's bind rest with thigh and
-  shank swung to hang straight down under the hip socket and the foot keeping its bind
-  orientation, the contract's wire zero. Each tick the ped stands on its lowest sole point: the
-  converter stores a heel and a toe point per foot in `meta.json` (`soles`), and the
-  root z is set so the lowest of them is at the floor. Rigs on wheels have none and keep
-  the actor SDF ground offset. MuJoCo and Gazebo plant the same way.
-- **Gazebo**: `arena_gz_plugins` `PedSkeletonPlugin` renders the wire `joint_state`
-  per bone through the same `utils/msgs/arena_people_msgs/bone_map.json` onto the bundle's neutral
-  stance (first frame of its `neutral` clip, else of its `idle` clip, with the legs
-  hanging straight down from the skin's bind rest), via the
-  `BoneTransforms` actor component of the gz-sim overlay. Without the overlay or the
-  bone map it follows `animation_state`/pose and scrubs the walk clip.

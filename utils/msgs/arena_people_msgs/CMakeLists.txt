@@ -26,6 +26,7 @@ set(msg_files
   "msg/AnimationSlot.msg"
   "msg/AnimationState.msg"
   "msg/AnimationStates.msg"
+  "msg/BodyPose.msg"
   "msg/Gesture.msg"
   "msg/Pedestrian.msg"
   "msg/Pedestrians.msg"
@@ -40,7 +41,5 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 ament_export_dependencies(rosidl_default_runtime)
-
-install(FILES bone_map.json DESTINATION share/${PROJECT_NAME})
 
 ament_package()

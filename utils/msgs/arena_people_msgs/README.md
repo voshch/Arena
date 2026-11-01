@@ -23,7 +23,8 @@ only `name` and `pose`.
 
 | File | Purpose |
 |---|---|
-| `Pedestrian.msg` | Standard pedestrian representation: `name`/`id`, `pose` (the body frame: origin at the soles under the pelvis, z up the body)/`twist`, `animation_state` (`IDLE`/`WALKING`/`RUNNING`/`PANIC`/`SURPRISED`/`CURIOUS`/`THREATENING`), `gesture`, `joint_state` (empty = synthesize fallback gait, non-empty = upstream override), `gait_phase`, `model_uri`. |
+| `Pedestrian.msg` | Standard pedestrian representation: `name`/`id`, `pose` (the body frame: origin at the soles under the pelvis, z up the body)/`twist`, `animation_state` (`IDLE`/`WALKING`/`RUNNING`/`PANIC`/`SURPRISED`/`CURIOUS`/`THREATENING`), `gesture`, `joint_state` (empty = synthesize fallback gait, non-empty = upstream override, on `arena_peds` only the driven joints), `body` (the skeleton pose as a `BodyPose`, no joints = none), `gait_phase`, `model_uri`. |
+| `BodyPose.msg` | One pose of the Arena body rig: `joints` (Arena joint names, any subset), `rotations` (parent-relative quaternions in `joints` order) and `root_offset` (root joint displacement from rest in the body frame, m). Joint set, frames and zero pose in [BODY.md](../../../task_generator/task_generator/simulators/human/BODY.md). |
 | `SpawnPedestrian.msg` | One pedestrian to spawn: a `Pedestrian` plus `model_ref`, a backend-interpreted asset reference (Gazebo: SDF path or inline XML, Isaac: character name). |
 | `Gesture.msg` | One attention channel: `slot` (`head`, `arm`, `arm_l`, `arm_r`, `body`), `at` (world-frame target for the aimed slots), `clip` (animation clip name on `body`), `hand` (dominant hand `l`/`r` on `arm`). Composes with `animation_state`, resolved to joints by the animation layer. |
 | `FaceView.msg` | A person's view, published per face by hri_producer: `info` (pinhole `CameraInfo` in `gaze_<id>`) and `clip_near` (m, the near clip that hides the person's own head). |

@@ -4,20 +4,16 @@ import math
 
 import numpy as np
 import pytest
+from arena_people_msgs.msg import Pedestrian
+from arena_simulation_setup.shared.body import DEFAULT_STANCE, SEMANTIC_DOFS, forward, load_template, matrix_to_quat, quat_to_matrix, semantic_to_body
+from geometry_msgs.msg import Quaternion
+from urdf_parser_py import urdf as urdf_parser
 
-from rviz_utils.hri.rig import _rot_axis, semantic_to_rig
+from rviz_utils.hri.body_pool import _origin_matrix
+from rviz_utils.hri.rig import _rot_axis, ped_positions, semantic_positions
+from rviz_utils.hri.urdf import REP155_FRAMES, ball_angles, body_positions, body_urdf
 
-_HALF_PI = math.pi / 2
-
-
-def _Rx(a: float) -> np.ndarray:
-    c, s = math.cos(a), math.sin(a)
-    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
-
-
-def _Rz(a: float) -> np.ndarray:
-    c, s = math.cos(a), math.sin(a)
-    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+_BODY = "env_0_agent_3"
 
 
 def _Raxis(axis: np.ndarray, a: float) -> np.ndarray:
@@ -38,219 +34,104 @@ def _Raxis(axis: np.ndarray, a: float) -> np.ndarray:
     )
 
 
-def _semantic_rotation(y: float, p: float, r: float) -> np.ndarray:
-    """JOINTS.md Section 1a: R = Rz(y) . Raxis((0,-1,0), p) . Raxis((0,0,-1), r),
-    the twist intrinsic about the rest limb axis (equivalently the world-frame
-    rotation about the current limb direction applied after yaw and flexion)."""
-    partial = _Rz(y) @ _Raxis((0.0, -1.0, 0.0), p)
-    return partial @ _Raxis((0.0, 0.0, -1.0), r)
+def _link_worlds(urdf: str, positions: dict[str, float]) -> dict[str, np.ndarray]:
+    robot = urdf_parser.URDF.from_xml_string(urdf)
+    root = robot.get_root()
+    worlds = {root: np.eye(4)}
+    stack = [root]
+    while stack:
+        parent = stack.pop()
+        for joint_name, child in robot.child_map.get(parent, ()):
+            joint = robot.joint_map[joint_name]
+            m = worlds[parent] @ _origin_matrix(joint.origin)
+            q = positions.get(joint_name, 0.0)
+            move = np.eye(4)
+            if joint.type == "prismatic":
+                move[:3, 3] = np.asarray(joint.axis, dtype=float) * q
+            elif joint.type in ("revolute", "continuous"):
+                move[:3, :3] = _Raxis(np.asarray(joint.axis, dtype=float), q)
+            worlds[child] = m @ move
+            stack.append(child)
+    return worlds
 
 
-def _left_chain(a: float, b: float, c: float) -> np.ndarray:
-    return _Rz(-a) @ _Rx(b) @ _Rz(c)
+def _random_pose(rng: np.random.Generator) -> dict[str, np.ndarray]:
+    template = load_template()
+    pose = {}
+    for joint in template.parents:
+        axis = rng.normal(size=3)
+        pose[joint] = matrix_to_quat(_Raxis(axis, float(rng.uniform(-1.2, 1.2))))
+    return pose
 
 
-def _right_chain(a: float, b: float, c: float) -> np.ndarray:
-    return _Rz(a) @ _Rx(-b) @ _Rz(-c)
+def test_the_urdf_roots_at_body_and_carries_every_rig_joint_and_the_rep155_frames() -> None:
+    robot = urdf_parser.URDF.from_xml_string(body_urdf(_BODY))
+    template = load_template()
+    assert robot.get_root() == f"body_{_BODY}"
+    links = set(robot.link_map)
+    assert {f"{joint}_{_BODY}" for joint in template.parents} <= links
+    assert {f"{frame}_{_BODY}" for frame in REP155_FRAMES} <= links
+    assert f"head_{_BODY}" in links
+    assert len(template.parents) == 52
 
 
-_SHOULDER_NAMES = (
-    "l_y_shoulder",
-    "l_p_shoulder",
-    "l_r_shoulder",
-    "r_y_shoulder",
-    "r_p_shoulder",
-    "r_r_shoulder",
-)
-
-
-def _translate_shoulders(y: float, p: float, r: float) -> dict[str, float]:
-    """Feed the same wire triple through both sides."""
-    positions = [y, p, r, y, p, r]
-    out = semantic_to_rig(_SHOULDER_NAMES, positions)
-    return dict(zip(_SHOULDER_NAMES, out, strict=True))
-
-
-_P_SWEEP = np.linspace(-3.0, 3.0, 25)
-
-
-@pytest.mark.parametrize("p", _P_SWEEP)
-def test_sagittal_only_constants_left(p: float) -> None:
-    """wire (0, p, 0) extracts to the constants (pi/2, p, pi/2)."""
-    s = _translate_shoulders(0.0, p, 0.0)
-    assert math.isclose(s["l_y_shoulder"], _HALF_PI, abs_tol=1e-9)
-    assert math.isclose(s["l_p_shoulder"], p, abs_tol=1e-9)
-    assert math.isclose(s["l_r_shoulder"], _HALF_PI, abs_tol=1e-9)
-
-
-@pytest.mark.parametrize("p", _P_SWEEP)
-def test_sagittal_only_constants_right(p: float) -> None:
-    s = _translate_shoulders(0.0, p, 0.0)
-    assert math.isclose(s["r_y_shoulder"], _HALF_PI, abs_tol=1e-9)
-    assert math.isclose(s["r_p_shoulder"], p, abs_tol=1e-9)
-    assert math.isclose(s["r_r_shoulder"], _HALF_PI, abs_tol=1e-9)
-
-
-def _random_wire_triples(n: int, seed: int) -> list[tuple[float, float, float]]:
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_urdf_kinematics_reproduce_the_rig_template_for_any_pose(seed: int) -> None:
     rng = np.random.default_rng(seed)
-    ys = rng.uniform(-3.1, 3.1, size=n)
-    ps = rng.uniform(-1.0, 3.3, size=n)
-    rs = rng.uniform(-1.6, 1.6, size=n)
-    return list(zip(ys, ps, rs, strict=True))
+    pose = _random_pose(rng)
+    offset = rng.uniform(-0.3, 0.3, size=3)
+    template = load_template()
+    want, frames = forward(template, pose, offset)
+    worlds = _link_worlds(body_urdf(_BODY), body_positions(_BODY, pose, offset))
+    pelvis = template.offsets["pelvis"]
+    for joint in template.parents:
+        got = worlds[f"{joint}_{_BODY}"]
+        np.testing.assert_allclose(got[:3, 3], want[joint] - pelvis, atol=1e-9)
+        np.testing.assert_allclose(got[:3, :3], frames[joint], atol=1e-9)
 
 
-@pytest.mark.parametrize("triple", _random_wire_triples(200, seed=0))
-def test_round_trip_left(triple: tuple[float, float, float]) -> None:
-    y, p, r = triple
-    s = _translate_shoulders(y, p, r)
-    target = _semantic_rotation(y, p, r)
-    got = _left_chain(s["l_y_shoulder"], s["l_p_shoulder"], s["l_r_shoulder"])
-    assert np.allclose(got, target, atol=1e-9)
+def test_every_bone_cylinder_spans_its_parent_and_child_joint() -> None:
+    robot = urdf_parser.URDF.from_xml_string(body_urdf(_BODY))
+    template = load_template()
+    checked = 0
+    for joint, parent in template.parents.items():
+        if parent is None:
+            continue
+        offset = np.asarray(template.offsets[joint], dtype=float)
+        length = float(np.linalg.norm(offset))
+        if length < 1e-6:
+            continue
+        cylinders = [v for v in robot.link_map[f"{parent}_{_BODY}"].visuals if isinstance(v.geometry, urdf_parser.Cylinder) and abs(v.geometry.length - length) < 1e-5]
+        ends = [(_origin_matrix(v.origin) @ np.array((0.0, 0.0, s * length / 2.0, 1.0)))[:3] for v in cylinders for s in (-1.0, 1.0)]
+        assert any(np.allclose(a, (0.0, 0.0, 0.0), atol=1e-5) and np.allclose(b, offset, atol=1e-5) for a, b in zip(ends[::2], ends[1::2])), joint
+        checked += 1
+    assert checked > 40
 
 
-@pytest.mark.parametrize("triple", _random_wire_triples(200, seed=0))
-def test_round_trip_right(triple: tuple[float, float, float]) -> None:
-    y, p, r = triple
-    s = _translate_shoulders(y, p, r)
-    target = _semantic_rotation(y, p, r)
-    got = _right_chain(s["r_y_shoulder"], s["r_p_shoulder"], s["r_r_shoulder"])
-    assert np.allclose(got, target, atol=1e-9)
-
-
-def _random_yr_pairs(n: int, seed: int) -> list[tuple[float, float]]:
+@pytest.mark.parametrize("seed", range(5))
+def test_ball_angles_rebuild_the_rotation(seed: int) -> None:
     rng = np.random.default_rng(seed)
-    ys = rng.uniform(-3.1, 3.1, size=n)
-    rs = rng.uniform(-1.6, 1.6, size=n)
-    return list(zip(ys, rs, strict=True))
+    q = matrix_to_quat(_Raxis(rng.normal(size=3), float(rng.uniform(-2.5, 2.5))))
+    a, b, c = ball_angles(q)
+    rebuilt = _Raxis(np.array((1.0, 0.0, 0.0)), a) @ _Raxis(np.array((0.0, 1.0, 0.0)), b) @ _Raxis(np.array((0.0, 0.0, 1.0)), c)
+    np.testing.assert_allclose(rebuilt, quat_to_matrix(q), atol=1e-9)
 
 
-@pytest.mark.parametrize("pair", _random_yr_pairs(50, seed=1))
-def test_degenerate_p_zero_folds_correctly(pair: tuple[float, float]) -> None:
-    """p=0 is the degenerate branch (sin(b)~0). a/c individually are ambiguous, only
-    their composition through the URDF chain has to reproduce the semantic rotation."""
-    y, r = pair
-    s = _translate_shoulders(y, 0.0, r)
-    target = _semantic_rotation(y, 0.0, r)
-
-    assert math.isclose(s["l_y_shoulder"], _HALF_PI, abs_tol=1e-9)
-    assert math.isclose(s["r_y_shoulder"], _HALF_PI, abs_tol=1e-9)
-
-    got_l = _left_chain(s["l_y_shoulder"], s["l_p_shoulder"], s["l_r_shoulder"])
-    got_r = _right_chain(s["r_y_shoulder"], s["r_p_shoulder"], s["r_r_shoulder"])
-    assert np.allclose(got_l, target, atol=1e-9)
-    assert np.allclose(got_r, target, atol=1e-9)
+def test_ped_positions_read_the_body_pose_off_the_wire() -> None:
+    pose = semantic_to_body({"l_elbow": 1.1, "r_curl_index": 0.9}, DEFAULT_STANCE)
+    ped = Pedestrian()
+    ped.body.joints = list(pose)
+    ped.body.rotations = [Quaternion(x=float(q[0]), y=float(q[1]), z=float(q[2]), w=float(q[3])) for q in pose.values()]
+    ped.body.root_offset.z = -0.2
+    got = ped_positions(ped, _BODY)
+    assert got == pytest.approx(body_positions(_BODY, pose, (0.0, 0.0, -0.2)))
+    assert got[f"root_z_{_BODY}"] == pytest.approx(-0.2)
 
 
-def test_non_shoulder_joints_passthrough() -> None:
-    names = ["l_r_hip", "l_elbow", "waist", "r_knee", "p_head"]
-    positions = [0.45, 0.8, 0.03, -0.9, 0.1]
-    out = semantic_to_rig(names, positions)
-    assert out == positions
-
-
-def test_torso_and_ankle_passthrough() -> None:
-    names = ["r_waist", "y_waist", "l_ankle", "r_ankle"]
-    positions = [0.1, -0.2, 0.3, -0.15]
-    out = semantic_to_rig(names, positions)
-    assert out == positions
-
-
-def test_mixed_sequence_preserves_order_and_length() -> None:
-    names = ["waist", "l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "r_waist", "l_ankle"]
-    positions = [0.02, 0.0, 0.5, 0.0, 0.1, 0.3]
-    out = semantic_to_rig(names, positions)
-    assert len(out) == len(names)
-    assert out[0] == 0.02
-    assert math.isclose(out[1], _HALF_PI, abs_tol=1e-9)
-    assert math.isclose(out[2], 0.5, abs_tol=1e-9)
-    assert math.isclose(out[3], _HALF_PI, abs_tol=1e-9)
-    assert out[4] == 0.1
-    assert out[5] == 0.3
-
-
-@pytest.mark.parametrize("pair", _random_yr_pairs(50, seed=2))
-@pytest.mark.parametrize("p", [math.pi, -math.pi])
-def test_degenerate_arm_overhead_folds_correctly(pair: tuple[float, float], p: float) -> None:
-    """p=+-pi points the limb up the twist axis (cos(b)=-1), the other degenerate half."""
-    y, r = pair
-    s = _translate_shoulders(y, p, r)
-    target = _semantic_rotation(y, p, r)
-
-    for side in ("l", "r"):
-        assert math.isclose(s[f"{side}_y_shoulder"], _HALF_PI, abs_tol=1e-9)
-        assert math.isclose(s[f"{side}_p_shoulder"], math.pi, abs_tol=1e-9)
-
-    got_l = _left_chain(s["l_y_shoulder"], s["l_p_shoulder"], s["l_r_shoulder"])
-    got_r = _right_chain(s["r_y_shoulder"], s["r_p_shoulder"], s["r_r_shoulder"])
-    assert np.allclose(got_l, target, atol=1e-9)
-    assert np.allclose(got_r, target, atol=1e-9)
-
-
-@pytest.mark.parametrize("p", [math.pi, -math.pi])
-def test_arm_overhead_keeps_sagittal_constants(p: float) -> None:
-    s = _translate_shoulders(0.0, p, 0.0)
-    for side in ("l", "r"):
-        assert math.isclose(s[f"{side}_y_shoulder"], _HALF_PI, abs_tol=1e-9)
-        assert math.isclose(s[f"{side}_p_shoulder"], math.pi, abs_tol=1e-9)
-        assert math.isclose(s[f"{side}_r_shoulder"], _HALF_PI, abs_tol=1e-9)
-
-
-def test_flexion_below_degenerate_threshold_holds_first_angle() -> None:
-    s = _translate_shoulders(0.7, 1e-9, 0.3)
-    target = _semantic_rotation(0.7, 1e-9, 0.3)
-    assert s["l_y_shoulder"] == _HALF_PI
-    assert s["r_y_shoulder"] == _HALF_PI
-    assert np.allclose(_left_chain(s["l_y_shoulder"], s["l_p_shoulder"], s["l_r_shoulder"]), target, atol=1e-9)
-    assert np.allclose(_right_chain(s["r_y_shoulder"], s["r_p_shoulder"], s["r_r_shoulder"]), target, atol=1e-9)
-
-
-_BRANCH_CASES = [
-    ((1.0, 0.5, 0.2), (_HALF_PI - 1.0, 0.5, _HALF_PI - 0.2), (_HALF_PI + 1.0, 0.5, _HALF_PI + 0.2)),
-    ((0.5, -0.7, 0.1), (_HALF_PI - 0.5, -0.7, _HALF_PI - 0.1), (_HALF_PI + 0.5, -0.7, _HALF_PI + 0.1)),
-    ((2.5, 1.2, -0.3), (3 * _HALF_PI - 2.5, -1.2, -_HALF_PI + 0.3), (2.5 - _HALF_PI, -1.2, -_HALF_PI - 0.3)),
-]
-
-
-@pytest.mark.parametrize(("wire", "left", "right"), _BRANCH_CASES)
-def test_branch_flip_keeps_first_angle_in_half_turn(wire: tuple[float, float, float], left: tuple[float, float, float], right: tuple[float, float, float]) -> None:
-    """Canonical extractions with a negative first angle fold to (a+pi, -b, c+pi), the others stay."""
-    s = _translate_shoulders(*wire)
-    got_left = (s["l_y_shoulder"], s["l_p_shoulder"], s["l_r_shoulder"])
-    got_right = (s["r_y_shoulder"], s["r_p_shoulder"], s["r_r_shoulder"])
-    assert np.allclose(got_left, left, atol=1e-9)
-    assert np.allclose(got_right, right, atol=1e-9)
-    for a in (got_left[0], got_right[0]):
-        assert 0.0 <= a < math.pi
-    target = _semantic_rotation(*wire)
-    assert np.allclose(_left_chain(*got_left), target, atol=1e-9)
-    assert np.allclose(_right_chain(*got_right), target, atol=1e-9)
-
-
-@pytest.mark.parametrize("triple", _random_wire_triples(200, seed=3))
-def test_first_angle_always_in_half_turn(triple: tuple[float, float, float]) -> None:
-    s = _translate_shoulders(*triple)
-    assert 0.0 <= s["l_y_shoulder"] < math.pi
-    assert 0.0 <= s["r_y_shoulder"] < math.pi
-
-
-def test_single_side_triple_translates_only_that_side() -> None:
-    names = ["l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "r_y_shoulder", "r_p_shoulder"]
-    positions = [0.0, 0.5, 0.0, 0.4, 0.6]
-    out = semantic_to_rig(names, positions)
-    assert np.allclose(out[:3], [_HALF_PI, 0.5, _HALF_PI], atol=1e-9)
-    assert out[3:] == [0.4, 0.6]
-
-
-def test_right_triple_without_left_translates_right() -> None:
-    names = ["r_r_shoulder", "r_p_shoulder", "r_y_shoulder"]
-    positions = [0.0, -0.4, 0.0]
-    out = semantic_to_rig(names, positions)
-    assert np.allclose(out, [_HALF_PI, -0.4, _HALF_PI], atol=1e-9)
-
-
-def test_mismatched_names_and_positions_raise() -> None:
-    with pytest.raises(ValueError):
-        semantic_to_rig(["l_elbow", "r_elbow"], [0.1])
+def test_semantic_positions_pose_the_body_over_the_default_stance_without_a_rig() -> None:
+    angles = dict.fromkeys(SEMANTIC_DOFS, 0.0) | {"l_knee": -0.7}
+    got = semantic_positions(angles, "", _BODY)
+    assert got == pytest.approx(body_positions(_BODY, semantic_to_body(angles, DEFAULT_STANCE)))
 
 
 def test_rot_axis_zero_axis_is_identity() -> None:

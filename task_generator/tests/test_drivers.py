@@ -1,4 +1,4 @@
-"""Driven joints: rig.yaml drivers and the wheel angles integrated from a ped's poses."""
+"""Driven joints: .rig drivers and the wheel angles integrated from a ped's poses."""
 
 from __future__ import annotations
 
@@ -6,61 +6,63 @@ import math
 from pathlib import Path
 
 import pytest
+from arena_assets.rig import write_rig
+from arena_simulation_setup.testing import make_rig
 from task_generator.simulators.human.drivers import DrivenJoints, JoystickDriver, Roller, load_drivers, parse_drivers, with_driven
 from task_generator.simulators.human.possession import bare_joint_names_valid
 
-_RIG = """
-skeleton: cmu
-drivers:
-  l_wheel: {bone: WheelL, from: distance, radius: 0.3, lateral: 0.28, axis: [0.0, 1.0, 0.0]}
-  r_wheel: {bone: WheelR, from: distance, radius: 0.3, lateral: -0.28, axis: [0.0, 1.0, 0.0]}
-"""
+_WHEELS = {
+    "l_wheel": {"bone": "WheelL", "from": "distance", "radius": 0.3, "lateral": 0.28, "axis": [0.0, 1.0, 0.0]},
+    "r_wheel": {"bone": "WheelR", "from": "distance", "radius": 0.3, "lateral": -0.28, "axis": [0.0, 1.0, 0.0]},
+}
 _CHAIR = (Roller("l_wheel", 0.3, 0.28), Roller("r_wheel", 0.3, -0.28))
-_JOYSTICK = "  joystick_pitch: {bone: Joystick, from: velocity, axis: [0.0, 1.0, 0.0]}\n  joystick_roll: {bone: Joystick, from: velocity, axis: [1.0, 0.0, 0.0]}\n"
+_JOYSTICK = {
+    "joystick_pitch": {"bone": "Joystick", "from": "velocity", "axis": [0.0, 1.0, 0.0]},
+    "joystick_roll": {"bone": "Joystick", "from": "velocity", "axis": [1.0, 0.0, 0.0]},
+}
 
 
-def _bundle(root: Path, rig: str | None) -> str:
+def _bundle(root: Path, drivers: dict[str, dict] | None) -> str:
     bundle = root / "chair"
-    bundle.mkdir(parents=True)
-    sdf = bundle / "chair.sdf"
+    (bundle / "rig").mkdir(parents=True)
+    sdf = bundle / "rig" / "chair.sdf"
     sdf.write_text("<sdf/>")
-    if rig is not None:
-        (bundle / "rig.yaml").write_text(rig)
+    if drivers is not None:
+        write_rig(bundle / "rig" / "chair.rig", make_rig({"pelvis": (None, [("Hips", 1.0, (0.0, 0.0, 0.0, 1.0))])}, drivers=drivers))
     return str(sdf)
 
 
-def test_drivers_load_from_the_rig_file_beside_the_actor_sdf(tmp_path: Path) -> None:
-    assert load_drivers(_bundle(tmp_path, _RIG)).rollers == _CHAIR
+def test_drivers_load_from_the_rig_beside_the_actor_sdf(tmp_path: Path) -> None:
+    assert load_drivers(_bundle(tmp_path, _WHEELS)).rollers == _CHAIR
 
 
 def test_models_without_a_rig_file_or_a_drivers_section_have_no_drivers(tmp_path: Path) -> None:
     assert load_drivers("").rollers == ()
     assert load_drivers(_bundle(tmp_path / "a", None)).rollers == ()
-    assert load_drivers(_bundle(tmp_path / "b", "skeleton: cmu\n")).rollers == ()
+    assert load_drivers(_bundle(tmp_path / "b", {})).rollers == ()
 
 
 @pytest.mark.parametrize(
-    ("rig", "message"),
+    ("driver", "message"),
     [
-        ("- a\n", "a rig file is a mapping"),
-        ("drivers: [l_wheel]\n", "drivers takes"),
-        ("drivers: {l_wheel: {from: heading, radius: 0.3}}\n", "driver 'l_wheel' takes"),
-        ("drivers: {l_wheel: {from: distance}}\n", "needs a radius above 0 m"),
-        ("drivers: {l_wheel: {from: distance, radius: 0.0}}\n", "needs a radius above 0 m"),
+        ({"from": "heading", "radius": 0.3}, "driver 'l_wheel' takes"),
+        ({"from": "distance"}, "needs a radius above 0 m"),
+        ({"from": "distance", "radius": 0.0}, "needs a radius above 0 m"),
     ],
 )
-def test_malformed_drivers_are_rejected_with_the_expected_form(rig: str, message: str, tmp_path: Path) -> None:
+def test_malformed_drivers_are_rejected_with_the_expected_form(driver: dict, message: str, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match=message):
-        load_drivers(_bundle(tmp_path, rig))
+        load_drivers(_bundle(tmp_path, {"l_wheel": {"bone": "WheelL", "axis": [0.0, 1.0, 0.0], **driver}}))
 
 
 def test_a_driver_without_lateral_sits_on_the_centerline() -> None:
-    assert parse_drivers({"drivers": {"wheel": {"from": "distance", "radius": 0.1}}}, "rig").rollers == (Roller("wheel", 0.1, 0.0),)
+    rig = make_rig({"pelvis": (None, [])}, drivers={"wheel": {"bone": "Wheel", "axis": [0.0, 1.0, 0.0], "from": "distance", "radius": 0.1}})
+    assert parse_drivers(rig, "rig").rollers == (Roller("wheel", 0.1, 0.0),)
 
 
 def test_velocity_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: Path) -> None:
-    assert not load_drivers(_bundle(tmp_path / "manual", _RIG)).joystick
-    electric = load_drivers(_bundle(tmp_path / "electric", _RIG + _JOYSTICK))
+    assert not load_drivers(_bundle(tmp_path / "manual", _WHEELS)).joystick
+    electric = load_drivers(_bundle(tmp_path / "electric", _WHEELS | _JOYSTICK))
     assert electric.joystick
     wheels = electric.rollers
     assert wheels == _CHAIR
@@ -88,7 +90,7 @@ def test_velocity_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: P
 )
 def test_velocity_drivers_outside_the_full_joystick_are_rejected(section: dict[str, dict[str, str]], match: str) -> None:
     with pytest.raises(ValueError, match=match):
-        parse_drivers({"drivers": section}, "rig")
+        parse_drivers(make_rig({"pelvis": (None, [])}, drivers={name: {"bone": "Joystick", "axis": [0.0, 1.0, 0.0], **spec} for name, spec in section.items()}), "rig")
 
 
 def test_straight_travel_turns_both_wheels_by_distance_over_radius() -> None:

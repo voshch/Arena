@@ -16,6 +16,7 @@ from pathlib import Path
 import attrs
 import numpy as np
 import yaml
+from arena_simulation_setup.tree.assets.human_rig import SUB_BUNDLE
 
 from arena_assets.utils import human
 from arena_assets.utils.human import Legs, PelvisClearance, Proportions
@@ -92,16 +93,17 @@ def _read_skin(path: Path) -> human.Skin | None:
 
 
 def load_body(model_uri: str) -> BodyMeasurements | None:
-    """Measurements in the annotation beside an actor SDF, else measured off its skin (meshes/<name>.dae), None without either.
+    """Measurements in the bundle's annotation, else measured off the bundle's skin (meshes/<name>.dae), None without either, the bundle holding the actor SDF or its rig/ one.
 
     Proportions the annotation lacks come off the skin too, typical ones when it has none or an unknown rig.
     """
     if not model_uri:
         return None
     sdf = Path(model_uri)
-    path = sdf.with_name(ANNOTATION_FILE)
+    bundle = sdf.parent.parent if sdf.parent.name == SUB_BUNDLE else sdf.parent
+    path = bundle / ANNOTATION_FILE
     annotation = (yaml.safe_load(path.read_text()) or {}) if path.is_file() else {}
-    skin_path = sdf.parent / "meshes" / f"{sdf.stem}.dae"
+    skin_path = bundle / "meshes" / f"{sdf.stem}.dae"
     skin = _read_skin(skin_path) if not (annotation.get("pelvis_clearance") and annotation.get("legs") and annotation.get("proportions")) else None
     if annotation.get("proportions"):
         proportions = Proportions(**annotation["proportions"])
