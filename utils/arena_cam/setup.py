@@ -1,6 +1,3 @@
-import os
-from glob import glob
-
 from setuptools import find_packages, setup
 
 package_name = 'arena_cam'
@@ -17,8 +14,6 @@ setup(
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml', 'plugin.xml']),
         ('share/' + package_name + '/resource', ['resource/arena_cam_icon.png']),
-        (os.path.join('share', package_name, 'configs', 'cam', 'shots'),
-         glob('configs/cam/shots/*.yaml')),
     ],
     zip_safe=True,
     maintainer='voshch',

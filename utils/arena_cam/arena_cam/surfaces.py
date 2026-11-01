@@ -62,6 +62,18 @@ def tag(ns: str) -> str:
     return "sim" if ns == ARENA_ROOT else f"viz{env_id_from_ns(ns)}"
 
 
+def by_source(source: str | None, namespaces: Iterable[str]) -> list[str]:
+    """The surfaces a camera of `source` films through: `sim`, `viz` or None for all of them."""
+    return [ns for ns in namespaces if source is None or (ns == ARENA_ROOT) == (source == "sim")]
+
+
+def camera_tag(name: str, ns: str, count: int) -> str:
+    """File tag of a camera on one of its `count` surfaces: the surface alone for an unnamed camera, else the camera's name."""
+    if not name:
+        return tag(ns)
+    return name if count == 1 else f"{name}-{tag(ns)}"
+
+
 def env_refs(msg: EnvRegistry) -> dict[int, tuple[float, float]]:
     return {r.env_id: (float(r.reference[0]), float(r.reference[1])) for r in msg.envs}
 

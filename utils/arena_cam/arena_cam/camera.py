@@ -3,10 +3,10 @@
 Every verb (discrete framing and streamed motion) is a `@primitive`-registered
 class that owns its name, its parameter parsing (`from_params`), and its behaviour.
 `Camera.add(name, ...)` is the single generic entry point, resolving a name to a
-verb or a named shot (see `shots.py`); the shot YAML and the CLI both route through
-it. Adding a verb means writing one decorated class, nothing else. Poses are
+verb or a camera asset (see `shots.py`); the asset YAML and the CLI both route
+through it. Adding a verb means writing one decorated class, nothing else. Poses are
 expressed in the current reference frame, so an `orbit` authored after `track` runs
-in the entity's frame. Timing is wall-clock (LIVE) only.
+in the entity's frame.
 """
 
 from __future__ import annotations
@@ -18,14 +18,17 @@ from typing import Protocol
 from arena_rclpy_mixins.spin import run_main
 
 from . import curves
-from .client import FOV_DEFAULT, CamNode, FaceWatch, Steered, TargetSelection
-from .curves import Quat, Vec3
+from .client import CameraTake, CamNode, FaceWatches, Steered, TargetSelection
+from .curves import FOV_DEFAULT, Quat, Vec3
+from .mounts import Mount
 from .record import default_name, record_path
-from .registry import primitive
-from .shots import resolve
+from .registry import PRIMITIVES, primitive
+from .shots import RigCamera, check_bundle, expand_rig, resolve
 
 # A sampler maps eased progress in [0, 1] to (position, quat, fov).
 _Sampler = Callable[[float], tuple[Vec3, Quat, float]]
+
+_WHOLE = (0.0, 1.0)
 
 
 class _Cursor:
@@ -77,16 +80,65 @@ def _fov_fn(start: float, target: float | None) -> Callable[[float], float]:
 
 class _Action:
     verb: str = ""
+    duration: float = 0.0
 
     @classmethod
     def from_params(cls, params: _ParamSource) -> _Action:
         raise NotImplementedError
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
         raise NotImplementedError
 
-    async def prepare(self, node: CamNode) -> None:
+    async def skip(self, take: CameraTake, cursor: _Cursor) -> _Cursor:
+        """Apply this action's end state without filming, for a slice that starts past it."""
+        return await self.run(take, cursor)
+
+    async def prepare(self, take: CameraTake) -> None:
         """Set up what must exist before a lockstep hold freezes the sim, a no-op for most verbs."""
+
+    def atoms(self) -> list[_Action]:
+        return [self]
+
+
+class _Slice(_Action):
+    """The part `start` to `end` s of a flat action list, `end` None for its end."""
+
+    verb = "slice"
+
+    def __init__(self, actions: list[_Action], start: float, end: float | None) -> None:
+        self.actions, self.start = actions, start
+        total = sum(action.duration for action in actions)
+        self.end = total if end is None else min(end, total)
+        self.duration = max(0.0, self.end - start)
+
+    async def prepare(self, take: CameraTake) -> None:
+        for action in self.actions:
+            await action.prepare(take)
+
+    def atoms(self) -> list[_Action]:
+        return [atom for action in self.actions for atom in action.atoms()]
+
+    async def skip(self, take: CameraTake, cursor: _Cursor) -> _Cursor:
+        for action in self.actions:
+            cursor = await action.skip(take, cursor)
+        return cursor
+
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
+        low, high = self.start + span[0] * self.duration, self.start + span[1] * self.duration
+        now = 0.0
+        for action in self.actions:
+            if not take.ok():
+                break
+            begin, now = now, now + action.duration
+            if begin >= high:
+                break
+            if now <= low:
+                cursor = await action.skip(take, cursor)
+            elif action.duration <= 0.0:
+                cursor = await action.run(take, cursor)
+            else:
+                cursor = await action.run(take, cursor, (max(0.0, (low - begin) / action.duration), min(1.0, (high - begin) / action.duration)))
+        return cursor
 
 
 # discrete framing -----------------------------------------------------------
@@ -102,8 +154,11 @@ class _Look(_Action):
     def from_params(cls, params: _ParamSource) -> _Look:
         return cls(**_pick(params, ("eye", "target", "fov")))
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
-        await node.look(self.eye, self.target, self.fov)
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
+        await take.look(self.eye, self.target, self.fov)
+        return await self.skip(take, cursor)
+
+    async def skip(self, take: CameraTake, cursor: _Cursor) -> _Cursor:
         return _Cursor(self.eye, curves.look_at_quat(self.eye, self.target), self.fov or cursor.fov)
 
 
@@ -113,8 +168,11 @@ class _Ref(_Action):
     def __init__(self, entity: str = "", pose: tuple[Vec3, Quat] | None = None, mode: str = "full") -> None:
         self.entity, self.pose, self.mode = entity, pose, mode
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
-        await node.set_reference(self.entity, self.pose, self.mode)
+    async def prepare(self, take: CameraTake) -> None:
+        await take.prefill(self.entity)
+
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
+        await take.set_reference(self.entity, self.pose, self.mode)
         return cursor
 
 
@@ -168,8 +226,8 @@ class _Projection(_Action):
     def from_params(cls, params: _ParamSource | str) -> _Projection:
         return cls(params) if isinstance(params, str) else cls(**_pick(params, ("projection",)))
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
-        await node.set_projection(self.projection)
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
+        await take.set_projection(self.projection)
         return cursor
 
 
@@ -188,14 +246,17 @@ class _Segment(_Action):
         """Build the per-frame sampler and the end cursor from the start cursor."""
         raise NotImplementedError
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
         sampler, end = self.plan(cursor)
 
         def frame_at(t: float) -> tuple[Vec3, Quat, float]:
             return sampler(curves.ease(self.ease, t))
 
-        await node.drive(self.duration, self.world_orientation, frame_at)
-        return end
+        await take.drive(self.duration, self.world_orientation, frame_at, span)
+        return end if span[1] >= 1.0 else _Cursor(*frame_at(span[1]))
+
+    async def skip(self, take: CameraTake, cursor: _Cursor) -> _Cursor:
+        return self.plan(cursor)[1]
 
 
 @primitive("hold")
@@ -476,40 +537,47 @@ class _Zoom(_Segment):
 class _Pov(_Action):
     """Look through a pedestrian's face frame for `duration` s, then latch where the face last was."""
 
-    def __init__(self, face: str | float, duration: float = 10.0, fov: float | None = None) -> None:
+    def __init__(self, face: str | float, duration: float = 10.0, fov: float | None = None, clip_near: float | None = None) -> None:
         self.face = str(int(face)) if isinstance(face, float) and face.is_integer() else str(face)
         self.duration = max(0.0, float(duration))
         self.fov = fov
+        self.clip_near = clip_near
         self._prepared = False
-        self._watch: FaceWatch | None = None
+        self._watches: FaceWatches | None = None
 
     @classmethod
     def from_params(cls, params: _ParamSource) -> _Pov:
-        return cls(face=_typed(params, "face", (str, int, float)), **_pick(params, ("duration", "fov")))
+        return cls(face=_typed(params, "face", (str, int, float)), **_pick(params, ("duration", "fov", "clip_near")))
 
-    async def prepare(self, node: CamNode) -> None:
-        self._watch = await node.watch_face(self.face)
+    async def prepare(self, take: CameraTake) -> None:
+        self._watches = await take.watch_faces(self.face)
         self._prepared = True
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
-        watch = self._watch if self._prepared else await node.watch_face(self.face)
-        self._watch, self._prepared = None, False
-        if watch is None:
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
+        watches = self._watches if self._prepared else await take.watch_faces(self.face)
+        self._watches, self._prepared = None, False
+        if watches is None:
             return cursor
         try:
-            fov = self.fov if self.fov is not None else watch.fov
-            node.get_logger().info(f"cam: pov {watch.frame}, fov {math.degrees(fov):.0f} deg")
+            fov = self.fov if self.fov is not None else watches.fov
+            take.get_logger().info(f"cam: pov {sorted(set(watches.frames.values()))}, fov {math.degrees(fov):.0f} deg")
             pose = ((0.0, 0.0, 0.0), curves.look_at_quat((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)), fov)
-            node.clip_near = watch.clip_near
-            await node.set_reference(watch.frame, None, "full")
-            await node.drive(self.duration, False, lambda _t: pose)
-            node.clip_near = -1.0
-            node.stream(pose[0], pose[1], False, fov)
-            await node.set_reference("", None, "full")
+            take.clip_near = self.clip_near if self.clip_near is not None else watches.clip_near
+            await take.set_reference("", None, "full", frames=watches.frames)
+            await take.drive(self.duration, False, lambda _t: pose, span)
+            take.clip_near = -1.0
+            take.stream(pose[0], pose[1], False, fov)
+            await take.set_reference("", None, "full")
         finally:
-            node.clip_near = 0.0
-            watch.close()
+            take.clip_near = 0.0
+            watches.close()
         return _Cursor(*pose)
+
+    async def skip(self, take: CameraTake, cursor: _Cursor) -> _Cursor:
+        if self._watches is not None:
+            self._watches.close()
+        self._watches, self._prepared = None, False
+        return cursor
 
 
 class _Steer(_Action):
@@ -518,26 +586,45 @@ class _Steer(_Action):
     def __init__(self, next_frame: Callable[[float], Steered | None]) -> None:
         self.next_frame = next_frame
 
-    async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
-        await node.steer(self.next_frame)
+    async def run(self, take: CameraTake, cursor: _Cursor, span: tuple[float, float] = _WHOLE) -> _Cursor:
+        await take.steer(self.next_frame)
         return cursor
 
 
 class Camera:
-    """Author a camera shot as a chain of `add(verb, ...)` calls, then `play()` it."""
+    """Author a camera shot as a chain of `add(verb, ...)` calls or load a camera asset, then `play()` or `record()` it."""
 
     def __init__(self, targets: TargetSelection) -> None:
         self._targets = targets
         self._actions: list[_Action] = []
+        self._rig: list[RigCamera] = []
+        self._projection: str | None = None
+        self._live = ""
 
     def add(self, name: str, params: object = None, /, **kwargs: object) -> Camera:
-        """Queue a verb or shot by name. Params come as a positional dict/scalar (YAML) or as kwargs (Python).
+        """Queue a verb or camera asset by name, an asset resolves through its global tiers. Params come as a positional dict/scalar (YAML) or as kwargs (Python).
 
-        A shot expands eagerly to its atomic actions, so the queue stays flat and
-        a verb and a shot are indistinguishable at this call site.
+        An asset expands eagerly to its atomic actions, so the queue stays flat and
+        a verb and an asset are indistinguishable at this call site.
         """
         spec = params if params is not None else kwargs
-        self._actions.extend(resolve(name, spec))
+        if self._rig:
+            raise ValueError(f"cannot add {name!r} to a rig, a rig is a root only")
+        if name in PRIMITIVES:
+            self._actions.extend(resolve(name, spec))
+            return self
+        return self.load(name, _global_bundle(name), spec)
+
+    def load(self, root: str, bundle: dict[str, dict], params: object = None) -> Camera:
+        """Queue the camera asset `root` of a bundle, a rig replaces the queue."""
+        check_bundle(bundle)
+        if "cameras" not in bundle[root]:
+            self._actions.extend(resolve(root, params or {}, (), bundle))
+            return self
+        if self._actions:
+            raise ValueError(f"rig {root!r} is a root only, it cannot follow other steps")
+        rig = expand_rig(root, bundle[root], params, bundle)
+        self._rig, self._projection, self._live = rig.cameras, rig.projection, rig.live
         return self
 
     def steer(self, next_frame: Callable[[float], Steered | None]) -> Camera:
@@ -545,27 +632,43 @@ class Camera:
         self._actions.append(_Steer(next_frame))
         return self
 
-    def _run(self, record: tuple[str, float] | None = None, *, force: bool = False, lockstep: bool = False) -> bool:
+    @property
+    def projection(self) -> str | None:
+        return self._projection
+
+    def cameras(self, *, recording: bool) -> list[RigCamera]:
+        """The cameras a take runs: every rig camera when recording, else the live one."""
+        if not self._rig:
+            return [RigCamera(actions=self._actions)]
+        return self._rig if recording else [camera for camera in self._rig if camera.name == self._live]
+
+    def _run(self, record: tuple[str, float] | None = None, *, force: bool = False, lockstep: bool = False, fps: float = 30.0, mounts: Sequence[Mount] = (), env: int = 0) -> bool:
         nodes: list[CamNode] = []
 
         def make() -> CamNode:
-            nodes.append(CamNode(timeline=self, targets=self._targets, record=record, force=force, lockstep=lockstep))
+            nodes.append(CamNode(timeline=self, targets=self._targets, record=record, force=force, lockstep=lockstep, fps=fps, mounts=mounts, env=env))
             return nodes[-1]
 
         run_main(make)
         return bool(nodes) and nodes[0].ran
 
-    def play(self) -> bool:
-        """Connect to the live sim, run the shot, disconnect. Blocks until done, False when no viewport ran it."""
-        return self._run()
+    def play(self, *, lockstep: bool = False, fps: float = 30.0, env: int = 0) -> bool:
+        """Connect to the live sim, run the shot, disconnect. Blocks until done, False when no viewport ran it.
 
-    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> bool:
+        `lockstep` gates playback frame by frame: with a run active the cam rides it as a
+        hard channel gated at 1/fps, with no run it takes its own hold and steps the sim by
+        1/fps per frame. Without it playback runs on the wall clock, with no sync to the sim.
+        """
+        return self._run(lockstep=bool(lockstep), fps=float(fps), env=env)
+
+    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False, mounts: Sequence[Mount] = (), env: int = 0) -> bool:
         """Render the shot to a video, one capture per frame, encoded by ffmpeg.
 
         A bare `out` name lands under `$ARENA_DATA_DIR/recordings/`, an absolute
         or slash-bearing path is used verbatim, and the suffix picks the container
         (none means .mp4). `None` names the take `take_<YYYYmmdd-HHMMSS>`. With
-        several cameras selected each gets its own file, tagged `-sim` / `-viz<env>`.
+        several cameras selected each gets its own file, tagged `-sim` / `-viz<env>`,
+        and each rig camera its own file tagged by its name.
         An existing file is refused with an error log unless `force`. Raises
         `FileNotFoundError` without ffmpeg. Blocks until done.
 
@@ -574,23 +677,61 @@ class Camera:
         own hold and steps the sim by 1/fps between frames. False when no viewport ran the shot
         or a recording failed: a hold, step, capture (after its retries) or encode that failed
         stops the take there.
+
+        Each of `mounts` films from its TF frame through the sim camera at every recorded
+        frame's sim time, into its own file tagged by the frame. Mounts need `lockstep`
+        and the sim camera, and a timeline that films next to them cannot `latch`. A rig
+        needs `lockstep` too.
         """
+        if mounts and any(atom.verb == "latch" for action in self._actions for atom in action.atoms()):
+            raise ValueError("latch cannot run next to mounts, a shared surface cannot hold a latched reference")
         path = record_path(out or default_name("take"))
-        return self._run((str(path), float(fps)), force=bool(force), lockstep=bool(lockstep))
+        return self._run((str(path), float(fps)), force=bool(force), lockstep=bool(lockstep), mounts=mounts, env=env)
 
-    async def prepare(self, node: CamNode) -> None:
-        """Let each queued action set up against a connected node before the timeline runs."""
-        for action in self._actions:
-            await action.prepare(node)
+    async def prepare(self, take: CameraTake) -> None:
+        """Let each queued action of `take`'s camera set up against a connected node before the timeline runs."""
+        for action in take.camera.actions:
+            await action.prepare(take)
 
-    async def run(self, node: CamNode) -> None:
-        """Execute the queued actions against a connected node (called by CamNode.setup)."""
+    async def run(self, take: CameraTake) -> None:
+        """Execute the actions of `take`'s camera against a connected node (called by CamNode)."""
         cursor = _Cursor()
-        seeded = node.camera_pose()
+        seeded = take.camera_pose()
         if seeded is not None:
             cursor = _Cursor(seeded[0], seeded[1], 0.0)
-        for action in self._actions:
-            if not node.ok():
+        for action in take.camera.actions:
+            if not take.ok():
                 break
-            node.get_logger().info(f"cam: {action.verb}")
-            cursor = await action.run(node, cursor)
+            take.get_logger().info(f"cam: {action.verb}")
+            cursor = await action.run(take, cursor)
+
+
+def _global_bundle(name: str) -> dict[str, dict]:
+    """A bundle of the camera asset `name` from the global tiers, a ValueError naming them when no tier holds it."""
+    from arena_simulation_setup.tree import Identifier
+    from arena_simulation_setup.tree.assets.Camera import collect, find_spec
+
+    async def gather() -> dict[str, dict] | None:
+        spec = await find_spec(name)
+        return None if spec is None else await collect(name, spec)
+
+    bundle = Identifier._run_sync(gather())
+    if bundle is None:
+        raise ValueError(f"unknown camera name: {name!r} (verbs: {sorted(PRIMITIVES)}, shots: {global_cameras()})")
+    return bundle
+
+
+def global_spec(name: str) -> dict | None:
+    """The spec of the camera asset `name` from the global tiers, None when no tier holds it."""
+    from arena_simulation_setup.tree import Identifier
+    from arena_simulation_setup.tree.assets.Camera import find_spec
+
+    return Identifier._run_sync(find_spec(name))
+
+
+def global_cameras() -> list[str]:
+    """The camera assets of the global tiers, the names `arena cam` plays with no world loaded."""
+    from arena_simulation_setup.tree import Identifier
+    from arena_simulation_setup.tree.assets.Camera import candidates
+
+    return [identifier.name for identifier in Identifier._run_sync(candidates())]

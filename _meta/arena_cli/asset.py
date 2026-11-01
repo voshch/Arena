@@ -48,6 +48,7 @@ KINDS = {
     "stairs": Kind("stair and escalator kinds", f"{_TREE}.Stairs", "StairsIdentifier", "NETWORK_PROVIDERS", parse=True),
     "sound": Kind("sound assets", f"{_TREE}.assets.Sound", "SoundIdentifier", "NETWORK_PROVIDERS", parse=True),
     "animation": Kind("pedestrian animation clips", f"{_TREE}.assets.Animation", "AnimationIdentifier", "NETWORK_PROVIDERS", parse=True),
+    "camera": Kind("camera setups", f"{_TREE}.assets.Camera", "CameraIdentifier", "NETWORK_PROVIDERS", parse=True),
     "world": Kind("worlds", f"{_TREE}.World", "WorldIdentifier", "WORLD_PROVIDERS", closure="world", repo_subdir="worlds"),
     "suite": Kind("benchmark suites", _BENCH, "SuiteIdentifier", "BENCHMARK_PROVIDERS", bundle=True, closure="suite"),
     "contest": Kind("benchmark contests", _BENCH, "ContestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),

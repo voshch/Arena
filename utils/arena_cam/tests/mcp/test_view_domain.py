@@ -177,16 +177,17 @@ def test_view_domain_is_served_from_its_entry_point():
 
     (loaded,) = discover(["view"])
     assert loaded.served, loaded.reason
-    assert {spec.name for spec in loaded.domain.tools} == {"view_available", "view_set", "view_capture", "view_record"}
+    assert {spec.name for spec in loaded.domain.tools} == {"view_available", "view_set", "view_capture", "view_play", "view_record"}
     assert [resource.uri for resource in loaded.domain.resources] == ["arena://view/shots"]
 
 
-def test_shots_resource_lists_the_cam_registry():
+def test_shots_resource_lists_the_verbs_and_global_camera_assets():
     from arena_cam.registry import PRIMITIVES
 
     catalog = view.view_shots()
     assert set(catalog["verbs"]) == set(PRIMITIVES)
     assert {"look", "orbit", "hold", "track"} <= set(catalog["verbs"])
+    assert {"establishing", "tour"} <= set(catalog["shots"])
 
 
 def test_available_names_the_simulator_and_the_serving_node(rig: Rig):

@@ -61,8 +61,8 @@ There is one generic entry point on `Camera`:
 cam.add(name, **params)   # chainable, returns self
 ```
 
-`name` may be a verb (atomic) or a shot (composite). Verbs are resolved
-first; if the name is not a verb, it is looked up in the shots registry.
+`name` may be a verb (atomic) or a camera asset (composite). Verbs are resolved
+first; if the name is not a verb, it resolves through the global camera asset tiers.
 An unknown name raises `ValueError` listing both vocabularies. The call
 shape is identical regardless of whether the name is a verb or a shot.
 
@@ -167,12 +167,12 @@ Change fov only, eye and aim fixed. fov cannot be read back from the sim, so
 `from_fov=None` takes the current fov if a verb set one, else `FOV_DEFAULT`
 (1.047).
 
-**`pov`** -- `face`, `duration=10.0`, `fov=None`
+**`pov`** -- `face`, `duration=10.0`, `fov=None`, `clip_near=None`
 Look through a pedestrian's eyes: track its `face_<id>` frame in `full` mode and
 hold the camera at the face origin (the sellion) looking along the face's x axis.
 `face` is a face id (`env_0_agent_1`), its frame name (`face_env_0_agent_1`) or a
 bare agent number when exactly one env has it. `fov=None` takes the central-vision
-fov from the face's `view`, and the view's `clip_near` hides the pedestrian's own
+fov from the face's `view`, and the view's `clip_near` (or `clip_near` in m when given) hides the pedestrian's own
 head for the segment, restored to each camera's default afterwards. When the segment
 ends the reference is latched where the face last was, since the face frame stops being published once
 nobody watches it (see [Pedestrian faces](#pedestrian-faces)).
@@ -231,15 +231,107 @@ include another shot in its timeline; that nested shot is itself expanded
 recursively. Cycles are detected at load time and raise `ValueError`
 ("shot cycle: a -> b -> a").
 
-### Bundled shots and auto-registration
+### Camera assets
 
-Data shots live in [`configs/cam/shots/<name>.yaml`](../configs/cam/shots/)
-and are auto-registered by file stem at package import. The stem may not
-shadow an existing verb name (import-time `ValueError`). Two shots ship:
+A shot lives in a camera asset, the `camera` asset kind (`arena asset find camera`).
+One asset is one YAML file: a `timeline:` for one camera, or a `cameras:` map for a
+whole [rig](#rigs). It resolves through the Arena tiers, the most specific first:
+
+| tier | where |
+| --- | --- |
+| scenario | `worlds/<world>/scenarios/<scenario>/cameras/<name>.yaml` |
+| world | `worlds/<world>/assets/Common/Camera/<name>/<name>.yaml`, then the same under linked worlds |
+| global | `Common/Camera/<name>/<name>.yaml` under the local root, the imported root and `arena_simulation_setup/assets`, then the network buckets |
+
+`arena cam` is blind to scenarios: with no world loaded a name resolves through the
+global tiers. Scenario and world assets play through the task generator, see
+[Playing with the episode](#playing-with-the-episode). A step name resolves through
+the local tiers only, so a network asset a timeline names is pulled first. An asset
+may not shadow a verb name. Four ship with Arena:
 
 - `establishing` -- a single-take orbit with a look, orbit, and hold.
+- `overhead` -- a top-down hold.
+- `shoulder` -- over the robot's shoulder.
 - `tour` -- a meta-shot: includes `establishing`, sets a reference, then
   runs `dolly` and `pan` verbs.
+
+### Context tokens
+
+An asset never names an env. These tokens fill in per camera at send time, from that
+camera's env, so one asset works in every env:
+
+| token | value |
+| --- | --- |
+| `${env}` | `env_<n>` |
+| `${robot}` | base frame of the env's first robot |
+| `${robot.<name>}` | base frame of the named robot |
+| `${human.<name>}` | TF frame of the named pedestrian's body |
+| `${face.<name>}` | face id of the named pedestrian, for `pov` |
+
+They work in `track`'s `entity`, a `reference` entry's `entity`, a mount's `frame`,
+`--mount` and `pov`'s `face`. An rviz camera reads its own env, the sim camera its
+server's env or `--env N` (default 0). A token also works as a param default
+(`subject: "${robot}"`), and a param passed by that name replaces it. A token with
+no value in the env stops the take with an error naming what the env has.
+
+### Slices
+
+A step that names a camera asset takes `slice: [from, to]` in seconds and plays
+only that part of it, so a timeline composes from parts of other assets:
+
+```yaml
+timeline:
+  - establishing: { radius: 8, slice: [2.0, 6.0] }
+  - tour: { slice: [10.0, null] }
+```
+
+`null` means the end of the asset, and a `to` past its end stops there. Anything
+that ends before `from` is skipped but leaves its end state: references and
+projections apply, moves leave the cursor where they end. A move the slice cuts plays
+that part of its own curve, so a slice of an eased move keeps its easing. Slices nest.
+`slice` is refused on a verb and as a `params:` default.
+
+### Rigs
+
+A `cameras:` map replaces `timeline:` and names several cameras, each with its own
+timeline or a mount on a TF frame:
+
+```yaml
+params: { duration: 20.0 }
+projection: perspective
+live: chase
+cameras:
+  wide:
+    timeline:
+      - look: { eye: [8, 8, 6], target: [0, 0, 0.5] }
+      - hold: { duration: "${duration}" }
+  chase:
+    source: sim
+    reference: { entity: "${robot}", mode: yaw }
+    timeline:
+      - look: { eye: [-2.0, 0.0, 1.0], target: [2.0, 0.0, 0.0] }
+      - hold: { duration: "${duration}" }
+  nose:
+    mount: { frame: "${robot}", at: [0.2, 0.0, 0.6], pitch: 0.0, fov: 1.047 }
+```
+
+`params` and `projection` are shared. `reference`, `timeline`, `mount` and `source`
+are per camera. `source` is `sim` or `viz`, unset means every selected surface, and
+a mount films through the sim camera. A rig needs one camera with a timeline. A
+`projection` or `latch` verb in a rig camera is refused, since a surface shares one
+projection and cannot hold a latched reference between cameras, and a `pov` in a rig
+ends in the world frame instead of latching. A rig is a root only, a timeline cannot
+name one.
+
+`--record --lockstep` films every camera at the same sim time, exact under the cam's own
+hold and to within one physics step riding a run, where the first capture can land just
+before the step ends: the sim advances once per frame, then each camera swaps in its
+reference and captures, into its own file
+`<take>-<camera>`, or `<take>-<camera>-<surface tag>` through several surfaces. A
+camera that ends early holds its last pose, so every file has the same frame count.
+Each camera adds a capture per frame, and the take's last log line counts frames off
+the first camera's sim time and the largest offset, 0 when they are aligned. Live playback shows only the
+camera `live:` names, by default the first with a timeline.
 
 ---
 
@@ -251,9 +343,8 @@ means writing one decorated class; it becomes usable from `Camera.add`, shot
 YAML, and the CLI with no other edits. The registry lives in `registry.py`
 (`PRIMITIVES`).
 
-A new shot is a YAML file dropped into `configs/cam/shots/<name>.yaml`. It
-is auto-registered at import with no other edits required. The stem must not
-shadow a verb name.
+A new shot is a YAML file in any tier of [Camera assets](#camera-assets). The
+name must not shadow a verb name.
 
 Skeleton for a new streamed verb:
 
@@ -376,7 +467,7 @@ timeline:
 The interface is fully generic: one positional name dispatches verbs, shots,
 and files uniformly.
 
-### `arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]] [--record [FILE] [--fps N] [--lockstep] [-f]]`
+### `arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]] [--env N] [--lockstep] [--fps N] [--record [FILE] [-f] [--mount SPEC ...]]`
 
 Run a verb, a shot, or a YAML file against the live sim. Params are bare
 `key=value` tokens, everything the launcher itself needs is a `--flag`, and flags
@@ -401,9 +492,14 @@ may sit anywhere on the line.
   `reference` offset) before being sent. Once a shot sets a reference frame,
   poses are relative to it and go out as authored, and only the reference pose
   itself is localized.
+- `--lockstep` gates the take frame by frame, see [Live lockstep](#live-lockstep).
+  `--fps` (default 30) sets its frame rate.
+- `--env N` is the env of the sim camera, what its context tokens read (default 0).
 - `--record [FILE]` renders the take to a video instead of playing it live, see
-  [Recording](#recording). `--fps`, `--lockstep` and `-f` qualify it and are
-  rejected without it. Every selected camera is recorded, one file each.
+  [Recording](#recording). `-f` qualifies it and is rejected without it. Every
+  selected camera is recorded, one file each.
+- `--mount FRAME[@X,Y,Z[,PITCH]]` (repeatable) and `--mount-fov RAD` add cameras fixed
+  on TF frames to a lockstep recording, see [Mounted cameras](#mounted-cameras).
 
 ```
 arena cam look eye=8,8,6 target=0,0,0.5
@@ -425,9 +521,28 @@ Limitation: `key=value` covers scalars and x,y,z tuples. List-of-points
 params (e.g. `flyby` `eyes`) and deep nesting are file-only. Use
 `arena cam show <name>` to check whether a name needs a file.
 
+### Live lockstep
+
+Live playback runs on the wall clock and has no sync guarantee against the sim.
+`--lockstep` is what gives one, recording or not:
+
+```
+arena cam orbit radius=4 duration=8 --lockstep --fps 30
+```
+
+With a lockstep run active the cam rides it as hard channel `cam` at 1/fps: the sim
+freezes at each frame, the pose goes out on `cmd_view`, and a beat releases the next
+tick, so the shot's time is sim time. With no run it takes its own hold and steps the
+sim by 1/fps per frame. Either way the sim runs no faster than the camera. A `look`
+stays a `set_view` call, and it takes no frame.
+
+### `arena cam serve [--env N] [--sim] [--fps N] [--setup REQUEST]`
+
+Run one env's camera server, see [Playing with the episode](#playing-with-the-episode).
+
 ### `arena cam list`
 
-Print the full catalog: verbs and shots.
+Print the full catalog: verbs and global camera assets.
 
 ```
 arena cam list
@@ -441,6 +556,44 @@ Print a verb's constructor params, or a shot's `params:` and `timeline:`.
 arena cam show orbit
 arena cam show establishing
 ```
+
+---
+
+## Playing with the episode
+
+`viz.cam:=<request>` plays a camera asset at every episode start, on `arena launch`
+or as `cam:=<request>` on `arena viz`:
+
+```
+arena launch world:=hospital task.obstacles:=scenario viz.cam:=wide
+arena viz cam:=0
+```
+
+The cam stays blind to scenarios, the task generator tells it what to play. Each env
+gets a camera server, `arena cam serve --env N --setup <request>`, which drives that
+env's rviz camera, and env 0's also drives the sim camera. It sets `cam.setup` on the
+env's task generator, which at each episode start picks the asset for the running
+world and scenario and sends it, with every asset it reaches, to
+`/arena/env_<n>/cam/play` (`arena_cam_msgs/srv/Play`). A scenario swap so changes the
+shot with no further step. Stopping viz stops the servers and clears `cam.setup`.
+
+The request picks, in order:
+
+1. the asset named exactly that, through every tier
+2. else, for a non-negative integer, that index
+3. else index 0, with a warning naming the request and the pick
+
+An index counts the sorted names of the most specific tier that has any: the
+scenario's, else the world's with linked worlds, else the global ones. Adding a file
+can shift an index, so use names for a stable pick. A number never reaches the
+network tier. With no asset at all the env plays nothing and says so.
+
+A new play cancels the running take, and each take starts in the world frame. A take
+that finishes leaves the camera where it ended. With a lockstep run active a take
+rides it as hard channel `cam`, registered under the env so it drops at despawn. With
+no run it plays on the wall clock, and a server never holds the sim. `cam/stop`
+(`std_srvs/Trigger`) ends the running take. `<node>/cam/play` on the task generator
+takes a request and forwards it, which is what `view_play` calls.
 
 ---
 
@@ -582,6 +735,33 @@ camera or from an rviz camera. rviz has no scene time of its own, so it gates on
 due capture at once, expect about a second per frame. Under Newton it waits out
 an idle grace after each step, expect several seconds per frame.
 
+### Mounted cameras
+
+A mount is a camera fixed on a TF frame, such as a robot's base link, filmed next to
+the take's own cameras at the same instants. Each one writes its own file, tagged by
+its frame with `/` turned into `_`, and the take's cameras then carry their `-sim` /
+`-viz<env>` tags.
+
+```
+arena cam pov face=1 duration=30 --sim --record pass --lockstep --mount env_0/jackal/base_link@0.2,0,0.6
+# recordings/pass-sim.mp4 + pass-env_0_jackal_base_link.mp4
+```
+
+`FRAME@X,Y,Z,PITCH` places the camera at `X,Y,Z` m in the frame (x forward, z up),
+looking along the frame's x axis tilted down by `PITCH` rad. Position and pitch
+default to 0, `--mount-fov` (rad, default 1.047) sets the fov of every mount. In
+Python, `Camera.record(..., mounts=[Mount(frame, fov, at, pitch)])`.
+
+A mount is a [rig](#rigs) camera, in a file a `mount:` entry. It films through the
+sim camera, so it needs that selected and `--lockstep`. On every recorded frame the
+sim camera is captured as usual, then for each mount it is referenced to the mount's
+frame and captured at the mount pose with its default near clip and at the sim
+camera's frame time. A mount's frames therefore show the scene at the same sim time
+as the take's. The take's last log line counts frames whose stamp differs from the
+first camera's and the largest offset, 0 when they are aligned. Each mount adds a capture per
+frame, so a take with one mount runs about twice as long. A timeline that films next
+to a mount cannot `latch`, a surface cannot hold a latched reference between cameras.
+
 ---
 
 ## Pedestrian faces
@@ -650,7 +830,12 @@ the robot. `view_available` reports which viewports are up, the node serving
 each and the simulator, and names the missing Gazebo GUI when that is why none
 is up.
 
+`view_play` plays a camera asset live on an env's cameras through its task
+generator, so world and scenario assets resolve, and needs a camera server
+(`viz.cam` or `arena cam serve`). It takes the request of
+[Playing with the episode](#playing-with-the-episode) and rides an active lockstep run.
+
 `view_record` runs `arena cam <name> --record --lockstep` as a job
 (`jobs_status`, `jobs_wait`), which rides an active lockstep run or steps the sim
-itself. The job result lists the written files. `arena://view/shots` lists the
-verbs and shots it takes.
+itself. The job result lists the written files, one per camera of a rig.
+`arena://view/shots` lists the verbs and global camera assets it takes.

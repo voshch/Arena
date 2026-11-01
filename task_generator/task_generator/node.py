@@ -11,6 +11,7 @@ import typing
 import uuid
 from collections.abc import Sequence
 
+import arena_cam_msgs.srv
 import arena_robots.Robot
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
@@ -38,6 +39,7 @@ from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import Node
 from arena_simulation_setup.shared.judge import NodeMonitor, Sample, WallGrid, zone_polygons
 from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+from arena_simulation_setup.tree.assets.Camera import collect, pick_camera
 from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_simulation_setup.utils.articulation import family_members
@@ -93,6 +95,8 @@ _LATCHED = rclpy.qos.QoSProfile(
     depth=1,
     durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
 )
+
+_CAM_PLAY_TIMEOUT = 10.0
 
 # Deeper KeepLast for state/episode: terminal-then-next-RUNNING bursts.
 _EPISODE_QOS = rclpy.qos.QoSProfile(
@@ -290,6 +294,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             self.service_namespace("task_reset"),
             1,
         )
+
+        self._cam_setup = self.ROSParam[str]("cam.setup", "")
+        self._cam_client = self.create_client_wrapper(arena_cam_msgs.srv.Play, f"{self.get_namespace().rstrip('/')}/cam/play", timeout=_CAM_PLAY_TIMEOUT)
+        self._cam_absent = False
+        self._cam_task: asyncio.Future[tuple[bool, str]] | None = None
 
         self._pub_state_world = self.create_publisher(
             String,
@@ -641,6 +650,41 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         if reason not in self._episodes.current.integrity:
             self._episodes.current.integrity.append(reason)
         self._publish_episode_state()
+
+    async def _play_camera(self, request: str, params: str = "") -> tuple[bool, str]:
+        """Pick the camera asset `request` selects in this episode and send it to the env's camera server."""
+        log = self.get_logger()
+        try:
+            identifier, warning = await pick_camera(request)
+            if warning is not None:
+                log.warning(f"cam: {warning}")
+            if identifier is None:
+                return False, str(warning)
+            if not self._cam_client.client.service_is_ready():
+                if not self._cam_absent:
+                    log.warning(f"cam: no camera server on {self._cam_client.client.srv_name}, start one with viz.cam")
+                self._cam_absent = True
+                return False, "no camera server"
+            self._cam_absent = False
+            spec = (await identifier.resolve()).spec
+            bundle = await collect(identifier.name, spec)
+            play = arena_cam_msgs.srv.Play.Request(root=identifier.name, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params)
+            response = await self._cam_client.call_timeout(play)
+        except (OSError, ValueError, LookupError, yaml.YAMLError) as e:
+            log.warning(f"cam: {request!r} not played: {e}")
+            return False, str(e)
+        if response is None or not response.success:
+            message = "camera server timed out" if response is None else response.message
+            log.warning(f"cam: {identifier.name!r} refused: {message}")
+            return False, message
+        return True, identifier.name
+
+    async def _cb_cam_play(self, request: arena_cam_msgs.srv.Play.Request, response: arena_cam_msgs.srv.Play.Response) -> arena_cam_msgs.srv.Play.Response:
+        if self._episodes.current.outcome_state != task_generator_msgs.action.RunEpisode.Result.RUNNING:
+            response.message = "no episode is running, cam.setup plays at the next episode start"
+            return response
+        response.success, response.message = await self._play_camera(request.root, request.params)
+        return response
 
     def _params_for_mode(self, mode: str) -> list[RclParameter]:
         if not mode:
@@ -1530,6 +1574,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             record.start_time = self.sim_time
             record.outcome_state = task_generator_msgs.action.RunEpisode.Result.RUNNING
             self._publish_episode_state()
+            if self._cam_setup.value:
+                self._cam_task = asyncio.ensure_future(self._play_camera(self._cam_setup.value))
 
             log = self.get_logger()
             log.warn("=============")
@@ -2242,6 +2288,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             task_generator_msgs.srv.ResetEpisode,
             self.service_namespace("lifecycle", "reset_episode"),
             self._cb_reset_episode,
+        )
+
+        self.create_service(
+            arena_cam_msgs.srv.Play,
+            self.service_namespace("cam", "play"),
+            self._cb_cam_play,
         )
 
         self._run_episode_action_server = ActionServer(

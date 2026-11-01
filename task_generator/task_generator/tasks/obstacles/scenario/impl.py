@@ -4,7 +4,7 @@ import typing
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
-from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light
+from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light, point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView, articulation_problems
 
 from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
@@ -34,6 +34,7 @@ class TM_Scenario(TM_Obstacles):
         )
 
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(scenario_name).resolve_sync()
+        point_scenario_assets(scenario_view.path)
         scenario = scenario_view.load(converter=zone_conv)
         self.scenario = scenario
         self.lights = [anchor_light(light, scenario.objects) for light in scenario.lights]

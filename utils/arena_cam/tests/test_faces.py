@@ -69,6 +69,16 @@ def test_pov_takes_face_duration_and_fov():
     assert (action.face, action.duration, action.fov) == ("3", 4.0, 0.9)
 
 
+def test_pov_takes_clip_near_and_defaults_to_the_view():
+    pytest.importorskip("arena_cam.camera")
+    from arena_cam.shots import resolve
+
+    (action,) = resolve("pov", {"face": 3, "clip_near": 0.35})
+    assert action.clip_near == 0.35
+    (action,) = resolve("pov", {"face": 3})
+    assert action.clip_near is None
+
+
 def test_pov_without_a_face_names_the_missing_param():
     pytest.importorskip("arena_cam.camera")
     from arena_cam.shots import resolve

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, cli, fleet, media, msgs
+from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, cli, fleet, media, msgs, tg
 
 if TYPE_CHECKING:
     from sensor_msgs.msg import Image
@@ -19,8 +20,8 @@ domain = Domain(
     "view",
     """Viewport cameras: aim and capture the sim GUI camera (/arena/viewport: MuJoCo, Isaac, Gazebo while its GUI runs) or an env's rviz camera.
     Poses are in the env frame (the world frame when several envs run and env_id is omitted), relative to the robot while following one.
-    view_record films an arena cam take in lockstep as a job.""",
-    requires=("viewport_control_msgs", "arena_runtime_msgs"),
+    view_play plays a camera asset live on an env's cameras, view_record films an arena cam take in lockstep as a job.""",
+    requires=("viewport_control_msgs", "arena_runtime_msgs", "arena_cam_msgs"),
 )
 
 NO_VIEWPORT = "MuJoCo serves /arena/viewport, Isaac and Gazebo only while their GUI runs (launch without headless:=true), an env's rviz camera needs arena viz, view_available lists what is up"
@@ -221,22 +222,34 @@ async def view_capture(view: View | None = None, env_id: int | None = None, surf
 
 def _catalog() -> tuple[list[str], list[str]]:
     from arena_cam.registry import PRIMITIVES
-    from arena_cam.shots import SHOTS, discover
 
-    importlib.import_module("arena_cam.camera")
-    discover()
-    return sorted(PRIMITIVES), sorted(SHOTS)
+    camera = importlib.import_module("arena_cam.camera")
+    return sorted(PRIMITIVES), camera.global_cameras()
 
 
-@domain.resource("arena://view/shots", mime_type="application/json", description="arena cam verbs and installed shots, the names view_record films")
+@domain.resource("arena://view/shots", mime_type="application/json", description="arena cam verbs and global camera assets, the names view_record films")
 def view_shots() -> dict[str, list[str]]:
     verbs, shots = _catalog()
     return {"verbs": verbs, "shots": shots}
 
 
 @domain.tool(destructive=True)
+async def view_play(
+    request: Annotated[str, Field(description="camera asset name, resolved scenario first, then world, then global, else an index into the most specific tier's sorted assets, else its first asset")],
+    params: Annotated[dict[str, str | float | bool] | None, Field(description="parameters of the camera asset")] = None,
+    env_id: Annotated[int | None, Field(description="the env to play in, may be omitted when one env runs")] = None,
+) -> dict[str, Any]:
+    """Play a camera asset live on an env's cameras through its task generator and camera server, gated when a lockstep run is active. Needs viz.cam or arena cam serve."""
+    from arena_cam_msgs.srv import Play
+
+    node = await tg(env_id)
+    response = await _call(Play, f"{node}/cam/play", Play.Request(root=request, params=json.dumps(params or {})))
+    return {"playing": response.message}
+
+
+@domain.tool(destructive=True)
 async def view_record(
-    name: Annotated[str, Field(description="arena cam verb, shot or shot .yaml path, arena://view/shots lists them")],
+    name: Annotated[str, Field(description="arena cam verb, camera asset or camera .yaml path, a rig films one file per camera, arena://view/shots lists them")],
     params: Annotated[dict[str, str | float | bool] | None, Field(description="verb or shot parameters, a tuple as 'x,y,z'")] = None,
     out: Annotated[str | None, Field(description="output file, a bare name lands under $ARENA_DATA_DIR/recordings, default <name>_<timestamp>.mp4")] = None,
     surface: Annotated[Literal["sim", "rviz", "all"], Field(description="which cameras film, all and several rviz cameras write one file per camera")] = "sim",
@@ -252,10 +265,8 @@ async def view_record(
     shot_file = is_path(name)
     targets = TargetSelection(include_sim=surface != "rviz", viz_all=surface != "sim" and env_id is None, viz_env=env_id if surface != "sim" else None)
     try:
-        if shot_file:
-            load_shot(name, targets)
-        else:
-            Camera(targets).add(name, parse_params(tokens))
+        parsed = parse_params(tokens)
+        camera = load_shot(name, targets, parsed) if shot_file else Camera(targets).add(name, parsed)
     except (ValueError, OSError) as exc:
         verbs, shots = _catalog()
         raise ToolError(f"arena cam cannot play {name!r}: {exc}", hint=f"verbs: {', '.join(verbs)}, shots: {', '.join(shots) or 'none'}") from exc
@@ -264,7 +275,9 @@ async def view_record(
         raise ToolError(f"no {surface} viewport is up", hint=NO_VIEWPORT)
     target = out or default_name(Path(name).stem if shot_file else name)
     path = resolve_path(target)
-    files = take_paths(path, [surfaces.tag(ns) for ns, _ in found])
+    namespaces = [ns for ns, _ in found]
+    cameras = [(rig.name, surfaces.by_source(rig.source, namespaces)) for rig in camera.cameras(recording=True)]
+    files = take_paths(path, [surfaces.camera_tag(rig, ns, len(chosen)) for rig, chosen in cameras for ns in chosen])
     args = ["cam", name, *tokens, "--record", target, "--lockstep"]
     if surface == "sim":
         args.append("--sim")

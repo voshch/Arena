@@ -113,6 +113,7 @@ class LocalRootPath(RootPath):
 
 
 class DynamicPaths:
+    SCENARIO = DynamicPath()
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
     ARENA = LocalRootPath()

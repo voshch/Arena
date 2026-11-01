@@ -1,0 +1,7 @@
+# Play a camera asset on one env's camera server, replacing the running take.
+string root    # name of the asset to play
+string bundle  # YAML mapping of name to spec for every asset root reaches
+string params  # YAML mapping of parameters
+---
+bool success
+string message
