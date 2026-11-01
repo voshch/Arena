@@ -169,7 +169,7 @@ def test_walk_schemas_declares_every_registered_schema() -> None:
     for package in ("modules", "obstacles", "robots"):
         importlib.import_module(f"task_generator.tasks.{package}")
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-    from task_generator.constants import Constants
+    from task_generator.modes import Modes
     from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES, walk_schemas
 
     node = ROSParamServer("walk_schemas_probe")
@@ -183,7 +183,7 @@ def test_walk_schemas_declares_every_registered_schema() -> None:
         declared = set(node.get_parameters_by_prefix("")) - builtin
         assert declared
         assert {name for name in declared if not any(name.startswith(f"{namespace}.") for namespace in schema_namespaces)} == set()
-        stationary = ROBOTS_MODES.meta(Constants.TaskMode.TM_Robots.STATIONARY).namespace
+        stationary = ROBOTS_MODES.meta(Modes.TM_Robots.STATIONARY).namespace
         assert math.isnan(node.get_parameter(stationary("pos_x")).value)
         assert node.get_parameter(stationary("pos_theta")).value == 0.0
     finally:

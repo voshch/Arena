@@ -5,7 +5,7 @@
 
 ## `TM_Obstacles` ABC
 
-[`__init__.py:8`](__init__.py#L8)
+[`__init__.py`](__init__.py)
 
 ```python
 class TM_Obstacles(TaskMode):
@@ -31,7 +31,7 @@ behave exactly as before.
 | `parametrized` | `TM_Parametrized` | [`parametrized/`](parametrized/) | loads a `ParametrizedConfig` by name from `arena_simulation_setup`; min/max counts per entry |
 | `scenario` | `TM_Scenario` | [`scenario/`](scenario/) | reads `static` and `dynamic` lists from a world scenario YAML |
 | `environment` | `TM_Environment` | [`environment/`](environment/) | places obstacle groups from an environment config into detected or declared rooms |
-| `prompt` | `TM_Prompt` | [`prompt/`](prompt/) | LLM-driven obstacle generation; PROMPT registered per `BaseHumanSimulator` subclass |
+| `prompt` | `TM_Prompt` | [`prompt/`](prompt/) | LLM-driven obstacle generation; PROMPT registered per `human` value |
 
 ## Package structure
 
@@ -46,7 +46,7 @@ Parameters live under `task.<mode>.<leaf>` (e.g. `task.random.static.n`).
 
 All `task.*` writes go through `config/queue_episode`. The request carries the mode change and a leaf-keyed `obstacles_params` / `robots_params` payload (`rcl_interfaces/Parameter[]`, names **relative to the mode**, no `task.<mode>.` prefix). The server stages them and applies at the next `lifecycle/reset_episode` boundary. Failures warn, never abort. Last-write-wins on duplicate leaf keys within an axis between resets.
 
-The same request carries `human_params`, which are staged and applied at the same boundary in every obstacle mode. A name is `<backend namespace>.<param>`, e.g. `humansim.global_planner.resolution`, which is also the key of the launch arg. The request is rejected when a name sits under the reserved `human.` prefix or under no known namespace (`Constants.HUMAN_PARAM_NAMESPACES`). The active backend applies the names under its own namespace and skips the rest, so one suite runs unchanged under another backend. A set value stays until a later request overwrites it. See [simulators/human/README.md](../../simulators/human/README.md#arena-adapter-humanarena).
+The same request carries `human_params`, which are staged and applied at the same boundary in every obstacle mode. A name is `<backend namespace>.<param>`, e.g. `humansim.global_planner.resolution`, which is also the key of the launch arg. The request is rejected when a name sits under the reserved `human.` prefix or under no known namespace (`Constants.HUMAN_PARAM_NAMESPACES`). The active backend applies the names under its own namespace and skips the rest, so one suite runs unchanged under another backend. A set value stays until a later request overwrites it. See [humans/README.md](../../../../arena_runtime/arena_runtime/arena_runtime/humans/README.md#arena-adapter-humanarena).
 
 A leaf is what's left after stripping `task.<mode>.`. For `task.random.static.n` the leaf is `static.n`; for `task.scenario.file` the leaf is `file`. The active mode is taken from the request's `tm_obstacles` / `tm_robots`; sending `task.scenario.file` as a param name (full path) results in the server constructing `task.<mode>.task.scenario.file` and dropping it as undeclared.
 
@@ -105,9 +105,9 @@ seed produces identical placements.
 
 ## `obstacles/prompt/`
 
-`TM_Prompt` generates obstacle lists via an LLM. PROMPT registration is
-per-`BaseHumanSimulator` subclass, see
-[PROMPT registration](../../simulators/human/README.md#prompt-registration),
+`TM_Prompt` generates obstacle lists via an LLM. PROMPT registration follows
+the `human` param, see
+[PROMPT registration](../../../../arena_runtime/arena_runtime/arena_runtime/humans/README.md#prompt-registration),
 so which implementation you get follows the `human` arg:
 
 | `human:=` | Implementation | `generation_mode` |
@@ -127,7 +127,7 @@ Behaviour-tree prompt context lives in
 ## Adding a new TM_Obstacles mode
 
 1. Create `tasks/obstacles/<name>/` as a package.
-2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has tunable parameters (using helpers from [`arena_rclpy_mixins.declarations`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py), e.g. `declare_int_pair`, `declare_catalog`), then register the loader with `@OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.<NAME>, namespace=_NS, schema=_declare_schema)`.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has tunable parameters (using helpers from [`arena_rclpy_mixins.declarations`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py), e.g. `declare_int_pair`, `declare_catalog`), then register the loader with `@OBSTACLES_MODES.register(Modes.TM_Obstacles.<NAME>, namespace=_NS, schema=_declare_schema)`.
 3. In `impl.py`: define the class extending `TM_Obstacles`; override `reset` to return `(list[Obstacle], list[DynamicObstacle])`.
-4. Add `<NAME> = "<name>"` to `Constants.TaskMode.TM_Obstacles` in [`constants/__init__.py`](../../constants/__init__.py).
+4. Add `<NAME> = "<name>"` to `Modes.TM_Obstacles` in [`modes.py`](../../modes.py).
 5. `walk_schemas` (module-level in `tasks/registry.py`) picks up your schema automatically at node init.

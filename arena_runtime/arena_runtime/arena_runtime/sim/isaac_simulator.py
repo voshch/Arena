@@ -22,6 +22,7 @@ import launch_ros
 import rclpy.task
 import std_msgs.msg
 import std_srvs.srv
+from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrian, SpawnPedestrian
 from arena_people_msgs.srv import (
     DeletePedestrians,
@@ -68,8 +69,11 @@ from isaacsim_msgs.srv import (
     StepSimulation,
 )
 from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
-from task_generator.shared import Ceiling as CeilingDefinition
-from task_generator.shared import (
+
+from arena_runtime._node import NodeInterface
+from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
+from arena_runtime.shared import Ceiling as CeilingDefinition
+from arena_runtime.shared import (
     DynamicObstacle,
     Model,
     ModelType,
@@ -78,12 +82,8 @@ from task_generator.shared import (
     Position,
     Robot,
 )
-from task_generator.shared import Floor as FloorDefinition
-from task_generator.shared import Wall as WallDefinition
-from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
-
-from arena_runtime._node import NodeInterface
-from arena_runtime.constants import SimSimulator
+from arena_runtime.shared import Floor as FloorDefinition
+from arena_runtime.shared import Wall as WallDefinition
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle
 from arena_runtime.sim._articulation import ArticulatedObject, command_fields, link_message
 from arena_runtime.sim._articulation import JointCommand as ArticulatedCommand

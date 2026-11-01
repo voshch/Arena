@@ -64,7 +64,7 @@ shaped like [`SCHEMA.yaml`](SCHEMA.yaml):
 
 ```yaml
 task_modes:
-  - kind: STRING          # TM_Robots kind - matches Constants.TaskMode.TM_Robots enum value
+  - kind: STRING          # TM_Robots kind - matches Modes.TM_Robots enum value
     produces: GOTO_POSE   # task kind produced; matched against robot.accepts
     assignments:          # list of robot names to pin; [] means pool (greedy allocation)
       - ROBOT_NAME

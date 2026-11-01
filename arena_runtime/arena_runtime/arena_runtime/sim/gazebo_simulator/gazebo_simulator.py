@@ -22,6 +22,7 @@ import launch
 import launch_ros
 import rclpy.impl.rcutils_logger
 import rclpy.time
+from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
@@ -41,7 +42,11 @@ from ros_gz_interfaces.msg import Entity as EntityMsg
 from ros_gz_interfaces.msg import EntityFactory, WorldControl
 from ros_gz_interfaces.srv import ControlWorld, DeleteEntity, SetEntityPose, SpawnEntity
 from std_msgs.msg import Bool
-from task_generator.shared import (
+from viewport_control_msgs.msg import ViewportView
+from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
+
+from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
+from arena_runtime.shared import (
     DynamicObstacle,
     Entity,
     Floor,
@@ -54,12 +59,6 @@ from task_generator.shared import (
     Robot,
     Wall,
 )
-from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
-from task_generator.utils.static_tf import StaticTransformBroadcaster
-from viewport_control_msgs.msg import ViewportView
-from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
-
-from arena_runtime.constants import SimSimulator
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._articulation import ArticulatedObject, command_fields, surface
 from arena_runtime.sim._articulation import JointCommand as ArticulatedCommand
@@ -70,6 +69,7 @@ from arena_runtime.sim._control import (
 )
 from arena_runtime.sim._interface import resolve_obstacle_box
 from arena_runtime.sim._walls import realize_renderable, sloped_box
+from arena_runtime.static_tf import StaticTransformBroadcaster
 
 from .robot_bridge import BridgeConfiguration, MappingDirection, _TopicMapping
 from .scene import parse_scene_models

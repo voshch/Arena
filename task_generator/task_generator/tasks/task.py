@@ -1,144 +1,63 @@
-import asyncio
 import typing
 from collections.abc import Sequence
 
-import rclpy
-import rclpy.publisher
-import std_msgs.msg as std_msgs
-from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_runtime._node import NodeInterface
-from arena_simulation_setup.tree.World import point_scenario_assets
+from arena_runtime.env.request import TaskRequest
+from arena_runtime.env.task_layer import ResetPlan, TaskContext
+from arena_runtime.shared import Pose
 
-from task_generator.constants import Constants
-from task_generator.manager.environment_manager import EnvironmentManager
-from task_generator.manager.robot_manager import RobotsManager
-from task_generator.manager.world_manager.world_manager_ros import WorldManagerROS as WorldManager
-from task_generator.shared import Pose
+from task_generator.modes import Modes
 from task_generator.tasks.registry import (
     _REGISTRY_NAMESPACE,
     MODULE_MODES,
     OBSTACLES_MODES,
     ROBOTS_MODES,
-    walk_schemas,
 )
-from task_generator.tasks.robots.adapters import ResetContext
 from task_generator.tasks.robots.composite import (
     TM_Composite,
     _scoped_ctx,
     get_extra_tm_loader,
 )
 from task_generator.tasks.robots.fleet_manager import FleetManager, TaskModeSpec, load_task_config
-from task_generator.tasks.robots.request import TaskKind, TaskRequest
 
-from . import TaskContext
 from .obstacles import TM_Obstacles
 from .robots import TM_Robots
 
-# consecutive reset failures mean the environment is broken, not the episode: raise so the runner respawns it
-_MAX_CONSECUTIVE_RESET_FAILURES = 3
+if typing.TYPE_CHECKING:
+    from arena_runtime.env.episode_node import EpisodeNode
 
-# import training.srv as training_srvs
+    from task_generator.tasks.layer import ModeParams
 
 
-class Task(NodeInterface):
-    """Task class that comibnes task modes."""
+class Task(NodeInterface["EpisodeNode"]):
+    """The task modes bound to one env."""
 
-    TOPIC_RESET_START = "reset_start"
-    TOPIC_RESET_END = "reset_end"
-    PARAM_RESETTING = "resetting"
-
-    @classmethod
-    def declare_parameters(cls, node: ROSParamServer):
-        node.ROSParam[bool](cls.PARAM_RESETTING, True)
-        walk_schemas(node)
-
-    __reset_start: rclpy.publisher.Publisher
-    __reset_end: rclpy.publisher.Publisher
-
-    __param_tm_robots: Constants.TaskMode.TM_Robots | None
-    __param_tm_obstacles: Constants.TaskMode.TM_Obstacles
+    __param_tm_robots: Modes.TM_Robots | None
+    __param_tm_obstacles: Modes.TM_Obstacles
     __param_tm_config: str = ""
     __composite_fleet: frozenset[str] = frozenset()
 
     __tm_robots: TM_Robots | None = None
     __tm_obstacles: TM_Obstacles | None = None
 
-    _force_reset: bool
-    _abort_reason: str | None
-    _consecutive_reset_failures: int
-    _reset_sim_time: int
-
     @classmethod
-    async def create(
-        cls,
-        *,
-        environment_manager: EnvironmentManager,
-        robots_manager: RobotsManager,
-        world_manager: WorldManager,
-        modules: Sequence[Constants.TaskMode.TM_Module] = (),
-        **kwargs: object,
-    ) -> "Task":
-        self = cls(
-            environment_manager=environment_manager,
-            robots_manager=robots_manager,
-            world_manager=world_manager,
-            modules=modules,
-            **kwargs,
-        )
-        tm_config = self.node.conf.TaskMode.TM_CONFIG.value
+    async def create(cls, *, node: "EpisodeNode", ctx: TaskContext, params: "ModeParams", modules: Sequence[Modes.TM_Module] = ()) -> "Task":
+        self = cls(node=node, ctx=ctx, params=params, modules=modules)
+        tm_config = self._params.TM_CONFIG.value
         if not tm_config:
-            await self.set_tm_robots(self.node.conf.TaskMode.TM_ROBOTS.value)
-        await self.set_tm_obstacles(self.node.conf.TaskMode.TM_OBSTACLES.value)
-        await self.robots_manager.set_up()
+            await self.set_tm_robots(self._params.TM_ROBOTS.value)
+        await self.set_tm_obstacles(self._params.TM_OBSTACLES.value)
+        await ctx.robots_manager.set_up()
         if tm_config:
             await self.set_tm_robots_from_config(tm_config)
         return self
 
     _ctx: TaskContext
 
-    @property
-    def environment_manager(self) -> EnvironmentManager:
-        return self._ctx.environment_manager
-
-    @property
-    def robots_manager(self) -> RobotsManager:
-        return self._ctx.robots_manager
-
-    @property
-    def world_manager(self) -> WorldManager:
-        return self._ctx.world_manager
-
-    @property
-    def robots(self) -> dict:
-        return self._ctx.robots
-
-    def __init__(
-        self,
-        *args: object,
-        environment_manager: EnvironmentManager,
-        robots_manager: RobotsManager,
-        world_manager: WorldManager,
-        modules: Sequence[Constants.TaskMode.TM_Module] = (),
-        **kwargs: object,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-
-        self._force_reset = False
-        self._abort_reason = None
-        self._consecutive_reset_failures = 0
-        self._reset_sim_time = self.node.sim_time.sec
-
-        self._ctx = TaskContext(
-            environment_manager=environment_manager,
-            robots_manager=robots_manager,
-            world_manager=world_manager,
-            abort_episode=self.abort_episode,
-        )
-
-        robots_manager.bind_abort(self.abort_episode)
-
-        self.__reset_start = self.node.create_publisher(std_msgs.Empty, 'reset_start', 1)
-        self.__reset_end = self.node.create_publisher(std_msgs.Empty, 'reset_end', 1)
+    def __init__(self, *, node: "EpisodeNode", ctx: TaskContext, params: "ModeParams", modules: Sequence[Modes.TM_Module] = ()) -> None:
+        super().__init__(node=node)
+        self._ctx = ctx
+        self._params = params
 
         self._logger.debug('initing modules')
         self.__modules = []
@@ -152,7 +71,7 @@ class Task(NodeInterface):
             await self.__tm_robots.teardown()
             self.__tm_robots = None
 
-    async def set_tm_robots(self, tm_robots: Constants.TaskMode.TM_Robots):
+    async def set_tm_robots(self, tm_robots: Modes.TM_Robots):
         assert tm_robots in ROBOTS_MODES, f"TaskMode '{tm_robots}' for robots is not registered!"
         cls = ROBOTS_MODES.get(tm_robots)
         meta = ROBOTS_MODES.meta(tm_robots)
@@ -167,7 +86,7 @@ class Task(NodeInterface):
         self._logger.info(f"task config {path} takes precedence over tm_robots")
         await self.set_tm_robots_composite(load_task_config(path))
         self.__param_tm_config = path
-        self.__param_tm_robots = self.node.conf.TaskMode.TM_ROBOTS.value
+        self.__param_tm_robots = self._params.TM_ROBOTS.value
 
     async def set_tm_robots_composite(
         self,
@@ -187,7 +106,7 @@ class Task(NodeInterface):
             # Resolve the TM class via the standard TaskMode enum;
             # fall back to the composite module's extra registry for TM_Null.
             try:
-                enum_key = Constants.TaskMode.TM_Robots(spec.kind)
+                enum_key = Modes.TM_Robots(spec.kind)
             except ValueError:
                 enum_key = None
             if enum_key is not None and enum_key in ROBOTS_MODES:
@@ -213,7 +132,7 @@ class Task(NodeInterface):
         self.__param_tm_robots = None
         self.__composite_fleet = frozenset(self._ctx.robots.keys())
 
-    async def set_tm_obstacles(self, tm_obstacles: Constants.TaskMode.TM_Obstacles):
+    async def set_tm_obstacles(self, tm_obstacles: Modes.TM_Obstacles):
         assert tm_obstacles in OBSTACLES_MODES, f"TaskMode '{tm_obstacles}' for obstacles is not registered!"
         cls = OBSTACLES_MODES.get(tm_obstacles)
         meta = OBSTACLES_MODES.meta(tm_obstacles)
@@ -230,117 +149,33 @@ class Task(NodeInterface):
             await self.__tm_obstacles.teardown()
             self.__tm_obstacles = None
 
-    async def _reset_episode(self, seed: int) -> None:
-        try:
-            self.__reset_start.publish(std_msgs.Empty())
+    async def prepare_reset(self, seed: int) -> ResetPlan:
+        """Rebind the modes the params select, then reset them, with the sim paused."""
+        if new_tm_config := self._params.TM_CONFIG.value:
+            if new_tm_config != self.__param_tm_config or frozenset(self._ctx.robots.keys()) != self.__composite_fleet:
+                await self.set_tm_robots_from_config(new_tm_config)
+            elif (new_tm_robots := self._params.TM_ROBOTS.value) != self.__param_tm_robots:
+                self._logger.warning(f"task.robots ignored while task config {new_tm_config} is bound")
+                self.__param_tm_robots = new_tm_robots
+        elif (new_tm_robots := self._params.TM_ROBOTS.value) != self.__param_tm_robots:
+            await self.set_tm_robots(new_tm_robots)
 
-            self.node.conf.General.RNG.reseed(seed)
-            point_scenario_assets(None)
+        if (new_tm_obstacles := self._params.TM_OBSTACLES.value) != self.__param_tm_obstacles:
+            await self.set_tm_obstacles(new_tm_obstacles)
 
-            await self.robots_manager.set_up()
-            await self.robots_manager.launch_pending()
+        for module in self.__modules:
+            module.before_reset()
 
-            await self.environment_manager.before_reset_episode()
+        await self.tm_robots.reset()
+        obstacles, dynamic_obstacles = await self.tm_obstacles.reset(seed=seed)
+        return ResetPlan(obstacles=obstacles, dynamic_obstacles=dynamic_obstacles, lights=self.tm_obstacles.lights)
 
-            try:
-                self.node._apply_staged_params()
-                await self.node._apply_staged_human_params()
-
-                if new_tm_config := self.node.conf.TaskMode.TM_CONFIG.value:
-                    if new_tm_config != self.__param_tm_config or frozenset(self._ctx.robots.keys()) != self.__composite_fleet:
-                        await self.set_tm_robots_from_config(new_tm_config)
-                    elif (new_tm_robots := self.node.conf.TaskMode.TM_ROBOTS.value) != self.__param_tm_robots:
-                        self._logger.warning(f"task.robots ignored while task config {new_tm_config} is bound")
-                        self.__param_tm_robots = new_tm_robots
-                elif (new_tm_robots := self.node.conf.TaskMode.TM_ROBOTS.value) != self.__param_tm_robots:
-                    await self.set_tm_robots(new_tm_robots)
-
-                if (new_tm_obstacles := self.node.conf.TaskMode.TM_OBSTACLES.value) != self.__param_tm_obstacles:
-                    await self.set_tm_obstacles(new_tm_obstacles)
-
-                for module in self.__modules:
-                    module.before_reset()
-
-                await self.tm_robots.reset()
-
-                obstacles, dynamic_obstacles = await self.tm_obstacles.reset(seed=seed)
-
-                async def respawn():
-                    await asyncio.gather(
-                        self.environment_manager.spawn_dynamic_obstacles(dynamic_obstacles),
-                        self.environment_manager.spawn_obstacles(obstacles),
-                    )
-                    await self.environment_manager.spawn_mode_lights(self.tm_obstacles.lights)
-
-                await self.environment_manager.respawn(respawn)
-
-                robot_outcomes = await asyncio.gather(
-                    *(
-                        mgr.reset(
-                            ResetContext(
-                                rng=self.node.conf.General.RNG.stream("robot-adapter", name),
-                                start_pose=self.tm_robots.start_poses.get(name),
-                                episode_index=self.node._episodes.current.episode_id,
-                            )
-                        )
-                        for name, mgr in self.robots_manager.managers.items()
-                    ),
-                    return_exceptions=True,
-                )
-                reasons: list[str] = []
-                for name, outcome in zip(self.robots_manager.managers, robot_outcomes, strict=True):
-                    if isinstance(outcome, BaseException):
-                        failures: dict[str, BaseException] = {"reset": outcome}
-                    else:
-                        failures = {kind: exc for kind, exc in outcome.items() if exc is not None}
-                    if not failures:
-                        continue
-                    detail = "; ".join(f"{kind}: {exc!r}" for kind, exc in failures.items())
-                    reasons.append(f"robot {name!r} adapter reset failed: {detail}")
-
-                if reasons:
-                    self._consecutive_reset_failures += 1
-                    for reason in reasons:
-                        self._logger.error(reason)
-                    if self._consecutive_reset_failures >= _MAX_CONSECUTIVE_RESET_FAILURES:
-                        raise RuntimeError(f"robot reset failed on {self._consecutive_reset_failures} consecutive episodes; treating the environment as unusable: {'; '.join(reasons)}")
-                    self.node.fail_episode(reasons[0] if len(reasons) == 1 else "; ".join(reasons))
-                else:
-                    self._consecutive_reset_failures = 0
-
-                for module in self.__modules:
-                    module.after_reset()
-            finally:
-                await self.environment_manager.after_reset_episode()
-
-        except Exception as e:
-            self.node.get_logger().error(repr(e))
-            raise
-
-        finally:
-            self.__reset_end.publish(std_msgs.Empty())
+    def after_reset(self) -> None:
+        for module in self.__modules:
+            module.after_reset()
 
     @property
-    def abort_reason(self) -> str | None:
-        return self._abort_reason
-
-    def abort_episode(self, reason: str) -> None:
-        self._abort_reason = reason
-        self._force_reset = True
-
-    async def reset(self, *, seed: int) -> None:
-        self._force_reset = False
-        self._abort_reason = None
-        self._reset_sim_time = self.node.sim_time.sec
-        await self._reset_episode(seed)
-
-    @property
-    async def is_done(self) -> bool:
-        if self._force_reset:
-            return True
-        if (self.node.sim_time.sec - self._reset_sim_time) > self.node.conf.Robot.TIMEOUT.value:
-            self.abort_episode("timeout")
-            return True
+    async def done(self) -> bool:
         return await self.tm_robots.done
 
     @property
@@ -354,25 +189,16 @@ class Task(NodeInterface):
         return self.__tm_robots
 
     async def set_robot_position(self, pose: Pose):
-        """Broadcast a teleport to all robots (back-compat shim for RViz / training UI)."""
+        """Broadcast a teleport to all robots."""
         await self.tm_robots.set_position(pose)
-        self.node._compromise("robots moved by hand")
+        self._ctx.compromise("robots moved by hand")
 
     async def set_robot_goal(self, pose: Pose):
-        """Broadcast a goal to all robots (back-compat shim for RViz / training UI)."""
+        """Broadcast a goal to all robots."""
         await self.tm_robots.set_goal(pose)
-        self.node._compromise("robot goal set by hand")
+        self._ctx.compromise("robot goal set by hand")
 
     async def submit_task(self, request: TaskRequest, robot_name: str) -> None:
         """Submit a typed task request to a specific robot; bypasses TM_Robots."""
         robot = self._ctx.robots[robot_name]
         await robot.submit_task(request)
-
-    def set_info(self, info: str) -> None:
-        """Update the live info string shown in the RViz panel for the current episode."""
-        self.node.set_episode_info(info)
-
-    _TaskKindAlias = TaskKind  # keep TaskKind import live
-
-    def force_reset(self):
-        self._force_reset = True

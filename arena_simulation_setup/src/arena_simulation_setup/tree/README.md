@@ -7,7 +7,7 @@ registered at import time via `.use(resolver, ...)`.
 
 ## Core ABC: `Identifier`
 
-[tree/__init__.py:457](__init__.py#L457)
+[tree/__init__.py](__init__.py)
 
 `Identifier[T]` is an `attrs`-based class with a single required field `name: str`.
 Calling `.resolve(**kwargs)` walks the class-level resolver list in order,
@@ -33,16 +33,16 @@ Register additional resolvers on a subclass at any time with
 
 | Class | File | Adds |
 |---|---|---|
-| `Identifier[T]` | [tree/__init__.py:457](__init__.py#L457) | `name`, resolver walk, `probe()`/`resolve_write_path()`, `load()` ABC |
-| `AssetIdentifier[T]` | [tree/__init__.py:614](__init__.py#L614) | `_asset_type` class var; `relpath()` → `<asset_type>/<name>` |
-| `DomainAssetIdentifier[T]` | [tree/__init__.py:637](__init__.py#L637) | `domain` field (default `'Common'`); parse `[domain/]<asset_type>/<name>` |
-| `ModifiersDomainAssetIdentifier[T]` | [tree/__init__.py:706](__init__.py#L706) | `modifiers: dict` passed through to `load()`; parse `(str, dict)` tuples |
-| `InlineIdentifier[T]` | [tree/__init__.py:767](__init__.py#L767) | Wraps an already-loaded value; `resolve()` returns it directly without disk I/O |
+| `Identifier[T]` | [tree/__init__.py](__init__.py) | `name`, resolver walk, `probe()`/`resolve_write_path()`, `load()` ABC |
+| `AssetIdentifier[T]` | [tree/__init__.py](__init__.py) | `_asset_type` class var; `relpath()` → `<asset_type>/<name>` |
+| `DomainAssetIdentifier[T]` | [tree/__init__.py](__init__.py) | `domain` field (default `'Common'`); parse `[domain/]<asset_type>/<name>` |
+| `ModifiersDomainAssetIdentifier[T]` | [tree/__init__.py](__init__.py) | `modifiers: dict` passed through to `load()`; parse `(str, dict)` tuples |
+| `InlineIdentifier[T]` | [tree/__init__.py](__init__.py) | Wraps an already-loaded value; `resolve()` returns it directly without disk I/O |
 
 ## Resolver hierarchy
 
 Every resolver implements up to three async/sync-callable methods, declared on
-`ResolverBase` ([tree/__init__.py:90](__init__.py#L90)):
+`ResolverBase` ([tree/__init__.py](__init__.py)):
 
 | Method | Default | Purpose |
 |---|---|---|
@@ -56,16 +56,16 @@ walks it calling `destination()`.
 
 | Class | File | Behaviour |
 |---|---|---|
-| `SimplePathResolver` | [tree/__init__.py:177](__init__.py#L177) | Fixed `Path`; checks `path / identifier.relpath()`. `locate()` uses the same existence check |
-| `DynamicPathResolver` | [tree/__init__.py:191](__init__.py#L191) | `DynamicPath` whose value can change at runtime (e.g. `DynamicPaths.WORLD`); optional transform `fn` |
+| `SimplePathResolver` | [tree/__init__.py](__init__.py) | Fixed `Path`; checks `path / identifier.relpath()`. `locate()` uses the same existence check |
+| `DynamicPathResolver` | [tree/__init__.py](__init__.py) | `DynamicPath` whose value can change at runtime (e.g. `DynamicPaths.WORLD`); optional transform `fn` |
 | `DynamicPathListResolver` | [tree/__init__.py](__init__.py) | `DynamicPathList` whose paths can change at runtime (`DynamicPaths.LINKED`), the first path holding the asset wins; optional transform `fn` |
-| `NetResolver` | [tree/__init__.py:212](__init__.py#L212) | Batches same-tick `resolve()` requests; calls `ros2 run arena_assets arena_assets -s net <provider> fetch`. `locate()` instead runs a non-fetching `... exists` check. Constructor takes `formats=` (defaults to the `ARENA_MODELS_FORMATS` env filter; pass `formats=()` to opt out) and `ttl=` (defaults to `ARENA_MODELS_TTL`, seconds). `listall(network=True)` caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` regardless of the payload `ttl=`, and `listall_async` shares one in-flight fetch per provider. `expire(identifier=None)` writes `1` into the `.ttl` of one complete entry, or of every one in the bucket and drops its listings, so the next `resolve()` refetches while an unreachable bucket still serves the old copy (`arena asset expire`). `NetResolver.all(_T, providers=NETWORK_PROVIDERS, ...)` builds one instance per bucket name |
+| `NetResolver` | [tree/__init__.py](__init__.py) | Batches same-tick `resolve()` requests; calls `ros2 run arena_assets arena_assets -s net <provider> fetch`. `locate()` instead runs a non-fetching `... exists` check. Constructor takes `formats=` (defaults to the `ARENA_MODELS_FORMATS` env filter; pass `formats=()` to opt out) and `ttl=` (defaults to `ARENA_MODELS_TTL`, seconds). `listall(network=True)` caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` regardless of the payload `ttl=`, and `listall_async` shares one in-flight fetch per provider. `expire(identifier=None)` writes `1` into the `.ttl` of one complete entry, or of every one in the bucket and drops its listings, so the next `resolve()` refetches while an unreachable bucket still serves the old copy (`arena asset expire`). `NetResolver.all(_T, providers=NETWORK_PROVIDERS, ...)` builds one instance per bucket name |
 | `LocalResolver` | [tree/__init__.py](__init__.py) | Reads and writes a subdirectory of the local root (`$ARENA_ASSETS_DIR_LOCAL`, looked up at every use, never cached): `resolve()` checks existence, `listall_async()` walks it in a child process at every call, `destination()` is the write target |
-| `FallbackResolver` | [tree/__init__.py:406](__init__.py#L406) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
+| `FallbackResolver` | [tree/__init__.py](__init__.py) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
 
 ### `DynamicPaths` singleton
 
-[tree/__init__.py:62](__init__.py#L62)
+[tree/__init__.py](__init__.py)
 
 | Path | Default value |
 |---|---|
@@ -83,7 +83,7 @@ type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, `ARENA`, then
 `WORLD` at `path` (`/dev/null` for None) and `LINKED` at `linked`, then
 invalidates every `DynamicPathResolver` and `DynamicPathListResolver`
 registered on any `Identifier` kind, so no kind keeps answers cached from the
-previous world. The task generator's world load and `SoundLibrary.use_world`
+previous world. The env node's world load and `SoundLibrary.use_world`
 call it. `world_assets(view, world=None)` is the scoped form: a context
 manager that points the paths at `view` and the worlds it links levels from
 (taken from `world` when already loaded) and restores both on exit, also on
@@ -91,7 +91,7 @@ an exception. Offline tools that resolve a world's assets (`nav_at_r`,
 `preload_world`, the scenario generator) use it.
 
 `point_scenario_assets(path)` ([World/view.py](World/view.py)) points `SCENARIO` at a
-scenario directory, None for no scenario. The task generator clears it at every
+scenario directory, None for no scenario. The env node clears it at every
 reset and `TM_Scenario` sets it, so what resolves through it swaps with the scenario.
 
 ## Shipped Identifiers
@@ -162,7 +162,7 @@ tints every diffuse texture before returning.
 
 Default materials per context: `wall` → `Marble`, `floor` → `Porcelain_Tile_4`,
 `door` → `Aluminum_Anodized`
-([tree/assets/Material.py:69](assets/Material.py#L69)).
+([tree/assets/Material.py](assets/Material.py)).
 
 ### `SoundIdentifier`
 
@@ -185,7 +185,7 @@ Resolves `domain/Wall/name/name.yaml` and structures it as a `WallDescription`.
 In `world.yaml`, a wall entry without a `kind` field generates a plain
 `PlaceWallSegmentAsset`; a wall entry with `kind: <name>` is resolved via
 `WallIdentifier(name)` at simulation time by
-[shared/walls.py:25](../shared/walls.py#L25).
+[shared/walls.py](../shared/walls.py).
 
 ### `WorldIdentifier`
 

@@ -6,13 +6,13 @@ import pytest
 
 
 def _origin() -> object:
-    from task_generator.shared import Position
+    from arena_runtime.shared import Position
 
     return Position(0.0, 0.0, 0.0)
 
 
 def _at(x: float, y: float) -> object:
-    from task_generator.shared import Position
+    from arena_runtime.shared import Position
 
     return Position(x, y, 0.0)
 

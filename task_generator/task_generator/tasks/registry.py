@@ -7,7 +7,7 @@ from arena_rclpy_mixins.shared import Namespace
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.World import WorldIdentifier
 
-from task_generator.constants import Constants
+from task_generator.modes import Modes
 from task_generator.tasks.mode import Namespaced
 
 if typing.TYPE_CHECKING:
@@ -78,9 +78,9 @@ class TaskModeRegistry[K, V]:
         return key in self._classes
 
 
-ROBOTS_MODES: TaskModeRegistry[Constants.TaskMode.TM_Robots, type["TM_Robots"]] = TaskModeRegistry()
-OBSTACLES_MODES: TaskModeRegistry[Constants.TaskMode.TM_Obstacles, type["TM_Obstacles"]] = TaskModeRegistry()
-MODULE_MODES: TaskModeRegistry[Constants.TaskMode.TM_Module, type["TM_Module"]] = TaskModeRegistry()
+ROBOTS_MODES: TaskModeRegistry[Modes.TM_Robots, type["TM_Robots"]] = TaskModeRegistry()
+OBSTACLES_MODES: TaskModeRegistry[Modes.TM_Obstacles, type["TM_Obstacles"]] = TaskModeRegistry()
+MODULE_MODES: TaskModeRegistry[Modes.TM_Module, type["TM_Module"]] = TaskModeRegistry()
 
 
 def _walk_registry_schemas[K, V](node: "ROSParamServer", reg: TaskModeRegistry[K, V]) -> None:

@@ -8,7 +8,7 @@ either:
 - **attaches additively** to an already-running runtime, with a sim-mismatch
   check on `sim:=`.
 
-Either way it then spawns `env.n` task-generator envs and, unless
+Either way it then spawns `env.n` envs and, unless
 `headless:=true` (or explicit `viz:=false`), runs `arena viz --all` so each
 env gets a rviz window.
 
@@ -17,7 +17,7 @@ three underlying verbs can be used independently. See
 [CLI verbs](#cli-verbs) below.
 
 The full argument surface for `arena_runtime.launch.py` and
-`task_generator.launch.py` is in [launch/README.md](launch/README.md).
+`env.launch.py` is in [launch/README.md](launch/README.md).
 
 ---
 
@@ -26,7 +26,7 @@ The full argument surface for `arena_runtime.launch.py` and
 | Verb | Launch file | What it starts |
 |---|---|---|
 | `arena runtime [args]` | `arena_runtime.launch.py` | Sim + `arena_node`, no envs |
-| `arena env [args]` | `task_generator.launch.py` | One task-generator env; waits for `/arena/register_env` (10s warning cadence if runtime is absent) |
+| `arena env [args]` | `env.launch.py` | One env; waits for `/arena/register_env` (10s warning cadence if runtime is absent) |
 | `arena viz [target]` | (ros2 run) | Attaches rviz to a running env; see [arena viz](#arena-viz) |
 
 `arena launch` orchestrates all three (skipping the runtime step if one is
@@ -110,7 +110,7 @@ arena launch \
 ```
 
 `human:=arena` starts the `arena_humansim` node (subsystem mode) in the
-task-generator namespace. Human pedestrian models are managed by the
+env namespace. Human pedestrian models are managed by the
 arena_humansim adapter; the `tm_obstacles` mode controls non-human obstacles
 separately.
 
@@ -177,7 +177,7 @@ arena launch \
 
 | Arg | Implication |
 |---|---|
-| `env.n:=3` | Three task-generator instances under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
+| `env.n:=3` | Three envs under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
 | `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac`, `sim:=mujoco` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
 
 Slot positions are placed by the shelf packer in `arena_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_node` (default 5 m).
@@ -187,7 +187,7 @@ Slot positions are placed by the shelf packer in `arena_node` based on each env'
 ### 6. Runtime / client mode (dynamic envs)
 
 The runtime (`arena_node`) and the simulator can be launched without any
-task-generator envs, then envs and viz can be added or removed at will.
+envs, then envs and viz can be added or removed at will.
 
 ```bash
 # Terminal 1: runtime only.
@@ -540,7 +540,7 @@ common entry points. Verbs relevant to bringup:
 | `arena launch [--bg] [args]` | bash composite | All-in-one: `arena runtime` + N × `arena env` + optional `arena viz --all`. `--bg` detaches it. |
 | `arena runtime [--bg] [args]` | `arena_runtime.launch.py` | Runtime-only launch (sim + `arena_node`, no envs). `--bg` detaches it. |
 | `arena runtime down` | SIGINT to the recorded supervisors | Stop every `--bg` launch and viz of this ROS domain, see [section 6](#6-runtime--client-mode-dynamic-envs). |
-| `arena env [args]` | `task_generator.launch.py` | Attach one task-generator env to a running runtime. |
+| `arena env [args]` | `env.launch.py` | Attach one env to a running runtime. |
 | `arena env --bg [args]` | `/arena/spawn_env` | Have the runtime spawn and own one env, print its id and log path once it is ACTIVE. |
 | `arena env <env_id> down` | `/arena/despawn_env` | Shut one env down through its lifecycle, attached or spawned. |
 | `arena env [ENV] semantics ...` | `state/semantics`, `semantics/set` | List, inspect, set or watch the semantic entities of a running env (lights, doors, signals, sounds, zones) by authored name: `arena env 0 semantics hall level=0.3`, `arena env --all semantics --kind light lit=false`. `arena env semantics --help` lists the forms. |

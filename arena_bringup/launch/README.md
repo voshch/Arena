@@ -1,6 +1,6 @@
 # arena_bringup launch
 
-Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim + `arena_node`). Task-generator envs are attached via `task_generator.launch.py`; the `arena launch` bash composite orchestrates both.
+Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim + `arena_node`). Envs are attached via `env.launch.py`; the `arena launch` bash composite orchestrates both.
 
 ## Arguments
 
@@ -10,7 +10,7 @@ exposes `.substitution` / `.dict` / `.param`).
 
 The table below covers the combined argument surface of `arena launch`. Runtime
 args (`sim`, `headless`, `world`, `use_sim_time`, `log_level`) go to
-`arena_runtime.launch.py`; the rest go to `task_generator.launch.py` per env.
+`arena_runtime.launch.py`; the rest go to `env.launch.py` per env.
 
 Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, see [Deprecated launch args](../BRINGUP.md#deprecated-launch-args).
 
@@ -22,7 +22,7 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `robot.arm` | string | `moveit` | Arm adapter kind |
 | `robot.planner` | string | `` (empty) | Top-level planner selector; resolves to `robot.mobile:=<adapter> robot.mobile.<selector>:=<name>` via `arena_planners.resolver` |
 | `robot.train` | bool string | `false` | Training mode: robot adapters route `cmd_vel` from the RL agent |
-| `robot.hearing` | `none` \| `bus` \| `srp` \| `seld` | `none` | Robot-side hearing layer ([arena_hearing](../../arena_hearing/README.md)): belief grid and a Nav2 speed-filter mask per fleet robot, merged into each robot's nav2 params, RViz displays. `bus` consumes simulator bus events, `srp` runs the untrained energy-onset + GCC-PHAT front-end on any array, `seld` runs the SELDnet front-end on the array its weights were trained on. Needs `acoustics:=arena` and the hearing feature (`arena feature hearing install`), dispatched by [launch/hearing](../../task_generator/launch/hearing/README.md). |
+| `robot.hearing` | `none` \| `bus` \| `srp` \| `seld` | `none` | Robot-side hearing layer ([arena_hearing](../../arena_hearing/README.md)): belief grid and a Nav2 speed-filter mask per fleet robot, merged into each robot's nav2 params, RViz displays. `bus` consumes simulator bus events, `srp` runs the untrained energy-onset + GCC-PHAT front-end on any array, `seld` runs the SELDnet front-end on the array its weights were trained on. Needs `acoustics:=arena` and the hearing feature (`arena feature hearing install`), dispatched by [launch/hearing](../../arena_runtime/arena_runtime/launch/hearing/README.md). |
 | `robot.hearing.policy` | `belief` \| `listen` \| `full` | `full` | Hearing mask layers: belief only, plus the corner listen cap, plus creep-yield at blind bends ([arena_hearing](../../arena_hearing/README.md)). |
 | `robot.hearing.<param>` | node param | node default | Every other `robot.hearing.<param>:=<val>` reaches the hearing nodes as ROS param `<param>`. The launch-facing ones (`robot.hearing.seld.device`, `robot.hearing.srp.hop_s`, ...) are declared by arena_hearing's `hearing.launch.py`, empty = node default. Never forwarded to the robot adapters. |
 | `robot.mobile.<key>:=<val>` | adapter-scoped | - | Override any kwarg the bound mobile adapter accepts. Lands as ROS param `robot.mobile.<key>` and overlays the cap-file YAML. Examples: `robot.mobile.local_planner:=teb`, `robot.mobile.global_planner:=smac`, `robot.mobile.agent:=jackal_pretrained`. |
@@ -42,14 +42,14 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `task.obstacles` | string | `random` | Obstacle task mode |
 | `task.modules` | string | `rviz_ui` | Comma-separated task modules to load |
 | `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = use the `task.params` default) |
-| `task.params` | string | `configs/task_generator.yaml` | Task-generator ROS parameter YAML |
+| `task.params` | string | `configs/task_generator.yaml` | Env node ROS parameter YAML |
 | `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/`. A comma list (`hospital_1,office_1`) stacks the worlds as the levels of one world, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#linked-levels) |
 | `world.lighting` | string | `authored` | `authored` renders the lights the world declares. `auto` also gives every zone with a ceiling and no lights of its own a calibrated ceiling rig, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md). |
 | `world.levels` | `auto` \| `stack` \| `spread` | `auto` | How the simulator places a world's levels. `spread` lays them side by side, `stack` puts each above the one below, every stair and escalator pair joined at its seam. `auto` stacks a world with stairs or escalators on a simulator that stacks (gazebo) and spreads otherwise, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#stacked-levels). |
 | `kg.derive` | string | `auto` | `auto` derives which zones hold each door, object, light, sound and elevator, and which zones a door connects, from geometry wherever `kg.yaml` states none. `all` derives them for everything and ignores the stated ones, keeping every other entity, prop, fact and constraint of `kg.yaml`. `off` keeps the stated facts only, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#kg). |
-| `acoustics` | `none` \| `arena` | `none` | Acoustics simulator: `arena` runs arena_auditory (sound propagation, robot and human sound emission, rendering, playback). The `auditory.*` sub-keys below take effect only with `arena`, see [arena_auditory/README.md](../../arena_auditory/README.md) and [launch/acoustics](../../task_generator/launch/acoustics/README.md). `arena` needs the auditory feature (`arena feature auditory install`). |
+| `acoustics` | `none` \| `arena` | `none` | Acoustics simulator: `arena` runs arena_auditory (sound propagation, robot and human sound emission, rendering, playback). The `auditory.*` sub-keys below take effect only with `arena`, see [arena_auditory/README.md](../../arena_auditory/README.md) and [launch/acoustics](../../arena_runtime/arena_runtime/launch/acoustics/README.md). `arena` needs the auditory feature (`arena feature auditory install`). |
 | `auditory.<param>` | node param | node default | Every `auditory.<param>:=<val>` reaches each auditory node as ROS param `<param>`, coerced to the type of its default in `arena_auditory/params.py`. The rows below are declared by `arena_auditory.launch.py`, an empty value keeps the node default shown. |
 | `auditory.output.device` | string | `auto` | PortAudio output device for workstation playback. `auto` tries `pulse`, `pipewire`, `default`, then the PortAudio default. `none` starts no listener renderer. |
 | `auditory.output.block_size` | int string | `512` | Workstation audio callback block size. |
@@ -72,7 +72,7 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `auditory.microphones` | YAML string | `[]` | Robot microphone mappings (owner, robot, placement, frame, index). |
 | `auditory.static_sounds` | YAML string | `[]` | World-independent `sound` entities (radios, alarms), as a flat list of the same `Sound` schema used in `world.yaml`. Non-empty adds `sounds` to `task.modules` (already on whenever `acoustics` is not `none`). With `acoustics:=none` nothing hears them and the launch warns once. |
 | `use_sim_time` | bool string | `true` | Use sim clock instead of wall clock |
-| `env.n` | int string | `1` | Number of task-generator environments `arena launch` will spawn this invocation. Additive: if the runtime already has envs, these add to them rather than replace. |
+| `env.n` | int string | `1` | Number of environments `arena launch` will spawn this invocation. Additive: if the runtime already has envs, these add to them rather than replace. |
 | `env_d` | float string | `50` | Spacing (metres) between environments on the snail grid |
 | `debug` | bool string | `False` | Enable debug features |
 | `task.episode.auto_reset` | bool expression | `true` | `true` = standalone: node auto-advances episodes; `false` = managed: external controller drives resets via `lifecycle/reset_episode` |
@@ -98,7 +98,7 @@ ROS-style FQNs (`/dummy/node`) match the same as bare paths. Levels are the ROS
 canonical set: `debug | info | warn | error | fatal` (no aliases).
 
 `SetGlobalLogLevelAction` is also invoked further down the launch tree (e.g. by
-`task_generator`'s robot launcher to silence nav2 nodes by default) - those
+the env node's robot launcher to silence nav2 nodes by default) - those
 later calls can use the merge form to layer rules on top of the user's spec
 without clobbering it. With `fallback=True` a merge lands just above the first
 `**/*` catch-all instead, so it covers only nodes no earlier rule names. The
@@ -110,8 +110,8 @@ quiet rules as a fallback: `log_level:='{**/planner_server:info, warn}'` keeps
 ## Simulator dispatch
 
 - [simulator/sim/README.md](simulator/sim/README.md) - physics simulator backends (`dummy`, `flatsim`, `gazebo`, `isaac`, `mujoco`).
-- Human-simulation backends: see `task_generator/launch/human/README.md`
-  (moved alongside their `BaseHumanSimulator` adapters).
+- Human-simulation backends: see [`arena_runtime/arena_runtime/launch/human/README.md`](../../arena_runtime/arena_runtime/launch/human/README.md)
+  (alongside the env launch file).
 
 ## Top-level composition
 
@@ -125,8 +125,8 @@ quiet rules as a fallback: `log_level:='{**/planner_server:info, warn}'` keeps
    assets.
 4. **`arena_node`** (`LifecycleNode`) - the multi-env orchestrator.
 
-Task-generator envs are not included here. Each env is started separately via
-`task_generator.launch.py` (either manually via `arena env` or orchestrated by
+Envs are not included here. Each env is started separately via
+`env.launch.py` (either manually via `arena env` or orchestrated by
 `arena launch`). Each env includes:
 
 - `human.launch.py` - starts the human simulator (if any) for that environment.
@@ -136,7 +136,7 @@ Environments are positioned on a *snail grid* (`snail_grid(d)`) that spirals
 outward from the origin with spacing `d`, so multiple parallel environments do
 not overlap.
 
-The simulator is paused during setup and the entire `Task._reset_episode` body -
+The simulator is paused during setup and the entire env reset -
 see [Sim-paused invariant](../../arena_runtime/arena_runtime/arena_runtime/sim/README.md#sim-paused-invariant).
 
 ## utils/

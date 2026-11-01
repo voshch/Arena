@@ -2,15 +2,15 @@ import typing
 from collections.abc import Awaitable, Callable
 
 import geometry_msgs.msg as geometry_msgs
+from arena_runtime.env.interactive.hub import Menu, planar_marker, static_marker, visual
+from arena_runtime.env.realizer import Realizer
+from arena_runtime.env.request import GoToPhase, TaskPhase, TaskRequest
+from arena_runtime.shared import Pose
 from visualization_msgs.msg import Marker
 
-from task_generator.interactive.hub import Menu, planar_marker, static_marker, visual
-from task_generator.manager.realizer import Realizer
-from task_generator.shared import Pose
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots.guided import chain
 from task_generator.tasks.robots.random.impl import TM_Random
-from task_generator.tasks.robots.request import GoToPhase, TaskPhase, TaskRequest
 
 _SHARED_CHAIN_COLOR = (0.1, 0.4, 1.0)
 _LINE_WIDTH = 0.05
@@ -75,7 +75,7 @@ class TM_Guided(TM_Random):
         if not self._waypoints:
             return
 
-        realizer = self.node._realizer
+        realizer = self._ctx.realizer
         clear_menu = Menu("Clear chain", self._clear_chain)
         robots = list(self._ctx.robots)
         r, g, b, _ = self.node.robot_colors.rgba(robots[0], 1.0) if len(robots) == 1 else (*_SHARED_CHAIN_COLOR, 1.0)

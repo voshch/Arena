@@ -4,11 +4,11 @@ import typing
 
 from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_int
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.request import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
+from arena_runtime.shared import Orientation, Pose, Position, PositionRadius
 
-from task_generator.shared import Orientation, Pose, Position, PositionRadius
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
-from task_generator.tasks.robots.request import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
 
 _RANDOM_ALIASES = frozenset({"", "random", "<random>"})
 

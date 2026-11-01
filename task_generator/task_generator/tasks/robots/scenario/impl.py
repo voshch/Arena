@@ -4,15 +4,15 @@ from collections.abc import Iterator, Sequence
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.realizer import Realizer
+from arena_runtime.env.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+from arena_runtime.shared import Pose, Position, PositionRadius
 from arena_simulation_setup.tree.World import WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import RobotGoal
 
-from task_generator.manager.realizer import Realizer
-from task_generator.shared import Pose, Position, PositionRadius
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
-from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 
 
 def to_map_frame(pose: Pose, zone: str, level: str, realizer: Realizer) -> Pose:
@@ -78,7 +78,7 @@ class TM_Scenario(TM_Robots):
             SCENARIO_ROBOTS = SCENARIO_ROBOTS[:setup_robot_length]
             self._logger.warn("Scenario file contains more robots than setup.", once=True)
 
-        realizer = self.node._realizer
+        realizer = self._ctx.realizer
 
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
             start_pose = to_map_frame(config.start, config.start_zone, config.level, realizer)

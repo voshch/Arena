@@ -14,7 +14,6 @@ import threading
 import time
 import typing
 
-import ament_index_python.packages
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
 import rclpy
@@ -24,6 +23,8 @@ import rclpy.qos
 import rclpy.subscription
 import rclpy.timer
 import rosgraph_msgs.msg
+from ament_index_python.packages import get_package_share_directory
+from arena_bringup.constants import SimSimulator
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Time import Time
 from lifecycle_msgs.msg import State as LcState
@@ -34,7 +35,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import Bool, Header
 from std_srvs.srv import Trigger
 
-from arena_runtime.constants import SimSimulator
+from arena_runtime.env.task_layer import task_layer_entry_point
 from arena_runtime.holds import HoldRegistry
 from arena_runtime.lockstep import LockstepConfig, LockstepScheduler, _parse_channel_spec, spec_from_msg
 from arena_runtime.registry import EnvRegistry, _extent_eq, sweep_verdict
@@ -888,6 +889,14 @@ sys.exit(ls.run())
             response.error_msg = f"sim dead: {self._sim_dead_reason}"
             return response
 
+        try:
+            task_layer_entry_point()
+        except LookupError as e:
+            response.success = False
+            response.error_msg = str(e)
+            return response
+
+        launchfile = os.path.join(get_package_share_directory("arena_runtime"), "launch", "env.launch.py")
         sim_name = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
         requested_ns = request.ns or None
 
@@ -906,11 +915,6 @@ sys.exit(ls.run())
         env.spawn_ready = self.event_loop.create_future()
         self._publish_envs()
 
-        launchfile = os.path.join(
-            ament_index_python.packages.get_package_share_directory("task_generator"),
-            "launch",
-            "task_generator.launch.py",
-        )
         per_spawn_fixed: dict[str, str] = {
             "env.managed": "true",
             "env.id": str(env_id),

@@ -11,7 +11,8 @@ from arena_people_msgs.msg import Pedestrians
 from arena_simulation_setup.shared import Ceiling, Light, Stairs
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.utils.geometry import Orientation, Position
-from task_generator.shared import (
+
+from arena_runtime.shared import (
     Door,
     DynamicObstacle,
     Elevator,
@@ -273,7 +274,8 @@ class MechanismITF:
         from collections.abc import Callable
 
         from arena_simulation_setup.shared.semantics import SemanticCfg
-        from task_generator.manager.realizer import Realizer
+
+        from arena_runtime.env.realizer import Realizer
 
         from ._articulation import ArticulatedObject
         from ._mechanism_shim import _DoorRuntime, _ElevatorRuntime, _StairsRuntime

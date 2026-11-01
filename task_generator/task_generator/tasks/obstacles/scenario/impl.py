@@ -3,13 +3,13 @@ import typing
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
+from arena_runtime.humans.itinerary import Stop
+from arena_runtime.shared import DynamicObstacle, Position, Region
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light, point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView, articulation_problems
 
-from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
-from task_generator.shared import DynamicObstacle, Position, Region
-from task_generator.simulators.human.itinerary import Stop
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.obstacles._itinerary import attach_itinerary
@@ -62,7 +62,7 @@ class TM_Scenario(TM_Obstacles):
     def _with_itinerary(self, obstacle: DynamicObstacle) -> DynamicObstacle:
         """Attach waypoint dwell and explicit elevator rides."""
         wm = self._ctx.world_manager
-        realizer = self.node._realizer
+        realizer = self._ctx.realizer
 
         def elevator_ride(name: str, toward: Position | None) -> Stop | None:
             try:

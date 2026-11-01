@@ -9,7 +9,7 @@ Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live
 | File | Purpose |
 |---|---|
 | `RegisterEnv.srv` | Reserve an env_id and namespace; called by an env that launches without managed mode. |
-| `SpawnEnv.srv` | Reserve + launch `task_generator.launch.py` as a child process; waits for ACTIVE. |
+| `SpawnEnv.srv` | Reserve + launch arena_runtime's `env.launch.py` as a child process; waits for ACTIVE. |
 | `DespawnEnv.srv` | Publish a `ShutdownRequest` asking an env to self-shutdown via lifecycle. |
 | `ConfirmWorld.srv` | Run the shelf packer for an env's extent; returns `reference`, `slot_extent`, `prespawn`. |
 | `LifecycleHold.srv` | Acquire or release a pause hold (ref-counted across callers). |

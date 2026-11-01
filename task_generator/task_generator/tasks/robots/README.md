@@ -8,7 +8,7 @@ intent into goals sent at a specific robot through its bound adapter.
 
 ## Guides
 
-- [Navigation adapters](adapters/README.md): `Adapter` ABC, `AdapterCtx`,
+- [Navigation adapters](../../../../arena_runtime/arena_runtime/arena_runtime/env/adapters/README.md): `Adapter` ABC, `AdapterCtx`,
   registration, how `RobotManager` binds one, dispatch and teardown flow,
   adding a new adapter. Paired with the launch-side
   [`arena_robots/launch/adapters/README.md`](../../../../arena_robots/arena_robots/launch/adapters/README.md).
@@ -33,7 +33,7 @@ levels), with start and goal sampled anywhere. Which levels exist is set at load
 (`world:=name` loads all, `world:=name[0,3]` loads only 0 and 3), not per reset.
 
 Crossing floors is handled below the task mode, in `RobotManager.submit_task`:
-[`route_phases`](../../manager/robot_manager/elevator_routing.py) expands the explicit
+[`route_phases`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/elevator_routing.py) expands the explicit
 `via` entries of a `GoToPhase` (elevator or stair half names), then, when the goal is on a
 different level than the one the robot ends up on, the fewest-hop route over the elevators
 and the stairs the robot climbs (`WorldManager.level_hops`). A tie in hop count goes to the
@@ -84,7 +84,7 @@ an async `done` flag. Shipped modes:
 | `null` | [`composite.py`](composite.py) | idle sink for robots unallocated by the fleet manager |
 | `composite` | [`composite.py`](composite.py) | fan-out: each sub-TM sees a scoped `TaskContext` covering only its allocated robots |
 
-Modes are registered by `Constants.TaskMode.TM_Robots` enum value in
+Modes are registered by `Modes.TM_Robots` enum value in
 [`tasks/registry.py`](../registry.py). `null` and `composite` are not in
 the enum, they are only reachable via `set_tm_robots_composite`.
 
@@ -94,7 +94,7 @@ the enum, they are only reachable via `set_tm_robots_composite`.
 `RobotManager.submit_task`. The types live in
 [`arena_simulation_setup.shared.task`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/task.py)
 so scenario YAML, runtime generators, the episode record and arena_evaluation
-share one definition. [`request.py`](request.py) re-exports them with
+share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/request.py) re-exports them with
 `kind_of(phase) -> TaskKind`, the action kind an adapter dispatches.
 
 - `TaskPhase`: one step. Every phase takes `on_failure`
@@ -144,7 +144,7 @@ of the list when the previous one ends, and the loop's `until` is judged on
 every tick a loop phase is active. Once it holds, the running phase and the
 rest of its iteration are marked dropped and the phase after the loop becomes
 active. A loop without `until` repeats until the episode ends. Everything is judged by the task runner
-([`manager/robot_manager/task_runner.py`](../../manager/robot_manager/task_runner.py))
+([`env/robot_manager/task_runner.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/task_runner.py))
 on the node's 30 Hz sim tick from a `Sample` of robot poses, ped positions and
 semantic fields, with the same predicate code arena_evaluation replays offline
 ([`shared/judge.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/judge.py)).
@@ -196,7 +196,7 @@ the input order.
 allocation and:
 
 1. For each `(spec, robots)` pair, resolves the loader:
-   `Constants.TaskMode.TM_Robots(spec.kind)` via the standard registry,
+   `Modes.TM_Robots(spec.kind)` via the standard registry,
    falling back to `get_extra_tm_loader(spec.kind)` for sentinel kinds
    (`null`).
 2. Builds a scoped `TaskContext` via `_scoped_ctx` that exposes only the
@@ -212,12 +212,12 @@ fleet's robot names differ from the last allocation.
 
 ## Integration points
 
-- **`RobotManager`** ([`manager/robot_manager/robot_manager.py`](../../manager/robot_manager/robot_manager.py)):
+- **`RobotManager`** ([`env/robot_manager/robot_manager.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/robot_manager.py)):
   one per spawned robot. Owns the bound adapters, the task runner with this
   episode's phases, the goal-republish loop, and the tf-backed `pose`
   property. Entry points used from here: `submit_task`, `stop_task`, `move`,
   `is_done`, `accepts`.
-- **`RobotsManager`** ([`manager/robot_manager/robots_manager.py`](../../manager/robot_manager/robots_manager.py)):
+- **`RobotsManager`** ([`env/robot_manager/robots_manager.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/robots_manager.py)):
   diff-driven fleet lifecycle. Parses the `robot` ROS param (comma-
   separated list of robot names, `model[count]`, or `.yaml` setup refs),
   reconciles against existing `RobotManager` instances, and creates /

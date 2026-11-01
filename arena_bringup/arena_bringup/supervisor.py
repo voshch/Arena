@@ -1,6 +1,6 @@
 """Process supervisor for `arena launch`.
 
-Spawns arena_runtime + N task_generator envs (+ viz / human panel per env),
+Spawns arena_runtime + N envs (+ viz / human panel per env),
 discovers readiness via rclpy graph queries, and propagates signals to the
 entire process tree of each child via process-group signaling.
 """
@@ -291,8 +291,8 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
             [
                 'ros2',
                 'launch',
-                'task_generator',
-                'task_generator.launch.py',
+                'arena_runtime',
+                'env.launch.py',
                 *args.env_args,
             ],
         )

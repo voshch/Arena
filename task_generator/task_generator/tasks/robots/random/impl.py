@@ -1,9 +1,10 @@
 import math
 from collections.abc import Sequence
 
-from task_generator.shared import Orientation, Pose, Position, PositionRadius
+from arena_runtime.env.request import GoToPhase, ReachPhase, TaskPhase, TaskRequest
+from arena_runtime.shared import Orientation, Pose, Position, PositionRadius
+
 from task_generator.tasks.robots import TM_Robots
-from task_generator.tasks.robots.request import GoToPhase, ReachPhase, TaskPhase, TaskRequest
 
 
 def goal_clearance(goals: Sequence[Position], tolerance: float) -> list[PositionRadius]:

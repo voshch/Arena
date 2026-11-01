@@ -9,8 +9,8 @@ try:
     import shapely
     from arena_rclpy_mixins.Time import Time
 
-    from task_generator.manager.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
-    from task_generator.shared import Position
+    from arena_runtime.env.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
+    from arena_runtime.shared import Position
     from task_generator.tasks.obstacles._validation import make_is_valid
 except ImportError:
     pytestmark = pytest.mark.skip(reason="ROS2 not available")

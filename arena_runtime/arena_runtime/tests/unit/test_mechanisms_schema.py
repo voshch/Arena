@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("task_generator.manager.realizer")
+pytest.importorskip("arena_runtime.env.realizer")
 
 from arena_simulation_setup.shared import Door, Elevator, Signal  # noqa: E402
 from arena_simulation_setup.shared.semantics import parse_semantics  # noqa: E402
 from arena_simulation_setup.tree.World.legacy import upgrade  # noqa: E402
 from arena_simulation_setup.utils.geometry import Position  # noqa: E402
-from task_generator.manager.environment_manager import _attachments, _route_semantics  # noqa: E402
-from task_generator.manager.realizer import Realizer  # noqa: E402
+from arena_runtime.env.environment_manager import _attachments, _route_semantics  # noqa: E402
+from arena_runtime.env.realizer import Realizer  # noqa: E402
 
 
 @pytest.fixture()

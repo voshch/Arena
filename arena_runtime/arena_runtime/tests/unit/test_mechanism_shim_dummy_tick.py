@@ -23,7 +23,7 @@ def on_dummy_sim():
     def run(body: typing.Callable[..., typing.Awaitable[None]], *, jackal: bool = False) -> None:
         from arena_rclpy_mixins import ArenaMixinNode
         from arena_rclpy_mixins.shared import Namespace
-        from task_generator.manager.realizer import Realizer
+        from arena_runtime.env.realizer import Realizer
 
         from arena_runtime.sim.dummy_simulator import DummySimulator
 
@@ -47,7 +47,7 @@ def on_dummy_sim():
 
 def _register_jackal(sim) -> str:
     from arena_robots.Robot import RobotIdentifier
-    from task_generator.shared import Pose, Robot
+    from arena_runtime.shared import Pose, Robot
 
     model = RobotIdentifier.parse("jackal")
     robot = Robot(name="jackal", pose=Pose(), model=model, adapters={}, extra={})
@@ -71,7 +71,7 @@ def _place(sim, frame: str, x: float, y: float, yaw: float = 0.0) -> None:
 
 
 def _door(shim, sim, name: str = "d"):
-    from task_generator.shared import Door, Position
+    from arena_runtime.shared import Door, Position
 
     door = Door(name=name, start=Position(0.0, 0.0, 0.0), end=Position(1.0, 0.0, 0.0), activation_distance=(1.5, 1.5), transition_time=1.0, hold_time=2.0)
     _, closed = shim._door_geometry(door)
@@ -81,7 +81,7 @@ def _door(shim, sim, name: str = "d"):
 
 
 def _elevator(shim, sim, name: str, x: float, destination: str):
-    from task_generator.shared import Elevator, Position
+    from arena_runtime.shared import Elevator, Position
 
     elevator = Elevator(name=name, position=Position(x, 0.0, 0.0), size=[2.0, 2.0, 2.5], door_side="+x", destinations=[destination], travel_time=0.0, transition_time=1.0, hold_time=2.0, activation_distance=1.0)
     door = shim._elevator_synthesized_door(elevator)
@@ -95,7 +95,7 @@ def _elevator(shim, sim, name: str, x: float, destination: str):
 
 
 def _lamp():
-    from task_generator.shared import Pose, Position
+    from arena_runtime.shared import Pose, Position
 
     from arena_simulation_setup.shared import Light
 
@@ -140,7 +140,7 @@ def test_robot_without_a_transform_does_not_trigger_a_door(shim, on_dummy_sim):
 
 
 def test_elevator_without_a_cabin_door_is_left_alone(shim, on_dummy_sim):
-    from task_generator.shared import Elevator, Position
+    from arena_runtime.shared import Elevator, Position
 
     async def body(sim):
         elevator = Elevator(name="e", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["f"])
@@ -269,7 +269,7 @@ def test_light_semantics_without_a_spawned_light_push_nothing(shim, on_dummy_sim
 
 
 def test_frame_light_follows_its_frame_and_ignores_jitter(shim, on_dummy_sim):
-    from task_generator.shared import Pose, Position
+    from arena_runtime.shared import Pose, Position
 
     from arena_simulation_setup.shared import Light
 
@@ -314,7 +314,7 @@ def test_attaching_semantics_starts_one_loop_that_ticks_until_stopped(shim, on_d
 
 
 def test_reset_restores_an_elevator_without_a_cabin_door(shim, on_dummy_sim):
-    from task_generator.shared import Elevator, Position
+    from arena_runtime.shared import Elevator, Position
 
     async def body(sim):
         elevator = Elevator(name="e", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["f"])
@@ -329,9 +329,9 @@ def test_reset_restores_an_elevator_without_a_cabin_door(shim, on_dummy_sim):
 
 def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_dummy_sim):
     from arena_people_msgs.msg import Pedestrian, Pedestrians
-    from task_generator.constants import Constants
-    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
-    from task_generator.simulators.human.noop import NoopHumanSimulator
+    from arena_runtime.env.constants import Constants
+    from arena_runtime.acoustics import AcousticsSimulatorRegistry
+    from arena_runtime.humans.noop import NoopHumanSimulator
 
     async def body(sim, jackal):
         reasons: list[str] = []
@@ -359,9 +359,9 @@ def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_d
 
 def test_cabin_door_reports_to_the_human_simulator_only_when_it_turns_open_or_stops_being_open(shim, on_dummy_sim):
     from arena_people_msgs.msg import Pedestrian, Pedestrians
-    from task_generator.constants import Constants
-    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
-    from task_generator.simulators.human.noop import NoopHumanSimulator
+    from arena_runtime.env.constants import Constants
+    from arena_runtime.acoustics import AcousticsSimulatorRegistry
+    from arena_runtime.humans.noop import NoopHumanSimulator
 
     class DoorLog(NoopHumanSimulator):
         def __init__(self, **kwargs):
@@ -401,9 +401,9 @@ def test_cabin_door_reports_to_the_human_simulator_only_when_it_turns_open_or_st
 @pytest.mark.parametrize(("bystander_x", "departs"), [(1.8, True), (1.2, False)])
 def test_loaded_cabin_reopens_only_for_a_body_in_its_door_threshold(shim, on_dummy_sim, bystander_x: float, departs: bool):
     from arena_people_msgs.msg import Pedestrian, Pedestrians
-    from task_generator.constants import Constants
-    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
-    from task_generator.simulators.human.noop import NoopHumanSimulator
+    from arena_runtime.env.constants import Constants
+    from arena_runtime.acoustics import AcousticsSimulatorRegistry
+    from arena_runtime.humans.noop import NoopHumanSimulator
 
     def at(name: str, x: float, y: float) -> Pedestrian:
         ped = Pedestrian(name=name)
@@ -427,7 +427,7 @@ def test_loaded_cabin_reopens_only_for_a_body_in_its_door_threshold(shim, on_dum
 
 
 def test_dummy_spawns_stairs_as_a_no_op(on_dummy_sim):
-    from task_generator.shared import Position
+    from arena_runtime.shared import Position
 
     from arena_simulation_setup.shared import Stairs
 

@@ -12,8 +12,8 @@ from collections.abc import Sequence
 
 from arena_people_msgs.msg import Pedestrians
 from arena_simulation_setup.shared import Stairs
-from task_generator.shared import Door, DynamicObstacle, Elevator, Entity, Floor, Obstacle, Robot, Wall
 
+from arena_runtime.shared import Door, DynamicObstacle, Elevator, Entity, Floor, Obstacle, Robot, Wall
 from arena_runtime.sim import BaseSim, SimLifecycle
 
 T = typing.TypeVar('T')

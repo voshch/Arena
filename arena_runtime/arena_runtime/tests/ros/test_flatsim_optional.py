@@ -31,7 +31,7 @@ def test_runtime_imports_without_flatsim(tmp_path) -> None:
 
 @pytest.mark.parametrize("registry", ["LifecycleRegistry", "SimulatorRegistry"])
 def test_flatsim_without_its_packages_names_the_feature(tmp_path, registry: str) -> None:
-    code = f"import asyncio\nfrom arena_runtime.constants import SimSimulator\nfrom arena_runtime.sim import {registry}\nasyncio.run({registry}.get(SimSimulator.FLATSIM, node=None))"
+    code = f"import asyncio\nfrom arena_bringup.constants import SimSimulator\nfrom arena_runtime.sim import {registry}\nasyncio.run({registry}.get(SimSimulator.FLATSIM, node=None))"
     proc = _python(code, tmp_path)
     assert proc.returncode != 0
     assert "arena feature flatsim install" in proc.stderr

@@ -1,0 +1,4 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:hall', props: {description: Lit hall with an emergency strip over the east exit}}

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from arena_runtime.constants import SimSimulator
+from arena_bringup.constants import SimSimulator
 from arena_runtime.sim._control import effective_control_yaml, load_control_yaml
 
 BASE = {

@@ -2,11 +2,11 @@ import math
 import typing
 
 from arena_rclpy_mixins.Time import Time
+from arena_runtime.env.request import GoToPhase, TaskRequest
+from arena_runtime.shared import Orientation, Pose
 
-from task_generator.shared import Orientation, Pose
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots.random.impl import TM_Random
-from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
 
 class TM_Explore(TM_Random):

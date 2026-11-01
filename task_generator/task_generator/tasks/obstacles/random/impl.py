@@ -9,12 +9,12 @@ import attrs
 import numpy as np
 import rclpy
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 from typing_extensions import Self
 
-from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose
 from task_generator.tasks import identifier_to_available
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles

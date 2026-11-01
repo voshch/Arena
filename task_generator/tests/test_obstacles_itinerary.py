@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 from arena_simulation_setup.shared.entities import Waypoint
-from task_generator.shared import DynamicObstacle, Pose, Position
-from task_generator.simulators.human.arena_humansim.arena_humansim import PedMechanics
-from task_generator.simulators.human.itinerary import Stop
+from arena_runtime.shared import DynamicObstacle, Pose, Position
+from arena_runtime.humans.arena_humansim.arena_humansim import PedMechanics
+from arena_runtime.humans.itinerary import Stop
 from task_generator.tasks.obstacles._itinerary import attach_itinerary
 
 # level 0 at the origin, level 1 laid out 20 m to the right, each level is a 10 x 10 square

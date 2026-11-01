@@ -9,13 +9,14 @@ import pytest
 pytest.importorskip("arena_mcp")
 pytest.importorskip("rclpy")
 
-from arena_mcp.core import JOBS, ROS, ToolError
+from arena_mcp.core import JOBS, ToolError
 from task_generator_msgs.msg import EpisodeRecord
 
-from task_generator.constants.runtime import EPISODE_PARAMS
-from task_generator.mcp import entities, episode
+from arena_runtime.env.constants.runtime import EPISODE_PARAMS
+from arena_runtime.env import entities_mcp as entities
+from arena_runtime.env import episode_mcp as episode
 
-from tg_peer import ENV, MISSING_WORLD, PLAIN_ENV, ROBOT, SCENARIOS, WORLDS
+from arena_runtime.testing.env_peer import ENV, MISSING_WORLD, PLAIN_ENV, ROBOT, SCENARIOS, WORLDS
 
 
 def test_reset_blocks_until_the_next_episode_runs_and_returns_its_record(run, peers):

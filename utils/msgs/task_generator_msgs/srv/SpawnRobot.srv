@@ -1,9 +1,9 @@
-# Inject an additional robot at runtime via TM_Robots.extend.
+# Inject an additional robot at runtime.
 string model
 # Empty auto-generates.
 string name
 geometry_msgs/PoseStamped pose
-# False = task mode picks placement.
+# False = the env picks a free placement.
 bool use_pose
 # True = provision into the live world now (idle), else commit on the next reset.
 bool immediate

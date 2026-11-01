@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 import asyncio
 import uuid
 
@@ -16,7 +17,7 @@ def _during_reset(call):
     from arena_rclpy_mixins.Async import AsyncNode
     from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
     from arena_rclpy_mixins.shared import Namespace
-    from task_generator.simulators.acoustics.noop import NoopAcousticsSimulator
+    from arena_runtime.acoustics.noop import NoopAcousticsSimulator
     from task_generator.tasks.modules.sounds.impl import Mod_Sounds
 
     class _Node(ServiceNamespace, AsyncNode):
@@ -28,10 +29,9 @@ def _during_reset(call):
     async def main():
         node = _Node(f"sounds_services_{suffix}", namespace=str(ns))
         try:
-            node._reset_lock = asyncio.Lock()
-            node._acoustics_simulator = NoopAcousticsSimulator(node=node, namespace=ns)
-            module = Mod_Sounds(node=node, ctx=None, namespace=ns, task=None)
-            async with node._reset_lock:
+            ctx = types.SimpleNamespace(reset_lock=asyncio.Lock(), acoustics_simulator=NoopAcousticsSimulator(node=node, namespace=ns))
+            module = Mod_Sounds(node=node, ctx=ctx, namespace=ns, task=None)
+            async with ctx.reset_lock:
                 pending = asyncio.ensure_future(call(module))
                 await asyncio.sleep(0.05)
                 waited = not pending.done()

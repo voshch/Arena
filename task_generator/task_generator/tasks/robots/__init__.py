@@ -1,10 +1,9 @@
 import asyncio
 
-from task_generator.shared import Pose
-from task_generator.shared import Robot as RobotEntity
+from arena_runtime.env.request import GoToPhase, TaskRequest
+from arena_runtime.shared import Pose
+
 from task_generator.tasks.mode import TaskMode
-from task_generator.tasks.robots._placement import random_placement
-from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
 from . import characterization, demo, explore, guided, random, scenario, stationary
 
@@ -46,23 +45,6 @@ class TM_Robots(TaskMode):
         """Dispatch a single-phase GOTO request targeting ``pose`` on every robot."""
         for robot_manager in self._ctx.robots.values():
             await robot_manager.submit_task(TaskRequest(phases=[GoToPhase(pose=pose)]))
-
-    async def extend(
-        self,
-        model: str,
-        name: str | None = None,
-        pose: Pose | None = None,
-        args: dict[str, str] | None = None,
-    ) -> str:
-        from arena_robots.SetupFile import Config as RobotSetupConfig
-
-        resolved_pose = pose if pose is not None else await random_placement(self._ctx)
-        assigned_name = name or self.node._robots_manager.next_name(model)
-        config_dict: dict[str, object] = {'robot': model, 'name': assigned_name, 'pos': resolved_pose.to_2d(), **(args or {})}
-        (config,) = RobotSetupConfig.parse(config_dict)
-        robot = RobotEntity.from_setup(config, node=self.node)
-        self.node._robots_manager.add_pending(assigned_name, robot)
-        return assigned_name
 
     @property
     async def done(self) -> bool:

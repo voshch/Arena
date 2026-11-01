@@ -1,10 +1,11 @@
 import typing
 
-import rclpy.node
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
+from arena_runtime.env.task_layer import TaskContext
 
-from task_generator.tasks.context import TaskContext
+if typing.TYPE_CHECKING:
+    from arena_runtime.env.episode_node import EpisodeNode
 
 
 class Namespaced:
@@ -17,13 +18,13 @@ class Namespaced:
 class TaskModeKwargs(typing.TypedDict):
     ctx: TaskContext
     namespace: Namespace
-    node: rclpy.node.Node
+    node: "EpisodeNode"
 
 
-class TaskMode(NodeInterface, Namespaced):
+class TaskMode(NodeInterface["EpisodeNode"], Namespaced):
     _ctx: TaskContext
 
-    def __init__(self, *, ctx: TaskContext, namespace: Namespace, node: rclpy.node.Node) -> None:
+    def __init__(self, *, ctx: TaskContext, namespace: Namespace, node: "EpisodeNode") -> None:
         super().__init__(node=node)
         self._ctx = ctx
         self._namespace = namespace

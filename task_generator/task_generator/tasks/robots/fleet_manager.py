@@ -8,11 +8,10 @@ from typing import TYPE_CHECKING
 
 import attrs
 import yaml
-
-from task_generator.tasks.robots.request import TaskKind
+from arena_runtime.env.request import TaskKind
 
 if TYPE_CHECKING:
-    from task_generator.manager.robot_manager.robot_manager import RobotManager
+    from arena_runtime.env.robot_manager.robot_manager import RobotManager
 
 
 def _task_kind(value: TaskKind | str) -> TaskKind:

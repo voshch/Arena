@@ -19,13 +19,13 @@ from collections.abc import Callable
 import rclpy.publisher
 import rclpy.subscription
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.shared import Pose
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
-from task_generator.shared import Pose
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
@@ -164,9 +164,9 @@ class TM_Characterization(TM_Robots):
 
     async def _centre_placement(self) -> Pose:
         """A free cell closest to the map centre (fallback: random placement)."""
-        from task_generator.manager.world_manager.world_manager import _occupancy_to_available
-        from task_generator.shared import Orientation, Position
-        from task_generator.tasks.robots._placement import random_placement
+        from arena_runtime.env.placement import random_robot_pose
+        from arena_runtime.env.world_manager.utils import WorldOccupancy
+        from arena_runtime.shared import Orientation, Position
 
         try:
             import numpy as np
@@ -174,7 +174,7 @@ class TM_Characterization(TM_Robots):
             wm = self._ctx.world_manager
             grid = wm.map.occupancy.grid
             rows, cols = grid.shape
-            available = _occupancy_to_available(grid, 0.0)
+            available = np.argwhere(WorldOccupancy.not_full(grid))
             if len(available) > 0:
                 dist = np.abs(available[:, 0] - rows // 2) + np.abs(available[:, 1] - cols // 2)
                 row, col = available[int(np.argmin(dist))]
@@ -182,7 +182,7 @@ class TM_Characterization(TM_Robots):
                 return Pose(Position(pos.x, pos.y, 0.0), orientation=Orientation.from_yaw(0.0))
         except Exception as e:
             self._logger.warning(f"TM_Characterization centre placement failed ({e!r}), using random")
-        return await random_placement(self._ctx)
+        return random_robot_pose(self._ctx.world_manager, self._ctx.robots_manager)
 
     def _make_odom_cb(self, robot_name: str) -> Callable[[Odometry], None]:
         def _cb(msg: Odometry) -> None:

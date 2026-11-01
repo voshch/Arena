@@ -2,7 +2,7 @@
 
 Top-level launch entry point for Arena, plus shared Python launch helpers,
 task configs. Everything that ties together the simulator,
-task-generator, and navigation stack lives here.
+env node, and navigation stack lives here.
 
 ## Guides
 
@@ -12,8 +12,8 @@ task-generator, and navigation stack lives here.
   top-level composition, and the `utils/` helpers.
 - [Simulator dispatch](launch/simulator/sim/README.md) - `SelectAction`
   convention, per-sim subdirs (`gazebo/`, `isaac/`), adding a new simulator.
-- Human simulator dispatch: see `task_generator/launch/human/README.md`
-  (moved alongside its `BaseHumanSimulator` adapters).
+- Human simulator dispatch: see [`arena_runtime/arena_runtime/launch/human/README.md`](../arena_runtime/arena_runtime/launch/human/README.md)
+  (alongside the env launch file).
 - [Task configs](configs/tasks/README.md) - `TaskModeSpec` schema,
   fleet-manager allocation, examples.
 - [Benchmark configs](../arena_evaluation/arena_evaluation/configs/benchmark/README.md) - suites,

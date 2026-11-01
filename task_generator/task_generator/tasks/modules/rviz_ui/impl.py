@@ -6,14 +6,14 @@ import geometry_msgs.msg as geometry_msgs
 import rclpy.qos
 import rclpy.time
 from arena_rclpy_mixins.Time import Time
+from arena_runtime.env.interactive.hub import planar_marker, visual
+from arena_runtime.env.request import GoToPhase, TaskRequest
+from arena_runtime.env.robot_manager.robot_manager import RobotManager
+from arena_runtime.shared import Orientation, Pose, Position
 from task_generator_msgs.msg import RobotFleet
 from visualization_msgs.msg import Marker
 
-from task_generator.interactive.hub import planar_marker, visual
-from task_generator.manager.robot_manager.robot_manager import RobotManager
-from task_generator.shared import Orientation, Pose, Position
 from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
-from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
 _FLEET_QOS = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
 
@@ -50,7 +50,7 @@ class Mod_OverrideRobot(TM_Module):
 
     async def _cb_fleet(self, msg: RobotFleet) -> None:
         del msg
-        if not self.node._reset_lock.locked():
+        if not self._ctx.reset_lock.locked():
             self._sync_handles()
 
     def _sync_handles(self) -> None:
@@ -113,14 +113,14 @@ class Mod_OverrideRobot(TM_Module):
                 ),
                 Orientation.from_yaw(yaw + Orientation.from_msg(msg.orientation).to_yaw()),
             )
-            await manager.move(self.node._realizer.ezilear(target))
+            await manager.move(self._ctx.realizer.ezilear(target))
             return geometry_msgs.Pose()
 
         return move
 
     def _goal_setter(self, name: str) -> Callable[[geometry_msgs.Pose], Awaitable[None]]:
         async def go(msg: geometry_msgs.Pose) -> None:
-            pose = self.node._realizer.ezilear(Pose.from_msg(msg))
+            pose = self._ctx.realizer.ezilear(Pose.from_msg(msg))
             await self._task.submit_task(TaskRequest(phases=[GoToPhase(pose=pose)]), name)
 
         return go
@@ -129,7 +129,7 @@ class Mod_OverrideRobot(TM_Module):
         self._timeouts[index] = self.node.sim_time
 
     def _to_abstract(self, frame_id: str, pose: Pose) -> Pose:
-        return self.node._realizer.ezilear(pose) if frame_id == 'map' else pose
+        return self._ctx.realizer.ezilear(pose) if frame_id == 'map' else pose
 
     async def _cb_set_position(self, pos: geometry_msgs.PoseWithCovarianceStamped):
         await self._task.set_robot_position(self._to_abstract(pos.header.frame_id, Pose.from_msg(pos.pose.pose)))
@@ -138,4 +138,4 @@ class Mod_OverrideRobot(TM_Module):
         await self._task.set_robot_goal(self._to_abstract(pos.header.frame_id, Pose.from_msg(pos.pose)))
 
     def _cb_new_scenario(self, *args: object, **kwargs: object) -> None:
-        self._task.force_reset()
+        self.node.force_reset()

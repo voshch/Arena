@@ -21,7 +21,7 @@ class ROSParamT(abc.ABC, typing.Generic[T]):
         value: object,
         *,
         type_: rclpy.Parameter.Type | None = None,
-        parse: typing.Callable[[object], T] | None = None,
+        parse: typing.Callable[[typing.Any], T] | None = None,
         **kwargs: object,
     ) -> None: ...
 
@@ -119,7 +119,7 @@ class _ROSParam(ROSParamT[T]):
         value: object | None = None,
         *,
         type_: rclpy.Parameter.Type | None = None,
-        parse: typing.Callable[[object], T] | None = None,
+        parse: typing.Callable[[typing.Any], T] | None = None,
         **kwargs: object,
     ) -> None:
         self._name = name

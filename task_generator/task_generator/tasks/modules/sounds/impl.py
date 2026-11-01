@@ -10,6 +10,9 @@ import rclpy
 import rclpy.time
 import tf2_ros
 import yaml
+from arena_runtime.acoustics import SoundEmission
+from arena_runtime.env.interactive import Apply, Menu, planar_marker, visual
+from arena_runtime.shared import Orientation
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
 from arena_simulation_setup.tree.assets.sound_catalog import AgentKind, SoundLibrary, selection_seed
 from arena_simulation_setup.tree.World import World, WorldIdentifier
@@ -21,16 +24,12 @@ from rclpy.clock import Clock, ClockType
 from task_generator_msgs.srv import RemoveSound, SpawnSound
 from visualization_msgs.msg import Marker
 
-from task_generator.interactive import Apply, Menu, planar_marker, visual
-from task_generator.shared import Orientation
-from task_generator.simulators.acoustics import SoundEmission
 from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
 from task_generator.tasks.modules.sounds import REMOVE_SOUND, SPAWN_SOUND
 
 if typing.TYPE_CHECKING:
+    from arena_runtime.env.realizer import Realizer
     from arena_simulation_setup.tree.assets.sound_catalog import SoundAsset
-
-    from task_generator.manager.realizer import Realizer
 
 
 def _index_static_entities(world: World, scenario_objects: Sequence[Obstacle] = ()) -> dict[str, list[tuple[str, Obstacle]]]:
@@ -174,10 +173,10 @@ class Mod_Sounds(TM_Module):
 
     def after_reset(self) -> None:
         for entity in self._attached:
-            self.node._simulator.detach_semantics(entity)
+            self._ctx.simulator.detach_semantics(entity)
         self._sound_state.clear()
         self._runtime.clear()
-        self.node._acoustics_simulator.clear_sounds()
+        self._ctx.acoustics_simulator.clear_sounds()
 
         world_name = self._ctx.world_manager.loaded_world
         world_view = WorldIdentifier(world_name).resolve_sync()
@@ -189,7 +188,7 @@ class Mod_Sounds(TM_Module):
         resolved: dict[str, _ResolvedSound] = {}
         for level_id, level in world.levels.items():
             for snd in level.all_sounds:
-                realized_name = self.node._realizer.realize(snd, level_id).name
+                realized_name = self._ctx.realizer.realize(snd, level_id).name
                 self._warn_if_inert(snd, realized_name)
                 built = self._resolve_and_build(snd, indexed_entities, level_id, realized_name)
                 if built is not None:
@@ -198,12 +197,12 @@ class Mod_Sounds(TM_Module):
         attached: set[str] = set()
         episode_sounds = list(scenario.sounds) if scenario is not None else []
         for snd in [*episode_sounds, *self._configured_sounds()]:
-            realized_name = self.node._realizer.realize(snd).name
+            realized_name = self._ctx.realizer.realize(snd).name
             self._warn_if_inert(snd, realized_name)
             built = self._resolve_and_build(snd, indexed_entities, "", realized_name)
             if built is not None:
                 resolved[realized_name] = built
-            self.node._simulator.attach_semantics("sound", realized_name, snd.semantics)
+            self._ctx.simulator.attach_semantics("sound", realized_name, snd.semantics)
             attached.add(realized_name)
 
         self._sounds = resolved
@@ -231,10 +230,10 @@ class Mod_Sounds(TM_Module):
             self._logger.error(f"sound {snd.name!r} stays silent: {exc}")
             return None
         if snd.frame:
-            frame_id = _realize_frame(self.node._realizer.realize(), snd.frame)
+            frame_id = _realize_frame(self._ctx.realizer.realize(), snd.frame)
             return self._build_resolved(snd, asset, realized_name, snd.offset.to_msg(), 0.0, frame_id)
-        position, yaw, level_id = _resolve_sound_placement(snd, self.node._realizer, indexed_entities, listing_level_id)
-        map_position = self.node._realizer.realize(position, level_id)
+        position, yaw, level_id = _resolve_sound_placement(snd, self._ctx.realizer, indexed_entities, listing_level_id)
+        map_position = self._ctx.realizer.realize(position, level_id)
         return self._build_resolved(snd, asset, realized_name, map_position.to_msg(), yaw, "map")
 
     def _build_resolved(self, snd: Sound, asset: SoundAsset, realized_name: str, position: Point, yaw: float, frame_id: str) -> _ResolvedSound:
@@ -281,7 +280,7 @@ class Mod_Sounds(TM_Module):
         response: SpawnSound.Response,
     ) -> SpawnSound.Response:
         try:
-            async with self.node._reset_lock:
+            async with self._ctx.reset_lock:
                 return await self._spawn_sound_impl(request, response)
         except ValueError as exc:
             self._logger.error(f"spawning runtime sound failed:\n{traceback.format_exc()}")
@@ -399,11 +398,11 @@ class Mod_Sounds(TM_Module):
         async def _spawn() -> str | None:
             index = 1
             entity_name = f"runtime_{kind}_{index}"
-            realized_name = self.node._realizer.prefix(entity_name)
+            realized_name = self._ctx.realizer.prefix(entity_name)
             while realized_name in self._attached:
                 index += 1
                 entity_name = f"runtime_{kind}_{index}"
-                realized_name = self.node._realizer.prefix(entity_name)
+                realized_name = self._ctx.realizer.prefix(entity_name)
             local = Position(float(map_position.x), float(map_position.y), float(map_position.z))
             sound = Sound(
                 name=entity_name,
@@ -417,13 +416,13 @@ class Mod_Sounds(TM_Module):
                     SemanticCfg(role="state", name="volume_db", value=source_volume_db),
                 ],
             )
-            if not self.node._simulator.attach_semantics("sound", realized_name, sound.semantics):
+            if not self._ctx.simulator.attach_semantics("sound", realized_name, sound.semantics):
                 return None
             if initially_active:
-                self.node._simulator.set_semantic_value(realized_name, "sounding", "true")
+                self._ctx.simulator.set_semantic_value(realized_name, "sounding", "true")
             self._attached.add(realized_name)
             self._runtime.add(realized_name)
-            wire_frame = _realize_frame(self.node._realizer.realize(), frame_id) if attach_to_frame else "map"
+            wire_frame = _realize_frame(self._ctx.realizer.realize(), frame_id) if attach_to_frame else "map"
             self._sounds[realized_name] = self._build_resolved(sound, asset, realized_name, map_position, float(yaw), wire_frame)
             if not attach_to_frame:
                 self._put_handle(realized_name, map_position, float(yaw))
@@ -467,7 +466,7 @@ class Mod_Sounds(TM_Module):
         self._attached.discard(entity)
         self._runtime.discard(entity)
         self.node.markers.erase(entity)
-        self.node._simulator.detach_semantics(entity)
+        self._ctx.simulator.detach_semantics(entity)
         return True
 
     async def _remove_sound(
@@ -476,7 +475,7 @@ class Mod_Sounds(TM_Module):
         response: RemoveSound.Response,
     ) -> RemoveSound.Response:
         entity_name = str(request.entity).strip()
-        async with self.node._reset_lock:
+        async with self._ctx.reset_lock:
             removed = self._remove_runtime(entity_name)
         if not removed:
             response.error_msg = f"unknown or non-removable sound {entity_name!r}"
@@ -528,13 +527,13 @@ class Mod_Sounds(TM_Module):
 
     async def _publish_sources(self) -> None:
         try:
-            self.node._acoustics_simulator.emit_sounds(await self._emissions())
+            self._ctx.acoustics_simulator.emit_sounds(await self._emissions())
         except (TypeError, ValueError):
             self._logger.error(f"publishing static audio state failed:\n{traceback.format_exc()}")
 
     async def _emissions(self) -> list[SoundEmission]:
         emissions: list[SoundEmission] = []
-        for snap in self.node._simulator.semantics_snapshot():
+        for snap in self._ctx.simulator.semantics_snapshot():
             if snap.kind != "sound":
                 continue
             resolved = self._sounds.get(snap.entity)

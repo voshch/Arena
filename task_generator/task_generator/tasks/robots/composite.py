@@ -6,11 +6,9 @@ import asyncio
 import typing
 
 import attrs
-from arena_rclpy_mixins.shared import Namespace
+from arena_runtime.env.task_layer import TaskContext
+from arena_runtime.shared import Pose
 
-from task_generator.constants import Constants
-from task_generator.shared import Pose
-from task_generator.tasks.context import TaskContext
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
@@ -35,12 +33,7 @@ def _scoped_ctx(parent: TaskContext, robot_names: typing.Iterable[str]) -> TaskC
     """Build a TaskContext whose robots expose only the named subset."""
     names = frozenset(robot_names)
     scoped_mgr = _ScopedRobotsView(parent.robots_manager, names)
-    return TaskContext(
-        environment_manager=parent.environment_manager,
-        robots_manager=scoped_mgr,  # type: ignore[arg-type]
-        world_manager=parent.world_manager,
-        abort_episode=parent.abort_episode,
-    )
+    return attrs.evolve(parent, robots_manager=scoped_mgr)  # type: ignore[arg-type]
 
 
 class TM_Composite(TM_Robots):
@@ -109,7 +102,7 @@ class TM_Null(TM_Robots):
 
 
 # TM_Null is registered here via a sentinel string because the
-# standard registry is keyed by the Constants.TaskMode.TM_Robots enum.
+# standard registry is keyed by the Modes.TM_Robots enum.
 _COMPOSITE_EXTRA: dict[str, typing.Any] = {}
 
 
@@ -137,5 +130,3 @@ __all__ = [
     "extra_tm_kinds",
     "get_extra_tm_loader",
 ]
-
-_ = (Namespace, Constants)

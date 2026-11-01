@@ -24,8 +24,8 @@ and a small styling dataclass. No ROS deps, no renderers.
 
 | Producer | What it does |
 |---|---|
-| [`task_generator/tasks/robots/adapters`](../../task_generator/task_generator/tasks/robots/adapters) | Declares `AdapterDisplayHint(kind=DisplayKind.X, style_json=StyleSpec(...).to_json())` on each adapter. |
-| [`task_generator.node._publish_viz_manifest`](../../task_generator/task_generator/node.py) | Emits env-level + per-robot displays as `task_generator_msgs/AdapterVizManifest`. |
+| [`arena_runtime/env/adapters`](../../arena_runtime/arena_runtime/arena_runtime/env/adapters) | Declares `AdapterDisplayHint(kind=DisplayKind.X, style_json=StyleSpec(...).to_json())` on each adapter. |
+| [`EnvNode._publish_viz_manifest`](../../arena_runtime/arena_runtime/arena_runtime/env/node.py) | Emits env-level + per-robot displays as `task_generator_msgs/AdapterVizManifest`. |
 
 | Consumer | Renderer registry |
 |---|---|

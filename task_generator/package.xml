@@ -6,34 +6,26 @@
   <maintainer email="dev@voshch.dev">voshch</maintainer>
   <license>TODO</license>
 
-  <depend>ros_gz_sim</depend>
-  <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>rclcpp</depend>
-  <depend>rcl_interfaces</depend>
   <depend>rclpy</depend>
-  <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>visualization_msgs</depend>
 
   <exec_depend>arena_rclpy_mixins</exec_depend>
-  <exec_depend>arena_assets</exec_depend>
-  <exec_depend>arena_bringup</exec_depend>
-  <exec_depend>controller_manager_msgs</exec_depend>
-  <exec_depend>arena_planners</exec_depend>
   <exec_depend>arena_runtime</exec_depend>
-  <exec_depend>arena_runtime_msgs</exec_depend>
-  <exec_depend>arena_cam_msgs</exec_depend>
   <exec_depend>arena_robots</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>task_generator_msgs</exec_depend>
-  <exec_depend>arena_viz</exec_depend>
-  <exec_depend>interactive_markers</exec_depend>
-  <exec_depend>arena_mcp</exec_depend>
+  <exec_depend>arena_humansim</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
-  <test_depend>python3-hypothesis</test_depend>
+  <test_depend>arena_mcp</test_depend>
+  <test_depend>arena_people_msgs</test_depend>
+  <test_depend>arena_robots_msgs</test_depend>
+  <test_depend>nav2_msgs</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

@@ -5,7 +5,7 @@ from arena_cli.complete import Context, _expand
 
 MANIFEST = {
     "launch": {
-        "task_generator/task_generator.launch.py": {"acoustics": {"desc": "acoustic simulator", "default": "none"}},
+        "arena_runtime/env.launch.py": {"acoustics": {"desc": "acoustic simulator", "default": "none"}},
         "arena_auditory/arena_auditory.launch.py": {
             "namespace": {"desc": "", "default": ""},
             "env.ns": {"desc": "", "default": ""},

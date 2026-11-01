@@ -4,12 +4,12 @@ import typing
 import numpy as np
 import shapely
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from arena_simulation_setup.tree.configs.parametrized import (
     ParametrizedConfig,
     ParametrizedIdentifier,
 )
 
-from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import TM_Obstacles
 

@@ -12,7 +12,7 @@ tiles into a world's free rooms/zones. Each file is a `dict` resolved by
 
 `EnvironmentIdentifier` is backed by `EnvironmentResolver`, which looks under
 `ASS_DIR / 'configs' / 'environment'`
-([tree/configs/environment.py:15](../../src/arena_simulation_setup/tree/configs/environment.py#L15)).
+([tree/configs/environment.py](../../src/arena_simulation_setup/tree/configs/environment.py)).
 
 `ASS_DIR` is the installed share path of `arena_simulation_setup` (or the
 `ASS_DIR` env var when `ament_index_python` is absent).
@@ -56,7 +56,7 @@ default to `[]` when omitted.
 
 `EnvironmentDescription` is an untyped `dict` subclass. No validation beyond
 top-level `dict` is performed at load time
-([tree/configs/environment.py:32](../../src/arena_simulation_setup/tree/configs/environment.py#L32)).
+([tree/configs/environment.py](../../src/arena_simulation_setup/tree/configs/environment.py)).
 Malformed groups/entities surface as `KeyError`/`TypeError` from the task
 mode at reset time, not as a load-time error.
 

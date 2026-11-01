@@ -1,6 +1,6 @@
 string model
 geometry_msgs/PoseStamped pose
-# False = task mode picks placement.
+# False = the env picks a free placement.
 bool use_pose
 ---
 string id

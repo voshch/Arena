@@ -2,8 +2,8 @@ import math
 import typing
 
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.shared import Orientation, Pose, Position
 
-from task_generator.shared import Orientation, Pose, Position
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 

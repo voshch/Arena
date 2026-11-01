@@ -24,15 +24,15 @@ if TYPE_CHECKING:
     import rclpy.node
     from arena_people_msgs.msg import Pedestrian, Pedestrians
     from arena_people_msgs.srv import MovePedestrians
+    from arena_runtime.humans.gait import LIMITS, GaitGenerator
     from geometry_msgs.msg import Twist
     from rclpy.qos import QoSProfile
     from rclpy.subscription import Subscription
     from rclpy.task import Future
-    from task_generator.simulators.human.gait import LIMITS, GaitGenerator
     from task_generator_msgs.msg import EpisodeRecord
 else:
     try:
-        from task_generator.simulators.human.gait import LIMITS, GaitGenerator
+        from arena_runtime.humans.gait import LIMITS, GaitGenerator
     except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
         GaitGenerator = None
         LIMITS = ()

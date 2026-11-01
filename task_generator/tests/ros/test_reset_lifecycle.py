@@ -1,4 +1,4 @@
-"""Task._reset_episode on the dummy simulator: the order of a reset, all of it inside the paused window."""
+"""EpisodeNode._reset_episode driving the real Task on the dummy simulator: the order of a reset, all of it inside the paused window."""
 
 from __future__ import annotations
 
@@ -27,9 +27,6 @@ class _Robots:
 
     def __init__(self, log: list[str]) -> None:
         self.log = log
-
-    def bind_abort(self, abort: Callable[[str], None]) -> None:
-        del abort
 
     async def set_up(self) -> None:
         self.log.append("set_up")
@@ -77,26 +74,27 @@ class _Module:
 def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> list[str]:
     import rclpy
     import rclpy.executors
+    from std_msgs.msg import Empty
     from arena_rclpy_mixins.Async import AsyncNode
     from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
     from arena_rclpy_mixins.shared import Namespace
     from arena_runtime.sim.dummy_simulator import DummySimulator
 
-    from task_generator.constants import Constants
-    from task_generator.constants.rng import EpisodeRng
-    from task_generator.manager.environment_manager import EnvironmentManager
-    from task_generator.manager.realizer import Realizer
-    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
-    from task_generator.simulators.human import HumanSimulatorRegistry
+    from arena_runtime.env.constants import Constants
+    from arena_runtime.env.constants.rng import EpisodeRng
+    from arena_runtime.env.environment_manager import EnvironmentManager
+    from arena_runtime.env.realizer import Realizer
+    from arena_runtime.acoustics import AcousticsSimulatorRegistry
+    from arena_runtime.humans import HumanSimulatorRegistry
+    from arena_runtime.env.episode_node import EpisodeNode
     from task_generator.tasks.task import Task
 
     log: list[str] = []
 
     class _Node(ServiceNamespace, AsyncNode):
-        conf = SimpleNamespace(
-            General=SimpleNamespace(RNG=EpisodeRng()),
-            TaskMode=SimpleNamespace(TM_CONFIG=SimpleNamespace(value=""), TM_ROBOTS=SimpleNamespace(value=ROBOTS), TM_OBSTACLES=SimpleNamespace(value=OBSTACLES)),
-        )
+        conf = SimpleNamespace(General=SimpleNamespace(RNG=EpisodeRng()))
+        episode_id = 0
+        _reset_episode = EpisodeNode._reset_episode
 
         def _apply_staged_params(self) -> None:
             log.append("staged_params")
@@ -143,13 +141,18 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> l
             acoustics = await AcousticsSimulatorRegistry.get(Constants.AcousticsSimulator.NONE, node=node, namespace=ns)
             human = await HumanSimulatorRegistry.get(Constants.HumanSimulator.DUMMY, node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
             environment = _Environment(node=node, simulator=simulator, human_simulator=human, realizer=realizer)
-            task = Task(node=node, environment_manager=environment, robots_manager=_Robots(log), world_manager=SimpleNamespace())
+            node._environment_manager = environment
+            node._robots_manager = _Robots(log)
+            task = Task(node=node, ctx=SimpleNamespace(robots={}), params=SimpleNamespace(TM_CONFIG=SimpleNamespace(value=""), TM_ROBOTS=SimpleNamespace(value=ROBOTS), TM_OBSTACLES=SimpleNamespace(value=OBSTACLES)))
             task._Task__param_tm_robots = ROBOTS
             task._Task__param_tm_obstacles = OBSTACLES
             task._Task__tm_robots = _TmRobots(log)
             task._Task__tm_obstacles = _TmObstacles(log, error)
             task._Task__modules = [_Module(log)]
-            await body(task)
+            node._task = task
+            node._pub_reset_start = node.create_publisher(Empty, "reset_start", 1)
+            node._pub_reset_end = node.create_publisher(Empty, "reset_end", 1)
+            await body(node)
         finally:
             if human is not None:
                 human._keepalive_task.cancel()
@@ -163,15 +166,15 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> l
 
 
 def test_a_reset_runs_every_step_in_order_inside_the_paused_window(rclpy_context) -> None:
-    async def body(task) -> None:
-        await task.reset(seed=3)
+    async def body(node) -> None:
+        await node._reset_episode(3)
 
     assert _on_task(None, body) == WINDOW
 
 
 def test_a_failing_mode_still_closes_the_paused_window(rclpy_context) -> None:
-    async def body(task) -> None:
+    async def body(node) -> None:
         with pytest.raises(RuntimeError, match="no obstacles today"):
-            await task.reset(seed=3)
+            await node._reset_episode(3)
 
     assert _on_task(RuntimeError("no obstacles today"), body) == [*WINDOW[: WINDOW.index("tm_obstacles") + 1], "after_reset"]

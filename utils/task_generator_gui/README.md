@@ -62,7 +62,7 @@ A single Pause/Unpause button backed by the runtime's ref-counted holds. Pause a
 
 The panel maintains a local `history_buffer_` (`std::deque<EpisodeRecord>`, max 50) deduped by `episode_id`. On every `state/episode` arrival the record is upserted into the buffer and the table is rebuilt:
 
-- Each finalized record is shown oldest-first: `episode_id`, `world`, `seed`, `outcome_state` (QUEUED/RUNNING/SUCCESS/FAILED/SKIPPED/FATAL), `outcome_info`. The `outcome_info` cell is live: tasks may republish it mid-episode (e.g. `"timeout after 120s"`, `"50% complete"`) via `Task.set_info(text)` and the panel will refresh on the next latched message.
+- Each finalized record is shown oldest-first: `episode_id`, `world`, `seed`, `outcome_state` (QUEUED/RUNNING/SUCCESS/FAILED/SKIPPED/FATAL), `outcome_info`. The `outcome_info` cell is live: tasks may republish it mid-episode (e.g. `"timeout after 120s"`, `"50% complete"`) via `EpisodeNode.set_episode_info(text)` and the panel will refresh on the next latched message.
 - The current episode (`last_current_episode_`) appears as the last (bottom) row in bold.
 - A "Next:" preview row is appended (italic) when `last_queued_episode_` differs meaningfully from current (world, modes, robots, or any param).
 

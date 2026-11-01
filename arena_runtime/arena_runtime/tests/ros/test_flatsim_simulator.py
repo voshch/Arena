@@ -31,8 +31,8 @@ async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[No
     from arena_rclpy_mixins import ArenaMixinNode
     from arena_rclpy_mixins.shared import Namespace
     from arena_rclpy_mixins.spin import create_executor
-    from task_generator.manager.realizer import Realizer
-    from task_generator.shared import Pose, Robot
+    from arena_runtime.env.realizer import Realizer
+    from arena_runtime.shared import Pose, Robot
 
     from arena_runtime.sim.flatsim_simulator.flatsim_simulator import FlatsimHost, FlatsimSimulator
     from flatsim.server import FlatsimServer
@@ -130,7 +130,7 @@ def _mobile() -> typing.Any:
 async def _drives_and_scans(bench: typing.Any, sim: typing.Any, robot: typing.Any, cmd_vel: typing.Any) -> None:
     import geometry_msgs.msg
     from arena_people_msgs.msg import Pedestrian, Pedestrians
-    from task_generator.simulators.human import PED_RADIUS
+    from arena_runtime.humans import PED_RADIUS
 
     params = _mobile()
     mobile = params.caps.mobile
@@ -183,7 +183,7 @@ async def _drives_and_scans(bench: typing.Any, sim: typing.Any, robot: typing.An
 
 
 async def _reset_publishes_the_new_pose(bench: typing.Any, sim: typing.Any, robot: typing.Any, cmd_vel: typing.Any) -> None:
-    from task_generator.shared import Pose
+    from arena_runtime.shared import Pose
 
     await asyncio.sleep(0.3)
     gap = _ahead(bench.scans[-1])
@@ -221,8 +221,8 @@ async def _host_removes_the_entities_of_an_env(bench: typing.Any, sim: typing.An
 
 async def _two_envs_share_the_world(bench: typing.Any, sim: typing.Any, robot: typing.Any, cmd_vel: typing.Any) -> None:
     from arena_rclpy_mixins.shared import Namespace
-    from task_generator.manager.realizer import Realizer
-    from task_generator.shared import Pose
+    from arena_runtime.env.realizer import Realizer
+    from arena_runtime.shared import Pose
 
     from arena_runtime.sim.flatsim_simulator import FlatsimSimulator
 

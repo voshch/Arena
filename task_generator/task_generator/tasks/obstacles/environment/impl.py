@@ -7,10 +7,10 @@ import numpy as np
 import shapely
 import shapely.ops
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.world_manager.utils import GridFrame, WorldOccupancy
+from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from shapely.geometry import LineString, Point
 
-from task_generator.manager.world_manager.utils import GridFrame, WorldOccupancy
-from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 

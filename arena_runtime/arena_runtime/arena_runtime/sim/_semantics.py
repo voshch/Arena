@@ -15,7 +15,8 @@ from ._mechanism_shim import _DoorState, _near_door_segment, _reset_door, _reset
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.semantics import SemanticCfg
-    from task_generator.shared import Door
+
+    from arena_runtime.shared import Door
 
     from ._articulation import ArticulatedObject
     from ._interface import MechanismITF

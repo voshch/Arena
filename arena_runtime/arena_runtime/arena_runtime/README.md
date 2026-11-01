@@ -59,7 +59,7 @@ Namespace prefix for all names below: `/arena/`.
 | Service | Type | Purpose |
 | --- | --- | --- |
 | `register_env` | [`RegisterEnv.srv`](../../arena_runtime_msgs/srv/RegisterEnv.srv) | Reserve an ID+namespace; env calls this when it launches without managed mode |
-| `spawn_env` | [`SpawnEnv.srv`](../../arena_runtime_msgs/srv/SpawnEnv.srv) | Reserve + launch `task_generator.launch.py` as a child process; waits for ACTIVE |
+| `spawn_env` | [`SpawnEnv.srv`](../../arena_runtime_msgs/srv/SpawnEnv.srv) | Reserve + launch the env launch file as a child process; waits for ACTIVE. The file is [`env.launch.py`](../launch/env.launch.py) of arena_runtime, started after the `arena_runtime.task_layer` entry point resolves ([task_layer.py](env/task_layer.py)) |
 | `despawn_env` | [`DespawnEnv.srv`](../../arena_runtime_msgs/srv/DespawnEnv.srv) | Publish a `ShutdownRequest` asking an env to self-shutdown via lifecycle |
 | `confirm_world` | [`ConfirmWorld.srv`](../../arena_runtime_msgs/srv/ConfirmWorld.srv) | Run the shelf packer for an env's extent; returns reference/slot/prespawn |
 | `sim_lifecycle/hold` | [`LifecycleHold.srv`](../../arena_runtime_msgs/srv/LifecycleHold.srv) | Acquire or release a pause hold |
@@ -132,8 +132,31 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
 - `runtime_spawn_env` waits for the env to reach ACTIVE, or with `wait_ready: false` returns a job (see the `jobs` domain) that finishes once it does. The env's output lands in the returned `log_path`.
 - Lockstep follows `arena lockstep`: `runtime_lockstep_start` with `seconds` is `run for:=` (a job that pauses the run when it ends or is cancelled), without it is `on`. `runtime_lockstep_gate` runs `arena lockstep gate` with the given presets or raw `name|topic|type|period_s|role` specs, an empty list clears the `cli` registration.
 
+## MCP domain `entities`
+
+[env/entities_mcp.py](env/entities_mcp.py) contributes the `entities` domain, a client of the node of one env: spawn
+static and dynamic obstacles and robots, despawn robots, move entities,
+semantics, runtime sounds (the `sounds` module serves them), the map server,
+pedestrians (`arena_peds`, `human/move`, `human/stream`) and, when the env
+runs `human:=arena`, the humansim behavior services (waypoints, flow,
+sources and sinks, stimuli, agents, profile). `python3 -m arena_mcp ls entities` lists its tools.
+
+## `static_tf.py`
+
+[`static_tf.py`](static_tf.py)
+
+`StaticTransformBroadcaster`: the node's latched `/tf_static` publisher. It
+keeps one transform per child frame and a resend replaces it, so the
+`map -> env_<n>/map` anchor follows a world swap (the tf2_ros broadcaster
+keeps the first transform it sent for a child frame).
+
 ## See also
 
-- [task_generator](../../../task_generator/README.md): episode loop, task-mode registry, manager overview.
-- [Managers](../../../task_generator/task_generator/manager/README.md): `RobotsManager`, `WorldManager`, `EnvironmentManager`, `Realizer`.
+- [Simulator interface](sim/README.md): `BaseSim` and its adapters.
+- [Human simulators](humans/README.md): pedestrian backends and their task-mode prompts.
+- [Human launch axis](../launch/human/README.md), [acoustics launch axis](../launch/acoustics/README.md) and [hearing launch axis](../launch/hearing/README.md): the launch trees per axis.
+- [Constants and parameters](env/constants/README.md): `Constants` and `Configuration`.
+- [Robot adapters](env/adapters/README.md): per-cap adapters.
+- [task_generator](../../../task_generator/README.md): task-mode registry.
+- [Env layer](env/README.md): `EnvNode`, `EpisodeNode`, episode loop, `episode` MCP domain, `RobotsManager`, `WorldManager`, `EnvironmentManager`, `Realizer`.
 - [arena_runtime_msgs](../../arena_runtime_msgs): all message and service definitions.

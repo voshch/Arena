@@ -111,7 +111,7 @@ only the preview call fails.
 
 `driver.py` is Qt-free and importable on its own. Every ROS message type it
 touches is guarded the same way
-[`gait.py`](../../task_generator/task_generator/simulators/human/gait.py)
+[`gait.py`](../../arena_runtime/arena_runtime/arena_runtime/humans/gait.py)
 guards `sensor_msgs`. Only constructing a `Driver` against a real node
 needs a sourced install.
 
@@ -151,7 +151,7 @@ while rclpy.ok():
 | `human/<token>/cmd_vel` | topic (driver subscribes) | env (`<env_ns>/human/<token>/cmd_vel`) | `geometry_msgs/Twist` | depth 10 | per-ped teleop input, `token` = ped name with runs of non-alphanumerics collapsed to `_` (see `clips.slug`). Same input path and 0.5 s deadman as the panel's own Teleop tool, and the first command claims the ped until `Driver.release` |
 | `arena_peds` | topic (driver subscribes) | env (`<env_ns>/arena_peds`) | `arena_people_msgs/Pedestrians` | depth 10 | roster mirror: names, ids, poses, `model_uri`, `twist`/`animation_state` (roster-row speed and state pill) |
 | `state/episode` | topic (driver subscribes) | node (`<node_ns>/state/episode`) | `task_generator_msgs/EpisodeRecord` | depth 20, transient-local | `episode_id` changes clear every per-ped intent |
-| `runtime/require_map` | service (canvas calls) | node (`<node_ns>/runtime/require_map`) | `std_srvs/Trigger` | default | retried every ~3 s until it returns success (the task generator's initialized flag can lag viz_manifest), gates the occupancy underlay, static markers render regardless |
+| `runtime/require_map` | service (canvas calls) | node (`<node_ns>/runtime/require_map`) | `std_srvs/Trigger` | default | retried every ~3 s until it returns success (the env node's initialized flag can lag viz_manifest), gates the occupancy underlay, static markers render regardless |
 | `pedestrian_markers/static*` | topic (canvas subscribes) | env (`<env_ns>/pedestrian_markers/static*`) | `visualization_msgs/MarkerArray` | depth 1, transient-local | wall/object baseline, always rendered |
 | `map` | topic (canvas subscribes, after the Trigger) | node (`<node_ns>/map`) | `nav_msgs/OccupancyGrid` | depth 1, transient-local | occupancy underlay |
 | `state/viz_manifest` | topic (discovery) | node (`<node_ns>/state/viz_manifest`) | any | n/a | manifest-suffix convention: one discovery pass finds `<node_ns>`, `env_ns = dirname(node_ns)`, `map topic = <node_ns>/map` (see `_meta/tools/viz`) |

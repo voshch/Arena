@@ -110,6 +110,7 @@ class Ros:
         self._publishers: dict[tuple[str, type, str], Publisher] = {}
         self._shutdown_hooks: list[Callable[[], Awaitable[None]]] = []
         self._closing = False
+        self._owns_context = False
         self._crash: Exception | None = None
 
     async def node(self) -> AsyncNode:
@@ -126,6 +127,7 @@ class Ros:
                     raise ToolError(f"ROS is not available in this environment ({exc})", hint="serve from a sourced Arena container") from exc
                 if not rclpy.ok():
                     rclpy.init(args=None, signal_handler_options=SignalHandlerOptions.NO)
+                    self._owns_context = True
                 self._closing = False
                 self._node = AsyncNode(f"arena_mcp_{os.getpid()}")
                 self._executor = create_executor()
@@ -170,8 +172,9 @@ class Ros:
         with contextlib.suppress(Exception):
             self._node.destroy_node()
         with contextlib.suppress(Exception):
-            if rclpy.ok():
+            if self._owns_context and rclpy.ok():
                 rclpy.shutdown()
+        self._owns_context = False
         self._node = None
         self._crash = None
         self._actions.clear()

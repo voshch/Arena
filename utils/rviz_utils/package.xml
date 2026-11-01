@@ -77,7 +77,7 @@
   <exec_depend>urdfdom_py</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>hri_rviz</exec_depend>
-  <exec_depend>task_generator</exec_depend>
+  <exec_depend>arena_runtime</exec_depend>
   <exec_depend>rviz_display_control_msgs</exec_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
