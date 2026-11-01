@@ -10,10 +10,11 @@ import typing
 
 if typing.TYPE_CHECKING:
     from .camera import Camera
+    from .mounts import Mount
     from .shot import load_shot
     from .surfaces import TargetSelection
 
-__all__ = ["Camera", "TargetSelection", "load_shot"]
+__all__ = ["Camera", "Mount", "TargetSelection", "load_shot"]
 
 
 def __getattr__(name: str) -> object:
@@ -21,6 +22,10 @@ def __getattr__(name: str) -> object:
         from .surfaces import TargetSelection
 
         return TargetSelection
+    if name == "Mount":
+        from .mounts import Mount
+
+        return Mount
     if name in ("Camera", "load_shot"):
         from .shots import discover
 

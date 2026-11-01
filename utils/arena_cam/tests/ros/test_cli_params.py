@@ -23,3 +23,18 @@ def test_shot_files_are_told_apart_from_names() -> None:
     assert is_path("tour.yaml")
     assert is_path("shots/tour")
     assert not is_path("orbit")
+
+
+def test_a_mount_without_lockstep_is_refused() -> None:
+    with pytest.raises(SystemExit):
+        main(["hold", "--record", "take", "--mount", "env_0/jackal/base_link"])
+
+
+def test_a_mount_without_the_sim_camera_is_refused() -> None:
+    with pytest.raises(SystemExit):
+        main(["hold", "--viz", "0", "--record", "take", "--lockstep", "--mount", "env_0/jackal/base_link"])
+
+
+def test_a_malformed_mount_is_refused() -> None:
+    with pytest.raises(SystemExit):
+        main(["hold", "--record", "take", "--lockstep", "--mount", "env_0/jackal/base_link@0,0"])

@@ -20,6 +20,7 @@ from arena_rclpy_mixins.spin import run_main
 from . import curves
 from .client import FOV_DEFAULT, CamNode, FaceWatch, Steered, TargetSelection
 from .curves import Quat, Vec3
+from .mounts import Mount
 from .record import default_name, record_path
 from .registry import primitive
 from .shots import resolve
@@ -476,16 +477,17 @@ class _Zoom(_Segment):
 class _Pov(_Action):
     """Look through a pedestrian's face frame for `duration` s, then latch where the face last was."""
 
-    def __init__(self, face: str | float, duration: float = 10.0, fov: float | None = None) -> None:
+    def __init__(self, face: str | float, duration: float = 10.0, fov: float | None = None, clip_near: float | None = None) -> None:
         self.face = str(int(face)) if isinstance(face, float) and face.is_integer() else str(face)
         self.duration = max(0.0, float(duration))
         self.fov = fov
+        self.clip_near = clip_near
         self._prepared = False
         self._watch: FaceWatch | None = None
 
     @classmethod
     def from_params(cls, params: _ParamSource) -> _Pov:
-        return cls(face=_typed(params, "face", (str, int, float)), **_pick(params, ("duration", "fov")))
+        return cls(face=_typed(params, "face", (str, int, float)), **_pick(params, ("duration", "fov", "clip_near")))
 
     async def prepare(self, node: CamNode) -> None:
         self._watch = await node.watch_face(self.face)
@@ -500,7 +502,7 @@ class _Pov(_Action):
             fov = self.fov if self.fov is not None else watch.fov
             node.get_logger().info(f"cam: pov {watch.frame}, fov {math.degrees(fov):.0f} deg")
             pose = ((0.0, 0.0, 0.0), curves.look_at_quat((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)), fov)
-            node.clip_near = watch.clip_near
+            node.clip_near = self.clip_near if self.clip_near is not None else watch.clip_near
             await node.set_reference(watch.frame, None, "full")
             await node.drive(self.duration, False, lambda _t: pose)
             node.clip_near = -1.0
@@ -545,11 +547,11 @@ class Camera:
         self._actions.append(_Steer(next_frame))
         return self
 
-    def _run(self, record: tuple[str, float] | None = None, *, force: bool = False, lockstep: bool = False) -> bool:
+    def _run(self, record: tuple[str, float] | None = None, *, force: bool = False, lockstep: bool = False, mounts: Sequence[Mount] = ()) -> bool:
         nodes: list[CamNode] = []
 
         def make() -> CamNode:
-            nodes.append(CamNode(timeline=self, targets=self._targets, record=record, force=force, lockstep=lockstep))
+            nodes.append(CamNode(timeline=self, targets=self._targets, record=record, force=force, lockstep=lockstep, mounts=mounts))
             return nodes[-1]
 
         run_main(make)
@@ -559,7 +561,7 @@ class Camera:
         """Connect to the live sim, run the shot, disconnect. Blocks until done, False when no viewport ran it."""
         return self._run()
 
-    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> bool:
+    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False, mounts: Sequence[Mount] = ()) -> bool:
         """Render the shot to a video, one capture per frame, encoded by ffmpeg.
 
         A bare `out` name lands under `$ARENA_DATA_DIR/recordings/`, an absolute
@@ -574,9 +576,13 @@ class Camera:
         own hold and steps the sim by 1/fps between frames. False when no viewport ran the shot
         or a recording failed: a hold, step, capture (after its retries) or encode that failed
         stops the take there.
+
+        Each of `mounts` films from its TF frame through the sim camera at every recorded
+        frame's sim time, into its own file tagged by the frame. Mounts need `lockstep`
+        and the sim camera.
         """
         path = record_path(out or default_name("take"))
-        return self._run((str(path), float(fps)), force=bool(force), lockstep=bool(lockstep))
+        return self._run((str(path), float(fps)), force=bool(force), lockstep=bool(lockstep), mounts=mounts)
 
     async def prepare(self, node: CamNode) -> None:
         """Let each queued action set up against a connected node before the timeline runs."""

@@ -4,6 +4,7 @@ One command shape for everything:
 
     arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]]   # name is verb, shot, or .yaml
     arena cam <name> ... --record [FILE] [--fps 30] [--lockstep] [-f]   # render to a video (ffmpeg) instead
+    arena cam <name> ... --record [FILE] --lockstep --mount FRAME[@X,Y,Z[,PITCH]]   # plus a camera fixed on FRAME
     arena cam drive [--sim] [--viz [ENV_ID]] [--record [FILE] ...]   # fly the camera from the keyboard, R records
     arena cam list                               # catalog of verbs and shots
     arena cam show <name>                        # parameters of a verb or shot
@@ -21,6 +22,8 @@ Targets select which viewport cameras the shot drives. With no flag it drives
 everything: the sim GUI camera plus every env's rviz camera. `--sim` is sim only,
 `--viz` is all rviz cameras, `--viz <env_id>` is one env's, and the flags compose.
 Record writes one file per selected camera, tagged `-sim` / `-viz<env>` when there are several.
+`--mount` adds a camera fixed on a TF frame, filmed through the sim camera at each
+frame's sim time into a file tagged by the frame, and needs `--lockstep` and the sim camera.
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ import sys
 import yaml
 
 from arena_cam import Camera, TargetSelection, load_shot
+from arena_cam.client import FOV_DEFAULT
+from arena_cam.mounts import SPEC_FORM, parse_mount
 from arena_cam.record import default_name
 from arena_cam.registry import PRIMITIVES
 from arena_cam.shots import SHOTS
@@ -159,11 +164,27 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--fps", type=float, default=30.0, help="record frame rate (default 30)")
     parser.add_argument("--lockstep", action="store_true", help="record in physics lockstep, one 1/fps step per frame")
     parser.add_argument("-f", "--force", action="store_true", help="overwrite an existing record file")
+    parser.add_argument(
+        "--mount",
+        action="append",
+        default=[],
+        metavar=SPEC_FORM,
+        help="also film from a camera fixed on TF frame FRAME at X,Y,Z m (x forward, z up), tilted down by PITCH rad, repeatable, needs --record --lockstep and the sim camera",
+    )
+    parser.add_argument("--mount-fov", type=float, default=FOV_DEFAULT, help=f"horizontal fov of every mount in rad (default {FOV_DEFAULT})")
     args = parser.parse_intermixed_args(argv if argv is not None else sys.argv[1:])
     if args.record is None and args.name != "drive" and (args.fps != 30.0 or args.lockstep or args.force):
         parser.error("--fps, --lockstep and -f only apply with --record")
     if args.record and "=" in args.record:
         parser.error(f"--record took {args.record!r} as the file name, use --record=FILE or put it after the key=value params")
+    if args.mount and (args.record is None or not args.lockstep):
+        parser.error("--mount films in lockstep, add --record and --lockstep")
+    if args.mount and args.viz is not None and not args.sim:
+        parser.error("--mount films through the sim camera, add --sim")
+    try:
+        mounts = [parse_mount(spec, args.mount_fov) for spec in args.mount]
+    except ValueError as e:
+        parser.error(str(e))
 
     if args.name is None:
         parser.print_usage()
@@ -196,7 +217,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     out = args.record or default_name(os.path.splitext(os.path.basename(args.name))[0] if shot_file else args.name)
     try:
-        ran = cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep)
+        ran = cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep, mounts=mounts)
     except FileNotFoundError as e:
         raise SystemExit(str(e)) from e
     if not ran:

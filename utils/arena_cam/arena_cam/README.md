@@ -167,12 +167,12 @@ Change fov only, eye and aim fixed. fov cannot be read back from the sim, so
 `from_fov=None` takes the current fov if a verb set one, else `FOV_DEFAULT`
 (1.047).
 
-**`pov`** -- `face`, `duration=10.0`, `fov=None`
+**`pov`** -- `face`, `duration=10.0`, `fov=None`, `clip_near=None`
 Look through a pedestrian's eyes: track its `face_<id>` frame in `full` mode and
 hold the camera at the face origin (the sellion) looking along the face's x axis.
 `face` is a face id (`env_0_agent_1`), its frame name (`face_env_0_agent_1`) or a
 bare agent number when exactly one env has it. `fov=None` takes the central-vision
-fov from the face's `view`, and the view's `clip_near` hides the pedestrian's own
+fov from the face's `view`, and the view's `clip_near` (or `clip_near` in m when given) hides the pedestrian's own
 head for the segment, restored to each camera's default afterwards. When the segment
 ends the reference is latched where the face last was, since the face frame stops being published once
 nobody watches it (see [Pedestrian faces](#pedestrian-faces)).
@@ -376,7 +376,7 @@ timeline:
 The interface is fully generic: one positional name dispatches verbs, shots,
 and files uniformly.
 
-### `arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]] [--record [FILE] [--fps N] [--lockstep] [-f]]`
+### `arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]] [--record [FILE] [--fps N] [--lockstep] [-f] [--mount SPEC ...]]`
 
 Run a verb, a shot, or a YAML file against the live sim. Params are bare
 `key=value` tokens, everything the launcher itself needs is a `--flag`, and flags
@@ -404,6 +404,8 @@ may sit anywhere on the line.
 - `--record [FILE]` renders the take to a video instead of playing it live, see
   [Recording](#recording). `--fps`, `--lockstep` and `-f` qualify it and are
   rejected without it. Every selected camera is recorded, one file each.
+- `--mount FRAME[@X,Y,Z[,PITCH]]` (repeatable) and `--mount-fov RAD` add cameras fixed
+  on TF frames to a lockstep recording, see [Mounted cameras](#mounted-cameras).
 
 ```
 arena cam look eye=8,8,6 target=0,0,0.5
@@ -581,6 +583,32 @@ camera or from an rviz camera. rviz has no scene time of its own, so it gates on
 `/clock` and draws one more update before the grab. Under PhysX, Isaac renders a
 due capture at once, expect about a second per frame. Under Newton it waits out
 an idle grace after each step, expect several seconds per frame.
+
+### Mounted cameras
+
+A mount is a camera fixed on a TF frame, such as a robot's base link, filmed next to
+the take's own cameras at the same instants. Each one writes its own file, tagged by
+its frame with `/` turned into `_`, and the take's cameras then carry their `-sim` /
+`-viz<env>` tags.
+
+```
+arena cam pov face=1 duration=30 --sim --record pass --lockstep --mount env_0/jackal/base_link@0.2,0,0.6
+# recordings/pass-sim.mp4 + pass-env_0_jackal_base_link.mp4
+```
+
+`FRAME@X,Y,Z,PITCH` places the camera at `X,Y,Z` m in the frame (x forward, z up),
+looking along the frame's x axis tilted down by `PITCH` rad. Position and pitch
+default to 0, `--mount-fov` (rad, default 1.047) sets the fov of every mount. In
+Python, `Camera.record(..., mounts=[Mount(frame, fov, at, pitch)])`.
+
+Mounts film through the sim camera, so they need it selected and `--lockstep`. On
+every recorded frame the sim camera is captured as usual, then for each mount it is
+referenced to the mount's frame, captured at the mount pose with its default near
+clip and at the sim camera's frame time, and handed back the reference the timeline
+last set. A mount's frames therefore show the scene at the same sim time as the
+take's. The take's last log line counts mount frames whose stamp differs from the
+sim camera's, which is 0 when they are aligned. Each mount adds a capture per frame,
+so a take with one mount runs about twice as long.
 
 ---
 

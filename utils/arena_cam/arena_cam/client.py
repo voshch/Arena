@@ -53,13 +53,14 @@ from .record import Recorder, claim, take_paths
 from .surfaces import TargetSelection
 
 if typing.TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     import rclpy.node
     import rclpy.subscription
     from arena_rclpy_mixins.Async import ClientWrapper
 
     from .camera import Camera
+    from .mounts import Mount
 
     # A frame sampler: eased progress in [0, 1] -> (position, quat, fov).
     Frame = Callable[[float], tuple[Vec3, Quat, float]]
@@ -109,6 +110,7 @@ class _Endpoint:
         self.cmd_view = node.create_publisher(ViewportView, f"{ns}/viewport/cmd_view", surfaces.STREAM_QOS)
         self._pose: tuple[Vec3, Quat] | None = None
         self.recorder: Recorder | None = None
+        self.reference: ViewportSetReferenceFrame.Request | None = None
         node.create_subscription(PoseStamped, f"{ns}/viewport/camera_pose", self._on_pose, 10)
 
     def _on_pose(self, msg: PoseStamped) -> None:
@@ -161,6 +163,7 @@ class CamNode(ArenaMixinNode):
         force: bool = False,
         lead: float = LEAD,
         lockstep: bool = False,
+        mounts: Sequence[Mount] = (),
     ) -> None:
         super().__init__(node_name)
         self._timeline = timeline
@@ -170,6 +173,9 @@ class CamNode(ArenaMixinNode):
         self._fps = record[1] if record is not None else 0.0
         self._force = force
         self._lockstep = lockstep and record is not None
+        self._mounts = list(mounts)
+        self._mount_recorders: list[Recorder] = []
+        self._mount_off_stamp = 0
         self._env_refs: dict[int, tuple[float, float]] = {}
         self._endpoints: list[_Endpoint] = []
         # 0 keeps each camera's near clip, < 0 restores its default
@@ -215,6 +221,9 @@ class CamNode(ArenaMixinNode):
         if not self._endpoints:
             self.get_logger().error("no reachable viewport targets")
             return False
+        if self._mounts and (not self._lockstep or self._mount_endpoint() is None):
+            self.get_logger().error("mounts record in lockstep from the sim camera, select it and pass lockstep")
+            return False
         if self._record is None or await self._open_recorders():
             names = ", ".join(endpoint.ns for endpoint in self._endpoints)
             self.get_logger().info(f"viewport connected ({names}), {'recording' if self._record else 'playing'} shot")
@@ -230,15 +239,17 @@ class CamNode(ArenaMixinNode):
             finally:
                 for endpoint in self._endpoints:
                     self._close_recorder(endpoint)
+                self._close_mounts()
             if rclpy.ok() and self._record is None:
                 self.get_logger().info("shot complete")
             return self._record_error is None
         return False
 
     async def _open_recorders(self) -> bool:
-        """One ffmpeg per camera. A lone camera keeps the file name, several get `-sim` / `-viz<env>` tags."""
+        """One ffmpeg per camera and mount. A lone camera keeps the file name, several get `-sim` / `-viz<env>` / mount-frame tags."""
         assert self._record is not None
-        paths = take_paths(self._record, [surfaces.tag(endpoint.ns) for endpoint in self._endpoints])
+        tags = [surfaces.tag(endpoint.ns) for endpoint in self._endpoints] + [mount.tag for mount in self._mounts]
+        paths = take_paths(self._record, tags)
         try:
             claim(paths, self._force)
         except FileExistsError as e:
@@ -248,9 +259,12 @@ class CamNode(ArenaMixinNode):
             if not await endpoint.capture.ensure(timeout_sec=10.0):
                 self.get_logger().error(f"no {endpoint.ns}/viewport/capture service, rebuild the plugin for record mode")
                 return False
-        for endpoint, path in zip(self._endpoints, paths, strict=True):
+        for endpoint, path in zip(self._endpoints, paths[: len(self._endpoints)], strict=True):
             endpoint.recorder = Recorder(str(path), self._fps)
             self.get_logger().info(f"recording {surfaces.tag(endpoint.ns)} to {path}")
+        for mount, path in zip(self._mounts, paths[len(self._endpoints) :], strict=True):
+            self._mount_recorders.append(Recorder(str(path), self._fps))
+            self.get_logger().info(f"recording mount {mount.frame} to {path}")
         return True
 
     def _close_recorder(self, endpoint: _Endpoint) -> None:
@@ -268,6 +282,18 @@ class CamNode(ArenaMixinNode):
         self.get_logger().error(message)
         if self._record_error is None:
             self._record_error = message
+
+    def _close_mounts(self) -> None:
+        for mount, recorder in zip(self._mounts, self._mount_recorders, strict=False):
+            if recorder.close() and self._record_error is None:
+                self.get_logger().info(f"saved mount {mount.frame} recording to {recorder.path} ({recorder.n} frames)")
+            else:
+                self._fail_record(f"mount {mount.frame} recording failed after {recorder.n} frames, {recorder.path} is not usable")
+        if self._mount_recorders:
+            self.get_logger().info(f"mount frames off the sim camera's sim time: {self._mount_off_stamp}")
+
+    def _mount_endpoint(self) -> _Endpoint | None:
+        return next((endpoint for endpoint in self._endpoints if surfaces.tag(endpoint.ns) == "sim"), None)
 
     def _on_lockstep_status(self, msg: LockstepStatus) -> None:
         if self._follower and self._scheduler_active and not msg.active:
@@ -441,6 +467,7 @@ class CamNode(ArenaMixinNode):
                 # The reference pose is authored in world coords, so it localizes once here.
                 req.pose = surfaces.ros_pose(endpoint.localize(pose[0]), pose[1])
             req.mode = surfaces.REFERENCE_MODES[mode]
+            endpoint.reference = req
             ok = await self._call(endpoint.set_reference, req) and ok
         self._referenced = True
         return ok
@@ -509,12 +536,22 @@ class CamNode(ArenaMixinNode):
             if not await self._record_frame(frame.position, frame.quat, False, frame.fov):
                 return
 
-    async def capture(self, endpoint: _Endpoint, position: Vec3, quat: Quat, world_orientation: bool, fov: float, min_sim_time: RosTime | None = None) -> ViewportCapture.Response | None:
+    async def capture(
+        self,
+        endpoint: _Endpoint,
+        position: Vec3,
+        quat: Quat,
+        world_orientation: bool,
+        fov: float,
+        min_sim_time: RosTime | None = None,
+        clip_near: float | None = None,
+        local: bool = False,
+    ) -> ViewportCapture.Response | None:
         req = ViewportCapture.Request()
-        req.pose = surfaces.ros_pose(self._local(endpoint, position), quat)
+        req.pose = surfaces.ros_pose(position if local else self._local(endpoint, position), quat)
         req.world_orientation = bool(world_orientation)
         req.fov = float(fov)
-        req.clip_near = float(self.clip_near)
+        req.clip_near = float(self.clip_near if clip_near is None else clip_near)
         if min_sim_time is not None:
             req.min_sim_time = min_sim_time
         try:
@@ -548,6 +585,14 @@ class CamNode(ArenaMixinNode):
         stamps = await asyncio.gather(*(self._grab(endpoint, position, quat, world_orientation, fov, min_sim_time) for endpoint in self._endpoints))
         if any(stamp is None for stamp in stamps):
             return False
+        mount_endpoint = self._mount_endpoint()
+        if self._mounts and mount_endpoint is not None:
+            sim_stamp = stamps[self._endpoints.index(mount_endpoint)]
+            assert sim_stamp is not None
+            mount_stamps = await self._grab_mounts(mount_endpoint, sim_stamp)
+            if mount_stamps is None:
+                return False
+            stamps += mount_stamps
         if self._follower:
             assert self._beat_pub is not None
             self._lockstep_time = max(Time.from_msg(stamp) for stamp in stamps if stamp is not None)
@@ -556,10 +601,47 @@ class CamNode(ArenaMixinNode):
             self._beat_pub.publish(beat)
         return True
 
-    async def _grab(self, endpoint: _Endpoint, position: Vec3, quat: Quat, world_orientation: bool, fov: float, min_sim_time: RosTime | None) -> RosTime | None:
+    async def _grab_mounts(self, endpoint: _Endpoint, sim_stamp: RosTime) -> list[RosTime] | None:
+        """Capture every mount from the sim camera at the sim camera's frame time, then hand it back the timeline's reference."""
+        stamps: list[RosTime] = []
+        for mount, recorder in zip(self._mounts, self._mount_recorders, strict=True):
+            req = ViewportSetReferenceFrame.Request()
+            req.entity = mount.frame
+            req.mode = surfaces.REFERENCE_MODES["full"]
+            if not await self._call(endpoint.set_reference, req):
+                self._fail_record(f"mount {mount.frame} not referenced, stopping record")
+                return None
+            position, quat = mount.local_pose()
+            stamp = await self._grab(endpoint, position, quat, False, mount.fov, sim_stamp, recorder=recorder, clip_near=-1.0, local=True)
+            if stamp is None:
+                return None
+            if Time.from_msg(stamp) != Time.from_msg(sim_stamp):
+                self._mount_off_stamp += 1
+            stamps.append(stamp)
+        restore = endpoint.reference
+        if restore is None:
+            restore = ViewportSetReferenceFrame.Request()
+            restore.mode = surfaces.REFERENCE_MODES["full"]
+        if not await self._call(endpoint.set_reference, restore):
+            self._fail_record("timeline reference not restored after the mounts, stopping record")
+            return None
+        return stamps
+
+    async def _grab(
+        self,
+        endpoint: _Endpoint,
+        position: Vec3,
+        quat: Quat,
+        world_orientation: bool,
+        fov: float,
+        min_sim_time: RosTime | None,
+        recorder: Recorder | None = None,
+        clip_near: float | None = None,
+        local: bool = False,
+    ) -> RosTime | None:
         attempt = 0
         while True:
-            res = await self.capture(endpoint, position, quat, world_orientation, fov, min_sim_time)
+            res = await self.capture(endpoint, position, quat, world_orientation, fov, min_sim_time, clip_near, local)
             if res is not None and res.success:
                 break
             if self._follower and self._run_paused:
@@ -574,9 +656,10 @@ class CamNode(ArenaMixinNode):
                 continue
             self._fail_record(f"{endpoint.ns} capture failed {CAPTURE_ATTEMPTS} times ({detail}), stopping record")
             return None
-        assert endpoint.recorder is not None
+        recorder = recorder if recorder is not None else endpoint.recorder
+        assert recorder is not None
         try:
-            endpoint.recorder.write(res.image)
+            recorder.write(res.image)
         except (ValueError, OSError) as e:
             self._fail_record(f"{endpoint.ns} frame not encoded ({e}), stopping record")
             return None
