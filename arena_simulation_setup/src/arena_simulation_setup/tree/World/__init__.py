@@ -15,10 +15,11 @@ from .model import (
     entity_lights,
 )
 from .parse import WorldFormatError, parse_world
-from .view import WorldIdentifier, WorldView, save_snapshot, world_assets
+from .view import WorldIdentifier, WorldView, point_scenario_assets, save_snapshot, world_assets
 from .write import write_world
 
 __all__ = [
+    "point_scenario_assets",
     'DERIVE_MODES',
     'connections',
     'contents',

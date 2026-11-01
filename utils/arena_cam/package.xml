@@ -11,6 +11,10 @@
   <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_runtime</exec_depend>
   <exec_depend>arena_runtime_msgs</exec_depend>
+  <exec_depend>arena_cam_msgs</exec_depend>
+  <exec_depend>arena_simulation_setup</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
   <exec_depend>viewport_control_msgs</exec_depend>
   <exec_depend>task_generator_msgs</exec_depend>
   <exec_depend>arena_people_msgs</exec_depend>

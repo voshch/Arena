@@ -317,17 +317,19 @@ _register(_robot_mod.VERB)
 
 
 CAM_SPEC = Union(
-    Static({"list": "catalog of verbs and shots", "show": "parameters of a verb or shot", "drive": "fly the camera from the keyboard"}),
+    Static({"list": "catalog of verbs and global camera assets", "show": "parameters of a verb or camera asset", "drive": "fly the camera from the keyboard", "serve": "one env's camera server"}),
     Flags(
         {
             "--sim": "the sim GUI camera only",
             "--viz": "rviz cameras, bare for all or an env id for one",
             "--record": "render to a video instead of playing live",
-            "--fps": "record frame rate (default 30)",
-            "--lockstep": "record in physics lockstep, one 1/fps step per frame",
+            "--fps": "frame rate of a recording, a --lockstep take or serve (default 30)",
+            "--lockstep": "gate the take in physics lockstep, one 1/fps step per frame, recording or live",
             "--force": "overwrite an existing record file",
+            "--env": "the sim camera's env, what its context tokens read and what serve drives",
+            "--setup": "serve: camera asset the env's task generator plays at every episode start",
         },
-        valued=("--fps",),
+        valued=("--fps", "--env", "--setup"),
     ),
 )
 
@@ -338,21 +340,27 @@ def cam(args: list[str]) -> None:
 
     \b
     Usage:
-      cam <name> [key=value ...]   play a verb, a shot or a shot .yaml live
-      cam list                     catalog of verbs and shots
-      cam show <name>              parameters of a verb or shot
+      cam <name> [key=value ...]   play a verb, a camera asset or a camera .yaml live
+      cam list                     catalog of verbs and global camera assets
+      cam show <name>              parameters of a verb or camera asset
       cam drive                    fly the camera from the keyboard, R starts and stops a take
+      cam serve [--env N] [--sim] [--fps N] [--setup REQUEST]
+                                   one env's camera server, plays what its task generator sends
 
     \b
     Targets (default: every camera, the flags compose):
       --sim                        the sim GUI camera only
       --viz [ENV_ID]               rviz cameras, bare for all or an env id for one
+      --env N                      the sim camera's env, what its context tokens read (default 0)
+
+    \b
+    Timing, live and recording (without --lockstep a live take has no sync to the sim):
+      --lockstep                   step physics by 1/fps per frame, frame-exact at any render speed
+      --fps N                      frame rate (default 30)
 
     \b
     Recording (needs ffmpeg):
       --record [FILE]              render to a video instead of playing live
-      --fps N                      frame rate (default 30)
-      --lockstep                   step physics by 1/fps per frame, frame-exact at any render speed
       -f, --force                  overwrite an existing file
 
     \b

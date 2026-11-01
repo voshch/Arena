@@ -27,9 +27,6 @@ def __getattr__(name: str) -> object:
 
         return Mount
     if name in ("Camera", "load_shot"):
-        from .shots import discover
-
-        discover()
         if name == "Camera":
             from .camera import Camera
 

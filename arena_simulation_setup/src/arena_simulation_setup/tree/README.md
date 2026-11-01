@@ -69,6 +69,7 @@ walks it calling `destination()`.
 
 | Path | Default value |
 |---|---|
+| `DynamicPaths.SCENARIO` | `/dev/null` (set at runtime to the active scenario directory, read by the `Camera` kind only) |
 | `DynamicPaths.WORLD` | `/dev/null` (set at runtime to the active world directory) |
 | `DynamicPaths.LINKED` | empty (set at runtime to the directories of the worlds the active world links levels from) |
 | `DynamicPaths.ARENA` | `$ARENA_ASSETS_DIR_LOCAL` or `$ARENA_ASSETS_DIR/local`, looked up at every read until a path is assigned |
@@ -89,6 +90,10 @@ manager that points the paths at `view` and the worlds it links levels from
 an exception. Offline tools that resolve a world's assets (`nav_at_r`,
 `preload_world`, the scenario generator) use it.
 
+`point_scenario_assets(path)` ([World/view.py](World/view.py)) points `SCENARIO` at a
+scenario directory, None for no scenario. The task generator clears it at every
+reset and `TM_Scenario` sets it, so what resolves through it swaps with the scenario.
+
 ## Shipped Identifiers
 
 | Identifier | File | Base class | `_asset_type` | Resolvers (in order) |
@@ -98,6 +103,7 @@ an exception. Offline tools that resolve a world's assets (`nav_at_r`,
 | `AnimationIdentifier` | [tree/assets/Animation.py](assets/Animation.py) | `DomainAssetIdentifier[AnimationView]` | `Animation` | DynamicPaths (world/assets + local), then NetResolver (`formats=()`) |
 | `MaterialIdentifier` | [tree/assets/Material.py](assets/Material.py) | `ModifiersDomainAssetIdentifier[Material]` | `Material` | DynamicPaths (world/assets + local), then NetResolver |
 | `SoundIdentifier` | [tree/assets/Sound.py](assets/Sound.py) | `DomainAssetIdentifier[SoundView]` | `Sound` | DynamicPaths (world/assets + local), then NetResolver (`formats=()`, listed by `--children` under `Common/Sound`) |
+| `CameraIdentifier` | [tree/assets/Camera.py](assets/Camera.py) | `DomainAssetIdentifier[CameraView]` | `Camera` | `ScenarioCameraResolver` (`<scenario>/cameras/<name>.yaml`, plain files with no domain), DynamicPaths (world/assets + local), `ASS_DIR / 'assets'`, then NetResolver (`formats=()`, listed by `--children` under `Common/Camera`) |
 | `WallIdentifier` | [tree/Wall.py](Wall.py) | `DomainAssetIdentifier[WallDescription]` | `Wall` | DynamicPaths (world/assets + local), then NetResolver |
 | `WorldIdentifier` | [tree/World/view.py](World/view.py) | `Identifier[WorldView]` | - | `ComposedResolver`, `ARENA_WORLD_PATH` roots, `LocalResolver('worlds')` (also the write target), `ASS_DIR / 'worlds'` (existence-checked), then a `NetResolver` per `WORLD_BUCKETS` provider |
 | `EnvironmentIdentifier` | [tree/configs/environment.py](configs/environment.py) | `Identifier[EnvironmentDescription]` | - | `EnvironmentResolver` → `ASS_DIR / 'configs' / 'environment'` |
