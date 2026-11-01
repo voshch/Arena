@@ -33,7 +33,7 @@ from arena_simulation_setup.shared import (
 )
 from arena_simulation_setup.shared.entities import Waypoint
 from arena_simulation_setup.shared.semantics import parse_semantics
-from arena_simulation_setup.shared.world import STOREY
+from arena_simulation_setup.shared.world import STOREY, clear_door_pockets
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.utils.cattrs import ArenaConverter, converter
@@ -354,7 +354,7 @@ class Level:
     id: str = ''
     zones: list[Zone] = attrs.field(factory=list)
     walls: list[WallPath] = attrs.field(factory=list)
-    doors: list[Door] = attrs.field(factory=list)
+    doors: list[Door] = attrs.field(factory=list, converter=clear_door_pockets)
     elevators: list[Elevator] = attrs.field(factory=list)
     stairs: list[Stairs] = attrs.field(factory=list)
     elevation: float | None = None

@@ -86,7 +86,7 @@ the result from `Level.all_walls`.
 | key | default | meaning |
 | --- | --- | --- |
 | `name` | required | unique within the world |
-| `span` | required | opening endpoints `[[x, y], [x, y]]` |
+| `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken |
 | `kind` | `sliding` | `sliding`, `sliding_top`, `teleport` implemented. `hinged` is accepted but falls back to `teleport` at runtime with a warning |
 | `width` | `0.1` | metres |
 | `height` | `2.0` | metres |
