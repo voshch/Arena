@@ -1,10 +1,11 @@
 import asyncio
 import typing
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
+from arena_simulation_setup.tree.World.Scenario import RobotGoal
 
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Pose, Position, PositionRadius
@@ -41,6 +42,11 @@ def goto_poses(phase: TaskPhase) -> Iterator[Pose]:
         yield phase.pose
 
 
+def idle_robots(names: Sequence[str], entries: Sequence[RobotGoal]) -> set[str]:
+    """Robots with no task: past the scenario's entries or on an entry without phases."""
+    return {name for index, name in enumerate(names) if index >= len(entries) or not entries[index].phases}
+
+
 class TM_Scenario(TM_Robots):
     _config: ROSParamT[str]
     _linger_after_completion: ROSParamT[bool]
@@ -49,8 +55,6 @@ class TM_Scenario(TM_Robots):
 
     async def reset(self) -> None:
         await super().reset()
-
-        self._idle_robots = set()
 
         zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self.node.conf.General.RNG.stream("robots", "scenario"))
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(self._config.value).resolve_sync()
@@ -63,9 +67,12 @@ class TM_Scenario(TM_Robots):
         scenario_robots_length = len(SCENARIO_ROBOTS)
         setup_robot_length = len(managed_robots)
 
+        self._idle_robots = idle_robots([robot.name for robot in managed_robots], SCENARIO_ROBOTS)
+
         if setup_robot_length > scenario_robots_length:
             managed_robots = managed_robots[:scenario_robots_length]
-            self._logger.warn("Robot setup contains more robots than the scenario file.", once=True)
+            if SCENARIO_ROBOTS:
+                self._logger.warn("Robot setup contains more robots than the scenario file.", once=True)
 
         if scenario_robots_length > setup_robot_length:
             SCENARIO_ROBOTS = SCENARIO_ROBOTS[:setup_robot_length]
@@ -87,8 +94,6 @@ class TM_Scenario(TM_Robots):
             # recordings can capture pedestrians passing a parked robot.
             if phases:
                 await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)), start_pose, pedestrians=declared_pedestrians)
-            else:
-                self._idle_robots.add(robot.name)
             self._ctx.world_manager.forbid(forbidden)
 
         agents = [name for robot in managed_robots for name in (robot.name, robot.robot.sim_path) if name]

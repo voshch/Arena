@@ -69,11 +69,7 @@ def test_unchanged_polygons_leave_the_world_untouched(world_root: Path):
     assert sorted(path.name for path in world_root.iterdir()) == ["world.yaml"]
 
 
-def test_unknown_zone_is_rejected(world_root: Path):
-    with pytest.raises(ValueError, match="no zone"):
-        write_zone_polygons(world_root, {"nowhere": [(0.0, 0.0)]})
-
-
-def test_point_count_mismatch_is_rejected(world_root: Path):
-    with pytest.raises(ValueError, match="polygon points"):
-        write_zone_polygons(world_root, {"office": [(0.0, 0.0)]})
+@pytest.mark.parametrize(("zone", "match"), [("nowhere", "no zone"), ("office", "polygon points")])
+def test_bad_polygon_is_rejected(world_root: Path, zone: str, match: str):
+    with pytest.raises(ValueError, match=match):
+        write_zone_polygons(world_root, {zone: [(0.0, 0.0)]})

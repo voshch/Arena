@@ -60,6 +60,14 @@ def test_render_atom_text(atom, text):
         ({"loop": [{"goto": "kitchen"}]}, "Keep repeating these steps: Go to the kitchen."),
         ({"goto": "sofa", "until": "alice plays beckon for 1 or robot within 2.5 of alice"}, "Go to the sofa and wait until the visitor is making the beckon gesture for 1 seconds or you are within 2.5 m of the visitor."),
         ({"loop": [{"goto": "kitchen"}], "text": "Patrol the kitchen."}, "Patrol the kitchen."),
+        ({"gesture": "wave", "until": {"field": "wardrobe.openness.door_left", "ge": 0.8}}, "Perform the wave gesture and wait until wardrobe openness door left is at least 0.8."),
+        ({"gesture": "wave", "until": {"field": "drawer.pos.slide", "within": [0.2, 0.4], "for": 2}}, "Perform the wave gesture and wait until drawer pos slide is between 0.2 and 0.4 for 2 seconds."),
+        ({"gesture": "wave", "until": {"some": "wardrobe.openness", "gt": 0.5}}, "Perform the wave gesture and wait until the openness of some joint of wardrobe is above 0.5."),
+        ({"gesture": "wave", "until": {"each": "stove.setting", "eq": "off"}}, "Perform the wave gesture and wait until the setting of every joint of stove is off."),
+        ({"gesture": "wave", "until": {"all": [{"subject": "robot", "in": "kitchen"}, {"not": {"subject": "alice", "plays": "beckon"}}]}}, "Perform the wave gesture and wait until you are in the kitchen and the visitor is not making the beckon gesture."),
+        ({"gesture": "wave", "until": {"any": [{"field": "door.open", "ne": "true"}, {"field": "lift.eta", "lt": 3, "for": 1}]}}, "Perform the wave gesture and wait until door open is not true or lift eta is below 3 for 1 seconds."),
+        ({"gesture": "wave", "until": {"all": [{"any": ["robot in kitchen", "robot in hallway"]}, {"field": "lift.eta", "le": 3}]}}, "Perform the wave gesture and wait until (you are in the kitchen or you are in the hallway) and lift eta is at most 3."),
+        ({"gesture": "wave", "until": {"not": {"any": ["robot in kitchen", "robot in hallway"]}}}, "Perform the wave gesture and wait until it is not the case that (you are in the kitchen or you are in the hallway)."),
     ],
 )
 def test_render_phase(phase, text):
@@ -108,23 +116,6 @@ class _DockPhase(TaskPhase):
 def test_render_phase_of_unknown_kind_uses_the_generic_sentence():
     assert render_phase(_DockPhase(), NOUNS) == "Carry out the step."
     assert render_phase(_DockPhase(until="robot in kitchen"), NOUNS) == "Carry out the step and wait until you are in the kitchen."
-
-
-@pytest.mark.parametrize(
-    ("phase", "text"),
-    [
-        ({"gesture": "wave", "until": {"field": "wardrobe.openness.door_left", "ge": 0.8}}, "Perform the wave gesture and wait until wardrobe openness door left is at least 0.8."),
-        ({"gesture": "wave", "until": {"field": "drawer.pos.slide", "within": [0.2, 0.4], "for": 2}}, "Perform the wave gesture and wait until drawer pos slide is between 0.2 and 0.4 for 2 seconds."),
-        ({"gesture": "wave", "until": {"some": "wardrobe.openness", "gt": 0.5}}, "Perform the wave gesture and wait until the openness of some joint of wardrobe is above 0.5."),
-        ({"gesture": "wave", "until": {"each": "stove.setting", "eq": "off"}}, "Perform the wave gesture and wait until the setting of every joint of stove is off."),
-        ({"gesture": "wave", "until": {"all": [{"subject": "robot", "in": "kitchen"}, {"not": {"subject": "alice", "plays": "beckon"}}]}}, "Perform the wave gesture and wait until you are in the kitchen and the visitor is not making the beckon gesture."),
-        ({"gesture": "wave", "until": {"any": [{"field": "door.open", "ne": "true"}, {"field": "lift.eta", "lt": 3, "for": 1}]}}, "Perform the wave gesture and wait until door open is not true or lift eta is below 3 for 1 seconds."),
-        ({"gesture": "wave", "until": {"all": [{"any": ["robot in kitchen", "robot in hallway"]}, {"field": "lift.eta", "le": 3}]}}, "Perform the wave gesture and wait until (you are in the kitchen or you are in the hallway) and lift eta is at most 3."),
-        ({"gesture": "wave", "until": {"not": {"any": ["robot in kitchen", "robot in hallway"]}}}, "Perform the wave gesture and wait until it is not the case that (you are in the kitchen or you are in the hallway)."),
-    ],
-)
-def test_render_phase_with_a_structured_until(phase, text):
-    assert render_phase(TaskPhase.parse(phase), NOUNS) == text
 
 
 def test_render_condition_with_structured_p_and_q():

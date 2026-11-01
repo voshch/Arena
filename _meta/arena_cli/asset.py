@@ -344,31 +344,15 @@ def _drop_listing(kind: str, bucket: str) -> None:
             resolver._listing_path.unlink(missing_ok=True)
 
 
-def push(argv: list[str]) -> int:
-    """Publish an asset to its bucket.
-
-    `arena asset push KIND NAME [--bucket B] [--force] [--yes]`. Kinds carrying a closure
-    are checked first, and publishing is refused if any reference would not resolve for
-    someone else. A flat benchmark config is wrapped into the directory bundle the bucket
-    requires.
-    """
-    import shutil
-    import tempfile
-    from pathlib import Path
-
-    (kind, name), opts = _parse(argv, ("KIND", "NAME"), flags=("--force", "--yes"), valued=("--bucket",))
+def _publishable(kind: str, name: str, identifier: AssetIdentifier, force: bool) -> Path | None:
+    """The source of one asset, None when its preflight refuses it."""
     spec = _kind(kind)
-    force = "--force" in opts
-    bucket = _bucket_of(opts, kind)
-
-    identifier = _identifier(kind, name)
-
     if spec.repo_subdir is not None and not force:
         from arena_simulation_setup import ASS_DIR
 
         if (ASS_DIR / spec.repo_subdir / name).is_dir():
             print(f"{name} ships in the repo, so a published copy would never be read. Use --force to publish anyway.", file=sys.stderr)
-            return 1
+            return None
 
     source = _config_source(identifier) if spec.bundle else identifier.resolve_source_sync().path
     assert source is not None
@@ -385,37 +369,101 @@ def push(argv: list[str]) -> int:
             reason = str(exc).splitlines()[0] or type(exc).__name__
             print(f"{verdict}: references could not be enumerated ({reason})", file=sys.stderr)
             if not force:
-                return 1
+                return None
     if dangling:
         print(f"{verdict}: {len(dangling)} reference(s) would not resolve for anyone else", file=sys.stderr)
         for entry in dangling:
             print(f"  MISS  {entry}", file=sys.stderr)
         if not force:
             print("bundle them under the asset directory, or pass --force", file=sys.stderr)
-            return 1
+            return None
+    return source
 
-    target = f"{bucket}:{identifier.relpath()}"
-    if "--yes" not in opts:
-        if not sys.stdin.isatty():
-            raise CLIError(f"publishing {target} needs confirmation, pass --yes")
-        print(f"publish {kind} {name} to {target} ? [y/N] ", end="", flush=True)
-        if input().strip().lower() not in ("y", "yes"):
-            return 1
 
+def _stage(kind: str, source: Path, staged: Path, only: tuple[str, ...]) -> None:
+    """Copy one asset into staged, without cache bookkeeping and, given `only`, just the files matching a glob."""
+    import fnmatch
+    import shutil
+
+    def ignored(directory: str, names: list[str]) -> set[str]:
+        unmatched = {name for name in names if only and not os.path.isdir(os.path.join(directory, name)) and not any(fnmatch.fnmatch(name, glob) for glob in only)}
+        return unmatched | {".ttl"}
+
+    if source.is_dir():
+        # .ttl is cache bookkeeping; publishing it would ship a stale freshness stamp
+        shutil.copytree(source, staged, ignore=ignored)
+    else:
+        staged.mkdir(parents=True)
+        shutil.copy(source, staged / f"{kind}.yaml")
+
+
+def _local_identifiers(kind: str) -> list[AssetIdentifier]:
+    from arena_simulation_setup.tree import NetResolver
+
+    found = {identifier.shortname: identifier for resolver in _identifier_type(kind)._resolvers if not isinstance(resolver, NetResolver) for identifier in resolver.listall()}
+    return [found[name] for name in sorted(found)]
+
+
+def push(argv: list[str]) -> int:
+    """Publish assets to their bucket, adding and replacing files, never deleting any.
+
+    `arena asset push KIND NAME|--all [--only GLOB[,GLOB]] [--dry-run] [--bucket B] [--force] [--yes]`.
+    Kinds carrying a closure are checked first, and publishing is refused if any reference
+    would not resolve for someone else. A flat benchmark config is wrapped into the
+    directory bundle the bucket requires. --all publishes every local asset of the kind in
+    one upload. --only keeps the files matching a glob, so the bucket's other files stay as
+    they are. --dry-run lists the files and uploads nothing.
+    """
+    import tempfile
+    from pathlib import Path
+
+    pos, opts = _parse(argv, ("KIND", "NAME"), flags=("--all", "--dry-run", "--force", "--yes"), valued=("--bucket", "--only"), optional=1)
+    kind = pos[0]
+    spec = _kind(kind)
+    if ("--all" in opts) == (len(pos) == 2):
+        raise CLIError(f"pass one {kind} name or --all, run 'arena asset ls {kind}' to list them")
+    only = tuple(str(opts["--only"]).split(",")) if "--only" in opts else ()
+    if only and spec.bundle:
+        raise CLIError(f"--only filters directory assets, a {kind} publishes one file")
+    force = "--force" in opts
+    bucket = _bucket_of(opts, kind)
+
+    identifiers = _local_identifiers(kind) if "--all" in opts else [_identifier(kind, pos[1])]
+    if not identifiers:
+        raise CLIError(f"no local {kind} to publish, {kind} assets resolved from a bucket have nothing to send")
+    names = [identifier.shortname for identifier in identifiers] if "--all" in opts else [pos[1]]
+    sources = [_publishable(kind, name, identifier, force) for name, identifier in zip(names, identifiers, strict=True)]
+    if None in sources:
+        return 1
+
+    relpaths = [str(identifier.relpath()) for identifier in identifiers]
+    prefix = os.path.commonpath(relpaths)
+    target = f"{bucket}:{prefix}"
     with tempfile.TemporaryDirectory() as staging:
-        staged = Path(staging) / name
-        if source.is_dir():
-            # .ttl is cache bookkeeping; publishing it would ship a stale freshness stamp
-            shutil.copytree(source, staged, ignore=shutil.ignore_patterns(".ttl"))
-        else:
-            staged.mkdir(parents=True)
-            shutil.copy(source, staged / f"{kind}.yaml")
-        files = [f for f in staged.rglob("*") if f.is_file()]
+        root = Path(staging) / "publish"
+        for source, relpath in zip(sources, relpaths, strict=True):
+            assert source is not None
+            _stage(kind, source, root / os.path.relpath(relpath, prefix), only)
+        files = sorted(f for f in root.rglob("*") if f.is_file())
         size = sum(f.stat().st_size for f in files)
-        result = _net(bucket, "author", str(staged), "-d", str(identifier.relpath()))
+        if not files:
+            print(f"nothing to publish: no file of {' '.join(names)} matches {opts.get('--only')}", file=sys.stderr)
+            return 1
+        if "--dry-run" in opts:
+            for file in files:
+                print(f"{prefix}/{file.relative_to(root)}")
+            print(f"would publish {len(files)} file(s), {size / 1e6:.1f} MB to {bucket}")
+            return 0
+        if "--yes" not in opts:
+            if not sys.stdin.isatty():
+                raise CLIError(f"publishing {target} needs confirmation, pass --yes")
+            print(f"publish {len(files)} file(s) of {kind} {' '.join(names[:3])}{' ...' if len(names) > 3 else ''} to {target} ? [y/N] ", end="", flush=True)
+            if input().strip().lower() not in ("y", "yes"):
+                return 1
+        result = _net(bucket, "author", str(root), "-d", prefix)
     if result == 0:
         _drop_listing(kind, bucket)
-        print(f"published {kind} {name} to {target}: {len(files)} file(s), {size / 1e6:.1f} MB")
+        print(f"published {len(names)} {kind} to {target}: {len(files)} file(s), {size / 1e6:.1f} MB")
     return result
 
 
@@ -456,7 +504,7 @@ def import_(argv: list[str]) -> int:
     return _assets("import", *_import_args(pos, opts))
 
 
-IMPORT_KINDS = ("episode", "material", "object", "scenario", "sound", "suite", "world")
+IMPORT_KINDS = ("animation", "episode", "material", "object", "scenario", "sound", "suite", "world")
 
 _KIND = Sub({kind: Manifest(f"asset.{kind}") for kind in KINDS})
 _IMPORT_FLAGS = Flags({"--all": "import every item of the source", "--out": "target root instead of $ARENA_ASSETS_DIR_IMPORTED", "--json": "machine-readable source or item listing"}, valued=("--out",))
@@ -527,7 +575,7 @@ COMMANDS = {
         make_verb("ls", ls, complete=Union(_KINDS, Flags({"--network": "include bucket-only entries", "--json": "machine-readable"}))),
         make_verb("pull", pull, complete=_KIND),
         make_verb("expire", expire, complete=_KIND),
-        make_verb("push", push, complete=Sub(_KIND.subs, extra=Flags({"--force": "publish despite a failed preflight", "--yes": "skip the confirmation"}))),
+        make_verb("push", push, complete=Sub(_KIND.subs, extra=Flags({"--all": "every local asset of the kind, in one upload", "--only": "only files matching GLOB[,GLOB]", "--dry-run": "list the files, upload nothing", "--force": "publish despite a failed preflight", "--yes": "skip the confirmation"}))),
         make_verb("import", import_, complete=_IMPORT),
     )
 }

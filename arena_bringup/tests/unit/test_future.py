@@ -44,79 +44,38 @@ def test_python_expression_parse_two_args() -> None:
 
 
 @_skip
-def test_python_expression_parse_zero_args_raises() -> None:
+@pytest.mark.parametrize("args", [[], ["a", "b", "c"]])
+def test_python_expression_parse_wrong_arity_raises(args: list[str]) -> None:
     from arena_bringup.future import PythonExpression
 
     with pytest.raises(TypeError):
-        PythonExpression.parse([])
+        PythonExpression.parse(args)
 
 
 @_skip
-def test_python_expression_parse_three_args_raises() -> None:
+@pytest.mark.parametrize(
+    ("expression", "kwargs", "expected"),
+    [
+        ("2 + 2", {}, "4"),
+        ("math.sqrt(4)", {"python_modules": ["math"]}, "2.0"),
+        ("sqrt(4)", {}, "2.0"),
+        ("'hello'", {}, "hello"),
+    ],
+)
+def test_python_expression_perform(expression: str, kwargs: dict, expected: str) -> None:
     from arena_bringup.future import PythonExpression
 
-    with pytest.raises(TypeError):
-        PythonExpression.parse(["a", "b", "c"])
+    assert PythonExpression(expression, **kwargs).perform(_make_context()) == expected
 
 
 @_skip
-def test_python_expression_perform_simple_arithmetic() -> None:
-    from arena_bringup.future import PythonExpression
-
-    ctx = _make_context()
-    expr = PythonExpression("2 + 2")
-    result = expr.perform(ctx)
-    assert result == "4"
-
-
-@_skip
-def test_python_expression_perform_math_module() -> None:
-    from arena_bringup.future import PythonExpression
-
-    ctx = _make_context()
-    expr = PythonExpression("math.sqrt(4)", python_modules=["math"])
-    result = expr.perform(ctx)
-    assert result == "2.0"
-
-
-@_skip
-def test_python_expression_perform_math_implicit() -> None:
-    from arena_bringup.future import PythonExpression
-
-    ctx = _make_context()
-    expr = PythonExpression("sqrt(4)")
-    result = expr.perform(ctx)
-    assert result == "2.0"
-
-
-@_skip
-def test_python_expression_perform_string_result() -> None:
-    from arena_bringup.future import PythonExpression
-
-    ctx = _make_context()
-    expr = PythonExpression("'hello'")
-    result = expr.perform(ctx)
-    assert result == "hello"
-
-
-@_skip
-def test_python_expression_expression_property() -> None:
+def test_python_expression_normalizes_to_substitutions() -> None:
     from arena_bringup.future import PythonExpression
     import launch.substitutions
 
-    expr = PythonExpression("1 + 2")
-    assert isinstance(expr.expression, list)
-    assert all(isinstance(s, launch.substitutions.TextSubstitution) for s in expr.expression)
-
-
-@_skip
-def test_python_expression_python_modules_property() -> None:
-    from arena_bringup.future import PythonExpression
-    import launch.substitutions
-
-    expr = PythonExpression("1", python_modules=["math"])
-    assert isinstance(expr.python_modules, list)
-    assert all(isinstance(s, launch.substitutions.TextSubstitution) for s in expr.python_modules)
+    expr = PythonExpression("1 + 2", python_modules=["math"])
+    assert all(isinstance(s, launch.substitutions.TextSubstitution) for s in [*expr.expression, *expr.python_modules])
+    assert expr.expression and expr.python_modules
 
 
 @_skip
@@ -137,96 +96,32 @@ def test_if_else_substitution_both_empty_raises() -> None:
 
 
 @_skip
-def test_if_else_substitution_true_condition_returns_if_value() -> None:
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [("true", "yes"), ("True", "yes"), ("1", "yes"), ("false", "no"), ("False", "no"), ("0", "no")],
+)
+def test_if_else_substitution_picks_the_branch_of_the_condition(condition: str, expected: str) -> None:
     from arena_bringup.future import IfElseSubstitution
 
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="true", if_value="yes", else_value="no")
-    assert sub.perform(ctx) == "yes"
+    assert IfElseSubstitution(condition=condition, if_value="yes", else_value="no").perform(_make_context()) == expected
 
 
 @_skip
-def test_if_else_substitution_false_condition_returns_else_value() -> None:
+@pytest.mark.parametrize(
+    ("condition", "kwargs", "expected"),
+    [("true", {"if_value": "only_if"}, "only_if"), ("false", {"else_value": "only_else"}, "only_else")],
+)
+def test_if_else_substitution_with_one_value_specified(condition: str, kwargs: dict, expected: str) -> None:
     from arena_bringup.future import IfElseSubstitution
 
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="false", if_value="yes", else_value="no")
-    assert sub.perform(ctx) == "no"
+    assert IfElseSubstitution(condition=condition, **kwargs).perform(_make_context()) == expected
 
 
 @_skip
-def test_if_else_substitution_1_is_truthy() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="1", if_value="yes", else_value="no")
-    assert sub.perform(ctx) == "yes"
-
-
-@_skip
-def test_if_else_substitution_0_is_falsy() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="0", if_value="yes", else_value="no")
-    assert sub.perform(ctx) == "no"
-
-
-@_skip
-def test_if_else_substitution_true_uppercase() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="True", if_value="yes", else_value="no")
-    assert sub.perform(ctx) == "yes"
-
-
-@_skip
-def test_if_else_substitution_false_uppercase() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="False", if_value="yes", else_value="no")
-    assert sub.perform(ctx) == "no"
-
-
-@_skip
-def test_if_else_substitution_only_if_value_specified() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="true", if_value="only_if")
-    assert sub.perform(ctx) == "only_if"
-
-
-@_skip
-def test_if_else_substitution_only_else_value_specified() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    ctx = _make_context()
-    sub = IfElseSubstitution(condition="false", else_value="only_else")
-    assert sub.perform(ctx) == "only_else"
-
-
-@_skip
-def test_if_else_substitution_condition_property() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    sub = IfElseSubstitution(condition="true", if_value="a")
-    assert isinstance(sub.condition, list)
-
-
-@_skip
-def test_if_else_substitution_if_value_property() -> None:
-    from arena_bringup.future import IfElseSubstitution
-
-    sub = IfElseSubstitution(condition="true", if_value="a")
-    assert isinstance(sub.if_value, list)
-
-
-@_skip
-def test_if_else_substitution_else_value_property() -> None:
+def test_if_else_substitution_normalizes_to_lists() -> None:
     from arena_bringup.future import IfElseSubstitution
 
     sub = IfElseSubstitution(condition="true", if_value="a", else_value="b")
+    assert isinstance(sub.condition, list)
+    assert isinstance(sub.if_value, list)
     assert isinstance(sub.else_value, list)

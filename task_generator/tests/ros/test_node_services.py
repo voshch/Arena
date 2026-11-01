@@ -6,7 +6,6 @@ These tests are pure-Python and do not require a live ROS graph.
 
 from __future__ import annotations
 
-import hashlib
 import inspect
 
 import pytest
@@ -17,11 +16,9 @@ import pytest
 
 
 def _derive_seed(run_seed: str, world: str, episode_id: int) -> int:
-    digest = hashlib.blake2b(
-        f"{run_seed}|{world}|{episode_id}".encode(),
-        digest_size=8,
-    ).digest()
-    return int.from_bytes(digest, "big")
+    from task_generator.node import _derive_seed as derive
+
+    return derive(run_seed, world, episode_id)
 
 
 def test_seed_derivation_stable() -> None:
@@ -45,14 +42,6 @@ def test_seed_derivation_sensitive_to_episode_id() -> None:
 def test_seed_derivation_nonnegative() -> None:
     v = _derive_seed("x", "y", 3)
     assert v >= 0
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate() -> None:
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
 
 
 # ---------------------------------------------------------------------------

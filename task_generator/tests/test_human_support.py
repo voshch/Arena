@@ -18,6 +18,7 @@ from task_generator.simulators.human.support import (
     Legs,
     PelvisClearance,
     Support,
+    _contacts,
     _leg_fk,
     ankle_reach,
     blend_pose,
@@ -33,6 +34,7 @@ from task_generator.simulators.human.support import (
     seated_legs,
     squat_profile,
     supported_pose,
+    tilted_pose,
 )
 
 LEGS = Legs(hip=0.015, thigh=0.36, shin=0.375, ankle=0.08)
@@ -84,6 +86,15 @@ def test_body_is_read_from_the_annotation_beside_the_actor(tmp_path):
     (sdf.parent / "annotation.yaml").write_text(yaml.safe_dump({"pelvis_clearance": {"sit": 0.12, "lie": 0.11}, "legs": {"hip": 0.015, "thigh": 0.36, "shin": 0.375, "ankle": 0.08}}))
     assert load_body(str(sdf)) == BODY
     assert load_body("") is None
+
+
+@pytest.mark.parametrize("skin", ["not xml", "<COLLADA/>"])
+def test_annotated_body_outlives_an_unreadable_skin(tmp_path, skin):
+    sdf = tmp_path / "nurse" / "model.sdf"
+    (sdf.parent / "meshes").mkdir(parents=True)
+    (sdf.parent / "meshes" / "model.dae").write_text(skin)
+    (sdf.parent / "annotation.yaml").write_text(yaml.safe_dump({"pelvis_clearance": {"sit": 0.12, "lie": 0.11}, "legs": {"hip": 0.015, "thigh": 0.36, "shin": 0.375, "ankle": 0.08}}))
+    assert load_body(str(sdf)) == BODY
 
 
 SQUAT = [{"t": k / 20.0, "angles": {**dict.fromkeys(JOINT_NAMES, 0.0), "l_r_hip": h, "r_r_hip": h, "l_knee": -2.0 * h, "r_knee": -2.0 * h, "waist": 0.3 * h}} for k, h in enumerate(np.linspace(0.0, 1.5, 21))]
@@ -232,3 +243,37 @@ def test_body_is_measured_off_the_skin_when_the_annotation_has_none(tmp_path):
 def test_sitter_moves_its_pelvis_depth_ahead_along_its_facing():
     position, _ = supported_pose(Support("sit", 0.45), BODY, SEATED, 1.0, 2.0, math.pi / 2, depth=-0.1)
     assert position[:2] == pytest.approx([1.0, 1.9])
+
+
+def _yaw(yaw: float) -> np.ndarray:
+    return np.array([0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2)])
+
+
+@pytest.mark.parametrize("yaw", [0.0, 1.2])
+def test_an_untilted_clip_leaves_the_ped_standing_where_it_is(yaw: float) -> None:
+    position, orientation = tilted_pose(BODY, {}, 1.0, 2.0, 0.3, yaw, (0.0, 0.0, 0.0, 1.0))
+    assert position == pytest.approx([1.0, 2.0, 0.3])
+    assert orientation == pytest.approx(_yaw(yaw))
+
+
+@pytest.mark.parametrize("yaw", [0.0, -2.0])
+def test_a_body_tilted_onto_its_back_lies_with_its_pelvis_over_the_ped(yaw: float) -> None:
+    supine = (0.0, -math.sin(math.pi / 4), 0.0, math.cos(math.pi / 4))
+    position, orientation = tilted_pose(BODY, {}, 1.0, 2.0, 0.0, yaw, supine)
+    pelvis = position + rotate(orientation, (0.0, 0.0, planted_pelvis({}, LEGS)))
+    assert pelvis == pytest.approx([1.0, 2.0, BODY.clearance.lie])  # the pelvis rests on its back, as on a bed
+    head = rotate(orientation, (0.0, 0.0, 1.0))
+    assert head == pytest.approx([-math.cos(yaw), -math.sin(yaw), 0.0], abs=1e-9)  # the head behind the heading
+
+
+def test_a_tilted_body_rests_its_lowest_skin_on_the_floor_with_its_pelvis_over_the_ped() -> None:
+    kneel = {"l_r_hip": 1.4, "r_r_hip": 1.4, "l_knee": -2.2, "r_knee": -2.2, "l_ankle": 0.6, "r_ankle": 0.6, "waist": 0.5}
+    tilt = np.array([0.15, 0.35, 0.05, 0.92])
+    tilt /= np.linalg.norm(tilt)
+    position, orientation = tilted_pose(BODY, kneel, 1.0, 2.0, 0.2, 0.4, tilt)
+    points, flesh, soles, pelvis = _contacts(kneel, BODY)
+    lift = np.array([0.0, 0.0, pelvis[2] - soles[:, 2].min()])  # the renderer plants the lowest sole at body height 0
+    world = lambda p: position + rotate(orientation, tuple(p - pelvis + lift))  # noqa: E731
+    assert world(pelvis)[:2] == pytest.approx([1.0, 2.0])
+    skin = [world(p)[2] - f for p, f in zip(points, flesh, strict=True)] + [world(p)[2] for p in soles]
+    assert min(skin) == pytest.approx(0.2)

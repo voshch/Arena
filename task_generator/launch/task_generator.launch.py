@@ -170,6 +170,11 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value='false',
         description='Keep a completed scenario robot task alive until timeout/external cancellation.',
     )
+    view_fov = LaunchArgument(
+        name="view.fov_deg",
+        default_value="60.0",
+        description="Horizontal fov in degrees of the pedestrian views.",
+    )
     tm_obstacles = LaunchArgument(name="task.obstacles", default_value="random")
     tm_modules = LaunchArgument(name="task.modules", default_value="rviz_ui")
     LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""))
@@ -387,6 +392,7 @@ def generate_launch_description() -> launch.LaunchDescription:
             parameters=[
                 {"use_sim_time": True},
                 {"max_bodies": 32},
+                {"view.fov_deg": view_fov.param_value(float)},
             ],
             output="screen",
         )

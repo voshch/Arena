@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import math
 import os
 import subprocess
@@ -11,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from adapter_helpers import write_sequence
 
 NATIVE_WORLD = "sbend_corridor"
 NATIVE_SCENARIO = "default"
@@ -25,19 +25,6 @@ WALKERS = {
 def _gate():
     pytest.importorskip("arena_assets.importers")
     pytest.importorskip("arena_simulation_setup.shared.track")
-
-
-def write_sequence(path: Path, walkers: list[tuple[int, int, int, tuple[float, float], tuple[float, float]]]) -> None:
-    """A SocNavBench sequence file: rows frame, id, y, x, one column per sample, a walker per straight line."""
-    columns = []
-    for ident, first, last, (x0, y0), (x1, y1) in walkers:
-        for frame in range(first, last + 1):
-            u = (frame - first) / (last - first)
-            columns.append((frame, ident, round(y0 + u * (y1 - y0), 4), round(x0 + u * (x1 - x0), 4)))
-    columns.sort()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="") as f:
-        csv.writer(f).writerows(zip(*columns, strict=True))
 
 
 def seed(cache: Path) -> Path:
@@ -67,15 +54,6 @@ def _view(out: Path, world: str):
 
 def _level(view):
     return view.load().levels["0"]
-
-
-def test_registry_target_is_the_class() -> None:
-    from arena_assets.importers import IMPORTERS
-
-    from task_generator.adapters.eth_ucy import ETHUCY
-
-    assert IMPORTERS.load("scenario", "eth_ucy") is ETHUCY
-    assert ETHUCY.meta.kind == "scenario"
 
 
 def test_items_and_unknown_item(importer) -> None:

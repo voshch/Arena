@@ -21,6 +21,8 @@ class WorldGeneratorType(enum.Enum):
     SKETCH = "sketch"
     LETTER = "letter"
     BARN_CYLINDER = "barn_cylinder"
+    CORRIDOR = "corridor"
+    OPEN = "open"
 
 
 class BaseConfiguration(pydantic.BaseModel):
@@ -185,3 +187,17 @@ def lazy_BarnCylinder() -> type[WorldGeneratorImpl]:
     from .barn_cylinder import WorldGeneratorBarnCylinder
 
     return WorldGeneratorBarnCylinder
+
+
+@WorldGenerator.register(WorldGeneratorType.CORRIDOR)
+def lazy_Corridor() -> type[WorldGeneratorImpl]:
+    from .corridor import WorldGeneratorCorridor
+
+    return WorldGeneratorCorridor
+
+
+@WorldGenerator.register(WorldGeneratorType.OPEN)
+def lazy_Open() -> type[WorldGeneratorImpl]:
+    from .open import WorldGeneratorOpen
+
+    return WorldGeneratorOpen

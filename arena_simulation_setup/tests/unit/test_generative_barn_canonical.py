@@ -238,7 +238,7 @@ def test_index_dispatches_between_canonical_and_procedural():
         assert _segments(_raw(procedural.compute().levels["0"])) == _segments(_raw(WorldGenerator(WorldGeneratorType.BARN, {}, seed=0).compute().levels["0"]))
 
 
-def test_ros_node_declares_index_and_source_and_dispatches_on_them():
+def test_ros_node_declares_index_and_source_and_dispatches_on_them(rclpy_context):
     pytest.importorskip("world_generator_msgs")
     import json
 
@@ -276,7 +276,7 @@ def test_ros_node_declares_index_and_source_and_dispatches_on_them():
         node.destroy_node()
 
 
-def test_ros_node_gets_and_describes_every_generator_parameter():
+def test_ros_node_gets_and_describes_every_generator_parameter(rclpy_context):
     pytest.importorskip("world_generator_msgs")
     from arena_simulation_setup.generative.world.world_generator_ros import WorldGeneratorROS
 

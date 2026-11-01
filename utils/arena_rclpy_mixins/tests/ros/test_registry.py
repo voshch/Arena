@@ -5,14 +5,6 @@ import asyncio
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
-
 def _make_registry():
     from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 

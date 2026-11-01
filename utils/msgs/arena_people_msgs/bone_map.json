@@ -522,5 +522,25 @@
       "sign": 1.0,
       "scale": 1.0
     }
+  ],
+  "joystick_pitch": [
+    {
+      "bone": "Joystick",
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "sign": 1.0,
+      "scale": 1.0
+    }
+  ],
+  "joystick_roll": [
+    {
+      "bone": "Joystick",
+      "axis": [1.0, 0.0, 0.0],
+      "sign": 1.0,
+      "scale": 1.0
+    }
   ]
 }

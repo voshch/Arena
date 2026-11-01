@@ -15,7 +15,7 @@ pytest.importorskip("viewport_control_msgs.srv")
 pytest.importorskip("arena_runtime_msgs.srv")
 pytest.importorskip("task_generator_msgs.msg")
 
-from arena_mcp.core import JOBS, ROS, ToolError
+from arena_mcp.core import JOBS, ROS, ToolError, cli
 
 from arena_cam import mcp as view
 
@@ -234,7 +234,7 @@ def test_set_and_capture_place_env_poses_in_the_world_and_follow_robots(rig: Rig
     assert down[0]["camera"]["y"] == pytest.approx(3.0)
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None or not os.environ.get("ARENA_DIR"), reason="needs ffmpeg and a sourced Arena checkout")
+@pytest.mark.skipif(shutil.which("ffmpeg") is None or not cli.sourced(), reason="needs ffmpeg and a shell that sourced arena")
 def test_record_films_a_lockstep_take_through_the_cam_cli(rig: Rig, tmp_path):
     out = tmp_path / "take.mp4"
     out.write_bytes(b"")

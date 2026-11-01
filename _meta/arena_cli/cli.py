@@ -573,7 +573,12 @@ def rebuild(args: list[str]) -> None:
 TEST_DEFAULT_SELECT = ("--packages-select-regex", "^arena_", "^task_generator$")
 
 
-@verb("test", passthrough=True, complete=Packages(), help_text=f"Run colcon test and print a summary.\n\nDefaults to `{' '.join(TEST_DEFAULT_SELECT)}` unless a selection flag is given. Bare package names are shorthand for --packages-select.")
+@verb(
+    "test",
+    passthrough=True,
+    complete=Packages(),
+    help_text=f"Run colcon test and print a summary.\n\nDefaults to `{' '.join(TEST_DEFAULT_SELECT)}` unless a selection flag is given. Bare package names are shorthand for --packages-select. Asset bucket traffic goes to a dead loopback port unless ARENA_ASSETS_ENDPOINT is set.",
+)
 def test(args: list[str]) -> None:
     import re
 
@@ -587,6 +592,7 @@ def test(args: list[str]) -> None:
         pkgs = resolve_packages(argv)
     except CLIError:
         pkgs = []
+    os.environ.setdefault("ARENA_ASSETS_ENDPOINT", "http://127.0.0.1:9")
     test_rc = _run("colcon", "test", "--base-paths", *ws.base_paths, "--build-base", ws.build_base, "--install-base", ws.install_base, "--event-handlers", "console_direct+", *argv)
     from arena_cli.testsum import summarize
 

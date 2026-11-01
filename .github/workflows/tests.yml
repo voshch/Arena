@@ -10,6 +10,8 @@ on:
       pr:
         description: Pull request to test merged into jazzy
         required: true
+  schedule:
+    - cron: '0 3 * * 1'
 
 jobs:
   image:
@@ -34,6 +36,7 @@ jobs:
   suites:
     needs: image
     runs-on: ubuntu-latest
+    continue-on-error: ${{ github.event_name == 'schedule' }}
     container: ${{ needs.image.outputs.image }}
     defaults:
       run:
@@ -43,6 +46,8 @@ jobs:
       CCACHE_MAXSIZE: 500M
       UV_CACHE_DIR: /github/home/.cache/uv
       UV_LINK_MODE: copy
+      PYTEST_ADDOPTS: ${{ github.event_name == 'schedule' && '-m network' || '' }}
+      ARENA_ASSETS_ENDPOINT: ${{ github.event_name != 'schedule' && 'http://127.0.0.1:9' || '' }}
     steps:
       - run: type -P ccache curl git vcs zstd > /dev/null || { apt-get update && apt-get install -y --no-install-recommends ca-certificates ccache curl git python3-vcstool zstd; }
       - uses: voshch/ci/trial-merge@v1
@@ -53,7 +58,12 @@ jobs:
       - name: fetch the dependency repos
         run: .github/ci/fetch-deps.sh
       - name: list the packages with tests
-        run: .github/ci/tested-packages.sh | tee tested.txt
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            printf '%s\n' arena_assets arena_evaluation arena_simulation_setup task_generator | tee tested.txt
+          else
+            .github/ci/tested-packages.sh | tee tested.txt
+          fi
       - name: install the system dependencies
         run: .github/ci/system-deps.sh --purge-dropped $(cat tested.txt)
       - uses: actions/cache@v4

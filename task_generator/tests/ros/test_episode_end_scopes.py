@@ -5,16 +5,6 @@ import time
 import types
 from types import SimpleNamespace
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate() -> None:
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 class _Task:
     abort_reason: str | None = None

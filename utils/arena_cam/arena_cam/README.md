@@ -599,7 +599,7 @@ The frames go onto the global `/tf`, where every viewport backend resolves them,
 also onto `<env_ns>/humans/tf` when the env remaps its `/tf`. A face's frames and
 view are published only while its `view` has a subscriber, and the
 whole roster only while `faces/tracked` (or `humans/tf`) has one, so `pov` and the
-panel hold both. The fov is hri_producer's `view.fov_deg` (default 60, a central
+panel hold both. The fov is the launch argument `view.fov_deg` of hri_producer (default 60, a central
 cone, not the full human field). `clip_near` is its `view.clip_near` (default 0.15 m):
 the face origin sits inside the rendered head, whose nose, brow and hair reach a few
 cm ahead of it, while a gesturing hand is 0.3 m or more away.

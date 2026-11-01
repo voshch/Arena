@@ -142,6 +142,39 @@ stream itself carries only the 40. Renderers resolve them through `BONE_MAP` lik
 any other wire joint and skip them on a skeleton without the bone. The ros4hri URDF
 has no such joints, so the RViz skeleton ignores them.
 
+A `from: velocity` driver takes its angle from the ped's forward speed and yaw
+rate instead of integrating a wheel over distance. Its rig entry contains `bone`,
+`from` and the bone-local `axis`, without `radius` or `lateral`. Electric
+wheelchair bundles use `joystick_pitch` (Y axis, positive forward) and
+`joystick_roll` (X axis, positive right) on the same `Joystick` bone. The publisher
+computes these angles in radians, the wheel integrator leaves them untouched and
+renderers resolve their bone-map entries as usual.
+
+`JoystickDriver` in `drivers.py` supplies the electric chair's two joystick
+angles after gait generation, alongside the wheel angles. It samples speed and yaw
+rate together over a 0.2 s pose-timestamp window and holds the resulting stick
+between samples, including repeated frames. Its per-agent cache is discarded on
+despawn and reset.
+The publisher enables it when the model's `rig.yaml` declares both `joystick_pitch`
+and `joystick_roll` with `from: velocity`, regardless of agent type. Any other
+`from: velocity` entry rejects the rig file.
+
+The same driver selects one of seven calibrated right-arm poses from the joystick's
+`(pitch, roll)` pair: neutral, forward, reverse, forward left/right and pivot
+left/right. Its small table holds absolute radians for the three shoulder joints,
+elbow and two wrist joints. `with_driven` replaces those gait angles together with
+the joystick angles, so both change in the same published frame. The arm pose is
+left out while a gesture, possession or a producer's own `joint_state` drives one of
+its joints, the joystick still moves. These poses were calibrated for
+`arenian_wheelchair_electric` with `seated_wheelchair_electric`:
+forward/reverse pitch and pivot roll are 0.6 rad in magnitude, while forward turns
+use 0.4 rad roll. The palm follows the joystick's roll, with the shoulder, elbow
+and wrist angles calibrated together. All poses were checked from four views,
+with 5 to 7 mm between the hand mesh and the joystick and no
+intersections with its shaft, grip or housing. A changed model or
+seated profile requires recalibration. Fingers keep their existing pose, there is
+no runtime IK, grasping or interpolation.
+
 ### Wrists (v4)
 
 `l/r_r_wrist`, `l/r_wrist`: two DOFs per hand at the distal end of the forearm, chain
@@ -150,10 +183,10 @@ forward, palm toward the thigh. `r_wrist` is forearm pronation (positive turns t
 backward, both sides), `wrist` is the hand hinge (positive = extension, back of the hand
 toward the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
 (`r_wrist`: `(0,0,-1)` left / `(0,0,1)` right, `wrist`: `(1,0,0)` left / `(-1,0,0)`
-right), so the RViz adapter passes both through untouched. Only the `halt` gesture
-writes them, everything else leaves them at 0.0. Recordings that predate them carry no
-wrist values and are read as 0.0 (the loaders zero-fill, same migration as the spine
-stack).
+right), so the RViz adapter passes both through untouched. The `halt` gesture and
+the electric-chair operating poses write them, other default animations leave them
+at 0.0. Recordings that predate them carry no wrist values and are read as 0.0 (the
+loaders zero-fill, same migration as the spine stack).
 
 ### Gait synthesis
 

@@ -1,4 +1,4 @@
-"""Per-level directory shape, selective loading, WorldIdentifier.split_filter."""
+"""Selective level loading, WorldIdentifier.split_filter, WorldView.save shape."""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from arena_simulation_setup.shared.world import Elevator
 from arena_simulation_setup.tree.World import FORMAT, Level, World, WorldIdentifier, WorldView, Zone
 from arena_simulation_setup.utils.geometry import Position
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _SQUARE = [[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0]]
 
@@ -34,44 +31,13 @@ def _write_world_yaml(world_dir: Path, level_ids: list[str]) -> None:
     (world_dir / "world.yaml").write_text(yaml.safe_dump({"format": FORMAT, "levels": levels}))
 
 
-# ---------------------------------------------------------------------------
-# WorldIdentifier.split_filter
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("text", "levels"),
+    [("myworld", None), ("myworld[1]", {"1"}), ("myworld[1,3]", {"1", "3"}), ("myworld[ 1 , 3 ]", {"1", "3"}), ("myworld[]", None)],
+)
+def test_split_filter(text: str, levels: set[str] | None):
+    assert WorldIdentifier.split_filter(text) == ("myworld", levels)
 
-
-def test_parse_no_filter():
-    name, filt = WorldIdentifier.split_filter("myworld")
-    assert name == "myworld"
-    assert filt is None
-
-
-def test_parse_single_level():
-    name, filt = WorldIdentifier.split_filter("myworld[1]")
-    assert name == "myworld"
-    assert filt == {"1"}
-
-
-def test_parse_multi_level():
-    name, filt = WorldIdentifier.split_filter("myworld[1,3]")
-    assert name == "myworld"
-    assert filt == {"1", "3"}
-
-
-def test_parse_with_spaces():
-    name, filt = WorldIdentifier.split_filter("myworld[ 1 , 3 ]")
-    assert name == "myworld"
-    assert filt == {"1", "3"}
-
-
-def test_parse_empty_brackets_returns_none_filter():
-    name, filt = WorldIdentifier.split_filter("myworld[]")
-    assert name == "myworld"
-    assert filt is None
-
-
-# ---------------------------------------------------------------------------
-# World.validate: elevator destinations
-# ---------------------------------------------------------------------------
 
 _BOX = [Position(0, 0), Position(10, 0), Position(10, 10), Position(0, 10)]
 
@@ -122,83 +88,12 @@ def test_selective_load_keeps_destinations_into_dropped_levels(tmp_path: Path):
         partial.validate()
 
 
-# ---------------------------------------------------------------------------
-# Auto-discovery: per-level subdirs (format 1)
-# ---------------------------------------------------------------------------
-
-
-def test_auto_discovery_two_levels(tmp_path: Path):
-    world_dir = tmp_path / "myworld"
-    for fid in ("0", "1"):
-        fd = world_dir / fid
-        fd.mkdir(parents=True)
-        _write_level_yaml(fd / "world.yaml", [f"room_{fid}"])
-
-    with pytest.warns(DeprecationWarning):
-        world = WorldView(world_dir).load(validate=False)
-
-    assert set(world.levels.keys()) == {"0", "1"}
-
-
-def test_auto_discovery_zone_names(tmp_path: Path):
-    world_dir = tmp_path / "myworld"
-    for fid in ("0", "1"):
-        fd = world_dir / fid
-        fd.mkdir(parents=True)
-        _write_level_yaml(fd / "world.yaml", [f"room_{fid}"])
-
-    with pytest.warns(DeprecationWarning):
-        world = WorldView(world_dir).load(validate=False)
-
-    assert [z.name for z in world.levels["0"].zones] == ["room_0"]
-
-
-# ---------------------------------------------------------------------------
-# Auto-wrap legacy: single root world.yaml -> level '0'
-# ---------------------------------------------------------------------------
-
-
-def test_legacy_single_file_loads_as_level_0(tmp_path: Path):
-    world_dir = tmp_path / "legacyworld"
-    world_dir.mkdir()
-    _write_level_yaml(world_dir / "world.yaml", ["hall"])
-
-    with pytest.warns(DeprecationWarning):
-        world = WorldView(world_dir).load(validate=False)
-
-    assert list(world.levels) == ["0"]
-
-
-def test_legacy_single_file_zone_preserved(tmp_path: Path):
-    world_dir = tmp_path / "legacyworld"
-    world_dir.mkdir()
-    _write_level_yaml(world_dir / "world.yaml", ["my_hall"])
-
-    with pytest.warns(DeprecationWarning):
-        world = WorldView(world_dir).load(validate=False)
-
-    assert [z.name for z in world.levels["0"].zones] == ["my_hall"]
-
-
-# ---------------------------------------------------------------------------
-# Level filter: selective load
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("layout", ["format1", "format2"])
-def test_level_filter_returns_only_requested(tmp_path: Path, layout: str):
+@pytest.mark.parametrize("levels", [{"1"}, {"1", "3"}])
+def test_level_filter_loads_only_the_requested_levels(tmp_path: Path, layout: str, levels: set[str]):
     world_dir = tmp_path / "multilevel"
     _write_levels(world_dir, ["1", "2", "3"], layout)
-    world = WorldView(world_dir).load(validate=False, level_filter={"1"})
-    assert set(world.levels.keys()) == {"1"}
-
-
-@pytest.mark.parametrize("layout", ["format1", "format2"])
-def test_level_filter_excludes_others(tmp_path: Path, layout: str):
-    world_dir = tmp_path / "multilevel"
-    _write_levels(world_dir, ["1", "2", "3"], layout)
-    world = WorldView(world_dir).load(validate=False, level_filter={"1", "3"})
-    assert set(world.levels) == {"1", "3"}
+    assert set(WorldView(world_dir).load(validate=False, level_filter=levels).levels) == levels
 
 
 def _write_levels(world_dir: Path, level_ids: list[str], layout: str) -> None:
@@ -209,11 +104,6 @@ def _write_levels(world_dir: Path, level_ids: list[str], layout: str) -> None:
         fd = world_dir / fid
         fd.mkdir(parents=True)
         _write_level_yaml(fd / "world.yaml", [f"room_{fid}"])
-
-
-# ---------------------------------------------------------------------------
-# WorldView.save shape
-# ---------------------------------------------------------------------------
 
 
 def test_save_writes_one_world_file_and_a_map_per_level(tmp_path: Path):

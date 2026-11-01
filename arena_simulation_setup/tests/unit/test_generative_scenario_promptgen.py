@@ -90,6 +90,9 @@ def test_derive_pins_point_masses_and_refuses_bt_params_on_plain_types() -> None
         ("A power cut leaves the floor in the dark.", "blackout"),
         ("The break is over and everyone surges back to work all at once.", "stampede"),
         ("It is visiting hours and the place is packed.", "busy"),
+        ("Everyone is evacuated from the ward.", "evacuation"),
+        ("The crowd surges towards the lifts.", "stampede"),
+        ("The workers rushed back, shoving.", "stampede"),
     ],
 )
 def test_lexicon_matches_the_taxonomy(text, case) -> None:

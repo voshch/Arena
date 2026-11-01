@@ -11,14 +11,6 @@ import random
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def _ros_gate() -> None:
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
-
 # ---------------------------------------------------------------------------
 # environment_manager kind grouping
 # ---------------------------------------------------------------------------
@@ -357,32 +349,27 @@ def test_semantic_snapshot_carries_the_timeline_entity() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_coerce_zone_value_predicate_true_false() -> None:
+@pytest.mark.parametrize(
+    ("kind", "value", "coerced"),
+    [
+        ("predicate", "true", True),
+        ("predicate", "False", False),
+        ("continuous", "1.5", 1.5),
+        ("discrete", "lobby", "lobby"),
+    ],
+)
+def test_coerce_zone_value(kind: str, value: str, coerced: object) -> None:
     from task_generator.node import TaskGenerator
 
-    assert TaskGenerator._coerce_zone_value("predicate", "true") is True
-    assert TaskGenerator._coerce_zone_value("predicate", "False") is False
+    assert TaskGenerator._coerce_zone_value(kind, value) == coerced
 
 
-def test_coerce_zone_value_predicate_malformed() -> None:
+@pytest.mark.parametrize(("kind", "value"), [("predicate", "maybe"), ("continuous", "fast")])
+def test_coerce_zone_value_malformed(kind: str, value: str) -> None:
     from task_generator.node import TaskGenerator
 
     with pytest.raises(ValueError, match="malformed value"):
-        TaskGenerator._coerce_zone_value("predicate", "maybe")
-
-
-def test_coerce_zone_value_continuous_and_malformed() -> None:
-    from task_generator.node import TaskGenerator
-
-    assert TaskGenerator._coerce_zone_value("continuous", "1.5") == 1.5
-    with pytest.raises(ValueError, match="malformed value"):
-        TaskGenerator._coerce_zone_value("continuous", "fast")
-
-
-def test_coerce_zone_value_discrete_passthrough() -> None:
-    from task_generator.node import TaskGenerator
-
-    assert TaskGenerator._coerce_zone_value("discrete", "lobby") == "lobby"
+        TaskGenerator._coerce_zone_value(kind, value)
 
 
 def test_norm_token_booleans_render_lowercase() -> None:
@@ -406,9 +393,10 @@ def _rng_stub(seed: str) -> object:
     return stub, TaskGenerator
 
 
-def test_resolve_timeline_value_verbatim() -> None:
+@pytest.mark.parametrize("value", ["true", "a..b"])
+def test_resolve_timeline_value_verbatim(value: str) -> None:
     stub, cls = _rng_stub("5:0")
-    assert cls._resolve_timeline_value(stub, "true", 0) == "true"
+    assert cls._resolve_timeline_value(stub, value, 0) == value
 
 
 def test_resolve_timeline_value_range_is_seeded() -> None:
@@ -424,11 +412,6 @@ def test_resolve_timeline_value_range_differs_by_seed() -> None:
     stub_a, cls = _rng_stub("5:0")
     stub_b, _ = _rng_stub("5:1")
     assert cls._resolve_timeline_value(stub_a, "0.0..1000.0", 0) != cls._resolve_timeline_value(stub_b, "0.0..1000.0", 0)
-
-
-def test_resolve_timeline_value_bad_range_verbatim() -> None:
-    stub, cls = _rng_stub("5:0")
-    assert cls._resolve_timeline_value(stub, "a..b", 0) == "a..b"
 
 
 # ---------------------------------------------------------------------------

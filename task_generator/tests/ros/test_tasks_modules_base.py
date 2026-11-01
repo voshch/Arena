@@ -2,16 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 class _FakeLogger:
     def get_child(self, name):

@@ -51,53 +51,34 @@ class TestParseLogLevelSpec:
 
         assert parse_log_level_spec("{/foo:debug}") == ("replace", [("/foo", "debug")])
 
-    def test_inline_default_must_be_last(self) -> None:
+    @pytest.mark.parametrize(
+        ("spec", "mode", "rules"),
+        [
+            ("+[**/nav2*/**:error]", "prepend", [("**/nav2*/**", "error")]),
+            ("+[/foo:debug, /bar/**:warn]", "prepend", [("/foo", "debug"), ("/bar/**", "warn")]),
+            ("[/foo:debug]+", "append", [("/foo", "debug")]),
+        ],
+    )
+    def test_merge_forms(self, spec: str, mode: str, rules: list) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
 
-        with pytest.raises(ValueError, match="bare log_level"):
-            parse_log_level_spec("{info, /foo:debug}")
+        assert parse_log_level_spec(spec) == (mode, rules)
 
-    def test_inline_rejects_warning_alias(self) -> None:
+    @pytest.mark.parametrize(
+        ("spec", "message"),
+        [
+            ("{info, /foo:debug}", "bare log_level"),
+            ("{warning}", "invalid log level"),
+            ("{}", "empty"),
+            ("+[warn]", "must be"),
+            ("verbose", "not a known level"),
+        ],
+    )
+    def test_malformed_spec_is_rejected(self, spec: str, message: str) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
 
-        with pytest.raises(ValueError, match="invalid log level"):
-            parse_log_level_spec("{warning}")
-
-    def test_inline_empty_braces(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
-
-        with pytest.raises(ValueError, match="empty"):
-            parse_log_level_spec("{}")
-
-    def test_prepend_form(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
-
-        assert parse_log_level_spec("+[**/nav2*/**:error]") == (
-            "prepend",
-            [("**/nav2*/**", "error")],
-        )
-
-    def test_prepend_multiple_rules(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
-
-        assert parse_log_level_spec("+[/foo:debug, /bar/**:warn]") == (
-            "prepend",
-            [("/foo", "debug"), ("/bar/**", "warn")],
-        )
-
-    def test_append_form(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
-
-        assert parse_log_level_spec("[/foo:debug]+") == (
-            "append",
-            [("/foo", "debug")],
-        )
-
-    def test_merge_form_rejects_bare_level(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
-
-        with pytest.raises(ValueError, match="must be"):
-            parse_log_level_spec("+[warn]")
+        with pytest.raises(ValueError, match=message):
+            parse_log_level_spec(spec)
 
     def test_yaml_file(self, tmp_path) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
@@ -134,12 +115,6 @@ class TestParseLogLevelSpec:
         f.write_text("default: warning\n")
         with pytest.raises(ValueError):
             parse_log_level_spec(str(f))
-
-    def test_unknown_value_errors(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
-
-        with pytest.raises(ValueError, match="not a known level"):
-            parse_log_level_spec("verbose")
 
     def test_empty_value_returns_empty(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import parse_log_level_spec
@@ -277,35 +252,14 @@ class TestNodeLogLevelExtension:
 
 
 class TestSetGlobalLogLevelAction:
-    def test_str_to_level_debug(self) -> None:
+    @pytest.mark.parametrize(
+        ("name", "level"),
+        [("debug", logging.DEBUG), ("info", logging.INFO), ("warn", logging.WARN), ("error", logging.ERROR), ("fatal", logging.FATAL), ("unknown_level", logging.NOTSET)],
+    )
+    def test_str_to_level(self, name: str, level: int) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 
-        assert SetGlobalLogLevelAction.str_to_level("debug") == logging.DEBUG
-
-    def test_str_to_level_info(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        assert SetGlobalLogLevelAction.str_to_level("info") == logging.INFO
-
-    def test_str_to_level_warn(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        assert SetGlobalLogLevelAction.str_to_level("warn") == logging.WARN
-
-    def test_str_to_level_error(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        assert SetGlobalLogLevelAction.str_to_level("error") == logging.ERROR
-
-    def test_str_to_level_fatal(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        assert SetGlobalLogLevelAction.str_to_level("fatal") == logging.FATAL
-
-    def test_str_to_level_unknown_returns_notset(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        assert SetGlobalLogLevelAction.str_to_level("unknown_level") == logging.NOTSET
+        assert SetGlobalLogLevelAction.str_to_level(name) == level
 
     def test_execute_bare_scalar(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
@@ -337,57 +291,24 @@ class TestSetGlobalLogLevelAction:
             ["**/*", "error"],
         ]
 
-    def test_execute_prepend(self) -> None:
+    @pytest.mark.parametrize(
+        ("first", "spec", "kwargs", "rules"),
+        [
+            ("warn", "+[**/nav2*/**:error]", {}, [["**/nav2*/**", "error"], ["**/*", "warn"]]),
+            ("warn", "[**/nav2*/**:error]+", {}, [["**/*", "warn"], ["**/nav2*/**", "error"]]),
+            (None, "+[/foo:debug]", {}, [["/foo", "debug"], ["**/*", "warn"]]),
+            (None, "[/foo:debug]+", {}, [["**/*", "warn"], ["/foo", "debug"]]),
+            (None, "+[/foo:debug]", {"base": "info"}, [["/foo", "debug"], ["**/*", "info"]]),
+        ],
+    )
+    def test_execute_merges_around_the_existing_rules(self, first: str | None, spec: str, kwargs: dict, rules: list) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 
         ctx = _make_context()
-        SetGlobalLogLevelAction("warn").execute(ctx)
-        SetGlobalLogLevelAction("+[**/nav2*/**:error]").execute(ctx)
-        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
-            ["**/nav2*/**", "error"],
-            ["**/*", "warn"],
-        ]
-
-    def test_execute_append(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        ctx = _make_context()
-        SetGlobalLogLevelAction("warn").execute(ctx)
-        SetGlobalLogLevelAction("[**/nav2*/**:error]+").execute(ctx)
-        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
-            ["**/*", "warn"],
-            ["**/nav2*/**", "error"],
-        ]
-
-    def test_execute_prepend_with_no_existing_seeds_base(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        ctx = _make_context()
-        SetGlobalLogLevelAction("+[/foo:debug]").execute(ctx)
-        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
-            ["/foo", "debug"],
-            ["**/*", "warn"],
-        ]
-
-    def test_execute_append_with_no_existing_seeds_base(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        ctx = _make_context()
-        SetGlobalLogLevelAction("[/foo:debug]+").execute(ctx)
-        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
-            ["**/*", "warn"],
-            ["/foo", "debug"],
-        ]
-
-    def test_execute_prepend_with_custom_base(self) -> None:
-        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-
-        ctx = _make_context()
-        SetGlobalLogLevelAction("+[/foo:debug]", base="info").execute(ctx)
-        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
-            ["/foo", "debug"],
-            ["**/*", "info"],
-        ]
+        if first is not None:
+            SetGlobalLogLevelAction(first).execute(ctx)
+        SetGlobalLogLevelAction(spec, **kwargs).execute(ctx)
+        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == rules
 
     def test_execute_seed_only_when_existing_empty(self) -> None:
         from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction

@@ -4,14 +4,6 @@ import pytest
 from arena_rclpy_mixins.registry import ClassRegistry
 
 
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
-
 def test_register_and_get_round_trip():
     reg: ClassRegistry[str, type] = ClassRegistry()
 

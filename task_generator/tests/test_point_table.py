@@ -6,12 +6,13 @@ import os
 import numpy as np
 import pytest
 
+from arena_simulation_setup.tree.assets.Animation import write_anim
 from task_generator.simulators.human.pointing import BakedPointAt, PointAtGenerator, PointAtOptions, PointTable, bake
 from task_generator.simulators.human.pointing import contract as C
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.table import COLLAR_SCALE, anchor_index, table_path
 
-pytestmark = pytest.mark.clips("point_to_right")
+pytestmark = pytest.mark.clips("point_at_template")
 
 
 @pytest.fixture(scope="module")
@@ -38,18 +39,7 @@ def max_step(clip) -> float:
     return float(np.abs(np.diff(m, axis=0)).max())
 
 
-def test_table_ships_for_the_default_template():
-    path = table_path("point_to_right")
-    assert os.path.exists(path), f"bake it: python3 -m task_generator.simulators.human.pointing.table ({path})"
-    t = PointTable(path)
-    assert t.template == "point_to_right" and t.height == pytest.approx(1.65) and t.collar_scale == COLLAR_SCALE
-    assert t.az[0] == -180.0 and t.az[-1] == 180.0
-    assert t.ok[:, :, :].mean() > 0.5
-    # the wrapped column is the first column
-    assert np.array_equal(t.quat[:, -1], t.quat[:, 0])
-
-
-@pytest.mark.parametrize("az,el", [(-30.0, 0.0), (30.0, 0.0), (-60.0, 30.0), (0.0, -30.0), (-90.0, 20.0), (45.0, -20.0)])
+@pytest.mark.parametrize("az,el", [(-30.0, 0.0), (30.0, 0.0), (-60.0, 30.0), (0.0, -30.0), (-90.0, 15.0), (60.0, -15.0)])
 def test_grid_nodes_reproduce_the_solver(gen: PointAtGenerator, baked: BakedPointAt, az: float, el: float):
     ref = gen.point_at(azimuth=az, elevation=el)
     got = baked.point_at(azimuth=az, elevation=el)
@@ -96,15 +86,23 @@ def test_wrong_table_is_rejected():
         BakedPointAt(options=PointAtOptions(collar_scale=1.0))
 
 
+def test_bake_into_an_anim_keeps_the_clip_and_reads_back(tmp_path):
+    path = write_anim(tmp_path / "t.anim", {"clip/angles": np.zeros((2, 1))})
+    table = PointTable(bake(path=str(path), collar_scale=1.0, az_step=90.0, el_step=45.0, el_max=45.0, workers=0))
+    assert table.linear.shape[:3] == (2, 5, 3) and table.collar_scale == 1.0
+    with np.load(path, allow_pickle=False) as z:
+        assert "clip/angles" in z.files and "table/az" in z.files and "az" not in z.files
+
+
 def test_bake_tiny_grid_round_trips(tmp_path):
-    path = bake(path=str(tmp_path / "t.npz"), collar_scale=1.0, az_step=90.0, el_step=45.0, el_max=45.0, workers=0)
+    path = bake(path=str(tmp_path / "t.npz"), collar_scale=1.0, az_step=180.0, el_step=90.0, el_max=45.0, workers=0)
     t = PointTable(path)
-    assert t.linear.shape[:3] == (2, 5, 3) and t.collar_scale == 1.0
+    assert t.linear.shape[:3] == (2, 3, 2) and t.collar_scale == 1.0
     b = BakedPointAt(table=t)
     assert b.opts.collar_scale == 1.0
     raw = PointAtGenerator()
-    got = b.point_at(azimuth=-90.0, elevation=0.0)
-    ref = raw.point_at(azimuth=-90.0, elevation=0.0)
+    got = b.point_at(azimuth=0.0, elevation=45.0)
+    ref = raw.point_at(azimuth=0.0, elevation=45.0)
     a = anchor_index(raw)
     for n in raw._blended_dofs(ref.side):
         assert got.frames[a]["angles"][n] == pytest.approx(ref.frames[a]["angles"][n], abs=1e-3)

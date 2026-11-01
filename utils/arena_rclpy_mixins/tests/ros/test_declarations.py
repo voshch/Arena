@@ -9,16 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate() -> None:
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 @dataclass
 class _Recorder:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import csv
 import importlib.util
 import math
 import os
@@ -13,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from adapter_helpers import write_sequence
 
 NATIVE_WORLD = "sbend_corridor"
 NATIVE_SCENARIO = "default"
@@ -136,19 +136,6 @@ def _gate():
     pytest.importorskip("arena_simulation_setup.shared.track")
 
 
-def write_sequence(path: Path, walkers: list[tuple[int, int, int, tuple[float, float], tuple[float, float]]]) -> None:
-    """A SocNavBench sequence file: rows frame, id, y, x, one column per sample, a walker per straight line."""
-    columns = []
-    for ident, first, last, (x0, y0), (x1, y1) in walkers:
-        for frame in range(first, last + 1):
-            u = (frame - first) / (last - first)
-            columns.append((frame, ident, round(y0 + u * (y1 - y0), 4), round(x0 + u * (x1 - x0), 4)))
-    columns.sort()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="") as f:
-        csv.writer(f).writerows(zip(*columns, strict=True))
-
-
 def episodes_ini() -> str:
     sections = ["[episodes_params]\n# names of which tests to include in the final benchmark\ntests=['t_all']\n\nwithout_robot=False ; lite version without the robot\n"]
     for name, datasets, ranges, start_goal, max_time in EPISODES:
@@ -225,13 +212,9 @@ def _replay_stage():
     return module
 
 
-def test_registry_target_is_the_class() -> None:
-    from arena_assets.importers import IMPORTERS
-
+def test_default_provider_is_pinned_to_the_published_commit() -> None:
     from task_generator.adapters.socnavbench import BASE_URL, EPISODES_FILE, SocNavBench
 
-    assert IMPORTERS.load("scenario", "socnavbench") is SocNavBench
-    assert SocNavBench.meta.kind == "scenario"
     assert SocNavBench.default_provider().url(EPISODES_FILE) == f"{BASE_URL}/params/episode_params_val.ini"
     assert BASE_URL == "https://raw.githubusercontent.com/CMU-TBD/SocNavBench/2724ea85ff22ca61a88ee95285dfc3fa056656c6"
 

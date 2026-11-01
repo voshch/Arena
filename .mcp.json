@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "arena": {
-      "command": "_meta/tools/arena-mcp",
-      "args": ["serve"]
+      "command": "sh",
+      "args": ["-c", "root=$(git rev-parse --show-superproject-working-tree 2>/dev/null); [ -n \"$root\" ] || root=$(git rev-parse --show-toplevel); exec \"$root/_meta/tools/arena-mcp\" serve"]
     }
   }
 }

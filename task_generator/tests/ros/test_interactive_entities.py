@@ -7,22 +7,14 @@ import uuid
 import pytest
 import shapely
 
+_spin_in_background = pytest.importorskip("arena_rclpy_mixins.testing").spin_in_background
+
 
 @pytest.fixture(autouse=True)
 def _ros_gate():
     pytest.importorskip("rclpy")
     pytest.importorskip("interactive_markers")
     pytest.importorskip("task_generator_msgs.srv")
-
-
-def _spin_in_background(rclpy, node, stop: threading.Event) -> threading.Thread:
-    def _spin() -> None:
-        while not stop.is_set():
-            rclpy.spin_once(node, timeout_sec=0.02)
-
-    thread = threading.Thread(target=_spin, daemon=True)
-    thread.start()
-    return thread
 
 
 def test_known_static_obstacle_respawn_moves_instead_of_spawning(rclpy_context):

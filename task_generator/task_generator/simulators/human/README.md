@@ -89,7 +89,8 @@ The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and t
 
 A model whose bundle ships a `rig.yaml` with `drivers:` (wheelchair bundles: `l_wheel`, `r_wheel`) gets those joints
 set on top, whoever filled the field: [`drivers.py`](drivers.py) rolls each wheel over the distance its contact
-point covered since the last message, see the Driven joints section of [`JOINTS.md`](JOINTS.md).
+point covered since the last message, and electric bundles add `joystick_pitch` and `joystick_roll`, see the Driven
+joints section of [`JOINTS.md`](JOINTS.md).
 
 The same message goes out again on `<namespace>/sim_peds`, which the Gazebo pedestrian plugin reads: unchanged in a spread
 world, every ped moved into the simulator frame by `Realizer.placement()` when the levels are stacked (`world.levels`).
@@ -177,7 +178,7 @@ timing is sim-deterministic under lockstep without any extra plumbing.
 
 ## Animation clips
 
-Canned clips (`wave`, `hug`, the pointing template `point_to_right`, ...) are `Animation` assets
+Canned clips (`wave`, `hug`, the pointing template `point_at_template`, ...) are `Animation` assets
 ([Animation.py](../../../../arena_simulation_setup/src/arena_simulation_setup/tree/assets/Animation.py)), not
 repo files. `AnimationManager` loads every clip it can list at startup through [`AssetClips`](clips.py), and
 `AnimationManager.clip(name)` fetches one published after launch on first request. Resolution order: the active
@@ -186,10 +187,17 @@ under `$ARENA_ASSETS_DIR/<bucket>/`). Both local dirs gitignore `*/Animation/`.
 
 ```
 Common/Animation/<name>/
-  annotation.yaml   fps, loop, reverse, joints (a JOINT_GROUPS name from clips.py or a list; omitted = whole body), note
-  <name>.npz        joint_names (J,), angles (T, J), t (T,), root_xy_yaw (T, 3), animation_state (T,)
-  table.npz         point_to_right only: the baked pointing table (pointing/table.py)
+  annotation.yaml   fps, loop, reverse, loop_from, release_from, joints (a JOINT_GROUPS name from clips.py or a list;
+                    omitted = whole body), pair, note
+  <name>.anim       the clip's arrays, settings over the annotation, and for point_at_template the baked pointing
+                    table (pointing/table.py), format in the tree README
 ```
+
+A looping clip's `loop_from` (s) makes the frames before it an intro that plays once, the loop wraps back to it.
+`release_from` (s) cuts the frames from it off as the release: they play when the gesture ends, blended out of
+wherever the loop is, instead of the default fade. A two-person clip (`arena_animation_retarget --pair`) carries
+`pair: {role, partner, partner_offset: [dx, dy, dyaw], separation}`, the partner's stance seen from this role, which
+humansim's clip sets (`ClipSet.pair`) place the pair with.
 
 Adding a clip: write it with `write_clip(Path("arena_simulation_setup/assets/Common/Animation/<name>"), frames, meta)`
 (frames are the players' `{"t", "angles", "root_xy_yaw", "animation_state"}` dicts), check it with

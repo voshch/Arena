@@ -29,7 +29,7 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m 'not network'"
 markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",

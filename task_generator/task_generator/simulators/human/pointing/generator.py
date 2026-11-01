@@ -49,7 +49,8 @@ from . import skeleton as S
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.tree.assets.Animation import AnimationView
 
-TEMPLATES = ("point_to_right",)
+DEFAULT_TEMPLATE = "point_at_template"  # the recorded point the generator retargets, its asset also holds the baked table
+TEMPLATES = (DEFAULT_TEMPLATE,)
 
 
 @functools.cache
@@ -111,7 +112,7 @@ def _elbow_swivel(sh: np.ndarray, el: np.ndarray, aim_dir: np.ndarray) -> float:
     return float(np.arctan2(np.dot(v, m0), np.dot(v, n0)))
 
 
-def load_template(name: str = "point_to_right", height: float = 1.65) -> Template:
+def load_template(name: str = DEFAULT_TEMPLATE, height: float = 1.65) -> Template:
     frames = _load_frames(name)
     body = S.Body(height)
     t = np.array([f["t"] for f in frames], dtype=float)
@@ -568,7 +569,7 @@ class PointAtGenerator:
     >>> clip.save("point_at.npy")
     """
 
-    def __init__(self, template: str = "point_to_right", height: float = 1.65, options: PointAtOptions | None = None):
+    def __init__(self, template: str = DEFAULT_TEMPLATE, height: float = 1.65, options: PointAtOptions | None = None):
         self.body = S.Body(height)
         self.template = load_template(template, height)
         self.opts = options or PointAtOptions()
@@ -1153,6 +1154,6 @@ class PointAtGenerator:
         }
 
 
-def point_at(target: Sequence[float] | np.ndarray | None = None, azimuth: float | None = None, elevation: float | None = None, template: str = "point_to_right", height: float = 1.65, *, deg: bool = True, options: PointAtOptions | None = None, **kw: object) -> PointAtClip:
+def point_at(target: Sequence[float] | np.ndarray | None = None, azimuth: float | None = None, elevation: float | None = None, template: str = DEFAULT_TEMPLATE, height: float = 1.65, *, deg: bool = True, options: PointAtOptions | None = None, **kw: object) -> PointAtClip:
     """One-shot convenience wrapper around :class:`PointAtGenerator`."""
     return PointAtGenerator(template=template, height=height).point_at(target=target, azimuth=azimuth, elevation=elevation, deg=deg, options=options, **kw)

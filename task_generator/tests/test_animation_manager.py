@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
-from task_generator.simulators.human.animation_manager import JOINT_NAMES, Animation, AnimationManager
+from task_generator.simulators.human.animation_manager import JOINT_NAMES, UPRIGHT, Animation, AnimationManager, nlerp
 from task_generator.simulators.human.clips import AssetClips, NoClips
 
 ARMS = {"l_y_collar", "l_p_collar", "l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "l_elbow", "r_y_collar", "r_p_collar", "r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow"}
@@ -48,11 +50,11 @@ def test_state_map_defaults():
         assert set(angles) == set(JOINT_NAMES)
 
 
-@pytest.mark.clips("wave")
+@pytest.mark.clips("talk_with_arm_gesture_v1")
 def test_stored_clips_zero_fill_missing_contract_joints():
     m = AnimationManager(logger=StubLogger(), fps=FPS, clips=AssetClips())
-    m.cache_animations(["wave"])
-    frames = m.animations["wave"].frames
+    m.cache_animations(["talk_with_arm_gesture_v1"])  # recorded without the wrist channels
+    frames = m.animations["talk_with_arm_gesture_v1"].frames
     assert all(set(JOINT_NAMES) <= set(frame["angles"]) for frame in frames)
     assert all(frame["angles"][joint] == 0.0 for frame in frames for joint in ("l_r_wrist", "l_wrist", "r_r_wrist", "r_wrist"))
 
@@ -321,3 +323,97 @@ def test_reverse_clip_plays_out_and_back(mgr):
 def test_a_reverse_clip_must_loop(mgr):
     with pytest.raises(AssertionError):
         mgr.register_transient("bad", const_frames(0.0, 3), loop=False, reverse=True)
+
+
+class _OneClip:
+    """A clip source holding one in-memory clip."""
+
+    def __init__(self, name: str, n: int, meta: dict, legacy: bool = False) -> None:
+        import numpy as np
+
+        from arena_simulation_setup.tree.assets.Animation import AnimationClip
+
+        angles = np.zeros((n, 1))
+        angles[:, 0] = np.arange(n) * 0.1  # l_elbow ramps 0.1 rad per frame
+        self.clip = AnimationClip(name=name, joint_names=("l_elbow",), angles=angles, t=np.arange(n) / FPS, root_xy_yaw=np.zeros((n, 3)), animation_state=np.zeros(n, dtype=int), meta={"fps": FPS, **meta}, legacy=legacy)
+
+    def names(self) -> list[str]:
+        return [self.clip.name]
+
+    def load(self, names):
+        return {name: self.clip for name in names}
+
+
+def test_annotation_loop_window_and_release():
+    """loop_from (s) makes the frames before it an intro, release_from (s) cuts the tail off as the release."""
+    m = AnimationManager(logger=StubLogger(), fps=FPS, clips=_OneClip("windowed", 40, {"loop": True, "loop_from": 0.5, "release_from": 1.5}))
+    anim = m.clip("windowed")
+    assert anim is not None
+    assert anim.n_frames == 30 and anim.loop_from == 10 and len(anim.release) == 10
+    assert anim.release[0]["angles"]["l_elbow"] == pytest.approx(3.0)
+    # the loop wraps from frame 29 back to frame 10, never into the release
+    assert m._sample_single_animation(29.5 / FPS, anim)["l_elbow"] == pytest.approx(0.5 * (2.9 + 1.0))
+    assert AnimationManager._loop_time(anim, 2.0) == pytest.approx(0.5 + (2.0 - 0.5) % 1.0)
+
+
+def test_annotation_without_window_keeps_the_whole_clip():
+    m = AnimationManager(logger=StubLogger(), fps=FPS, clips=_OneClip("plain", 12, {"loop": True}))
+    anim = m.clip("plain")
+    assert anim is not None and anim.n_frames == 12 and anim.loop_from == 0 and anim.release == ()
+
+
+@pytest.mark.parametrize("meta", [{"release_from": 5.0}, {"loop_from": 5.0}, {"reverse": True, "loop_from": 0.1}])
+def test_annotation_window_outside_the_clip_is_rejected(meta):
+    logger = StubLogger()
+    m = AnimationManager(logger=logger, fps=FPS, clips=_OneClip("bad", 12, {"loop": True, **meta}))
+    assert m.clip("bad") is None
+    assert any("rejected" in line for line in logger.lines)
+
+
+def test_clips_from_old_data_warn_once_with_their_names():
+    logger = StubLogger()
+    m = AnimationManager(logger=logger, fps=FPS, clips=_OneClip("stale", 12, {"loop": True}, legacy=True))
+    assert m.clip("stale") is not None
+    warned = [line for line in logger.lines if "old .npz data" in line]
+    assert len(warned) == 1 and "stale" in warned[0]
+
+
+def test_anim_clips_load_without_the_old_data_warning():
+    logger = StubLogger()
+    m = AnimationManager(logger=logger, fps=FPS, clips=_OneClip("fresh", 12, {"loop": True}))
+    assert m.clip("fresh") is not None
+    assert not [line for line in logger.lines if "old .npz data" in line]
+
+
+def tilted_frames(quat: tuple[float, float, float, float], n: int) -> list[dict]:
+    return [{"angles": dict.fromkeys(JOINT_NAMES, 0.0), "root_quat": list(quat)} for _ in range(n)]
+
+
+SUPINE = (0.0, -math.sin(math.pi / 4), 0.0, math.cos(math.pi / 4))
+
+
+def test_a_tilted_clip_reports_its_pelvis_tilt_by_its_blend_weight(mgr: AnimationManager) -> None:
+    fall = mgr.register_transient("fall", tilted_frames(SUPINE, 40))
+    assert fall.tilted and not mgr.animations["zero_base"].tilted
+    step(mgr, 1)
+    assert mgr.root_tilt(1) is None
+    mgr.set_ped_blend(1, fall, blend_joints=set(JOINT_NAMES), slot="body")
+    step(mgr, 1)
+    assert mgr.root_tilt(1) == pytest.approx(SUPINE)
+    mgr.set_ped_blend(2, fall, blend_joints=set(JOINT_NAMES), blend_weight=0.5, slot="body")
+    step(mgr, 2)
+    assert mgr.root_tilt(2) == pytest.approx(nlerp(UPRIGHT, SUPINE, 0.5))
+    assert mgr.root_tilt(2)[1] == pytest.approx(-math.sin(math.pi / 8))  # half the pitch
+    mgr.clear_ped_blend(1, slot="body")
+    step(mgr, 1)
+    assert mgr.root_tilt(1) is None
+    mgr.forget(2)
+    assert mgr.root_tilt(2) is None
+
+
+def test_the_pelvis_tilt_follows_the_playhead_between_frames(mgr: AnimationManager) -> None:
+    frames = tilted_frames(UPRIGHT, 1) + tilted_frames(SUPINE, 1) + tilted_frames(SUPINE, 2)
+    fall = mgr.register_transient("fall", frames)
+    mgr.set_ped_blend(1, fall, blend_joints=set(JOINT_NAMES), slot="body")
+    step(mgr, 1, dt=0.025)  # half way from frame 0 to frame 1 at 20 fps
+    assert mgr.root_tilt(1) == pytest.approx(nlerp(UPRIGHT, SUPINE, 0.5))

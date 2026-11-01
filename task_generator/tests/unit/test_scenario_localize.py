@@ -17,6 +17,25 @@ def _pose(x: float, y: float):
     return Pose(position=Position(x, y, 0.0), orientation=Orientation.from_yaw(0.0))
 
 
+def _entry(*phases):
+    from arena_simulation_setup.tree.World.Scenario import RobotGoal
+
+    return RobotGoal(start=_pose(0.0, 0.0), phases=list(phases))
+
+
+def test_robots_without_a_scenario_entry_are_idle():
+    from task_generator.tasks.robots.scenario.impl import idle_robots
+
+    assert idle_robots(["a", "b"], []) == {"a", "b"}
+
+
+def test_only_robots_with_phases_are_active():
+    from task_generator.tasks.robots.request import GoToPhase
+    from task_generator.tasks.robots.scenario.impl import idle_robots
+
+    assert idle_robots(["a", "b", "c"], [_entry(GoToPhase(pose=_pose(1.0, 1.0))), _entry()]) == {"b", "c"}
+
+
 def test_literal_goto_pose_gets_its_goal_level_origin():
     from task_generator.tasks.robots.request import GoToPhase
     from task_generator.tasks.robots.scenario.impl import localize_phase

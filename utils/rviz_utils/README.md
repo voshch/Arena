@@ -28,7 +28,7 @@ visuals of `head_<id>`, x forward, z up) by forward kinematics of the neck chain
 from the tick's rig joint positions ([`hri/face.py`](rviz_utils/hri/face.py)), adds
 `gaze_<id>` (same origin, optical convention) and publishes both on the global
 `/tf`, plus `humans/tf` when the env remaps its `/tf`. The view (`arena_people_msgs/FaceView`) carries a
-square pinhole `CameraInfo` of `view.fov_deg` (default 60) in `gaze_<id>` and
+square pinhole `CameraInfo` of `view.fov_deg` (launch argument, default 60) in `gaze_<id>` and
 `clip_near`, `view.clip_near` (default 0.15 m), the near clip that hides the
 pedestrian's own head but not its hands. `arena cam pov` and
 the `cam drive` panel look through it.

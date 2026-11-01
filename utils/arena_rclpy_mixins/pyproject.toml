@@ -10,7 +10,7 @@ dependencies = [
 dynamic = ["authors", "classifiers", "description", "keywords", "license", "maintainers", "scripts"]
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+test = ["hypothesis", "pytest>=7"]
 
 [tool.uv]
 package = false

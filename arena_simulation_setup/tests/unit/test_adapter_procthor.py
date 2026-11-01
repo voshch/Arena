@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import gzip
 import json
 import math
@@ -39,11 +38,6 @@ DEFAULT_MATERIALS = {"Common/Material/Porcelain_Tile_4", "Common/Material/Concre
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 FREE = 255
 OCCUPIED = 0
-
-
-@pytest.fixture(autouse=True)
-def _gate():
-    pytest.importorskip("arena_assets.importers")
 
 
 @pytest.fixture()
@@ -412,38 +406,29 @@ def test_split_is_streamed_once_for_ascending_houses(tmp_path: Path) -> None:
         houses.house(1)
 
 
-def _open_handles(path: Path) -> int:
-    target = os.path.realpath(path)
-    count = 0
-    for fd in os.listdir("/proc/self/fd"):
-        with contextlib.suppress(OSError):
-            count += os.readlink(f"/proc/self/fd/{fd}") == target
-    return count
-
-
-def test_stepping_back_and_closing_release_the_split_file(tmp_path: Path) -> None:
+def test_stepping_back_and_closing_release_the_split_file(tmp_path: Path, open_handles) -> None:
     from arena_simulation_setup.adapters.procthor import Houses
 
     src = _split_file(tmp_path / "val.jsonl.gz", FIXTURE, FRAME_FIXTURE)
     houses = Houses(src)
     assert len(houses.house(1)["rooms"]) == 2
-    assert _open_handles(src) == 1
+    assert open_handles(src) == 1
     assert len(houses.house(0)["rooms"]) == 7
-    assert _open_handles(src) == 1
+    assert open_handles(src) == 1
     houses.close()
-    assert _open_handles(src) == 0
+    assert open_handles(src) == 0
     with pytest.raises(IndexError):
         houses.house(5)
-    assert _open_handles(src) == 0
+    assert open_handles(src) == 0
 
 
-def test_importing_items_releases_the_split_file(tmp_path: Path) -> None:
+def test_importing_items_releases_the_split_file(tmp_path: Path, open_handles) -> None:
     from arena_simulation_setup.adapters.procthor import ProcTHOR
 
     src = _split_file(tmp_path / "cache" / "val.jsonl.gz", FIXTURE, FRAME_FIXTURE)
     importer = ProcTHOR(cache=tmp_path / "cache")
     assert sorted(importer.import_items(["val/1", "val/0"], tmp_path / "worlds")) == ["val/0", "val/1"]
-    assert _open_handles(src) == 0
+    assert open_handles(src) == 0
 
 
 def test_house_past_the_end_of_a_split_is_an_index_error() -> None:
