@@ -10,6 +10,7 @@ from collections.abc import Callable
 from arena_cam.surfaces import STREAM_QOS
 
 import rclpy
+import rclpy.callback_groups
 import rclpy.executors
 
 WIDTH, HEIGHT = 32, 24
@@ -56,7 +57,7 @@ class Runtime:
         self.node.create_service(ViewportSetView, "/arena/viewport/set_view", self._set_view)
         self.node.create_service(ViewportSetReferenceFrame, "/arena/viewport/set_reference_frame", self._set_reference)
         self.node.create_service(ViewportSetProjection, "/arena/viewport/set_projection", self._set_projection)
-        self.node.create_service(ViewportCapture, "/arena/viewport/capture", self._capture)
+        self.node.create_service(ViewportCapture, "/arena/viewport/capture", self._capture, callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup())
         self.node.create_service(LifecycleHold, "/arena/sim_lifecycle/hold", self._hold)
         self.node.create_service(LifecycleStep, "/arena/sim_lifecycle/step", self._step)
         self.node.create_service(LockstepRegister, "/arena/sim_lifecycle/lockstep/register", self._register)
@@ -119,6 +120,11 @@ class Runtime:
     def _capture(self, request, response):
         from sensor_msgs.msg import Image
 
+        floor_ns = request.min_sim_time.sec * 1_000_000_000 + request.min_sim_time.nanosec
+        if not self.wait(lambda: self.clock_ns >= floor_ns):
+            response.success = False
+            response.message = "capture timed out, min_sim_time not reached"
+            return response
         with self.lock:
             self.captures.append(Capture(self.reference, request.fov, request.clip_near, self.clock_ns))
             frame = len(self.captures)
