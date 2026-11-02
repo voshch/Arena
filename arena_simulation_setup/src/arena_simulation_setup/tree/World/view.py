@@ -590,4 +590,4 @@ WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _wor
 WorldIdentifier.use(LocalResolver(WorldIdentifier, 'worlds'))
 WorldIdentifier.use(DynamicPathResolver(WorldIdentifier, DynamicPaths.IMPORTED, fn=lambda p: p / 'worlds'))
 WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
-WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))
+WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False, list_containing='world.yaml'))

@@ -57,8 +57,8 @@ KINDS = {
 
 DESCRIPTION = """Inspect and move resolvable arena data.
 
-`ls` alone lists the kinds. Reading is anonymous, pushing needs GCS_ACCESS_TOKEN in the
-environment."""
+`ls` alone lists the kinds. Reading public buckets is anonymous, reading a private bucket
+and pushing need GCS_ACCESS_TOKEN in the environment or a gcloud login."""
 
 
 def _parse(argv: list[str], positionals: tuple[str, ...], flags: tuple[str, ...] = (), valued: tuple[str, ...] = (), optional: int = 0, variadic: bool = False) -> tuple[list[str], dict[str, str | bool]]:
