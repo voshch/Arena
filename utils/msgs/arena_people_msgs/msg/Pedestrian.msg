@@ -22,8 +22,11 @@ uint8 animation_state
 # Active upper-body attention channels, compose with animation_state
 Gesture[] gestures
 
-# Empty = synthesize fallback gait, non-empty = upstream override.
+# Empty = fallback gait, else semantic override. On arena_peds: driven joints
 sensor_msgs/JointState joint_state
+
+# Skeleton pose on the Arena body rig, no joints = none
+BodyPose body
 
 # Monotonic walk-cycle phase in rad, 0 = unknown.
 float32 gait_phase

@@ -7,6 +7,7 @@ import rclpy.publisher
 import std_msgs.msg as std_msgs
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_runtime._node import NodeInterface
+from arena_simulation_setup.tree.World import point_scenario_assets
 
 from task_generator.constants import Constants
 from task_generator.manager.environment_manager import EnvironmentManager
@@ -234,6 +235,7 @@ class Task(NodeInterface):
             self.__reset_start.publish(std_msgs.Empty())
 
             self.node.conf.General.RNG.reseed(seed)
+            point_scenario_assets(None)
 
             await self.robots_manager.set_up()
             await self.robots_manager.launch_pending()

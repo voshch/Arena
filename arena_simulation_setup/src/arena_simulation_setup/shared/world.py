@@ -25,6 +25,9 @@ CABIN_DOOR_THRESHOLD = 0.6
 ActivationDistance = typing.NewType('ActivationDistance', tuple[float, float])
 
 
+_POCKET_OVERLAP_M = 0.01
+
+
 def _activation_distance_converter(x: float | typing.Sequence[float]) -> ActivationDistance:
     if isinstance(x, (int, float)):
         return ActivationDistance((float(x), float(x)))
@@ -729,6 +732,32 @@ class Door(Named):
             self.end - projected_half_width,
             self.end + projected_half_width,
         ]
+
+
+def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door]) -> bool:
+    """Whether a leaf sliding from `start` past `end` by its own length covers the span of a collinear door among `others`."""
+    length = math.hypot(end.x - start.x, end.y - start.y)
+    if length == 0.0:
+        return False
+    ux, uy = (end.x - start.x) / length, (end.y - start.y) / length
+    for other in others:
+        if other is door:
+            continue
+        along = sorted((p.x - start.x) * ux + (p.y - start.y) * uy for p in (other.start, other.end))
+        across = max(abs((p.y - start.y) * ux - (p.x - start.x) * uy) for p in (other.start, other.end))
+        if across <= door.width and min(along[1], 2.0 * length) - max(along[0], length) > _POCKET_OVERLAP_M:
+            return True
+    return False
+
+
+def clear_door_pockets(doors: typing.Sequence[Door]) -> list[Door]:
+    """Keep open sliding leaves off other doors' spans: such a door slides the other way, or teleports open when that side is taken too."""
+    result = list(doors)
+    for index, door in enumerate(result):
+        if door.kind != 'sliding' or not _leaf_rests_on(door.start, door.end, door, result):
+            continue
+        result[index] = attrs.evolve(door, kind='teleport') if _leaf_rests_on(door.end, door.start, door, result) else attrs.evolve(door, start=door.end, end=door.start)
+    return result
 
 
 @attrs.define

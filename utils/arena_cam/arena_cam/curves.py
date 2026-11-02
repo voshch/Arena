@@ -12,6 +12,9 @@ import math
 Vec3 = tuple[float, float, float]
 Quat = tuple[float, float, float, float]
 
+# Horizontal fov (rad) assumed while no verb has set one.
+FOV_DEFAULT = 1.047
+
 
 def vadd(a: Vec3, b: Vec3) -> Vec3:
     return (a[0] + b[0], a[1] + b[1], a[2] + b[2])

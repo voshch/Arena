@@ -1,7 +1,7 @@
 # Tight over-the-shoulder take: the camera rides the robot's heading frame, sits just
 # behind and above the chassis, and holds. Screen-left is robot-left.
 params:
-  subject: env_0/jackal/base_link
+  subject: "${robot}"
   duration: 20.0
 reference:
   entity: "${subject}"

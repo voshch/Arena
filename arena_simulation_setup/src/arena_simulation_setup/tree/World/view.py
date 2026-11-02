@@ -373,6 +373,11 @@ def point_world_assets(path: Path | None, linked: Iterable[Path]) -> None:
         resolver.invalidate()
 
 
+def point_scenario_assets(path: Path | None) -> None:
+    """Point scenario-local resolution at scenario directory `path`, None for no scenario."""
+    DynamicPaths.SCENARIO.path = path if path is not None else Path('/dev/null')
+
+
 def _dynamic_path_resolvers() -> Iterator[ResolverBase]:
     """Every resolver registered on an Identifier kind that reads its root from DynamicPaths, each once."""
     seen: set[int] = set()
@@ -585,4 +590,4 @@ WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _wor
 WorldIdentifier.use(LocalResolver(WorldIdentifier, 'worlds'))
 WorldIdentifier.use(DynamicPathResolver(WorldIdentifier, DynamicPaths.IMPORTED, fn=lambda p: p / 'worlds'))
 WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
-WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))
+WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False, list_containing='world.yaml'))

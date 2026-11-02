@@ -14,11 +14,14 @@ import yaml
 from scipy.spatial.transform import Rotation
 
 from arena_simulation_setup.adapters.arena_animation_retarget import fidelity, load, load_clip, retarget, retarget_batch, write_clip
-from arena_simulation_setup.adapters.arena_animation_retarget.contract import WIRE
+from arena_simulation_setup.adapters.arena_animation_retarget.contract import SK, WIRE
 from arena_simulation_setup.adapters.arena_animation_retarget.fk_torch import ContractFK
 from arena_simulation_setup.adapters.arena_animation_retarget.ik import HARD_LIMITS
-from arena_simulation_setup.adapters.arena_animation_retarget.retarget import prepare, resample
+from arena_simulation_setup.adapters.arena_animation_retarget.retarget import _rot, heading, prepare, resample
 from arena_simulation_setup.adapters.arena_animation_retarget.smplx import BODY_TO_ROS, REST_OFFSETS, J, Motion, forward_kinematics, rest_offsets_from_model
+
+from arena_simulation_setup.shared.body import BODY_JOINTS, forward, load_template
+from arena_simulation_setup.tree.assets.Animation import AnimationView
 
 sys.path.insert(0, str(Path(__file__).parent))
 import reference  # noqa: E402
@@ -238,6 +241,33 @@ def test_batch_matches_alone():
 
 
 # ---- files ---------------------------------------------------------------------------------------------------------
+
+
+def test_the_body_track_keeps_every_bone_on_its_source_direction():
+    motion = load_motion(_locals(30, 12), _root(30))
+    prep = prepare(motion)
+    template = load_template()
+    base = _rot(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
+    children = {"pelvis": "spine1", "spine3": "neck"}
+    pairs = [(parent, children.get(parent, joint)) for joint, parent in template.parents.items() if parent is not None and joint in BODY_JOINTS]
+    for frame in range(0, 30, 7):
+        positions, _ = forward(template, dict(zip(BODY_JOINTS, prep.body_rotations[frame], strict=True)))
+        source = motion.joints[frame] @ base[frame]
+        for joint, child in pairs:
+            got = positions[child] - positions[joint]
+            want = source[BODY_JOINTS.index(child)] - source[BODY_JOINTS.index(joint)]
+            assert got / np.linalg.norm(got) == pytest.approx(want / np.linalg.norm(want), abs=1e-6)
+
+
+def test_the_body_group_survives_the_clip_file(tmp_path):
+    clip = retarget(load_motion(_locals(30, 2), _root(30)), method="none")
+    d = write_clip(clip, tmp_path, "smplx_body")
+    back = load_clip(d)
+    assert back.body_rotations == pytest.approx(clip.body_rotations)
+    assert back.body_pelvis == pytest.approx(clip.body_pelvis)
+    view = AnimationView(d)
+    assert view.clip.body_joints == BODY_JOINTS
+    assert view.clip.frames()[3]["body"] == pytest.approx(clip.body_rotations[3])
 
 
 def test_write_and_load(tmp_path):

@@ -127,7 +127,8 @@ share one definition. [`request.py`](request.py) re-exports them with
   that moment: within it the phase is met, elsewhere the phase fails and the
   episode is aborted as `signaled <signal> <d> m from goal`. `submit_task`
   rejects a signal the robot's adapter cannot send (`Adapter.signals`). With
-  neither pose nor target the phase holds the robot where it starts.
+  neither pose nor target the phase holds the robot where it stands once the
+  reset has placed it.
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
   result. A reach pose's `frame` (the base frame by default) is a robot link,
   put under the robot's TF prefix unless it already carries it.

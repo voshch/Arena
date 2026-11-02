@@ -48,6 +48,7 @@ KINDS = {
     "stairs": Kind("stair and escalator kinds", f"{_TREE}.Stairs", "StairsIdentifier", "NETWORK_PROVIDERS", parse=True),
     "sound": Kind("sound assets", f"{_TREE}.assets.Sound", "SoundIdentifier", "NETWORK_PROVIDERS", parse=True),
     "animation": Kind("pedestrian animation clips", f"{_TREE}.assets.Animation", "AnimationIdentifier", "NETWORK_PROVIDERS", parse=True),
+    "camera": Kind("camera setups", f"{_TREE}.assets.Camera", "CameraIdentifier", "NETWORK_PROVIDERS", parse=True),
     "world": Kind("worlds", f"{_TREE}.World", "WorldIdentifier", "WORLD_PROVIDERS", closure="world", repo_subdir="worlds"),
     "suite": Kind("benchmark suites", _BENCH, "SuiteIdentifier", "BENCHMARK_PROVIDERS", bundle=True, closure="suite"),
     "contest": Kind("benchmark contests", _BENCH, "ContestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
@@ -56,8 +57,8 @@ KINDS = {
 
 DESCRIPTION = """Inspect and move resolvable arena data.
 
-`ls` alone lists the kinds. Reading is anonymous, pushing needs GCS_ACCESS_TOKEN in the
-environment."""
+`ls` alone lists the kinds. Reading public buckets is anonymous, reading a private bucket
+and pushing need GCS_ACCESS_TOKEN in the environment or a gcloud login."""
 
 
 def _parse(argv: list[str], positionals: tuple[str, ...], flags: tuple[str, ...] = (), valued: tuple[str, ...] = (), optional: int = 0, variadic: bool = False) -> tuple[list[str], dict[str, str | bool]]:

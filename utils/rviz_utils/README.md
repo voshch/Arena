@@ -33,19 +33,14 @@ square pinhole `CameraInfo` of `view.fov_deg` (launch argument, default 60) in `
 pedestrian's own head but not its hands. `arena cam pov` and
 the `cam drive` panel look through it.
 
-**Relay mode (primary path).** When `arena_peds.joint_state.name` is non-empty,
-`hri_producer` re-suffixes each bare semantic joint name with the body ID
-(`<joint>_<body_id>`) and publishes directly.  The joint data originates from
-`GaitGenerator` inside `BaseHumanSimulator.publish_arena_peds`.
+**Body model.** Each body's URDF comes from `rviz_utils.hri.urdf`, built from
+the body rig template (`arena_simulation_setup` `configs/body/template.yaml`):
+root `body_<id>` at the pelvis, a three-axis ball per rig joint (links
+`<joint>_<id>`, joints `<joint>_<rx|ry|rz>_<id>`, fingers included), the root
+offset on `root_<x|y|z>_<id>`, and the REP-155 body frames (`waist`, `torso`,
+`head`, `l|r_shoulder`, `elbow`, `wrist`, `hip`, `knee`, `ankle`) as fixed
+links. `hri_producer` turns `Pedestrian.body` into those joint positions.
 
-**Fallback gait.** When `joint_state` arrives empty (e.g. from the Isaac
-adapter, which does not fill joint_state on the bus), `hri_producer` runs its
-own `GaitGenerator` instance to synthesize a gait from the pedestrian's speed
-and `animation_state`.  The fallback applies per-body in the same message, so
-mixed messages (some peds with joint_state, some without) are handled correctly.
-
-Joint name convention: bare names on the bus (`l_r_hip`, `l_knee`, ...) are
-suffixed per body before publishing to `joint_states` so they match the
-`human_description` URDF rig.  See
-[`task_generator/simulators/human/gait.py`](../../task_generator/task_generator/simulators/human/gait.py)
-for the full 20-joint semantic name set.
+**Fallback gait.** A pedestrian without a body pose gets a gait from
+`hri_producer`'s own `GaitGenerator`, from its speed and `animation_state`,
+posed over its model's stance. Mixed messages are handled per body.

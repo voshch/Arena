@@ -261,6 +261,7 @@ via `/arena/spawn_env`.
 | `humansim.markers` | `1` | Debug marker level of the `arena` human backend: `0` = off (also hides its rviz panels), `1` = agent bodies, headings and infrastructure, `2` = adds goals, paths, waypoints, vision cones and force vectors. Lower it to cut per-tick marker cost in crowded scenarios. |
 | `viz.view` | `map` | Camera view in rviz: `map` (TopDownOrtho), `robot` (Orbit on robot base), `robot3p` (ThirdPersonFollower on robot base). |
 | `viz.robot` | `0` | Robot index in the fleet for `viz.view:=robot*`. `all` spawns one rviz window per robot. Ignored when `view=map`. |
+| `viz.cam` | off | Camera asset to play at every episode start: a name resolved scenario, then world, then global, else an index into the most specific tier, else its first asset. Starts one `arena cam serve` per env, see [Playing with the episode](../utils/arena_cam/arena_cam/README.md#playing-with-the-episode). |
 
 Examples:
 
@@ -383,6 +384,7 @@ Default is `arena settings sim [auto|dummy|<simulator>]`, read by every launch w
 | Key | Default | Meaning |
 |---|---|---|
 | `sim.flatsim.dynamics` | `rigid` | Runtime argument. `rigid`: walls and obstacles stop or push the robot, pedestrians touch it without pushing. `kinematic`: the robot passes through and only the collision tracker reports. |
+| `sim.flatsim.physics` | `auto` | Runtime argument. `box2d`: the world steps on the CPU. `warp`: physics and ray casts run on the GPU, on the CPU without one. `auto`: `warp` when GPU passthrough is on (`arena feature docker gpu on`), else `box2d`. |
 
 ### sim.isaac.*
 

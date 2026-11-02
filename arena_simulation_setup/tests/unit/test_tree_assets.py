@@ -10,7 +10,7 @@ from arena_simulation_setup.tree import DynamicPaths
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier, HumanView
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier, ObjectView
-from arena_simulation_setup.utils.models import ModelWrapper
+from arena_simulation_setup.utils.models import ModelType, ModelWrapper
 
 
 def test_object_identifier_load_sdf_only(tmp_path: Path) -> None:
@@ -62,6 +62,16 @@ def test_pedestrian_identifier_load_sdf(tmp_path: Path) -> None:
     assert isinstance(view, HumanView)
     assert isinstance(view.model, ModelWrapper)
     assert view.model.name == model_name
+
+
+def test_a_human_model_resolves_to_the_rig_sdf_when_the_bundle_has_one(tmp_path: Path) -> None:
+    bundle = tmp_path / "alice"
+    (bundle / "rig").mkdir(parents=True)
+    (bundle / "alice.sdf").write_text("<sdf/>")
+    view = HumanIdentifier("alice").load(bundle)
+    assert asyncio.run(view.model.get(ModelType.SDF)).path == bundle / "alice.sdf"
+    (bundle / "rig" / "alice.sdf").write_text("<sdf/>")
+    assert asyncio.run(HumanIdentifier("alice").load(bundle).model.get(ModelType.SDF)).path == bundle / "rig" / "alice.sdf"
 
 
 def test_material_identifier_load_no_tint(tmp_path: Path) -> None:

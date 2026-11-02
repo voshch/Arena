@@ -21,6 +21,7 @@ upright root); ``fold_tilt=False`` leaves the body pelvis-relative for a rendere
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -28,8 +29,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
+from arena_simulation_setup.shared.body import BODY_JOINTS, Template, load_template, rest_correction
+
 from .contract import SK, WIRE
-from .smplx import J, Motion
+from .smplx import BODY_TO_ROS, J, Motion
 
 if TYPE_CHECKING:
     from .ik import IKConfig
@@ -57,6 +60,8 @@ class Clip:
     root_quat: np.ndarray  # (N, 4) pelvis orientation in its heading frame, xyzw
     fold_tilt: bool = True
     meta: dict = field(default_factory=dict)
+    body_rotations: np.ndarray | None = None  # (N, 22, 4) local xyzw of the Arena body rig, BODY_JOINTS order
+    body_pelvis: np.ndarray | None = None  # (N, 3) pelvis displacement from rest, body frame, m
 
     @property
     def fps(self) -> float:
@@ -80,6 +85,8 @@ class Prepared:
     fps: float
     fold_tilt: bool
     scale: dict[str, float]  # source -> contract length ratios used by the reach targets
+    body_rotations: np.ndarray | None = None
+    body_pelvis: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.init)
@@ -207,6 +214,27 @@ def _contact(d: np.ndarray) -> np.ndarray:
     return np.exp(-((d / CONTACT_DIST) ** 2))
 
 
+@functools.cache
+def _template() -> Template:
+    return load_template()
+
+
+def body_track(motion: Motion, heading_frame: np.ndarray, root_z: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The motion on the Arena body rig: rest-corrected local quaternions (T, 22, 4) and the pelvis displacement (T, 3)."""
+    template = _template()
+    source = {joint: BODY_TO_ROS @ motion.rest_offsets[k] for k, joint in enumerate(BODY_JOINTS)}
+    correction = rest_correction(template, source)
+    frames = {joint: _T(heading_frame) @ motion.global_rots[:, k] @ correction[joint].T for k, joint in enumerate(BODY_JOINTS)}
+    rotations = np.zeros((len(motion), len(BODY_JOINTS), 4))
+    for k, joint in enumerate(BODY_JOINTS):
+        parent = template.parents[joint]
+        local = frames[joint] if parent is None else _T(frames[parent]) @ frames[joint]
+        rotations[:, k] = Rotation.from_matrix(local).as_quat()
+    pelvis = np.zeros((len(motion), 3))
+    pelvis[:, 2] = root_z - template.offsets["pelvis"][2]
+    return rotations, pelvis
+
+
 # ---- stage 1: rotation retarget + IK targets -----------------------------------------------------------------------
 
 
@@ -299,10 +327,20 @@ def prepare(motion: Motion, fold_tilt: bool = True, height: float = 1.75) -> Pre
         "anchor": np.zeros((T, 4, 3)),
         "anchor_w": np.zeros((T, 4)),
     }
-    return Prepared(init=th, targets=tg, src=q, root_xy_yaw=root_xy_yaw, root_z=root_z, root_quat=root_quat, fps=motion.fps, fold_tilt=fold_tilt, scale=scale)
+    body_rotations, body_pelvis = body_track(motion, root_r, root_z)
+    return Prepared(init=th, targets=tg, src=q, root_xy_yaw=root_xy_yaw, root_z=root_z, root_quat=root_quat, fps=motion.fps, fold_tilt=fold_tilt, scale=scale, body_rotations=body_rotations, body_pelvis=body_pelvis)
 
 
 # ---- API -----------------------------------------------------------------------------------------------------------
+
+
+def _slerp_joints(prep: Prepared, t_in: np.ndarray, t_out: np.ndarray) -> np.ndarray | None:
+    """The body track at the output times."""
+    if prep.body_rotations is None:
+        return None
+    if len(t_in) < 2:
+        return prep.body_rotations
+    return np.stack([Slerp(t_in, Rotation.from_quat(prep.body_rotations[:, k]))(t_out).as_quat() for k in range(prep.body_rotations.shape[1])], 1)
 
 
 def resample(prep: Prepared, angles: np.ndarray, fps: float = 20.0) -> Clip:
@@ -314,7 +352,16 @@ def resample(prep: Prepared, angles: np.ndarray, fps: float = 20.0) -> Clip:
         return np.interp(t_out, t_in, v)
 
     quat = Slerp(t_in, Rotation.from_quat(prep.root_quat))(t_out).as_quat() if len(t_in) > 1 else prep.root_quat
-    return Clip(angles={k: lerp(angles[:, i]) for i, k in enumerate(WIRE)}, t=t_out, root_xy_yaw=np.stack([lerp(prep.root_xy_yaw[:, i]) for i in range(3)], 1), root_z=lerp(prep.root_z), root_quat=quat, fold_tilt=prep.fold_tilt)
+    return Clip(
+        angles={k: lerp(angles[:, i]) for i, k in enumerate(WIRE)},
+        t=t_out,
+        root_xy_yaw=np.stack([lerp(prep.root_xy_yaw[:, i]) for i in range(3)], 1),
+        root_z=lerp(prep.root_z),
+        root_quat=quat,
+        fold_tilt=prep.fold_tilt,
+        body_rotations=_slerp_joints(prep, t_in, t_out),
+        body_pelvis=np.stack([lerp(prep.body_pelvis[:, i]) for i in range(3)], 1) if prep.body_pelvis is not None else None,
+    )
 
 
 def retarget_batch(motions: list[Motion], fold_tilt: bool = True, fps: float = 20.0, method: str = "ik", device: str = "auto", config: IKConfig | None = None, preps: list[Prepared] | None = None, chunk_frames: int = 400_000, verbose: bool = False) -> list[Clip]:

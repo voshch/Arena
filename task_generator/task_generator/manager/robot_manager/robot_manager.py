@@ -422,8 +422,8 @@ class RobotManager(NodeInterface):
         self._runner.finish_episode()
 
     def _dispatch_pose(self, phase: GoToPhase) -> Pose | None:
-        """Pose a goto without one dispatches to: the robot's own for a hold, a standoff next to the pedestrian for a ped target, None while either is unknown."""
-        pose = self.pose
+        """Pose a goto without one dispatches to: the robot's own for a hold, a standoff next to the pedestrian for a ped target, None while either is unknown or the reset has not landed the robot."""
+        pose = self.pose if self._placed else None
         if pose is None:
             return None
         here = self._environment_manager.ezilear(pose)

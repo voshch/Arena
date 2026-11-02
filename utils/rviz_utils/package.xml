@@ -67,13 +67,13 @@
   <exec_depend>task_generator_msgs</exec_depend>
   <exec_depend>arena_viz</exec_depend>
   <exec_depend>arena_people_msgs</exec_depend>
+  <exec_depend>arena_assets</exec_depend>
+  <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>hri_msgs</exec_depend>
-  <exec_depend>human_description</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>topic_tools</exec_depend>
-  <exec_depend>xacro</exec_depend>
   <exec_depend>urdfdom_py</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>hri_rviz</exec_depend>

@@ -1,16 +1,15 @@
-"""REP-155 face pose of a human_description body and the intrinsics of its central view."""
+"""REP-155 face pose of an RViz body and the intrinsics of its central view."""
 
 from __future__ import annotations
 
 import dataclasses
 import math
 from collections.abc import Mapping
-from pathlib import Path
 
 import numpy as np
-import yaml
-from task_generator.simulators.human.drivers import RIG_FILE
 from urdf_parser_py import urdf as urdf_parser
+
+from arena_assets.rig import rig_of
 
 from .body_pool import _origin_matrix
 from .rig import _rot_axis
@@ -24,6 +23,7 @@ class _ChainJoint:
     name: str
     origin: np.ndarray
     axis: np.ndarray | None
+    prismatic: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -41,8 +41,8 @@ class FaceChain:
         joints = []
         for name in names:
             joint = robot.joint_map[name]
-            axis = np.asarray(joint.axis, dtype=float) if joint.type in ("revolute", "continuous") else None
-            joints.append(_ChainJoint(name, _origin_matrix(joint.origin), axis))
+            axis = np.asarray(joint.axis, dtype=float) if joint.type in ("revolute", "continuous", "prismatic") else None
+            joints.append(_ChainJoint(name, _origin_matrix(joint.origin), axis, joint.type == "prismatic"))
         eyes = [visual.origin.xyz for visual in robot.link_map[head].visuals if visual.origin is not None and abs(visual.origin.xyz[1]) > 0.0]
         if len(eyes) != 2:
             raise ValueError(f"{head} has {len(eyes)} off-midline visuals, expected two eyes")
@@ -57,7 +57,10 @@ class FaceChain:
                 q = positions.get(joint.name, 0.0)
                 if q:
                     r = np.eye(4)
-                    r[:3, :3] = _rot_axis(joint.axis, q)
+                    if joint.prismatic:
+                        r[:3, 3] = joint.axis * q
+                    else:
+                        r[:3, :3] = _rot_axis(joint.axis, q)
                     m = m @ r
         sellion = np.eye(4)
         sellion[:3, 3] = self.sellion
@@ -65,14 +68,11 @@ class FaceChain:
 
 
 def root_drop(model_uri: str) -> float:
-    """Height in m the rig.yaml beside an actor SDF moves the body root, 0 without the file or the key."""
-    if not model_uri:
+    """Height in m the .rig beside an actor SDF moves the body root, 0 without the file or the setting."""
+    rig = rig_of(model_uri)
+    if rig is None:
         return 0.0
-    rig_path = Path(model_uri).with_name(RIG_FILE)
-    if not rig_path.is_file():
-        return 0.0
-    rig = yaml.safe_load(rig_path.read_text()) or {}
-    return float(rig.get("root_offset", (0.0, 0.0, 0.0))[2])
+    return float(rig.settings.get("root_offset", (0.0, 0.0, 0.0))[2])
 
 
 def quat_from_matrix(m: np.ndarray) -> tuple[float, float, float, float]:

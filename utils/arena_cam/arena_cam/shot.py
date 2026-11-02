@@ -1,4 +1,4 @@
-"""Load a declarative shot YAML file into a `Camera` timeline.
+"""Load a camera file by path into a `Camera`.
 
 Schema (see cam/README.md):
 
@@ -11,10 +11,10 @@ Schema (see cam/README.md):
       - orbit: { radius: 4, elevation_deg: 30, sweep_deg: 360, duration: 8, ease: inout }
       - establishing: { radius: 8 }    # a step may reference another shot
 
-Each step is a single-key map {name: params} routed through `Camera.add`, so every
-verb and every registered shot is usable here with no per-step code. A file is just
-a shot loaded by path rather than by name. Angles are radians except `sweep_deg` /
-`start_deg`; fov is radians.
+Each step is a single-key map {name: params}, a verb or a camera asset, and a file
+may hold a `cameras:` rig instead of a timeline. A file is just a camera asset loaded
+by path rather than by name, its nested names resolve through the global tiers.
+Angles are radians except `sweep_deg` / `start_deg`; fov is radians.
 """
 
 from __future__ import annotations
@@ -25,15 +25,13 @@ import yaml
 
 from .camera import Camera
 from .client import TargetSelection
-from .shots import desugar, substitute
 
 
-def load_shot(path: str | Path, targets: TargetSelection) -> Camera:
-    """Parse a shot YAML file into a ready-to-play `Camera`."""
+def load_shot(path: str | Path, targets: TargetSelection, params: dict | None = None) -> Camera:
+    """Parse a camera file into a ready-to-play `Camera`."""
+    from arena_simulation_setup.tree import Identifier
+    from arena_simulation_setup.tree.assets.Camera import collect
+
+    root = str(path)
     spec = yaml.safe_load(Path(path).read_text()) or {}
-    args = spec.get("params", {})
-    cam = Camera(targets)
-    for step in desugar(spec):
-        ((name, raw),) = step.items()
-        cam.add(name, substitute(raw, args))
-    return cam
+    return Camera(targets).load(root, Identifier._run_sync(collect(root, spec)), params)

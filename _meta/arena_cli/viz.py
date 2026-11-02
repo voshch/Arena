@@ -196,6 +196,7 @@ def cmd(argv: list[str]) -> None:
 VIZ_KV = Kv(
     {
         "backend": Static(["rviz", "rerun"]),
+        "cam": None,
         "view": Static(["map", "robot", "robot3p"]),
         "robot": Static(["all"]),
         "web_port": None,

@@ -360,11 +360,12 @@ with the period snapped to a whole number of physics steps and every pulse
 stamped with the observation time its action was computed for, so a
 lockstep run steps exactly one planner tick per action: obs at the frozen
 boundary, action, step. The `none`, `manual`, and `test_collision` bringups
-keep fire-and-forget goto_pose and stay ungated. `arena cam ... lockstep=true` recording registers `cam`
-(hard, 1/fps) for the take when a lockstep run is active and captures each
+keep fire-and-forget goto_pose and stay ungated. `arena cam ... --lockstep` registers `cam`
+(hard, 1/fps) for the take when a lockstep run is active and, recording or live, films each
 frame at the tick the run froze on for it before beating that stamp, so the
-recording is gated like any other producer and frame-exact at any target rtf. With no
-run active it holds and steps the sim itself. Beats republish
+take is gated like any other producer and frame-exact at any target rtf. With no
+run active it holds and steps the sim itself. A camera server (`arena cam serve`) registers
+`cam` under its env for each take and never holds the sim. Beats republish
 `LockstepHeartbeat` coverage stamps, and a wall-clock grace watchdog publishes
 forward keepalives through legitimately silent phases (MoveIt planning,
 nav2 recovery behaviors), pacing the sim at wall rate so a producer that
@@ -499,6 +500,9 @@ are what Arena sends it.
   every env. `rigid` (default) lets walls and obstacles stop or push the robot
   while pedestrians touch it without pushing, `kinematic` lets it pass through.
   Collision events come from the task generator's collision tracker in both.
+- `sim.flatsim.physics:=auto|box2d|warp`: a runtime argument, the engine of the
+  server. `box2d` steps on the CPU, `warp` runs physics and every ray cast on the
+  GPU, `auto` takes `warp` when GPU passthrough is on, else `box2d`.
 - Sensors: `laserscan`, `pointcloud`, `imu` and `contact` specs, each at its
   own update rate rounded to whole physics steps, and every sensor publishes
   once more when an episode reset ends (`republish`). Lidar and camera geometry

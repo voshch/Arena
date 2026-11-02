@@ -1077,6 +1077,31 @@ do its regions. See
 [worlds/README.md](worlds/README.md) for the full key list of every
 top-level key.
 
+### Scenario cameras
+
+A scenario can carry its own camera setups as plain files,
+`scenarios/<name>/cameras/<camera>.yaml`, beside its other files. Each is a
+[camera asset](../utils/arena_cam/arena_cam/README.md#camera-assets): one camera's
+timeline, or a rig of cameras with their mounts. `viz.cam:=<camera>` opts in and plays
+it at every episode start, and the camera follows a scenario swap:
+
+```yaml
+# worlds/hospital/scenarios/triage/cameras/wide.yaml
+reference: { entity: "${robot}", mode: yaw }
+timeline:
+  - look: { eye: [-3, 0, 2], target: [2, 0, 0] }
+  - establishing: { radius: 6, slice: [0, 4] }
+  - hold: { duration: 20 }
+```
+
+The name resolves scenario first, then world, then global. A name the scenario lacks
+falls to a non-negative index into its sorted cameras, else its first, so
+`viz.cam:=0` plays each scenario's first camera. See
+[Playing with the episode](../utils/arena_cam/arena_cam/README.md#playing-with-the-episode).
+Name robots and pedestrians with context tokens, `${robot}` or `${face.agent_1}`, never
+with an env. A camera times itself from when it starts, so only under lockstep does a
+step line up with a `timeline:` `at:` to the frame.
+
 ### Robots: floors, elevator rides, mechanism map
 
 Robot poses are level-local when the robot entry carries `level` /
@@ -1241,7 +1266,7 @@ reach.
 Assets placed under `worlds/$WORLD/assets/<domain>/<Type>/<name>/` are
 resolved before shared-local (`$ARENA_ASSETS_DIR_LOCAL`), imported (`$ARENA_ASSETS_DIR_IMPORTED`) and network-fetched
 assets. `<domain>` defaults to `Common` if you have no reason to scope the
-asset further. Six asset kinds can be shipped this way:
+asset further. Seven asset kinds can be shipped this way:
 
 | Type | Directory contents | Referenced as |
 |---|---|---|
@@ -1251,6 +1276,7 @@ asset further. Six asset kinds can be shipped this way:
 | `Wall` | `<name>.yaml`, a `WallDescription` (see [configs/walls/README.md](configs/walls/README.md)) | `kind:` on a `walls:` entry or a zone outline |
 | `Sound` | `<name>.yaml` (a sound manifest, see [configs/sounds/README.md](configs/sounds/README.md)) plus its wav files | `asset_id:` on a `sounds:` entry |
 | `Stairs` | `<name>.yaml`, a staircase kind (see [Staircase kinds](#staircase-kinds)) | `kind:` on a `stairs:` or `escalators:` entry |
+| `Camera` | `<name>.yaml`, a camera asset (see [the arena_cam README](../utils/arena_cam/arena_cam/README.md#camera-assets)) | `viz.cam:=<name>` |
 
 To ship a custom wall style:
 
@@ -1259,7 +1285,7 @@ mkdir -p worlds/$WORLD/assets/Common/Wall/my_style
 # create worlds/$WORLD/assets/Common/Wall/my_style/my_style.yaml
 ```
 
-Then reference it in `world.yaml` walls as `kind: my_style`. The other five
+Then reference it in `world.yaml` walls as `kind: my_style`. The other six
 kinds follow the same `assets/<domain>/<Type>/<name>/` layout. Objects, humans
 and materials carry model or material files instead of a preset YAML, a sound
 carries its `<name>.yaml` manifest beside the wav files, and a staircase kind

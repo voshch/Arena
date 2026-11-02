@@ -126,7 +126,7 @@ If the hook auto-fixes something, the commit is aborted and the fixes are left u
 pre-commit run basedpyright --hook-stage manual
 ```
 
-[`_meta/typings`](_meta/typings) holds stubs for compiled modules that ship no type information (USD, MuJoCo, Box2D, gz-transport, tf2, the Qt bindings).
+[`_meta/typings`](_meta/typings) holds stubs for compiled modules that ship no type information (USD, MuJoCo, Box2D, Warp, gz-transport, tf2, the Qt bindings).
 
 [`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs the same check, at the hook's basedpyright version, over `_meta` and every package it tests, after the test suites.
 

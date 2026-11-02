@@ -86,7 +86,7 @@ the result from `Level.all_walls`.
 | key | default | meaning |
 | --- | --- | --- |
 | `name` | required | unique within the world |
-| `span` | required | opening endpoints `[[x, y], [x, y]]` |
+| `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken |
 | `kind` | `sliding` | `sliding`, `sliding_top`, `teleport` implemented. `hinged` is accepted but falls back to `teleport` at runtime with a warning |
 | `width` | `0.1` | metres |
 | `height` | `2.0` | metres |
@@ -524,8 +524,9 @@ Resolvers run in order, first hit wins
    `arena-worlds-prod-public`), fetching into `$ARENA_ASSETS_DIR/<bucket>/<name>/`.
    A world keys off its bare name, so the worlds bucket is itself the namespace.
 
-Worlds not shipped in this package are hosted in the public bucket(s) named
-by `WORLD_BUCKETS` and pulled on demand. `arena asset find world <name>`
+Worlds not shipped in this package are hosted in the bucket(s) named by
+`WORLD_BUCKETS` and pulled on demand. `default` in that list stands for the public
+bucket, and a private bucket needs `GCS_ACCESS_TOKEN` or a gcloud login. `arena asset find world <name>`
 prints every resolver's verdict for a name (which one hit, which were
 shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 `arena asset expire world <name>` makes the next use download it again.

@@ -5,9 +5,12 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 import attrs
+import numpy as np
+from arena_simulation_setup.shared.body import JOINT_DOFS
 
 from .clips import AssetClips, ClipSource, joint_mask
 from .gait import GaitGenerator
+from .hands import COUNT_CLIP, COUNT_JOINTS, count_frames
 from .profile import PoseProfile
 
 JOINT_NAMES = GaitGenerator.JOINT_NAMES
@@ -41,6 +44,15 @@ class AnimationLogger(Protocol):
     def warning(self, message: str, /) -> object: ...
 
 
+@attrs.frozen(eq=False)
+class BodyLayer:
+    """One playing clip's body group this tick: rotations by joint with their weight, its pelvis displacement when it owns the whole body."""
+
+    rotations: dict[str, tuple[Quat, float]]
+    pelvis: np.ndarray | None
+    weight: float
+
+
 @attrs.define
 class Animation:
     name: str
@@ -53,6 +65,7 @@ class Animation:
     joints: tuple[str, ...] = ()  # joints the clip moves, empty = all (canned clips carry this from annotations)
     reverse: bool = False  # loop forward then backward
     release: tuple[dict, ...] = ()  # frames played when the clip's gesture slot ends, empty = fade out
+    body_joints: tuple[str, ...] = ()  # joints of the clip's body group, empty without one
 
     def __len__(self) -> int:
         return len(self.frames)
@@ -164,6 +177,8 @@ class AnimationManager:
         self.one_shot_animations = {"t-pose", "jump", "seated", "sit", "lie", "collapse_to_ground"}
 
         self.cache_animations([])
+        count = count_frames(fps)
+        self.animations[COUNT_CLIP] = Animation(name=COUNT_CLIP, frames=count, n_frames=len(count), duration=len(count) / fps, loop=True, fps=fps, joints=COUNT_JOINTS)
 
         # Core playhead tracking (per agent)
         self._playhead: dict[int, float] = {}
@@ -183,6 +198,7 @@ class AnimationManager:
         # Pedestrian.msg IDLE/WALKING/RUNNING/PANIC/SURPRISED/CURIOUS/THREATENING
         self.state_to_animation_map: dict[int, str] = {0: "idle", 1: "walk", 2: "run", 3: "idle", 4: "idle", 5: "idle", 6: "idle"}
         self._transitions: dict[int, _Transition] = {}  # base crossfade in flight per agent
+        self._body_layers: dict[int, list[BodyLayer]] = {}
         self._tilt: dict[int, Quat] = {}  # pelvis tilt the last compute() blended in, per agent with a tilted clip playing
 
     def map_state_to_animation(self, state: int, anim_name: str) -> None:
@@ -248,7 +264,7 @@ class AnimationManager:
             raise ValueError("reverse with an intro")
 
         cycle = 2 * n_frames - 2 if is_reverse and n_frames > 1 else n_frames
-        return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, loop_from=loop_from, joints=joint_mask(meta.get("joints")), reverse=is_reverse, release=tuple(release))
+        return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, loop_from=loop_from, joints=joint_mask(meta.get("joints")), reverse=is_reverse, release=tuple(release), body_joints=clip.body_joints)
 
     def clip(self, name: str) -> Animation | None:
         """A cached clip, loaded from the clip source on first request (a clip published after launch). Failures are not retried."""
@@ -323,6 +339,7 @@ class AnimationManager:
             self.animations.pop(name, None)
         self._transitions.pop(agent_id, None)
         self._tilt.pop(agent_id, None)
+        self._body_layers.pop(agent_id, None)
         self.gait_generator.forget(agent_id)
 
     def root_tilt(self, agent_id: int) -> Quat | None:
@@ -584,7 +601,22 @@ class AnimationManager:
             self._tilt.pop(agent_id, None)
         else:
             self._tilt[agent_id] = tilt
+        self._body_layers[agent_id] = []
+        if next_anim.body_joints:
+            self._add_body_layer(agent_id, self._get_playhead(agent_id), next_anim, 1.0, set(JOINT_NAMES))
         return self._sample_animation_overlay(agent_id, base_angles, dt)
+
+    def _add_body_layer(self, agent_id: int, playhead: float, anim: Animation, weight: float, dofs: set[str]) -> None:
+        """Queue a clip's body group at a playhead, each joint weighted by whether the slot owns its DOFs, joints without DOFs only when it owns them all."""
+        current, following, frac = self._bracket(playhead, anim)
+        whole = dofs >= set(JOINT_NAMES)
+        rotations = {joint: (nlerp(current["body"][k], following["body"][k], frac), weight) for k, joint in enumerate(anim.body_joints) if (whole if joint not in JOINT_DOFS else dofs.issuperset(JOINT_DOFS[joint]))}
+        pelvis = (1.0 - frac) * current["body_pelvis"] + frac * following["body_pelvis"] if whole else None
+        self._body_layers.setdefault(agent_id, []).append(BodyLayer(rotations, pelvis, weight))
+
+    def body_layers(self, agent_id: int) -> list[BodyLayer]:
+        """The body groups of the clips playing on an agent this tick, lowest first."""
+        return self._body_layers.get(agent_id, [])
 
     def _sample_animation_overlay(
         self,
@@ -651,6 +683,8 @@ class AnimationManager:
             tilt = self._sample_tilt(overlay_t, overlay_anim)
             if tilt is not None:
                 self._tilt[agent_id] = nlerp(self._tilt.get(agent_id, UPRIGHT), tilt, weight)
+            if overlay_anim.body_joints:
+                self._add_body_layer(agent_id, overlay_t, overlay_anim, weight, overlay.joints)
 
         if overlay.releasing and overlay.release_elapsed >= overlay.release_s:
             self._end_overlay(agent_id, slot, overlay, drop=True)

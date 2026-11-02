@@ -204,6 +204,15 @@ def test_providers_drops_empty_segments():
         del os.environ[var]
 
 
+def test_providers_default_entry_stands_for_the_family_bucket():
+    var = '_ARENA_TEST_PROVIDERS_DEFAULT_ENTRY'
+    os.environ[var] = 'default,private'
+    try:
+        assert providers(var, 'family-public') == ['family-public', 'private']
+    finally:
+        del os.environ[var]
+
+
 def test_providers_blank_env_value_falls_back_to_default():
     """The shell exports the override slot blank, which must not read as 'no buckets'."""
     var = '_ARENA_TEST_PROVIDERS_BLANK'
@@ -261,6 +270,14 @@ def test_net_listing_args_uses_children_and_prefix_for_unannotated_payloads():
 
     prefixed = NetResolver(WorldIdentifier, provider='b', annotated=False, list_prefix='suites')._listing_args()
     assert prefixed[-3:] == ['list', '--children', 'suites']
+
+
+def test_net_listing_args_filter_children_by_contained_file():
+    from arena_simulation_setup.tree import NetResolver
+    from arena_simulation_setup.tree.World import WorldIdentifier
+
+    argv = NetResolver(WorldIdentifier, provider='b', annotated=False, list_containing='world.yaml')._listing_args()
+    assert argv[-3:] == ['--children', '--containing', 'world.yaml']
 
 
 def test_expired_net_entry_is_refetched_but_still_served_stale(tmp_path):

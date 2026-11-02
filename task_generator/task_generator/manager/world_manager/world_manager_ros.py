@@ -307,10 +307,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self.node.rosparam[str].set('world', world_name)
 
         if self._map_server_present:
-            if disk_mode:
-                await self._push_disk_map_to_map_server(world_view.map_yaml(disk_level), compacted_description)
-            elif compacted_description is not None:
-                await self._push_world_to_map_server(compacted_description, level_origins=level_origins)
+            await self._push_map_source(world_view, world.level_ids, compacted_description, level_origins)
 
         await self._environment_manager.reset(purge=ObstacleLayer.WORLD)
         detected_walls: dict[str, Sequence[Wall]] = {}
@@ -442,6 +439,15 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         png_bytes = (map_yaml.parent / yaml.safe_load(map_yaml_text)['image']).read_bytes()
         await self._load_map_to_server(png_bytes, map_yaml_text, description)
 
+    async def _push_map_source(self, world_view: WorldView, level_ids: Sequence[str], description: Level | None, level_origins: dict[str, tuple[float, float]] | None) -> None:
+        """Serve the map `debug.map_source` selects. Caller guarantees map_server is present."""
+        if description is None:
+            return
+        if map_source(self.node) is MapSource.DISK:
+            await self._push_disk_map_to_map_server(world_view.map_yaml(level_ids[0]), description)
+        else:
+            await self._push_world_to_map_server(description, level_origins=level_origins)
+
     def _publish_door_mask(
         self,
         description: Level,
@@ -513,8 +519,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 loaded = world_view.load(level_filter=wn_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
                 origins = world_view.level_origins()
                 compacted = loaded.compact_world(origins=origins if origins is not None else {fid: (0.0, 0.0) for fid in loaded.level_ids})
-                if compacted is not None:
-                    await self._push_world_to_map_server(compacted, level_origins=origins)
+                await self._push_map_source(world_view, loaded.level_ids, compacted, origins)
 
     def __init__(self, *args: object, environment_manager: EnvironmentManager, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)

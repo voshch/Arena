@@ -12,11 +12,21 @@ from arena_simulation_setup.tree import (
     NetResolver,
     PathView,
 )
-from arena_simulation_setup.utils.models import ModelWrapper
+from arena_simulation_setup.utils.models import Model, ModelWrapper
 from arena_simulation_setup.utils.models.model_loader import (
     ModelProvider_OBJ,
     ModelProvider_SDF,
 )
+
+
+class ModelProvider_HumanSDF(ModelProvider_SDF):
+    """The SDF of rig/<name>.sdf when the bundle has one, else the bundle's own."""
+
+    @classmethod
+    async def load(cls, model_dir: Path, model: str, loader_args: dict | None) -> Model:
+        if (model_dir / 'rig' / f'{model}.sdf').is_file():
+            return await super().load(model_dir / 'rig', model, loader_args)
+        return await super().load(model_dir, model, loader_args)
 
 
 class HumanView(PathView):
@@ -31,7 +41,7 @@ class HumanView(PathView):
         return ModelWrapper(
             self.path.name,
             {
-                **ModelProvider_SDF.asdict(self.path, self.path.name),
+                **ModelProvider_HumanSDF.asdict(self.path, self.path.name),
                 **ModelProvider_OBJ.asdict(self.path, self.path.name),
             },
         )

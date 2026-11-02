@@ -63,6 +63,8 @@ The package contributes four domains to the `arena_mcp` server, listed with
   the import of chosen items as a job whose result lists the item paths.
   `assets_retarget_animation` runs the `animation_retarget` tool on SMPL-X
   files as a job whose result lists the clip directories.
+  `assets_rig_human` writes `rig/<name>.rig` and `rig/<name>.sdf` into a human
+  bundle from its skin like `rig_human`, `dry_run` returning the rig without writing it.
   `assets_articulation` resolves one object and lists its links, joints (type,
   parent, child, limits, speed), named states, detents, field families (each
   family with its member joints) and swept box, or says it is rigid.
@@ -124,11 +126,11 @@ cosmetic.
 
 `PedSkeletonPlugin` (package `arena_gz_plugins`) is the gz-sim 8 C++ plugin that
 subscribes `arena_peds`, positions each actor via `TrajectoryPose`, and poses its
-skeleton per bone via `BoneTransforms` from the wire `joint_state`, through the
-same bone map as the Isaac provider (`utils/msgs/arena_people_msgs/bone_map.json`), so
-both simulators render the same articulated gait.  `BoneTransforms` is an Arena
+skeleton per bone via `BoneTransforms` from the wire `body` pose, through the
+bundle's `rig/<name>.rig` like the Isaac and MuJoCo renderers, so all simulators render the
+same articulated gait.  `BoneTransforms` is an Arena
 addition to gz-sim carried by the `gz-sim` overlay in `_meta/repos/gazebo.repos`
-and built by `arena feature gazebo update`.  Without the overlay or a bone map the
+and built by `arena feature gazebo update`.  Without the overlay or a rigged bundle the
 plugin falls back to scrubbing the `walk` clip via `AnimationTime`.  Enabled by
 default via the `ped_skeleton_enabled` launch arg in `arena_bringup`.  The plugin
 lives in its own repo, [arena_gz_plugins](https://github.com/voshch/arena_gz_plugins),
