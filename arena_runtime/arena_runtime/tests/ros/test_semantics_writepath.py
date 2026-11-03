@@ -419,9 +419,12 @@ def test_resolve_timeline_value_range_differs_by_seed() -> None:
 
 def _node_stub() -> object:
     """A EpisodeNode that skipped its init: no robots manager, so the record carries no phases."""
+    from types import SimpleNamespace
+
     from arena_runtime.env.episode_node import EpisodeNode
 
-    stub = object.__new__(type("Stub", (EpisodeNode,), {"sim_time": None}))
+    rosparam = {str: SimpleNamespace(get=lambda name, default: {"task_layer": "fake_layer"}.get(name, default))}
+    stub = object.__new__(type("Stub", (EpisodeNode,), {"sim_time": None, "rosparam": rosparam}))
     stub._robots_manager = None
     return stub
 
@@ -688,6 +691,7 @@ def test_record_to_msg_carries_the_modes_and_the_full_name_params_of_the_record(
 
     assert decode_modes(msg.modes) == record.modes
     assert sorted(p.name for p in msg.params) == ["task.fake_obstacles.m", "task.fake_robots.n"]
+    assert msg.task_layer == "fake_layer"
 
 
 def test_record_to_msg_carries_the_axes_of_a_runtime_with_other_axes() -> None:

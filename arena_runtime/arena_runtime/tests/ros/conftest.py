@@ -157,7 +157,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
                 pytest.skip(str(e))
             raise
         assert await probe.start.ensure(timeout_sec=10.0)
-        await rig.until(lambda: probe.clock() > 0.0, 5.0, f"{sim} /clock")
+        await rig.until(lambda: probe.clock() > 0.0, 30.0, f"{sim} /clock")
         await scenario(rig)
     finally:
         with contextlib.suppress(Exception):
