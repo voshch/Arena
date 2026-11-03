@@ -6,6 +6,7 @@ helpers, so the descriptor mini-DSL (label/range tokens) has a single producer.
 
 from __future__ import annotations
 
+import enum
 import types
 import typing
 
@@ -106,14 +107,17 @@ def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls
                 declare_int(node, name, unset if default is None else default, label=label, description=f"{unset} = unset", lo=unset, hi=int(le) if le is not None else None)
         elif annotation is float:
             declare_double(node, name, float(default), label=label, lo=float(ge) if ge is not None else None, hi=float(le) if le is not None else None)
-        elif annotation is str:
+        elif annotation is str or (isinstance(annotation, type) and issubclass(annotation, str)):
             extra = field_info.json_schema_extra
             widget = extra.get("widget") if isinstance(extra, dict) else None
+            default_str = str(default.value if isinstance(default, enum.Enum) else (default or ""))
             if widget == "sketch":
-                declare_sketch(node, name, str(default), label=label)
+                declare_sketch(node, name, default_str, label=label)
             elif widget == "text":
-                declare_text(node, name, str(default), label=label)
+                declare_text(node, name, default_str, label=label)
             else:
-                declare_string(node, name, str(default), label=label)
+                declare_string(node, name, default_str, label=label)
+        elif origin in (list, tuple):
+            continue
         else:
             raise ValueError(f"Unsupported annotation {annotation!r} for field '{field_name}'; only bool/int/float/str and 2-tuples thereof are supported")
