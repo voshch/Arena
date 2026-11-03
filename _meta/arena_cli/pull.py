@@ -145,6 +145,8 @@ def pull_main(argv: list[str]) -> int:
 
         skipped.extend(f"patch {name}" for name in apply_patches(arena_dir, env))
 
+        rosdep_ok = do_rosdep and subprocess.run(["rosdep", "update", "--rosdistro", _env("ARENA_ROS_DISTRO")], env=env, check=False).returncode == 0
+
         if do_git:
             repos_file = os.path.join(arena_dir, "_meta", "repos", "arena.repos")
             ws_src = os.path.join(arena_ws_dir, "src")
@@ -167,7 +169,6 @@ def pull_main(argv: list[str]) -> int:
                     skipped.append(f"feature {name}")
 
         if do_rosdep:
-            rosdep_ok = subprocess.run(["rosdep", "update", "--rosdistro", _env("ARENA_ROS_DISTRO")], env=env, check=False).returncode == 0
             deps_ok = (
                 rosdep_ok
                 and subprocess.run(
