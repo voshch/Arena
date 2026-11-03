@@ -329,6 +329,47 @@ def test_expired_net_entry_is_refetched_but_still_served_stale(tmp_path):
     assert (entry / '.ttl').read_text() == '1'
 
 
+_COUNTING_FETCH = """
+import asyncio
+import subprocess
+import sys
+from arena_simulation_setup.tree import NetResolver
+from arena_simulation_setup.tree.World import WorldIdentifier
+
+class Counting(NetResolver):
+    calls = 0
+
+    @classmethod
+    async def check_output_async(cls, args, **kwargs):
+        Counting.calls += 1
+        if sys.argv[1] == 'unreachable':
+            raise subprocess.CalledProcessError(1, list(args))
+        return b''
+
+resolver = Counting(WorldIdentifier, provider='b', annotated=False)
+first = asyncio.run(resolver.resolve(WorldIdentifier('w')))
+second = asyncio.run(resolver.resolve(WorldIdentifier('w')))
+resolver.invalidate()
+third = asyncio.run(resolver.resolve(WorldIdentifier('w')))
+print(first, second, third, Counting.calls)
+"""
+
+
+def _resolve_thrice(tmp_path: Path, mode: str) -> str:
+    env = {**os.environ, 'ARENA_ASSETS_DIR': str(tmp_path)}
+    env.pop('ARENA_ASSETS_NET')
+    done = subprocess.run([sys.executable, '-c', _COUNTING_FETCH, mode], env=env, capture_output=True, text=True, check=True)
+    return done.stdout.splitlines()[-1]
+
+
+def test_net_entry_absent_from_the_provider_is_fetched_once_until_invalidated(tmp_path):
+    assert _resolve_thrice(tmp_path, 'absent') == 'None None None 2'
+
+
+def test_net_fetch_that_fails_is_retried_at_the_next_resolve(tmp_path):
+    assert _resolve_thrice(tmp_path, 'unreachable') == 'None None None 3'
+
+
 def test_arena_dynamic_path_reads_the_local_root_at_every_use_until_assigned(tmp_path: Path) -> None:
     previous_env = os.environ.get("ARENA_ASSETS_DIR_LOCAL")
     previous = DynamicPaths.ARENA._assigned

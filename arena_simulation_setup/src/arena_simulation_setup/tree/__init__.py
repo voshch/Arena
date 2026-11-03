@@ -436,10 +436,12 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         self._batch_lock = asyncio.Lock()
         self._stale: set[IdentifierT] = set()
         self._failures: dict[str, str] = {}
+        self._absent: set[str] = set()
 
     def invalidate(self):
         super().invalidate()
         self._stale.clear()
+        self._absent.clear()
 
     def is_stale(self, identifier: IdentifierT) -> bool:
         return identifier in self._stale
@@ -546,6 +548,8 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
                 self._failures.pop(relpath, None)
                 target = root_path / relpath
                 result = target if target.exists() else None
+                if result is None:
+                    self._absent.add(relpath)
                 if result is not None and result.is_dir():
                     try:
                         (result / self._TTL_MARKER).write_text(stamp)
@@ -568,6 +572,9 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
             return None
         if identifier in self._cache:
             return self._cache[identifier]
+        relpath = str(identifier.relpath())
+        if relpath in self._absent:
+            return None
 
         candidate = self.path / identifier.relpath()
         if candidate.is_dir():
@@ -580,7 +587,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
                 self._cache[identifier] = candidate
                 return candidate
 
-        result = await self._batch_request(str(identifier.relpath()))
+        result = await self._batch_request(relpath)
         if result is None:
             result = self._serve_stale(identifier, candidate)
         if result is not None:
