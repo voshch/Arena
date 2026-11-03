@@ -70,20 +70,29 @@ def _far(s: Segment, near: Point) -> Point:
     return s.b if _key(s.a) == _key(near) else s.a
 
 
-def _arms(leg: Leg, run: set[int], segments: list[Segment], ends: dict[tuple[int, int], list[int]]) -> tuple[Arm, ...]:
-    u = leg.direction
+def _arms(leg: Leg, run: set[int], segments: list[Segment], width: float) -> tuple[Arm, ...]:
+    """Every square segment that ends on or passes through the run, as the branches it leaves on either side."""
+    u, n = leg.direction, leg.normal
     arms: list[Arm] = []
-    for key, members in ends.items():
-        node = (key[0] * _EPS, key[1] * _EPS)
-        arc = (node[0] - leg.start[0]) * u[0] + (node[1] - leg.start[1]) * u[1]
-        if not _EPS < arc < leg.length - _EPS or math.dist(leg.at(arc), node) > 1e-3:
+    for i, s in enumerate(segments):
+        if i in run or math.dist(s.a, s.b) < _EPS:
             continue
-        branches = [(_unit(node, _far(segments[i], node)), segments[i]) for i in members if i not in run]
-        for direction, segment in branches:
-            if abs(direction[0] * u[0] + direction[1] * u[1]) > _PERPENDICULAR:
-                continue
-            across = next((math.dist(other.a, other.b) for d, other in branches if d[0] * direction[0] + d[1] * direction[1] < -1 + _EPS), 0.0)
-            arms.append(Arm(arc=arc, direction=direction, length=math.dist(segment.a, segment.b), opposite=across))
+        d = _unit(s.a, s.b)
+        if abs(d[0] * u[0] + d[1] * u[1]) > _PERPENDICULAR:
+            continue
+        side_a = (s.a[0] - leg.start[0]) * n[0] + (s.a[1] - leg.start[1]) * n[1]
+        side_b = (s.b[0] - leg.start[0]) * n[0] + (s.b[1] - leg.start[1]) * n[1]
+        if side_a * side_b > 0 and min(abs(side_a), abs(side_b)) > _EPS:
+            continue
+        t = side_a / (side_a - side_b)
+        cross = (s.a[0] + (s.b[0] - s.a[0]) * t, s.a[1] + (s.b[1] - s.a[1]) * t)
+        arc = (cross[0] - leg.start[0]) * u[0] + (cross[1] - leg.start[1]) * u[1]
+        if not _EPS < arc < leg.length - _EPS:
+            continue
+        for side, other in ((side_a, side_b), (side_b, side_a)):
+            if abs(side) > width / 2:
+                opposite = abs(other) if side * other < 0 and abs(other) > width / 2 else 0.0
+                arms.append(Arm(arc=arc, direction=n if side > 0 else (-n[0], -n[1]), length=abs(side), opposite=opposite))
     return tuple(sorted(arms, key=lambda a: a.arc))
 
 
@@ -113,7 +122,8 @@ def runs(layout: Layout) -> list[Run]:
             continue
         seen.add(frozenset(chain))
         leg = Leg(start=start, end=end)
-        found.append(Run(leg=leg, width=min(segments[k].width for k in chain), arms=_arms(leg, chain, segments, ends)))
+        width = min(segments[k].width for k in chain)
+        found.append(Run(leg=leg, width=width, arms=_arms(leg, chain, segments, width)))
     return sorted(found, key=lambda r: r.leg.length, reverse=True)
 
 
