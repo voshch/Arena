@@ -4,11 +4,23 @@ from __future__ import annotations
 
 import math
 import random
+from dataclasses import dataclass, field
+from pathlib import Path
 
+import numpy as np
+import pydantic
+import pytest
+import shapely
 import yaml
-
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
-from arena_simulation_setup.generative.world.concourse import FlowStreamSpec, WorldGeneratorConcourse
+from arena_simulation_setup.generative.world.concourse import (
+    ConcourseConfiguration,
+    ElevatorBayFeature,
+    FlowStreamSpec,
+    SideBranchFeature,
+    WorldGeneratorConcourse,
+)
+from arena_simulation_setup.tree.World.Scenario import ScenarioView
 
 
 def test_concourse_registered_in_world_generator_registry() -> None:
@@ -18,6 +30,18 @@ def test_concourse_registered_in_world_generator_registry() -> None:
     world = gen.compute()
     assert len(world.all_levels) == 1
     assert len(world.all_levels[0].zones) >= 1
+
+
+def test_concourse_params_contract() -> None:
+    """Verify concourse params() binds robots and obstacles to the generated scenario file."""
+    gen = WorldGeneratorConcourse({"length": 24.0, "width": 4.0}, random.Random(42))
+    assert gen.params() == {
+        "modes": {"robots": "scenario", "obstacles": "scenario"},
+        "params": {
+            "robots": {"file": "default"},
+            "obstacles": {"file": "default"},
+        },
+    }
 
 
 def test_concourse_straight_default_synthesizes_docks_and_scenario() -> None:
@@ -104,6 +128,7 @@ def test_concourse_custom_flow_distribution_with_blind_and_aware_peds() -> None:
                 velocity_min=1.2,
                 velocity_max=1.6,
                 behavior_tree="social_aware",
+                active_window=(10.0, 50.0),
             ).model_dump(),
             FlowStreamSpec(
                 name="blind_distracted",
@@ -125,11 +150,77 @@ def test_concourse_custom_flow_distribution_with_blind_and_aware_peds() -> None:
     assert aware_src["config"]["agent"]["agent_type"] == "adult"
     assert aware_src["config"]["agent"]["behavior_tree"] == "social_aware"
     assert aware_src["config"]["agent"]["desired_velocity"]["min"] == 1.2
+    assert aware_src["config"]["rate_profile"] == [
+        {"t": 0.0, "rate": 0.0},
+        {"t": 10.0, "rate": 0.0},
+        {"t": 10.0, "rate": 0.8},
+        {"t": 50.0, "rate": 0.8},
+        {"t": 50.0, "rate": 0.0},
+    ]
 
     blind_src = scenario["regions"]["dock_end_source_blind_distracted"]
     assert blind_src["config"]["agent"]["agent_type"] == "blind_pedestrian"
     assert blind_src["config"]["agent"]["behavior_tree"] == "distracted_inattentive"
     assert blind_src["config"]["agent"]["desired_velocity"]["max"] == 1.1
+
+
+def _interpolate_scheduler_rate(profile: list[dict[str, float]], t: float) -> float:
+    """Evaluate spawn rate at time t according to Arena spawn_scheduler interpolation rules.
+
+    Mirrors spawn_scheduler.py:117-135 (arena_humansim.core.spawn_scheduler.SpawnScheduler._interpolate_rate).
+    """
+    if not profile:
+        return 0.0
+    if len(profile) == 1:
+        return profile[0]["rate"]
+    if t <= profile[0]["t"]:
+        return profile[0]["rate"]
+    if t >= profile[-1]["t"]:
+        return profile[-1]["rate"]
+
+    for i in range(len(profile) - 1):
+        if profile[i]["t"] <= t <= profile[i + 1]["t"]:
+            dt = profile[i + 1]["t"] - profile[i]["t"]
+            if dt <= 0:
+                return profile[i + 1]["rate"]
+            alpha = (t - profile[i]["t"]) / dt
+            return profile[i]["rate"] + alpha * (profile[i + 1]["rate"] - profile[i]["rate"])
+
+    return profile[-1]["rate"]
+
+
+def test_concourse_active_window_rate_profile_interpolation() -> None:
+    """Verify active_window keyframe step construction accurately models discrete windows."""
+    gen = WorldGeneratorConcourse({"length": 24.0}, random.Random(42))
+
+    # Case 1: Window from t=10.0 to t=50.0
+    spec_window = FlowStreamSpec(name="f1", rate=0.8, active_window=(10.0, 50.0))
+    p1 = gen._compile_rate_profile(spec_window)
+    assert _interpolate_scheduler_rate(p1, 0.0) == 0.0
+    assert _interpolate_scheduler_rate(p1, 5.0) == 0.0
+    assert _interpolate_scheduler_rate(p1, 9.99) == 0.0
+    assert _interpolate_scheduler_rate(p1, 10.01) == 0.8
+    assert _interpolate_scheduler_rate(p1, 30.0) == 0.8
+    assert _interpolate_scheduler_rate(p1, 49.99) == 0.8
+    assert _interpolate_scheduler_rate(p1, 50.0) == 0.0
+    assert _interpolate_scheduler_rate(p1, 60.0) == 0.0
+
+    # Case 2: Window from t=0.0 to t=40.0
+    spec_from_zero = FlowStreamSpec(name="f2", rate=0.5, active_window=(0.0, 40.0))
+    p2 = gen._compile_rate_profile(spec_from_zero)
+    assert _interpolate_scheduler_rate(p2, 0.0) == 0.5
+    assert _interpolate_scheduler_rate(p2, 20.0) == 0.5
+    assert _interpolate_scheduler_rate(p2, 39.99) == 0.5
+    assert _interpolate_scheduler_rate(p2, 40.0) == 0.0
+    assert _interpolate_scheduler_rate(p2, 50.0) == 0.0
+
+    # Case 3: Window starting at t=15.0 extending to episode end
+    spec_delayed_start = FlowStreamSpec(name="f3", rate=0.6, active_window=(15.0, 999999.0))
+    p3 = gen._compile_rate_profile(spec_delayed_start)
+    assert _interpolate_scheduler_rate(p3, 0.0) == 0.0
+    assert _interpolate_scheduler_rate(p3, 10.0) == 0.0
+    assert _interpolate_scheduler_rate(p3, 15.01) == 0.6
+    assert _interpolate_scheduler_rate(p3, 100.0) == 0.6
 
 
 def test_concourse_attached_room_with_door_and_enter_room_mission() -> None:
@@ -160,7 +251,194 @@ def test_concourse_attached_room_with_door_and_enter_room_mission() -> None:
     door_len = math.hypot(door.end.x - door.start.x, door.end.y - door.start.y)
     assert round(door_len, 2) == 1.2
 
+    # Verify door endpoints lie on wall boundary
+    walls_lines = [shapely.LineString([(p.x, p.y) for p in w.path]) for w in level.walls]
+    walls_union = shapely.ops.unary_union(walls_lines)
+    p_start = shapely.Point(door.start.x, door.start.y)
+    p_end = shapely.Point(door.end.x, door.end.y)
+    assert walls_union.distance(p_start) < 0.2
+    assert walls_union.distance(p_end) < 0.2
+
     scenario = yaml.safe_load(gen.files()["scenarios/default/scenario.yaml"])
     robot = scenario["robots"][0]
     assert robot["phases"][0]["goto"][0] == 15.0
     assert robot["phases"][0]["goto"][1] > 4.0
+
+
+def test_concourse_runtime_scenario_loading_with_zone_converter(tmp_path: Path) -> None:
+    """Verify generated scenario loads successfully via ScenarioView without mocks."""
+    rng = random.Random(42)
+    gen = WorldGeneratorConcourse(
+        {
+            "length": 30.0,
+            "width": 4.0,
+            "branches": [{"at_s": 15.0, "side": "left", "width": 3.0, "length": 5.0}],
+        },
+        rng,
+    )
+    world = gen.compute()
+    c = world.compact_world(dict.fromkeys(world.level_ids, (0.0, 0.0))).zone_converter(np.random.default_rng(0))
+
+    scenario_dir = tmp_path / "scenarios" / "default"
+    scenario_dir.mkdir(parents=True)
+    scenario_file = scenario_dir / "scenario.yaml"
+    scenario_file.write_bytes(gen.files()["scenarios/default/scenario.yaml"])
+
+    scenario = ScenarioView(str(scenario_dir)).load(converter=c)
+    assert len(scenario.robots) == 1
+    assert len(scenario.regions) >= 2
+
+
+def test_concourse_validation_errors() -> None:
+    """Verify boundary checks fail with descriptive ValueErrors."""
+    # Door width exceeds branch width
+    with pytest.raises(ValueError, match="cannot exceed branch width"):
+        SideBranchFeature(at_s=10.0, width=3.0, length=5.0, door_width=4.0)
+
+    # Door width positive lower bound (0.0 rejected)
+    with pytest.raises(pydantic.ValidationError):
+        SideBranchFeature(at_s=10.0, width=3.0, length=5.0, door_width=0.0)
+
+    # Velocity min exceeds velocity max
+    with pytest.raises(ValueError, match="velocity_min .* cannot exceed velocity_max"):
+        FlowStreamSpec(velocity_min=2.0, velocity_max=1.0)
+
+    # Equal door width is permitted
+    feat = SideBranchFeature(at_s=10.0, width=3.0, length=5.0, door_width=3.0)
+    assert feat.door_width == 3.0
+
+    # Branch at_s exceeds nominal length
+    with pytest.raises(ValueError, match="exceeds concourse length"):
+        ConcourseConfiguration(length=20.0, branches=[SideBranchFeature(at_s=25.0)])
+
+    # Elevator at_s exceeds nominal length
+    with pytest.raises(ValueError, match="exceeds concourse length"):
+        ConcourseConfiguration(length=20.0, elevators=[ElevatorBayFeature(at_s=25.0)])
+
+    # Duplicate flow stream names
+    with pytest.raises(ValueError, match="Flow stream names must be unique"):
+        ConcourseConfiguration(
+            length=20.0,
+            flows=[FlowStreamSpec(name="f1"), FlowStreamSpec(name="f1")],
+        )
+
+    # Curved-spine actual arc length boundary check on compute()
+    with pytest.raises(ValueError, match="exceeds actual spine length"):
+        WorldGeneratorConcourse(
+            {
+                "length": 30.0,
+                "shape": "smooth_l_bend",
+                "bend_angle_deg": 60.0,
+                "branches": [{"at_s": 28.0, "width": 3.0, "length": 4.0}],
+            },
+            random.Random(42),
+        ).compute()
+
+    # Invalid dock reference in flows fails early on compute()
+    rng = random.Random(42)
+    invalid_flow_gen = WorldGeneratorConcourse(
+        {
+            "length": 20.0,
+            "flows": [FlowStreamSpec(name="f1", source_dock="dock_nonexistent").model_dump()],
+        },
+        rng,
+    )
+    with pytest.raises(ValueError, match="not found in dock sockets"):
+        _ = invalid_flow_gen.compute()
+
+    # Invalid robot_target_branch fails early on compute()
+    invalid_target_gen = WorldGeneratorConcourse(
+        {
+            "length": 20.0,
+            "robot_task_mode": "turn_into_branch",
+            "robot_target_branch": "dock_fake_branch",
+        },
+        rng,
+    )
+    with pytest.raises(ValueError, match="robot_target_branch 'dock_fake_branch' not found"):
+        _ = invalid_target_gen.compute()
+
+
+def test_concourse_scenario_output_determinism() -> None:
+    """Verify files() produces identical byte output and deterministic region order across runs."""
+    config = {
+        "length": 35.0,
+        "width": 4.0,
+        "branches": [{"at_s": 15.0, "side": "both", "width": 3.0, "length": 5.0}],
+    }
+    gen1 = WorldGeneratorConcourse(config, random.Random(1))
+    gen2 = WorldGeneratorConcourse(config, random.Random(2))
+    files1 = gen1.files()
+    files2 = gen2.files()
+    assert files1 == files2
+
+    # Verify region keys are sorted deterministically (sinks first, then sources)
+    scenario = yaml.safe_load(files1["scenarios/default/scenario.yaml"])
+    region_keys = list(scenario["regions"].keys())
+    assert region_keys == [
+        "dock_branch_0_right_sink",
+        "dock_start_sink",
+        "dock_end_source_main_opposing",
+        "dock_branch_0_left_source_cross_flow",
+    ]
+
+
+@dataclass
+class _Recorder:
+    calls: list[tuple[str, object, object]] = field(default_factory=list)
+
+    def declare_forward(self, name: str, value: object, *, descriptor: object = None) -> None:
+        self.calls.append((name, value, descriptor))
+
+
+@dataclass
+class _StubNode:
+    rosparam: _Recorder = field(default_factory=_Recorder)
+
+
+def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
+    """Verify config_from_params maps empty strings to None and ROS panel configs compute."""
+    from arena_simulation_setup.generative.world.schema import config_from_params
+
+    ros_params = {
+        "length": 30.0,
+        "width": 4.0,
+        "robot_target_branch": "",
+        "shape": "straight",
+    }
+    mapped = config_from_params(ConcourseConfiguration, ros_params)
+    assert mapped["robot_target_branch"] is None
+
+    # Verify ROS panel configuration computes successfully without dock reference error
+    gen = WorldGeneratorConcourse(ros_params, random.Random(42))
+    world = gen.compute()
+    assert len(world.all_levels) == 1
+    assert "dock_start" in {z.name for z in world.all_levels[0].zones}
+
+
+def test_schema_bridge_enum_default_list_skip_and_optional_str() -> None:
+    """Verify declare_config_params handles enums, skips lists, and handles optional strings."""
+    pytest.importorskip("rclpy")
+    pytest.importorskip("arena_rclpy_mixins")
+    from arena_simulation_setup.generative.world.schema import config_from_params, declare_config_params
+
+    assert config_from_params(ConcourseConfiguration, {"robot_target_branch": ""})["robot_target_branch"] is None
+
+    node = _StubNode()
+    declare_config_params(node, "test_prefix", ConcourseConfiguration)
+    declared_names = [c[0] for c in node.rosparam.calls]
+
+    # Verify enum fields are declared as string with value
+    assert "test_prefix.shape" in declared_names
+    shape_call = next(c for c in node.rosparam.calls if c[0] == "test_prefix.shape")
+    assert shape_call[1] == "straight"
+
+    # Verify structured list fields are skipped
+    assert "test_prefix.branches" not in declared_names
+    assert "test_prefix.elevators" not in declared_names
+    assert "test_prefix.pillars" not in declared_names
+    assert "test_prefix.colonnades" not in declared_names
+    assert "test_prefix.flows" not in declared_names
+
+    # Verify optional string field is declared
+    assert "test_prefix.robot_target_branch" in declared_names

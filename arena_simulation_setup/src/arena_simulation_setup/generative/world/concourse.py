@@ -24,6 +24,26 @@ from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
 from . import BaseConfiguration, WorldGeneratorImpl
 from .layout import Area, Layout, Region, compile_layout
 
+SCENARIO = "default"
+
+ANCHOR_EPSILON_DS = 0.05
+FILLET_EXTRA_RATIO = 0.15
+MERGE_GAP_M = 0.2
+BUFFER_PAD_M = 0.05
+TRUNK_DOCK_WIDTH_RATIO = 0.85
+BRANCH_DOCK_DEPTH_RATIO = 0.45
+BRANCH_DOCK_WIDTH_RATIO = 0.45
+DEFAULT_ROOM_DOOR_WIDTH_M = 1.2
+DEFAULT_ABSORPTION_RADIUS_M = 0.5
+DEFAULT_ACTIVE_WINDOW_END_S = 999999.0
+
+DEFAULT_OPPOSING_FLOW_RATE = 0.4
+DEFAULT_CROSS_FLOW_RATE = 0.3
+DEFAULT_FLOW_VELOCITY_MIN = 1.0
+DEFAULT_FLOW_VELOCITY_MAX = 1.5
+DEFAULT_CROSS_FLOW_VELOCITY_MIN = 0.9
+DEFAULT_CROSS_FLOW_VELOCITY_MAX = 1.4
+
 
 class ConcourseShape(str, enum.Enum):
     """Concourse spine geometry archetype."""
@@ -68,6 +88,18 @@ class SpineAnchor:
     half_width: float
 
 
+@dataclasses.dataclass(frozen=True)
+class BranchPlacement:
+    """Calculated position and orientation for a branch side attachment."""
+
+    branch_index: int
+    side: BranchSide
+    door_width: float | None
+    anchor: SpineAnchor
+    tip_point: tuple[float, float]
+    direction: tuple[float, float]
+
+
 class SideBranchFeature(pydantic.BaseModel):
     """Parametric side corridor or room attached at arc-length s along the spine."""
 
@@ -77,9 +109,16 @@ class SideBranchFeature(pydantic.BaseModel):
     side: BranchSide = pydantic.Field(default=BranchSide.BOTH)
     angle_deg: float = pydantic.Field(90.0, ge=15.0, le=165.0)
     is_room: bool = pydantic.Field(False)
-    door_width: float | None = pydantic.Field(default=None)
+    door_width: float | None = pydantic.Field(default=None, ge=0.5)
     jamb_thickness: float = pydantic.Field(0.25, ge=0.05)
     door_activation_distance: float = pydantic.Field(1.2, ge=0.5)
+
+    @pydantic.model_validator(mode="after")
+    def validate_door_width(self) -> SideBranchFeature:
+        """Ensure doorway width does not exceed branch corridor width."""
+        if self.door_width is not None and self.door_width > self.width:
+            raise ValueError(f"door_width ({self.door_width} m) cannot exceed branch width ({self.width} m)")
+        return self
 
 
 class ElevatorBayFeature(pydantic.BaseModel):
@@ -115,6 +154,13 @@ class ColonnadeFeature(pydantic.BaseModel):
     radius: float = pydantic.Field(default=0.3, ge=0.1)
     wall_margin: float = pydantic.Field(default=0.15, ge=0.05)
 
+    @pydantic.model_validator(mode="after")
+    def validate_interval(self) -> ColonnadeFeature:
+        """Ensure colonnade start arc-length does not exceed end arc-length."""
+        if self.start_s > self.end_s:
+            raise ValueError(f"start_s ({self.start_s}) cannot exceed end_s ({self.end_s})")
+        return self
+
 
 class FlowStreamSpec(pydantic.BaseModel):
     """Continuous pedestrian crowd flow stream between dock socket zones."""
@@ -128,14 +174,29 @@ class FlowStreamSpec(pydantic.BaseModel):
         default="dock_end",
         description="Target sink dock socket zone name (e.g. dock_start, dock_end, dock_branch_0_right)",
     )
-    rate: float = pydantic.Field(default=0.4, ge=0.02, le=5.0, description="Pedestrian spawn rate in agents/second")
+    rate: float = pydantic.Field(default=DEFAULT_OPPOSING_FLOW_RATE, ge=0.02, le=5.0, description="Pedestrian spawn rate in agents/second")
     agent_type: str = pydantic.Field(default="adult", description="Agent model/type: adult, blind_pedestrian, aware_pedestrian, etc.")
-    velocity_min: float = pydantic.Field(default=1.0, ge=0.2, description="Minimum desired speed in m/s")
-    velocity_max: float = pydantic.Field(default=1.5, ge=0.2, description="Maximum desired speed in m/s")
+    velocity_min: float = pydantic.Field(default=DEFAULT_FLOW_VELOCITY_MIN, ge=0.2, description="Minimum desired speed in m/s")
+    velocity_max: float = pydantic.Field(default=DEFAULT_FLOW_VELOCITY_MAX, ge=0.2, description="Maximum desired speed in m/s")
     behavior_tree: str = pydantic.Field(default="default", description="Behavior tree policy: default, social_aware, etc.")
-    active_window: tuple[float, float] = pydantic.Field(default=(0.0, 999999.0), description="Active time window (t_start, t_end)")
+    active_window: tuple[float, float] = pydantic.Field(default=(0.0, DEFAULT_ACTIVE_WINDOW_END_S), description="Active time window (t_start, t_end)")
     max_concurrent: int = pydantic.Field(default=-1, description="Max concurrent agents alive (-1 for unlimited)")
     max_total: int = pydantic.Field(default=-1, description="Total agents to spawn over episode (-1 for unlimited)")
+
+    @pydantic.model_validator(mode="after")
+    def validate_active_window(self) -> FlowStreamSpec:
+        """Ensure active window has 0 <= t0 < t1."""
+        t0, t1 = self.active_window
+        if t0 < 0.0 or t0 >= t1:
+            raise ValueError(f"active_window requires 0 <= t0 < t1, got ({t0}, {t1})")
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def validate_velocity_range(self) -> FlowStreamSpec:
+        """Ensure minimum desired velocity does not exceed maximum desired velocity."""
+        if self.velocity_min > self.velocity_max:
+            raise ValueError(f"velocity_min ({self.velocity_min} m/s) cannot exceed velocity_max ({self.velocity_max} m/s)")
+        return self
 
 
 class ConcourseConfiguration(BaseConfiguration):
@@ -151,7 +212,11 @@ class ConcourseConfiguration(BaseConfiguration):
     """
 
     shape: ConcourseShape = pydantic.Field(default=ConcourseShape.STRAIGHT, description="Spine geometry: straight, smooth_s_bend, smooth_l_bend, s_bend, l_bend")
-    length: float = pydantic.Field(24.0, ge=6.0, description="Total longitudinal spine length in meters")
+    length: float = pydantic.Field(
+        24.0,
+        ge=6.0,
+        description="Longitudinal spine length in meters (nominal extent for smooth curve shapes; actual spine arc length may vary with curvature)",
+    )
     width: float = pydantic.Field(4.0, ge=1.5, description="Main concourse walkway width in meters")
     bend_angle_deg: float = pydantic.Field(45.0, ge=10.0, le=120.0, description="Angle in degrees for L-bend and S-bend shapes")
     corner_fillet_radius: float = pydantic.Field(0.0, ge=0.0, le=10.0, description="Corner fillet radius in meters (0 for sharp corners)")
@@ -169,6 +234,34 @@ class ConcourseConfiguration(BaseConfiguration):
     robot_task_mode: RobotTaskMode = pydantic.Field(default=RobotTaskMode.MAIN_THROUGH, description="Robot mission: main_through, turn_into_branch, enter_room")
     robot_target_branch: str | None = pydantic.Field(default=None, description="Optional explicit dock name target for robot mission (e.g. dock_branch_0_left)")
 
+    @pydantic.field_validator("robot_target_branch", mode="before")
+    @classmethod
+    def normalize_empty_target_branch(cls, v: object) -> object:
+        """Map empty string to None for ROS panel parameter compatibility."""
+        if v == "":
+            return None
+        return v
+
+    @pydantic.model_validator(mode="after")
+    def validate_features_within_bounds(self) -> ConcourseConfiguration:
+        """Ensure all branch, elevator, pillar, and colonnade arc-length positions lie within nominal spine length."""
+        for i, branch in enumerate(self.branches):
+            if branch.at_s > self.length:
+                raise ValueError(f"Branch {i} at_s ({branch.at_s} m) exceeds concourse length ({self.length} m)")
+        for i, elevator in enumerate(self.elevators):
+            if elevator.at_s > self.length:
+                raise ValueError(f"Elevator {i} at_s ({elevator.at_s} m) exceeds concourse length ({self.length} m)")
+        for i, pillar in enumerate(self.pillars):
+            if pillar.at_s > self.length:
+                raise ValueError(f"Pillar {i} at_s ({pillar.at_s} m) exceeds concourse length ({self.length} m)")
+        for i, colonnade in enumerate(self.colonnades):
+            if colonnade.end_s > self.length:
+                raise ValueError(f"Colonnade {i} end_s ({colonnade.end_s} m) exceeds concourse length ({self.length} m)")
+        names = [f.name for f in self.flows]
+        if len(names) != len(set(names)):
+            raise ValueError(f"Flow stream names must be unique, found duplicates: {names}")
+        return self
+
 
 @final
 class WorldGeneratorConcourse(WorldGeneratorImpl):
@@ -178,6 +271,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
     config: ConcourseConfiguration
 
     def __init__(self, configuration: dict[str, object], rng: random.Random) -> None:
+        self.config = ConcourseConfiguration.model_validate(configuration)
         self._spine: LineString = LineString([(0.0, 0.0), (24.0, 0.0)])
         self._doors: list[Door] = []
         self._dock_metadata: dict[str, dict[str, object]] = {}
@@ -201,16 +295,16 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             _ = self._compile_world()
         scenario_dict = self._compile_scenario_dict()
         yaml_bytes = yaml.safe_dump(scenario_dict, sort_keys=False).encode("utf-8")
-        return {"scenarios/default/scenario.yaml": yaml_bytes}
+        return {f"scenarios/{SCENARIO}/scenario.yaml": yaml_bytes}
 
     @override
     def params(self) -> dict[str, object]:
         """Bind the generated world to scenario mode on episode reset."""
         return {
-            "modes": {"task": "scenario", "obstacles": "scenario"},
+            "modes": {"robots": "scenario", "obstacles": "scenario"},
             "params": {
-                "task": {"scenario.file": "default"},
-                "obstacles": {"scenario.file": "default"},
+                "robots": {"file": SCENARIO},
+                "obstacles": {"file": SCENARIO},
             },
         }
 
@@ -224,7 +318,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
         if shape == ConcourseShape.SMOOTH_S_BEND:
             lateral = total_len * self.config.s_bend_lateral_ratio
-            xs = np.linspace(0.0, total_len, 40)
+            xs = np.linspace(0.0, total_len, self.config.curve_samples)
             ys = [float(lateral * 0.5 * (1.0 - math.cos(math.pi * float(x) / total_len))) for x in xs]
             return LineString([(float(x), y) for x, y in zip(xs, ys, strict=True)])
 
@@ -266,9 +360,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         total = self._spine.length
         s_clamped = max(0.0, min(total, s))
         pt = self._spine.interpolate(s_clamped)
-        ds = 0.05
-        s_prev = max(0.0, s_clamped - ds)
-        s_next = min(total, s_clamped + ds)
+        s_prev = max(0.0, s_clamped - ANCHOR_EPSILON_DS)
+        s_next = min(total, s_clamped + ANCHOR_EPSILON_DS)
         p_prev = self._spine.interpolate(s_prev)
         p_next = self._spine.interpolate(s_next)
         dx = p_next.x - p_prev.x
@@ -282,9 +375,33 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             half_width=self.config.width / 2.0,
         )
 
+    def _buffered_main_corridor(self, half_w: float) -> Polygon:
+        """Compute the base polygon covering the full main concourse corridor."""
+        join_style = "round" if self.config.corner_fillet_radius > 0 else "mitre"
+        fillet_extra = self.config.corner_fillet_radius * FILLET_EXTRA_RATIO
+        return self._spine.buffer(half_w + fillet_extra, cap_style="flat", join_style=join_style)
+
+    def _validate_actual_spine_bounds(self) -> None:
+        """Validate feature attachment stations against the evaluated spine arc length."""
+        actual_len = self._spine.length
+        shape_name = self.config.shape.value
+        for i, branch in enumerate(self.config.branches):
+            if branch.at_s > actual_len:
+                raise ValueError(f"Branch {i} at_s ({branch.at_s} m) exceeds actual spine length ({actual_len:.2f} m for shape '{shape_name}')")
+        for i, elevator in enumerate(self.config.elevators):
+            if elevator.at_s > actual_len:
+                raise ValueError(f"Elevator {i} at_s ({elevator.at_s} m) exceeds actual spine length ({actual_len:.2f} m for shape '{shape_name}')")
+        for i, pillar in enumerate(self.config.pillars):
+            if pillar.at_s > actual_len:
+                raise ValueError(f"Pillar {i} at_s ({pillar.at_s} m) exceeds actual spine length ({actual_len:.2f} m for shape '{shape_name}')")
+        for i, colonnade in enumerate(self.config.colonnades):
+            if colonnade.end_s > actual_len:
+                raise ValueError(f"Colonnade {i} end_s ({colonnade.end_s} m) exceeds actual spine length ({actual_len:.2f} m for shape '{shape_name}')")
+
     def _compile_world(self) -> World:
         """Assemble semantic zones, dock sockets, walls, and doors into a World via Layout IR."""
         self._spine = self._build_spine()
+        self._validate_actual_spine_bounds()
         self._doors = []
         self._dock_metadata = {}
         self._semantic_zones = []
@@ -296,28 +413,31 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._build_side_branches(half_w)
         self._build_elevators(total_len)
         self._apply_pillar_obstacles(half_w)
-        self._build_trunk_dock_sockets(total_len)
+        self._build_trunk_dock_sockets()
+
+        # Validate dock socket references early so compute() (preview) and files() (save) fail fast
+        self._validate_dock_references()
 
         areas = [Area(polygon=poly) for _, _, poly in self._semantic_zones]
-        docks = [
-            Region(name=z_name, polygon=z_poly, description=z_desc)
-            for z_name, z_desc, z_poly in self._semantic_zones
-            if z_name.startswith("dock_")
-        ]
-        others = [
-            Region(name=z_name, polygon=z_poly, description=z_desc)
-            for z_name, z_desc, z_poly in self._semantic_zones
-            if not z_name.startswith("dock_")
-        ]
+        docks = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if z_name.startswith("dock_")]
+        others = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if not z_name.startswith("dock_")]
         world, self.diagnostics = compile_layout(Layout(areas=areas, regions=[*docks, *others]))
+        # Doors have no Layout IR form per design contract (see README.md:37 and hallway.py:119)
         world.all_levels[0].doors.extend(self._doors)
+
+        # Verify that all generated dock socket zones survive layout compilation
+        surviving_zones = {z.name for z in world.all_levels[0].zones}
+        for dock_name in self._dock_metadata:
+            if dock_name not in surviving_zones:
+                raise ValueError(f"Dock socket zone '{dock_name}' was completely covered or lost during layout compilation")
+
         return world
 
     def _partition_main_spine(self, half_w: float, total_len: float) -> None:
         """Slice the main concourse spine into corridor and intersection zones."""
+        main_corridor_poly = self._buffered_main_corridor(half_w)
         join_style = "round" if self.config.corner_fillet_radius > 0 else "mitre"
-        fillet_extra = self.config.corner_fillet_radius * 0.15
-        main_corridor_poly = self._spine.buffer(half_w + fillet_extra, cap_style="flat", join_style=join_style)
+        fillet_extra = self.config.corner_fillet_radius * FILLET_EXTRA_RATIO
 
         intervals: list[tuple[float, float, str]] = []
         for branch in sorted(self.config.branches, key=lambda b: b.at_s):
@@ -328,7 +448,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
         merged_intervals: list[tuple[float, float, str]] = []
         for s_lo, s_hi, kind in intervals:
-            if merged_intervals and s_lo <= merged_intervals[-1][1] + 0.2:
+            if merged_intervals and s_lo <= merged_intervals[-1][1] + MERGE_GAP_M:
                 prev_lo, prev_hi, _ = merged_intervals[-1]
                 merged_intervals[-1] = (prev_lo, max(prev_hi, s_hi), "intersection")
             else:
@@ -337,11 +457,11 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         cursor = 0.0
         seg_slices: list[tuple[float, float, str]] = []
         for s_lo, s_hi, kind in merged_intervals:
-            if s_lo - cursor > 0.2:
+            if s_lo - cursor > MERGE_GAP_M:
                 seg_slices.append((cursor, s_lo, "corridor"))
             seg_slices.append((s_lo, s_hi, kind))
             cursor = s_hi
-        if total_len - cursor > 0.2:
+        if total_len - cursor > MERGE_GAP_M:
             seg_slices.append((cursor, total_len, "corridor"))
         if not seg_slices:
             seg_slices.append((0.0, total_len, "corridor"))
@@ -350,9 +470,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         int_idx = 0
         for s0, s1, z_type in seg_slices:
             sub_line = shapely.ops.substring(self._spine, s0, s1)
-            sub_poly = sub_line.buffer(half_w + fillet_extra + 0.05, cap_style="flat", join_style=join_style).intersection(
-                main_corridor_poly
-            )
+            sub_poly = sub_line.buffer(half_w + fillet_extra + BUFFER_PAD_M, cap_style="flat", join_style=join_style).intersection(main_corridor_poly)
             if sub_poly.is_empty:
                 continue
             geom = cast("Polygon | MultiPolygon", sub_poly)
@@ -365,9 +483,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
     def _build_side_branches(self, half_w: float) -> None:
         """Attach side corridors or enclosed doorway rooms along the spine with dock sockets."""
-        join_style = "round" if self.config.corner_fillet_radius > 0 else "mitre"
-        fillet_extra = self.config.corner_fillet_radius * 0.15
-        main_poly = self._spine.buffer(half_w + fillet_extra, cap_style="flat", join_style=join_style)
+        main_poly = self._buffered_main_corridor(half_w)
 
         for idx, branch in enumerate(self.config.branches):
             anchor = self._anchor_at(branch.at_s)
@@ -376,19 +492,26 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             for side in sides:
                 outside_branch, tip_pt, dir_vec = self._build_branch_polygon(branch, anchor, side)
                 outside_clipped = cast("Polygon | MultiPolygon", outside_branch.difference(main_poly))
-                door_w = branch.door_width if branch.door_width is not None else (1.2 if branch.is_room else None)
+                door_w = branch.door_width if branch.door_width is not None else (DEFAULT_ROOM_DOOR_WIDTH_M if branch.is_room else None)
+
+                placement = BranchPlacement(
+                    branch_index=idx,
+                    side=side,
+                    door_width=door_w,
+                    anchor=anchor,
+                    tip_point=tip_pt,
+                    direction=dir_vec,
+                )
 
                 if door_w is not None and door_w < branch.width:
-                    outside_clipped = self._cut_doorway_jambs(outside_clipped, branch, (anchor, dir_vec, door_w))
+                    outside_clipped = self._cut_doorway_jambs(outside_clipped, branch, placement)
 
                 if not outside_clipped.is_empty:
                     z_prefix = "room" if branch.is_room else "branch"
                     z_desc = "Adjacent Room Space" if branch.is_room else "Side Branch Corridor"
-                    self._semantic_zones.append(
-                        (f"{z_prefix}_{idx}_{side.value}", f"{z_desc} {idx} ({side.value})", outside_clipped)
-                    )
+                    self._semantic_zones.append((f"{z_prefix}_{idx}_{side.value}", f"{z_desc} {idx} ({side.value})", outside_clipped))
 
-                self._register_branch_dock_socket((idx, side, door_w), branch, (anchor, tip_pt, dir_vec))
+                self._register_branch_dock_socket(branch, placement)
 
     def _build_branch_polygon(
         self,
@@ -416,12 +539,14 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self,
         outside_branch: Polygon | MultiPolygon,
         branch: SideBranchFeature,
-        portal_spec: tuple[SpineAnchor, tuple[float, float], float],
+        placement: BranchPlacement,
     ) -> Polygon | MultiPolygon:
         """Subtract doorway wall jambs from the branch entrance."""
-        anchor, (dir_x, dir_y), door_w = portal_spec
-        px, py = anchor.point
-        p_junc = (px + dir_x * anchor.half_width, py + dir_y * anchor.half_width)
+        assert placement.door_width is not None
+        dir_x, dir_y = placement.direction
+        door_w = placement.door_width
+        px, py = placement.anchor.point
+        p_junc = (px + dir_x * placement.anchor.half_width, py + dir_y * placement.anchor.half_width)
         trans_x, trans_y = -dir_y, dir_x
         half_bw = branch.width / 2.0
         half_dw = door_w / 2.0
@@ -440,21 +565,23 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                 cx + jamb_len / 2.0,
                 cy + branch.jamb_thickness / 2.0,
             )
-            jamb_boxes.append(cast("Polygon", shapely.affinity.rotate(box_raw, rot_deg, origin=(cx, cy))))
+            jamb_boxes.append(shapely.affinity.rotate(box_raw, rot_deg, origin=(cx, cy)))
 
         return cast("Polygon | MultiPolygon", outside_branch.difference(shapely.unary_union(jamb_boxes)))
 
     def _register_branch_dock_socket(
         self,
-        identity: tuple[int, BranchSide, float | None],
         branch: SideBranchFeature,
-        geom: tuple[SpineAnchor, tuple[float, float], tuple[float, float]],
+        placement: BranchPlacement,
     ) -> None:
         """Register Door aperture and dock socket zone at the branch terminal."""
-        idx, side, door_w = identity
-        anchor, (tip_x, tip_y), (dir_x, dir_y) = geom
-        px, py = anchor.point
-        p_junc = (px + dir_x * anchor.half_width, py + dir_y * anchor.half_width)
+        idx = placement.branch_index
+        side = placement.side
+        door_w = placement.door_width
+        tip_x, tip_y = placement.tip_point
+        dir_x, dir_y = placement.direction
+        px, py = placement.anchor.point
+        p_junc = (px + dir_x * placement.anchor.half_width, py + dir_y * placement.anchor.half_width)
         trans_x, trans_y = -dir_y, dir_x
 
         if door_w is not None:
@@ -473,13 +600,13 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             )
 
         dock_name = f"dock_branch_{idx}_{side.value}"
-        depth = min(self.config.dock_depth, branch.length * 0.45)
+        depth = min(self.config.dock_depth, branch.length * BRANCH_DOCK_DEPTH_RATIO)
         dock_cx = tip_x - dir_x * (depth / 2.0)
         dock_cy = tip_y - dir_y * (depth / 2.0)
         dock_poly = shapely.box(
-            dock_cx - branch.width * 0.45,
+            dock_cx - branch.width * BRANCH_DOCK_WIDTH_RATIO,
             dock_cy - depth / 2.0,
-            dock_cx + branch.width * 0.45,
+            dock_cx + branch.width * BRANCH_DOCK_WIDTH_RATIO,
             dock_cy + depth / 2.0,
         )
         self._semantic_zones.append((dock_name, f"Dock Socket for Branch {idx} ({side.value})", dock_poly))
@@ -536,65 +663,78 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             anchor = self._anchor_at(p.at_s)
             px, py = anchor.point
             nx, ny = anchor.normal
-            transverse_dist = (
-                p.lateral_offset
-                if p.lateral_ratio is None
-                else p.lateral_ratio * max(0.1, half_w - p.radius - p.wall_margin)
-            )
+            transverse_dist = p.lateral_offset if p.lateral_ratio is None else p.lateral_ratio * max(0.1, half_w - p.radius - p.wall_margin)
             cx = px + nx * transverse_dist
             cy = py + ny * transverse_dist
 
             if p.shape == PillarShape.CYLINDER:
                 pillar_obstacles.append(Point(cx, cy).buffer(p.radius))
             else:
-                pillar_obstacles.append(
-                    shapely.box(cx - p.width / 2.0, cy - p.depth / 2.0, cx + p.width / 2.0, cy + p.depth / 2.0)
-                )
+                pillar_obstacles.append(shapely.box(cx - p.width / 2.0, cy - p.depth / 2.0, cx + p.width / 2.0, cy + p.depth / 2.0))
 
         if pillar_obstacles:
             combined = shapely.ops.unary_union(pillar_obstacles)
-            self._semantic_zones = [
-                (name, desc, cast("Polygon | MultiPolygon", poly.difference(combined)))
-                for name, desc, poly in self._semantic_zones
-                if not poly.difference(combined).is_empty
-            ]
+            updated_zones: list[tuple[str, str, Polygon | MultiPolygon]] = []
+            for name, desc, poly in self._semantic_zones:
+                diff = poly.difference(combined)
+                if not diff.is_empty:
+                    updated_zones.append((name, desc, cast("Polygon | MultiPolygon", diff)))
+            self._semantic_zones = updated_zones
 
-    def _build_trunk_dock_sockets(self, total_len: float) -> None:
+    def _build_trunk_dock_sockets(self) -> None:
         """Create start and end dock socket zones along the concourse trunk."""
-        p_start = self._spine.coords[0]
-        p_end = self._spine.coords[-1]
-        t0 = (self._spine.coords[1][0] - p_start[0], self._spine.coords[1][1] - p_start[1])
-        norm0 = math.hypot(t0[0], t0[1]) or 1.0
+        depth = self.config.dock_depth
+        half_w = self.config.width / 2.0 * TRUNK_DOCK_WIDTH_RATIO
+
+        anchor_start = self._anchor_at(0.0)
+        p_start = anchor_start.point
+        t0 = anchor_start.tangent
         yaw0 = math.atan2(t0[1], t0[0])
 
-        tn = (p_end[0] - self._spine.coords[-2][0], p_end[1] - self._spine.coords[-2][1])
-        normn = math.hypot(tn[0], tn[1]) or 1.0
-        yawn = math.atan2(tn[1], tn[0])
-
-        depth = self.config.dock_depth
-        half_w = self.config.width / 2.0 * 0.85
-
-        dock_s_cx = p_start[0] + (t0[0] / norm0) * (depth / 2.0)
-        dock_s_cy = p_start[1] + (t0[1] / norm0) * (depth / 2.0)
+        dock_s_cx = p_start[0] + t0[0] * (depth / 2.0)
+        dock_s_cy = p_start[1] + t0[1] * (depth / 2.0)
         dock_s_poly = shapely.box(dock_s_cx - depth / 2.0, dock_s_cy - half_w, dock_s_cx + depth / 2.0, dock_s_cy + half_w)
         self._semantic_zones.append(("dock_start", "Terminal Dock Socket Start", dock_s_poly))
         self._dock_metadata["dock_start"] = {
             "nav_pose": [round(dock_s_cx, 2), round(dock_s_cy, 2), round(yaw0, 3)],
         }
 
-        dock_e_cx = p_end[0] - (tn[0] / normn) * (depth / 2.0)
-        dock_e_cy = p_end[1] - (tn[1] / normn) * (depth / 2.0)
+        anchor_end = self._anchor_at(self._spine.length)
+        p_end = anchor_end.point
+        tn = anchor_end.tangent
+        yawn = math.atan2(tn[1], tn[0])
+        yaw_end_norm = math.atan2(math.sin(yawn + math.pi), math.cos(yawn + math.pi))
+
+        dock_e_cx = p_end[0] - tn[0] * (depth / 2.0)
+        dock_e_cy = p_end[1] - tn[1] * (depth / 2.0)
         dock_e_poly = shapely.box(dock_e_cx - depth / 2.0, dock_e_cy - half_w, dock_e_cx + depth / 2.0, dock_e_cy + half_w)
         self._semantic_zones.append(("dock_end", "Terminal Dock Socket End", dock_e_poly))
         self._dock_metadata["dock_end"] = {
-            "nav_pose": [round(dock_e_cx, 2), round(dock_e_cy, 2), round(yawn + math.pi, 3)],
+            "nav_pose": [round(dock_e_cx, 2), round(dock_e_cy, 2), round(yaw_end_norm, 3)],
         }
+
+    def _validate_dock_references(self) -> None:
+        """Ensure all dock references in flows and robot target resolve to valid socket zones."""
+        available_docks = set(self._dock_metadata.keys())
+        if self.config.robot_target_branch is not None:
+            if self.config.robot_target_branch not in available_docks:
+                raise ValueError(f"robot_target_branch '{self.config.robot_target_branch}' not found in dock sockets: {sorted(available_docks)}")
+        for spec in self.config.flows:
+            if spec.source_dock not in available_docks:
+                raise ValueError(f"Flow '{spec.name}' source_dock '{spec.source_dock}' not found in dock sockets: {sorted(available_docks)}")
+            if spec.sink_dock not in available_docks:
+                raise ValueError(f"Flow '{spec.name}' sink_dock '{spec.sink_dock}' not found in dock sockets: {sorted(available_docks)}")
 
     def _resolve_robot_mission(self) -> tuple[list[float], list[float]]:
         """Determine robot start and goal poses using dock sockets."""
         start_pose = list(cast("list[float]", self._dock_metadata["dock_start"]["nav_pose"]))
         end_pose = list(cast("list[float]", self._dock_metadata["dock_end"]["nav_pose"]))
         mode = self.config.robot_task_mode
+
+        target_key = self.config.robot_target_branch
+        if target_key is not None:
+            target_pose = list(cast("list[float]", self._dock_metadata[target_key]["nav_pose"]))
+            return start_pose, target_pose
 
         if mode == RobotTaskMode.MAIN_THROUGH:
             return start_pose, end_pose
@@ -603,16 +743,41 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         if not branch_docks:
             return start_pose, end_pose
 
-        target_key = self.config.robot_target_branch
-        if target_key not in self._dock_metadata:
-            if mode == RobotTaskMode.ENTER_ROOM:
-                room_docks = [k for k in branch_docks if self._dock_metadata[k].get("is_room")]
-                target_key = room_docks[0] if room_docks else branch_docks[0]
-            else:
-                target_key = branch_docks[0]
+        if mode == RobotTaskMode.ENTER_ROOM:
+            room_docks = [k for k in branch_docks if self._dock_metadata[k].get("is_room")]
+            target_key = room_docks[0] if room_docks else branch_docks[0]
+        else:
+            target_key = branch_docks[0]
 
         target_pose = list(cast("list[float]", self._dock_metadata[target_key]["nav_pose"]))
         return start_pose, target_pose
+
+    def _compile_rate_profile(self, spec: FlowStreamSpec) -> list[dict[str, float]]:
+        """Construct keyframes holding constant spawn rate throughout the active window."""
+        t0, t1 = spec.active_window
+        is_infinite = t1 >= DEFAULT_ACTIVE_WINDOW_END_S
+
+        if t0 <= 0.0 and is_infinite:
+            return [{"t": 0.0, "rate": spec.rate}]
+        if t0 <= 0.0:
+            return [
+                {"t": 0.0, "rate": spec.rate},
+                {"t": t1, "rate": spec.rate},
+                {"t": t1, "rate": 0.0},
+            ]
+        if is_infinite:
+            return [
+                {"t": 0.0, "rate": 0.0},
+                {"t": t0, "rate": 0.0},
+                {"t": t0, "rate": spec.rate},
+            ]
+        return [
+            {"t": 0.0, "rate": 0.0},
+            {"t": t0, "rate": 0.0},
+            {"t": t0, "rate": spec.rate},
+            {"t": t1, "rate": spec.rate},
+            {"t": t1, "rate": 0.0},
+        ]
 
     def _compile_scenario_dict(self) -> dict[str, object]:
         """Build format 2 scenario referencing dock socket zones directly."""
@@ -625,10 +790,10 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                     name="main_opposing",
                     source_dock="dock_end",
                     sink_dock="dock_start",
-                    rate=0.4,
+                    rate=DEFAULT_OPPOSING_FLOW_RATE,
                     agent_type="adult",
-                    velocity_min=1.0,
-                    velocity_max=1.5,
+                    velocity_min=DEFAULT_FLOW_VELOCITY_MIN,
+                    velocity_max=DEFAULT_FLOW_VELOCITY_MAX,
                 )
             )
             branch_docks = [k for k in self._dock_metadata if k.startswith("dock_branch_")]
@@ -638,21 +803,21 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                         name="cross_flow",
                         source_dock=branch_docks[0],
                         sink_dock=branch_docks[1],
-                        rate=0.3,
+                        rate=DEFAULT_CROSS_FLOW_RATE,
                         agent_type="adult",
-                        velocity_min=0.9,
-                        velocity_max=1.4,
+                        velocity_min=DEFAULT_CROSS_FLOW_VELOCITY_MIN,
+                        velocity_max=DEFAULT_CROSS_FLOW_VELOCITY_MAX,
                     )
                 )
 
-        # Register sink regions first
+        # Register sink regions first in deterministic sorted order
         used_sinks = {s.sink_dock for s in streams}
-        for sink_dock in used_sinks:
+        for sink_dock in sorted(used_sinks):
             sink_reg_name = f"{sink_dock}_sink"
             regions[sink_reg_name] = {
                 "type": "sink",
                 "ref": sink_dock,
-                "config": {"capacity": -1, "absorption_radius": 0.5},
+                "config": {"capacity": -1, "absorption_radius": DEFAULT_ABSORPTION_RADIUS_M},
             }
 
         # Register source regions with agent profile and sink affinity
@@ -663,7 +828,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                 "type": "source",
                 "ref": spec.source_dock,
                 "config": {
-                    "rate_profile": [{"t": 0.0, "rate": spec.rate}],
+                    "rate_profile": self._compile_rate_profile(spec),
                     "max_concurrent": spec.max_concurrent,
                     "max_total": spec.max_total,
                     "agent": {

@@ -11,16 +11,6 @@ import types
 import typing
 
 import pydantic
-from arena_rclpy_mixins.declarations import (
-    declare_bool,
-    declare_double,
-    declare_float_pair,
-    declare_int,
-    declare_int_pair,
-    declare_sketch,
-    declare_string,
-    declare_text,
-)
 
 if typing.TYPE_CHECKING:
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
@@ -30,25 +20,25 @@ def _title(field_name: str) -> str:
     return field_name.replace("_", " ").title()
 
 
-def _find_ge(metadata: list) -> float | None:
+def _find_ge(metadata: list[object]) -> float | None:
     for m in metadata:
         try:
-            v = m.ge
+            v = getattr(m, "ge", None)
         except AttributeError:
             continue
         if v is not None:
-            return v
+            return float(v)
     return None
 
 
-def _find_le(metadata: list) -> float | None:
+def _find_le(metadata: list[object]) -> float | None:
     for m in metadata:
         try:
-            v = m.le
+            v = getattr(m, "le", None)
         except AttributeError:
             continue
         if v is not None:
-            return v
+            return float(v)
     return None
 
 
@@ -63,14 +53,42 @@ def _unset_int(field_info: pydantic.fields.FieldInfo) -> int | None:
     return int(ge) - 1
 
 
-def config_from_params(model_cls: type[pydantic.BaseModel], config: dict) -> dict:
-    """Map the ROS stand-ins of `int | None` fields in config back to None."""
-    unset = {name: _unset_int(info) for name, info in model_cls.model_fields.items()}
-    return {leaf: None if unset.get(leaf) is not None and value == unset[leaf] else value for leaf, value in config.items()}
+def _is_optional_str(field_info: pydantic.fields.FieldInfo) -> bool:
+    """True if field is typed `str | None` with default None."""
+    annotation = field_info.annotation
+    if typing.get_origin(annotation) not in (typing.Union, types.UnionType) or set(typing.get_args(annotation)) != {str, type(None)}:
+        return False
+    return field_info.default is None
+
+
+def config_from_params(model_cls: type[pydantic.BaseModel], config: dict[str, object]) -> dict[str, object]:
+    """Map the ROS stand-ins of `int | None` and `str | None` fields in config back to None."""
+    unset_ints = {name: _unset_int(info) for name, info in model_cls.model_fields.items()}
+    optional_strs = {name for name, info in model_cls.model_fields.items() if _is_optional_str(info)}
+    out: dict[str, object] = {}
+    for leaf, value in config.items():
+        if unset_ints.get(leaf) is not None and value == unset_ints[leaf]:
+            out[leaf] = None
+        elif leaf in optional_strs and value == "":
+            out[leaf] = None
+        else:
+            out[leaf] = value
+    return out
 
 
 def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls: type[pydantic.BaseModel]) -> None:
     """Declare one ROS param per scalar/pair field of model_cls under namespace_prefix.<field>."""
+    from arena_rclpy_mixins.declarations import (
+        declare_bool,
+        declare_double,
+        declare_float_pair,
+        declare_int,
+        declare_int_pair,
+        declare_sketch,
+        declare_string,
+        declare_text,
+    )
+
     for field_name, field_info in model_cls.model_fields.items():
         name = f"{namespace_prefix}.{field_name}"
         label = _title(field_name)
@@ -120,4 +138,4 @@ def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls
         elif origin in (list, tuple):
             continue
         else:
-            raise ValueError(f"Unsupported annotation {annotation!r} for field '{field_name}'; only bool/int/float/str and 2-tuples thereof are supported")
+            raise ValueError(f"Unsupported annotation {annotation!r} for field '{field_name}'; only bool/int/float/str, 2-tuples thereof, and skipped list/tuple fields are supported")
