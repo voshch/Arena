@@ -206,8 +206,9 @@ empty phase list) and returns the manager and the new phase indices:
 `runtime/submit_task` (`SubmitTask`, answers with the indices) and
 `runtime/run_task` (`RunTask` action). A `RunTask` goal is tracked off the
 runner on each tick: feedback names each of its phases as it leaves `pending`,
-and the goal ends `met` when all its phases are met, `failed` when one failed,
-`dropped` when one was dropped (a later submit or goal for the robot, a stop,
+and the goal ends `met` when all its phases are met, `failed` once its phases
+have ended and one failed (under `on_failure: continue` the robot runs the rest
+first, a failure policy ends it at once), `dropped` when one was dropped (a later submit or goal for the robot, a stop,
 an episode reset, detected by the episode id the goal was assigned in). An empty
 task ends `met` at once. A goal's outcome comes only from
 `TaskRunner.request_outcome` for the request its submit made. A new goal for a

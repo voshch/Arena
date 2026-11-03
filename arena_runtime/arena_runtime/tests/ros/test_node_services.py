@@ -70,6 +70,8 @@ def test_ros_param_impl_destroy_callable() -> None:
 
 
 def _queue_stub() -> object:
+    import asyncio
+
     from arena_runtime.env.episode_node import EpisodeNode, EpisodeRuntime
     from arena_runtime.testing.env_host import FakeTaskLayer
 
@@ -80,6 +82,7 @@ def _queue_stub() -> object:
     stub._episodes = EpisodeRuntime()
     stub._staged_params = {}
     stub._staged_human_params = {}
+    stub._pending_lock = asyncio.Lock()
     stub._mode_namespaces = EpisodeNode._mode_namespaces.__get__(stub)
     stub._publish_queue_state = lambda: None
     return stub
@@ -374,6 +377,7 @@ def test_reset_episode_in_flight_resolves_skipped() -> None:
         stub._episodes.action_in_flight = True
         fut: asyncio.Future = asyncio.get_event_loop().create_future()
         stub._episodes.pending_outcomes[7] = fut
+        stub._pending_lock = asyncio.Lock()
         stub._task = object()
 
         request = arena_runtime_msgs.srv.ResetEpisode.Request()

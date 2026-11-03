@@ -303,7 +303,7 @@ def test_staged_params_of_a_namespace_two_axes_share_survive_until_both_axes_dro
     async def body(env: object, rig: object) -> None:
         await _queue(env, params=[_param("task.fake_shared.level", 5)])
         await _queue(env, modes=_key_values(obstacles="fake_obstacles"))
-        assert env._staged_params == {"task.fake_shared.level": 5}
+        assert {name: value.integer_value for name, value in env._staged_params.items()} == {"task.fake_shared.level": 5}
 
         await _queue(env, modes=_key_values(robots="fake_robots"))
         assert env._staged_params == {}

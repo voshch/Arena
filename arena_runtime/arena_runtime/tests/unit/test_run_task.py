@@ -121,7 +121,7 @@ def test_a_goal_ends_met_when_all_its_phases_are_met_and_feedback_names_each_pha
     asyncio.run(scenario())
 
 
-def test_a_goal_ends_failed_when_one_of_its_phases_fails() -> None:
+def test_a_goal_with_a_failed_phase_runs_its_remaining_phases_and_ends_failed() -> None:
     async def scenario() -> None:
         node, manager = _node()
         handle = _Handle("r", TWO_GOTOS)
@@ -129,9 +129,14 @@ def test_a_goal_ends_failed_when_one_of_its_phases_fails() -> None:
 
         manager.reach(1.0, 1.0, FAILED)
         node._advance_run_tasks()
+        assert handle.feedback == [(0, "failed")]
+        assert not goal.done()
+
+        manager.reach(3.0, 3.0)
+        node._advance_run_tasks()
         result = await goal
         assert result.outcome == "failed"
-        assert handle.feedback[0] == (0, "failed")
+        assert handle.feedback == [(0, "failed"), (1, "met")]
         assert handle.status == "succeeded"
 
     asyncio.run(scenario())
@@ -402,6 +407,7 @@ async def _rig() -> AsyncIterator[_Rig]:
         _run_task_cancel_callback = EpisodeNode._run_task_cancel_callback
         _run_task_execute_callback = EpisodeNode._run_task_execute_callback
         _run_task = EpisodeNode._run_task
+        _until_cancel_requested = EpisodeNode._until_cancel_requested
         _stop_run_task = EpisodeNode._stop_run_task
         _advance_run_tasks = EpisodeNode._advance_run_tasks
         _advance_run_task = EpisodeNode._advance_run_task

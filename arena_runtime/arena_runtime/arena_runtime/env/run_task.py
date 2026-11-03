@@ -23,6 +23,7 @@ class RunningTask:
     done: asyncio.Future[Outcome]
     phases: list[int] = attrs.Factory(list)
     reported: set[int] = attrs.Factory(set)
+    cancelled: bool = False
 
     @property
     def goal_id(self) -> bytes:

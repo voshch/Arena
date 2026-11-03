@@ -316,6 +316,8 @@ class EpisodeNode(EnvNode):
         super().on_activate(state)
 
         def _start() -> None:
+            if self._shutting_down:
+                return
             self._check_status_task = asyncio.create_task(self._termination_watcher())
             if self.rosparam[bool].get_unsafe("task.episode.auto_reset"):
                 self._spawn_episode()
@@ -1199,6 +1201,7 @@ class EpisodeNode(EnvNode):
     def _stop_run_task(self, goal_id: bytes) -> None:
         for robot, run in list(self._run_tasks.items()):
             if run.goal_id == goal_id:
+                run.cancelled = True
                 manager = self._robots_manager.managers.get(robot) if self._robots_manager is not None and run.episode_id == self.episode_id else None
                 if manager is not None and manager.runner.request_outcome(run.request) is None:
                     manager.stop_task()
@@ -1233,6 +1236,8 @@ class EpisodeNode(EnvNode):
             self._stop_run_task(run.goal_id)
         result.outcome = await run.done
         result.phase_indices = run.phases
+        if run.cancelled:
+            await self._until_cancel_requested(goal_handle)
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
         elif result.outcome in ("met", "failed"):
@@ -1240,6 +1245,12 @@ class EpisodeNode(EnvNode):
         else:
             goal_handle.abort()
         return result
+
+    async def _until_cancel_requested(self, goal_handle: ServerGoalHandle, timeout: float = 1.0) -> None:
+        """Wait for rclpy to move an accepted cancel to CANCELING, which it does only after the cancel callback returned."""
+        deadline = self.event_loop.time() + timeout
+        while not goal_handle.is_cancel_requested and self.event_loop.time() < deadline:
+            await asyncio.sleep(0.005)
 
     def _advance_run_tasks(self) -> None:
         for robot, run in list(self._run_tasks.items()):
