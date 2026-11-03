@@ -9,11 +9,11 @@ import random
 from typing import ClassVar, cast, final
 
 import numpy as np
-import pydantic
 import shapely
 import shapely.affinity
 import shapely.ops
 import yaml
+from pydantic import BaseModel, Field, field_validator, model_validator
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from typing_extensions import override
 
@@ -100,20 +100,20 @@ class BranchPlacement:
     direction: tuple[float, float]
 
 
-class SideBranchFeature(pydantic.BaseModel):
+class SideBranchFeature(BaseModel):
     """Parametric side corridor or room attached at arc-length s along the spine."""
 
-    at_s: float = pydantic.Field(10.0, ge=1.0)
-    width: float = pydantic.Field(3.0, ge=0.8)
-    length: float = pydantic.Field(6.0, ge=1.0)
-    side: BranchSide = pydantic.Field(default=BranchSide.BOTH)
-    angle_deg: float = pydantic.Field(90.0, ge=15.0, le=165.0)
-    is_room: bool = pydantic.Field(False)
-    door_width: float | None = pydantic.Field(default=None, ge=0.5)
-    jamb_thickness: float = pydantic.Field(0.25, ge=0.05)
-    door_activation_distance: float = pydantic.Field(1.2, ge=0.5)
+    at_s: float = Field(10.0, ge=1.0)
+    width: float = Field(3.0, ge=0.8)
+    length: float = Field(6.0, ge=1.0)
+    side: BranchSide = Field(default=BranchSide.BOTH)
+    angle_deg: float = Field(90.0, ge=15.0, le=165.0)
+    is_room: bool = Field(False)
+    door_width: float | None = Field(default=None, ge=0.5)
+    jamb_thickness: float = Field(0.25, ge=0.05)
+    door_activation_distance: float = Field(1.2, ge=0.5)
 
-    @pydantic.model_validator(mode="after")
+    @model_validator(mode="after")
     def validate_door_width(self) -> SideBranchFeature:
         """Ensure doorway width does not exceed branch corridor width."""
         if self.door_width is not None and self.door_width > self.width:
@@ -121,40 +121,40 @@ class SideBranchFeature(pydantic.BaseModel):
         return self
 
 
-class ElevatorBayFeature(pydantic.BaseModel):
+class ElevatorBayFeature(BaseModel):
     """Enclosed elevator compartment at spine start or end."""
 
-    at_s: float = pydantic.Field(0.0, ge=0.0)
-    cabin_width: float = pydantic.Field(2.5, ge=1.2)
-    cabin_depth: float = pydantic.Field(2.5, ge=1.2)
-    door_width: float = pydantic.Field(1.4, ge=0.8)
+    at_s: float = Field(0.0, ge=0.0)
+    cabin_width: float = Field(2.5, ge=1.2)
+    cabin_depth: float = Field(2.5, ge=1.2)
+    door_width: float = Field(1.4, ge=0.8)
 
 
-class PillarFeature(pydantic.BaseModel):
+class PillarFeature(BaseModel):
     """Single structural column obstacle along the spine."""
 
-    at_s: float = pydantic.Field(default=12.0, ge=0.5)
-    lateral_offset: float = pydantic.Field(default=0.0)
-    lateral_ratio: float | None = pydantic.Field(default=None, ge=-0.85, le=0.85)
-    shape: PillarShape = pydantic.Field(default=PillarShape.CYLINDER)
-    radius: float = pydantic.Field(default=0.35, ge=0.1)
-    width: float = pydantic.Field(default=0.6, ge=0.1)
-    depth: float = pydantic.Field(default=0.6, ge=0.1)
-    wall_margin: float = pydantic.Field(default=0.15, ge=0.05)
+    at_s: float = Field(default=12.0, ge=0.5)
+    lateral_offset: float = Field(default=0.0)
+    lateral_ratio: float | None = Field(default=None, ge=-0.85, le=0.85)
+    shape: PillarShape = Field(default=PillarShape.CYLINDER)
+    radius: float = Field(default=0.35, ge=0.1)
+    width: float = Field(default=0.6, ge=0.1)
+    depth: float = Field(default=0.6, ge=0.1)
+    wall_margin: float = Field(default=0.15, ge=0.05)
 
 
-class ColonnadeFeature(pydantic.BaseModel):
+class ColonnadeFeature(BaseModel):
     """Repeated series of pillars along a spine interval."""
 
-    start_s: float = pydantic.Field(default=5.0, ge=0.5)
-    end_s: float = pydantic.Field(default=20.0, ge=1.0)
-    spacing: float = pydantic.Field(default=4.0, ge=1.0)
-    lateral_offset: float = pydantic.Field(default=0.0)
-    lateral_ratio: float | None = pydantic.Field(default=None, ge=-0.85, le=0.85)
-    radius: float = pydantic.Field(default=0.3, ge=0.1)
-    wall_margin: float = pydantic.Field(default=0.15, ge=0.05)
+    start_s: float = Field(default=5.0, ge=0.5)
+    end_s: float = Field(default=20.0, ge=1.0)
+    spacing: float = Field(default=4.0, ge=1.0)
+    lateral_offset: float = Field(default=0.0)
+    lateral_ratio: float | None = Field(default=None, ge=-0.85, le=0.85)
+    radius: float = Field(default=0.3, ge=0.1)
+    wall_margin: float = Field(default=0.15, ge=0.05)
 
-    @pydantic.model_validator(mode="after")
+    @model_validator(mode="after")
     def validate_interval(self) -> ColonnadeFeature:
         """Ensure colonnade start arc-length does not exceed end arc-length."""
         if self.start_s > self.end_s:
@@ -162,28 +162,28 @@ class ColonnadeFeature(pydantic.BaseModel):
         return self
 
 
-class FlowStreamSpec(pydantic.BaseModel):
+class FlowStreamSpec(BaseModel):
     """Continuous pedestrian crowd flow stream between dock socket zones."""
 
-    name: str = pydantic.Field(default="stream_0", description="Unique flow stream identifier")
-    source_dock: str = pydantic.Field(
+    name: str = Field(default="stream_0", description="Unique flow stream identifier")
+    source_dock: str = Field(
         default="dock_start",
         description="Source dock socket zone name (e.g. dock_start, dock_end, dock_branch_0_left, dock_elevator_0)",
     )
-    sink_dock: str = pydantic.Field(
+    sink_dock: str = Field(
         default="dock_end",
         description="Target sink dock socket zone name (e.g. dock_start, dock_end, dock_branch_0_right)",
     )
-    rate: float = pydantic.Field(default=DEFAULT_OPPOSING_FLOW_RATE, ge=0.02, le=5.0, description="Pedestrian spawn rate in agents/second")
-    agent_type: str = pydantic.Field(default="adult", description="Agent model/type: adult, blind_pedestrian, aware_pedestrian, etc.")
-    velocity_min: float = pydantic.Field(default=DEFAULT_FLOW_VELOCITY_MIN, ge=0.2, description="Minimum desired speed in m/s")
-    velocity_max: float = pydantic.Field(default=DEFAULT_FLOW_VELOCITY_MAX, ge=0.2, description="Maximum desired speed in m/s")
-    behavior_tree: str = pydantic.Field(default="default", description="Behavior tree policy: default, social_aware, etc.")
-    active_window: tuple[float, float] = pydantic.Field(default=(0.0, DEFAULT_ACTIVE_WINDOW_END_S), description="Active time window (t_start, t_end)")
-    max_concurrent: int = pydantic.Field(default=-1, description="Max concurrent agents alive (-1 for unlimited)")
-    max_total: int = pydantic.Field(default=-1, description="Total agents to spawn over episode (-1 for unlimited)")
+    rate: float = Field(default=DEFAULT_OPPOSING_FLOW_RATE, ge=0.02, le=5.0, description="Pedestrian spawn rate in agents/second")
+    agent_type: str = Field(default="adult", description="Agent model/type: adult, blind_pedestrian, aware_pedestrian, etc.")
+    velocity_min: float = Field(default=DEFAULT_FLOW_VELOCITY_MIN, ge=0.2, description="Minimum desired speed in m/s")
+    velocity_max: float = Field(default=DEFAULT_FLOW_VELOCITY_MAX, ge=0.2, description="Maximum desired speed in m/s")
+    behavior_tree: str = Field(default="default", description="Behavior tree policy: default, social_aware, etc.")
+    active_window: tuple[float, float] = Field(default=(0.0, DEFAULT_ACTIVE_WINDOW_END_S), description="Active time window (t_start, t_end)")
+    max_concurrent: int = Field(default=-1, description="Max concurrent agents alive (-1 for unlimited)")
+    max_total: int = Field(default=-1, description="Total agents to spawn over episode (-1 for unlimited)")
 
-    @pydantic.model_validator(mode="after")
+    @model_validator(mode="after")
     def validate_active_window(self) -> FlowStreamSpec:
         """Ensure active window has 0 <= t0 < t1."""
         t0, t1 = self.active_window
@@ -191,7 +191,7 @@ class FlowStreamSpec(pydantic.BaseModel):
             raise ValueError(f"active_window requires 0 <= t0 < t1, got ({t0}, {t1})")
         return self
 
-    @pydantic.model_validator(mode="after")
+    @model_validator(mode="after")
     def validate_velocity_range(self) -> FlowStreamSpec:
         """Ensure minimum desired velocity does not exceed maximum desired velocity."""
         if self.velocity_min > self.velocity_max:
@@ -211,30 +211,30 @@ class ConcourseConfiguration(BaseConfiguration):
     to attach pedestrian sources and sinks.
     """
 
-    shape: ConcourseShape = pydantic.Field(default=ConcourseShape.STRAIGHT, description="Spine geometry: straight, smooth_s_bend, smooth_l_bend, s_bend, l_bend")
-    length: float = pydantic.Field(
+    shape: ConcourseShape = Field(default=ConcourseShape.STRAIGHT, description="Spine geometry: straight, smooth_s_bend, smooth_l_bend, s_bend, l_bend")
+    length: float = Field(
         24.0,
         ge=6.0,
         description="Longitudinal spine length in meters (nominal extent for smooth curve shapes; actual spine arc length may vary with curvature)",
     )
-    width: float = pydantic.Field(4.0, ge=1.5, description="Main concourse walkway width in meters")
-    bend_angle_deg: float = pydantic.Field(45.0, ge=10.0, le=120.0, description="Angle in degrees for L-bend and S-bend shapes")
-    corner_fillet_radius: float = pydantic.Field(0.0, ge=0.0, le=10.0, description="Corner fillet radius in meters (0 for sharp corners)")
-    curve_samples: int = pydantic.Field(24, ge=8, le=64, description="Sampling resolution for smooth curves")
-    s_bend_lateral_ratio: float = pydantic.Field(0.28, ge=0.05, le=1.0, description="Lateral shift ratio relative to length for smooth S-bends")
-    dock_depth: float = pydantic.Field(1.5, ge=0.5, le=4.0, description="Longitudinal depth in meters of terminal dock socket zones")
-    branches: list[SideBranchFeature] = pydantic.Field(default_factory=list, description="Side branches, connecting corridors, or doorway rooms")
-    elevators: list[ElevatorBayFeature] = pydantic.Field(default_factory=list, description="Enclosed elevator cabins at corridor ends")
-    pillars: list[PillarFeature] = pydantic.Field(default_factory=list, description="Individual structural columns along the spine")
-    colonnades: list[ColonnadeFeature] = pydantic.Field(default_factory=list, description="Repeated colonnade series along the spine")
-    flows: list[FlowStreamSpec] = pydantic.Field(
+    width: float = Field(4.0, ge=1.5, description="Main concourse walkway width in meters")
+    bend_angle_deg: float = Field(45.0, ge=10.0, le=120.0, description="Angle in degrees for L-bend and S-bend shapes")
+    corner_fillet_radius: float = Field(0.0, ge=0.0, le=10.0, description="Corner fillet radius in meters (0 for sharp corners)")
+    curve_samples: int = Field(24, ge=8, le=64, description="Sampling resolution for smooth curves")
+    s_bend_lateral_ratio: float = Field(0.28, ge=0.05, le=1.0, description="Lateral shift ratio relative to length for smooth S-bends")
+    dock_depth: float = Field(1.5, ge=0.5, le=4.0, description="Longitudinal depth in meters of terminal dock socket zones")
+    branches: list[SideBranchFeature] = Field(default_factory=list, description="Side branches, connecting corridors, or doorway rooms")
+    elevators: list[ElevatorBayFeature] = Field(default_factory=list, description="Enclosed elevator cabins at corridor ends")
+    pillars: list[PillarFeature] = Field(default_factory=list, description="Individual structural columns along the spine")
+    colonnades: list[ColonnadeFeature] = Field(default_factory=list, description="Repeated colonnade series along the spine")
+    flows: list[FlowStreamSpec] = Field(
         default_factory=list,
         description="Crowd flow streams between dock sockets. Sockets are generated at dock_start, dock_end, dock_branch_<idx>_<side>, and dock_elevator_<idx>.",
     )
-    robot_task_mode: RobotTaskMode = pydantic.Field(default=RobotTaskMode.MAIN_THROUGH, description="Robot mission: main_through, turn_into_branch, enter_room")
-    robot_target_branch: str | None = pydantic.Field(default=None, description="Optional explicit dock name target for robot mission (e.g. dock_branch_0_left)")
+    robot_task_mode: RobotTaskMode = Field(default=RobotTaskMode.MAIN_THROUGH, description="Robot mission: main_through, turn_into_branch, enter_room")
+    robot_target_branch: str | None = Field(default=None, description="Optional explicit dock name target for robot mission (e.g. dock_branch_0_left)")
 
-    @pydantic.field_validator("robot_target_branch", mode="before")
+    @field_validator("robot_target_branch", mode="before")
     @classmethod
     def normalize_empty_target_branch(cls, v: object) -> object:
         """Map empty string to None for ROS panel parameter compatibility."""
@@ -242,7 +242,7 @@ class ConcourseConfiguration(BaseConfiguration):
             return None
         return v
 
-    @pydantic.model_validator(mode="after")
+    @model_validator(mode="after")
     def validate_features_within_bounds(self) -> ConcourseConfiguration:
         """Ensure all branch, elevator, pillar, and colonnade arc-length positions lie within nominal spine length."""
         for i, branch in enumerate(self.branches):

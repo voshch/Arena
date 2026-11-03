@@ -396,8 +396,22 @@ class _StubNode:
     rosparam: _Recorder = field(default_factory=_Recorder)
 
 
+def test_concourse_empty_robot_target_branch_normalizes_to_none() -> None:
+    """Verify that an empty string for robot_target_branch normalizes to None directly in model."""
+    config = ConcourseConfiguration.model_validate({"robot_target_branch": ""})
+    assert config.robot_target_branch is None
+
+    # Verify ROS panel configuration computes successfully without dock reference error
+    gen = WorldGeneratorConcourse({"robot_target_branch": ""}, random.Random(42))
+    world = gen.compute()
+    assert len(world.all_levels) == 1
+    assert "dock_start" in {z.name for z in world.all_levels[0].zones}
+
+
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     """Verify config_from_params maps empty strings to None and ROS panel configs compute."""
+    pytest.importorskip("rclpy")
+    pytest.importorskip("arena_rclpy_mixins")
     from arena_simulation_setup.generative.world.schema import config_from_params
 
     ros_params = {
@@ -408,12 +422,6 @@ def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     }
     mapped = config_from_params(ConcourseConfiguration, ros_params)
     assert mapped["robot_target_branch"] is None
-
-    # Verify ROS panel configuration computes successfully without dock reference error
-    gen = WorldGeneratorConcourse(ros_params, random.Random(42))
-    world = gen.compute()
-    assert len(world.all_levels) == 1
-    assert "dock_start" in {z.name for z in world.all_levels[0].zones}
 
 
 def test_schema_bridge_enum_default_list_skip_and_optional_str() -> None:

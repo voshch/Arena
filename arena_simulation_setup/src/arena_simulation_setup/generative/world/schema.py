@@ -11,6 +11,16 @@ import types
 import typing
 
 import pydantic
+from arena_rclpy_mixins.declarations import (
+    declare_bool,
+    declare_double,
+    declare_float_pair,
+    declare_int,
+    declare_int_pair,
+    declare_sketch,
+    declare_string,
+    declare_text,
+)
 
 if typing.TYPE_CHECKING:
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
@@ -20,25 +30,25 @@ def _title(field_name: str) -> str:
     return field_name.replace("_", " ").title()
 
 
-def _find_ge(metadata: list[object]) -> float | None:
+def _find_ge(metadata: list) -> float | None:
     for m in metadata:
         try:
-            v = getattr(m, "ge", None)
+            v = m.ge
         except AttributeError:
             continue
         if v is not None:
-            return float(v)
+            return v
     return None
 
 
-def _find_le(metadata: list[object]) -> float | None:
+def _find_le(metadata: list) -> float | None:
     for m in metadata:
         try:
-            v = getattr(m, "le", None)
+            v = m.le
         except AttributeError:
             continue
         if v is not None:
-            return float(v)
+            return v
     return None
 
 
@@ -61,13 +71,13 @@ def _is_optional_str(field_info: pydantic.fields.FieldInfo) -> bool:
     return field_info.default is None
 
 
-def config_from_params(model_cls: type[pydantic.BaseModel], config: dict[str, object]) -> dict[str, object]:
+def config_from_params(model_cls: type[pydantic.BaseModel], config: dict) -> dict:
     """Map the ROS stand-ins of `int | None` and `str | None` fields in config back to None."""
-    unset_ints = {name: _unset_int(info) for name, info in model_cls.model_fields.items()}
+    unset = {name: _unset_int(info) for name, info in model_cls.model_fields.items()}
     optional_strs = {name for name, info in model_cls.model_fields.items() if _is_optional_str(info)}
     out: dict[str, object] = {}
     for leaf, value in config.items():
-        if unset_ints.get(leaf) is not None and value == unset_ints[leaf]:
+        if unset.get(leaf) is not None and value == unset[leaf]:
             out[leaf] = None
         elif leaf in optional_strs and value == "":
             out[leaf] = None
@@ -78,17 +88,6 @@ def config_from_params(model_cls: type[pydantic.BaseModel], config: dict[str, ob
 
 def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls: type[pydantic.BaseModel]) -> None:
     """Declare one ROS param per scalar/pair field of model_cls under namespace_prefix.<field>."""
-    from arena_rclpy_mixins.declarations import (
-        declare_bool,
-        declare_double,
-        declare_float_pair,
-        declare_int,
-        declare_int_pair,
-        declare_sketch,
-        declare_string,
-        declare_text,
-    )
-
     for field_name, field_info in model_cls.model_fields.items():
         name = f"{namespace_prefix}.{field_name}"
         label = _title(field_name)
