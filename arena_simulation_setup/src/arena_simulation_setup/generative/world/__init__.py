@@ -23,6 +23,7 @@ class WorldGeneratorType(enum.Enum):
     BARN_CYLINDER = "barn_cylinder"
     CORRIDOR = "corridor"
     OPEN = "open"
+    EGOBENCH = "egobench"
 
 
 class BaseConfiguration(pydantic.BaseModel):
@@ -208,3 +209,10 @@ def lazy_Open() -> type[WorldGeneratorImpl]:
     from .open import WorldGeneratorOpen
 
     return WorldGeneratorOpen
+
+
+@WorldGenerator.register(WorldGeneratorType.EGOBENCH)
+def lazy_EgoBench() -> type[WorldGeneratorImpl]:
+    from ..egobench.meta import WorldGeneratorEgoBench
+
+    return WorldGeneratorEgoBench
