@@ -54,7 +54,8 @@ def test_the_active_task_modes_answer_carries_modes_only(run):
 
 
 def test_queue_refuses_a_param_of_the_mode_it_deselects_in_the_same_request(run, peers):
+    sent = len(peers.humansim.queued)
     with pytest.raises(ToolError) as refused:
         run(episode.episode_queue(env_id=ENV, modes={"modules": []}, params={"task.fake_module.level": 5}))
     assert "task.fake_module.level" in str(refused.value)
-    assert not peers.humansim.queued
+    assert len(peers.humansim.queued) == sent

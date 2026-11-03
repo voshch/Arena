@@ -4,7 +4,7 @@ import asyncio
 import importlib.metadata
 import os
 import typing
-from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 
 import attrs
 from arena_rclpy_mixins.Time import Time
@@ -283,7 +283,7 @@ def encode_modes(modes: TaskModes) -> list[KeyValue]:
     return [KeyValue(key=axis, value=",".join(names)) for axis, names in modes.items()]
 
 
-def decode_modes(pairs: Sequence[KeyValue]) -> TaskModes:
+def decode_modes(pairs: Iterable[KeyValue]) -> TaskModes:
     return {pair.key: [name for name in pair.value.split(",") if name] for pair in pairs}
 
 
@@ -294,7 +294,7 @@ def encode_namespaces(namespaces: Mapping[str, Mapping[str, str]]) -> list[KeyVa
     return [KeyValue(key=f"{axis}/{mode}", value=str(namespace)) for axis, modes in namespaces.items() for mode, namespace in modes.items()]
 
 
-def decode_namespaces(pairs: Sequence[KeyValue]) -> dict[str, dict[str, str]]:
+def decode_namespaces(pairs: Iterable[KeyValue]) -> dict[str, dict[str, str]]:
     out: dict[str, dict[str, str]] = {}
     for pair in pairs:
         axis, _, mode = pair.key.partition("/")

@@ -80,7 +80,7 @@ def _queue_stub() -> object:
     stub._episodes = EpisodeRuntime()
     stub._staged_params = {}
     stub._staged_human_params = {}
-    stub._namespaces_of = EpisodeNode._namespaces_of.__get__(stub)
+    stub._mode_namespaces = EpisodeNode._mode_namespaces.__get__(stub)
     stub._publish_queue_state = lambda: None
     return stub
 

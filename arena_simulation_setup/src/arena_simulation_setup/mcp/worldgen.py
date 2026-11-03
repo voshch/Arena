@@ -221,11 +221,16 @@ async def worldgen_queue(name: WorldName, env_id: int | None = None, binding: An
             raise ToolError(f"binding params name axis {axis!r}, which selects no known mode ({mode!r})", hint=f"known: {', '.join(sorted(namespaces))}")
         return f"{namespace}.{leaf}"
 
+    params: list[Parameter] = []
+    for axis, axis_leaves in leaves.items():
+        if not isinstance(axis_leaves, dict):
+            raise ToolError(f"binding params.{axis} must be a mapping, got {type(axis_leaves).__name__}")
+        params.extend(Parameter(name=full_name(axis, leaf), value=python_to_param(item, 0)) for leaf, item in axis_leaves.items())
     request = QueueEpisode.Request(
         action=QueueEpisode.Request.MERGE,
         world=path_component(name),
         modes=[KeyValue(key=str(axis), value=str(names)) for axis, names in modes.items()],
-        params=[Parameter(name=full_name(axis, leaf), value=python_to_param(item, 0)) for axis, axis_leaves in leaves.items() for leaf, item in dict(axis_leaves).items()],
+        params=params,
     )
     service = f"{node}/config/queue_episode"
     response = await ROS.call(QueueEpisode, service, request, hint="is the env's task generator up?")

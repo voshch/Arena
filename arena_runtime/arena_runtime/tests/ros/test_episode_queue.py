@@ -41,8 +41,10 @@ async def _on_running_env(body: Callable[[object, object], Awaitable[None]]) -> 
         try:
             await asyncio.wait_for(env.setup(), TIMEOUT)
             env.trigger_activate()
-            await body(env, rig)
-            await env.teardown()
+            try:
+                await body(env, rig)
+            finally:
+                await asyncio.wait_for(env.teardown(), TIMEOUT)
         finally:
             rig.executor.remove_node(env)
             env.destroy_node()

@@ -207,7 +207,7 @@ def _peer_class(modes: TaskModes) -> type:
 
         def on_get_task_modes(self, request: srv.GetTaskModes.Request, response: srv.GetTaskModes.Response) -> srv.GetTaskModes.Response:
             modules = sorted(module for module in self.get_parameter(mode_param("modules")).get_parameter_value().string_value.split(",") if module)
-            response.modes = encode_modes({"robots": [self.get_parameter(mode_param("robots")).value], "obstacles": [self.get_parameter(mode_param("obstacles")).value], "modules": modules})
+            response.modes = encode_modes({axis: [self.get_parameter(mode_param(axis)).get_parameter_value().string_value] for axis in ("robots", "obstacles")} | {"modules": modules})
             return response
 
         def on_queue(self, request: srv.QueueEpisode.Request, response: srv.QueueEpisode.Response) -> srv.QueueEpisode.Response:
