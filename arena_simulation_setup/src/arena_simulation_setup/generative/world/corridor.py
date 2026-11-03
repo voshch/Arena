@@ -28,11 +28,13 @@ class WorldGeneratorCorridor(WithPedestrians):
         diagonal: bool = True
 
     config: Configuration
+    _layout: Layout | None
 
     def configure(self, configuration: dict):
         self.config = self.Configuration.model_validate(configuration)
         self.warnings = []
         self.diagnostics = None
+        self._layout = None
 
     def _snap(self, value: float) -> float:
         return round(value / self.config.resolution) * self.config.resolution
@@ -119,4 +121,8 @@ class WorldGeneratorCorridor(WithPedestrians):
         if not layout.segments:
             raise ValueError(f'no branch fits a {c.width} x {c.height} m extent')
         world, self.diagnostics = compile_layout(layout)
+        self._layout = layout
         return world
+
+    def layout(self) -> Layout | None:
+        return self._layout

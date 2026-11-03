@@ -96,3 +96,8 @@ def test_a_manifest_loads_from_yaml(tmp_path: Path):
     path = tmp_path / "m.yaml"
     path.write_text("name: file\nworlds:\n  open: {width: [10.0, 20.0]}\nencounters: [crossing_left]\n")
     assert len(sample(Manifest.load(path))) == 2
+
+
+def test_an_unknown_pedestrian_profile_is_named():
+    with pytest.raises(pydantic.ValidationError, match="no pedestrian profile robot"):
+        manifest(agent_type=["adult", "robot"])

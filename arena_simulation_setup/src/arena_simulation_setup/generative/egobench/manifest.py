@@ -11,6 +11,7 @@ from pathlib import Path
 import pydantic
 import yaml
 
+from arena_simulation_setup.generative.scenario.promptgen.profiles import PROFILES
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 
 Scalar = bool | int | float | str
@@ -116,6 +117,11 @@ class Manifest(pydantic.BaseModel):
             unknown = sorted(set(axes) - set(fields))
             if unknown:
                 raise ValueError(f"{space.value} has no configuration field {', '.join(unknown)}, it has {', '.join(sorted(fields))}")
+        if isinstance(self.agent_type, Span):
+            raise ValueError("agent_type names profiles, it cannot be a span")
+        unknown_types = sorted({str(t) for t in axis_values(self.agent_type)} - set(PROFILES))
+        if unknown_types:
+            raise ValueError(f"no pedestrian profile {', '.join(unknown_types)}, there are {', '.join(PROFILES)}")
         if self.sampling == "grid":
             for axis in self._axes():
                 if isinstance(axis, Span) and axis.step is None:
