@@ -184,20 +184,22 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]], modu
 
 
 def test_a_reset_runs_every_step_in_order_inside_the_paused_window(rclpy_context) -> None:
+    from arena_runtime.env.phase_clock import PhaseClock
     from arena_runtime.env.task_layer import EpisodeRecord
 
     async def body(node) -> None:
-        await node._reset_episode(EpisodeRecord(seed=3))
+        await node._reset_episode(EpisodeRecord(seed=3), PhaseClock())
 
     assert _on_task(None, body) == WINDOW
 
 
 def test_a_failing_mode_still_closes_the_paused_window(rclpy_context) -> None:
+    from arena_runtime.env.phase_clock import PhaseClock
     from arena_runtime.env.task_layer import EpisodeRecord
 
     async def body(node) -> None:
         with pytest.raises(RuntimeError, match="no obstacles today"):
-            await node._reset_episode(EpisodeRecord(seed=3))
+            await node._reset_episode(EpisodeRecord(seed=3), PhaseClock())
 
     assert _on_task(RuntimeError("no obstacles today"), body) == [*WINDOW[: WINDOW.index("tm_obstacles") + 1], "after_reset"]
 

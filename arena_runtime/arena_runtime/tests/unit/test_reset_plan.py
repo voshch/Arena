@@ -116,6 +116,7 @@ def test_the_node_applies_the_plan_between_the_robot_and_the_obstacle_reset() ->
     pytest.importorskip("rclpy")
     from arena_runtime.env.constants.rng import EpisodeRng
     from arena_runtime.env.episode_node import EpisodeNode
+    from arena_runtime.env.phase_clock import PhaseClock
     from arena_runtime.env.task_layer import EpisodeRecord, ResetPlan, RobotReset
 
     log: list[str] = []
@@ -140,7 +141,7 @@ def test_the_node_applies_the_plan_between_the_robot_and_the_obstacle_reset() ->
         get_logger=lambda: SimpleNamespace(error=log.append),
     )
 
-    asyncio.run(EpisodeNode._reset_episode(node, EpisodeRecord(seed=3)))
+    asyncio.run(EpisodeNode._reset_episode(node, EpisodeRecord(seed=3), PhaseClock()))
 
     assert log[log.index("reset_robots 3") : log.index("respawn") + 1] == ["reset_robots 3", "submit r0 task0 from start0 seeing ['h0']", "forbid ['zone']", "reset_obstacles 3", "respawn"]
     assert {"spawn ['crate']", "spawn dynamic ['walker']", "lights ('lamp',)"} <= set(log)

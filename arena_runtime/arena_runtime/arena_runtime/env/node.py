@@ -41,6 +41,7 @@ from arena_runtime.env.colors import RobotColors
 from arena_runtime.env.constants import Constants
 from arena_runtime.env.constants.runtime import Configuration, migrate_deprecated_params
 from arena_runtime.env.environment_manager import EnvironmentManager
+from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.env.robot_manager import RobotsManager
 from arena_runtime.env.world_manager.world_manager_ros import WorldManagerROS as WorldManager
@@ -233,25 +234,37 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
     # LIFECYCLE
 
     async def setup(self) -> None:
+        clock = PhaseClock()
         try:
             await self._set_up_acoustics()
+            clock.lap("acoustics")
             await self._set_up_services()
+            clock.lap("services")
             await self._arena_hold_client.ensure()
             await self._arena_unpause_window_client.ensure()
             await self._arena_step_client.ensure()
+            clock.lap("clients")
 
             await self.hold("setup")
+            clock.lap("hold")
             try:
                 await self._set_up_managers()
+                clock.lap("managers")
                 assert self._robots_manager is not None
                 await self._set_up_task()
+                clock.lap("task")
                 await self._world_manager.sync()
+                clock.lap("world")
                 if flag_enabled(self, "debug", "map_server") or self._acoustics_simulator.requires_map_server:
                     await self._world_manager.require_map_server()
+                    clock.lap("map_server")
                 await self._robots_manager.launch_pending()
+                clock.lap("launch")
             finally:
                 await self.release("setup")
+                clock.lap("release")
             self._publish_viz_manifest()
+            self._logger.info(f"setup took {clock}")
 
             self.rosparam[bool].set("initialized", True)
             self._after_setup()
