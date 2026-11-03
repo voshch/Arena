@@ -163,7 +163,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     scenario_file = LaunchArgument(
         name='task.scenario.file',
         default_value='',
-        description='Scenario for the scenario task modes (empty = use task.params default).',
+        description='Scenario for the scenario task modes (empty = the task layer default).',
     )
     scenario_linger = LaunchArgument(
         name='task.scenario.linger_after_completion',
@@ -245,7 +245,8 @@ def generate_launch_description() -> launch.LaunchDescription:
     train_mode = LaunchArgument(name="robot.train", default_value="false")
     parameter_file = LaunchArgument(
         name="task.params",
-        default_value=os.path.join(bringup_dir, "configs", "task.yaml"),
+        default_value="",
+        description="Env node ROS parameter YAML over the task layer's defaults (empty = none).",
     )
 
     def _build_env_actions(
@@ -417,6 +418,8 @@ def generate_launch_description() -> launch.LaunchDescription:
         if scenario_val:
             dotted_overrides["task.scenario.file"] = scenario_val
 
+        parameter_file_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(parameter_file.substitution)).strip()
+
         task_layer_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(task_layer.substitution))
         if task_layer_val:
             dotted_overrides["task_layer"] = task_layer_val
@@ -479,7 +482,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "tf_namespace": tf_namespace,
                     "log_level": ParameterValue(active_spec(context), value_type=str),
                 },
-                parameter_file.substitution,
+                *([parameter_file_val] if parameter_file_val else []),
                 {
                     "task.scenario.linger_after_completion": scenario_linger.param_value(bool),
                 },

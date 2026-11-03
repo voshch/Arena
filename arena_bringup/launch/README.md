@@ -41,8 +41,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `task.config` | string | `` (empty) | Path to a [TaskModeSpec YAML](../configs/tasks/README.md); empty -> synthesize from `task.robots` (wins if both set) |
 | `task.obstacles` | string | task runtime's (`random`) | Obstacle task mode |
 | `task.modules` | string | task runtime's (`clear_forbidden_zones`, `rviz_ui`, plus `sounds` with acoustics) | Comma-separated task modules to load, the always-on ones added |
-| `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = use the `task.params` default) |
-| `task.params` | string | `configs/task.yaml` | Env node ROS parameter YAML |
+| `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = the task layer default) |
+| `task.params` | string | `` (empty) | Env node ROS parameter YAML over the task layer's defaults, the mode schemas own those |
 | `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/`. A comma list (`hospital_1,office_1`) stacks the worlds as the levels of one world, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#linked-levels) |

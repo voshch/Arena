@@ -51,10 +51,10 @@ sorted(k.value for k in OBSTACLES_MODES.keys())
 
 | Kind | Meaning |
 |---|---|
-| `random` | samples static/dynamic/interactive obstacles from model pools. `static.n`/`dynamic.n`/`interactive.n` are `[min, max]` counts (defaults `[5,15]`/`[1,5]`/`[0,0]`), `static.models`/`dynamic.models`/`interactive.models` are catalog name lists (default = all) |
-| `parametrized` | loads a named `ParametrizedConfig` from `arena_simulation_setup` (`file` param, default empty). min/max counts per entry live in that file |
+| `random` | samples static/dynamic/interactive obstacles from model pools. `static.n`/`dynamic.n`/`interactive.n` are `[min, max]` counts (default `[0,0]` each), `static.models`/`dynamic.models`/`interactive.models` are catalog name lists (defaults `[shelf]`/`[arenian]`/`[shelf]`, empty = all) |
+| `parametrized` | loads a named `ParametrizedConfig` from `arena_simulation_setup` (`file` param, default `default.xml`). min/max counts per entry live in that file |
 | `scenario` | reads `static`/`dynamic` obstacle lists from the world's scenario YAML (`file` param, default `default`, or the world's first scenario if it has none named `default`) |
-| `environment` | places obstacle groups from an environment config into detected/declared rooms (`file` param, default `default`) |
+| `environment` | places obstacle groups from an environment config into detected/declared rooms (`file` param, default `office.yaml`) |
 | `prompt` | LLM-driven obstacle generation, only registered once a `BaseHumanSimulator` is constructed (`human:=hunav` or `human:=arena`) |
 
 ## `TaskModeSpec` schema

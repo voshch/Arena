@@ -28,7 +28,7 @@ the registry, the env peers and the launch derive from, started by the `arena_en
 [`env.launch.py`](../../launch/env.launch.py), which `arena_runtime_node` launches for
 every `spawn_env`.
 
-The task layer is reached only through [`task_layer.py`](task_layer.py):
+The runtime reaches the task layer only through [`task_layer.py`](task_layer.py):
 `task_layer(name)` loads the module registered as `name` under the
 `arena_runtime.task_layer` entry point group. The `task_layer` launch arg selects
 it for an env, `$ARENA_TASK_LAYER` for a process that has no launch args (the
@@ -42,7 +42,13 @@ the same one. The `TaskLayer` and `EpisodeTask` protocols, `TaskContext`,
 `TaskConfiguration`, `ResetPlan`, `RobotReset`, `EpisodeRecord`,
 `TaskModeOverrides` and `TaskParams` are all `EpisodeNode` sees of it. The
 selection params of the runtime's axes are its `TaskParams`, reached as
-`node.task_params`. The node is what task modes get as `self.node`, and it
+`node.task_params`. `TaskContext.interactive` is optional, and a mode that uses the rviz side asserts it.
+A task layer reaches the runtime only through `task_layer.py` (the protocols, the
+records and `TaskContext`), [`task_api.py`](task_api.py) (the runtime types and
+helpers task modes call, such as `NodeInterface`, `TaskRequest`, `PhaseState`,
+`Realizer` and `RobotManager`), `arena_runtime.shared` (the value types) and
+`arena_runtime_msgs`. `task_generator/tests/unit/test_runtime_seam.py` holds
+`task_generator` to that list. The node is what task modes get as `self.node`, and it
 builds the `TaskContext` they work on in `_set_up_task` (between the managers
 and the world sync, the one abstract hook) and binds its collision callback on
 the robots manager there. The optional hooks of `EnvNode` it overrides: simulator incidents (`_compromise`, logged by

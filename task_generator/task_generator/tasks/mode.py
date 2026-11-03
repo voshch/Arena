@@ -1,7 +1,7 @@
 import typing
 
 from arena_rclpy_mixins.shared import Namespace
-from arena_runtime._node import NodeInterface
+from arena_runtime.env.task_api import NodeInterface
 from arena_runtime.env.task_layer import TaskContext
 
 if typing.TYPE_CHECKING:

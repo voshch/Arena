@@ -12,7 +12,7 @@ from arena_simulation_setup.shared import Elevator, Stairs
 from arena_simulation_setup.tree.World import Level, World
 
 from arena_runtime._node import NodeInterface
-from arena_runtime.shared import Position, PositionRadius
+from arena_runtime.shared import WORLD_ENTITY_PREFIX, Position, PositionRadius
 
 from .utils import MultiLevelMap, WorldMap, WorldOccupancy
 
@@ -153,9 +153,6 @@ def _sample_grid_positions(
     """Pick n (row, col) cells with Euclidean safe_dist_cells clearance from non-empty cells and from each other."""
     available = _occupancy_to_available(occupancy, safe_dist_cells)
     return _sample_from_candidates(available, n, safe_dist_cells, rng, max_depth=max_depth)
-
-
-WORLD_ENTITY_PREFIX = 'world_'
 
 
 class WorldManager(NodeInterface):

@@ -1,7 +1,7 @@
 import math
 from collections.abc import Sequence
 
-from arena_runtime.env.request import GoToPhase, ReachPhase, TaskPhase, TaskRequest
+from arena_runtime.env.task_api import GoToPhase, ReachPhase, TaskPhase, TaskRequest
 from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Orientation, Pose, Position, PositionRadius
 

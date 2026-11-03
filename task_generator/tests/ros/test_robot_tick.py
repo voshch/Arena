@@ -68,7 +68,7 @@ def _explore(managers: list[_Manager], *, reset: bool = True) -> tuple[object, S
 
 
 def test_explore_gives_a_robot_whose_task_finished_a_fresh_goal() -> None:
-    from arena_runtime.env.request import GoToPhase
+    from arena_runtime.env.task_api import GoToPhase
 
     finished, running = _Manager("r0", done=False), _Manager("r1", done=False)
     mode, _ = _explore([finished, running])
@@ -103,20 +103,20 @@ def test_explore_teleports_a_robot_that_ran_into_the_timeout_and_restarts_its_cl
     assert len(stuck.moved) == 1
 
 
-def test_explore_leaves_a_robot_assigned_from_outside_alone_until_the_next_reset() -> None:
-    assigned, free = _Manager("r0", done=True), _Manager("r1", done=True)
+def test_explore_holds_a_robot_assigned_from_outside_while_its_task_runs_until_the_next_reset() -> None:
+    assigned, free = _Manager("r0", done=False), _Manager("r1", done=True)
     mode, node = _explore([assigned, free])
     asyncio.run(mode.tick({}, ["r0"]))
     assert assigned.submitted == []
     assert len(free.submitted) == 1
-    assigned.done = True
     node.sim_time = SimpleNamespace(sec=TIMEOUT)
     asyncio.run(mode.tick({}, []))
     assert assigned.submitted == []
     assert assigned.moved == []
     asyncio.run(mode.reset())
+    node.sim_time = SimpleNamespace(sec=2 * TIMEOUT)
     asyncio.run(mode.tick({}, []))
-    assert len(assigned.submitted) == 1
+    assert len(assigned.moved) == 1
 
 
 def test_explore_does_not_teleport_a_timed_out_robot_assigned_from_outside() -> None:

@@ -4,7 +4,7 @@ import typing
 
 from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_int
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_runtime.env.request import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
+from arena_runtime.env.task_api import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
 from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Orientation, Pose, Position, PositionRadius
 

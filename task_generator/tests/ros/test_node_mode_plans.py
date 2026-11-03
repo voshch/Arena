@@ -77,7 +77,7 @@ def _reset(key: object, registry: object, world: _World, names: tuple[str, ...])
 
 
 def test_demo_plan_drives_the_polygon_from_its_center_and_forbids_every_corner(rclpy_context: object) -> None:
-    from arena_runtime.env.request import GoToPhase, PlayGesturePhase
+    from arena_runtime.env.task_api import GoToPhase, PlayGesturePhase
 
     from task_generator.modes import Modes
     from task_generator.tasks.registry import ROBOTS_MODES

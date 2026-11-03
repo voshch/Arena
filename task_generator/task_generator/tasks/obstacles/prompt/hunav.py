@@ -22,8 +22,8 @@ from task_generator.tasks.mode import TaskModeKwargs
 os.environ["PYGLET_HEADLESS"] = "true"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
-from arena_runtime.humans.hunav.agent import HunavDynamicObstacle
+from arena_runtime.env.task_api import HunavDynamicObstacle
+from arena_runtime.shared import WORLD_ENTITY_PREFIX
 from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.entities import WAYPOINT_MODES
 from arena_simulation_setup.tree.World import Level, WorldIdentifier, describe, zones_of

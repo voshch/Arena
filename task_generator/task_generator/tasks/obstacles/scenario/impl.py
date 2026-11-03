@@ -3,9 +3,8 @@ import typing
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
-from arena_runtime.humans.itinerary import Stop
-from arena_runtime.shared import DynamicObstacle, Position, Region
+from arena_runtime.env.task_api import Stop
+from arena_runtime.shared import WORLD_ENTITY_PREFIX, DynamicObstacle, Position, Region
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light, point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView, articulation_problems

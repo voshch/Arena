@@ -117,7 +117,7 @@ class TaskContext:
     reset_lock: asyncio.Lock
     conf: TaskConfiguration
     episode: EpisodeContext
-    interactive: InteractiveContext
+    interactive: InteractiveContext | None = None
 
     @property
     def robots(self) -> dict[str, RobotManager]:

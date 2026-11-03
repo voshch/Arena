@@ -14,7 +14,7 @@ _NS = _REGISTRY_NAMESPACE("parametrized")
 
 
 def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:
-    declare_catalog(node, ns("file"), "", catalog="parametrizeds", label="Parametrized file", description="Parametrized config file name.")
+    declare_catalog(node, ns("file"), "default.xml", catalog="parametrizeds", label="Parametrized file", description="Parametrized config file name.")
 
 
 @OBSTACLES_MODES.register(Modes.TM_Obstacles.PARAMETRIZED, namespace=_NS, schema=_declare_schema)

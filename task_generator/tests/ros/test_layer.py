@@ -186,9 +186,9 @@ def test_select_writes_only_the_listed_axes_and_only_when_they_differ(rclpy_cont
 
     node = _node()
     writes: list[str] = []
-    node.add_on_set_parameters_callback(lambda changed: writes.extend(parameter.name for parameter in changed) or SetParametersResult(successful=True))
     try:
         params = layer.declare_task_params(node)
+        node.add_on_set_parameters_callback(lambda changed: writes.extend(parameter.name for parameter in changed) or SetParametersResult(successful=True))
         params.select({"robots": ["explore"]})
         params.select({"robots": ["random"]})
         assert writes == ["task.robots"]
@@ -245,9 +245,9 @@ def test_select_with_the_live_selection_writes_nothing(rclpy_context: object) ->
 
     node = _node()
     writes: list[str] = []
-    node.add_on_set_parameters_callback(lambda changed: writes.extend(parameter.name for parameter in changed) or SetParametersResult(successful=True))
     try:
         params = layer.declare_task_params(node)
+        node.add_on_set_parameters_callback(lambda changed: writes.extend(parameter.name for parameter in changed) or SetParametersResult(successful=True))
         params.select({"obstacles": ["random"], "modules": ["rviz_ui"]})
         params.select(params.resolve({}))
         assert writes == []

@@ -10,7 +10,7 @@ from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.route import WORDINGS, instruct
 
 from arena_runtime.env.adapters.mobile.drl import DrlAdapter
-from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
+from arena_runtime.shared import WORLD_ENTITY_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable

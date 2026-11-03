@@ -179,10 +179,10 @@ class TM_Random(TM_Obstacles):
         DYNAMIC = 'dynamic'
 
         self._config = _Config(
-            N_STATIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(STATIC, 'n'), [5, 15], parse=param_to_tuple),
+            N_STATIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(STATIC, 'n'), [0, 0], parse=param_to_tuple),
             N_INTERACTIVE_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(INTERACTIVE, 'n'), [0, 0], parse=param_to_tuple),
-            N_DYNAMIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(DYNAMIC, 'n'), [1, 5], parse=param_to_tuple),
-            MODELS_STATIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(STATIC, 'models'), [], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
-            MODELS_INTERACTIVE_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(INTERACTIVE, 'models'), [], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
-            MODELS_DYNAMIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(DYNAMIC, 'models'), [], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, HumanIdentifier)),
+            N_DYNAMIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(DYNAMIC, 'n'), [0, 0], parse=param_to_tuple),
+            MODELS_STATIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(STATIC, 'models'), ['shelf'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
+            MODELS_INTERACTIVE_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(INTERACTIVE, 'models'), ['shelf'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
+            MODELS_DYNAMIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(DYNAMIC, 'models'), ['arenian'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, HumanIdentifier)),
         )

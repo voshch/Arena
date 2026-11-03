@@ -2,9 +2,7 @@ import typing
 from collections.abc import Awaitable, Callable
 
 import geometry_msgs.msg as geometry_msgs
-from arena_runtime.env.interactive.hub import Menu, planar_marker, static_marker, visual
-from arena_runtime.env.realizer import Realizer
-from arena_runtime.env.request import GoToPhase, TaskPhase, TaskRequest
+from arena_runtime.env.task_api import GoToPhase, Menu, Realizer, TaskPhase, TaskRequest, planar_marker, static_marker, visual
 from arena_runtime.env.task_layer import ResetPlan
 from arena_runtime.shared import Pose
 from visualization_msgs.msg import Marker
@@ -81,7 +79,9 @@ class TM_Guided(TM_Random):
         return chain.scope_prefix(list(self._ctx.robots))
 
     def _rebuild_markers(self) -> None:
-        hub = self._ctx.interactive.markers
+        interactive = self._ctx.interactive
+        assert interactive is not None, "guided needs the env's interactive context"
+        hub = interactive.markers
         scope = self._scope
         hub.erase_prefix(scope)
         if not self._waypoints:
@@ -90,7 +90,7 @@ class TM_Guided(TM_Random):
         realizer = self._ctx.realizer
         clear_menu = Menu("Clear chain", self._clear_chain)
         robots = list(self._ctx.robots)
-        r, g, b, _ = self._ctx.interactive.robot_colors.rgba(robots[0], 1.0) if len(robots) == 1 else (*_SHARED_CHAIN_COLOR, 1.0)
+        r, g, b, _ = interactive.robot_colors.rgba(robots[0], 1.0) if len(robots) == 1 else (*_SHARED_CHAIN_COLOR, 1.0)
 
         for index, waypoint in enumerate(self._waypoints):
             hub.put(

@@ -22,11 +22,11 @@ from arena_runtime.env.affordance_markers import affordance_markers
 from arena_runtime.env.collision_grid import CollisionGrid
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.env.world_manager.utils import WorldMap
-from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
 from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
 from arena_runtime.humans import BaseHumanSimulator
 from arena_runtime.humans.utils import ObstacleLayer
 from arena_runtime.shared import (
+    WORLD_ENTITY_PREFIX,
     Door,
     DynamicObstacle,
     Elevator,

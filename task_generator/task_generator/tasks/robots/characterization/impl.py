@@ -165,8 +165,7 @@ class TM_Characterization(TM_Robots):
 
     async def _centre_placement(self) -> Pose:
         """A free cell closest to the map centre (fallback: random placement)."""
-        from arena_runtime.env.placement import random_robot_pose
-        from arena_runtime.env.world_manager.utils import WorldOccupancy
+        from arena_runtime.env.task_api import WorldOccupancy, random_robot_pose
         from arena_runtime.shared import Orientation, Position
 
         try:

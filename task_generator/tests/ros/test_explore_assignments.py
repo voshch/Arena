@@ -67,7 +67,7 @@ def _explore(managers: list[_Manager]) -> tuple[object, SimpleNamespace]:
 
 
 def _ended(outcome: str, reason: str = "") -> object:
-    from arena_runtime.env.robot_manager.task_runner import PhaseState
+    from arena_runtime.env.task_api import PhaseState
 
     return PhaseState(index=0, phase=None, monitor=None, outcome=outcome, reason=reason)
 

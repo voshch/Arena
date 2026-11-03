@@ -10,8 +10,7 @@ import rclpy
 import rclpy.time
 import tf2_ros
 import yaml
-from arena_runtime.acoustics import SoundEmission
-from arena_runtime.env.interactive import Apply, Menu, planar_marker, visual
+from arena_runtime.env.task_api import Apply, Menu, SoundEmission, planar_marker, visual
 from arena_runtime.shared import Orientation
 from arena_runtime_msgs.srv import RemoveSound, SpawnSound
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
@@ -28,7 +27,7 @@ from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
 from task_generator.tasks.modules.sounds import REMOVE_SOUND, SPAWN_SOUND
 
 if typing.TYPE_CHECKING:
-    from arena_runtime.env.realizer import Realizer
+    from arena_runtime.env.task_api import Realizer
     from arena_simulation_setup.tree.assets.sound_catalog import SoundAsset
 
 
@@ -370,8 +369,10 @@ class Mod_Sounds(TM_Module):
             float(orientation.w) / orientation_norm,
         )
         if frame_id != "map" and not attach_to_frame:
+            interactive = self._ctx.interactive
+            assert interactive is not None, "sounds needs the env's interactive context"
             try:
-                transform = self._ctx.interactive.tf_buffer.lookup_transform(
+                transform = interactive.tf_buffer.lookup_transform(
                     "map",
                     frame_id,
                     rclpy.time.Time(),
@@ -453,6 +454,8 @@ class Mod_Sounds(TM_Module):
         return response
 
     def _put_handle(self, entity: str, position: Point, yaw: float) -> None:
+        interactive = self._ctx.interactive
+        assert interactive is not None, "sounds needs the env's interactive context"
         pose = PoseMsg(position=position, orientation=Orientation.from_yaw(yaw).to_msg())
 
         async def on_pose(moved: PoseMsg) -> None:
@@ -461,7 +464,7 @@ class Mod_Sounds(TM_Module):
         async def remove() -> None:
             self._remove_runtime(entity)
 
-        self._ctx.interactive.markers.put(
+        interactive.markers.put(
             planar_marker(entity, pose, description=entity, scale=0.6, visuals=[visual(Marker.CUBE, (0.25, 0.25, 0.25), (0.9, 0.8, 0.2, 0.9))]),
             on_pose=on_pose,
             apply=Apply.LIVE,
@@ -479,7 +482,9 @@ class Mod_Sounds(TM_Module):
         self._sound_state.pop(entity, None)
         self._attached.discard(entity)
         self._runtime.discard(entity)
-        self._ctx.interactive.markers.erase(entity)
+        interactive = self._ctx.interactive
+        assert interactive is not None, "sounds needs the env's interactive context"
+        interactive.markers.erase(entity)
         self._ctx.simulator.detach_semantics(entity)
         return True
 

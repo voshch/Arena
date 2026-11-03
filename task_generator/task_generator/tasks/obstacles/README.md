@@ -60,10 +60,12 @@ Declared under the mode namespace (e.g. `task.random.*`):
 
 | Param | Default | Description |
 | --- | --- | --- |
-| `static.n` | `[5, 15]` | `[min, max]` static obstacle count |
-| `dynamic.n` | `[1, 5]` | `[min, max]` dynamic obstacle count |
-| `static.models` | *(all ObjectIdentifiers)* | model name list |
-| `dynamic.models` | *(all PedestrianIdentifiers)* | model name list |
+| `static.n` | `[0, 0]` | `[min, max]` static obstacle count |
+| `interactive.n` | `[0, 0]` | `[min, max]` interactive obstacle count |
+| `dynamic.n` | `[0, 0]` | `[min, max]` dynamic obstacle count |
+| `static.models` | `[shelf]` | model name list, empty = all ObjectIdentifiers |
+| `interactive.models` | `[shelf]` | model name list, empty = all ObjectIdentifiers |
+| `dynamic.models` | `[arenian]` | model name list, empty = all PedestrianIdentifiers |
 
 ### `TM_Parametrized` params
 
@@ -71,7 +73,7 @@ Declared under `task.parametrized.*`:
 
 | Param | Default | Description |
 | --- | --- | --- |
-| `parametrized.file` | `''` | `ParametrizedIdentifier` name to resolve |
+| `parametrized.file` | `'default.xml'` | `ParametrizedIdentifier` name to resolve |
 
 ### `TM_Scenario` params
 
@@ -91,7 +93,7 @@ Declared under `task.environment.*`:
 
 | Param | Default | Description |
 | --- | --- | --- |
-| `environment.file` | `'default'` | `EnvironmentIdentifier` name to resolve |
+| `environment.file` | `'office.yaml'` | `EnvironmentIdentifier` name to resolve |
 
 Groups from the environment config are placed into rooms. Rooms are either
 taken from `world_manager.world.zones` (explicit zone declarations) or

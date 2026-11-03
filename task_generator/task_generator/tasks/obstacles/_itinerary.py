@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import attrs
-from arena_runtime.humans.itinerary import Stop, plan_itinerary
+from arena_runtime.env.task_api import Stop, plan_itinerary
 from arena_runtime.shared import DynamicObstacle, Position
 from arena_simulation_setup.shared.entities import Waypoint
 

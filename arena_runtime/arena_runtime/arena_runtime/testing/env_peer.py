@@ -64,7 +64,7 @@ def _peer_class(modes: TaskModes) -> type:
     from std_srvs.srv import Empty, Trigger
 
     from arena_runtime.env.constants.runtime import Configuration
-    from arena_runtime.env.task_layer import decode_modes, encode_modes, encode_namespaces, mode_param
+    from arena_runtime.env.task_layer import TASK_PARAM_PREFIX, decode_modes, encode_modes, encode_namespaces, mode_param
 
     class TaskGeneratorPeer(ROSParamServer):
         """Serves the env node's interfaces with the real Configuration and mode schemas declared."""
@@ -74,6 +74,7 @@ def _peer_class(modes: TaskModes) -> type:
             self.conf = Configuration(self)
             for name, default in ((mode_param("robots"), "random"), (mode_param("obstacles"), "random"), (mode_param("config"), ""), (mode_param("modules"), "")):
                 self.declare_parameter(name, default)
+            self.declare_parameter("task_layer", "")
             self.declare_parameter("task.episode.auto_reset", False)
             self.declare_parameter("task.episode.fail_on_collision", False)
             modes.declare(self)
@@ -201,7 +202,7 @@ def _peer_class(modes: TaskModes) -> type:
 
         def on_task_modes(self, request: srv.QueryTaskModes.Request, response: srv.QueryTaskModes.Response) -> srv.QueryTaskModes.Response:
             response.modes = encode_modes({"robots": sorted(modes.robots), "obstacles": sorted(modes.obstacles), "modules": sorted(modes.modules)})
-            response.namespaces = encode_namespaces({"robots": {m: mode_param(m) for m in modes.robots}, "obstacles": {m: mode_param(m) for m in modes.obstacles}, "modules": {m: mode_param(m) for m in modes.modules}})
+            response.namespaces = encode_namespaces({axis: {mode: f"{TASK_PARAM_PREFIX}{mode}" for mode in names} for axis, names in (("robots", modes.robots), ("obstacles", modes.obstacles), ("modules", modes.modules))})
             return response
 
         def on_get_task_modes(self, request: srv.GetTaskModes.Request, response: srv.GetTaskModes.Response) -> srv.GetTaskModes.Response:

@@ -66,7 +66,7 @@ class TaskContext:
     reset_lock: asyncio.Lock
     conf: TaskConfiguration
     episode: EpisodeContext
-    interactive: InteractiveContext
+    interactive: InteractiveContext | None = None
 
     @property
     def robots(self) -> dict[str, RobotManager]: ...
@@ -79,7 +79,8 @@ same names: `RNG`, `HUMAN`, `SAFE_DIST`, `GOAL_TOLERANCE_RADIUS`, `TIMEOUT` and
 `EpisodeContext` is what a mode may tell the running episode: `compromise`,
 `abort_episode`, `force_reset`, `register_timeline`, `register_conditions` and
 `register_sound_levels`. `InteractiveContext` is the env's rviz side: `markers`, the
-interactive marker hub, `robot_colors` and `tf_buffer`.
+interactive marker hub, `robot_colors` and `tf_buffer`. It is `None` in a
+host that has no rviz side, and the modes that use it assert it where they first need it.
 
 `TM_Composite` replaces `robots_manager` with a scoped view so each sub-TM
 only sees its allocated fleet slice.

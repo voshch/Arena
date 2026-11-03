@@ -12,7 +12,7 @@ from enum import Enum
 import attrs
 import yaml
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
+from arena_runtime.shared import WORLD_ENTITY_PREFIX
 from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.entities import WAYPOINT_MODES
 from arena_simulation_setup.tree.World import Level, WorldIdentifier, describe, zones_of

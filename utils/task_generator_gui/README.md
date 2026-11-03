@@ -13,7 +13,7 @@ The auditory panel and the spawn microphone and spawn sound tools live in the
 
 ## Service contract
 
-All service paths are relative to the task_generator node namespace (default `/arena_env_node`, configurable via the RViz panel `Target` config key).
+All service paths are relative to the env node namespace (default `/arena_env_node`, configurable via the RViz panel `Target` config key).
 
 | Path | Type | Usage |
 |---|---|---|

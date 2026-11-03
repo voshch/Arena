@@ -18,7 +18,7 @@ def test_reset_plans_the_start_and_publishes_the_schedule(rclpy_context: object)
     import rclpy
     from arena_rclpy_mixins import ArenaMixinNode
     from arena_runtime.env.constants.rng import EpisodeRng
-    from arena_runtime.env.world_manager.utils import WorldOccupancy
+    from arena_runtime.env.task_api import WorldOccupancy
     from arena_runtime.shared import Position
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from std_msgs.msg import String

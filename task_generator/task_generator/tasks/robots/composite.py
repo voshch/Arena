@@ -7,7 +7,7 @@ import typing
 from collections.abc import Collection, Mapping
 
 import attrs
-from arena_runtime.env.robot_manager.task_runner import PhaseState
+from arena_runtime.env.task_api import PhaseState
 from arena_runtime.env.task_layer import ResetPlan, TaskContext
 from arena_runtime.shared import Pose
 

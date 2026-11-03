@@ -9,7 +9,7 @@ from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 from arena_simulation_setup.tree.World import Level, WorldView, Zone
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 from arena_runtime.env.environment_manager import admit_lights, authored_statics, stage_ambient, stage_ambient_conflict, world_lights
-from arena_runtime.env.world_manager.world_manager import WORLD_ENTITY_PREFIX
+from arena_runtime.shared import WORLD_ENTITY_PREFIX
 
 
 def _level(static_name: str) -> Level:

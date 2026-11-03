@@ -4,8 +4,7 @@ from collections.abc import Iterator, Sequence
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_runtime.env.realizer import Realizer
-from arena_runtime.env.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+from arena_runtime.env.task_api import GoToPhase, LoopPhase, Realizer, TaskPhase, TaskRequest
 from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Pose, Position, PositionRadius
 from arena_simulation_setup.tree.World import WorldIdentifier

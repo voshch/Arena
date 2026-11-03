@@ -36,6 +36,8 @@ from typing_extensions import Self
 if TYPE_CHECKING:
     import rclpy.node
 
+WORLD_ENTITY_PREFIX = 'world_'
+
 
 @attrs.define
 class Robot(Entity):

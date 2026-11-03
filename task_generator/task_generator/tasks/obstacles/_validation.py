@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from arena_runtime.env.world_manager.utils import WorldMap, WorldOccupancy
+from arena_runtime.env.task_api import WorldMap, WorldOccupancy
 from arena_runtime.shared import Position, PositionRadius
 
 IsValid = Callable[[Position], bool]

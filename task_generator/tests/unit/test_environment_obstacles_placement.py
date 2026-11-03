@@ -342,7 +342,7 @@ def test_rotated_groups_are_checked_against_their_turned_footprint(on_bench):
 
 def test_placed_groups_block_later_rooms_without_touching_the_map(on_bench):
     async def body(bench: Bench):
-        from arena_runtime.env.world_manager.utils import WorldOccupancy
+        from arena_runtime.env.task_api import WorldOccupancy
 
         bench.world(zones={"office": OFFICE, "office_copy": OFFICE})
         static, _ = await bench.mode([BOX_GROUP]).reset(seed=0)
@@ -355,7 +355,7 @@ def test_placed_groups_block_later_rooms_without_touching_the_map(on_bench):
 
 def test_region_checks_and_marks_use_the_grid_frame(on_bench):
     async def body(bench: Bench):
-        from arena_runtime.env.world_manager.utils import GridFrame, WorldOccupancy
+        from arena_runtime.env.task_api import GridFrame, WorldOccupancy
         from arena_runtime.shared import Position
 
         bench.world()

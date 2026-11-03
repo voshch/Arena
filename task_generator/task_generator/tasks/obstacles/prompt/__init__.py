@@ -5,7 +5,7 @@ import importlib
 from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_string
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.shared import Namespace
-from arena_runtime.env.constants import Constants
+from arena_runtime.env.task_api import Constants
 
 from task_generator.modes import Modes
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, OBSTACLES_MODES
