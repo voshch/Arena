@@ -57,8 +57,10 @@ KINDS = {
 
 DESCRIPTION = """Inspect and move resolvable arena data.
 
-`ls` alone lists the kinds. Reading public buckets is anonymous, reading a private bucket
-and pushing need GCS_ACCESS_TOKEN in the environment or a gcloud login."""
+`ls` alone lists the kinds, `browse` alone the store sources and which kinds use them.
+Every bucket lives on the asset store at ARENA_ASSETS_URL (default
+https://storage.arena-rosnav.org). Reading public/* is anonymous, reading arena-internal,
+pushing and removing need ARENA_ASSETS_TOKEN in the environment or a gcloud login."""
 
 
 def _parse(argv: list[str], positionals: tuple[str, ...], flags: tuple[str, ...] = (), valued: tuple[str, ...] = (), optional: int = 0, variadic: bool = False) -> tuple[list[str], dict[str, str | bool]]:
@@ -228,7 +230,8 @@ def pull(argv: list[str]) -> int:
     resolver = _net_resolver(kind, bucket)
     path = identifier._run_sync(resolver.resolve(identifier))
     if path is None:
-        print(f"{kind} {name} is not in {bucket}", file=sys.stderr)
+        reason = resolver.failure(identifier)
+        print(f"{kind} {name} was not pulled from {bucket}: {reason}" if reason else f"{kind} {name} is not in {bucket}", file=sys.stderr)
         return 1
     print(path)
     return 0
@@ -461,11 +464,81 @@ def push(argv: list[str]) -> int:
             print(f"publish {len(files)} file(s) of {kind} {' '.join(names[:3])}{' ...' if len(names) > 3 else ''} to {target} ? [y/N] ", end="", flush=True)
             if input().strip().lower() not in ("y", "yes"):
                 return 1
-        result = _net(bucket, "author", str(root), "-d", prefix)
-    if result == 0:
-        _drop_listing(kind, bucket)
-        print(f"published {len(names)} {kind} to {target}: {len(files)} file(s), {size / 1e6:.1f} MB")
-    return result
+        done = subprocess.run(["ros2", "run", "arena_assets", "arena_assets", "-s", "net", bucket, "author", str(root), "-d", prefix], stdout=subprocess.PIPE, text=True, check=False)
+    if done.returncode != 0:
+        return done.returncode
+    _drop_listing(kind, bucket)
+    summary = json.loads(done.stdout.strip().splitlines()[-1])
+    if not summary["sent"]:
+        print(f"{kind} {' '.join(names[:3])}{' ...' if len(names) > 3 else ''} is up to date on {target}: all {summary['files']} file(s) already there")
+        return 0
+    print(f"published {len(names)} {kind} to {target}: sent {summary['sent']} of {summary['files']} file(s), {summary['bytes'] / 1e6:.1f} MB, {summary['skipped']} already up to date")
+    return 0
+
+
+def _sources() -> dict[str, list[str]]:
+    """Store sources the kinds read from, each with its kinds."""
+    sources: dict[str, list[str]] = {}
+    for kind in KINDS:
+        for bucket in _buckets(kind):
+            sources.setdefault("public/models" if bucket == "default" else bucket, []).append(kind)
+    sources.setdefault("arena-internal", [])
+    return sources
+
+
+def browse(argv: list[str]) -> int:
+    """Walk the asset store by folders.
+
+    `arena asset browse [BUCKET[/PATH]] [--json]`. Bare, the store sources and the kinds
+    that read from each. With a path, its folders (object count and size below each) and
+    files. Reading public/* is anonymous, arena-internal needs a token.
+    """
+    pos, opts = _parse(argv, ("PATH",), flags=("--json",), optional=1)
+    if not pos:
+        sources = _sources()
+        if "--json" in opts:
+            print(json.dumps([{"source": source, "kinds": kinds} for source, kinds in sources.items()]))
+            return 0
+        width = max(len(source) for source in sources) + 1
+        for source, kinds in sources.items():
+            print(f"{source + '/':<{width}}  {' '.join(kinds) or 'private, needs ARENA_ASSETS_TOKEN or a gcloud login'}")
+        print("\n`arena asset browse <source>/<folder>` lists one folder")
+        return 0
+    bucket, _, path = pos[0].strip("/").partition("/")
+    return _net(bucket, "browse", path, *(("--json",) if "--json" in opts else ()))
+
+
+def rm(argv: list[str]) -> int:
+    """Remove a published asset from its bucket, every file of it.
+
+    `arena asset rm KIND NAME [--bucket B] [--yes]`. The store allows it to the asset's
+    uploader or an admin. The cached copy goes too, so the asset is not served from the
+    cache afterwards. Local copies are never touched.
+    """
+    import shutil
+
+    (kind, name), opts = _parse(argv, ("KIND", "NAME"), flags=("--yes",), valued=("--bucket",))
+    bucket = _bucket_of(opts, kind)
+    identifier = _identifier(kind, name)
+    prefix = str(identifier.relpath())
+    target = f"{bucket}:{prefix}"
+    if "--yes" not in opts:
+        if not sys.stdin.isatty():
+            raise CLIError(f"removing {target} needs confirmation, pass --yes")
+        print(f"remove every file of {kind} {name} from {target} ? [y/N] ", end="", flush=True)
+        if input().strip().lower() not in ("y", "yes"):
+            return 1
+    done = subprocess.run(["ros2", "run", "arena_assets", "arena_assets", "-s", "net", bucket, "delete", "-r", prefix], stdout=subprocess.PIPE, text=True, check=False)
+    if done.returncode != 0:
+        return done.returncode
+    _drop_listing(kind, bucket)
+    resolver = _net_resolver(kind, bucket)
+    cached = resolver.path / prefix
+    if cached.is_dir():
+        shutil.rmtree(cached)
+    resolver.invalidate()
+    print(f"removed {kind} {name} from {target}: {len(done.stdout.split())} file(s)")
+    return 0
 
 
 def _import_args(pos: list[str], opts: dict[str, str | bool]) -> list[str]:
@@ -515,7 +588,8 @@ REFRESH_LOCK_MAX_AGE_S = 300.0
 
 def import_listing(kind: str, source: str) -> str | None:
     """Item list the bare `import KIND SOURCE` caches for that source, None without ARENA_ASSETS_DIR."""
-    root = os.environ.get("ARENA_ASSETS_DIR")
+    data = os.environ.get("ARENA_DATA_DIR")
+    root = os.environ.get("ARENA_ASSETS_DIR") or (os.path.join(data, "assets") if data else None)
     return os.path.join(root, ".import", source, f"items.{kind}.json") if root else None
 
 
@@ -576,6 +650,8 @@ COMMANDS = {
         make_verb("ls", ls, complete=Union(_KINDS, Flags({"--network": "include bucket-only entries", "--json": "machine-readable"}))),
         make_verb("pull", pull, complete=_KIND),
         make_verb("expire", expire, complete=_KIND),
+        make_verb("browse", browse, complete=Flags({"--json": "machine-readable folders and files"})),
+        make_verb("rm", rm, complete=Sub(_KIND.subs, extra=Flags({"--bucket": "bucket to remove from", "--yes": "skip the confirmation"}, valued=("--bucket",)))),
         make_verb("push", push, complete=Sub(_KIND.subs, extra=Flags({"--all": "every local asset of the kind, in one upload", "--only": "only files matching GLOB[,GLOB]", "--dry-run": "list the files, upload nothing", "--force": "publish despite a failed preflight", "--yes": "skip the confirmation"}))),
         make_verb("import", import_, complete=_IMPORT),
     )

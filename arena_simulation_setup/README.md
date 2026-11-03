@@ -53,9 +53,10 @@ The package contributes four domains to the `arena_mcp` server, listed with
   `$ARENA_ASSETS_DIR_LOCAL/worlds`, a scenario only into a world that lives
   there. `arena://worlds/{name}` serves the inspect summary. Previews render
   at the world generator node's pixel budget.
-- `assets` runs the `arena asset` verbs: kinds, find, ls, pull, and push with
+- `assets` runs the `arena asset` verbs: kinds, find, ls, browse (the store by
+  folders), pull, rm (destructive, a published asset and its cached copy), and push with
   the preflight that refuses references nobody else could resolve (marked
-  destructive and open-world, it needs `GCS_ACCESS_TOKEN`), `only` restricting it to
+  destructive and open-world, it needs `ARENA_ASSETS_TOKEN`), `only` restricting it to
   the files matching a glob and no name publishing every local asset. `assets_ls` and
   `assets_find` with kind `world` list the worlds and every resolver's verdict.
   `assets_import_sources` lists the datasets `arena asset import` converts

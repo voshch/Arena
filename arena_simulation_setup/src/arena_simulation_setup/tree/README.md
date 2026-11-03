@@ -194,7 +194,7 @@ worlds (`a,b[1]`), one `SimplePathResolver` per `ARENA_WORLD_PATH` root
 (colon-separated env var), then a `LocalResolver` on
 `$ARENA_ASSETS_DIR_LOCAL/worlds`, then a `SimplePathResolver` rooted at
 `ASS_DIR / 'worlds'`, then one `NetResolver` per `WORLD_BUCKETS` provider
-(default `arena-worlds-prod-public`, constructed with `formats=()` since a
+(default `public/worlds`, constructed with `formats=()` since a
 world payload is not model files, so the `ARENA_MODELS_FORMATS` filter would
 otherwise drop it). `resolve_write_sync()` returns the `LocalResolver`
 destination, so generated and authored worlds land in the local root, outside

@@ -201,7 +201,7 @@ humansim's clip sets (`ClipSet.pair`) place the pair with.
 
 Adding a clip: write it with `write_clip(Path("arena_simulation_setup/assets/Common/Animation/<name>"), frames, meta)`
 (frames are the players' `{"t", "angles", "root_xy_yaw", "animation_state"}` dicts), check it with
-`arena asset find animation <name>`, then publish it with `arena asset push animation <name>` (needs `GCS_ACCESS_TOKEN`).
+`arena asset find animation <name>`, then publish it with `arena asset push animation <name>` (needs `ARENA_ASSETS_TOKEN`).
 A clip from CMU mocap (the cgspeed BVH conversion, the `cmu_mb` rig of the human assets) comes from
 [`bvh.py`](bvh.py): `python3 -m arena_runtime.humans.bvh 22_14.bvh --skin <human>/meshes/<human>.dae -o
 .../Animation/squat --from 0.72 --to 1.75` turns each bone's rotation into its bind frame, read off any human asset's

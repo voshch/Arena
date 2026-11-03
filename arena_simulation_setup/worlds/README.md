@@ -513,7 +513,7 @@ Resolvers run in order, first hit wins
 
 1. Each `ARENA_WORLD_PATH` root (colon-separated env var), if set.
 2. The writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds` (default
-   `$ARENA_ASSETS_DIR/local/worlds`), a `LocalResolver` that reads the variable
+   `$ARENA_DIR/_assets/_local/worlds`), a `LocalResolver` that reads the variable
    again at every use. It is also the only write target
    (`resolve_write_path()` / `resolve_write_sync()`), so every saved world lands
    here: the world generator node, `save_generated`, `WorldView.save` on a
@@ -521,18 +521,22 @@ Resolvers run in order, first hit wins
    under the name of a shipped world shadows the shipped one.
 3. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
 4. One `NetResolver` per `WORLD_BUCKETS` provider (default
-   `arena-worlds-prod-public`), fetching into `$ARENA_ASSETS_DIR/<bucket>/<name>/`.
+   `public/worlds`), fetching into `$ARENA_ASSETS_DIR/<provider>/<name>/`, by default
+   under `$ARENA_DATA_DIR/assets`, outside the checkout.
    A world keys off its bare name, so the worlds bucket is itself the namespace.
 
-Worlds not shipped in this package are hosted in the bucket(s) named by
-`WORLD_BUCKETS` and pulled on demand. `default` in that list stands for the public
-bucket, and a private bucket needs `GCS_ACCESS_TOKEN` or a gcloud login. `arena asset find world <name>`
+Worlds not shipped in this package are hosted on the asset store
+(`ARENA_ASSETS_URL`, default `https://storage.arena-rosnav.org`) under the sources
+named by `WORLD_BUCKETS` and pulled on demand. `default` in that list stands for
+`public/worlds`, and `arena-internal` needs `ARENA_ASSETS_TOKEN` or a gcloud login. `arena asset find world <name>`
 prints every resolver's verdict for a name (which one hit, which were
 shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 `arena asset expire world <name>` makes the next use download it again.
 `arena asset push world <name>` publishes a locally-authored world after a
 preflight that checks every asset it references would resolve for someone
-else.
+else, sends only the files the store lacks and says how many were already
+there. `arena asset rm world <name>` removes a published world and its cached
+copy, and `arena asset browse public/worlds` walks the store by folders.
 
 `arena asset import world houseexpo <plan id>` writes one HouseExpo floor plan
 as `houseexpo_<plan id>` into the imported worlds root

@@ -30,9 +30,9 @@ export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
 
 export INSTALLED="$ARENA_DIR/.installed"
 export TOOLS_DIR="$ARENA_DIR/_meta/tools"
-export ARENA_ASSETS_DIR="$ARENA_DIR/_assets/"
-export ARENA_ASSETS_DIR_LOCAL="$ARENA_ASSETS_DIR/_local"
-export ARENA_ASSETS_DIR_IMPORTED="$ARENA_ASSETS_DIR/_imported"
+export ARENA_ASSETS_DIR="${ARENA_DATA_DIR:-$ARENA_WS_DIR/data}/assets"
+export ARENA_ASSETS_DIR_LOCAL="$ARENA_DIR/_assets/_local"
+export ARENA_ASSETS_DIR_IMPORTED="$ARENA_DIR/_assets/_imported"
 export ARENA_VENV_DIR="${ARENA_VENV_DIR:-$ARENA_DIR/.venv}"
 
 export ARENA_ROS_DISTRO="${ARENA_ROS_DISTRO:-jazzy}"

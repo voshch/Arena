@@ -52,8 +52,24 @@ def test_pull_of_a_world_absent_from_the_bucket_fails():
         assets.assets_pull("world", "mcp_no_such_world_anywhere")
 
 
+@sourced
+def test_browse_without_a_path_lists_the_sources_and_their_kinds():
+    sources = {row["source"]: row["kinds"] for row in assets.assets_browse()["sources"]}
+    assert sources["public/worlds"] == ["world"]
+    assert "object" in sources["public/models"]
+    assert "arena-internal" in sources
+
+
+@sourced
+def test_browse_of_an_unreachable_store_fails_with_the_reason(monkeypatch, tmp_path):
+    monkeypatch.setenv("ARENA_ASSETS_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ARENA_ASSETS_DIR", str(tmp_path))
+    with pytest.raises(ToolError, match="cannot reach the asset store at http://127.0.0.1:9"):
+        assets.assets_browse("public/models")
+
+
 def test_domain_serves_only_the_arena_asset_verbs():
-    assert sorted(spec.name for spec in assets.domain.tools) == ["assets_articulation", "assets_find", "assets_import", "assets_import_items", "assets_import_sources", "assets_kinds", "assets_ls", "assets_pull", "assets_push", "assets_retarget_animation", "assets_rig_human"]
+    assert sorted(spec.name for spec in assets.domain.tools) == ["assets_articulation", "assets_browse", "assets_find", "assets_import", "assets_import_items", "assets_import_sources", "assets_kinds", "assets_ls", "assets_pull", "assets_push", "assets_retarget_animation", "assets_rig_human", "assets_rm"]
 
 
 @sourced
