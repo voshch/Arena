@@ -9,7 +9,7 @@ This directory contains two distinct things used by the HuNav human simulator:
 
 `HunavDynamicObstacle._default` is populated by
 `_load_config()` in
-[task_generator/simulators/human/hunav/agent.py](../../../task_generator/task_generator/simulators/human/hunav/agent.py)
+[arena_runtime/humans/hunav/agent.py](../../../arena_runtime/arena_runtime/arena_runtime/humans/hunav/agent.py)
 (`_load_config`, `HunavDynamicObstacle.parse`), which reads
 `<arena_simulation_setup share>/configs/hunav/default.yaml` at module import
 time.
@@ -84,7 +84,7 @@ default. A few keys have HuNav-specific meaning:
 | `behavior` | See `behavior:` block above. |
 | `cyclic_goals`, `goal_radius`, `id`, `type`, `skin`, `group_id`, `radius` | Same meaning as in `default.yaml`. |
 
-See [task_generator human README](../../../task_generator/task_generator/simulators/human/README.md) for where `dynamic:` entries and their `extra:` map come from in `scenario.yaml`.
+See [arena_runtime human README](../../../arena_runtime/arena_runtime/arena_runtime/humans/README.md) for where `dynamic:` entries and their `extra:` map come from in `scenario.yaml`.
 
 ## `behavior_trees/`: BT library
 

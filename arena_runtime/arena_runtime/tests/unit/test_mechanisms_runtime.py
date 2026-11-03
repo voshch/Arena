@@ -8,7 +8,7 @@ import random
 
 import pytest
 
-pytest.importorskip("task_generator.shared")
+pytest.importorskip("arena_runtime.shared")
 pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
@@ -37,7 +37,7 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
 from arena_runtime.sim._semantics import GateSemantics, SemanticsManager  # noqa: E402
 from arena_simulation_setup.shared.semantics import SemanticCfg  # noqa: E402
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position  # noqa: E402
-from task_generator.shared import Door, Elevator  # noqa: E402
+from arena_runtime.shared import Door, Elevator  # noqa: E402
 
 DT = 1.0 / 30.0
 

@@ -130,8 +130,8 @@ def test_normalize_leaves_legend_symbols_alone():
 
 def test_pedestrian_count_binds_random_dynamic_obstacles():
     assert build('──', pedestrians=7).params() == {
-        'tm_obstacles': 'random',
-        'obstacles_params': {'dynamic.n': [7, 7]},
+        'modes': {'obstacles': 'random'},
+        'params': {'obstacles': {'dynamic.n': [7, 7]}},
     }
     assert build('──').params() == {}
 

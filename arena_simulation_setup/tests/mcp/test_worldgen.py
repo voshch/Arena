@@ -51,7 +51,7 @@ def _call(name, arguments):
 def test_generators_lists_every_registered_generator_with_its_schema():
     listed = {entry["name"]: entry for entry in worldgen.worldgen_generators()}
     assert set(listed) == {kind.value for kind in WorldGenerator.available()}
-    assert listed["barn"]["episode_binding"] == {"tm_robots": "scenario", "robots_params": {"file": "barn"}}
+    assert listed["barn"]["episode_binding"] == {"modes": {"robots": "scenario"}, "params": {"robots": {"file": "barn"}}}
     assert listed["sketch"]["takes_sketch"] and not listed["empty"]["takes_sketch"]
     assert listed["sketch"]["binding_follows_pedestrians"] and not listed["barn"]["binding_follows_pedestrians"]
     assert "width" in listed["empty"]["config_schema"]["properties"]
@@ -103,7 +103,7 @@ def test_barn_takes_a_challenge_index_and_source_through_the_server():
     canonical = diagnostics_of(WorldGenerator(WorldGeneratorType.BARN, config).compute().all_levels[0])
     assert report["diagnostics"]["extent"] == [round(float(value), 3) for value in canonical.extent]
     assert report["diagnostics"]["extent"] != worldgen.worldgen_preview("barn", seed=3)[0]["diagnostics"]["extent"]
-    assert report["episode_binding"] == {"tm_robots": "scenario", "robots_params": {"file": "barn"}}
+    assert report["episode_binding"] == {"modes": {"robots": "scenario"}, "params": {"robots": {"file": "barn"}}}
     with pytest.raises(ToolError, match="invalid barn configuration"):
         worldgen.worldgen_preview("barn", config={"index": 300})
 
@@ -184,7 +184,8 @@ QUEUE_PEER = r"""
 import asyncio, json, threading
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
-from task_generator_msgs.srv import QueueEpisode
+from arena_runtime_msgs.srv import QueryTaskModes, QueueEpisode
+from diagnostic_msgs.msg import KeyValue
 from arena_mcp.core import ROS
 from arena_mcp.core.errors import ToolError
 from arena_simulation_setup.mcp.worldgen import worldgen_queue
@@ -199,6 +200,11 @@ def serve(request, response):
     return response
 
 
+def serve_modes(request, response):
+    response.namespaces = [KeyValue(key="robots/scenario", value="task.scn"), KeyValue(key="obstacles/random", value="task.rnd")]
+    return response
+
+
 async def main():
     own = await ROS.node()
     for _ in range(2):
@@ -207,18 +213,19 @@ async def main():
         if foreign:
             print(json.dumps({"busy": foreign}))
             return
-    node = rclpy.create_node("task_generator_node", namespace="/worldgen_test/env_7")
-    node.create_service(QueueEpisode, "/worldgen_test/env_7/task_generator_node/config/queue_episode", serve)
+    node = rclpy.create_node("arena_env_node", namespace="/worldgen_test/env_7")
+    node.create_service(QueueEpisode, "/worldgen_test/env_7/arena_env_node/config/queue_episode", serve)
+    node.create_service(QueryTaskModes, "/worldgen_test/env_7/arena_env_node/query/task_modes", serve_modes)
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
     try:
         for _ in range(50):
-            if "/worldgen_test/env_7/task_generator_node" in (await ROS.graph())["nodes"]:
+            if "/worldgen_test/env_7/arena_env_node" in (await ROS.graph())["nodes"]:
                 break
             await asyncio.sleep(0.2)
-        result = await worldgen_queue("gen_barn", env_id=7, binding={"tm_robots": "scenario", "robots_params": {"file": "barn"}, "obstacles_params": {"dynamic.n": [3, 3]}})
+        result = await worldgen_queue("gen_barn", env_id=7, binding={"modes": {"robots": "scenario", "obstacles": "random"}, "params": {"robots": {"file": "barn"}, "obstacles": {"dynamic.n": [3, 3]}}})
         errors = []
         for name, binding in (("refused_world", None), ("other", {"bogus": 1}), ("../up", None)):
             try:
@@ -233,11 +240,8 @@ async def main():
             "calls": len(received),
             "world": request.world,
             "action": request.action,
-            "keep_modules": request.keep_modules,
-            "tm_robots": request.tm_robots,
-            "tm_obstacles": request.tm_obstacles,
-            "robots_params": [[p.name, p.value.type, p.value.string_value] for p in request.robots_params],
-            "obstacles_params": [[p.name, p.value.type, list(p.value.integer_array_value)] for p in request.obstacles_params],
+            "modes": [[pair.key, pair.value] for pair in request.modes],
+            "params": [[p.name, p.value.type, p.value.string_value, list(p.value.integer_array_value)] for p in request.params],
         }))
     finally:
         executor.shutdown()
@@ -252,7 +256,7 @@ asyncio.run(main())
 
 def test_queue_sends_the_world_and_its_binding_to_the_env_queue_service(tmp_path):
     pytest.importorskip("rclpy")
-    pytest.importorskip("task_generator_msgs")
+    pytest.importorskip("arena_runtime_msgs")
     env = {**os.environ, "ROS_DOMAIN_ID": str(90 + os.getpid() % 10), "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST", "ARENA_DATA_DIR": str(tmp_path)}
     done = subprocess.run([sys.executable, "-c", QUEUE_PEER], capture_output=True, text=True, timeout=120, env=env, check=False)
     assert done.returncode == 0, done.stderr[-3000:]
@@ -260,11 +264,10 @@ def test_queue_sends_the_world_and_its_binding_to_the_env_queue_service(tmp_path
     if "busy" in out:
         pytest.skip(f"ROS domain {env['ROS_DOMAIN_ID']} is in use by {out['busy']}")
     assert out["result"]["queued"] == "gen_barn"
-    assert out["result"]["service"] == "/worldgen_test/env_7/task_generator_node/config/queue_episode"
-    assert out["world"] == "gen_barn" and out["keep_modules"] and out["action"] == 0
-    assert out["tm_robots"] == "scenario" and out["tm_obstacles"] == ""
-    assert out["robots_params"] == [["file", 4, "barn"]]
-    assert out["obstacles_params"] == [["dynamic.n", 7, [3, 3]]]
+    assert out["result"]["service"] == "/worldgen_test/env_7/arena_env_node/config/queue_episode"
+    assert out["world"] == "gen_barn" and out["action"] == 0
+    assert out["modes"] == [["robots", "scenario"], ["obstacles", "random"]]
+    assert out["params"] == [["task.scn.file", 4, "barn", []], ["task.rnd.dynamic.n", 7, "", [3, 3]]]
     refused, bogus, escape = out["errors"]
     assert "not today" in refused
     assert "bogus" in bogus

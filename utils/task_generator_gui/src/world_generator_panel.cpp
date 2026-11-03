@@ -2,6 +2,7 @@
 #include "rviz_common/display_context.hpp"
 #include "task_generator_gui/utils/sketch_edit.hpp"
 
+#include <diagnostic_msgs/msg/key_value.hpp>
 #include <rcl_interfaces/msg/parameter.hpp>
 #include <rcl_interfaces/msg/parameter_type.hpp>
 #include <rclcpp/parameter.hpp>
@@ -88,9 +89,9 @@ void WorldGeneratorPanel::load(const rviz_common::Config& config)
         world_generator_node = "/world_generator";
 
     if (config.mapGetString("Target", &result))
-        task_generator_node = result.toStdString();
+        arena_env_node = result.toStdString();
     else
-        task_generator_node = "/task_generator_node";
+        arena_env_node = "/arena_env_node";
 
     params_client_ = std::make_shared<rclcpp::AsyncParametersClient>(node, world_generator_node);
 
@@ -100,14 +101,14 @@ void WorldGeneratorPanel::load(const rviz_common::Config& config)
     generate_world_client_ = node->create_client<world_generator_msgs::srv::GenerateWorld>(
         world_generator_node + "/generate");
 
-    queue_episode_client_ = node->create_client<task_generator_msgs::srv::QueueEpisode>(
-        task_generator_node + "/config/queue_episode");
+    queue_episode_client_ = node->create_client<arena_runtime_msgs::srv::QueueEpisode>(
+        arena_env_node + "/config/queue_episode");
 
-    reset_episode_client_ = node->create_client<task_generator_msgs::srv::ResetEpisode>(
-        task_generator_node + "/lifecycle/reset_episode");
+    reset_episode_client_ = node->create_client<arena_runtime_msgs::srv::ResetEpisode>(
+        arena_env_node + "/lifecycle/reset_episode");
 
     resetting_sub_ = node->create_subscription<std_msgs::msg::Bool>(
-        task_generator_node + "/state/resetting",
+        arena_env_node + "/state/resetting",
         rclcpp::QoS(1).transient_local(),
         [this](std_msgs::msg::Bool::SharedPtr msg)
         {
@@ -228,37 +229,30 @@ void WorldGeneratorPanel::applyAlgorithms(const std::set<std::string>& algorithm
 }
 
 void WorldGeneratorPanel::applyEpisodeBinding(
-    task_generator_msgs::srv::QueueEpisode::Request& req, const std::string& json)
+    arena_runtime_msgs::srv::QueueEpisode::Request& req, const std::string& json)
 {
     // generate_world returns the generator's episode binding as JSON ({} = no overrides).
     auto doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
     if (!doc.isObject()) return;
     const QJsonObject obj = doc.object();
 
-    if (obj.contains("tm_robots"))
-        req.tm_robots = obj.value("tm_robots").toString().toStdString();
-    if (obj.contains("tm_obstacles"))
-        req.tm_obstacles = obj.value("tm_obstacles").toString().toStdString();
-
-    auto leaves = [](const QJsonValue& v) -> std::vector<rcl_interfaces::msg::Parameter>
+    const QJsonObject modes = obj.value("modes").toObject();
+    for (auto it = modes.begin(); it != modes.end(); ++it)
     {
-        std::vector<rcl_interfaces::msg::Parameter> out;
-        if (!v.isObject()) return out;
-        const QJsonObject leaf_obj = v.toObject();
-        for (auto it = leaf_obj.begin(); it != leaf_obj.end(); ++it)
-        {
-            rcl_interfaces::msg::Parameter pm;
-            pm.name  = it.key().toStdString();
-            pm.value = toParameterValue(it.value()).to_value_msg();
-            out.push_back(pm);
-        }
-        return out;
-    };
+        diagnostic_msgs::msg::KeyValue pair;
+        pair.key   = it.key().toStdString();
+        pair.value = it.value().toString().toStdString();
+        req.modes.push_back(pair);
+    }
 
-    auto robots    = leaves(obj.value("robots_params"));
-    auto obstacles = leaves(obj.value("obstacles_params"));
-    req.robots_params.insert(req.robots_params.end(), robots.begin(), robots.end());
-    req.obstacles_params.insert(req.obstacles_params.end(), obstacles.begin(), obstacles.end());
+    const QJsonObject params = obj.value("params").toObject();
+    for (auto it = params.begin(); it != params.end(); ++it)
+    {
+        rcl_interfaces::msg::Parameter pm;
+        pm.name  = it.key().toStdString();
+        pm.value = toParameterValue(it.value()).to_value_msg();
+        req.params.push_back(pm);
+    }
 }
 
 void WorldGeneratorPanel::applyAlphabetToSketch()
@@ -638,17 +632,16 @@ void WorldGeneratorPanel::generateWorld(bool load)
                     {
                     status_label_->setText(QString::fromStdString(ok_msg));
 
-                    auto qreq = std::make_shared<task_generator_msgs::srv::QueueEpisode::Request>();
-                    qreq->action       = task_generator_msgs::srv::QueueEpisode::Request::MERGE;
-                    qreq->keep_modules = true;
-                    qreq->world        = target;
+                    auto qreq = std::make_shared<arena_runtime_msgs::srv::QueueEpisode::Request>();
+                    qreq->action = arena_runtime_msgs::srv::QueueEpisode::Request::MERGE;
+                    qreq->world  = target;
 
                     // The generator returns its episode binding (e.g. BARN pins robots to scenario mode).
                     applyEpisodeBinding(*qreq, binding);
 
                     queue_episode_client_->async_send_request(
                         qreq,
-                        [this, target, finish](rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedFuture qf)
+                        [this, target, finish](rclcpp::Client<arena_runtime_msgs::srv::QueueEpisode>::SharedFuture qf)
                         {
                             auto qresp = qf.get();
                             if (!qresp || !qresp->success)
@@ -659,11 +652,11 @@ void WorldGeneratorPanel::generateWorld(bool load)
                             }
 
                             // Apply the staged world now by resetting the episode.
-                            auto rreq = std::make_shared<task_generator_msgs::srv::ResetEpisode::Request>();
+                            auto rreq = std::make_shared<arena_runtime_msgs::srv::ResetEpisode::Request>();
                             rreq->world = target;
                             reset_episode_client_->async_send_request(
                                 rreq,
-                                [this, finish](rclcpp::Client<task_generator_msgs::srv::ResetEpisode>::SharedFuture rf)
+                                [this, finish](rclcpp::Client<arena_runtime_msgs::srv::ResetEpisode>::SharedFuture rf)
                                 {
                                     auto rresp = rf.get();
                                     if (!rresp || !rresp->success)

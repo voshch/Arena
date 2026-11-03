@@ -38,7 +38,7 @@ def _world(**levels: SimpleNamespace) -> SimpleNamespace:
 
 
 def _realizer(*levels: str):
-    from task_generator.manager.realizer import Realizer
+    from arena_runtime.env.task_api import Realizer
 
     realizer = Realizer(level_origins=dict.fromkeys(levels, (0.0, 0.0)))
     realizer.reset_levels(levels)

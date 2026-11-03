@@ -19,17 +19,7 @@ from collections.abc import Callable
 import rclpy.publisher
 import rclpy.subscription
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
-from rclpy import Parameter
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import String
-
-from task_generator.shared import Pose
-from task_generator.tasks.mode import TaskModeKwargs
-from task_generator.tasks.robots import TM_Robots
-
-from .schedule import (
+from arena_robots.characterization import (
     CONTROL_RATE_HZ,
     DURATION_DEFAULTS,
     MAX_SCHEDULE_DURATION_S,
@@ -41,6 +31,16 @@ from .schedule import (
     resolve_envelope,
     schedule_duration,
 )
+from arena_runtime.env.task_layer import ResetPlan, RobotReset
+from arena_runtime.shared import Pose
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+from rclpy import Parameter
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
+
+from task_generator.tasks.mode import TaskModeKwargs
+from task_generator.tasks.robots import TM_Robots
 
 # The robot stack's cmd_vel consumers (twist stamper / velocity smoother)
 # subscribe RELIABLE and reject a BEST_EFFORT publisher ("No messages will be
@@ -84,18 +84,18 @@ class TM_Characterization(TM_Robots):
         self._odom_subs: dict[str, rclpy.subscription.Subscription] = {}
         self._last_odom: dict[str, float] = {}
 
-    async def reset(self) -> None:
-        await super().reset()
+    async def reset(self) -> ResetPlan:
+        plan = await super().reset()
         await self._cancel_driver()
         self._finished = False
         self._runs = {}
 
         # Place every robot near the map centre (a free cell) so the sweep's
         # out-and-back legs stay inside the arena.
-        self._start_poses = {}
         for manager in self._ctx.robots.values():
-            self._start_poses[manager.name] = await self._centre_placement()
-            self._logger.info(f"TM_Characterization: {manager.name} placed at {self._start_poses[manager.name].position}")
+            start = await self._centre_placement()
+            plan.robots[manager.name] = RobotReset(start_pose=start)
+            self._logger.info(f"TM_Characterization: {manager.name} placed at {start.position}")
 
         self._sync_entities()
 
@@ -139,6 +139,7 @@ class TM_Characterization(TM_Robots):
 
         if self._runs:
             self._driver = asyncio.create_task(self._drive())
+        return plan
 
     def _sync_entities(self) -> None:
         """Create this mode's ROS entities once per robot and drop departed ones."""
@@ -164,9 +165,8 @@ class TM_Characterization(TM_Robots):
 
     async def _centre_placement(self) -> Pose:
         """A free cell closest to the map centre (fallback: random placement)."""
-        from task_generator.manager.world_manager.world_manager import _occupancy_to_available
-        from task_generator.shared import Orientation, Position
-        from task_generator.tasks.robots._placement import random_placement
+        from arena_runtime.env.task_api import WorldOccupancy, random_robot_pose
+        from arena_runtime.shared import Orientation, Position
 
         try:
             import numpy as np
@@ -174,7 +174,7 @@ class TM_Characterization(TM_Robots):
             wm = self._ctx.world_manager
             grid = wm.map.occupancy.grid
             rows, cols = grid.shape
-            available = _occupancy_to_available(grid, 0.0)
+            available = np.argwhere(WorldOccupancy.not_full(grid))
             if len(available) > 0:
                 dist = np.abs(available[:, 0] - rows // 2) + np.abs(available[:, 1] - cols // 2)
                 row, col = available[int(np.argmin(dist))]
@@ -182,7 +182,7 @@ class TM_Characterization(TM_Robots):
                 return Pose(Position(pos.x, pos.y, 0.0), orientation=Orientation.from_yaw(0.0))
         except Exception as e:
             self._logger.warning(f"TM_Characterization centre placement failed ({e!r}), using random")
-        return await random_placement(self._ctx)
+        return random_robot_pose(self._ctx.world_manager, self._ctx.robots_manager)
 
     def _make_odom_cb(self, robot_name: str) -> Callable[[Odometry], None]:
         def _cb(msg: Odometry) -> None:
@@ -206,7 +206,7 @@ class TM_Characterization(TM_Robots):
         self._finished = True
         self._publish_zero()
         self._logger.error(f"TM_Characterization aborting sweep: {reason}")
-        self._ctx.abort_episode(f"characterization sweep aborted: {reason}")
+        self._ctx.episode.abort_episode(f"characterization sweep aborted: {reason}")
 
     async def _cancel_driver(self) -> None:
         if self._driver is None:

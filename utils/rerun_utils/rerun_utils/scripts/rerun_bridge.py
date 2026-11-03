@@ -19,7 +19,7 @@ import rclpy.utilities
 import rerun as rr
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_viz import DisplayKind
-from task_generator_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
+from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 
 from rerun_utils.renderers import REGISTRY, RendererCtx
 from rerun_utils.tf_mirror import TFMirror
@@ -32,7 +32,7 @@ class RerunBridge(ArenaMixinNode):
     _env_id: int
     _tf_namespace: str
 
-    def __init__(self, TASKGEN_NODE: str = '/task_generator_node') -> None:
+    def __init__(self, TASKGEN_NODE: str = '/arena_env_node') -> None:
         super().__init__('rerun_bridge')
         self._TASKGEN_NODE = TASKGEN_NODE
         self.declare_parameter('web_port', 9090)

@@ -1,6 +1,6 @@
 """Pure-logic tests for the mechanism shim (unified always-present model).
 
-Skipped if task_generator / arena_simulation_setup aren't importable (no
+Skipped if arena_runtime / arena_simulation_setup aren't importable (no
 sourced overlay), since the shim's data types live there.
 """
 
@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-pytest.importorskip("task_generator.shared")
+pytest.importorskip("arena_runtime.shared")
 pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
@@ -41,7 +41,7 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
 from arena_runtime.sim._semantics import SemanticsManager  # noqa: E402
 from arena_simulation_setup.shared import Light  # noqa: E402
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position  # noqa: E402
-from task_generator.shared import Door, Elevator  # noqa: E402
+from arena_runtime.shared import Door, Elevator  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # helpers

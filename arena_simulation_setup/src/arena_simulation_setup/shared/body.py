@@ -1,4 +1,4 @@
-"""Arena body rig (task_generator human BODY.md): joint table, template skeleton, SMPL-X conversion, semantic DOFs and bundle rest offsets."""
+"""Arena body rig (arena_runtime humans/BODY.md): joint table, template skeleton, SMPL-X conversion, semantic DOFs and bundle rest offsets."""
 
 from __future__ import annotations
 

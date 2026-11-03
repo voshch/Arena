@@ -36,7 +36,7 @@ class Runtime:
         from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LockstepRegister
         from geometry_msgs.msg import PoseStamped
         from rosgraph_msgs.msg import Clock
-        from task_generator_msgs.msg import RobotDescriptor, RobotFleet, RobotState
+        from arena_runtime_msgs.msg import RobotDescriptor, RobotFleet, RobotState
         from viewport_control_msgs.msg import ViewportView
         from viewport_control_msgs.srv import ViewportCapture, ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
@@ -67,7 +67,7 @@ class Runtime:
         self.node.create_publisher(LockstepStatus, "/arena/state/lockstep", latched(1)).publish(LockstepStatus(active=run_period_ns > 0))
         self.node.create_publisher(EnvRegistry, "/arena/state/envs", latched(1)).publish(EnvRegistry(envs=[EnvRecord(env_id=0)]))
         fleet = RobotFleet(robots=[RobotState(descriptor=RobotDescriptor(name="jackal", base_frame="env_0/jackal/base_link"))])
-        self.node.create_publisher(RobotFleet, "/arena/env_0/task_generator_node/state/robots", latched(1)).publish(fleet)
+        self.node.create_publisher(RobotFleet, "/arena/env_0/arena_env_node/state/robots", latched(1)).publish(fleet)
         self._peds = self.node.create_publisher(Pedestrians, "/arena/env_0/arena_peds", 10)
         self._roster = Pedestrians(pedestrians=[Pedestrian(id=4, name="env_0/edge_0")])
         self._Clock, self._PoseStamped = Clock, PoseStamped

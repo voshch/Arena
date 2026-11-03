@@ -7,14 +7,15 @@
 #include <cstdlib>
 #include <memory>
 #include <cctype>
+#include <sstream>
 
 namespace task_generator_gui
 {
     void TaskGeneratorPanel::getWorlds()
     {
         query_worlds_client->async_send_request(
-            std::make_shared<task_generator_msgs::srv::QueryWorlds::Request>(),
-            [this](rclcpp::Client<task_generator_msgs::srv::QueryWorlds>::SharedFuture f)
+            std::make_shared<arena_runtime_msgs::srv::QueryWorlds::Request>(),
+            [this](rclcpp::Client<arena_runtime_msgs::srv::QueryWorlds>::SharedFuture f)
             {
                 auto resp = f.get();
                 if (!resp) return;
@@ -46,24 +47,64 @@ namespace task_generator_gui
         // Scenarios are fetched lazily via fetchCatalog("scenarios") in DynamicParamTree::rebuild.
     }
 
-    void TaskGeneratorPanel::setTMObstaclesParamsRequest(task_generator_msgs::srv::QueueEpisode::Request &req)
+    std::string TaskGeneratorPanel::modeName(const QString &mode)
     {
-        auto tm_value = obstacles_task_mode.toStdString();
-        for (char &c : tm_value)
+        auto name = mode.toStdString();
+        for (char &c : name)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-        req.tm_obstacles     = tm_value;
-        req.obstacles_params = DynamicParamTree::collectParams(param_widgets_obstacles_, param_types_obstacles_);
+        return name;
     }
 
-    void TaskGeneratorPanel::setTMRobotsParamsRequest(task_generator_msgs::srv::QueueEpisode::Request &req)
+    std::string TaskGeneratorPanel::namespaceOf(const std::string &axis, const std::string &mode) const
     {
-        auto tm_value = robots_task_mode.toStdString();
-        for (char &c : tm_value)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const auto it = mode_namespaces_.find(axis + "/" + mode);
+        return it == mode_namespaces_.end() ? std::string() : it->second;
+    }
 
-        req.tm_robots     = tm_value;
-        req.robots_params = DynamicParamTree::collectParams(param_widgets_robots_, param_types_robots_);
+    void TaskGeneratorPanel::rebuildTree(DynamicParamTree &tree, const std::string &axis, const std::string &mode)
+    {
+        const auto prefix = namespaceOf(axis, mode);
+        if (!prefix.empty())
+            tree.rebuild(prefix);
+    }
+
+    std::vector<std::string> TaskGeneratorPanel::modesOf(const std::vector<diagnostic_msgs::msg::KeyValue> &modes,
+                                                         const std::string &axis)
+    {
+        std::vector<std::string> names;
+        for (const auto &pair : modes)
+        {
+            if (pair.key != axis)
+                continue;
+            std::stringstream stream(pair.value);
+            std::string name;
+            while (std::getline(stream, name, ','))
+                if (!name.empty())
+                    names.push_back(name);
+        }
+        return names;
+    }
+
+    void TaskGeneratorPanel::addModeToRequest(arena_runtime_msgs::srv::QueueEpisode::Request &req,
+                                              const std::string &axis, const QString &mode,
+                                              const std::unordered_map<std::string, QWidget *> &widgets,
+                                              const std::unordered_map<std::string, uint8_t> &types)
+    {
+        if (mode.isEmpty())
+            return;
+
+        const auto name   = modeName(mode);
+        const auto prefix = namespaceOf(axis, name);
+        diagnostic_msgs::msg::KeyValue selection;
+        selection.key   = axis;
+        selection.value = name;
+        req.modes.push_back(selection);
+
+        for (auto param : DynamicParamTree::collectParams(widgets, types))
+        {
+            param.name = prefix + "." + param.name;
+            req.params.push_back(std::move(param));
+        }
     }
 
     void TaskGeneratorPanel::getParams()
@@ -73,16 +114,15 @@ namespace task_generator_gui
         getTMObstaclesParams();
     }
 
-    task_generator_msgs::srv::QueueEpisode::Request::SharedPtr
+    arena_runtime_msgs::srv::QueueEpisode::Request::SharedPtr
     TaskGeneratorPanel::buildQueueEpisodeRequest()
     {
-        auto req = std::make_shared<task_generator_msgs::srv::QueueEpisode::Request>();
-        req->action       = task_generator_msgs::srv::QueueEpisode::Request::MERGE;
-        req->keep_modules = true;
-        req->world        = staged_world;
+        auto req = std::make_shared<arena_runtime_msgs::srv::QueueEpisode::Request>();
+        req->action = arena_runtime_msgs::srv::QueueEpisode::Request::MERGE;
+        req->world  = staged_world;
 
-        setTMObstaclesParamsRequest(*req);
-        setTMRobotsParamsRequest(*req);
+        addModeToRequest(*req, kObstaclesAxis, obstacles_task_mode, param_widgets_obstacles_, param_types_obstacles_);
+        addModeToRequest(*req, kRobotsAxis, robots_task_mode, param_widgets_robots_, param_types_robots_);
 
         return req;
     }
@@ -93,7 +133,7 @@ namespace task_generator_gui
         queue_episode_client->async_send_request(
             req,
             [this, on_done = std::move(on_done)]
-            (rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedFuture f)
+            (rclcpp::Client<arena_runtime_msgs::srv::QueueEpisode>::SharedFuture f)
             {
                 auto resp = f.get();
                 const bool ok = resp && resp->success;

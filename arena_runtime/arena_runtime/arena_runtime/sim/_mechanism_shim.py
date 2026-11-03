@@ -13,7 +13,8 @@ import rclpy.impl.rcutils_logger
 from arena_simulation_setup.shared.world import CABIN_DOOR_INSET as DOOR_INSET
 from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD, CABIN_DOOR_WIDTH, ActivationDistance, Stairs, StairsBox
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
-from task_generator.shared import Door, Elevator, Obstacle, Orientation, Pose, Position
+
+from arena_runtime.shared import Door, Elevator, Obstacle, Orientation, Pose, Position
 
 from ._articulation import link_light_pose, step_articulated
 from ._interface import _BOX_FLOOR_CLEARANCE

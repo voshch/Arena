@@ -27,7 +27,7 @@ environment, works inside a container.
 
 The bridge follows the same lifecycle as `rviz_utils`:
 
-1. Wait for `task_generator_node`'s `initialized` param.
+1. Wait for `arena_env_node`'s `initialized` param.
 2. Read `prefix`, `env_id` and `tf_namespace`.
 3. Wait for one latched `state/robots` (fleet) and one latched
    `state/viz_manifest` (the env + per-robot display list).

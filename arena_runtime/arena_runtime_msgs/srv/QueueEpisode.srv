@@ -1,0 +1,17 @@
+# Per-field merge: empty/zero leaves prior queued value untouched.
+uint8 MERGE = 0
+uint8 action
+
+# Axis -> comma-separated modes, a listed axis replaces its selection.
+diagnostic_msgs/KeyValue[] modes
+
+# Empty keeps prior queued value.
+string world
+
+# Mode params by full name; per-key upsert.
+rcl_interfaces/Parameter[] params
+# Human backend params, names <backend namespace>.<param>, per-key upsert.
+rcl_interfaces/Parameter[] human_params
+---
+bool success
+string error_msg

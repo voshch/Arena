@@ -4,7 +4,7 @@ import os
 import sys
 from collections.abc import Iterable
 
-from arena_runtime.constants import SimSimulator
+from arena_bringup.constants import SimSimulator
 
 SIM_ORDER = (SimSimulator.ISAAC, SimSimulator.GAZEBO, SimSimulator.MUJOCO, SimSimulator.FLATSIM)
 

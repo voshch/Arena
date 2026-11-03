@@ -120,7 +120,7 @@ Every conversion prints a summary (`--check` prints the per-clip table, `--repor
 - `*_line`, `*_upper`/`*_lower`, `*_hand_rot`, `trunk`, `head`: in degrees.
 - `step`: the largest frame-to-frame change, which catches flips and jitter.
 
-The axes and chain come from `task_generator`'s `pointing/skeleton.py`, which is loaded from its file without rclpy (`$ARENA_SKELETON` overrides the path). `fk_torch.py` is its batched torch port, held to 1e-9 by a test.
+The axes and chain come from `arena_runtime`'s `humans/pointing/skeleton.py`, which is loaded from its file without rclpy (`$ARENA_SKELETON` overrides the path). `fk_torch.py` is its batched torch port, held to 1e-9 by a test.
 
 ## Tests
 

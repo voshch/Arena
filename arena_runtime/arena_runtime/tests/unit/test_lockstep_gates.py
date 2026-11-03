@@ -70,12 +70,12 @@ def test_step_slice() -> None:
 
 
 def test_env_match_is_slash_prefix_containment() -> None:
-    assert env_match("/arena/env_0", "/arena/env_0/task_generator_node")
-    assert env_match("/arena/env_0/task_generator_node", "/arena/env_0")
+    assert env_match("/arena/env_0", "/arena/env_0/arena_env_node")
+    assert env_match("/arena/env_0/arena_env_node", "/arena/env_0")
     assert env_match("arena/env_0", "/arena/env_0/")
     assert not env_match("/arena/env_1", "/arena/env_10")
     # a basename never matches the fqn the scheduler drops by (live seam bug, 2026-08-11)
-    assert not env_match("env_0", "/arena/env_0/task_generator_node")
+    assert not env_match("env_0", "/arena/env_0/arena_env_node")
 
 
 # registry
@@ -101,7 +101,7 @@ def test_registry_rejects_empty_caller() -> None:
 def test_registry_global_expands_per_env_and_concrete_is_verbatim() -> None:
     reg = ChannelRegistry()
     reg.register("launch", "", [_spec("engine", 0.05, topic="/arena/{env}/agent_states")])
-    reg.register("/arena/env_1/task_generator_node", "/arena/env_1", [_spec("roster", 0.15, topic="/arena/env_1/roster")])
+    reg.register("/arena/env_1/arena_env_node", "/arena/env_1", [_spec("roster", 0.15, topic="/arena/env_1/roster")])
     desired = reg.desired([0, 2])
     assert set(desired) == {"/arena/env_0/agent_states", "/arena/env_2/agent_states", "/arena/env_1/roster"}
     assert desired["/arena/env_0/agent_states"][1] == "engine/env_0"
@@ -113,19 +113,19 @@ def test_registry_first_registrant_wins_per_topic() -> None:
     first = _spec("cli_peds", 0.15, topic="/arena/env_0/arena_peds")
     second = _spec("peds", 0.0999, hard=False, topic="/arena/env_0/arena_peds")
     reg.register("cli", "", [first])
-    reg.register("/arena/env_0/task_generator_node", "/arena/env_0", [second])
+    reg.register("/arena/env_0/arena_env_node", "/arena/env_0", [second])
     assert reg.desired([0])["/arena/env_0/arena_peds"] == (first, "cli_peds")
 
 
 def test_registry_drop_env_by_fqn_containment() -> None:
     reg = ChannelRegistry()
-    reg.register("/arena/env_0/task_generator_node", "/arena/env_0", [_spec("engine", 0.05)])
-    reg.register("/arena/env_0/jackal/lockstep/nav", "/arena/env_0/task_generator_node", [_spec("nav", 0.05)])
-    reg.register("/arena/env_1/task_generator_node", "/arena/env_1", [_spec("other", 0.05)])
+    reg.register("/arena/env_0/arena_env_node", "/arena/env_0", [_spec("engine", 0.05)])
+    reg.register("/arena/env_0/jackal/lockstep/nav", "/arena/env_0/arena_env_node", [_spec("nav", 0.05)])
+    reg.register("/arena/env_1/arena_env_node", "/arena/env_1", [_spec("other", 0.05)])
     reg.register("launch", "", [_spec("global", 0.05)])
     version = reg.version
-    assert set(reg.drop_env("/arena/env_0/task_generator_node")) == {
-        "/arena/env_0/task_generator_node",
+    assert set(reg.drop_env("/arena/env_0/arena_env_node")) == {
+        "/arena/env_0/arena_env_node",
         "/arena/env_0/jackal/lockstep/nav",
     }
     assert reg.version == version + 1
@@ -136,12 +136,12 @@ def test_registry_drop_env_by_fqn_containment() -> None:
 
 def test_registry_skips_the_registrations_of_skipped_envs() -> None:
     reg = ChannelRegistry()
-    reg.register("/arena/env_0/task_generator_node", "/arena/env_0", [_spec("engine", 0.05)])
-    reg.register("/arena/env_0/jackal/lockstep/nav", "/arena/env_0/task_generator_node", [_spec("nav", 0.05)])
-    reg.register("/arena/env_1/task_generator_node", "/arena/env_1", [_spec("other", 0.05)])
+    reg.register("/arena/env_0/arena_env_node", "/arena/env_0", [_spec("engine", 0.05)])
+    reg.register("/arena/env_0/jackal/lockstep/nav", "/arena/env_0/arena_env_node", [_spec("nav", 0.05)])
+    reg.register("/arena/env_1/arena_env_node", "/arena/env_1", [_spec("other", 0.05)])
     reg.register("launch", "", [_spec("global", 0.05), _spec("agents", 0.05, topic="/arena/{env}/agent_states")])
     version = reg.version
-    assert set(reg.desired([1], skip=["/arena/env_0/task_generator_node"])) == {"/other", "/global", "/arena/env_1/agent_states"}
+    assert set(reg.desired([1], skip=["/arena/env_0/arena_env_node"])) == {"/other", "/global", "/arena/env_1/agent_states"}
     assert set(reg.desired([0, 1])) == {"/engine", "/nav", "/other", "/global", "/arena/env_0/agent_states", "/arena/env_1/agent_states"}
     assert reg.version == version
 

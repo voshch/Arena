@@ -14,11 +14,11 @@ find_package(pluginlib REQUIRED)
 find_package(rviz_common REQUIRED)
 find_package(rviz_default_plugins REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(task_generator_msgs REQUIRED)
 find_package(arena_runtime_msgs REQUIRED)
 find_package(world_generator_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(rcl_interfaces REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
 set(CMAKE_AUTOMOC ON)
@@ -53,11 +53,11 @@ ament_target_dependencies(task_generator_panel
   rviz_common
   rviz_default_plugins
   geometry_msgs
-  task_generator_msgs
   arena_runtime_msgs
   world_generator_msgs
   std_srvs
   rcl_interfaces
+  diagnostic_msgs
 )
 target_link_libraries(task_generator_panel Qt5::Widgets)
 

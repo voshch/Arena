@@ -2,7 +2,7 @@
 
 import math
 
-from task_generator.shared import Orientation, Pose, Position
+from arena_runtime.shared import Orientation, Pose, Position
 
 INSERT_AHEAD = 1.0
 

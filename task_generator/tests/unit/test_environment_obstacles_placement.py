@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 import math
 import typing
 
@@ -39,8 +40,8 @@ class Bench:
         from arena_simulation_setup.tree.World import Level, World, Zone
         from arena_simulation_setup.tree.World.model import WallPath
 
-        from task_generator.manager.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
-        from task_generator.shared import Position
+        from arena_runtime.env.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
+        from arena_runtime.shared import Position
 
         level = Level(
             zones=[Zone(name=name, polygon=[Position(x, y) for x, y in polygon]) for name, polygon in (zones or {}).items()],
@@ -53,10 +54,10 @@ class Bench:
         self.ctx.world_manager.update_world(world_map, World.from_levels(level))
 
     def mode(self, groups: list[dict] | None = None):
-        from task_generator.constants import Constants
+        from task_generator.modes import Modes
         from task_generator.tasks.registry import OBSTACLES_MODES
 
-        key = Constants.TaskMode.TM_Obstacles.ENVIRONMENT
+        key = Modes.TM_Obstacles.ENVIRONMENT
         tm = OBSTACLES_MODES.get(key)(node=self.node, ctx=self.ctx, namespace=OBSTACLES_MODES.meta(key).namespace)
         if groups is not None:
             self.load(tm, groups)
@@ -76,18 +77,19 @@ def on_bench(tmp_path):
     def run(body: typing.Callable[[Bench], typing.Awaitable[None]]) -> None:
         from arena_runtime.sim.dummy_simulator import DummySimulator
 
-        from task_generator.constants import Constants
-        from task_generator.manager.environment_manager import EnvironmentManager
-        from task_generator.manager.realizer import Realizer
-        from task_generator.manager.robot_manager import RobotsManager
-        from task_generator.manager.world_manager.world_manager_ros import WorldManagerROS
-        from task_generator.node import TaskGenerator
-        from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
-        from task_generator.simulators.human.noop import NoopHumanSimulator
-        from task_generator.tasks.context import TaskContext
+        from arena_runtime.env.constants import Constants
+
+        from arena_runtime.env.environment_manager import EnvironmentManager
+        from arena_runtime.env.realizer import Realizer
+        from arena_runtime.env.robot_manager import RobotsManager
+        from arena_runtime.env.world_manager.world_manager_ros import WorldManagerROS
+        from arena_runtime.env.episode_node import EpisodeNode
+        from arena_runtime.acoustics import AcousticsSimulatorRegistry
+        from arena_runtime.humans.noop import NoopHumanSimulator
+        from arena_runtime.env.task_layer import TaskConfiguration, TaskContext
 
         async def main() -> None:
-            node = TaskGenerator()
+            node = EpisodeNode()
             try:
                 realizer = Realizer(level_origins={"0": (0.0, 0.0)})
                 sim = DummySimulator(node=node, namespace=node._namespace, realizer=realizer)
@@ -95,7 +97,18 @@ def on_bench(tmp_path):
                 human = NoopHumanSimulator(node=node, namespace=node._namespace, simulator=sim, realizer=realizer, acoustics=acoustics)
                 env = EnvironmentManager(node=node, simulator=sim, human_simulator=human, realizer=realizer)
                 world = WorldManagerROS(node=node, environment_manager=env)
-                ctx = TaskContext(environment_manager=env, robots_manager=RobotsManager(node=node, environment_manager=env), world_manager=world, abort_episode=lambda reason: None)
+                ctx = TaskContext(
+                    environment_manager=env,
+                    robots_manager=RobotsManager(node=node, environment_manager=env),
+                    world_manager=world,
+                    realizer=realizer,
+                    simulator=sim,
+                    acoustics_simulator=acoustics,
+                    reset_lock=asyncio.Lock(),
+                    conf=TaskConfiguration.of(node.conf),
+                    episode=SimpleNamespace(),
+                    interactive=SimpleNamespace(),
+                )
                 await body(Bench(node, ctx, tmp_path))
             finally:
                 node._heartbeat_stop.set()
@@ -329,7 +342,7 @@ def test_rotated_groups_are_checked_against_their_turned_footprint(on_bench):
 
 def test_placed_groups_block_later_rooms_without_touching_the_map(on_bench):
     async def body(bench: Bench):
-        from task_generator.manager.world_manager.utils import WorldOccupancy
+        from arena_runtime.env.task_api import WorldOccupancy
 
         bench.world(zones={"office": OFFICE, "office_copy": OFFICE})
         static, _ = await bench.mode([BOX_GROUP]).reset(seed=0)
@@ -342,8 +355,8 @@ def test_placed_groups_block_later_rooms_without_touching_the_map(on_bench):
 
 def test_region_checks_and_marks_use_the_grid_frame(on_bench):
     async def body(bench: Bench):
-        from task_generator.manager.world_manager.utils import GridFrame, WorldOccupancy
-        from task_generator.shared import Position
+        from arena_runtime.env.task_api import GridFrame, WorldOccupancy
+        from arena_runtime.shared import Position
 
         bench.world()
         tm = bench.mode()

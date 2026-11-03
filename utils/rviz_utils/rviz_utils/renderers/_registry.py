@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 RendererFn = Callable[[AdapterDisplay, "RobotDescriptor | None"], "dict[str, object] | None"]
 

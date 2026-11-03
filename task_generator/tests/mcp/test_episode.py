@@ -9,13 +9,14 @@ import pytest
 pytest.importorskip("arena_mcp")
 pytest.importorskip("rclpy")
 
-from arena_mcp.core import JOBS, ROS, ToolError
-from task_generator_msgs.msg import EpisodeRecord
+from arena_mcp.core import JOBS, ToolError
+from arena_runtime_msgs.msg import EpisodeRecord
 
-from task_generator.constants.runtime import EPISODE_PARAMS
-from task_generator.mcp import entities, episode
+from arena_runtime.env.constants.runtime import EPISODE_PARAMS
+from arena_runtime.env import entities_mcp as entities
+from arena_runtime.env import episode_mcp as episode
 
-from tg_peer import ENV, MISSING_WORLD, PLAIN_ENV, ROBOT, SCENARIOS, WORLDS
+from arena_runtime.testing.env_peer import ENV, MISSING_WORLD, PLAIN_ENV, ROBOT, SCENARIOS, WORLDS
 
 
 def test_reset_blocks_until_the_next_episode_runs_and_returns_its_record(run, peers):
@@ -31,11 +32,11 @@ def test_reset_blocks_until_the_next_episode_runs_and_returns_its_record(run, pe
     assert reset["path_length"] == pytest.approx(3.5)
     assert reset["phases"] == {"jackal_0": {"phases": [{"goto": [1.0, 2.0, 0.0]}]}}
     assert reset["conditions"][0]["text"] == "no collisions"
-    assert reset["robots_params"] == {"n": 3}
+    assert reset["params"] == {"task.random.n": 3}
     assert reset["start_time"] == pytest.approx(12.0)
 
     queued = run(episode.episode_reset(env_id=ENV, wait=False))
-    assert queued == {"env": "/arena/env_7/task_generator_node", "requested": True, "previous_episode_id": before + 1}
+    assert queued == {"env": "/arena/env_7/arena_env_node", "requested": True, "previous_episode_id": before + 1}
     run(episode.episode_wait(env_id=ENV, until="running", timeout_s=10))
 
 
@@ -138,29 +139,32 @@ def test_queue_without_modules_keeps_them_and_types_params_by_declaration(run, p
     pairs = [(mode, entry) for mode, entries in modes["obstacles"].items() for entry in entries if entry["type"] == "integer_array"]
     robots_mode, double = doubles[0]
     obstacles_mode, pair = pairs[0]
-    queued = run(episode.episode_queue(env_id=ENV, tm_robots=robots_mode, tm_obstacles=obstacles_mode, robots_params={double["name"]: 3}, obstacles_params={pair["name"]: [1, 2]}))
+    from arena_runtime.env.task_layer import decode_modes
+
+    from task_generator.tasks import layer
+
+    spaces = layer.mode_namespaces()
+    robots_name = f"{spaces['robots'][robots_mode]}.{double['name']}"
+    obstacles_name = f"{spaces['obstacles'][obstacles_mode]}.{pair['name']}"
+    queued = run(episode.episode_queue(env_id=ENV, modes={"robots": robots_mode, "obstacles": obstacles_mode}, params={robots_name: 3, obstacles_name: [1, 2]}))
     request = peers.humansim.queued[-1]
-    assert request.keep_modules is True
-    assert list(request.tm_modules) == []
-    assert request.tm_robots == robots_mode
-    assert request.robots_params[0].name == double["name"]
-    assert request.robots_params[0].value.type == 3
-    assert request.robots_params[0].value.double_value == 3.0
-    assert request.obstacles_params[0].value.type == 7
-    assert list(request.obstacles_params[0].value.integer_array_value) == [1, 2]
-    assert queued["queued"]["tm_robots"] == robots_mode
-    assert queued["queued"]["robots_params"] == {double["name"]: 3.0}
+    assert decode_modes(request.modes) == {"robots": [robots_mode], "obstacles": [obstacles_mode]}
+    sent = {param.name: param.value for param in request.params}
+    assert (sent[robots_name].type, sent[robots_name].double_value) == (3, 3.0)
+    assert (sent[obstacles_name].type, list(sent[obstacles_name].integer_array_value)) == (7, [1, 2])
+    assert queued["queued"]["modes"]["robots"] == [robots_mode]
+    assert queued["queued"]["params"][robots_name] == 3.0
 
-    run(episode.episode_queue(env_id=ENV, tm_modules=[]))
-    assert peers.humansim.queued[-1].keep_modules is False
+    run(episode.episode_queue(env_id=ENV, modes={"modules": []}))
+    assert decode_modes(peers.humansim.queued[-1].modes)["modules"] == []
 
-    with pytest.raises(ToolError, match="has no parameter") as unknown:
-        run(episode.episode_queue(env_id=ENV, tm_robots=robots_mode, robots_params={"not_a_leaf": 1}))
+    with pytest.raises(ToolError, match="are not parameters of the selected task modes") as unknown:
+        run(episode.episode_queue(env_id=ENV, modes={"robots": robots_mode}, params={"not_a_leaf": 1}))
     assert double["name"] in str(unknown.value)
-    with pytest.raises(ToolError, match="not registered modules"):
-        run(episode.episode_queue(env_id=ENV, tm_modules=["not_a_module"]))
-    with pytest.raises(ToolError, match="not a registered robots task mode"):
-        run(episode.episode_queue(env_id=ENV, tm_robots="not_a_mode"))
+    with pytest.raises(ToolError, match="unknown modules mode"):
+        run(episode.episode_queue(env_id=ENV, modes={"modules": ["not_a_module"]}))
+    with pytest.raises(ToolError, match="unknown robots mode"):
+        run(episode.episode_queue(env_id=ENV, modes={"robots": "not_a_mode"}))
 
 
 def test_task_modes_live_and_registry_agree_and_list_the_fleet_only_null(run):
@@ -181,7 +185,7 @@ def test_task_modes_live_and_registry_agree_and_list_the_fleet_only_null(run):
     assert "null" in live["fleet_only_robots"]
     assert any(entry["description"] for entries in offline["obstacles"].values() for entry in entries)
     active = run(episode.episode_task_modes_active(env_id=ENV))
-    assert active["tm_robots"] in live["robots"]
+    assert active["modes"]["robots"][0] in live["robots"]
 
 
 def test_params_read_the_episode_catalog_and_set_coerces_to_declared_types(run, peers):

@@ -386,7 +386,14 @@ version = "0.0.0"
 source = { virtual = "arena_runtime/arena_runtime" }
 dependencies = [
     { name = "attrs" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "scipy" },
+    { name = "shapely" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -397,8 +404,15 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "attrs" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pydantic" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
     { name = "pyyaml" },
+    { name = "scipy" },
+    { name = "shapely" },
+    { name = "typing-extensions" },
 ]
 provides-extras = ["test"]
 
@@ -3283,13 +3297,10 @@ dependencies = [
     { name = "chromadb" },
     { name = "filelock" },
     { name = "google-genai" },
-    { name = "matplotlib" },
     { name = "numpy" },
     { name = "openai" },
-    { name = "pillow" },
     { name = "pyyaml" },
     { name = "rospkg" },
-    { name = "scipy" },
     { name = "shapely" },
     { name = "tqdm" },
     { name = "transformers" },
@@ -3308,14 +3319,11 @@ requires-dist = [
     { name = "chromadb" },
     { name = "filelock" },
     { name = "google-genai" },
-    { name = "matplotlib" },
     { name = "numpy" },
     { name = "openai" },
-    { name = "pillow" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
     { name = "pyyaml" },
     { name = "rospkg" },
-    { name = "scipy" },
     { name = "shapely" },
     { name = "tqdm" },
     { name = "transformers", specifier = ">=5.5.4" },

@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 
 import rerun as rr
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rerun_utils.entity_paths import tf_path
 from rerun_utils.renderers._registry import RendererCtx, register

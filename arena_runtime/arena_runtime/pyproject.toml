@@ -3,7 +3,14 @@ name = "arena_runtime"
 version = "0.0.0"
 dependencies = [
     "attrs",
+    "matplotlib",
+    "numpy",
+    "pillow",
+    "pydantic",
     "pyyaml",
+    "scipy",
+    "shapely",
+    "typing-extensions",
 ]
 dynamic = ["description", "license", "maintainers", "scripts", "entry-points"]
 
@@ -15,8 +22,10 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m 'not network'"
 markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",
+    "clips(*names): needs these Animation assets (skipped when they cannot be resolved)",
+    "network: hits the live upstream host",
 ]

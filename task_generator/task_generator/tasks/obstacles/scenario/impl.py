@@ -3,13 +3,12 @@ import typing
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.task_api import Stop
+from arena_runtime.shared import WORLD_ENTITY_PREFIX, DynamicObstacle, Position, Region
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light, point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView, articulation_problems
 
-from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
-from task_generator.shared import DynamicObstacle, Position, Region
-from task_generator.simulators.human.itinerary import Stop
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.obstacles._itinerary import attach_itinerary
@@ -26,10 +25,10 @@ class TM_Scenario(TM_Obstacles):
         await self._ctx.environment_manager.configure_gestures(self._gesture_mode.value)
         world_description = self._ctx.world_manager.world_compacted()
 
-        is_valid = make_is_valid(self._ctx.world_manager.map, self.node.conf.Obstacles.SAFE_DIST.value)
+        is_valid = make_is_valid(self._ctx.world_manager.map, self._ctx.conf.SAFE_DIST.value)
 
         zone_conv = world_description.zone_converter(
-            self.node.conf.General.RNG.stream("obstacles", "scenario"),
+            self._ctx.conf.RNG.stream("obstacles", "scenario"),
             is_valid=is_valid,
         )
 
@@ -54,15 +53,15 @@ class TM_Scenario(TM_Obstacles):
         ]
         await self._ctx.environment_manager.setup_regions(regions)
 
-        self.node.register_timeline(scenario.timeline, seed)
-        self.node.register_conditions(scenario.conditions)
+        self._ctx.episode.register_timeline(scenario.timeline, seed)
+        self._ctx.episode.register_conditions(scenario.conditions)
 
         return scenario.objects, [self._with_itinerary(obstacle) for obstacle in scenario.humans]
 
     def _with_itinerary(self, obstacle: DynamicObstacle) -> DynamicObstacle:
         """Attach waypoint dwell and explicit elevator rides."""
         wm = self._ctx.world_manager
-        realizer = self.node._realizer
+        realizer = self._ctx.realizer
 
         def elevator_ride(name: str, toward: Position | None) -> Stop | None:
             try:

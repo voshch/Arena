@@ -10,7 +10,7 @@ try:
     from arena_simulation_setup.tree.World import WorldView
     from arena_simulation_setup.tree.World.Scenario import parse_scenario
 
-    from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
+    from arena_runtime.shared import WORLD_ENTITY_PREFIX
     from task_generator.tasks.obstacles.prompt.arena import TM_Prompt
 except ImportError:
     pytestmark = pytest.mark.skip(reason="ROS2 or google-genai not available")

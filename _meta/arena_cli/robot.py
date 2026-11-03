@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     import rclpy.node
-    from task_generator_msgs.msg import RobotFleet, RobotState
+    from arena_runtime_msgs.msg import RobotFleet, RobotState
 
 ROBOTS_SUFFIX = "/state/robots"
 
@@ -129,7 +129,7 @@ def read_fleet(node: rclpy.node.Node, node_ns: str, timeout: float = 5.0) -> lis
 
     import rclpy
     import rclpy.qos
-    from task_generator_msgs.msg import RobotFleet
+    from arena_runtime_msgs.msg import RobotFleet
 
     latest: list[RobotFleet] = []
     qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
@@ -144,7 +144,7 @@ def read_fleet(node: rclpy.node.Node, node_ns: str, timeout: float = 5.0) -> lis
 def wait_for_presence(node: rclpy.node.Node, node_ns: str, names: set[str], present: bool, label: str) -> None:
     import rclpy
     import rclpy.qos
-    from task_generator_msgs.msg import RobotFleet
+    from arena_runtime_msgs.msg import RobotFleet
 
     state: dict[str, set[str] | None] = {"names": None}
     qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
@@ -170,8 +170,8 @@ def wait_for_presence(node: rclpy.node.Node, node_ns: str, names: set[str], pres
 
 
 def cmd_spawn(model: str, kv: dict[str, str], opts: argparse.Namespace) -> int:
+    from arena_runtime_msgs.srv import SpawnRobot
     from diagnostic_msgs.msg import KeyValue
-    from task_generator_msgs.srv import SpawnRobot
 
     count = int(kv.pop("count", "1"))
     name = kv.pop("name", "")
@@ -205,7 +205,7 @@ def cmd_spawn(model: str, kv: dict[str, str], opts: argparse.Namespace) -> int:
 
 
 def cmd_rm(name: str, opts: argparse.Namespace) -> int:
-    from task_generator_msgs.srv import DespawnRobot
+    from arena_runtime_msgs.srv import DespawnRobot
 
     node_ns = resolve_single(opts.target)
     with ros_node() as node:

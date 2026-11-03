@@ -4,7 +4,7 @@ import math
 
 
 def _poses(*xy_yaw):
-    from task_generator.shared import Orientation, Pose, Position
+    from arena_runtime.shared import Orientation, Pose, Position
 
     return [Pose(position=Position(x, y), orientation=Orientation.from_yaw(yaw)) for x, y, yaw in xy_yaw]
 

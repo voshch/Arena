@@ -159,7 +159,7 @@ def _supervisor(*argv: str) -> None:
 _LAUNCH_FILES: dict[str, Source] = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
 RUNTIME_ARGS = LaunchArgs("arena_bringup", "arena_runtime.launch.py", _LAUNCH_FILES)
 ENV_ARGS = Union(
-    LaunchArgs("task_generator", "task_generator.launch.py", _LAUNCH_FILES),
+    LaunchArgs("arena_runtime", "env.launch.py", _LAUNCH_FILES),
     LaunchArgs("arena_auditory", "arena_auditory.launch.py", prefix="auditory.", exclude=("namespace", "env.ns", "hearing")),
     LaunchArgs("arena_hearing", "hearing.launch.py", exclude=("env.ns", "tg_node", "frontend", "policy")),
 )
@@ -191,17 +191,19 @@ def launch(args: list[str]) -> None:
 
 
 DEMO_DEFAULTS = ("task.robots:=demo", "world:=demo", "sim:=isaac", "viz.view:=robot3p")
-_DEMO_ALIASES = {"tm_robots": "task.robots"}
 
 
 @verb("demo", passthrough=True, complete=LAUNCH_SPEC, help_text=f"Launch a demo.\n\nSame as `arena launch` with defaults {' '.join(DEMO_DEFAULTS)}, any KEY:=VALUE you pass overrides the corresponding default.")
 def demo(args: list[str]) -> None:
-    given = {_DEMO_ALIASES.get(k, k) for k in (a.split(":=", 1)[0] for a in args if ":=" in a)}
+    from arena_runtime.env.task_layer import legacy_mode_params
+
+    aliases = legacy_mode_params()
+    given = {aliases.get(k, k) for k in (a.split(":=", 1)[0] for a in args if ":=" in a)}
     merged = [d for d in DEMO_DEFAULTS if d.split(":=", 1)[0] not in given]
     _supervisor(*merged, *args)
 
 
-RUNTIME_HELP = """Start the runtime only (sim + arena_node, no envs), or stop the background one.
+RUNTIME_HELP = """Start the runtime only (sim + arena_runtime_node, no envs), or stop the background one.
 
 Usage:
   arena runtime [--bg] [KEY:=VALUE ...]   start the runtime, fails if another /arena node is up
@@ -240,7 +242,7 @@ Usage:
   arena env [ENV] semantics [...]         read and set the semantic state of a running env
 
 Attaching waits forever (10s warning cadence) for /arena/register_env if the
-runtime is not up yet, KEY:=VALUE tokens go to task_generator.launch.py.
+runtime is not up yet, KEY:=VALUE tokens go to env.launch.py.
 `--bg` waits the same way for /arena/spawn_env, then until the env is ACTIVE,
 prints its id and log path and returns. The env lives until `arena env ENV
 down` or until the runtime stops.
@@ -267,7 +269,7 @@ def env_(args: list[str]) -> int | None:
         raise CLIError(f"arena env: {stray[0]!r} is neither a launch argument (KEY:=VALUE) nor an env followed by a subcommand. Subcommands:\n{_listing(list(ENV_SUBCOMMANDS.items()))}\nRun 'arena env --help' for the forms.")
     if detached:
         return _bg.spawn_env(args)
-    _exec("ros2", "launch", "task_generator", "task_generator.launch.py", *args)
+    _exec("ros2", "launch", "arena_runtime", "env.launch.py", *args)
 
 
 def _despawn(env_id: int) -> None:
@@ -379,7 +381,7 @@ def cam(args: list[str]) -> None:
 
 
 _LOCKSTEP_PRESETS = {
-    "engine": {"name": "engine", "topic": "/arena/{env}/task_generator_node/agent_states", "type": "arena_humansim_msgs/msg/AgentFrame", "period_s": 0.05, "hard": True},
+    "engine": {"name": "engine", "topic": "/arena/{env}/arena_env_node/agent_states", "type": "arena_humansim_msgs/msg/AgentFrame", "period_s": 0.05, "hard": True},
     "peds": {"name": "peds", "topic": "/arena/{env}/arena_peds", "type": "arena_people_msgs/msg/Pedestrians", "period_s": 0.15, "hard": True},
 }
 

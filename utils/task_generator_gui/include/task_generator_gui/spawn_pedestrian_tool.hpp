@@ -9,7 +9,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rviz_default_plugins/tools/pose/pose_tool.hpp>
 
-#include "task_generator_msgs/srv/spawn_dynamic.hpp"
+#include "arena_runtime_msgs/srv/spawn_dynamic.hpp"
 
 namespace rviz_common
 {
@@ -42,7 +42,7 @@ private:
   rviz_common::properties::StringProperty * model_property_;
 
   std::shared_ptr<rclcpp::Node> service_node_;
-  rclcpp::Client<task_generator_msgs::srv::SpawnDynamic>::SharedPtr client_;
+  rclcpp::Client<arena_runtime_msgs::srv::SpawnDynamic>::SharedPtr client_;
 };
 }  // namespace task_generator_gui
 

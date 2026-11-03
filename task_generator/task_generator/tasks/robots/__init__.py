@@ -1,10 +1,11 @@
 import asyncio
+from collections.abc import Collection, Mapping
 
-from task_generator.shared import Pose
-from task_generator.shared import Robot as RobotEntity
+from arena_runtime.env.task_api import GoToPhase, PhaseState, TaskRequest
+from arena_runtime.env.task_layer import ResetPlan
+from arena_runtime.shared import Pose
+
 from task_generator.tasks.mode import TaskMode
-from task_generator.tasks.robots._placement import random_placement
-from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
 from . import characterization, demo, explore, guided, random, scenario, stationary
 
@@ -17,14 +18,12 @@ class TM_Robots(TaskMode):
         _ctx (TaskContext): Shared task context.
     """
 
-    _start_poses: dict[str, Pose]
+    async def reset(self) -> ResetPlan:
+        """The starts and tasks this mode wants for the next episode, computed with the sim paused."""
+        return ResetPlan()
 
-    @property
-    def start_poses(self) -> dict[str, Pose]:
-        return self._start_poses
-
-    async def reset(self) -> None:
-        self._start_poses = {}
+    async def tick(self, ended: Mapping[str, PhaseState], assigned: Collection[str]) -> None:
+        """Runs every sim tick of a running episode, ended maps a robot to the phase that ended on this tick and assigned holds the robots given a task from outside since the last tick."""
 
     async def teardown(self) -> None:
         """Release everything this mode drives; called when the mode is replaced or the task ends."""
@@ -46,23 +45,6 @@ class TM_Robots(TaskMode):
         """Dispatch a single-phase GOTO request targeting ``pose`` on every robot."""
         for robot_manager in self._ctx.robots.values():
             await robot_manager.submit_task(TaskRequest(phases=[GoToPhase(pose=pose)]))
-
-    async def extend(
-        self,
-        model: str,
-        name: str | None = None,
-        pose: Pose | None = None,
-        args: dict[str, str] | None = None,
-    ) -> str:
-        from arena_robots.SetupFile import Config as RobotSetupConfig
-
-        resolved_pose = pose if pose is not None else await random_placement(self._ctx)
-        assigned_name = name or self.node._robots_manager.next_name(model)
-        config_dict: dict[str, object] = {'robot': model, 'name': assigned_name, 'pos': resolved_pose.to_2d(), **(args or {})}
-        (config,) = RobotSetupConfig.parse(config_dict)
-        robot = RobotEntity.from_setup(config, node=self.node)
-        self.node._robots_manager.add_pending(assigned_name, robot)
-        return assigned_name
 
     @property
     async def done(self) -> bool:

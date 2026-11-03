@@ -23,7 +23,7 @@ domain = Domain(
     requires=("arena_simulation_setup", "shapely"),
 )
 
-BINDING_KEYS = frozenset({"tm_robots", "tm_obstacles", "robots_params", "obstacles_params"})
+BINDING_KEYS = frozenset({"modes", "params"})
 
 GeneratorName = Annotated[str, pydantic.Field(description="generator name, worldgen_generators lists them")]
 Config = Annotated[dict[str, object] | None, pydantic.Field(description="generator configuration, fields from worldgen_generators, unset fields keep their defaults")]
@@ -187,10 +187,11 @@ def worldgen_normalize(sketch: str) -> dict[str, object]:
 
 
 @domain.tool(destructive=True)
-async def worldgen_queue(name: WorldName, env_id: int | None = None, binding: Annotated[dict[str, object] | None, pydantic.Field(description="episode binding from worldgen_save: tm_robots, tm_obstacles, robots_params, obstacles_params")] = None) -> dict[str, object]:
+async def worldgen_queue(name: WorldName, env_id: int | None = None, binding: Annotated[dict[str, object] | None, pydantic.Field(description="episode binding from worldgen_save: modes (axis -> mode names) and params (axis -> leaf name -> value, the leaves of that axis's mode)")] = None) -> dict[str, object]:
     """Queue a world on an env for its next episode reset with the generator's episode binding, as the world generator panel does."""
+    from arena_runtime_msgs.srv import QueryTaskModes, QueueEpisode
+    from diagnostic_msgs.msg import KeyValue
     from rcl_interfaces.msg import Parameter
-    from task_generator_msgs.srv import QueueEpisode
 
     from arena_mcp.core.ros import python_to_param
 
@@ -199,22 +200,39 @@ async def worldgen_queue(name: WorldName, env_id: int | None = None, binding: An
     if unknown:
         raise ToolError(f"episode binding has no key {', '.join(unknown)}", hint=f"keys: {', '.join(sorted(BINDING_KEYS))}")
 
-    def leaves(key: str) -> list[Parameter]:
+    def entries(key: str) -> dict[object, object]:
         value = binding.get(key) or {}
         if not isinstance(value, dict):
-            raise ToolError(f"binding {key} must map parameter leaves to values, got {type(value).__name__}")
-        return [Parameter(name=str(leaf), value=python_to_param(item, 0)) for leaf, item in value.items()]
+            raise ToolError(f"binding {key} must be a mapping, got {type(value).__name__}")
+        return value
 
+    modes = entries("modes")
+    leaves = entries("params")
+    node = await tg(env_id)
+    namespaces: dict[str, str] = {}
+    if leaves:
+        queried = await ROS.call(QueryTaskModes, f"{node}/query/task_modes", QueryTaskModes.Request(), hint="is the env's task generator up?")
+        namespaces = {pair.key: pair.value for pair in queried.namespaces}
+
+    def full_name(axis: object, leaf: object) -> str:
+        mode = modes.get(axis)
+        namespace = namespaces.get(f"{axis}/{mode}")
+        if namespace is None:
+            raise ToolError(f"binding params name axis {axis!r}, which selects no known mode ({mode!r})", hint=f"known: {', '.join(sorted(namespaces))}")
+        return f"{namespace}.{leaf}"
+
+    params: list[Parameter] = []
+    for axis, axis_leaves in leaves.items():
+        if not isinstance(axis_leaves, dict):
+            raise ToolError(f"binding params.{axis} must be a mapping, got {type(axis_leaves).__name__}")
+        params.extend(Parameter(name=full_name(axis, leaf), value=python_to_param(item, 0)) for leaf, item in axis_leaves.items())
     request = QueueEpisode.Request(
         action=QueueEpisode.Request.MERGE,
-        keep_modules=True,
         world=path_component(name),
-        tm_robots=str(binding.get("tm_robots") or ""),
-        tm_obstacles=str(binding.get("tm_obstacles") or ""),
-        robots_params=leaves("robots_params"),
-        obstacles_params=leaves("obstacles_params"),
+        modes=[KeyValue(key=str(axis), value=str(names)) for axis, names in modes.items()],
+        params=params,
     )
-    service = f"{await tg(env_id)}/config/queue_episode"
+    service = f"{node}/config/queue_episode"
     response = await ROS.call(QueueEpisode, service, request, hint="is the env's task generator up?")
     if not response.success:
         raise ToolError(f"queue_episode refused {name!r}: {response.error_msg}")

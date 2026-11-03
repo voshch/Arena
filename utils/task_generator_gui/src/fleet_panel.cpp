@@ -39,24 +39,24 @@ void FleetPanel::load(const rviz_common::Config& config)
 
     QString result;
     if (config.mapGetString("Target", &result))
-        task_generator_node = result.toStdString();
+        arena_env_node = result.toStdString();
     else
-        task_generator_node = "/task_generator_node";
+        arena_env_node = "/arena_env_node";
 
-    query_robots_client = node->create_client<task_generator_msgs::srv::QueryRobots>(
-        task_generator_node + "/query/robots");
-    spawn_robot_client = node->create_client<task_generator_msgs::srv::SpawnRobot>(
-        task_generator_node + "/runtime/spawn_robot");
-    despawn_robot_client = node->create_client<task_generator_msgs::srv::DespawnRobot>(
-        task_generator_node + "/runtime/despawn_robot");
+    query_robots_client = node->create_client<arena_runtime_msgs::srv::QueryRobots>(
+        arena_env_node + "/query/robots");
+    spawn_robot_client = node->create_client<arena_runtime_msgs::srv::SpawnRobot>(
+        arena_env_node + "/runtime/spawn_robot");
+    despawn_robot_client = node->create_client<arena_runtime_msgs::srv::DespawnRobot>(
+        arena_env_node + "/runtime/despawn_robot");
 
     {
         rclcpp::QoS qos(rclcpp::KeepLast(1));
         qos.transient_local();
-        robot_fleet_sub = node->create_subscription<task_generator_msgs::msg::RobotFleet>(
-            task_generator_node + "/state/robots",
+        robot_fleet_sub = node->create_subscription<arena_runtime_msgs::msg::RobotFleet>(
+            arena_env_node + "/state/robots",
             qos,
-            [this](const task_generator_msgs::msg::RobotFleet::SharedPtr msg)
+            [this](const arena_runtime_msgs::msg::RobotFleet::SharedPtr msg)
             {
                 QMetaObject::invokeMethod(this, [this, msg]()
                 {
@@ -69,10 +69,10 @@ void FleetPanel::load(const rviz_common::Config& config)
     {
         rclcpp::QoS qos(rclcpp::KeepLast(1));
         qos.transient_local();
-        robot_queue_sub = node->create_subscription<task_generator_msgs::msg::RobotQueue>(
-            task_generator_node + "/state/robots/pending",
+        robot_queue_sub = node->create_subscription<arena_runtime_msgs::msg::RobotQueue>(
+            arena_env_node + "/state/robots/pending",
             qos,
-            [this](const task_generator_msgs::msg::RobotQueue::SharedPtr msg)
+            [this](const arena_runtime_msgs::msg::RobotQueue::SharedPtr msg)
             {
                 QMetaObject::invokeMethod(this, [this, msg]()
                 {
@@ -90,8 +90,8 @@ void FleetPanel::load(const rviz_common::Config& config)
         [this]()
         {
             query_robots_client->async_send_request(
-                std::make_shared<task_generator_msgs::srv::QueryRobots::Request>(),
-                [this](rclcpp::Client<task_generator_msgs::srv::QueryRobots>::SharedFuture f)
+                std::make_shared<arena_runtime_msgs::srv::QueryRobots::Request>(),
+                [this](rclcpp::Client<arena_runtime_msgs::srv::QueryRobots>::SharedFuture f)
                 {
                     auto resp = f.get();
                     if (!resp) return;
@@ -157,11 +157,11 @@ void FleetPanel::setupUi()
 
 void FleetPanel::sendDespawn(const std::string& name)
 {
-    auto req = std::make_shared<task_generator_msgs::srv::DespawnRobot::Request>();
+    auto req = std::make_shared<arena_runtime_msgs::srv::DespawnRobot::Request>();
     req->name = name;
     despawn_robot_client->async_send_request(
         req,
-        [this, name](rclcpp::Client<task_generator_msgs::srv::DespawnRobot>::SharedFuture f)
+        [this, name](rclcpp::Client<arena_runtime_msgs::srv::DespawnRobot>::SharedFuture f)
         {
             auto resp = f.get();
             if (resp && !resp->success)
@@ -268,14 +268,14 @@ void FleetPanel::spawnRobotButtonActivated()
     if (selected_robot_model.empty())
         return;
 
-    auto req = std::make_shared<task_generator_msgs::srv::SpawnRobot::Request>();
+    auto req = std::make_shared<arena_runtime_msgs::srv::SpawnRobot::Request>();
     req->model    = selected_robot_model;
     req->name     = "";
     req->use_pose = false;
 
     spawn_robot_client->async_send_request(
         req,
-        [this](rclcpp::Client<task_generator_msgs::srv::SpawnRobot>::SharedFuture f)
+        [this](rclcpp::Client<arena_runtime_msgs::srv::SpawnRobot>::SharedFuture f)
         {
             auto resp = f.get();
             if (resp && !resp->success)

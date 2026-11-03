@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("arena_runtime.arena_node")
+pytest.importorskip("arena_runtime.arena_runtime_node")
 
-from arena_runtime.arena_node import ArenaNode  # noqa: E402
+from arena_runtime.arena_runtime_node import ArenaRuntimeNode  # noqa: E402
 
 
 class _Logger:
@@ -53,14 +53,14 @@ def test_a_member_outliving_its_exited_wrapper_is_reaped(tmp_path):
     popen, member = _wrapper(tmp_path, "import time; time.sleep(60)", exit_wrapper=True)
     popen.wait(timeout=10.0)
     assert _running(member)
-    asyncio.run(ArenaNode._shutdown_pg(_Node(), 1, popen, grace_seconds=0.0))  # pyright: ignore[reportArgumentType]
+    asyncio.run(ArenaRuntimeNode._shutdown_pg(_Node(), 1, popen, grace_seconds=0.0))  # pyright: ignore[reportArgumentType]
     assert not _running(member)
 
 
 def test_a_member_ignoring_sigterm_is_killed(tmp_path):
     popen, member = _wrapper(tmp_path, "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)", exit_wrapper=False)
     node = _Node()
-    asyncio.run(ArenaNode._shutdown_pg(node, 1, popen, grace_seconds=0.5))  # pyright: ignore[reportArgumentType]
+    asyncio.run(ArenaRuntimeNode._shutdown_pg(node, 1, popen, grace_seconds=0.5))  # pyright: ignore[reportArgumentType]
     deadline = time.monotonic() + 5.0
     while _running(member) and time.monotonic() < deadline:
         time.sleep(0.1)

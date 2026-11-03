@@ -160,10 +160,11 @@ def write_fake_assets(root: Path) -> None:
 
 
 def install_fake_assets() -> Path:
-    """Generate the assets into a temporary local root that resolves ahead of every bucket, for this process and its children."""
+    """Generate the assets into a temporary local root and turn the net providers off, for this process and its children."""
     root = Path(tempfile.mkdtemp(prefix='arena-fake-assets-'))
     write_fake_assets(root)
     os.environ['ARENA_ASSETS_DIR_LOCAL'] = str(root)
+    os.environ['ARENA_ASSETS_NET'] = 'off'
     atexit.register(shutil.rmtree, root, ignore_errors=True)
     return root
 

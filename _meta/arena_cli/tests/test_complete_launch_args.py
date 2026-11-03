@@ -5,7 +5,7 @@ from arena_cli.complete import Context, _expand
 
 MANIFEST = {
     "launch": {
-        "task_generator/task_generator.launch.py": {"acoustics": {"desc": "acoustic simulator", "default": "none"}},
+        "arena_runtime/env.launch.py": {"acoustics": {"desc": "acoustic simulator", "default": "none"}},
         "arena_auditory/arena_auditory.launch.py": {
             "namespace": {"desc": "", "default": ""},
             "env.ns": {"desc": "", "default": ""},
@@ -40,3 +40,10 @@ def test_env_args_leave_out_the_keys_the_dispatch_sets() -> None:
 
 def test_prefixed_backend_bool_key_completes_its_values() -> None:
     assert {"true", "false"} <= _keys("auditory.viz.enabled:=")
+
+
+def test_task_axis_key_completes_the_modes_the_manifest_lists_for_it() -> None:
+    manifest = {"values": {"task.robots": ["explore", "patrol"]}, "launch": {"arena_runtime/env.launch.py": {"task.robots": {"desc": "robots mode of the task layer", "default": ""}}}}
+    ctx = Context("", manifest)
+    assert "task.robots:=" in {value for value, _desc, _group in _expand(cli.ENV_ARGS, [], "task.", ctx).items}
+    assert {"explore", "patrol"} <= {value for value, _desc, _group in _expand(cli.ENV_ARGS, [], "task.robots:=", ctx).items}

@@ -8,7 +8,7 @@ intent into goals sent at a specific robot through its bound adapter.
 
 ## Guides
 
-- [Navigation adapters](adapters/README.md): `Adapter` ABC, `AdapterCtx`,
+- [Navigation adapters](../../../../arena_runtime/arena_runtime/arena_runtime/env/adapters/README.md): `Adapter` ABC, `AdapterCtx`,
   registration, how `RobotManager` binds one, dispatch and teardown flow,
   adding a new adapter. Paired with the launch-side
   [`arena_robots/launch/adapters/README.md`](../../../../arena_robots/arena_robots/launch/adapters/README.md).
@@ -26,6 +26,27 @@ Parameters live under `task.<mode>.<leaf>`. Mode names are shared across the
 three axes; e.g. `task.scenario.file` is read by both `TM_Robots.scenario` and
 `TM_Obstacles.scenario`, which intentionally load the same scenario file.
 
+`reset()` computes the next episode and returns a `ResetPlan`: one `RobotReset`
+per robot in `robots` (its `start_pose`, `task` and `humans`) and the
+`forbidden_zones`. `EpisodeNode` submits the tasks, forbids the zones and places
+the robots.
+
+## Mid-episode assignment
+
+`tick(ended, assigned)` runs every sim tick of a running episode after the
+robots are judged. `ended` maps a robot name to the `PhaseState` that ended on
+this tick, `assigned` holds the robots given a task from outside (RunTask,
+SubmitTask) since the last tick, and the base class does nothing. A mode reassigns a robot from there through
+`RobotManager.submit_task` (drops the robot's unfinished phases and appends the
+new ones), `RobotManager.stop_task` or `move`. `explore` hands a robot whose task
+just ended a fresh random goal and teleports a robot that ran into
+`task.episode.timeout`, except a robot assigned from outside, which it leaves
+alone until the next reset. Its `done` is always `False`. `guided` assigns from
+its own goal clicks. `TM_Composite.tick` hands each sub-mode the part of `ended`
+and `assigned` that belongs to its robots, runs every sub-mode even when one
+raises, then raises the first error. A robot's runner state is reachable as
+`ctx.robots[name].runner` (`active_state`, `outcomes`).
+
 ## Level selection
 
 `TM_Robots` is level-agnostic: it places robots on the whole compacted map (all loaded
@@ -33,7 +54,7 @@ levels), with start and goal sampled anywhere. Which levels exist is set at load
 (`world:=name` loads all, `world:=name[0,3]` loads only 0 and 3), not per reset.
 
 Crossing floors is handled below the task mode, in `RobotManager.submit_task`:
-[`route_phases`](../../manager/robot_manager/elevator_routing.py) expands the explicit
+[`route_phases`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/elevator_routing.py) expands the explicit
 `via` entries of a `GoToPhase` (elevator or stair half names), then, when the goal is on a
 different level than the one the robot ends up on, the fewest-hop route over the elevators
 and the stairs the robot climbs (`WorldManager.level_hops`). A tie in hop count goes to the
@@ -70,13 +91,13 @@ physics and its planner gets no hint that they are passable.
 ## Task modes (`TM_Robots` subclasses)
 
 `TM_Robots` ([`__init__.py`](__init__.py)) is the base: one instance drives
-all robots in its scope, exposing `reset`, `set_position`, `set_goal`, and
-an async `done` flag. Shipped modes:
+all robots in its scope, exposing `reset`, `tick`, `set_position`, `set_goal`,
+and an async `done` flag. Shipped modes:
 
 | Kind | File | Behavior |
 | --- | --- | --- |
 | `random` | [`random/`](random/) | one random reachable goal per robot per episode |
-| `explore` | [`explore/`](explore/) | extends `random`; when a robot finishes or times out, a fresh random goal is assigned |
+| `explore` | [`explore/`](explore/) | extends `random`; in `tick`, a robot whose task just ended gets a fresh random goal and a timed-out robot is teleported |
 | `guided` | [`guided/`](guided/) | external controller drives the goal sequence. 2D Nav Goal clicks append waypoints, which show as numbered drag handles with Delete, Insert after and Clear chain menus |
 | `stationary` | [`stationary/`](stationary/) | robot stays parked without goal dispatch, at `pos_x`/`pos_y`/`pos_theta` or a free pose sampled per episode |
 | `scenario` | [`scenario/`](scenario/) | reads `start`/`goal` pairs from the world's scenario YAML. A robot past the `robots:` entries, or on an entry without `phases`, stays parked, and an episode with only parked robots runs until `task.episode.timeout` |
@@ -84,9 +105,36 @@ an async `done` flag. Shipped modes:
 | `null` | [`composite.py`](composite.py) | idle sink for robots unallocated by the fleet manager |
 | `composite` | [`composite.py`](composite.py) | fan-out: each sub-TM sees a scoped `TaskContext` covering only its allocated robots |
 
-Modes are registered by `Constants.TaskMode.TM_Robots` enum value in
+Modes are registered by `Modes.TM_Robots` enum value in
 [`tasks/registry.py`](../registry.py). `null` and `composite` are not in
 the enum, they are only reachable via `set_tm_robots_composite`.
+
+## Adding a TM_Robots mode
+
+1. Create `tasks/robots/<name>/` as a package.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has parameters, and register it on `ROBOTS_MODES`.
+3. In `impl.py`: define the class extending `TM_Robots`; override `reset` to return a `ResetPlan`.
+4. Add `<NAME> = "<name>"` to `Modes.TM_Robots` in [`modes.py`](../../modes.py).
+5. `declare_mode_schemas(layer, node)` picks up your schema automatically at node init.
+
+`reset` runs with the sim paused and fills these fields of the plan, leaving the
+obstacle fields to the obstacle mode:
+
+| Field | Meaning |
+|---|---|
+| `robots` | A `RobotReset` per robot. A robot left out keeps its adapter's own placement. |
+| `robots[name].start_pose` | Where the robot starts. |
+| `robots[name].task` | The `TaskRequest` it runs. Without one it stays parked. |
+| `robots[name].humans` | Names its task may refer to. |
+| `forbidden_zones` | Zones later placement keeps out of, in the map frame. |
+
+`reset` submits nothing and moves nothing: `EpisodeNode` submits the tasks, forbids
+the zones, resets the obstacle mode and places the robots, in that order. Sampling
+through `get_positions_on_map` still reserves what it samples at once. In a
+`composite`, each sub-mode's zones apply before the next sub-mode resets, so list
+modes with declared positions first. `ResetPlan.merge` is last-one-wins: a later
+plan's `RobotReset` replaces that robot's whole entry, its other fields add up.
+Assign during the episode with `RobotManager.submit_task` and `move`.
 
 ## Request types
 
@@ -94,7 +142,7 @@ the enum, they are only reachable via `set_tm_robots_composite`.
 `RobotManager.submit_task`. The types live in
 [`arena_simulation_setup.shared.task`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/task.py)
 so scenario YAML, runtime generators, the episode record and arena_evaluation
-share one definition. [`request.py`](request.py) re-exports them with
+share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/request.py) re-exports them with
 `kind_of(phase) -> TaskKind`, the action kind an adapter dispatches.
 
 - `TaskPhase`: one step. Every phase takes `on_failure`
@@ -144,7 +192,7 @@ of the list when the previous one ends, and the loop's `until` is judged on
 every tick a loop phase is active. Once it holds, the running phase and the
 rest of its iteration are marked dropped and the phase after the loop becomes
 active. A loop without `until` repeats until the episode ends. Everything is judged by the task runner
-([`manager/robot_manager/task_runner.py`](../../manager/robot_manager/task_runner.py))
+([`env/robot_manager/task_runner.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/task_runner.py))
 on the node's 30 Hz sim tick from a `Sample` of robot poses, ped positions and
 semantic fields, with the same predicate code arena_evaluation replays offline
 ([`shared/judge.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/judge.py)).
@@ -196,14 +244,14 @@ the input order.
 allocation and:
 
 1. For each `(spec, robots)` pair, resolves the loader:
-   `Constants.TaskMode.TM_Robots(spec.kind)` via the standard registry,
+   `Modes.TM_Robots(spec.kind)` via the standard registry,
    falling back to `get_extra_tm_loader(spec.kind)` for sentinel kinds
    (`null`).
 2. Builds a scoped `TaskContext` via `_scoped_ctx` that exposes only the
    allocated robots through `ctx.robots`.
 3. Instantiates one sub-TM per spec and wraps them all in
    [`TM_Composite`](composite.py), whose `done` is `all(sub.done)` and
-   whose `set_position` / `set_goal` fan out.
+   whose `tick` / `set_position` / `set_goal` fan out.
 
 Entry point: the `task.config` node param, read by
 `Task.create` and at every reset. A set config takes precedence over
@@ -212,12 +260,12 @@ fleet's robot names differ from the last allocation.
 
 ## Integration points
 
-- **`RobotManager`** ([`manager/robot_manager/robot_manager.py`](../../manager/robot_manager/robot_manager.py)):
+- **`RobotManager`** ([`env/robot_manager/robot_manager.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/robot_manager.py)):
   one per spawned robot. Owns the bound adapters, the task runner with this
   episode's phases, the goal-republish loop, and the tf-backed `pose`
   property. Entry points used from here: `submit_task`, `stop_task`, `move`,
   `is_done`, `accepts`.
-- **`RobotsManager`** ([`manager/robot_manager/robots_manager.py`](../../manager/robot_manager/robots_manager.py)):
+- **`RobotsManager`** ([`env/robot_manager/robots_manager.py`](../../../../arena_runtime/arena_runtime/arena_runtime/env/robot_manager/robots_manager.py)):
   diff-driven fleet lifecycle. Parses the `robot` ROS param (comma-
   separated list of robot names, `model[count]`, or `.yaml` setup refs),
   reconciles against existing `RobotManager` instances, and creates /

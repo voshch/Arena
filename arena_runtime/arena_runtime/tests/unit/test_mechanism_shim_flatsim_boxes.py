@@ -8,13 +8,13 @@ PREFIX = "env_0/"
 
 
 def _door(name: str, kind: str = "sliding"):
-    from task_generator.shared import Door, Position
+    from arena_runtime.shared import Door, Position
 
     return Door(name=name, start=Position(0.0, 0.0, 0.0), end=Position(2.0, 0.0, 0.0), kind=kind, width=0.1, height=2.0)
 
 
 def _elevator(name: str = "lift"):
-    from task_generator.shared import Elevator, Position
+    from arena_runtime.shared import Elevator, Position
 
     return Elevator(name=name, position=Position(5.0, 5.0, 0.0), size=[2.0, 2.0, 2.5], door_side="+x", destinations=["other"])
 
@@ -135,7 +135,7 @@ def test_remove_mechanisms_clears_doors_and_elevators(on_flatsim):
 
 
 def _stairs():
-    from task_generator.shared import Position
+    from arena_runtime.shared import Position
 
     from arena_simulation_setup.shared import Stairs
 

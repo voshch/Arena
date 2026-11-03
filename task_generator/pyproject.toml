@@ -6,13 +6,10 @@ dependencies = [
     "chromadb",
     "filelock",
     "google-genai",
-    "matplotlib",
     "numpy",
     "openai",
-    "pillow",
     "pyyaml",
     "rospkg",
-    "scipy",
     "shapely",
     "tqdm",
     "transformers>=5.5.4",
@@ -33,6 +30,5 @@ addopts = "-ra --strict-markers -m 'not network'"
 markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",
-    "clips(*names): needs these Animation assets (skipped when they cannot be resolved)",
     "network: hits the live upstream host",
 ]

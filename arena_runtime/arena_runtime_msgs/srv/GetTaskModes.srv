@@ -1,0 +1,3 @@
+---
+# Axis -> comma-separated live modes.
+diagnostic_msgs/KeyValue[] modes

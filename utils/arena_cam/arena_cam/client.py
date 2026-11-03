@@ -2,7 +2,7 @@
 
 `CamNode` fans a `Camera` out across one or more viewport surfaces: the sim GUI
 camera at `/arena/viewport/*` and any number of per-env rviz cameras at
-`/arena/env_<id>/task_generator_node/viewport/*`. Each camera of a take is a
+`/arena/env_<id>/arena_env_node/viewport/*`. Each camera of a take is a
 `CameraTake`, one per rig camera or a lone one. The `Camera` facade authors the
 shot in world coordinates. Each endpoint subtracts its env's world origin (the
 registry `reference`) so the same absolute shot lands at the matching place in every
@@ -636,7 +636,7 @@ class CamNode(ArenaMixinNode):
             await self._hold_client.call_timeout(rel)
 
     async def _held_sim_time(self) -> Time:
-        """The held sim's time once /clock stands still, the sample arena_node steps from too."""
+        """The held sim's time once /clock stands still, the sample arena_runtime_node steps from too."""
         seen = self.sim_time
         while rclpy.ok():
             await asyncio.sleep(0.2)

@@ -153,7 +153,7 @@ async def _window_under_a_run(rig: Rig) -> None:
 
     probe = rig.probe
     host = rig.arena._lifecycle._inner
-    holder = "/arena/env_0/task_generator_node"
+    holder = "/arena/env_0/arena_env_node"
     beat = LockstepChannel(name="beat", topic=probe.beat_topic, type=HEARTBEAT, period_s=PERIOD, hard=True)
     own = LockstepChannel(name="own", topic="/probe/own", type=HEARTBEAT, period_s=PERIOD, hard=True)
     assert (await probe.register_channels([beat])).success

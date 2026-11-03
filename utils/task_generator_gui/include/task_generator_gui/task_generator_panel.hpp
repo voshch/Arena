@@ -9,17 +9,19 @@
 #include <rviz_common/ros_integration/ros_node_abstraction_iface.hpp>
 #include <rviz_common/properties/property_tree_model.hpp>
 
-#include "task_generator_msgs/srv/query_environments.hpp"
-#include "task_generator_msgs/srv/query_parametrizeds.hpp"
-#include "task_generator_msgs/srv/query_static_obstacles.hpp"
-#include "task_generator_msgs/srv/query_dynamic_obstacles.hpp"
-#include "task_generator_msgs/srv/query_scenarios.hpp"
-#include "task_generator_msgs/srv/query_task_modes.hpp"
-#include "task_generator_msgs/srv/query_worlds.hpp"
-#include "task_generator_msgs/srv/reset_episode.hpp"
-#include "task_generator_msgs/srv/queue_episode.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
 
-#include "task_generator_msgs/msg/episode_record.hpp"
+#include "arena_runtime_msgs/srv/query_environments.hpp"
+#include "arena_runtime_msgs/srv/query_parametrizeds.hpp"
+#include "arena_runtime_msgs/srv/query_static_obstacles.hpp"
+#include "arena_runtime_msgs/srv/query_dynamic_obstacles.hpp"
+#include "arena_runtime_msgs/srv/query_scenarios.hpp"
+#include "arena_runtime_msgs/srv/query_task_modes.hpp"
+#include "arena_runtime_msgs/srv/query_worlds.hpp"
+#include "arena_runtime_msgs/srv/reset_episode.hpp"
+#include "arena_runtime_msgs/srv/queue_episode.hpp"
+
+#include "arena_runtime_msgs/msg/episode_record.hpp"
 
 #include "arena_runtime_msgs/msg/hold_registry.hpp"
 #include "arena_runtime_msgs/srv/lifecycle_hold.hpp"
@@ -93,18 +95,37 @@ namespace task_generator_gui
         void getTMObstaclesParams();
         void getScenarios(const std::string &world_name);
 
-        void setTMObstaclesParamsRequest(task_generator_msgs::srv::QueueEpisode::Request &req);
-        void setTMRobotsParamsRequest(task_generator_msgs::srv::QueueEpisode::Request &req);
+        static constexpr const char *kObstaclesAxis = "obstacles";
+        static constexpr const char *kRobotsAxis = "robots";
+
+        // Lower-case mode name, the registered name the env knows the mode by.
+        static std::string modeName(const QString &mode);
+
+        // The param namespace the env reports for the axis's mode, empty until query/task_modes answered.
+        std::string namespaceOf(const std::string &axis, const std::string &mode) const;
+
+        // Rebuild the tree under the namespace of the axis's mode, nothing while the namespace is unknown.
+        void rebuildTree(DynamicParamTree &tree, const std::string &axis, const std::string &mode);
+
+        // Names the axis lists in an axis -> comma-separated names mapping, empty when the axis is absent.
+        static std::vector<std::string> modesOf(const std::vector<diagnostic_msgs::msg::KeyValue> &modes,
+                                                const std::string &axis);
+
+        // Select the axis's mode and add the tree's params under their full names.
+        void addModeToRequest(arena_runtime_msgs::srv::QueueEpisode::Request &req,
+                              const std::string &axis, const QString &mode,
+                              const std::unordered_map<std::string, QWidget *> &widgets,
+                              const std::unordered_map<std::string, uint8_t> &types);
         void getParams();
 
         // Build a QueueEpisode request from current widget state.
-        task_generator_msgs::srv::QueueEpisode::Request::SharedPtr buildQueueEpisodeRequest();
+        arena_runtime_msgs::srv::QueueEpisode::Request::SharedPtr buildQueueEpisodeRequest();
 
         // Send a QueueEpisode request; calls on_done(success) when the response arrives.
         void pushQueueEpisode(std::function<void(bool)> on_done);
 
         // Populate all widgets from a queued EpisodeRecord; suppresses dirty bumps.
-        void populateFromQueue(const task_generator_msgs::msg::EpisodeRecord &rec);
+        void populateFromQueue(const arena_runtime_msgs::msg::EpisodeRecord &rec);
 
         // Clear all dirty flags.
         void clearDirtyFlags();
@@ -156,38 +177,38 @@ namespace task_generator_gui
         std::shared_ptr<rviz_common::ros_integration::RosNodeAbstractionIface> node_ptr;
         rclcpp::Node::SharedPtr node;
 
-        std::string task_generator_node;
+        std::string arena_env_node;
 
         // --- Query service clients (on `node`, spun by rviz executor) ---
-        rclcpp::Client<task_generator_msgs::srv::QueryEnvironments>::SharedPtr query_environments_client;
-        rclcpp::Client<task_generator_msgs::srv::QueryParametrizeds>::SharedPtr query_parametrizeds_client;
-        rclcpp::Client<task_generator_msgs::srv::QueryStaticObstacles>::SharedPtr query_static_obstacles_client;
-        rclcpp::Client<task_generator_msgs::srv::QueryDynamicObstacles>::SharedPtr query_dynamic_obstacles_client;
-        rclcpp::Client<task_generator_msgs::srv::QueryScenarios>::SharedPtr query_scenarios_client;
-        rclcpp::Client<task_generator_msgs::srv::QueryWorlds>::SharedPtr query_worlds_client;
-        rclcpp::Client<task_generator_msgs::srv::QueryTaskModes>::SharedPtr query_task_modes_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryEnvironments>::SharedPtr query_environments_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryParametrizeds>::SharedPtr query_parametrizeds_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryStaticObstacles>::SharedPtr query_static_obstacles_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryDynamicObstacles>::SharedPtr query_dynamic_obstacles_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryScenarios>::SharedPtr query_scenarios_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryWorlds>::SharedPtr query_worlds_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueryTaskModes>::SharedPtr query_task_modes_client;
 
         // --- Lifecycle service clients ---
-        rclcpp::Client<task_generator_msgs::srv::ResetEpisode>::SharedPtr reset_episode_client;
+        rclcpp::Client<arena_runtime_msgs::srv::ResetEpisode>::SharedPtr reset_episode_client;
         rclcpp::Client<arena_runtime_msgs::srv::LifecycleHold>::SharedPtr hold_client;
         std::string hold_caller_id;
 
         // --- Config service clients ---
-        rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client;
+        rclcpp::Client<arena_runtime_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client;
 
         std::shared_ptr<rclcpp::AsyncParametersClient> parameters_client;
 
         // --- state/episode subscription (current, deduped into history_buffer_) ---
-        rclcpp::Subscription<task_generator_msgs::msg::EpisodeRecord>::SharedPtr episode_sub;
-        task_generator_msgs::msg::EpisodeRecord::SharedPtr last_current_episode_;
+        rclcpp::Subscription<arena_runtime_msgs::msg::EpisodeRecord>::SharedPtr episode_sub;
+        arena_runtime_msgs::msg::EpisodeRecord::SharedPtr last_current_episode_;
 
         // --- state/queue subscription (latched, next-to-run slot) ---
-        rclcpp::Subscription<task_generator_msgs::msg::EpisodeRecord>::SharedPtr queue_sub;
-        task_generator_msgs::msg::EpisodeRecord::SharedPtr last_queued_episode_;
+        rclcpp::Subscription<arena_runtime_msgs::msg::EpisodeRecord>::SharedPtr queue_sub;
+        arena_runtime_msgs::msg::EpisodeRecord::SharedPtr last_queued_episode_;
 
         // Ordered ring of completed/current records, deduped by episode_id, max 50 entries.
         static constexpr size_t kHistoryBufferSize = 50;
-        std::deque<task_generator_msgs::msg::EpisodeRecord> history_buffer_;
+        std::deque<arena_runtime_msgs::msg::EpisodeRecord> history_buffer_;
 
         // --- parameter_events subscription ---
         rclcpp::Subscription<rcl_interfaces::msg::ParameterEvent>::SharedPtr param_events_sub;
@@ -199,6 +220,7 @@ namespace task_generator_gui
 
         std::vector<std::string> worlds;
         std::vector<std::string> obstacles_modes_;
+        std::unordered_map<std::string, std::string> mode_namespaces_;
         std::vector<std::string> robots_modes_;
 
         std::unordered_map<std::string, QWidget *> param_widgets_obstacles_;

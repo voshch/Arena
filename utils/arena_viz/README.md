@@ -24,8 +24,8 @@ and a small styling dataclass. No ROS deps, no renderers.
 
 | Producer | What it does |
 |---|---|
-| [`task_generator/tasks/robots/adapters`](../../task_generator/task_generator/tasks/robots/adapters) | Declares `AdapterDisplayHint(kind=DisplayKind.X, style_json=StyleSpec(...).to_json())` on each adapter. |
-| [`task_generator.node._publish_viz_manifest`](../../task_generator/task_generator/node.py) | Emits env-level + per-robot displays as `task_generator_msgs/AdapterVizManifest`. |
+| [`arena_runtime/env/adapters`](../../arena_runtime/arena_runtime/arena_runtime/env/adapters) | Declares `AdapterDisplayHint(kind=DisplayKind.X, style_json=StyleSpec(...).to_json())` on each adapter. |
+| [`EnvNode._publish_viz_manifest`](../../arena_runtime/arena_runtime/arena_runtime/env/node.py) | Emits env-level + per-robot displays as `arena_runtime_msgs/AdapterVizManifest`. |
 
 | Consumer | Renderer registry |
 |---|---|
@@ -60,5 +60,5 @@ utils/<backend>_utils/
       map.py, tf.py, path.py, ...  # one per DisplayKind
 ```
 
-The backend subscribes to `{task_generator_node}/state/viz_manifest`,
+The backend subscribes to `{arena_env_node}/state/viz_manifest`,
 dispatches each `AdapterDisplay` to `REGISTRY[DisplayKind(d.kind)]`.

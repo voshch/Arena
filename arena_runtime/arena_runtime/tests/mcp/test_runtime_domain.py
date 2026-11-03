@@ -1,9 +1,11 @@
-"""The runtime MCP domain against an in-process ArenaNode on the dummy sim and a peer env speaking the env protocol."""
+"""The runtime MCP domain against an in-process ArenaRuntimeNode on the dummy sim and a peer env speaking the env protocol."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import subprocess
+import sys
 import time
 
 import pytest
@@ -53,7 +55,7 @@ async def _start(rig: Rig) -> None:
     from arena_runtime_msgs.srv import ConfirmWorld, LifecycleHold, RegisterEnv
     from lifecycle_msgs.msg import State, TransitionEvent
 
-    from arena_runtime.arena_node import ArenaNode
+    from arena_runtime.arena_runtime_node import ArenaRuntimeNode
 
     await ROS.node()
     started = time.monotonic()
@@ -98,7 +100,7 @@ async def _start(rig: Rig) -> None:
             super().__init__("mcp_other_holder")
             self.hold = self.create_client(LifecycleHold, "/arena/sim_lifecycle/hold")
 
-    arena = ArenaNode()
+    arena = ArenaRuntimeNode()
     arena.declare_parameter("physics_dt", DT)
     arena.declare_parameter("sim", "dummy")
     arena.declare_parameter("heartbeat_timeout_sec", 600.0)
@@ -141,11 +143,6 @@ async def _stop(rig: Rig) -> None:
         if node is not None:
             with contextlib.suppress(Exception):
                 node.destroy_node()
-
-
-@pytest.fixture(scope="module")
-def rclpy_context() -> None:
-    return None
 
 
 @pytest.fixture(scope="module")
@@ -207,7 +204,7 @@ def test_envs_lists_registered_env_with_slot_and_heartbeat(rig: Rig) -> None:
     assert len(rows) == 1
     row = rows[0]
     assert row["env_id"] == env_id
-    assert row["fqn"] == f"/arena/env_{env_id}/task_generator_node"
+    assert row["fqn"] == f"/arena/env_{env_id}/arena_env_node"
     assert row["ns"] == f"/arena/env_{env_id}"
     assert row["ready"] and row["placed"]
     assert row["slot"]["size"] == pytest.approx([14.0, 12.0])
@@ -378,6 +375,17 @@ def test_despawn_evicts_the_env_and_cleanup_reports_removed(rig: Rig) -> None:
     assert rig.run(mcp.runtime_cleanup_env(env_id)) == {"env_id": env_id, "removed": 0}
 
 
+def test_spawn_is_refused_without_a_task_layer(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.metadata
+
+    from arena_runtime.env.task_layer import TASK_LAYER_GROUP
+
+    real = importlib.metadata.entry_points
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda **kwargs: [] if kwargs.get("group") == TASK_LAYER_GROUP else real(**kwargs))
+    with pytest.raises(ToolError, match=TASK_LAYER_GROUP):
+        rig.run(mcp.runtime_spawn_env())
+
+
 def test_spawn_is_refused_once_the_sim_is_dead(rig: Rig) -> None:
     rig.run(rig.arena._mark_sim_dead("killed by the mcp test"))
     state = rig.run(_dead_state(rig))
@@ -411,3 +419,17 @@ def test_server_shutdown_releases_only_its_own_holds(rig: Rig) -> None:
     rig.run(ROS.shutdown())
     assert not rig.arena._holds.has(caller, "left_over")
     assert rig.arena._holds.has("/mcp_other_holder", "foreign")
+
+
+def test_server_shutdown_keeps_a_context_it_did_not_start(rig: Rig) -> None:
+    import rclpy
+
+    rig.run(ROS.node())
+    rig.run(ROS.shutdown())
+    assert rclpy.ok()
+
+
+def test_server_shutdown_ends_a_context_it_started(tmp_path) -> None:
+    code = "import asyncio\nimport rclpy\nfrom arena_mcp.core import ROS\nasync def main():\n    await ROS.node()\n    assert rclpy.ok()\n    await ROS.shutdown()\n    assert not rclpy.ok()\nasyncio.run(main())\n"
+    proc = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, timeout=60, check=False)
+    assert proc.returncode == 0, proc.stderr

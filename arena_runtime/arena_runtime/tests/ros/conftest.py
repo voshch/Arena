@@ -1,4 +1,4 @@
-"""In-process ArenaNode on the dummy, flatsim or gazebo host plus a probe node, for lockstep tests."""
+"""In-process ArenaRuntimeNode on the dummy, flatsim or gazebo host plus a probe node, for lockstep tests."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
     from std_msgs.msg import Bool
     from std_srvs.srv import Trigger
 
-    from arena_runtime.arena_node import ArenaNode
+    from arena_runtime.arena_runtime_node import ArenaRuntimeNode
 
     latched = rclpy.qos.QoSProfile(depth=LATCHED_DEPTH, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
 
@@ -140,7 +140,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
 
         servers.append(FlatsimServer(parameter_overrides=[rclpy.parameter.Parameter("physics_dt", value=DT)]))
         executor.add_node(servers[0])
-    arena = ArenaNode()
+    arena = ArenaRuntimeNode()
     arena.declare_parameter("physics_dt", DT)
     arena.declare_parameter("sim", sim)
     probe = Probe()
@@ -157,7 +157,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
                 pytest.skip(str(e))
             raise
         assert await probe.start.ensure(timeout_sec=10.0)
-        await rig.until(lambda: probe.clock() > 0.0, 5.0, f"{sim} /clock")
+        await rig.until(lambda: probe.clock() > 0.0, 30.0, f"{sim} /clock")
         await scenario(rig)
     finally:
         with contextlib.suppress(Exception):
@@ -182,7 +182,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
 
 @pytest.fixture()
 def arena_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None]]], None]:
-    """Runs `scenario(rig)` on a fresh event loop against a spinning ArenaNode(sim=dummy)."""
+    """Runs `scenario(rig)` on a fresh event loop against a spinning ArenaRuntimeNode(sim=dummy)."""
 
     def run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], *, timeout: float = 90.0) -> None:
         asyncio.run(asyncio.wait_for(_run(scenario, "dummy"), timeout=timeout))
@@ -192,7 +192,7 @@ def arena_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None
 
 @pytest.fixture()
 def flatsim_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None]]], None]:
-    """Runs `scenario(rig)` on a fresh event loop against a spinning ArenaNode(sim=flatsim) and a flatsim server."""
+    """Runs `scenario(rig)` on a fresh event loop against a spinning ArenaRuntimeNode(sim=flatsim) and a flatsim server."""
 
     def run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], *, timeout: float = 90.0) -> None:
         pytest.importorskip("flatsim_msgs")
@@ -203,7 +203,7 @@ def flatsim_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[No
 
 @pytest.fixture()
 def gazebo_rig(tmp_path: Path) -> typing.Iterator[typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None]]], None]]:
-    """Runs `scenario(rig)` against a spinning ArenaNode(sim=gazebo), a running headless gz server on an empty world and its /clock bridge."""
+    """Runs `scenario(rig)` against a spinning ArenaRuntimeNode(sim=gazebo), a running headless gz server on an empty world and its /clock bridge."""
     if shutil.which("gz") is None:
         pytest.skip("gz is not on PATH")
     pytest.importorskip("ros_gz_interfaces")

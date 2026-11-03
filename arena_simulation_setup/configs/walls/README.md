@@ -119,7 +119,7 @@ main:
 
 In `world.yaml`, a `walls:` list entry can carry a `kind:` field naming a
 `WallIdentifier`. At simulation time,
-[shared/walls.py:30](../../src/arena_simulation_setup/shared/walls.py#L30)
+[shared/walls.py](../../src/arena_simulation_setup/shared/walls.py)
 calls `WallIdentifier(kind).resolve()`, which searches
 `DynamicPaths.WORLD / 'assets'`, then the `assets/` of every world the active
 world links levels from (`DynamicPaths.LINKED`), then `DynamicPaths.ARENA`, then network

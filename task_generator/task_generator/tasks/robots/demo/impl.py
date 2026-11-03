@@ -4,11 +4,12 @@ import typing
 
 from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_int
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.task_api import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
+from arena_runtime.env.task_layer import ResetPlan, RobotReset
+from arena_runtime.shared import Orientation, Pose, Position, PositionRadius
 
-from task_generator.shared import Orientation, Pose, Position, PositionRadius
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
-from task_generator.tasks.robots.request import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
 
 _RANDOM_ALIASES = frozenset({"", "random", "<random>"})
 
@@ -95,8 +96,8 @@ class TM_Demo(TM_Robots):
         self._gesture_p = self.node.ROSParam[str](self.namespace("gesture"), parse=_parse_gesture)
         self._orientation_p = self.node.ROSParam[_Orientation](self.namespace("orientation"), parse=_Orientation)
 
-    async def reset(self) -> None:
-        await super().reset()
+    async def reset(self) -> ResetPlan:
+        plan = await super().reset()
         gesture_name = self._gesture_p.value
         radius = self._radius_p.value
         orientation = self._orientation_p.value
@@ -117,16 +118,16 @@ class TM_Demo(TM_Robots):
             v0 = vertices[0]
             spawn_yaw = math.atan2(v0.position.y - center.y, v0.position.x - center.x)
             center_pose = Pose(Position(center.x, center.y, 0.0), Orientation.from_yaw(spawn_yaw))
-            self._start_poses[robot.name] = center_pose
             phases: list[TaskPhase] = []
             for v in vertices:
                 phases.append(GoToPhase(pose=v))
                 phases.append(PlayGesturePhase(gesture=_pick_gesture(gesture_name)))
             phases.append(GoToPhase(pose=center_pose))
-            await robot.submit_task(TaskRequest(phases=phases), center_pose)
-            self._ctx.world_manager.forbid(
+            plan.robots[robot.name] = RobotReset(start_pose=center_pose, task=TaskRequest(phases=phases))
+            plan.forbidden_zones.extend(
                 [
                     PositionRadius(x=center.x, y=center.y, radius=biggest_robot),
                     *(PositionRadius(x=v.position.x, y=v.position.y, radius=biggest_robot) for v in vertices),
                 ]
             )
+        return plan

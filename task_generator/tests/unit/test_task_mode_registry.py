@@ -164,27 +164,39 @@ def test_default_scenario_falls_back_to_first_scenario() -> None:
     assert default_scenario("three_storied_residential") in scenarios
 
 
-def test_walk_schemas_declares_every_registered_schema() -> None:
+def test_declare_mode_schemas_declares_what_every_registered_schema_declares() -> None:
     pytest.importorskip("rclpy")
     for package in ("modules", "obstacles", "robots"):
         importlib.import_module(f"task_generator.tasks.{package}")
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-    from task_generator.constants import Constants
-    from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES, walk_schemas
+    from arena_runtime.env.task_layer import declare_mode_schemas
 
-    node = ROSParamServer("walk_schemas_probe")
+    from task_generator.modes import Modes
+    from task_generator.tasks import layer
+    from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES
+
+    def declared(node: ROSParamServer) -> dict[str, str]:
+        return {name: repr(node.get_parameter(name).value) for name in node.get_parameters_by_prefix("")}
+
+    registries = (MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES)
+    reference = ROSParamServer("schemas_reference")
+    node = ROSParamServer("schemas_probe")
     try:
         builtin = set(node.get_parameters_by_prefix(""))
-        walk_schemas(node)
-        schema_namespaces = {str(meta.namespace) for registry in (MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES) for meta in (registry.meta(key) for key in registry.keys()) if meta.schema is not None}
-        assert schema_namespaces
-        for namespace in schema_namespaces:
-            assert node.get_parameters_by_prefix(namespace), namespace
-        declared = set(node.get_parameters_by_prefix("")) - builtin
-        assert declared
-        assert {name for name in declared if not any(name.startswith(f"{namespace}.") for namespace in schema_namespaces)} == set()
-        stationary = ROBOTS_MODES.meta(Constants.TaskMode.TM_Robots.STATIONARY).namespace
+        for registry in registries:
+            for key in registry.keys():
+                meta = registry.meta(key)
+                if meta.schema is not None:
+                    meta.schema(reference, meta.namespace)
+        declare_mode_schemas(layer, node)
+        expected = {name: value for name, value in declared(reference).items() if name not in builtin}
+        actual = {name: value for name, value in declared(node).items() if name not in builtin}
+        assert expected
+        assert actual == expected
+        assert OBSTACLES_MODES.meta(Modes.TM_Obstacles.SCENARIO).namespace == ROBOTS_MODES.meta(Modes.TM_Robots.SCENARIO).namespace
+        stationary = ROBOTS_MODES.meta(Modes.TM_Robots.STATIONARY).namespace
         assert math.isnan(node.get_parameter(stationary("pos_x")).value)
         assert node.get_parameter(stationary("pos_theta")).value == 0.0
     finally:
+        reference.destroy_node()
         node.destroy_node()

@@ -22,12 +22,11 @@ import threading
 import typing
 
 from arena_people_msgs.msg import FaceView
-from arena_runtime_msgs.msg import EnvRegistry
+from arena_runtime_msgs.msg import EnvRegistry, RobotFleet
 from geometry_msgs.msg import PoseStamped
 from hri_msgs.msg import IdsList
 from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
-from task_generator_msgs.msg import RobotFleet
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import (
     ViewportCapture,

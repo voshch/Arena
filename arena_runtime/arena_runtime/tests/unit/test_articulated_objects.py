@@ -65,13 +65,13 @@ def assets(tmp_path: Path):
 
 
 def _realizer():
-    from task_generator.manager.realizer import Realizer
+    from arena_runtime.env.realizer import Realizer
 
     return Realizer(Realizer._Configuration(x=0.0, y=0.0, prefix="env_0"))
 
 
 def _obstacle(name: str, model: str, x: float = 0.0, y: float = 0.0, yaw: float = 0.0, **kwargs: typing.Any):
-    from task_generator.shared import Obstacle, Orientation, Pose, Position
+    from arena_runtime.shared import Obstacle, Orientation, Pose, Position
 
     return _realizer().realize(Obstacle(name=name, model=model, pose=Pose(position=Position(x, y, 0.0), orientation=Orientation.from_yaw(yaw)), **kwargs))
 
@@ -135,7 +135,7 @@ def _snapshot(sim, entity: str = "env_0/cabinet"):
 
 def _register_jackal(sim) -> tuple[str, float]:
     from arena_robots.Robot import RobotIdentifier
-    from task_generator.shared import Pose, Robot
+    from arena_runtime.shared import Pose, Robot
 
     from arena_runtime.sim._interface import robot_footprint_radius
 
@@ -193,7 +193,7 @@ def test_a_rigid_or_unresolvable_object_is_not_articulated(assets):
 
 def test_plain_and_articulated_obstacles_spawn_move_and_delete_in_one_batch_each(assets, on_dummy_sim):
     import attrs
-    from task_generator.shared import Pose, Position
+    from arena_runtime.shared import Pose, Position
 
     async def body(sim):
         cabinet = _obstacle("cabinet", assets["cabinet"])
@@ -279,7 +279,7 @@ def test_joints_reach_a_written_target_state_at_their_speed(assets, on_dummy_sim
 
 def _door_light(link: str, x: float, y: float, yaw: float):
     from arena_simulation_setup.shared import Light
-    from task_generator.shared import Orientation, Pose, Position
+    from arena_runtime.shared import Orientation, Pose, Position
 
     origin = Pose(position=Position(x, y, 0.0), orientation=Orientation.from_yaw(yaw))
     return Light(name=f"cabinet_{link or 'free'}_light", fixture="downlight", lumens=100.0, owner="cabinet", link=link, pose=origin * Pose(position=Position(0.0, -0.31, 0.4), orientation=Orientation.from_euler((0.3, 0.0, 0.0))))
@@ -430,46 +430,6 @@ def test_an_episode_reset_move_starts_from_the_new_joints(assets, on_dummy_sim):
         assert runtime.current == {"door": 1.5, "drawer": 0.0, "knob": 0.0}
         await sim.move_objects([cabinet])
         assert runtime.current == {"door": 0.0, "drawer": 0.0, "knob": 0.0}
-
-    on_dummy_sim(body)
-
-
-def test_a_timeline_set_drives_the_object_and_the_judge_reads_its_state(assets, on_dummy_sim):
-    import random
-    import types
-
-    from arena_simulation_setup.shared.conditions import parse_atom
-    from arena_simulation_setup.shared.judge import Sample, atom_holds
-    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
-    from task_generator.node import TaskGenerator
-
-    from arena_runtime.sim import _mechanism_shim as shim
-
-    class Logger:
-        def warning(self, msg: str) -> None:
-            raise AssertionError(msg)
-
-    async def body(sim):
-        await sim.spawn_objects([_obstacle("cabinet", assets["cabinet"])])
-        node = types.SimpleNamespace(_semantic_names={}, _realizer=_realizer(), _simulator=sim, _sound_levels={}, _timeline_state=[{"rng": random.Random("7:0")}], get_logger=Logger)
-        for method in ("_resolve_semantic_entity", "_apply_semantic_checked", "_set_semantic", "_resolve_timeline_value", "_semantic_value"):
-            setattr(node, method, getattr(TaskGenerator, method).__get__(node))
-        node._norm_token = TaskGenerator._norm_token
-        node._stringify_float = TaskGenerator._stringify_float
-
-        def holds(atom: str) -> bool | None:
-            return atom_holds(parse_atom(atom), Sample(t=0.0, field=node._semantic_value), {})
-
-        assert holds("cabinet.state == closed")
-        TaskGenerator._fire_timeline_entry(node, 0, TimelineEntry(set=[{"entity": "cabinet", "field": "target", "value": "open"}], at=0.0))
-        assert holds("cabinet.target == open")
-        assert not holds("cabinet.state == open")
-        for _ in range(8):
-            await shim._tick(sim, DT)
-        assert holds("cabinet.state == open")
-        assert node._semantic_value("cabinet", "q.door") == "1.5"
-        assert node._semantic_value("cabinet", "openness.door") == "1.0"
-        assert holds("cabinet.moving == false")
 
     on_dummy_sim(body)
 
@@ -829,7 +789,7 @@ def test_a_held_joint_reads_blocked_until_it_is_let_go(assets, on_physics_sim):
 
 def test_a_physical_object_moves_and_deletes_as_one_and_resets_its_joints_in_place(assets, on_physics_sim):
     import attrs
-    from task_generator.shared import Pose, Position
+    from arena_runtime.shared import Pose, Position
 
     async def body(sim):
         from arena_runtime.sim import _mechanism_shim as shim

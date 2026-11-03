@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 import asyncio
 import uuid
 from pathlib import Path
@@ -10,7 +11,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _ros_gate():
     pytest.importorskip("rclpy")
-    pytest.importorskip("task_generator_msgs.msg")
+    pytest.importorskip("arena_runtime_msgs.msg")
 
 
 def _with_module(body):
@@ -18,8 +19,8 @@ def _with_module(body):
     from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
     from arena_rclpy_mixins.shared import Namespace
     from arena_runtime.sim.dummy_simulator import DummySimulator
-    from task_generator.manager.realizer import Realizer
-    from task_generator.simulators.acoustics.noop import NoopAcousticsSimulator
+    from arena_runtime.env.realizer import Realizer
+    from arena_runtime.acoustics.noop import NoopAcousticsSimulator
     from task_generator.tasks.modules.sounds.impl import Mod_Sounds
 
     class _Node(ServiceNamespace, AsyncNode):
@@ -32,9 +33,12 @@ def _with_module(body):
         node = _Node(f"sounds_volume_{suffix}", namespace=str(ns))
         try:
             realizer = Realizer(Realizer._Configuration(x=0.0, y=0.0, prefix=""))
-            node._simulator = DummySimulator(node=node, namespace=ns, realizer=realizer)
-            node._acoustics_simulator = NoopAcousticsSimulator(node=node, namespace=ns)
-            return await body(node, Mod_Sounds(node=node, ctx=None, namespace=ns, task=None))
+            ctx = types.SimpleNamespace(
+                realizer=realizer,
+                simulator=DummySimulator(node=node, namespace=ns, realizer=realizer),
+                acoustics_simulator=NoopAcousticsSimulator(node=node, namespace=ns),
+            )
+            return await body(ctx, Mod_Sounds(node=node, ctx=ctx, namespace=ns, task=None))
         finally:
             node.destroy_node()
 
@@ -53,10 +57,10 @@ def _launch_sound(entry: str):
 def _emitted(entry: str):
     from geometry_msgs.msg import Point
 
-    async def body(node, module):
+    async def body(ctx, module):
         sound = _launch_sound(entry)
         module._sounds = {sound.name: module._build_resolved(sound, module._library.asset(sound.asset_id), sound.name, Point(x=1.0, y=2.0), 0.0, "map")}
-        node._simulator.attach_semantics("sound", sound.name, sound.semantics)
+        ctx.simulator.attach_semantics("sound", sound.name, sound.semantics)
         (emission,) = await module._emissions()
         await module._publish_sources()
         return emission

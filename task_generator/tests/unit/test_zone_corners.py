@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from arena_simulation_setup.tree.World import WorldView
-from task_generator.utils.zone_corners import write_zone_polygons
+from task_generator.tasks.modules.zone_edit.zone_corners import write_zone_polygons
 
 _WORLD = """\
 format: arena-world/2

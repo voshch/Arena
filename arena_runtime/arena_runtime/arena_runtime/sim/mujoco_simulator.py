@@ -20,6 +20,7 @@ import launch.event_handlers
 import launch_ros
 import rclpy.task
 import std_srvs.srv
+from arena_bringup.constants import SimSimulator
 from arena_mujoco_msgs.msg import (
     ArticulatedLink,
     Ceiling,
@@ -67,8 +68,11 @@ from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.articulation import Values
 from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
-from task_generator.shared import Ceiling as CeilingDefinition
-from task_generator.shared import (
+
+from arena_runtime._node import NodeInterface
+from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
+from arena_runtime.shared import Ceiling as CeilingDefinition
+from arena_runtime.shared import (
     DynamicObstacle,
     Model,
     ModelType,
@@ -77,12 +81,8 @@ from task_generator.shared import (
     Position,
     Robot,
 )
-from task_generator.shared import Floor as FloorDefinition
-from task_generator.shared import Wall as WallDefinition
-from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
-
-from arena_runtime._node import NodeInterface
-from arena_runtime.constants import SimSimulator
+from arena_runtime.shared import Floor as FloorDefinition
+from arena_runtime.shared import Wall as WallDefinition
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle
 from arena_runtime.sim._articulation import ArticulatedObject, command_fields, link_message
 from arena_runtime.sim._articulation import JointCommand as ArticulatedCommand
@@ -97,8 +97,8 @@ from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable, sloped_box
 
 """
-MujocoHost is constructed once by arena_node and owns process-singleton resources for MuJoCo: the lifecycle (pause/unpause/cleanup/step) and its service clients.
-MujocoSimulator is per-env on task_generator_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
+MujocoHost is constructed once by arena_runtime_node and owns process-singleton resources for MuJoCo: the lifecycle (pause/unpause/cleanup/step) and its service clients.
+MujocoSimulator is per-env on arena_env_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
 """
 
 _MUJOCO_PHYSICS_DT = 0.002

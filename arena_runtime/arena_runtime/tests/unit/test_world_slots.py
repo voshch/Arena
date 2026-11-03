@@ -9,13 +9,13 @@ import pathlib
 import pytest
 
 pytest.importorskip("arena_runtime_msgs.msg")
-pytest.importorskip("task_generator.manager.world_manager.utils")
+pytest.importorskip("arena_runtime.env.world_manager.utils")
 
 import arena_runtime_msgs.msg  # noqa: E402
 import builtin_interfaces.msg  # noqa: E402
 import rclpy.time  # noqa: E402
 from arena_simulation_setup.tree.World import WorldView  # noqa: E402
-from task_generator.manager.world_manager.utils import WorldMap  # noqa: E402
+from arena_runtime.env.world_manager.utils import WorldMap  # noqa: E402
 
 from arena_runtime.registry import EnvRegistry  # noqa: E402
 

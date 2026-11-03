@@ -4,37 +4,35 @@ import pytest
 
 
 def test_registry_has_obstacles_entries():
-    from task_generator.constants import Constants
+    from task_generator.modes import Modes
     from task_generator.tasks.registry import OBSTACLES_MODES
 
-    assert Constants.TaskMode.TM_Obstacles.PARAMETRIZED in OBSTACLES_MODES
-    assert Constants.TaskMode.TM_Obstacles.RANDOM in OBSTACLES_MODES
-    assert Constants.TaskMode.TM_Obstacles.SCENARIO in OBSTACLES_MODES
-    assert Constants.TaskMode.TM_Obstacles.ENVIRONMENT in OBSTACLES_MODES
-    # PROMPT is registered per-BaseHumanSimulator subclass via _register_task_modes,
-    # not centrally; see test_humansim_register.py.
+    assert Modes.TM_Obstacles.PARAMETRIZED in OBSTACLES_MODES
+    assert Modes.TM_Obstacles.RANDOM in OBSTACLES_MODES
+    assert Modes.TM_Obstacles.SCENARIO in OBSTACLES_MODES
+    assert Modes.TM_Obstacles.ENVIRONMENT in OBSTACLES_MODES
 
 
 def test_registry_has_robots_entries():
-    from task_generator.constants import Constants
+    from task_generator.modes import Modes
     from task_generator.tasks.registry import ROBOTS_MODES
 
-    assert Constants.TaskMode.TM_Robots.GUIDED in ROBOTS_MODES
-    assert Constants.TaskMode.TM_Robots.EXPLORE in ROBOTS_MODES
-    assert Constants.TaskMode.TM_Robots.RANDOM in ROBOTS_MODES
-    assert Constants.TaskMode.TM_Robots.SCENARIO in ROBOTS_MODES
-    assert Constants.TaskMode.TM_Robots.STATIONARY in ROBOTS_MODES
-    assert Constants.TaskMode.TM_Robots.CHARACTERIZATION in ROBOTS_MODES
+    assert Modes.TM_Robots.GUIDED in ROBOTS_MODES
+    assert Modes.TM_Robots.EXPLORE in ROBOTS_MODES
+    assert Modes.TM_Robots.RANDOM in ROBOTS_MODES
+    assert Modes.TM_Robots.SCENARIO in ROBOTS_MODES
+    assert Modes.TM_Robots.STATIONARY in ROBOTS_MODES
+    assert Modes.TM_Robots.CHARACTERIZATION in ROBOTS_MODES
 
 
 def test_registry_has_module_entries():
-    from task_generator.constants import Constants
+    from task_generator.modes import Modes
     from task_generator.tasks.registry import MODULE_MODES
 
-    assert Constants.TaskMode.TM_Module.CLEAR_FORBIDDEN_ZONES in MODULE_MODES
-    assert Constants.TaskMode.TM_Module.RVIZ_UI in MODULE_MODES
-    assert Constants.TaskMode.TM_Module.SOUNDS in MODULE_MODES
-    assert Constants.TaskMode.TM_Module.ZONE_EDIT in MODULE_MODES
+    assert Modes.TM_Module.CLEAR_FORBIDDEN_ZONES in MODULE_MODES
+    assert Modes.TM_Module.RVIZ_UI in MODULE_MODES
+    assert Modes.TM_Module.SOUNDS in MODULE_MODES
+    assert Modes.TM_Module.ZONE_EDIT in MODULE_MODES
 
 
 @pytest.mark.parametrize(
@@ -47,9 +45,9 @@ def test_registry_has_module_entries():
 )
 def test_loader_returns_a_class(modes: str, axis: str, member: str):
     import task_generator.tasks.registry as registry
-    from task_generator.constants import Constants
+    from task_generator.modes import Modes
 
-    assert isinstance(getattr(registry, modes).get(getattr(getattr(Constants.TaskMode, axis), member)), type)
+    assert isinstance(getattr(registry, modes).get(getattr(getattr(Modes, axis), member)), type)
 
 
 @pytest.mark.parametrize(
@@ -61,6 +59,6 @@ def test_loader_returns_a_class(modes: str, axis: str, member: str):
 )
 def test_namespace_contains_the_mode_value(modes: str, axis: str, member: str, value: str):
     import task_generator.tasks.registry as registry
-    from task_generator.constants import Constants
+    from task_generator.modes import Modes
 
-    assert value in str(getattr(registry, modes).meta(getattr(getattr(Constants.TaskMode, axis), member)).namespace)
+    assert value in str(getattr(registry, modes).meta(getattr(getattr(Modes, axis), member)).namespace)

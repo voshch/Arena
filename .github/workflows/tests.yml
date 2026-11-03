@@ -60,7 +60,7 @@ jobs:
       - name: list the packages with tests
         run: |
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then
-            printf '%s\n' arena_assets arena_evaluation arena_simulation_setup task_generator | tee tested.txt
+            printf '%s\n' arena_assets arena_evaluation arena_runtime arena_simulation_setup | tee tested.txt
           else
             .github/ci/tested-packages.sh | tee tested.txt
           fi

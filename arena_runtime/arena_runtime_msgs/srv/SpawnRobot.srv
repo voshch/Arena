@@ -1,0 +1,15 @@
+# Inject an additional robot at runtime.
+string model
+# Empty auto-generates.
+string name
+geometry_msgs/PoseStamped pose
+# False = the env picks a free placement.
+bool use_pose
+# True = provision into the live world now (idle), else commit on the next reset.
+bool immediate
+# Forwarded to Robot.parse; unrecognized keys silently ignored.
+diagnostic_msgs/KeyValue[] args
+---
+string name
+bool success
+string error_msg

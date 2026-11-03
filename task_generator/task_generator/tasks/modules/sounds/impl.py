@@ -10,6 +10,9 @@ import rclpy
 import rclpy.time
 import tf2_ros
 import yaml
+from arena_runtime.env.task_api import Apply, Menu, SoundEmission, planar_marker, visual
+from arena_runtime.shared import Orientation
+from arena_runtime_msgs.srv import RemoveSound, SpawnSound
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
 from arena_simulation_setup.tree.assets.sound_catalog import AgentKind, SoundLibrary, selection_seed
 from arena_simulation_setup.tree.World import World, WorldIdentifier
@@ -18,19 +21,14 @@ from arena_simulation_setup.utils.cattrs import converter
 from geometry_msgs.msg import Point, Vector3
 from geometry_msgs.msg import Pose as PoseMsg
 from rclpy.clock import Clock, ClockType
-from task_generator_msgs.srv import RemoveSound, SpawnSound
 from visualization_msgs.msg import Marker
 
-from task_generator.interactive import Apply, Menu, planar_marker, visual
-from task_generator.shared import Orientation
-from task_generator.simulators.acoustics import SoundEmission
 from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
 from task_generator.tasks.modules.sounds import REMOVE_SOUND, SPAWN_SOUND
 
 if typing.TYPE_CHECKING:
+    from arena_runtime.env.task_api import Realizer
     from arena_simulation_setup.tree.assets.sound_catalog import SoundAsset
-
-    from task_generator.manager.realizer import Realizer
 
 
 def _index_static_entities(world: World, scenario_objects: Sequence[Obstacle] = ()) -> dict[str, list[tuple[str, Obstacle]]]:
@@ -172,24 +170,38 @@ class Mod_Sounds(TM_Module):
             clock=Clock(clock_type=ClockType.STEADY_TIME),
         )
 
+    def teardown(self) -> None:
+        self.node.destroy_timer(self._timer)
+        self.node.destroy_service(self._spawn_service)
+        self.node.destroy_service(self._remove_service)
+        for entity in list(self._runtime):
+            self._remove_runtime(entity)
+        for entity in self._attached:
+            self._ctx.simulator.detach_semantics(entity)
+        self._sounds.clear()
+        self._sound_state.clear()
+        self._attached.clear()
+        self._warned_inert.clear()
+        self._ctx.acoustics_simulator.clear_sounds()
+
     def after_reset(self) -> None:
         for entity in self._attached:
-            self.node._simulator.detach_semantics(entity)
+            self._ctx.simulator.detach_semantics(entity)
         self._sound_state.clear()
         self._runtime.clear()
-        self.node._acoustics_simulator.clear_sounds()
+        self._ctx.acoustics_simulator.clear_sounds()
 
         world_name = self._ctx.world_manager.loaded_world
         world_view = WorldIdentifier(world_name).resolve_sync()
         self._library.use_world(world_view.path)
-        world = world_view.load(derive=self.node.conf.Arena.KG_DERIVE.value or "auto")
+        world = world_view.load(derive=self._ctx.conf.KG_DERIVE.value or "auto")
         scenario = self._active_scenario()
         indexed_entities = _index_static_entities(world, scenario.objects if scenario is not None else ())
 
         resolved: dict[str, _ResolvedSound] = {}
         for level_id, level in world.levels.items():
             for snd in level.all_sounds:
-                realized_name = self.node._realizer.realize(snd, level_id).name
+                realized_name = self._ctx.realizer.realize(snd, level_id).name
                 self._warn_if_inert(snd, realized_name)
                 built = self._resolve_and_build(snd, indexed_entities, level_id, realized_name)
                 if built is not None:
@@ -198,17 +210,17 @@ class Mod_Sounds(TM_Module):
         attached: set[str] = set()
         episode_sounds = list(scenario.sounds) if scenario is not None else []
         for snd in [*episode_sounds, *self._configured_sounds()]:
-            realized_name = self.node._realizer.realize(snd).name
+            realized_name = self._ctx.realizer.realize(snd).name
             self._warn_if_inert(snd, realized_name)
             built = self._resolve_and_build(snd, indexed_entities, "", realized_name)
             if built is not None:
                 resolved[realized_name] = built
-            self.node._simulator.attach_semantics("sound", realized_name, snd.semantics)
+            self._ctx.simulator.attach_semantics("sound", realized_name, snd.semantics)
             attached.add(realized_name)
 
         self._sounds = resolved
         self._attached = attached
-        self.node.register_sound_levels({name: sound.level_db for name, sound in resolved.items()})
+        self._ctx.episode.register_sound_levels({name: sound.level_db for name, sound in resolved.items()})
         self._logger.info(f"loaded {len(resolved)} sound(s), {len(episode_sounds)} scenario, {len(attached) - len(episode_sounds)} launch")
 
     def _active_scenario(self) -> Scenario | None:
@@ -231,10 +243,10 @@ class Mod_Sounds(TM_Module):
             self._logger.error(f"sound {snd.name!r} stays silent: {exc}")
             return None
         if snd.frame:
-            frame_id = _realize_frame(self.node._realizer.realize(), snd.frame)
+            frame_id = _realize_frame(self._ctx.realizer.realize(), snd.frame)
             return self._build_resolved(snd, asset, realized_name, snd.offset.to_msg(), 0.0, frame_id)
-        position, yaw, level_id = _resolve_sound_placement(snd, self.node._realizer, indexed_entities, listing_level_id)
-        map_position = self.node._realizer.realize(position, level_id)
+        position, yaw, level_id = _resolve_sound_placement(snd, self._ctx.realizer, indexed_entities, listing_level_id)
+        map_position = self._ctx.realizer.realize(position, level_id)
         return self._build_resolved(snd, asset, realized_name, map_position.to_msg(), yaw, "map")
 
     def _build_resolved(self, snd: Sound, asset: SoundAsset, realized_name: str, position: Point, yaw: float, frame_id: str) -> _ResolvedSound:
@@ -273,7 +285,7 @@ class Mod_Sounds(TM_Module):
         if _has_initial_sounding(snd.semantics) or realized_name in self._warned_inert:
             return
         self._warned_inert.add(realized_name)
-        self._logger.warning(f"sound {snd.name!r} has neither sound_on nor a sounding value, so it stays silent until toggled: ros2 service call {self.node.service_namespace('semantics', 'set')} task_generator_msgs/srv/SetSemantic \"{{entity: {realized_name}, field: sounding, value: 'true'}}\"")
+        self._logger.warning(f"sound {snd.name!r} has neither sound_on nor a sounding value, so it stays silent until toggled: ros2 service call {self.node.service_namespace('semantics', 'set')} arena_runtime_msgs/srv/SetSemantic \"{{entity: {realized_name}, field: sounding, value: 'true'}}\"")
 
     async def _spawn_sound(
         self,
@@ -281,7 +293,7 @@ class Mod_Sounds(TM_Module):
         response: SpawnSound.Response,
     ) -> SpawnSound.Response:
         try:
-            async with self.node._reset_lock:
+            async with self._ctx.reset_lock:
                 return await self._spawn_sound_impl(request, response)
         except ValueError as exc:
             self._logger.error(f"spawning runtime sound failed:\n{traceback.format_exc()}")
@@ -357,8 +369,10 @@ class Mod_Sounds(TM_Module):
             float(orientation.w) / orientation_norm,
         )
         if frame_id != "map" and not attach_to_frame:
+            interactive = self._ctx.interactive
+            assert interactive is not None, "sounds needs the env's interactive context"
             try:
-                transform = self.node.tf_buffer.lookup_transform(
+                transform = interactive.tf_buffer.lookup_transform(
                     "map",
                     frame_id,
                     rclpy.time.Time(),
@@ -399,11 +413,11 @@ class Mod_Sounds(TM_Module):
         async def _spawn() -> str | None:
             index = 1
             entity_name = f"runtime_{kind}_{index}"
-            realized_name = self.node._realizer.prefix(entity_name)
+            realized_name = self._ctx.realizer.prefix(entity_name)
             while realized_name in self._attached:
                 index += 1
                 entity_name = f"runtime_{kind}_{index}"
-                realized_name = self.node._realizer.prefix(entity_name)
+                realized_name = self._ctx.realizer.prefix(entity_name)
             local = Position(float(map_position.x), float(map_position.y), float(map_position.z))
             sound = Sound(
                 name=entity_name,
@@ -417,13 +431,13 @@ class Mod_Sounds(TM_Module):
                     SemanticCfg(role="state", name="volume_db", value=source_volume_db),
                 ],
             )
-            if not self.node._simulator.attach_semantics("sound", realized_name, sound.semantics):
+            if not self._ctx.simulator.attach_semantics("sound", realized_name, sound.semantics):
                 return None
             if initially_active:
-                self.node._simulator.set_semantic_value(realized_name, "sounding", "true")
+                self._ctx.simulator.set_semantic_value(realized_name, "sounding", "true")
             self._attached.add(realized_name)
             self._runtime.add(realized_name)
-            wire_frame = _realize_frame(self.node._realizer.realize(), frame_id) if attach_to_frame else "map"
+            wire_frame = _realize_frame(self._ctx.realizer.realize(), frame_id) if attach_to_frame else "map"
             self._sounds[realized_name] = self._build_resolved(sound, asset, realized_name, map_position, float(yaw), wire_frame)
             if not attach_to_frame:
                 self._put_handle(realized_name, map_position, float(yaw))
@@ -440,6 +454,8 @@ class Mod_Sounds(TM_Module):
         return response
 
     def _put_handle(self, entity: str, position: Point, yaw: float) -> None:
+        interactive = self._ctx.interactive
+        assert interactive is not None, "sounds needs the env's interactive context"
         pose = PoseMsg(position=position, orientation=Orientation.from_yaw(yaw).to_msg())
 
         async def on_pose(moved: PoseMsg) -> None:
@@ -448,7 +464,7 @@ class Mod_Sounds(TM_Module):
         async def remove() -> None:
             self._remove_runtime(entity)
 
-        self.node.markers.put(
+        interactive.markers.put(
             planar_marker(entity, pose, description=entity, scale=0.6, visuals=[visual(Marker.CUBE, (0.25, 0.25, 0.25), (0.9, 0.8, 0.2, 0.9))]),
             on_pose=on_pose,
             apply=Apply.LIVE,
@@ -466,8 +482,10 @@ class Mod_Sounds(TM_Module):
         self._sound_state.pop(entity, None)
         self._attached.discard(entity)
         self._runtime.discard(entity)
-        self.node.markers.erase(entity)
-        self.node._simulator.detach_semantics(entity)
+        interactive = self._ctx.interactive
+        assert interactive is not None, "sounds needs the env's interactive context"
+        interactive.markers.erase(entity)
+        self._ctx.simulator.detach_semantics(entity)
         return True
 
     async def _remove_sound(
@@ -476,7 +494,7 @@ class Mod_Sounds(TM_Module):
         response: RemoveSound.Response,
     ) -> RemoveSound.Response:
         entity_name = str(request.entity).strip()
-        async with self.node._reset_lock:
+        async with self._ctx.reset_lock:
             removed = self._remove_runtime(entity_name)
         if not removed:
             response.error_msg = f"unknown or non-removable sound {entity_name!r}"
@@ -528,13 +546,13 @@ class Mod_Sounds(TM_Module):
 
     async def _publish_sources(self) -> None:
         try:
-            self.node._acoustics_simulator.emit_sounds(await self._emissions())
+            self._ctx.acoustics_simulator.emit_sounds(await self._emissions())
         except (TypeError, ValueError):
             self._logger.error(f"publishing static audio state failed:\n{traceback.format_exc()}")
 
     async def _emissions(self) -> list[SoundEmission]:
         emissions: list[SoundEmission] = []
-        for snap in self.node._simulator.semantics_snapshot():
+        for snap in self._ctx.simulator.semantics_snapshot():
             if snap.kind != "sound":
                 continue
             resolved = self._sounds.get(snap.entity)

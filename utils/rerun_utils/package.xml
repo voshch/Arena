@@ -11,7 +11,7 @@
   <depend>rclpy</depend>
   <depend>arena_rclpy_mixins</depend>
   <depend>arena_viz</depend>
-  <depend>task_generator_msgs</depend>
+  <depend>arena_runtime_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>

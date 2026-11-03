@@ -1,4 +1,4 @@
-"""rig_human: the .rig (task_generator human BODY.md, Section 5) and rig/ SDF of a human bundle, from its skin's bind skeleton."""
+"""rig_human: the .rig (arena_runtime humans/BODY.md, Section 5) and rig/ SDF of a human bundle, from its skin's bind skeleton."""
 
 from __future__ import annotations
 

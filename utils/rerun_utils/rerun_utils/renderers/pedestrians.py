@@ -6,8 +6,8 @@ per-body poses from TF; rerun has no hri plugin equivalent of hri_rviz/Skeletons
 
 from __future__ import annotations
 
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rerun_utils.renderers._registry import RendererCtx, register
 

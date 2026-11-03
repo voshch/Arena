@@ -19,7 +19,7 @@ def generate_launch_description():
 
     use_sim_time = LaunchArgument("use_sim_time")
 
-    task_generator_node = LaunchArgument('task_generator_node')
+    arena_env_node = LaunchArgument('arena_env_node')
     namespace = LaunchArgument("namespace")
     robot = LaunchArgument("robot")
     frame = LaunchArgument("frame")

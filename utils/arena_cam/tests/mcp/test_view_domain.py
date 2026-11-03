@@ -13,7 +13,7 @@ pytest.importorskip("arena_mcp")
 rclpy = pytest.importorskip("rclpy")
 pytest.importorskip("viewport_control_msgs.srv")
 pytest.importorskip("arena_runtime_msgs.srv")
-pytest.importorskip("task_generator_msgs.msg")
+pytest.importorskip("arena_runtime_msgs.msg")
 
 from arena_mcp.core import JOBS, ROS, ToolError, cli
 
@@ -32,7 +32,7 @@ class Arena:
         from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep
         from geometry_msgs.msg import PoseStamped
         from rosgraph_msgs.msg import Clock
-        from task_generator_msgs.msg import RobotDescriptor, RobotFleet, RobotState
+        from arena_runtime_msgs.msg import RobotDescriptor, RobotFleet, RobotState
         from viewport_control_msgs.srv import ViewportCapture, ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
         self.node = rclpy.create_node("arena")
@@ -147,7 +147,7 @@ def rig():
     owned = rclpy.ok()
     if not owned:
         rclpy.init()
-    tg = f"/mcp_{uuid.uuid4().hex[:8]}/env_0/task_generator_node"
+    tg = f"/mcp_{uuid.uuid4().hex[:8]}/env_0/arena_env_node"
     arena = Arena(tg)
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(arena.node)
@@ -156,7 +156,7 @@ def rig():
     loop = asyncio.new_event_loop()
     try:
         from arena_runtime_msgs.msg import EnvRegistry
-        from task_generator_msgs.msg import RobotFleet
+        from arena_runtime_msgs.msg import RobotFleet
 
         loop.run_until_complete(ROS.latest(EnvRegistry, "/arena/state/envs", timeout=30.0))
         loop.run_until_complete(ROS.latest(RobotFleet, f"{tg}/state/robots", timeout=30.0))

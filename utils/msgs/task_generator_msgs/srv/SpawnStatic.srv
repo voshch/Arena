@@ -1,8 +1,0 @@
-string model
-geometry_msgs/PoseStamped pose
-# False = task mode picks placement.
-bool use_pose
----
-string id
-bool success
-string error_msg
