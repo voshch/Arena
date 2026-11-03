@@ -21,6 +21,7 @@ from .robot_manager import RobotManager
 
 _AUTO_TOKEN = "auto"
 _ARENA_DEFAULT_ROBOT = "jackal"
+_NODE_PATHS_POLL = 0.1
 
 
 def split_robot_arg(value: str) -> list[str]:
@@ -260,7 +261,7 @@ class RobotsManager(NodeInterface):
                 while True:
                     latest = self.node.get_node_names_and_namespaces()
                     paths.update(os.path.join(ns, name) for name, ns in latest)
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(_NODE_PATHS_POLL)
 
             t = asyncio.create_task(task())
             yield t
