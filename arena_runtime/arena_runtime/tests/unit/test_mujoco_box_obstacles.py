@@ -22,8 +22,8 @@ def test_moved_box_obstacle_keeps_its_bbox_center_offset(tmp_path: Path):
     from arena_rclpy_mixins.shared import Namespace
     from arena_rclpy_mixins.spin import create_executor
     from arena_simulation_setup.tree.assets.Object import ObjectIdentifier, ObjectView
-    from task_generator.manager.realizer import Realizer
-    from task_generator.shared import Obstacle, Orientation, Pose, Position
+    from arena_runtime.env.realizer import Realizer
+    from arena_runtime.shared import Obstacle, Orientation, Pose, Position
 
     from arena_runtime.sim._interface import _BOX_FLOOR_CLEARANCE, offset_pose
     from arena_runtime.sim.mujoco_simulator import MujocoSimulator

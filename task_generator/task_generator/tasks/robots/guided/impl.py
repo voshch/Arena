@@ -2,15 +2,14 @@ import typing
 from collections.abc import Awaitable, Callable
 
 import geometry_msgs.msg as geometry_msgs
+from arena_runtime.env.task_api import GoToPhase, Menu, Realizer, TaskPhase, TaskRequest, planar_marker, static_marker, visual
+from arena_runtime.env.task_layer import ResetPlan
+from arena_runtime.shared import Pose
 from visualization_msgs.msg import Marker
 
-from task_generator.interactive.hub import Menu, planar_marker, static_marker, visual
-from task_generator.manager.realizer import Realizer
-from task_generator.shared import Pose
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots.guided import chain
 from task_generator.tasks.robots.random.impl import TM_Random
-from task_generator.tasks.robots.request import GoToPhase, TaskPhase, TaskRequest
 
 _SHARED_CHAIN_COLOR = (0.1, 0.4, 1.0)
 _LINE_WIDTH = 0.05
@@ -22,10 +21,16 @@ class TM_Guided(TM_Random):
     PARAM_WAYPOINTS = "guided_waypoints"
 
     _waypoints: list[Pose]
+    _starts: dict[str, Pose]
 
-    async def reset(self) -> None:
-        await super().reset()
-        await self._reset_waypoints()
+    async def reset(self) -> ResetPlan:
+        plan = await super().reset()
+        self._waypoints = []
+        self._starts = {name: entry.start_pose for name, entry in plan.robots.items()}
+        self._show_chain()
+        for entry in plan.robots.values():
+            entry.task = self._request(entry.start_pose)
+        return plan
 
     @property
     async def done(self) -> bool:
@@ -50,14 +55,19 @@ class TM_Guided(TM_Random):
         self._waypoints = waypoints
         await self._publish_chain()
 
-    async def _publish_chain(self, from_start: bool = False) -> None:
+    def _show_chain(self) -> None:
         self.node.rosparam[list[list[float]]].set(self.PARAM_WAYPOINTS, [[wp.position.x, wp.position.y, wp.orientation.to_yaw()] for wp in self._waypoints])
         self._rebuild_markers()
 
+    def _request(self, start: Pose) -> TaskRequest:
+        phases: list[TaskPhase] = [GoToPhase(pose=wp) for wp in self._waypoints] or [GoToPhase(pose=start)]
+        return TaskRequest(phases=phases)
+
+    async def _publish_chain(self, from_start: bool = False) -> None:
+        self._show_chain()
         for robot in self._ctx.robots.values():
-            start = self._start_poses.get(robot.name, robot.start_pos)
-            phases: list[TaskPhase] = [GoToPhase(pose=wp) for wp in self._waypoints] or [GoToPhase(pose=start)]
-            await robot.submit_task(TaskRequest(phases=phases), start if from_start else None)
+            start = self._starts.get(robot.name, robot.start_pos)
+            await robot.submit_task(self._request(start), start if from_start else None)
 
     async def _reset_waypoints(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -69,16 +79,18 @@ class TM_Guided(TM_Random):
         return chain.scope_prefix(list(self._ctx.robots))
 
     def _rebuild_markers(self) -> None:
-        hub = self.node.markers
+        interactive = self._ctx.interactive
+        assert interactive is not None, "guided needs the env's interactive context"
+        hub = interactive.markers
         scope = self._scope
         hub.erase_prefix(scope)
         if not self._waypoints:
             return
 
-        realizer = self.node._realizer
+        realizer = self._ctx.realizer
         clear_menu = Menu("Clear chain", self._clear_chain)
         robots = list(self._ctx.robots)
-        r, g, b, _ = self.node.robot_colors.rgba(robots[0], 1.0) if len(robots) == 1 else (*_SHARED_CHAIN_COLOR, 1.0)
+        r, g, b, _ = interactive.robot_colors.rgba(robots[0], 1.0) if len(robots) == 1 else (*_SHARED_CHAIN_COLOR, 1.0)
 
         for index, waypoint in enumerate(self._waypoints):
             hub.put(
@@ -131,3 +143,4 @@ class TM_Guided(TM_Random):
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
         self._waypoints = []
+        self._starts = {}

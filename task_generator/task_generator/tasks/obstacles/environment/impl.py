@@ -7,10 +7,10 @@ import numpy as np
 import shapely
 import shapely.ops
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.task_api import GridFrame, WorldOccupancy
+from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from shapely.geometry import LineString, Point
 
-from task_generator.manager.world_manager.utils import GridFrame, WorldOccupancy
-from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 
@@ -133,7 +133,7 @@ class TM_Environment(TM_Obstacles):
         occupancy_grid[max(top, 0) : max(bottom, 0), max(left, 0) : max(right, 0)] = WorldOccupancy.FULL
 
     def _parse_environment(self, environment_file: str) -> _ParsedConfig:
-        rng = self.node.conf.General.RNG.stream("obstacles", "environment")
+        rng = self._ctx.conf.RNG.stream("obstacles", "environment")
 
         environment = arena_simulation_setup.tree.configs.environment.EnvironmentIdentifier(environment_file).resolve_sync()
 

@@ -188,10 +188,10 @@ async def _spawn(request: SpawnEnv.Request, timeout_s: float) -> dict[str, Any]:
 
 @domain.tool()
 async def runtime_spawn_env(
-    launch_args: Annotated[dict[str, str] | None, Field(description="task_generator.launch.py arguments without the := (e.g. {'robot': 'jackal'}), merged over the runtime's env_args; env.id, env.ns and sim are set by the runtime")] = None,
+    launch_args: Annotated[dict[str, str] | None, Field(description="env.launch.py arguments without the := (e.g. {'robot': 'jackal'}), merged over the runtime's env_args; env.id, env.ns and sim are set by the runtime")] = None,
     wait_ready: Annotated[bool, Field(description="wait until the env is ACTIVE, else return at once with a job that finishes when it is")] = True,
     headless: Annotated[bool, Field(description="env output only to its log file, false also echoes it on the runtime's stdout")] = True,
-    ns: Annotated[str, Field(description="explicit task generator node path, empty allocates arena/env_<id>/task_generator_node")] = "",
+    ns: Annotated[str, Field(description="explicit task generator node path, empty allocates arena/env_<id>/arena_env_node")] = "",
     timeout_s: float = 300.0,
 ) -> dict[str, Any]:
     """Spawn one env as a child of the runtime and return its env_id, fqn and log_path."""

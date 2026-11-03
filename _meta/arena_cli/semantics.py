@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     import rclpy.node
     import rclpy.subscription
-    from task_generator_msgs.msg import SemanticSnapshot
+    from arena_runtime_msgs.msg import SemanticSnapshot
 
 SNAPSHOT_SUFFIX = "/state/semantics"
 SET_SUFFIX = "/semantics/set"
@@ -390,7 +390,7 @@ def _entities(msg: SemanticSnapshot, env: str) -> dict[tuple[str, str], Entity]:
 
 def _subscribe(node: rclpy.node.Node, node_ns: str, callback: Callable[[SemanticSnapshot], None]) -> rclpy.subscription.Subscription:
     import rclpy.qos
-    from task_generator_msgs.msg import SemanticSnapshot
+    from arena_runtime_msgs.msg import SemanticSnapshot
 
     qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
     return node.create_subscription(SemanticSnapshot, node_ns + SNAPSHOT_SUFFIX, callback, qos)
@@ -412,7 +412,7 @@ def _read(node: rclpy.node.Node, node_ns: str) -> dict[tuple[str, str], Entity]:
 
 def _set(node: rclpy.node.Node, node_ns: str, target: Entity, field: str, value: str) -> None:
     import rclpy
-    from task_generator_msgs.srv import SetSemantic
+    from arena_runtime_msgs.srv import SetSemantic
 
     client = node.create_client(SetSemantic, node_ns + SET_SUFFIX)
     if not client.wait_for_service(timeout_sec=READ_S):

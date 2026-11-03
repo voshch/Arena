@@ -29,7 +29,7 @@ void TaskGeneratorPanel::fetchCatalog(
     const std::string &catalog_name,
     std::function<void(std::vector<std::string>)> callback)
 {
-    namespace srv = task_generator_msgs::srv;
+    namespace srv = arena_runtime_msgs::srv;
 
     if (catalog_name == "objects")
     {

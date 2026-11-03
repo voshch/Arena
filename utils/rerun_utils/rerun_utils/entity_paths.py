@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from task_generator_msgs.msg import RobotDescriptor
+from arena_runtime_msgs.msg import RobotDescriptor
 
 
 def env_root(env_id: int) -> str:

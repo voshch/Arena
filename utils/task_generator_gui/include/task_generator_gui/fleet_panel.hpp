@@ -6,11 +6,11 @@
 #include <rviz_common/panel.hpp>
 #include <rviz_common/ros_integration/ros_node_abstraction_iface.hpp>
 
-#include "task_generator_msgs/srv/query_robots.hpp"
-#include "task_generator_msgs/srv/spawn_robot.hpp"
-#include "task_generator_msgs/srv/despawn_robot.hpp"
-#include "task_generator_msgs/msg/robot_fleet.hpp"
-#include "task_generator_msgs/msg/robot_queue.hpp"
+#include "arena_runtime_msgs/srv/query_robots.hpp"
+#include "arena_runtime_msgs/srv/spawn_robot.hpp"
+#include "arena_runtime_msgs/srv/despawn_robot.hpp"
+#include "arena_runtime_msgs/msg/robot_fleet.hpp"
+#include "arena_runtime_msgs/msg/robot_queue.hpp"
 
 #include <QComboBox>
 #include <QGroupBox>
@@ -48,17 +48,17 @@ protected:
     std::shared_ptr<rviz_common::ros_integration::RosNodeAbstractionIface> node_ptr;
     rclcpp::Node::SharedPtr node;
 
-    std::string task_generator_node;
+    std::string arena_env_node;
 
-    rclcpp::Client<task_generator_msgs::srv::QueryRobots>::SharedPtr query_robots_client;
-    rclcpp::Client<task_generator_msgs::srv::SpawnRobot>::SharedPtr spawn_robot_client;
-    rclcpp::Client<task_generator_msgs::srv::DespawnRobot>::SharedPtr despawn_robot_client;
+    rclcpp::Client<arena_runtime_msgs::srv::QueryRobots>::SharedPtr query_robots_client;
+    rclcpp::Client<arena_runtime_msgs::srv::SpawnRobot>::SharedPtr spawn_robot_client;
+    rclcpp::Client<arena_runtime_msgs::srv::DespawnRobot>::SharedPtr despawn_robot_client;
 
-    rclcpp::Subscription<task_generator_msgs::msg::RobotFleet>::SharedPtr robot_fleet_sub;
-    rclcpp::Subscription<task_generator_msgs::msg::RobotQueue>::SharedPtr robot_queue_sub;
+    rclcpp::Subscription<arena_runtime_msgs::msg::RobotFleet>::SharedPtr robot_fleet_sub;
+    rclcpp::Subscription<arena_runtime_msgs::msg::RobotQueue>::SharedPtr robot_queue_sub;
 
-    task_generator_msgs::msg::RobotFleet::SharedPtr last_fleet;
-    task_generator_msgs::msg::RobotQueue::SharedPtr last_pending;
+    arena_runtime_msgs::msg::RobotFleet::SharedPtr last_fleet;
+    arena_runtime_msgs::msg::RobotQueue::SharedPtr last_pending;
 
     std::string selected_robot_model;
     std::vector<std::string> robot_models;

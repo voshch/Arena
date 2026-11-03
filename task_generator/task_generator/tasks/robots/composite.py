@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import typing
+from collections.abc import Collection, Mapping
 
 import attrs
-from arena_rclpy_mixins.shared import Namespace
+from arena_runtime.env.task_api import PhaseState
+from arena_runtime.env.task_layer import ResetPlan, TaskContext
+from arena_runtime.shared import Pose
 
-from task_generator.constants import Constants
-from task_generator.shared import Pose
-from task_generator.tasks.context import TaskContext
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
@@ -35,12 +35,7 @@ def _scoped_ctx(parent: TaskContext, robot_names: typing.Iterable[str]) -> TaskC
     """Build a TaskContext whose robots expose only the named subset."""
     names = frozenset(robot_names)
     scoped_mgr = _ScopedRobotsView(parent.robots_manager, names)
-    return TaskContext(
-        environment_manager=parent.environment_manager,
-        robots_manager=scoped_mgr,  # type: ignore[arg-type]
-        world_manager=parent.world_manager,
-        abort_episode=parent.abort_episode,
-    )
+    return attrs.evolve(parent, robots_manager=scoped_mgr)  # type: ignore[arg-type]
 
 
 class TM_Composite(TM_Robots):
@@ -52,19 +47,29 @@ class TM_Composite(TM_Robots):
         super().__init__(**kwargs)
         self._sub_modes = list(sub_modes)
 
-    async def reset(self) -> None:
-        await super().reset()
-        await asyncio.gather(*(m.reset() for m in self._sub_modes))
+    async def reset(self) -> ResetPlan:
+        plan = await super().reset()
+        for mode in self._sub_modes:
+            sub_plan = await mode.reset()
+            self._ctx.world_manager.forbid(sub_plan.forbidden_zones)
+            plan.merge(sub_plan)
+        return plan
+
+    async def tick(self, ended: Mapping[str, PhaseState], assigned: Collection[str]) -> None:
+        errors: list[Exception] = []
+        for mode in self._sub_modes:
+            try:
+                await mode.tick(
+                    {name: state for name, state in ended.items() if name in mode._ctx.robots},
+                    [name for name in assigned if name in mode._ctx.robots],
+                )
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]
 
     async def teardown(self) -> None:
         await asyncio.gather(*(m.teardown() for m in self._sub_modes))
-
-    @property
-    def start_poses(self) -> dict:
-        merged: dict = {}
-        for m in self._sub_modes:
-            merged.update(m.start_poses)
-        return merged
 
     @property
     async def done(self) -> bool:
@@ -94,9 +99,6 @@ class TM_Composite(TM_Robots):
 class TM_Null(TM_Robots):
     """Idle sink for unallocated robots."""
 
-    async def reset(self) -> None:
-        await super().reset()
-
     @property
     async def done(self) -> bool:
         return False
@@ -109,7 +111,7 @@ class TM_Null(TM_Robots):
 
 
 # TM_Null is registered here via a sentinel string because the
-# standard registry is keyed by the Constants.TaskMode.TM_Robots enum.
+# standard registry is keyed by the Modes.TM_Robots enum.
 _COMPOSITE_EXTRA: dict[str, typing.Any] = {}
 
 
@@ -137,5 +139,3 @@ __all__ = [
     "extra_tm_kinds",
     "get_extra_tm_loader",
 ]
-
-_ = (Namespace, Constants)

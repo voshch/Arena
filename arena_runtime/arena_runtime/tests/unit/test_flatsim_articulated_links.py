@@ -13,7 +13,7 @@ PREFIX = "env_0/"
 
 def _chest(root: Path):
     from arena_simulation_setup.tree.assets.Object import ObjectIdentifier, ObjectView
-    from task_generator.shared import Obstacle, Pose, Position
+    from arena_runtime.shared import Obstacle, Pose, Position
 
     bundle = root / "chest"
     for link, box in (("base", [[-0.3, 0.3], [-0.2, 0.2], [0.0, 0.4]]), ("lid", [[-0.3, 0.3], [-0.2, 0.2], [0.4, 0.42]])):

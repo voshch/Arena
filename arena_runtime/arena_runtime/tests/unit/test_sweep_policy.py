@@ -114,7 +114,7 @@ def test_reserve_stamps_reserved_at():
 
 def test_reserve_rejects_owned_namespace_until_freed():
     reg = EnvRegistry()
-    env_id, ns = reg.reserve(requested_ns="arena/env_7/task_generator_node", now=_time(sec=1))
+    env_id, ns = reg.reserve(requested_ns="arena/env_7/arena_env_node", now=_time(sec=1))
     with pytest.raises(ValueError, match="already owned"):
         reg.reserve(requested_ns=ns, now=_time(sec=2))
     assert reg.get(env_id + 1) is None

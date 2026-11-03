@@ -21,7 +21,7 @@ def on_flatsim():
         from arena_rclpy_mixins import ArenaMixinNode
         from arena_rclpy_mixins.shared import Namespace
         from arena_rclpy_mixins.spin import create_executor
-        from task_generator.manager.realizer import Realizer
+        from arena_runtime.env.realizer import Realizer
 
         from arena_runtime.sim.flatsim_simulator import FlatsimSimulator
         from flatsim.server import FlatsimServer

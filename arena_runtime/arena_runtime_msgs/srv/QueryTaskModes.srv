@@ -1,0 +1,5 @@
+---
+# Axis -> comma-separated registered modes.
+diagnostic_msgs/KeyValue[] modes
+# <axis>/<mode> -> the mode's param namespace.
+diagnostic_msgs/KeyValue[] namespaces

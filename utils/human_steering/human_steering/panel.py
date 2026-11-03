@@ -39,7 +39,7 @@ from human_steering.canvas import PED_HELD_RING_RGB, Canvas, Tool
 from human_steering.driver import RUN_THRESHOLD_MPS, Driver
 
 try:
-    from task_generator.simulators.human.gait import LIMITS, GaitGenerator
+    from arena_runtime.humans.gait import LIMITS, GaitGenerator
 except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
     GaitGenerator = None
     LIMITS = ()

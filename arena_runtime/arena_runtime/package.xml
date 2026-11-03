@@ -2,7 +2,7 @@
 <package format="3">
   <name>arena_runtime</name>
   <version>0.0.0</version>
-  <description>Arena-Rosnav runtime: owns the `arena_node` lifecycle node and the per-simulator adapters.</description>
+  <description>Simulator engine, world driver and the per-env node with its episode loop</description>
   <maintainer email="dev@voshch.dev">voshch</maintainer>
   <license>TODO</license>
 
@@ -29,6 +29,32 @@
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>arena_mujoco_msgs</exec_depend>
   <exec_depend>arena_mcp</exec_depend>
+  <exec_depend>arena_cam_msgs</exec_depend>
+  <exec_depend>interactive_markers</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>arena_assets</exec_depend>
+  <exec_depend>arena_bringup</exec_depend>
+  <exec_depend>arena_planners</exec_depend>
+  <exec_depend>arena_robots_msgs</exec_depend>
+  <exec_depend>arena_viz</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>arena_humansim</exec_depend>
+  <exec_depend>arena_humansim_msgs</exec_depend>
+  <exec_depend>rosidl_runtime_py</exec_depend>
+
+  <test_depend>python3-hypothesis</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

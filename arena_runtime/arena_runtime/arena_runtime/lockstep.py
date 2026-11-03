@@ -19,7 +19,7 @@ if typing.TYPE_CHECKING:
     import std_msgs.msg
     from arena_rclpy_mixins.Async import AsyncNode
 
-    from arena_runtime.arena_node import ArenaNode
+    from arena_runtime.arena_runtime_node import ArenaRuntimeNode
 
 
 class _Stamped(typing.Protocol):
@@ -123,7 +123,7 @@ class LockstepScheduler:
     """Owns the lockstep step/wait loop: holds the sim paused and steps it exactly one
     channel period at a time, gating on HARD channels' latest header.stamp."""
 
-    def __init__(self, node: ArenaNode) -> None:
+    def __init__(self, node: ArenaRuntimeNode) -> None:
         self._node = node
         self._config: LockstepConfig | None = None
         self._task: asyncio.Task | None = None

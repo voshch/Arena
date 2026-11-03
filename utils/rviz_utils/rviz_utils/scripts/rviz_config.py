@@ -28,7 +28,7 @@ from arena_robots.moveit_factory import build_moveit_params
 from arena_robots.Robot import RobotIdentifier
 from arena_viz import DisplayKind
 from rviz_display_control_msgs.msg import DisplaySet, DisplaySpec
-from task_generator_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
+from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 
 from rviz_utils.renderers import REGISTRY
 
@@ -58,7 +58,7 @@ class ConfigFileGenerator(ArenaMixinNode):
     _env_id: int
     _tf_namespace: str
 
-    def __init__(self, TASKGEN_NODE: str = '/task_generator_node'):
+    def __init__(self, TASKGEN_NODE: str = '/arena_env_node'):
         super().__init__('rviz_config_generator')
 
         self._TASKGEN_NODE = TASKGEN_NODE
@@ -345,7 +345,7 @@ class ConfigFileGenerator(ArenaMixinNode):
             content = file.read()
             # i'm lazy, bite me
             content = content.format(
-                task_generator_node=self._TASKGEN_NODE,
+                arena_env_node=self._TASKGEN_NODE,
                 fixed_frame=fixed_frame,
             )
             return yaml.safe_load(content)

@@ -72,7 +72,7 @@ async def system_runtime(
     args: Annotated[dict[str, ArgValue] | None, Field(description="further runtime launch arguments as {name: value}")] = None,
     headless: Annotated[bool, Field(description="headless:=true, which hides the simulator GUI")] = False,
 ) -> dict[str, Any]:
-    """Start `arena runtime` (sim and arena_node, no envs) as a job."""
+    """Start `arena runtime` (sim and arena_runtime_node, no envs) as a job."""
     tokens = launch_tokens({"sim": sim, "world": world, "headless": True if headless else None}, args)
     job = await cli.job("runtime", f"arena runtime {' '.join(tokens)}", "runtime", *tokens)
     return job.as_dict()
@@ -229,7 +229,7 @@ def node_log(root: Path, node: str, *, scan: int = 300) -> Path:
             handle.seek(max(0, path.stat().st_size - 65536))
             if logger.search(handle.read()):
                 return path
-    raise ToolError(f"no log of {node} among the {len(files)} newest files under {root}", hint="pass the node's base name, e.g. task_generator_node")
+    raise ToolError(f"no log of {node} among the {len(files)} newest files under {root}", hint="pass the node's base name, e.g. arena_env_node")
 
 
 @domain.tool(read_only=True)

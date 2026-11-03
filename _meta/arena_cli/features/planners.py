@@ -38,8 +38,7 @@ _SOAK_SUITE = {
             "map": "map_empty",
             "robot": "auto",
             "episodes": 2,
-            "tm_robots": "random",
-            "tm_obstacles": "random",
+            "modes": {"robots": "random", "obstacles": "random"},
             "config": {
                 "random": {
                     "dynamic": {"min": 4, "max": 6, "models": ["arenian"]},
@@ -58,8 +57,7 @@ _PREFLIGHT_STAGE = {
     "map": "map_empty",
     "robot": "auto",
     "episodes": 2,
-    "tm_robots": "scenario",
-    "tm_obstacles": "scenario",
+    "modes": {"robots": "scenario", "obstacles": "scenario"},
     "config": {"scenario": {"file": "preflight"}},
     "timeout": "20s",
 }

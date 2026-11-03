@@ -13,34 +13,34 @@ The auditory panel and the spawn microphone and spawn sound tools live in the
 
 ## Service contract
 
-All service paths are relative to the task_generator node namespace (default `/task_generator_node`, configurable via the RViz panel `Target` config key).
+All service paths are relative to the env node namespace (default `/arena_env_node`, configurable via the RViz panel `Target` config key).
 
 | Path | Type | Usage |
 |---|---|---|
-| `lifecycle/reset_episode` | `task_generator_msgs::srv::ResetEpisode` | Next button (after queue flush) |
+| `lifecycle/reset_episode` | `arena_runtime_msgs::srv::ResetEpisode` | Next button (after queue flush) |
 | `lifecycle/wait_for_world` | `std_srvs::srv::Empty` | Called after world param change |
-| `query/worlds` | `task_generator_msgs::srv::QueryWorlds` | Populate world combobox |
-| `query/robots` | `task_generator_msgs::srv::QueryRobots` | Populate robot combobox |
-| `query/environments` | `task_generator_msgs::srv::QueryEnvironments` | Populate environment list |
-| `query/parametrizeds` | `task_generator_msgs::srv::QueryParametrizeds` | Populate parametrized list |
-| `query/static_obstacles` | `task_generator_msgs::srv::QueryStaticObstacles` | Populate static model list |
-| `query/dynamic_obstacles` | `task_generator_msgs::srv::QueryDynamicObstacles` | Populate dynamic model list |
-| `query/scenarios` | `task_generator_msgs::srv::QueryScenarios` | Populate scenario list for current world |
-| `query/task_modes` | `task_generator_msgs::srv::QueryTaskModes` | Populate mode comboboxes (obstacles, robots, modules) |
-| `config/queue_episode` | `task_generator_msgs::srv::QueueEpisode` | Queue / Next buttons (modes, world, robots, per-mode params staged for next reset) |
-| `runtime/spawn_dynamic` | `task_generator_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
-| `runtime/spawn_robot` | `task_generator_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
+| `query/worlds` | `arena_runtime_msgs::srv::QueryWorlds` | Populate world combobox |
+| `query/robots` | `arena_runtime_msgs::srv::QueryRobots` | Populate robot combobox |
+| `query/environments` | `arena_runtime_msgs::srv::QueryEnvironments` | Populate environment list |
+| `query/parametrizeds` | `arena_runtime_msgs::srv::QueryParametrizeds` | Populate parametrized list |
+| `query/static_obstacles` | `arena_runtime_msgs::srv::QueryStaticObstacles` | Populate static model list |
+| `query/dynamic_obstacles` | `arena_runtime_msgs::srv::QueryDynamicObstacles` | Populate dynamic model list |
+| `query/scenarios` | `arena_runtime_msgs::srv::QueryScenarios` | Populate scenario list for current world |
+| `query/task_modes` | `arena_runtime_msgs::srv::QueryTaskModes` | Populate the mode comboboxes from `modes` (axes `obstacles` and `robots`) |
+| `config/queue_episode` | `arena_runtime_msgs::srv::QueueEpisode` | Queue / Next buttons (`modes`, world, full-name `params` staged for next reset) |
+| `runtime/spawn_dynamic` | `arena_runtime_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
+| `runtime/spawn_robot` | `arena_runtime_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
 | `/arena/sim_lifecycle/hold` (absolute) | `arena_runtime_msgs::srv::LifecycleHold` | Pause button: acquires and releases the panel's own hold |
 
 ### Latched topics consumed
 
 | Topic | Type | Usage |
 |---|---|---|
-| `state/episode` | `task_generator_msgs::msg::EpisodeRecord` | Current episode. Subscribers dedup by `episode_id` (same id may be republished as outcome resolves) and feed the panel's local `history_buffer_` (ring of 50, oldest-first) plus the current/bold row. |
-| `state/queue` | `task_generator_msgs::msg::EpisodeRecord` | Queued (next) episode. On arrival the panel populates widgets via `populateFromQueue` (signal-blocked) and clears dirty flags. Drives the "Next:" preview row when it differs from current. |
+| `state/episode` | `arena_runtime_msgs::msg::EpisodeRecord` | Current episode. Subscribers dedup by `episode_id` (same id may be republished as outcome resolves) and feed the panel's local `history_buffer_` (ring of 50, oldest-first) plus the current/bold row. |
+| `state/queue` | `arena_runtime_msgs::msg::EpisodeRecord` | Queued (next) episode. On arrival the panel populates widgets via `populateFromQueue` (signal-blocked) and clears dirty flags. Drives the "Next:" preview row when it differs from current. |
 | `/arena/state/holders` (absolute) | `arena_runtime_msgs::msg::HoldRegistry` | Drives the pause button label: paused while the panel's own hold is listed. |
 | `state/resetting` | `std_msgs::msg::Bool` | True while `_run_reset_cycle` holds the reset lock. The world generator panel disables "+Deploy" while it is set. |
-| `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == task_generator_node`; if any changed/new/deleted parameter starts with `task.<active_mode>.`, rebuilds the matching family's param tree on the Qt thread. |
+| `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == arena_env_node`; if any changed/new/deleted parameter starts with the active mode's namespace, rebuilds the matching family's param tree on the Qt thread. |
 
 ## SpawnPedestrianTool
 
@@ -62,7 +62,7 @@ A single Pause/Unpause button backed by the runtime's ref-counted holds. Pause a
 
 The panel maintains a local `history_buffer_` (`std::deque<EpisodeRecord>`, max 50) deduped by `episode_id`. On every `state/episode` arrival the record is upserted into the buffer and the table is rebuilt:
 
-- Each finalized record is shown oldest-first: `episode_id`, `world`, `seed`, `outcome_state` (QUEUED/RUNNING/SUCCESS/FAILED/SKIPPED/FATAL), `outcome_info`. The `outcome_info` cell is live: tasks may republish it mid-episode (e.g. `"timeout after 120s"`, `"50% complete"`) via `Task.set_info(text)` and the panel will refresh on the next latched message.
+- Each finalized record is shown oldest-first: `episode_id`, `world`, `seed`, `outcome_state` (QUEUED/RUNNING/SUCCESS/FAILED/SKIPPED/FATAL), `outcome_info`. The `outcome_info` cell is live: tasks may republish it mid-episode (e.g. `"timeout after 120s"`, `"50% complete"`) via `EpisodeNode.set_episode_info(text)` and the panel will refresh on the next latched message.
 - The current episode (`last_current_episode_`) appears as the last (bottom) row in bold.
 - A "Next:" preview row is appended (italic) when `last_queued_episode_` differs meaningfully from current (world, modes, robots, or any param).
 
@@ -79,15 +79,15 @@ Two tabs (Obstacles, Robots) hold the only TM controls:
 - **Obstacles tab** has a task-mode combobox (`Environment` / `Parametrized` / `Random` / `Scenario` / `Prompt`) and per-mode parameter widgets. Combobox change marks `tm_obstacles_dirty_`, rebuilds the param tree, and updates Discard/Queue enabled state. No service call until Queue / Next fires.
 - **Robots tab** has a task-mode combobox (`Explore` / `Guided` / `Random` / `Scenario`). Combobox change marks `tm_robots_dirty_`, rebuilds the param tree, and updates Discard/Queue enabled state. No service call until Queue / Next fires.
 
-Server validates the string values against the Python enum on the eventual `QueueEpisode` call. On rejection, a `WARN` is logged with the server's `error_msg`.
+The runtime validates the selected mode names on the eventual `QueueEpisode` call. On rejection, a `WARN` is logged with the server's `error_msg`.
 
 ### Per-mode parameter staging
 
-All edits are batched locally (no live push). On Queue / Next, `buildQueueEpisodeRequest` packages current widget state into a single `config/queue_episode` request: `tm_robots`, `tm_obstacles` (lowercased), `world`, `robots = [selected_robot_model]`, plus per-mode `obstacles_params` and `robots_params` (each a `rcl_interfaces/Parameter` with a leaf-keyed name relative to the mode, e.g. `scenario.file`, `static.n`). `QueueEpisode` is per-field merge with `action = MERGE`: empty scalar fields preserve previously-queued overrides; `robots` unions with prior queued set (dedup, insertion order). The server stages everything and applies at the next `lifecycle/reset_episode` boundary.
+All edits are batched locally (no live push). On Queue / Next, `buildQueueEpisodeRequest` packages current widget state into a single `config/queue_episode` request: `modes` (axes `obstacles` and `robots`, mode names lowercased), `world`, `robots = [selected_robot_model]`, plus `params` (each a `rcl_interfaces/Parameter` named by its full name, the mode's namespace followed by the leaf, e.g. `task.scenario.file`, the namespace as `query/task_modes` reports it in `namespaces`). The panel strips the same namespace from `EpisodeRecord.params` to fill the widgets. `QueueEpisode` is per-field merge with `action = MERGE`: empty scalar fields preserve previously-queued overrides; `robots` unions with prior queued set (dedup, insertion order). The server stages everything and applies at the next `lifecycle/reset_episode` boundary.
 
 ### Mode combobox population
 
-The GUI uses `query/task_modes` to populate the Obstacles and Robots comboboxes at startup. The comboboxes stay in sync automatically when new task modes are registered on the server side. Since `walk_schemas` declares all `task.<mode>.*` params at node startup, the param tree can be rebuilt against any mode without first switching the active mode.
+The GUI uses `query/task_modes` to populate the Obstacles and Robots comboboxes at startup and keeps its `namespaces` (`<axis>/<mode>` to param namespace): param trees are built under, and leaves queued under, the selected mode's namespace. The comboboxes stay in sync automatically when new task modes are registered on the server side. Since the env declares every registered mode's params at node startup, the param tree can be rebuilt against any mode without first switching the active mode.
 
 ## Cold start
 

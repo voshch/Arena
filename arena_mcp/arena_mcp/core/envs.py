@@ -24,7 +24,7 @@ async def env_table(*, timeout: float = 2.0) -> list[dict[str, Any]]:
 
 async def _unmanaged() -> list[str]:
     graph = await ROS.graph()
-    return [name for name in graph["nodes"] if name.rsplit("/", 1)[-1] == "task_generator_node"]
+    return [name for name in graph["nodes"] if name.rsplit("/", 1)[-1] == "arena_env_node"]
 
 
 async def tg(env_id: int | None = None) -> str:
@@ -60,7 +60,7 @@ async def env_ns(env_id: int | None = None) -> str:
 
 async def fleet(env_id: int | None = None) -> list[dict[str, Any]]:
     """The live robots of an env: name, model, namespace, frames and caps."""
-    from task_generator_msgs.msg import RobotFleet
+    from arena_runtime_msgs.msg import RobotFleet
 
     node = await tg(env_id)
     msg = await ROS.latest(RobotFleet, f"{node}/state/robots", qos=LATCHED, hint="the env has not finished its first reset")

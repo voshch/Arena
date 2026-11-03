@@ -1,0 +1,268 @@
+"""Interpolation and pedestrian conversion of the engine's AgentFrame."""
+
+from __future__ import annotations
+
+import math
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("rclpy")
+
+from arena_humansim.core.interaction_kinds import InteractionType
+from arena_humansim_msgs.msg import AgentFrame, AgentGestures, AgentMeta, AgentState, Gesture
+from geometry_msgs.msg import Point
+from arena_runtime.env.realizer import Realizer
+from arena_runtime.humans.arena_humansim.arena_humansim import ArenaHumanSimulator, Seat, SeatHold
+from arena_runtime.humans.profile import default_profile
+from arena_runtime.humans.support import Support
+
+INTERPOLATED = {"header", "x", "y", "theta", "vx", "vy", "gait_phase"}
+
+
+def _frame(sec: int, nanosec: int = 0, **columns: list) -> AgentFrame:
+    msg = AgentFrame(**columns)
+    msg.header.stamp.sec = sec
+    msg.header.stamp.nanosec = nanosec
+    return msg
+
+
+def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0), engine_stamp_ns: int | None = None, teleport_stamps: dict[int, int] | None = None) -> ArenaHumanSimulator:
+    adapter = object.__new__(ArenaHumanSimulator)
+    adapter._teleport_stamps = dict(teleport_stamps or {})
+    adapter._prev_agent_states = prev
+    adapter._curr_agent_states = curr
+    adapter._engine_stamp_ns = engine_stamp_ns
+    adapter._agent_gestures = {}
+    adapter._agent_names = {}
+    adapter._agent_types = {}
+    adapter._agent_type_paths = {}
+    adapter._pose_profiles = {}
+    adapter._seats = {}
+    adapter._seat_holds = {}
+    adapter._realizer = Realizer(Realizer._Configuration(x=origin[0], y=origin[1], prefix="env_0"))
+    return adapter
+
+
+def test_lerp_preserves_every_uninterpolated_field() -> None:
+    filled = {
+        "agent_id": [7],
+        "desired_velocity": [1.4],
+        "radius": [0.37],
+        "kind": [AgentState.KIND_HUMAN],
+        "animation_state": [2],
+        "policy_idx": [3],
+        "gait_cadence": [1.3],
+    }
+    prev = _frame(0, x=[0.0], y=[0.0], theta=[0.0], vx=[1.0], vy=[0.0], gait_phase=[1.0], **filled)
+    curr = _frame(1, x=[2.0], y=[0.0], theta=[0.0], vx=[1.0], vy=[0.0], gait_phase=[3.0], **filled)
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.5e9))
+
+    for field in AgentFrame.get_fields_and_field_types():
+        if field in INTERPOLATED:
+            continue
+        assert getattr(lerped, field) == getattr(curr, field), f"{field} was dropped by the lerp"
+    assert lerped.x[0] == pytest.approx(1.0)
+    assert lerped.gait_phase[0] == pytest.approx(2.0)
+
+
+def test_lerp_gait_phase_by_id_and_passes_cadence_from_curr() -> None:
+    prev = _frame(0, agent_id=[3, 1], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0], gait_phase=[6.0, 1.0], gait_cadence=[0.9, 0.8])
+    curr = _frame(1, agent_id=[1, 2, 3], x=[0.0, 0.0, 0.0], y=[0.0, 0.0, 0.0], theta=[0.0, 0.0, 0.0], vx=[0.0, 0.0, 0.0], vy=[0.0, 0.0, 0.0], gait_phase=[2.0, 5.0, 8.0], gait_cadence=[1.1, 1.2, 1.3])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.25e9))
+
+    assert list(lerped.gait_phase) == pytest.approx([1.25, 5.0, 6.5])
+    assert list(lerped.gait_cadence) == pytest.approx([1.1, 1.2, 1.3])
+
+
+def test_lerp_leaves_gait_phase_alone_when_a_frame_lacks_it() -> None:
+    prev = _frame(0, agent_id=[1], x=[0.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    curr = _frame(1, agent_id=[1], x=[2.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0], gait_phase=[4.0], gait_cadence=[1.0])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.5e9))
+
+    assert list(lerped.gait_phase) == [4.0]
+    assert list(lerped.gait_cadence) == [1.0]
+    assert lerped.x[0] == pytest.approx(1.0)
+
+
+def test_lerp_aligns_by_id_and_passes_new_agents_through() -> None:
+    prev = _frame(0, agent_id=[3, 1], x=[30.0, 10.0], y=[-3.0, -1.0], theta=[0.3, 0.1], vx=[3.0, 1.0], vy=[0.0, 0.0])
+    curr = _frame(1, agent_id=[1, 2, 3], x=[12.0, 20.0, 34.0], y=[-1.0, -2.0, -5.0], theta=[0.1, 0.2, 0.3], vx=[2.0, 5.0, 4.0], vy=[1.0, 6.0, 2.0])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.25e9))
+
+    assert list(lerped.agent_id) == [1, 2, 3]
+    assert list(lerped.x) == pytest.approx([10.5, 20.0, 31.0])
+    assert list(lerped.y) == pytest.approx([-1.0, -2.0, -3.5])
+    assert list(lerped.vx) == pytest.approx([1.25, 5.0, 3.25])
+    assert list(lerped.vy) == pytest.approx([0.25, 6.0, 0.5])
+    assert list(lerped.theta) == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_lerp_snaps_an_agent_teleported_after_the_prev_frame() -> None:
+    prev = _frame(0, agent_id=[1, 2], x=[10.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    curr = _frame(1, agent_id=[1, 2], x=[40.0, 2.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    adapter = _adapter(prev, curr, teleport_stamps={1: int(0.5e9)})
+    lerped = adapter._interpolate_agent_states(int(0.5e9))
+
+    assert list(lerped.x) == pytest.approx([40.0, 1.0])
+    assert adapter._teleport_stamps == {1: int(0.5e9)}
+
+
+def test_lerp_forgets_a_teleport_once_the_prev_frame_is_past_it() -> None:
+    prev = _frame(1, agent_id=[1], x=[40.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    curr = _frame(2, agent_id=[1], x=[42.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    adapter = _adapter(prev, curr, teleport_stamps={1: int(0.5e9)})
+    lerped = adapter._interpolate_agent_states(int(1.5e9))
+
+    assert list(lerped.x) == pytest.approx([41.0])
+    assert adapter._teleport_stamps == {}
+
+
+def test_lerp_takes_the_short_way_across_pi() -> None:
+    prev = _frame(0, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[3.0, -3.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    curr = _frame(1, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[-3.0, 3.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.5e9))
+
+    step = 2.0 * math.pi - 6.0
+    assert list(lerped.theta) == pytest.approx([3.0 + 0.5 * step, -3.0 - 0.5 * step])
+
+
+def test_lerp_stamps_the_lerped_pose_time() -> None:
+    columns = {"agent_id": [1], "x": [0.0], "y": [0.0], "theta": [0.0], "vx": [0.0], "vy": [0.0]}
+    adapter = _adapter(_frame(4, 950_000_000, **columns), _frame(5, 50_000_000, **columns))
+
+    lerped = adapter._interpolate_agent_states(5 * 10**9)
+    assert (lerped.header.stamp.sec, lerped.header.stamp.nanosec) == (5, 0)
+    assert lerped.header.frame_id == "map"
+
+    clamped = adapter._interpolate_agent_states(6 * 10**9)
+    assert (clamped.header.stamp.sec, clamped.header.stamp.nanosec) == (5, 50_000_000)
+
+
+def test_lerp_without_prev_returns_curr() -> None:
+    curr = _frame(1, agent_id=[1], x=[1.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    assert _adapter(None, curr)._interpolate_agent_states(0) is curr
+
+
+def test_gestures_attach_to_their_owner_in_env_frame() -> None:
+    adapter = _adapter(origin=(100.0, 50.0))
+    adapter._agent_names = {2: "env_0/ped_2"}
+    adapter._agent_gestures_callback(
+        AgentGestures(
+            agent_id=[2, 1, 2],
+            gestures=[
+                Gesture(slot="head", at=Point(x=1.0, y=2.0, z=1.6)),
+                Gesture(slot="arm", at=Point(x=3.0, y=4.0, z=1.0), hand="l"),
+                Gesture(slot="body", at=Point(x=5.0, y=6.0), clip="hug", render_pose_override=True),
+            ],
+        )
+    )
+    frame = _frame(1, agent_id=[1, 2, 3], x=[0.0, 1.0, 2.0], y=[0.0, 1.0, 2.0], theta=[0.0, math.pi / 2, 0.0], vx=[0.5, 0.0, 0.0], vy=[0.0, 0.25, 0.0], animation_state=[1, 2, 0])
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+
+    assert [(g.slot, g.at.x, g.at.y, g.hand) for g in peds[1].gestures] == [("arm", 103.0, 54.0, "l")]
+    assert [(g.slot, g.at.x, g.at.y, g.at.z, g.clip) for g in peds[2].gestures] == [("head", 101.0, 52.0, 1.6, ""), ("body", 105.0, 56.0, 0.0, "hug")]
+    assert peds[3].gestures == []
+
+    assert (peds[1].pose.position.x, peds[1].pose.position.y) == (100.0, 50.0)
+    assert (peds[2].pose.position.x, peds[2].pose.position.y) == (105.0, 56.0)
+    assert (peds[3].pose.position.x, peds[3].pose.position.y) == (102.0, 52.0)
+    assert peds[2].pose.orientation.z == pytest.approx(math.sin(math.pi / 4))
+    assert (peds[1].twist.linear.x, peds[2].twist.linear.y) == (0.5, 0.25)
+    assert [peds[i].animation_state for i in (1, 2, 3)] == [1, 2, 0]
+    assert [peds[i].name for i in (1, 2, 3)] == ["1", "env_0/ped_2", "3"]
+
+
+def test_gestures_replace_on_each_update() -> None:
+    adapter = _adapter()
+    adapter._agent_gestures_callback(AgentGestures(agent_id=[1], gestures=[Gesture(slot="head")]))
+    adapter._agent_gestures_callback(AgentGestures())
+    frame = _frame(1, agent_id=[1], x=[0.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0], animation_state=[0])
+    assert adapter._agent_states_to_pedestrians(frame).pedestrians[0].gestures == []
+
+
+def test_flow_obstacle_reads_pose_and_desired_velocity() -> None:
+    adapter = _adapter(origin=(10.0, -5.0))
+    frame = _frame(1, agent_id=[4, 9], x=[1.0, 2.0], y=[3.0, 4.0], desired_velocity=[1.1, 1.3])
+    obs = adapter._make_flow_dynamic_obstacle(frame, 1, "Hospital/nurse_female_caucasian_young")
+
+    assert obs.name == "flow_9"
+    assert (obs.model.domain, obs.model.name) == ("Hospital", "nurse_female_caucasian_young")
+    assert obs.sim_path == "env_0/flow_9"
+    assert (obs.pose.position.x, obs.pose.position.y) == (12.0, -1.0)
+    assert obs.velocity == 1.3
+
+
+def test_pedestrians_carry_gait_phase_cadence_and_agent_type() -> None:
+    adapter = _adapter()
+    adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2], name=["a", "b"], handedness=["", "l"], agent_type=["elder", ""]))
+    frame = _frame(1, agent_id=[1, 2, 3], x=[0.0, 0.0, 0.0], y=[0.0, 0.0, 0.0], theta=[0.0, 0.0, 0.0], vx=[0.0, 0.0, 0.0], vy=[0.0, 0.0, 0.0], animation_state=[1, 1, 0], gait_phase=[2.5, 0.0, 7.0], gait_cadence=[1.2, 0.0, 1.9])
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+
+    assert [peds[i].gait_phase for i in (1, 2, 3)] == pytest.approx([2.5, 0.0, 7.0])
+    assert [peds[i].gait_cadence for i in (1, 2, 3)] == pytest.approx([1.2, 0.0, 1.9])
+    assert [peds[i].agent_type for i in (1, 2, 3)] == ["elder", "", ""]
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[3], name=["c"], handedness=[""], agent_type=["robot"]))
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+    assert [peds[i].agent_type for i in (1, 2, 3)] == ["", "", "robot"]
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2], name=["a", "b"], handedness=["", ""]))
+    assert adapter._agent_types == {1: "", 2: ""}
+
+
+def test_path_based_agent_type_resolves_its_pose_profile_from_the_file(tmp_path: Path) -> None:
+    named = tmp_path / "rider.yaml"
+    named.write_text("name: watcher\nextends: wheelchair_manual\n")
+    unnamed = tmp_path / "roller.yaml"
+    unnamed.write_text("extends: wheelchair_manual\n")
+    adapter = _adapter()
+    for agent_type in (str(named), str(unnamed), "elder", str(tmp_path / "missing.yaml")):
+        adapter._remember_agent_type_path(agent_type)
+    assert adapter._agent_type_paths == {"watcher": str(named), "roller": str(unnamed)}
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2, 3], name=["a", "b", "c"], handedness=["", "", ""], agent_type=["watcher", "roller", "elder"]))
+    frame = _frame(1, agent_id=[1, 2, 3], x=[0.0, 0.0, 0.0], y=[0.0, 0.0, 0.0], theta=[0.0, 0.0, 0.0], vx=[0.0, 0.0, 0.0], vy=[0.0, 0.0, 0.0], animation_state=[1, 1, 1])
+    peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
+    assert [peds[i].agent_type for i in (1, 2, 3)] == [str(named), str(unnamed), "elder"]
+
+    seated = adapter._pose_profile_for("wheelchair_manual")
+    assert seated != default_profile()
+    assert adapter._pose_profile_for(peds[1].agent_type) == seated
+    assert adapter._pose_profile_for(peds[2].agent_type) == seated
+
+
+def test_pedestrians_default_gait_fields_when_the_frame_has_none() -> None:
+    frame = _frame(1, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0], animation_state=[1, 1])
+    peds = _adapter()._agent_states_to_pedestrians(frame).pedestrians
+    assert [(p.gait_phase, p.gait_cadence, p.agent_type) for p in peds] == [(0.0, 0.0, ""), (0.0, 0.0, "")]
+
+
+def test_agents_parked_on_their_held_seat_rest_on_it() -> None:
+    adapter = _adapter()
+    adapter._seats = {"env_0/bed": [Seat(x=2.0, y=0.0, height=0.6)], "env_0/stool": [Seat(x=-2.0, y=0.0, height=math.nan)]}
+    adapter._seat_holds = {1: SeatHold(InteractionType.LIE_ON, "env_0/bed", 0), 2: SeatHold(InteractionType.LIE_ON, "env_0/bed", 0), 3: SeatHold(InteractionType.SIT_ON, "env_0/stool", 0)}
+    frame = _frame(1, agent_id=[1, 2, 3, 4], x=[2.0, 2.5, -2.0, 2.0], y=[0.01, 0.0, 0.0, 0.0], theta=[0.0] * 4, vx=[0.0] * 4, vy=[0.0] * 4, animation_state=[0] * 4)
+    peds = adapter._agent_states_to_pedestrians(frame).pedestrians
+    assert {ped.id: adapter._support(ped) for ped in peds} == {1: Support("lie", 0.6), 2: None, 3: None, 4: None}
+
+
+def test_roster_after_removal_covers_the_engines_last_frame() -> None:
+    adapter = _adapter(engine_stamp_ns=5216 * int(1e9) + 778_000_000)
+    peds = adapter._agent_states_to_pedestrians(adapter._interpolate_agent_states(5216 * int(1e9) + 811_300_000))
+
+    assert (peds.header.stamp.sec, peds.header.stamp.nanosec) == (5216, 778_000_000)
+    assert peds.header.frame_id == "map"
+    assert list(peds.pedestrians) == []
+
+
+def test_no_roster_before_the_engine_has_published() -> None:
+    assert _adapter()._interpolate_agent_states(int(1e9)) is None
+
+
+def test_lerp_snaps_a_jump_its_speed_cannot_explain_and_sweeps_a_fast_walk() -> None:
+    prev = _frame(0, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[1.0, 4.0], vy=[0.0, 0.0])
+    curr = _frame(0, int(0.5e9), agent_id=[1, 2], x=[20.0, 2.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[1.0, 4.0], vy=[0.0, 0.0])
+    lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.25e9))
+
+    assert list(lerped.x) == pytest.approx([20.0, 1.0])

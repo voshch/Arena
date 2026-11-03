@@ -80,6 +80,5 @@ arena_mujoco:  run_mujoco.launch.py                           (MuJoCo server)
    delegating to `arena feature <name> launch`.
 3. The new key appears in `launch_simulator.keys` automatically, so the
    `simulator` argument's `choices` list updates without extra changes.
-4. Add the corresponding `Constants.SimSimulator.<NAME>` entry in
-   `task_generator/task_generator/constants/__init__.py` if the task-generator
-   needs to branch on it.
+4. Add the corresponding `SimSimulator.<NAME>` entry in
+   [`arena_bringup/constants.py`](../../../arena_bringup/constants.py).

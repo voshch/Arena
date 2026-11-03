@@ -9,7 +9,7 @@ import attrs
 
 import pytest
 
-pytest.importorskip("task_generator.shared")
+pytest.importorskip("arena_runtime.shared")
 pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402

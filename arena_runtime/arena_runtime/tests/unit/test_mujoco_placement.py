@@ -14,7 +14,7 @@ _DOWNSTAIRS = (1.0 + 3.0, 2.0 + 4.0)
 
 
 def _realizer(stacked: bool):
-    from task_generator.manager.realizer import Realizer
+    from arena_runtime.env.realizer import Realizer
 
     realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0, prefix="world"))
     realizer.reset_level_origins({"0": (0.0, 0.0), "1": (17.0, 0.0)})
@@ -90,7 +90,7 @@ def test_light_fixtures_and_points_take_the_shift_of_the_level_holding_them(on_m
 
 
 def test_a_robot_upstairs_asks_once_for_the_inverse_shift_and_one_downstairs_never(on_mujoco_sim):
-    from task_generator.shared import Pose, Position
+    from arena_runtime.shared import Pose, Position
 
     async def body(sim) -> None:
         sim._track_level("jackal", Pose(position=Position(*_UPSTAIRS, 0.0)))

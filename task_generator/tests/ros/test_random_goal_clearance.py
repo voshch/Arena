@@ -7,9 +7,9 @@ import pytest
 
 try:
     from arena_rclpy_mixins.Time import Time
-    from task_generator.manager.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
-    from task_generator.manager.world_manager.world_manager import _occupancy_to_available, _sample_from_candidates
-    from task_generator.shared import Position
+    from arena_runtime.env.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
+    from arena_runtime.env.world_manager.world_manager import _occupancy_to_available, _sample_from_candidates
+    from arena_runtime.shared import Position
     from task_generator.tasks.robots.random.impl import goal_clearance
 except ImportError:
     pytestmark = pytest.mark.skip(reason="ROS2 not available")

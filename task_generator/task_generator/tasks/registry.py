@@ -7,7 +7,7 @@ from arena_rclpy_mixins.shared import Namespace
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.World import WorldIdentifier
 
-from task_generator.constants import Constants
+from task_generator.modes import Modes
 from task_generator.tasks.mode import Namespaced
 
 if typing.TYPE_CHECKING:
@@ -47,7 +47,7 @@ class TaskModeMeta:
 
 
 class TaskModeRegistry[K, V]:
-    """Lazy class registry with eager per-key metadata. Meta is registry-side (not class-side like AdapterMeta/BringupMeta) because `walk_schemas` reads it before any impl is imported."""
+    """Lazy class registry with eager per-key metadata. Meta is registry-side (not class-side like AdapterMeta/BringupMeta) because the layer reads it before any impl is imported."""
 
     def __init__(self) -> None:
         self._classes: ClassRegistry[K, V] = ClassRegistry()
@@ -78,19 +78,6 @@ class TaskModeRegistry[K, V]:
         return key in self._classes
 
 
-ROBOTS_MODES: TaskModeRegistry[Constants.TaskMode.TM_Robots, type["TM_Robots"]] = TaskModeRegistry()
-OBSTACLES_MODES: TaskModeRegistry[Constants.TaskMode.TM_Obstacles, type["TM_Obstacles"]] = TaskModeRegistry()
-MODULE_MODES: TaskModeRegistry[Constants.TaskMode.TM_Module, type["TM_Module"]] = TaskModeRegistry()
-
-
-def _walk_registry_schemas[K, V](node: "ROSParamServer", reg: TaskModeRegistry[K, V]) -> None:
-    for key in reg.keys():
-        meta = reg.meta(key)
-        if meta.schema is not None:
-            meta.schema(node, meta.namespace)
-
-
-def walk_schemas(node: "ROSParamServer") -> None:
-    _walk_registry_schemas(node, MODULE_MODES)
-    _walk_registry_schemas(node, OBSTACLES_MODES)
-    _walk_registry_schemas(node, ROBOTS_MODES)
+ROBOTS_MODES: TaskModeRegistry[Modes.TM_Robots, type["TM_Robots"]] = TaskModeRegistry()
+OBSTACLES_MODES: TaskModeRegistry[Modes.TM_Obstacles, type["TM_Obstacles"]] = TaskModeRegistry()
+MODULE_MODES: TaskModeRegistry[Modes.TM_Module, type["TM_Module"]] = TaskModeRegistry()

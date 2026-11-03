@@ -472,6 +472,10 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         self._stale.add(identifier)
         return candidate
 
+    @staticmethod
+    def _off() -> bool:
+        return os.environ.get('ARENA_ASSETS_NET') == 'off'
+
     @classmethod
     async def check_output_async(cls, args: Iterable[str], **kwargs: typing.Any) -> bytes:
         return await _subprocess_output(list(args), **kwargs)
@@ -543,6 +547,8 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
                         fut.set_result(None)
 
     async def resolve(self, identifier: IdentifierT) -> Path | None:
+        if self._off():
+            return None
         if identifier in self._cache:
             return self._cache[identifier]
 
@@ -576,6 +582,8 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         return bool(stamp) and time.time() - stamp < self._ttl
 
     async def locate(self, identifier: IdentifierT) -> Path | None:
+        if self._off():
+            return None
         candidate = self.path / identifier.relpath()
         if self._fresh(candidate):
             return candidate
@@ -685,11 +693,15 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         List all assets available. When *network* is True, also queries the
         remote provider (bucket listing cached on disk for ARENA_MODELS_TTL seconds).
         """
+        if self._off():
+            return
         yield from super(SimplePathResolver, self).listall(**kwargs)
         if network:
             yield from self._parse_listing(self._listing())
 
     async def listall_async(self, *, network: bool = False, **kwargs: bool) -> list[IdentifierT]:
+        if self._off():
+            return []
         result = await super(SimplePathResolver, self).listall_async(**kwargs)
         if network:
             result.extend(self._parse_listing(await self._listing_async()))

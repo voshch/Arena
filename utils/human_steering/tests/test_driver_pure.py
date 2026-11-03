@@ -300,7 +300,7 @@ def test_empty_manifest_due_only_on_nonempty_to_empty_transition() -> None:
 
 
 def test_viz_matches_node_ns_or_env_ns_or_basename() -> None:
-    node_ns = "/arena/env_0/task_generator_node"
+    node_ns = "/arena/env_0/arena_env_node"
     assert _viz_matches(node_ns, node_ns)
     assert _viz_matches(node_ns, "/arena/env_0")
     assert _viz_matches(node_ns, "arena/env_0")

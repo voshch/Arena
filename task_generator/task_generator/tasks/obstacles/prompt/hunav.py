@@ -22,6 +22,8 @@ from task_generator.tasks.mode import TaskModeKwargs
 os.environ["PYGLET_HEADLESS"] = "true"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.task_api import HunavDynamicObstacle
+from arena_runtime.shared import WORLD_ENTITY_PREFIX
 from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.entities import WAYPOINT_MODES
 from arena_simulation_setup.tree.World import Level, WorldIdentifier, describe, zones_of
@@ -40,8 +42,6 @@ from arena_text_crowd.crowd_generation_pipeline.velocity_field_generation.veloci
 )
 from hunav_msgs.srv import SetArenaWorldBounds, SetVelocityField
 
-from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
-from task_generator.simulators.human.hunav.agent import HunavDynamicObstacle
 from task_generator.tasks.obstacles import (
     DynamicObstacle,
     Obstacle,
@@ -251,7 +251,8 @@ class TM_Prompt(TM_Obstacles):
         req = SetVelocityField.Request()
         req.velocity_field = msg
 
-        response: SetVelocityField.Response = self.velocity_field_client.call(req)
+        response = self.velocity_field_client.call(req)
+        assert response is not None
 
         return response
 
@@ -279,7 +280,8 @@ class TM_Prompt(TM_Obstacles):
         req = SetArenaWorldBounds.Request()
         req.arena_world_bounds = msg
 
-        response: SetArenaWorldBounds.Response = self.arena_world_bounds_client.call(req)
+        response = self.arena_world_bounds_client.call(req)
+        assert response is not None
 
         return response, x_min, y_min, x_max, y_max
 

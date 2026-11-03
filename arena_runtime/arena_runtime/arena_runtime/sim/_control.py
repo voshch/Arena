@@ -8,10 +8,9 @@ from collections.abc import Sequence
 import launch_ros.actions
 import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+from arena_bringup.constants import SimSimulator
 from arena_robots.assembly import ResolvedAssembly
 from arena_robots.catalog import Catalog, render_effective_control
-
-from arena_runtime.constants import SimSimulator
 
 if typing.TYPE_CHECKING:
     from arena_robots.Robot import RobotView

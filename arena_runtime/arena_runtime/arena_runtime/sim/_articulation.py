@@ -12,7 +12,8 @@ import geometry_msgs.msg
 import numpy as np
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier, ObjectView
 from arena_simulation_setup.utils.articulation import Articulation, Joint, JointType, Material, Values
-from task_generator.shared import Obstacle, Pose, Position
+
+from arena_runtime.shared import Obstacle, Pose, Position
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared import Light

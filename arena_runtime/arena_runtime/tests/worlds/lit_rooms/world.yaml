@@ -1,0 +1,18 @@
+format: arena-world/2
+schedules:
+- name: power
+  semantics:
+  - preset: schedule
+    params: {windows: [{start: 20, end: 40, value: out}], regime: blackout}
+levels:
+- id: '0'
+  zones:
+  - name: hall
+    polygon: [[0.0, 0.0], [8.0, 0.0], [8.0, 6.0], [0.0, 6.0]]
+    floor: Oak_Planks
+    ceiling: {height: 2.6, lights: {cct_K: 4000.0, light_on: '!blackout'}}
+  walls:
+  - {path: [[0.0, 0.0], [8.0, 0.0], [8.0, 6.0], [0.0, 6.0]], closed: true}
+  lights:
+  - {name: ambient, fixture: dome, lux: 5.0}
+  - {name: exit_strip, fixture: tube, pose: {x: 7.8, y: 3.0, z: 2.2}, lumens: 300.0, light_on: blackout}

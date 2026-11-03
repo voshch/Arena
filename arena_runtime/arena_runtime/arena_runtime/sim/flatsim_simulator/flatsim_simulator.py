@@ -1,6 +1,6 @@
 """
-FlatsimHost is constructed once by arena_node and owns process-singleton resources for flatsim: the lifecycle (pause/unpause/step/cleanup) over the control clients of the server, which owns /clock.
-FlatsimSimulator is per-env on task_generator_node and mirrors env-namespace state (robots, outlines, discs and boxes under the env prefix) into the one world of that server.
+FlatsimHost is constructed once by arena_runtime_node and owns process-singleton resources for flatsim: the lifecycle (pause/unpause/step/cleanup) over the control clients of the server, which owns /clock.
+FlatsimSimulator is per-env on arena_env_node and mirrors env-namespace state (robots, outlines, discs and boxes under the env prefix) into the one world of that server.
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from arena_simulation_setup.tree.Wall import WallSegment
 from flatsim_msgs.msg import Box, Disc, Discs, EntityPose, EntityPoses, Fan, Outline, Ring, SensorSpec
 from flatsim_msgs.msg import Floor as FloorMsg
 from flatsim_msgs.srv import AddFloors, AddOutlines, ControlWorld, DeleteEntities, DeletePrefix, DeleteRobot, Republish, SetRobotPose, SpawnBoxes, SpawnRobot
-from task_generator.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
-from task_generator.simulators.human import PED_RADIUS
 
+from arena_runtime.humans import PED_RADIUS
+from arena_runtime.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._interface import robot_footprint_radius
 

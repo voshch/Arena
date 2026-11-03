@@ -4,7 +4,7 @@ import pytest
 
 from arena_cli import human, viz
 
-NODE = "/arena/env_3/task_generator_node"
+NODE = "/arena/env_3/arena_env_node"
 
 
 @pytest.mark.parametrize("matches", [viz._matches, human._matches])
@@ -14,6 +14,6 @@ def test_target_names_the_env(matches, target: str) -> None:
 
 
 @pytest.mark.parametrize("matches", [viz._matches, human._matches])
-@pytest.mark.parametrize("target", ["30", "env_30", "task_generator_node", "arena"])
+@pytest.mark.parametrize("target", ["30", "env_30", "arena_env_node", "arena"])
 def test_target_of_another_env_misses(matches, target: str) -> None:
     assert not matches(NODE, target)

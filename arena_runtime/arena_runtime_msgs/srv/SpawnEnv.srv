@@ -1,7 +1,7 @@
-# Programmatically launch a task_generator env owned by arena_node.
+# Programmatically launch an env owned by arena_runtime_node.
 string ns                # explicit ns path (e.g. for sim2real); empty = auto-allocate
 bool headless            # if true, only write subprocess output to log file; otherwise also echo to parent stdout
-string[] launch_args     # passthrough to task_generator.launch.py, "name:=value"
+string[] launch_args     # passthrough to env.launch.py, "name:=value"
 ---
 bool success
 uint16 env_id

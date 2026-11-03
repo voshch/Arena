@@ -280,6 +280,35 @@ def test_net_listing_args_filter_children_by_contained_file():
     assert argv[-3:] == ['--children', '--containing', 'world.yaml']
 
 
+def test_net_provider_turned_off_misses_without_a_subprocess_and_hides_its_cache(tmp_path):
+    entry = tmp_path / 'b' / 'w'
+    entry.mkdir(parents=True)
+    (entry / '.ttl').write_text(str(int(time.time())))
+    script = textwrap.dedent(
+        """
+        import asyncio
+        from arena_simulation_setup.tree import NetResolver
+        from arena_simulation_setup.tree.World import WorldIdentifier
+
+        class Refused(NetResolver):
+            @classmethod
+            async def check_output_async(cls, args, **kwargs):
+                raise AssertionError(args)
+
+        resolver = Refused(WorldIdentifier, provider='b', annotated=False)
+        print(asyncio.run(resolver.resolve(WorldIdentifier('w'))), asyncio.run(resolver.locate(WorldIdentifier('w'))))
+        print(list(resolver.listall(network=True)), asyncio.run(resolver.listall_async(network=True)))
+        """
+    )
+    env = {**os.environ, 'ARENA_ASSETS_DIR': str(tmp_path), 'ARENA_ASSETS_NET': 'off'}
+    done = subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, text=True, check=True)
+    assert done.stdout.splitlines()[-2:] == ['None None', '[] []']
+
+
+def test_fake_assets_turn_the_net_providers_off_for_children() -> None:
+    assert os.environ['ARENA_ASSETS_NET'] == 'off'
+
+
 def test_expired_net_entry_is_refetched_but_still_served_stale(tmp_path):
     entry = tmp_path / 'b' / 'w'
     entry.mkdir(parents=True)

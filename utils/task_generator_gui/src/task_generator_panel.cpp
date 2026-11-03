@@ -39,35 +39,35 @@ namespace task_generator_gui
 
         QString result;
         if (config.mapGetString("Target", &result))
-            task_generator_node = result.toStdString();
+            arena_env_node = result.toStdString();
         else
-            task_generator_node = "/task_generator_node";
+            arena_env_node = "/arena_env_node";
 
         // All clients go on `node` and rviz spins it continuously.
-        query_environments_client = node->create_client<task_generator_msgs::srv::QueryEnvironments>(
-            task_generator_node + "/query/environments");
-        query_parametrizeds_client = node->create_client<task_generator_msgs::srv::QueryParametrizeds>(
-            task_generator_node + "/query/parametrizeds");
-        query_static_obstacles_client = node->create_client<task_generator_msgs::srv::QueryStaticObstacles>(
-            task_generator_node + "/query/static_obstacles");
-        query_dynamic_obstacles_client = node->create_client<task_generator_msgs::srv::QueryDynamicObstacles>(
-            task_generator_node + "/query/dynamic_obstacles");
-        query_scenarios_client = node->create_client<task_generator_msgs::srv::QueryScenarios>(
-            task_generator_node + "/query/scenarios");
-        query_worlds_client = node->create_client<task_generator_msgs::srv::QueryWorlds>(
-            task_generator_node + "/query/worlds");
-        query_task_modes_client = node->create_client<task_generator_msgs::srv::QueryTaskModes>(
-            task_generator_node + "/query/task_modes");
+        query_environments_client = node->create_client<arena_runtime_msgs::srv::QueryEnvironments>(
+            arena_env_node + "/query/environments");
+        query_parametrizeds_client = node->create_client<arena_runtime_msgs::srv::QueryParametrizeds>(
+            arena_env_node + "/query/parametrizeds");
+        query_static_obstacles_client = node->create_client<arena_runtime_msgs::srv::QueryStaticObstacles>(
+            arena_env_node + "/query/static_obstacles");
+        query_dynamic_obstacles_client = node->create_client<arena_runtime_msgs::srv::QueryDynamicObstacles>(
+            arena_env_node + "/query/dynamic_obstacles");
+        query_scenarios_client = node->create_client<arena_runtime_msgs::srv::QueryScenarios>(
+            arena_env_node + "/query/scenarios");
+        query_worlds_client = node->create_client<arena_runtime_msgs::srv::QueryWorlds>(
+            arena_env_node + "/query/worlds");
+        query_task_modes_client = node->create_client<arena_runtime_msgs::srv::QueryTaskModes>(
+            arena_env_node + "/query/task_modes");
 
-        reset_episode_client = node->create_client<task_generator_msgs::srv::ResetEpisode>(
-            task_generator_node + "/lifecycle/reset_episode");
+        reset_episode_client = node->create_client<arena_runtime_msgs::srv::ResetEpisode>(
+            arena_env_node + "/lifecycle/reset_episode");
         hold_client = node->create_client<arena_runtime_msgs::srv::LifecycleHold>("/arena/sim_lifecycle/hold");
-        hold_caller_id = std::string(node->get_fully_qualified_name()) + "/task_generator_panel" + task_generator_node;
+        hold_caller_id = std::string(node->get_fully_qualified_name()) + "/task_generator_panel" + arena_env_node;
 
-        queue_episode_client = node->create_client<task_generator_msgs::srv::QueueEpisode>(
-            task_generator_node + "/config/queue_episode");
+        queue_episode_client = node->create_client<arena_runtime_msgs::srv::QueueEpisode>(
+            arena_env_node + "/config/queue_episode");
 
-        parameters_client = std::make_shared<rclcpp::AsyncParametersClient>(node, task_generator_node);
+        parameters_client = std::make_shared<rclcpp::AsyncParametersClient>(node, arena_env_node);
 
         {
             rclcpp::QoS hqos(rclcpp::KeepLast(1));
@@ -88,10 +88,10 @@ namespace task_generator_gui
         {
             rclcpp::QoS qos(rclcpp::KeepLast(20));
             qos.transient_local();
-            episode_sub = node->create_subscription<task_generator_msgs::msg::EpisodeRecord>(
-                task_generator_node + "/state/episode",
+            episode_sub = node->create_subscription<arena_runtime_msgs::msg::EpisodeRecord>(
+                arena_env_node + "/state/episode",
                 qos,
-                [this](const task_generator_msgs::msg::EpisodeRecord::SharedPtr msg)
+                [this](const arena_runtime_msgs::msg::EpisodeRecord::SharedPtr msg)
                 {
                     QMetaObject::invokeMethod(this, [this, msg]()
                     {
@@ -127,10 +127,10 @@ namespace task_generator_gui
         {
             rclcpp::QoS qos(rclcpp::KeepLast(1));
             qos.transient_local();
-            queue_sub = node->create_subscription<task_generator_msgs::msg::EpisodeRecord>(
-                task_generator_node + "/state/queue",
+            queue_sub = node->create_subscription<arena_runtime_msgs::msg::EpisodeRecord>(
+                arena_env_node + "/state/queue",
                 qos,
-                [this](const task_generator_msgs::msg::EpisodeRecord::SharedPtr msg)
+                [this](const arena_runtime_msgs::msg::EpisodeRecord::SharedPtr msg)
                 {
                     QMetaObject::invokeMethod(this, [this, msg]()
                     {
@@ -149,14 +149,14 @@ namespace task_generator_gui
         setupUi();
 
         // Bootstrap queries are gated on service readiness so they survive the
-        // race where rviz loads before task_generator_node has advertised.
+        // race where rviz loads before arena_env_node has advertised.
         whenReady(
             [c = query_worlds_client]() { return c->service_is_ready(); },
             [this]()
             {
                 query_worlds_client->async_send_request(
-                    std::make_shared<task_generator_msgs::srv::QueryWorlds::Request>(),
-                    [this](rclcpp::Client<task_generator_msgs::srv::QueryWorlds>::SharedFuture f)
+                    std::make_shared<arena_runtime_msgs::srv::QueryWorlds::Request>(),
+                    [this](rclcpp::Client<arena_runtime_msgs::srv::QueryWorlds>::SharedFuture f)
                     {
                         auto resp = f.get();
                         if (!resp) return;
@@ -180,12 +180,12 @@ namespace task_generator_gui
             [this]()
             {
                 query_task_modes_client->async_send_request(
-                    std::make_shared<task_generator_msgs::srv::QueryTaskModes::Request>(),
-                    [this](rclcpp::Client<task_generator_msgs::srv::QueryTaskModes>::SharedFuture f)
+                    std::make_shared<arena_runtime_msgs::srv::QueryTaskModes::Request>(),
+                    [this](rclcpp::Client<arena_runtime_msgs::srv::QueryTaskModes>::SharedFuture f)
                     {
                         auto resp = f.get();
                         if (!resp) return;
-                        QMetaObject::invokeMethod(this, [this, obs = resp->obstacles, rob = resp->robots]()
+                        QMetaObject::invokeMethod(this, [this, obs = modesOf(resp->modes, kObstaclesAxis), rob = modesOf(resp->modes, kRobotsAxis), namespaces = resp->namespaces]()
                         {
                             auto title = [](std::string s) -> std::string {
                                 if (!s.empty())
@@ -195,6 +195,9 @@ namespace task_generator_gui
 
                             obstacles_modes_ = obs;
                             robots_modes_ = rob;
+                            mode_namespaces_.clear();
+                            for (const auto &pair : namespaces)
+                                mode_namespaces_[pair.key] = pair.value;
 
                             {
                                 QSignalBlocker b1(obstacles_task_mode_combobox);
@@ -215,16 +218,17 @@ namespace task_generator_gui
 
                             obstacles_task_mode_combobox->setEnabled(true);
                             robot_task_mode_combobox->setEnabled(true);
+                            rebuildParamTrees();
                         }, Qt::QueuedConnection);
                     });
             });
 
         // Parameter event subscription: re-fetch the active param tree when
-        // task.<active_mode>.* changes on the task_generator node.
+        // the active modes' namespaces change on the task_generator node.
         param_events_sub = node->create_subscription<rcl_interfaces::msg::ParameterEvent>(
             "/parameter_events",
             rclcpp::QoS(10),
-            [this, expected_node = task_generator_node](const rcl_interfaces::msg::ParameterEvent::SharedPtr msg)
+            [this, expected_node = arena_env_node](const rcl_interfaces::msg::ParameterEvent::SharedPtr msg)
             {
                 if (msg->node != expected_node) return;
 
@@ -232,12 +236,10 @@ namespace task_generator_gui
                 bool rob_changed = false;
                 auto check = [&](const std::string &name)
                 {
-                    auto obs = obstacles_task_mode.toStdString();
-                    for (char &c : obs) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    auto rob = robots_task_mode.toStdString();
-                    for (char &c : rob) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (!obs.empty() && name.rfind("task." + obs + ".", 0) == 0) obs_changed = true;
-                    if (!rob.empty() && name.rfind("task." + rob + ".", 0) == 0) rob_changed = true;
+                    const auto obs = namespaceOf(kObstaclesAxis, modeName(obstacles_task_mode));
+                    const auto rob = namespaceOf(kRobotsAxis, modeName(robots_task_mode));
+                    if (!obs.empty() && name.rfind(obs + ".", 0) == 0) obs_changed = true;
+                    if (!rob.empty() && name.rfind(rob + ".", 0) == 0) rob_changed = true;
                 };
                 for (const auto &p : msg->changed_parameters) check(p.name);
                 for (const auto &p : msg->new_parameters)     check(p.name);
@@ -247,17 +249,9 @@ namespace task_generator_gui
                 QMetaObject::invokeMethod(this, [this, obs_changed, rob_changed]()
                 {
                     if (obs_changed && obstacles_tree)
-                    {
-                        auto m = obstacles_task_mode.toStdString();
-                        for (char &c : m) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                        dynamic_param_tree_obstacles_->rebuild("task." + m);
-                    }
+                        rebuildTree(*dynamic_param_tree_obstacles_, kObstaclesAxis, modeName(obstacles_task_mode));
                     if (rob_changed && robots_tree)
-                    {
-                        auto m = robots_task_mode.toStdString();
-                        for (char &c : m) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                        dynamic_param_tree_robots_->rebuild("task." + m);
-                    }
+                        rebuildTree(*dynamic_param_tree_robots_, kRobotsAxis, modeName(robots_task_mode));
                 }, Qt::QueuedConnection);
             });
 
@@ -298,14 +292,10 @@ namespace task_generator_gui
 
     void TaskGeneratorPanel::rebuildParamTrees()
     {
-        auto lower = [](std::string s) {
-            for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            return s;
-        };
         if (obstacles_tree && !obstacles_task_mode.isEmpty())
-            dynamic_param_tree_obstacles_->rebuild("task." + lower(obstacles_task_mode.toStdString()));
+            rebuildTree(*dynamic_param_tree_obstacles_, kObstaclesAxis, modeName(obstacles_task_mode));
         if (robots_tree && !robots_task_mode.isEmpty())
-            dynamic_param_tree_robots_->rebuild("task." + lower(robots_task_mode.toStdString()));
+            rebuildTree(*dynamic_param_tree_robots_, kRobotsAxis, modeName(robots_task_mode));
     }
 
     void TaskGeneratorPanel::whenReady(std::function<bool()> ready_check,
@@ -514,9 +504,7 @@ namespace task_generator_gui
     void TaskGeneratorPanel::onObstaclesTaskModeChanged(const QString &text)
     {
         obstacles_task_mode = text;
-        auto mode = text.toStdString();
-        for (char &c : mode) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        dynamic_param_tree_obstacles_->rebuild("task." + mode);
+        rebuildTree(*dynamic_param_tree_obstacles_, kObstaclesAxis, modeName(text));
 
         if (!loading_from_queue_)
         {
@@ -528,9 +516,7 @@ namespace task_generator_gui
     void TaskGeneratorPanel::onRobotsTaskModeChanged(const QString &text)
     {
         robots_task_mode = text;
-        auto mode = text.toStdString();
-        for (char &c : mode) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        dynamic_param_tree_robots_->rebuild("task." + mode);
+        rebuildTree(*dynamic_param_tree_robots_, kRobotsAxis, modeName(text));
 
         if (!loading_from_queue_)
         {
@@ -586,11 +572,11 @@ namespace task_generator_gui
 
     void TaskGeneratorPanel::sendResetEpisode()
     {
-        auto request = std::make_shared<task_generator_msgs::srv::ResetEpisode::Request>();
+        auto request = std::make_shared<arena_runtime_msgs::srv::ResetEpisode::Request>();
         request->seed = -1;
         reset_episode_client->async_send_request(
             request,
-            [this](rclcpp::Client<task_generator_msgs::srv::ResetEpisode>::SharedFuture f)
+            [this](rclcpp::Client<arena_runtime_msgs::srv::ResetEpisode>::SharedFuture f)
             {
                 auto resp = f.get();
                 if (resp && !resp->success)
@@ -662,7 +648,7 @@ namespace task_generator_gui
 
     // --- Populate widgets from queued record ---
 
-    void TaskGeneratorPanel::populateFromQueue(const task_generator_msgs::msg::EpisodeRecord &rec)
+    void TaskGeneratorPanel::populateFromQueue(const arena_runtime_msgs::msg::EpisodeRecord &rec)
     {
         auto title = [](std::string s) -> std::string {
             if (!s.empty())
@@ -687,11 +673,14 @@ namespace task_generator_gui
             return s;
         };
 
-        if (!rec.tm_obstacles.empty())
+        const auto rec_obstacles = modesOf(rec.modes, kObstaclesAxis);
+        const auto rec_robots    = modesOf(rec.modes, kRobotsAxis);
+
+        if (!rec_obstacles.empty())
         {
-            const auto new_mode = lower(rec.tm_obstacles);
+            const auto new_mode = lower(rec_obstacles.front());
             const auto cur_mode = lower(obstacles_task_mode.toStdString());
-            obstacles_task_mode = QString::fromStdString(title(rec.tm_obstacles));
+            obstacles_task_mode = QString::fromStdString(title(rec_obstacles.front()));
             if (obstacles_task_mode_combobox)
             {
                 QSignalBlocker b(obstacles_task_mode_combobox);
@@ -699,38 +688,45 @@ namespace task_generator_gui
             }
             // Rebuild only on actual mode change. Rebuilds are async and read
             // live param values, which would clobber the staged values carried
-            // in rec.<>_params (set below) since staging does not write the
+            // in rec.params (set below) since staging does not write the
             // live param.
             if (new_mode != cur_mode)
-                dynamic_param_tree_obstacles_->rebuild("task." + new_mode);
+                rebuildTree(*dynamic_param_tree_obstacles_, kObstaclesAxis, new_mode);
         }
 
-        if (!rec.tm_robots.empty())
+        if (!rec_robots.empty())
         {
-            const auto new_mode = lower(rec.tm_robots);
+            const auto new_mode = lower(rec_robots.front());
             const auto cur_mode = lower(robots_task_mode.toStdString());
-            robots_task_mode = QString::fromStdString(title(rec.tm_robots));
+            robots_task_mode = QString::fromStdString(title(rec_robots.front()));
             if (robot_task_mode_combobox)
             {
                 QSignalBlocker b(robot_task_mode_combobox);
                 robot_task_mode_combobox->setCurrentText(robots_task_mode);
             }
             if (new_mode != cur_mode)
-                dynamic_param_tree_robots_->rebuild("task." + new_mode);
+                rebuildTree(*dynamic_param_tree_robots_, kRobotsAxis, new_mode);
         }
 
-        for (const auto &p : rec.obstacles_params)
+        auto applyParams = [this, &rec](const std::string &axis, const QString &mode, const std::unordered_map<std::string, QWidget *> &widgets)
         {
-            auto it = param_widgets_obstacles_.find(p.name);
-            if (it != param_widgets_obstacles_.end())
-                DynamicParamTree::setWidgetValueFromParam(it->second, p);
-        }
-        for (const auto &p : rec.robots_params)
-        {
-            auto it = param_widgets_robots_.find(p.name);
-            if (it != param_widgets_robots_.end())
-                DynamicParamTree::setWidgetValueFromParam(it->second, p);
-        }
+            if (mode.isEmpty())
+                return;
+            const auto ns = namespaceOf(axis, modeName(mode));
+            if (ns.empty())
+                return;
+            const auto prefix = ns + ".";
+            for (const auto &p : rec.params)
+            {
+                if (p.name.rfind(prefix, 0) != 0)
+                    continue;
+                auto it = widgets.find(p.name.substr(prefix.size()));
+                if (it != widgets.end())
+                    DynamicParamTree::setWidgetValueFromParam(it->second, p);
+            }
+        };
+        applyParams(kObstaclesAxis, obstacles_task_mode, param_widgets_obstacles_);
+        applyParams(kRobotsAxis, robots_task_mode, param_widgets_robots_);
     }
 
     // --- History table ---
@@ -744,12 +740,12 @@ namespace task_generator_gui
         {
             switch (s)
             {
-            case task_generator_msgs::msg::EpisodeRecord::QUEUED:   return "QUEUED";
-            case task_generator_msgs::msg::EpisodeRecord::RUNNING:  return "RUNNING";
-            case task_generator_msgs::msg::EpisodeRecord::SUCCESS:  return "SUCCESS";
-            case task_generator_msgs::msg::EpisodeRecord::FAILED:   return "FAILED";
-            case task_generator_msgs::msg::EpisodeRecord::SKIPPED:  return "SKIPPED";
-            case task_generator_msgs::msg::EpisodeRecord::FATAL:    return "FATAL";
+            case arena_runtime_msgs::msg::EpisodeRecord::QUEUED:   return "QUEUED";
+            case arena_runtime_msgs::msg::EpisodeRecord::RUNNING:  return "RUNNING";
+            case arena_runtime_msgs::msg::EpisodeRecord::SUCCESS:  return "SUCCESS";
+            case arena_runtime_msgs::msg::EpisodeRecord::FAILED:   return "FAILED";
+            case arena_runtime_msgs::msg::EpisodeRecord::SKIPPED:  return "SKIPPED";
+            case arena_runtime_msgs::msg::EpisodeRecord::FATAL:    return "FATAL";
             default:                                                 return "UNKNOWN";
             }
         };
@@ -758,7 +754,7 @@ namespace task_generator_gui
         // Queued row is hidden while running, the latched queue snapshot is stale until next reset.
         bool show_queued = false;
         const bool current_running = last_current_episode_
-            && last_current_episode_->outcome_state == task_generator_msgs::msg::EpisodeRecord::RUNNING;
+            && last_current_episode_->outcome_state == arena_runtime_msgs::msg::EpisodeRecord::RUNNING;
         if (last_queued_episode_ && !current_running)
         {
             if (!last_current_episode_)
@@ -770,11 +766,9 @@ namespace task_generator_gui
                 const auto &cur = *last_current_episode_;
                 const auto &que = *last_queued_episode_;
                 show_queued = (cur.world != que.world
-                    || cur.tm_robots != que.tm_robots
-                    || cur.tm_obstacles != que.tm_obstacles
+                    || cur.modes != que.modes
                     || cur.robots != que.robots
-                    || cur.obstacles_params.size() != que.obstacles_params.size()
-                    || cur.robots_params.size() != que.robots_params.size());
+                    || cur.params.size() != que.params.size());
             }
         }
 

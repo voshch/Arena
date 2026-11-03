@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from arena_bringup.defaults import SIM_ORDER, available_sims, env_setting, installed_features, resolve_sim
-from arena_runtime.constants import SimSimulator
+from arena_bringup.constants import SimSimulator
 
 DUMMY = SimSimulator.DUMMY.value
 FIRST, SECOND, THIRD, LAST = (s.value for s in SIM_ORDER)

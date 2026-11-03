@@ -3,11 +3,10 @@ import typing
 from arena_rclpy_mixins.declarations import declare_bool, declare_double, declare_double_array
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.shared import Namespace
+from arena_robots.characterization import DURATION_DEFAULTS, MODES, SWEEP_DEFAULTS
 
-from task_generator.constants import Constants
+from task_generator.modes import Modes
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, ROBOTS_MODES
-
-from .schedule import DURATION_DEFAULTS, MODES, SWEEP_DEFAULTS
 
 if typing.TYPE_CHECKING:
     from task_generator.tasks.robots import TM_Robots
@@ -53,7 +52,7 @@ def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:
         declare_double_array(node, ns(name), default, label=label, description=_SWEEP_DESCRIPTIONS[name])
 
 
-@ROBOTS_MODES.register(Constants.TaskMode.TM_Robots.CHARACTERIZATION, namespace=_NS, schema=_declare_schema)
+@ROBOTS_MODES.register(Modes.TM_Robots.CHARACTERIZATION, namespace=_NS, schema=_declare_schema)
 def _load_characterization() -> type["TM_Robots"]:
     from .impl import TM_Characterization
 

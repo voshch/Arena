@@ -162,7 +162,7 @@ def generate_launch_description():
         deprecated_launch_args(context)
         given_args.update(context.launch_configurations)
 
-    def _arena_node(context: launch.LaunchContext) -> list[launch.Action]:
+    def _arena_runtime_node(context: launch.LaunchContext) -> list[launch.Action]:
         env_args = [f'{k}:={v}' for k, v in given_args.items() if k not in _RUNTIME_OWNED]
         params: dict = {'sim': sim.substitution}
         if env_args:
@@ -179,20 +179,20 @@ def generate_launch_description():
             params['bootstrap_timeout_sec'] = float(bootstrap_timeout)
         if heartbeat_timeout := context.launch_configurations.get('env.heartbeat_timeout', ''):
             params['heartbeat_timeout_sec'] = float(heartbeat_timeout)
-        arena_node = launch_ros.actions.LifecycleNode(
+        arena_runtime_node = launch_ros.actions.LifecycleNode(
             package='arena_runtime',
-            executable='arena_node',
+            executable='arena_runtime_node',
             name='arena',
             namespace='',
             output='screen',
             parameters=[params],
         )
         return [
-            arena_node,
+            arena_runtime_node,
             launch.actions.RegisterEventHandler(
                 launch.event_handlers.OnProcessExit(
-                    target_action=arena_node,
-                    on_exit=[launch.actions.Shutdown(reason='arena_node exited')],
+                    target_action=arena_runtime_node,
+                    on_exit=[launch.actions.Shutdown(reason='arena_runtime_node exited')],
                 )
             ),
         ]
@@ -205,7 +205,7 @@ def generate_launch_description():
             SetGlobalLogLevelAction(log_level.substitution),
             IsolatedGroupAction([launch_sim]),
             world_generator_node,
-            launch.actions.OpaqueFunction(function=_arena_node),
+            launch.actions.OpaqueFunction(function=_arena_runtime_node),
         ]
     )
 

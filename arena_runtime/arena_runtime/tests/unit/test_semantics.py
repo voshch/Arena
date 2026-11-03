@@ -1,6 +1,6 @@
 """Pure-logic tests for the runtime semantic kinds and manager.
 
-Skipped if task_generator / arena_simulation_setup aren't importable (no
+Skipped if arena_runtime / arena_simulation_setup aren't importable (no
 sourced overlay), since the door/elevator runtime types live there.
 """
 
@@ -10,7 +10,7 @@ import math
 
 import pytest
 
-pytest.importorskip("task_generator.shared")
+pytest.importorskip("arena_runtime.shared")
 pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
@@ -27,7 +27,7 @@ from arena_runtime.sim._semantics import (  # noqa: E402
     SemanticsManager,
 )
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position  # noqa: E402
-from task_generator.shared import Door, Elevator  # noqa: E402
+from arena_runtime.shared import Door, Elevator  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # hand-built fixtures

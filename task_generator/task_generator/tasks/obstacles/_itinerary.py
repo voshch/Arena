@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import attrs
+from arena_runtime.env.task_api import Stop, plan_itinerary
+from arena_runtime.shared import DynamicObstacle, Position
 from arena_simulation_setup.shared.entities import Waypoint
-
-from task_generator.shared import DynamicObstacle, Position
-from task_generator.simulators.human.itinerary import Stop, plan_itinerary
 
 LevelOrigin = Callable[[str], tuple[float, float]]
 Placement = Callable[[str, str], str]

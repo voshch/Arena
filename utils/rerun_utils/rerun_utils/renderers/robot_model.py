@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import tempfile
 
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rerun_utils.entity_paths import display_path
 from rerun_utils.renderers._registry import RendererCtx, register

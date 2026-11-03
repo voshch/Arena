@@ -11,7 +11,7 @@ pytest.importorskip("rosidl_runtime_py")
 from arena_mcp.core.errors import ToolError
 from arena_mcp.core.msgs import constants, fill, pose, pose_dict, to_dict
 
-PACKAGES = ["task_generator_msgs", "arena_runtime_msgs", "arena_robots_msgs", "world_generator_msgs"]
+PACKAGES = ["arena_runtime_msgs", "arena_runtime_msgs", "arena_robots_msgs", "world_generator_msgs"]
 
 
 def _message_types():
@@ -32,14 +32,14 @@ def test_every_message_round_trips_through_dicts(msg_type):
 
 
 def test_fill_rejects_unknown_fields_with_the_field_list():
-    from task_generator_msgs.msg import RobotDescriptor
+    from arena_runtime_msgs.msg import RobotDescriptor
 
     with pytest.raises(ToolError, match="fields: name, model"):
         fill(RobotDescriptor, {"nmae": "jackal"})
 
 
 def test_constants_and_pose_helpers():
-    from task_generator_msgs.msg import EpisodeRecord
+    from arena_runtime_msgs.msg import EpisodeRecord
 
     names = constants(EpisodeRecord)
     assert names

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import enum
+import importlib.metadata
 import json
 import os
 import re
@@ -102,28 +103,52 @@ def _import_sources() -> dict[str, dict[str, str]]:
     return sources
 
 
+def _task_layers() -> tuple[dict[str, list[str]], list[str]]:
+    """The registered task layers, and per axis the mode names of every layer under `task.<axis>`, with the layer modules as deps."""
+    from arena_runtime.env.task_layer import TASK_LAYER_GROUP, mode_param, task_layer
+
+    entries = sorted(importlib.metadata.entry_points(group=TASK_LAYER_GROUP), key=lambda entry: entry.name)
+    axes: dict[str, set[str]] = {}
+    names: list[str] = []
+    deps: list[str] = []
+    for entry in entries:
+        try:
+            namespaces = task_layer(entry.name).mode_namespaces()
+        except Exception as exc:
+            print(f"arena: skipping task layer {entry.name!r}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            continue
+        names.append(entry.name)
+        for axis, modes in namespaces.items():
+            axes.setdefault(axis, set()).update(modes)
+        file = sys.modules[entry.module].__file__
+        if file:
+            deps.append(os.path.realpath(file))
+    return {"task_layer": names, **{mode_param(axis): sorted(modes) for axis, modes in sorted(axes.items())}}, deps
+
+
+def _task_axis_args(values: dict) -> dict[str, dict[str, str]]:
+    from arena_runtime.env.task_layer import TASK_PARAM_PREFIX
+
+    return {key: {"desc": f"{key.removeprefix(TASK_PARAM_PREFIX)} mode of the task layer", "default": ""} for key in values if key.startswith(TASK_PARAM_PREFIX)}
+
+
 def _values() -> tuple[dict[str, list[str] | dict[str, str]], list[str]]:
-    import task_generator.tasks.modules
-    import task_generator.tasks.obstacles
-    import task_generator.tasks.robots
     from arena_robots.Robot import RobotIdentifier
+    from arena_runtime import humans as human_sim
     from arena_runtime import sim as runtime_sim
     from arena_simulation_setup.tree.World import WorldIdentifier
-    from task_generator.simulators import human as human_sim
-    from task_generator.tasks import registry
 
     arena = Path(os.environ["ARENA_DIR"])
+    layer_values, layer_deps = _task_layers()
     values: dict[str, list[str] | dict[str, str]] = {
         "sim": _enum_names(runtime_sim.SimulatorRegistry.keys()),
         "human": _enum_names(human_sim.HumanSimulatorRegistry.keys()),
-        "task.robots": _enum_names(registry.ROBOTS_MODES.keys()),
-        "task.obstacles": _enum_names(registry.OBSTACLES_MODES.keys()),
-        "task.modules": _enum_names(registry.MODULE_MODES.keys()),
-        "world": sorted(registry.identifier_to_available(WorldIdentifier)),
-        "robot": sorted(set(registry.identifier_to_available(RobotIdentifier)) - _uninstalled_robots(arena)),
+        **layer_values,
+        "world": sorted(identifier.shortname for identifier in WorldIdentifier.listall()),
+        "robot": sorted({identifier.shortname for identifier in RobotIdentifier.listall()} - _uninstalled_robots(arena)),
         "robot.planner": _installed_planners(arena),
     }
-    deps = [os.path.realpath(m.__file__) for m in (runtime_sim, human_sim, registry, task_generator.tasks.robots, task_generator.tasks.obstacles, task_generator.tasks.modules) if m.__file__]
+    deps = [os.path.realpath(m.__file__) for m in (runtime_sim, human_sim) if m.__file__] + layer_deps
     deps += [str(arena / "arena_robots" / ".gitmodules"), str(arena / "arena_planners" / ".gitmodules")]
     asset_values, asset_deps = _asset_names()
     values.update(asset_values)
@@ -149,9 +174,11 @@ def _installed_planners(arena: Path) -> list[str]:
 
 def build(ws: str) -> dict:
     values, deps = _values()
+    axis_args = _task_axis_args(values)
     launch: dict[str, dict[str, dict[str, str]]] = {}
     for package, file in sorted(_launch_targets()):
-        launch[f"{package}/{file}"] = _show_args(package, file)
+        args = _show_args(package, file)
+        launch[f"{package}/{file}"] = {**axis_args, **args} if "task_layer" in args else args
         path = _share_file(package, file)
         if path is not None:
             deps.append(path)

@@ -17,7 +17,7 @@ def fleet_size(ns: str) -> int:
     """Probe RobotFleet on `ns/state/robots`; fall back to 1 if unknown."""
     import rclpy
     import rclpy.qos
-    from task_generator_msgs.msg import RobotFleet
+    from arena_runtime_msgs.msg import RobotFleet
 
     own_init = not rclpy.ok()
     seen: list[int] = []
@@ -51,7 +51,7 @@ def fleet_size(ns: str) -> int:
 
 
 def env_idx_from_ns(ns: str) -> int:
-    """Parse the env index from a namespace (`/arena/env_3/task_generator_node` → 3). 0 on failure."""
+    """Parse the env index from a namespace (`/arena/env_3/arena_env_node` → 3). 0 on failure."""
     for part in reversed(ns.strip('/').split('/')):
         head, _, tail = part.rpartition('_')
         if head and tail.isdigit():

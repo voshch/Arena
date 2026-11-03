@@ -72,8 +72,8 @@ class WorldGeneratorImpl(abc.ABC):
         return None
 
     def params(self) -> dict[str, typing.Any]:
-        """Episode binding applied when this world is queued: tm_robots/tm_obstacles plus
-        robots_params/obstacles_params leaf dicts. Empty (default) leaves the prior episode untouched."""
+        """Episode binding applied when this world is queued: modes (axis -> mode names) plus
+        params (axis -> leaf name -> value, the leaves of that axis's mode). Empty (default) leaves the prior episode untouched."""
         return {}
 
 
@@ -144,7 +144,7 @@ class WithPedestrians(WorldGeneratorImpl):
         count = self.config.pedestrians
         if count < 0:
             return {}
-        return {'tm_obstacles': 'random', 'obstacles_params': {'dynamic.n': [count, count]}}
+        return {'modes': {'obstacles': 'random'}, 'params': {'obstacles': {'dynamic.n': [count, count]}}}
 
 
 @WorldGenerator.register(WorldGeneratorType.EMPTY)

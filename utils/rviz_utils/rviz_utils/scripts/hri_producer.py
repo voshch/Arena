@@ -27,7 +27,7 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import CameraInfo, JointState
 from std_msgs.msg import Bool, Float32, String
-from task_generator.simulators.human.gait import GaitGenerator
+from arena_runtime.humans.gait import GaitGenerator
 from tf2_msgs.msg import TFMessage
 
 from rviz_utils.hri import BodyPool

@@ -1,0 +1,12 @@
+# Assign a task to one robot, dropping its unfinished phases.
+# A later goal for the same robot replaces this one, cancel stops the robot.
+string robot              # robot name as in state/robots
+string task_yaml          # phases list or {phases, conditions}, map-frame poses
+---
+string outcome            # met, failed or dropped
+string error_msg          # why the task was refused, empty otherwise
+uint32[] phase_indices    # episode-wide indices of the task's phases
+---
+uint32[] phase_indices    # episode-wide indices of the task's phases
+uint32 phase_index        # the phase that just ended
+string outcome            # its outcome: met, failed or dropped

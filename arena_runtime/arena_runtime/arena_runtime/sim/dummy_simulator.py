@@ -1,6 +1,6 @@
 """
-`DummyHost` is constructed once by `arena_node` and owns the singleton paused-state flag that gates the /clock loop.
-`DummySimulator` is per-env on `task_generator_node` and is a no-op stub for the spawn/move/delete verbs.
+`DummyHost` is constructed once by `arena_runtime_node` and owns the singleton paused-state flag that gates the /clock loop.
+`DummySimulator` is per-env on `arena_env_node` and is a no-op stub for the spawn/move/delete verbs.
 """
 
 from __future__ import annotations
@@ -12,15 +12,15 @@ from collections.abc import Sequence
 
 from arena_people_msgs.msg import Pedestrians
 from arena_simulation_setup.shared import Stairs
-from task_generator.shared import Door, DynamicObstacle, Elevator, Entity, Floor, Obstacle, Robot, Wall
 
+from arena_runtime.shared import Door, DynamicObstacle, Elevator, Entity, Floor, Obstacle, Robot, Wall
 from arena_runtime.sim import BaseSim, SimLifecycle
 
 T = typing.TypeVar('T')
 
 
 class DummyHost(SimLifecycle):
-    """Sim clock = wall time minus paused time plus stepped time. arena_node publishes
+    """Sim clock = wall time minus paused time plus stepped time. arena_runtime_node publishes
     `now()` on /clock every CLOCK_PERIOD, so a step is visible on the wire one period later."""
 
     CLOCK_PERIOD = 0.01

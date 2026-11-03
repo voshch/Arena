@@ -8,7 +8,7 @@ import pytest
 try:
     import attrs
     from arena_simulation_setup.tree.World import World, WorldView
-    from task_generator.utils.zone_corners import write_zone_polygons
+    from task_generator.tasks.modules.zone_edit.zone_corners import write_zone_polygons
 except ImportError:
     pytestmark = pytest.mark.skip(reason="ROS2 not available")
 
@@ -21,7 +21,7 @@ def _load(path: Path) -> World:
 
 @pytest.fixture
 def lit_rooms(tmp_path: Path) -> Path:
-    shutil.copytree(_LIT_ROOMS, tmp_path / "lit_rooms", ignore=shutil.ignore_patterns("scenarios"))
+    shutil.copytree(_LIT_ROOMS, tmp_path / "lit_rooms")
     return tmp_path / "lit_rooms"
 
 

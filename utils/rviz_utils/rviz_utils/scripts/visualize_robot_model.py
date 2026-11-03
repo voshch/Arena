@@ -8,7 +8,7 @@ from typing import TypedDict
 import rclpy
 import rclpy.qos
 import yaml
-from task_generator_msgs.msg import RobotFleet
+from arena_runtime_msgs.msg import RobotFleet
 from geometry_msgs.msg import Point, Vector3
 from nav_msgs.msg import Odometry
 from arena_rclpy_mixins.lazy import LazyPublisher
@@ -33,8 +33,8 @@ class VisualizeRobotModel(Node):
     def __init__(self):
         super().__init__('visualize_robot_model')
 
-        self.declare_parameter('task_generator_node', '/task_generator_node')
-        tg_node = self.get_parameter('task_generator_node').value
+        self.declare_parameter('arena_env_node', '/arena_env_node')
+        tg_node = self.get_parameter('arena_env_node').value
         assert isinstance(tg_node, str)
 
         self.srv_start_setup = self.create_service(Empty, "start_model_visualization", self.start_model_visualization_callback)

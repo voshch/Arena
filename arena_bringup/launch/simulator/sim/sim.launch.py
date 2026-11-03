@@ -6,7 +6,7 @@ import launch_ros.actions
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_bringup.substitutions import LaunchArgument, SelectAction
 
-from arena_runtime.constants import SimSimulator
+from arena_bringup.constants import SimSimulator
 
 
 def _require_flatsim(context: launch.LaunchContext) -> None:

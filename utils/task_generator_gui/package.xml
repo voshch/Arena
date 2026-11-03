@@ -13,12 +13,12 @@
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <depend>rcl_interfaces</depend>
+  <depend>diagnostic_msgs</depend>
 
   <depend>pluginlib</depend>
   <depend>rviz_common</depend>
   <depend>rviz_default_plugins</depend>
   <depend>geometry_msgs</depend>
-  <depend>task_generator_msgs</depend>
   <depend>arena_runtime_msgs</depend>
   <depend>world_generator_msgs</depend>
 

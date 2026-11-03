@@ -2,8 +2,9 @@ import math
 import typing
 
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_runtime.env.task_layer import ResetPlan, RobotReset
+from arena_runtime.shared import Orientation, Pose, Position
 
-from task_generator.shared import Orientation, Pose, Position
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
@@ -22,8 +23,8 @@ class TM_Stationary(TM_Robots):
         self._pos_y = self.node.ROSParam[float](self.namespace('pos_y'), math.nan)
         self._pos_theta = self.node.ROSParam[float](self.namespace('pos_theta'), 0.0)
 
-    async def reset(self) -> None:
-        await super().reset()
+    async def reset(self) -> ResetPlan:
+        plan = await super().reset()
 
         pos_x, pos_y = self._pos_x.value, self._pos_y.value
 
@@ -35,12 +36,13 @@ class TM_Stationary(TM_Robots):
             )
             starts = [override_pose] * len(robots)
         else:
-            rng = self.node.conf.General.RNG.stream("robots", "stationary")
+            rng = self._ctx.conf.RNG.stream("robots", "stationary")
             biggest_robot = max((robot.safe_distance for robot in robots), default=0)
             starts = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in self._ctx.world_manager.get_positions_on_map(n=len(robots), safe_dist=biggest_robot)]
 
         for robot, start in zip(robots, starts, strict=True):
-            self._start_poses[robot.name] = start
+            plan.robots[robot.name] = RobotReset(start_pose=start)
+        return plan
 
     @property
     async def done(self) -> bool:

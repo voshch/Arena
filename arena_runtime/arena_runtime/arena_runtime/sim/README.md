@@ -1,8 +1,8 @@
-# task_generator sim interface
+# arena_runtime sim interface
 
 `BaseSim` and the four sub-interfaces it combines. Implementations are
 registered in `SimulatorRegistry` and instantiated by key at runtime. See also
-[human simulator](../../../../task_generator/task_generator/simulators/human/README.md) for the pedestrian-logic counterpart
+[human simulator](../../../../arena_runtime/arena_runtime/arena_runtime/humans/README.md) for the pedestrian-logic counterpart
 (`BaseHumanSimulator`).
 
 ## Sub-interfaces
@@ -11,7 +11,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `ObstacleITF`
 
-[`_interface.py:20`](_interface.py#L20)
+[`_interface.py`](_interface.py)
 
 | Abstract method | Signature |
 | --- | --- |
@@ -21,7 +21,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `PedestrianITF`
 
-[`_interface.py:38`](_interface.py#L38)
+[`_interface.py`](_interface.py)
 
 | Abstract method | Signature |
 | --- | --- |
@@ -32,7 +32,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `RobotITF`
 
-[`_interface.py:61`](_interface.py#L61)
+[`_interface.py`](_interface.py)
 
 | Abstract method | Signature |
 | --- | --- |
@@ -42,7 +42,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `WorldITF`
 
-[`_interface.py:116`](_interface.py#L116)
+[`_interface.py`](_interface.py)
 
 | Abstract method | Signature |
 | --- | --- |
@@ -52,7 +52,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `MechanismITF`
 
-[`_interface.py:138`](_interface.py#L138): door, elevator and stair orchestration. Provides concrete default implementations driven by an internal sim-time tick loop ([`_mechanism_shim.py`](_mechanism_shim.py)) on top of four box/robot primitives. Any simulator that implements the primitives gets door animation, elevator rides, and ped/robot teleport for free, and simulators with native support can override the four top-level methods.
+[`_interface.py`](_interface.py): door, elevator and stair orchestration. Provides concrete default implementations driven by an internal sim-time tick loop ([`_mechanism_shim.py`](_mechanism_shim.py)) on top of four box/robot primitives. Any simulator that implements the primitives gets door animation, elevator rides, and ped/robot teleport for free, and simulators with native support can override the four top-level methods.
 
 | Default method | Signature | Purpose |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ and with `door:<name>` (the door segment) only when a door changes between "cann
 (gate effectively locked with no authorized agent near, or `activation_distance <= 0` with no pressed plate
 driving it) and "can open".
 
-The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../task_generator/task_generator/simulators/human/README.md)). Without an attached human-sim, the shim still drives doors against `robot_discs` alone and logs a no-op for ped teleports.
+The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../arena_runtime/arena_runtime/arena_runtime/humans/README.md)). Without an attached human-sim, the shim still drives doors against `robot_discs` alone and logs a no-op for ped teleports.
 
 Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as an occupant, and when the cabin door has closed behind it the ride hands the destinations to `pedestrian_teleport`. An empty cabin opens for a robot or ped outside within `activation_distance` of its door, a cabin with an occupant only for one within `CABIN_DOOR_THRESHOLD` (0.6 m), so riders queuing for the next trip do not hold a loaded cabin. The shim also tells the human-sim which cabin doors are passable: each tick it collects the cabins whose door turned `open` or left `open` since the last report, starting from closed at spawn and including the close an episode reset causes, and sends them in one `elevator_doors_changed` call, nothing on ticks without a change.
 
@@ -261,7 +261,7 @@ command whose placement got no reading is placed again on the next tick.
 
 ### `SimLifecycle`
 
-[`_interface.py:18`](_interface.py#L18): process-singleton host counterpart to `BaseSim`. Owned by `arena_node` (one instance per process), drives sim-wide pause/unpause and namespace cleanup that cuts across env-scoped simulators.
+[`_interface.py`](_interface.py): process-singleton host counterpart to `BaseSim`. Owned by `arena_runtime_node` (one instance per process), drives sim-wide pause/unpause and namespace cleanup that cuts across env-scoped simulators.
 
 | Abstract method | Purpose |
 | --- | --- |
@@ -271,19 +271,19 @@ command whose placement got no reading is placed again on the next tick.
 
 Registered in `LifecycleRegistry` alongside `SimulatorRegistry` ([`__init__.py`](__init__.py)).
 
-`arena_node` wraps the registered `SimLifecycle` in a liveness-accounting
+`arena_runtime_node` wraps the registered `SimLifecycle` in a liveness-accounting
 proxy: two consecutive `pause`/`unpause` failures (`False` or raised) or step
 failures mark the sim dead, published latched on `state/sim`
 ([`SimState.msg`](../../../arena_runtime_msgs/msg/SimState.msg)), see the
 [arena_runtime README](../README.md) topic table.
 Adapters signal a dead transport (a timed-out service call, not a genuine
 rejection) by raising [`SimUnavailable`](_interface.py) instead of returning
-`False`. `cleanup_namespace` should let it propagate. `arena_node` never
+`False`. `cleanup_namespace` should let it propagate. `arena_runtime_node` never
 retries or recovers a dead sim on its own.
 
 ## `BaseSim`
 
-[`__init__.py:17`](__init__.py#L17)
+[`__init__.py`](__init__.py)
 
 ```python
 class BaseSim(NodeInterface, ObstacleITF, PedestrianITF, RobotITF, WorldITF, MechanismITF, abc.ABC):
@@ -323,12 +323,12 @@ dummy, flatsim and gazebo hosts are what
 [`tests/ros/`](../../tests/ros/) exercises (gazebo against a headless gz server on an empty world), the gate math itself is
 [`lockstep_gates.py`](../lockstep_gates.py) and has ROS-free unit tests.
 
-`arena_node` exposes it as `sim_lifecycle/step` (valid only while holds are
+`arena_runtime_node` exposes it as `sim_lifecycle/step` (valid only while holds are
 active and no unpause window is open), plus the lockstep control plane
 driving the [`LockstepScheduler`](../lockstep.py). Every adapter advances at
 least one physics step for any positive delta, so a delta below half a step
-is exactly one step. The task generator steps that way to teleport robots
-during a reset hold (see the [manager README](../../../../task_generator/task_generator/manager/README.md)).
+is exactly one step. The env node steps that way to teleport robots
+during a reset hold (see the [manager README](../../../../arena_runtime/arena_runtime/arena_runtime/env/README.md)).
 
 Components self-register their data channels via
 `sim_lifecycle/lockstep/register` (LockstepRegister: `caller`, `env`,
@@ -424,7 +424,7 @@ extra channels under caller `cli`.
 
 ## Sim-paused invariant
 
-The sim is paused for the entire body of `Task._reset_episode`. Only
+The sim is paused for the entire body of `EpisodeNode._reset_episode`. Only
 node-discovery and lifecycle signals are observable while the sim is paused;
 tf, costmap, and sim-clock topics are not advancing, except for the single
 physics steps a robot teleport takes through `sim_lifecycle/step` until TF
@@ -435,8 +435,8 @@ controller activation lives inside the robot bring-up unpause window.
 
 ## Registered implementations
 
-[`__init__.py:57`](__init__.py#L57): `SimulatorRegistry` maps
-`Constants.SimSimulator` keys to async factory functions:
+[`__init__.py`](__init__.py): `SimulatorRegistry` maps
+`SimSimulator` keys to async factory functions:
 
 | Key | Class | File | Notes |
 | --- | --- | --- | --- |
@@ -466,7 +466,7 @@ are what Arena sends it.
 - [`FlatsimHost`](flatsim_simulator/flatsim_simulator.py): `pause` and `unpause` are
   `control_world` calls. `step_seconds` sends `multi_step` in chunks of at
   most one sim second, the server takes the steps before it answers, and the
-  call returns once arena_node's own clock carries the returned time.
+  call returns once arena_runtime_node's own clock carries the returned time.
   `cleanup_namespace` deletes every entity, floor and robot whose name starts
   with the env prefix `env_<id>/`.
 - [`FlatsimSimulator`](flatsim_simulator/flatsim_simulator.py): the per-env client. It
@@ -499,7 +499,7 @@ are what Arena sends it.
 - `sim.flatsim.dynamics:=rigid|kinematic`: a runtime argument, the same for
   every env. `rigid` (default) lets walls and obstacles stop or push the robot
   while pedestrians touch it without pushing, `kinematic` lets it pass through.
-  Collision events come from the task generator's collision tracker in both.
+  Collision events come from the env node's collision tracker in both.
 - `sim.flatsim.physics:=auto|box2d|warp`: a runtime argument, the engine of the
   server. `box2d` steps on the CPU, `warp` runs physics and every ray cast on the
   GPU, `auto` takes `warp` when GPU passthrough is on, else `box2d`.
@@ -537,10 +537,10 @@ are what Arena sends it.
 3. Register a lazy async factory:
 
 ```python
-@SimulatorRegistry.register(Constants.SimSimulator.MY_SIM)
+@SimulatorRegistry.register(SimSimulator.MY_SIM)
 async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .my_sim import MySimulator
     return await MySimulator.create(**kwargs)
 ```
 
-4. Add `MY_SIM = "my_sim"` to `Constants.SimSimulator`.
+4. Add `MY_SIM = "my_sim"` to `SimSimulator` in `arena_bringup/constants.py`.

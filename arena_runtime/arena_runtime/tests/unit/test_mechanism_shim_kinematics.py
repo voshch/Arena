@@ -13,7 +13,7 @@ def shim():
 
 
 def _door(start, end, *, kind="sliding", width=0.1, height=2.0, activation=1.5):
-    from task_generator.shared import Door, Position
+    from arena_runtime.shared import Door, Position
 
     return Door(name="d", start=Position(*start), end=Position(*end), kind=kind, width=width, height=height, activation_distance=(activation, activation))
 
@@ -93,7 +93,7 @@ def test_sliding_entry_ignores_a_zero_length_door(shim):
 
 
 def test_elevator_without_a_door_side_opens_on_plus_x(shim):
-    from task_generator.shared import Elevator, Position
+    from arena_runtime.shared import Elevator, Position
 
     elevator = Elevator(name="e", position=Position(4.0, 1.0, 0.0), size=[2.0, 3.0, 2.5], door_side=None)
     start, end = shim._door_slot(elevator)
@@ -102,7 +102,7 @@ def test_elevator_without_a_door_side_opens_on_plus_x(shim):
 
 
 def test_scheduled_arrival_without_riders_only_opens_the_door(shim):
-    from task_generator.shared import Elevator, Position
+    from arena_runtime.shared import Elevator, Position
 
     elevator = Elevator(name="b", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["a"])
     runtime = shim._ElevatorRuntime(elevator=elevator, door_name="b/door", destination_name="a")

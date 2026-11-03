@@ -11,7 +11,7 @@ if typing.TYPE_CHECKING:
     import rclpy.node
     import rclpy.subscription
     from arena_people_msgs.msg import Pedestrians
-    from task_generator_msgs.msg import RobotFleet
+    from arena_runtime_msgs.msg import RobotFleet
 
 _TOKEN = re.compile(r"\$\{([^}]+)\}")
 
@@ -67,11 +67,11 @@ class EnvContext:
     def _watch(self) -> None:
         from arena_people_msgs.msg import Pedestrians
         from arena_rclpy_mixins.qos import latched
-        from task_generator_msgs.msg import RobotFleet
+        from arena_runtime_msgs.msg import RobotFleet
 
         ns = f"/arena/env_{self._env_id}"
         self._subscriptions = [
-            self._node.create_subscription(RobotFleet, f"{ns}/task_generator_node/state/robots", self._on_fleet, latched(1)),
+            self._node.create_subscription(RobotFleet, f"{ns}/arena_env_node/state/robots", self._on_fleet, latched(1)),
             self._node.create_subscription(Pedestrians, f"{ns}/arena_peds", self._on_peds, 10),
         ]
 

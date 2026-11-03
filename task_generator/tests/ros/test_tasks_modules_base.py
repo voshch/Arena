@@ -97,3 +97,13 @@ def test_tm_module_task_stored():
 def test_tm_module_ctx_stored():
     tm = _make_tm_module()
     assert tm._ctx is not None
+
+
+def test_clear_forbidden_zones_clears_them_before_every_reset() -> None:
+    from task_generator.tasks.modules.clear_forbidden_zones.impl import Mod_ClearForbiddenZones
+
+    cleared: list[bool] = []
+    ctx = SimpleNamespace(world_manager=SimpleNamespace(forbid_clear=lambda: cleared.append(True)))
+    module = Mod_ClearForbiddenZones(ctx=ctx, namespace=SimpleNamespace(), node=SimpleNamespace(), task=SimpleNamespace())
+    module.before_reset()
+    assert cleared == [True]

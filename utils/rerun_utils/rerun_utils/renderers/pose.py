@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import rerun as rr
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from geometry_msgs.msg import PoseStamped
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rerun_utils.entity_paths import display_path
 from rerun_utils.renderers._registry import RendererCtx, register
