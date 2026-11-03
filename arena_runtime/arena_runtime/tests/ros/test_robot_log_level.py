@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-ROBOT_NS = "/arena/env_0/task_generator_node/jackal"
+ROBOT_NS = "/arena/env_0/arena_env_node/jackal"
 
 
 def _level(spec: str, name: str) -> str | None:

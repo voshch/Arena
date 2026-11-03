@@ -3,11 +3,10 @@ import typing
 from arena_rclpy_mixins.declarations import declare_bool, declare_double, declare_double_array
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.shared import Namespace
+from arena_robots.characterization import DURATION_DEFAULTS, MODES, SWEEP_DEFAULTS
 
 from task_generator.modes import Modes
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, ROBOTS_MODES
-
-from .schedule import DURATION_DEFAULTS, MODES, SWEEP_DEFAULTS
 
 if typing.TYPE_CHECKING:
     from task_generator.tasks.robots import TM_Robots

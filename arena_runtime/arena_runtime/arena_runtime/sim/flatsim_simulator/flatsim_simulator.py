@@ -1,6 +1,6 @@
 """
-FlatsimHost is constructed once by arena_node and owns process-singleton resources for flatsim: the lifecycle (pause/unpause/step/cleanup) over the control clients of the server, which owns /clock.
-FlatsimSimulator is per-env on task_generator_node and mirrors env-namespace state (robots, outlines, discs and boxes under the env prefix) into the one world of that server.
+FlatsimHost is constructed once by arena_runtime_node and owns process-singleton resources for flatsim: the lifecycle (pause/unpause/step/cleanup) over the control clients of the server, which owns /clock.
+FlatsimSimulator is per-env on arena_env_node and mirrors env-namespace state (robots, outlines, discs and boxes under the env prefix) into the one world of that server.
 """
 
 from __future__ import annotations

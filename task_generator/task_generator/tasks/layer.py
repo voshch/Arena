@@ -5,78 +5,114 @@ from __future__ import annotations
 import enum
 import typing
 
-from arena_runtime.env.task_layer import TaskContext, TaskModeNames
+from arena_runtime.env.task_layer import EpisodeRecord, TaskContext, TaskModeOverrides, TaskModes, mode_param
+from arena_runtime.env.task_layer import validate_modes as _validate_modes
 
 from task_generator.modes import Modes
 from task_generator.tasks.obstacles.prompt import register_prompt_mode
-from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES, TaskModeRegistry, walk_schemas
+from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES, TaskModeRegistry
 from task_generator.tasks.robots.composite import extra_tm_kinds
 from task_generator.tasks.task import Task
 
 if typing.TYPE_CHECKING:
+    from arena_rclpy_mixins import ArenaMixinNode
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_runtime.env.task_layer import TaskParams
 
 
+_REGISTRIES: dict[str, tuple[type[enum.Enum], TaskModeRegistry]] = {
+    "robots": (Modes.TM_Robots, ROBOTS_MODES),
+    "obstacles": (Modes.TM_Obstacles, OBSTACLES_MODES),
+    "modules": (Modes.TM_Module, MODULE_MODES),
+}
 _ALWAYS_ON = (Modes.TM_Module.CLEAR_FORBIDDEN_ZONES, Modes.TM_Module.RVIZ_UI)
+_VOCABULARY = {
+    "robots": [mode.value for mode in Modes.TM_Robots],
+    "obstacles": [mode.value for mode in Modes.TM_Obstacles],
+    "modules": sorted(key.value for key in MODULE_MODES.keys()),
+}
+_MULTI_AXES = ("modules",)
 
 
-def _modules(value: object) -> set[Modes.TM_Module]:
+def validate_modes(modes: TaskModes) -> TaskModes:
+    """The listed axes' selection in canonical names, ValueError naming the first axis or mode that would not run."""
+    return _validate_modes(modes, _VOCABULARY, _MULTI_AXES)
+
+
+def _parse_axis(axis: str, value: object) -> list[str]:
     if not isinstance(value, str):
         raise TypeError(f"expected a comma-separated string, got {value!r}")
-    return {Modes.TM_Module(module) for module in value.split(",") if module != ""}
+    return validate_modes({axis: [name for name in value.split(",") if name != ""]})[axis]
 
 
-class ModeParams:
+def _parse_robots(value: object) -> Modes.TM_Robots:
+    return Modes.TM_Robots(_parse_axis("robots", value)[0])
+
+
+def _parse_obstacles(value: object) -> Modes.TM_Obstacles:
+    return Modes.TM_Obstacles(_parse_axis("obstacles", value)[0])
+
+
+def _parse_modules(value: object) -> set[Modes.TM_Module]:
+    return {Modes.TM_Module(name) for name in _parse_axis("modules", value)}
+
+
+class TaskModeParams:
     def __init__(self, server: ROSParamServer) -> None:
-        self.TM_ROBOTS = server.ROSParam[Modes.TM_Robots]("task.robots", Modes.TM_Robots.default().value, parse=Modes.TM_Robots)
-        self.TM_OBSTACLES = server.ROSParam[Modes.TM_Obstacles]("task.obstacles", Modes.TM_Obstacles.default().value, parse=Modes.TM_Obstacles)
-        self.TM_CONFIG = server.ROSParam[str]("task.config", "")
-        self.TM_MODULES = server.ROSParam[set[Modes.TM_Module]]("task.modules", ",".join(module.value for module in Modes.TM_Module.default()), parse=_modules)
+        self._server = server
+        self.TM_ROBOTS = server.ROSParam[Modes.TM_Robots](mode_param("robots"), Modes.TM_Robots.default().value, parse=_parse_robots)
+        self.TM_OBSTACLES = server.ROSParam[Modes.TM_Obstacles](mode_param("obstacles"), Modes.TM_Obstacles.default().value, parse=_parse_obstacles)
+        self.TM_CONFIG = server.ROSParam[str](mode_param("config"), "")
+        self.TM_MODULES = server.ROSParam[set[Modes.TM_Module]](mode_param("modules"), ",".join(module.value for module in Modes.TM_Module.default()), parse=_parse_modules)
+
+    def _with_implied(self, selected: set[Modes.TM_Module]) -> list[Modes.TM_Module]:
+        """The modules plus those every env runs and sounds when the env has acoustics or static sounds."""
+        selected = selected | set(_ALWAYS_ON)
+        rosparam = self._server.rosparam[str]
+        static_sounds = rosparam.get_unsafe("auditory.static_sounds", "").strip() not in ("", "[]")
+        if rosparam.get_unsafe("acoustics", "none") != "none" or static_sounds:
+            selected.add(Modes.TM_Module.SOUNDS)
+        return sorted(selected, key=lambda module: module.value)
 
     @property
-    def robots(self) -> str:
-        return self.TM_ROBOTS.value.value if self.TM_ROBOTS.value else ""
+    def modules(self) -> list[Modes.TM_Module]:
+        return self._with_implied(set(self.TM_MODULES.value))
 
-    @property
-    def obstacles(self) -> str:
-        return self.TM_OBSTACLES.value.value if self.TM_OBSTACLES.value else ""
+    def resolve(self, modes: TaskModes) -> TaskModes:
+        live = {"robots": [self.TM_ROBOTS.value.value], "obstacles": [self.TM_OBSTACLES.value.value], "modules": [module.value for module in self.modules]}
+        resolved: TaskModes = {}
+        for axis in _REGISTRIES:
+            names = modes.get(axis)
+            if names is None:
+                resolved[axis] = live[axis]
+            elif axis not in _MULTI_AXES:
+                resolved[axis] = list(names)
+            else:
+                resolved[axis] = [module.value for module in self._with_implied({Modes.TM_Module(name) for name in names})]
+        return resolved
 
-    @property
-    def modules(self) -> list[str]:
-        return [module.value for module in self.TM_MODULES.value]
-
-
-def declare_task_params(node: ROSParamServer) -> ModeParams:
-    return ModeParams(node)
-
-
-async def create_task(*, node: EpisodeNode, ctx: TaskContext) -> Task:
-    register_prompt_mode(node.conf.Arena.HUMAN.value)
-    params = typing.cast("ModeParams", node.task_params)
-    modules = params.TM_MODULES.value
-    modules.update(_ALWAYS_ON)
-    return await Task.create(node=node, ctx=ctx, params=params, modules=list(modules))
-
-
-def mode_names() -> TaskModeNames:
-    return TaskModeNames(
-        robots=[key.value for key in ROBOTS_MODES.keys()],
-        obstacles=[key.value for key in OBSTACLES_MODES.keys()],
-        modules=[key.value for key in MODULE_MODES.keys()],
-    )
+    def select(self, modes: TaskModes) -> None:
+        live = self.resolve({})
+        for axis, names in self.resolve(modes).items():
+            if names != live[axis]:
+                self._server.rosparam[str].set(mode_param(axis), ",".join(names))
 
 
-def mode_vocabulary() -> TaskModeNames:
-    return TaskModeNames(
-        robots=[mode.value for mode in Modes.TM_Robots],
-        obstacles=[mode.value for mode in Modes.TM_Obstacles],
-        modules=[mode.value for mode in Modes.TM_Module],
-    )
+def declare_task_params(node: ROSParamServer) -> TaskModeParams:
+    return TaskModeParams(node)
 
 
-def declare_mode_schemas(node: ROSParamServer) -> None:
-    walk_schemas(node)
+async def create_task(*, node: ArenaMixinNode, ctx: TaskContext, params: TaskParams) -> Task:
+    register_prompt_mode(ctx.conf.HUMAN.value)
+    mode_params = typing.cast("TaskModeParams", params)
+    return await Task.create(node=node, ctx=ctx, params=mode_params, modules=mode_params.modules)
+
+
+def declare_mode_schema(node: ROSParamServer, axis: str, mode: str) -> None:
+    _, registry = _REGISTRIES[axis]
+    meta = registry.meta(next(key for key in registry.keys() if key.value == mode))
+    if meta.schema is not None:
+        meta.schema(node, meta.namespace)
 
 
 def _namespaces[K: enum.Enum, V](registry: TaskModeRegistry[K, V]) -> dict[str, str]:
@@ -84,8 +120,13 @@ def _namespaces[K: enum.Enum, V](registry: TaskModeRegistry[K, V]) -> dict[str, 
 
 
 def mode_namespaces() -> dict[str, dict[str, str]]:
-    return {"robots": _namespaces(ROBOTS_MODES), "obstacles": _namespaces(OBSTACLES_MODES), "modules": _namespaces(MODULE_MODES)}
+    return {axis: _namespaces(registry) for axis, (_, registry) in _REGISTRIES.items()}
 
 
 def fleet_only_robots() -> list[str]:
     return extra_tm_kinds()
+
+
+async def next_episode(*, previous: EpisodeRecord, queued: TaskModeOverrides) -> TaskModeOverrides:
+    del previous
+    return queued

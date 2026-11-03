@@ -48,16 +48,16 @@ def _node_stub(publisher, runner, loop: asyncio.AbstractEventLoop):
 
 def test_fail_episode_judges_open_scopes_and_publishes_the_snapshot_at_once(rclpy_context) -> None:
     import rclpy
-    import task_generator_msgs.action
-    import task_generator_msgs.msg
+    import arena_runtime_msgs.action
+    import arena_runtime_msgs.msg
 
     from arena_runtime.env.episode_node import EpisodeNode
 
     host = rclpy.create_node("episode_end_scopes_host")
-    received: list[task_generator_msgs.msg.SemanticSnapshot] = []
+    received: list[arena_runtime_msgs.msg.SemanticSnapshot] = []
     topic = "/episode_end_scopes/state/semantics"
-    host.create_subscription(task_generator_msgs.msg.SemanticSnapshot, topic, received.append, 10)
-    publisher = host.create_publisher(task_generator_msgs.msg.SemanticSnapshot, topic, 10)
+    host.create_subscription(arena_runtime_msgs.msg.SemanticSnapshot, topic, received.append, 10)
+    publisher = host.create_publisher(arena_runtime_msgs.msg.SemanticSnapshot, topic, 10)
     loop = asyncio.new_event_loop()
     try:
         deadline = time.monotonic() + 5.0
@@ -71,7 +71,7 @@ def test_fail_episode_judges_open_scopes_and_publishes_the_snapshot_at_once(rclp
         assert stub._abort_reason == "no progress"
         assert runner.violated == ["e0"]
         assert stub._semantics_dirty is False
-        assert stub._episodes.pending_outcomes[stub._episodes.current.episode_id].result() == (task_generator_msgs.action.RunEpisode.Result.FAILED, "no progress")
+        assert stub._episodes.pending_outcomes[stub._episodes.current.episode_id].result() == (arena_runtime_msgs.action.RunEpisode.Result.FAILED, "no progress")
         while not received and time.monotonic() < deadline:
             rclpy.spin_once(host, timeout_sec=0.05)
         robots = [e for e in received[0].entities if e.kind == "robot"]

@@ -14,7 +14,7 @@ _spin_in_background = pytest.importorskip("arena_rclpy_mixins.testing").spin_in_
 def _ros_gate():
     pytest.importorskip("rclpy")
     pytest.importorskip("interactive_markers")
-    pytest.importorskip("task_generator_msgs.srv")
+    pytest.importorskip("arena_runtime_msgs.srv")
 
 
 def test_known_static_obstacle_respawn_moves_instead_of_spawning(rclpy_context):

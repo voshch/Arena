@@ -1,4 +1,4 @@
-"""Env registration, eviction and holds of ArenaNode on the dummy sim."""
+"""Env registration, eviction and holds of ArenaRuntimeNode on the dummy sim."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ async def _registration(rig: Rig) -> None:
     await fleet.ready()
 
     first = await fleet.register()
-    assert (first.success, first.env_id, first.ns, first.sim) == (True, 0, "arena/env_0/task_generator_node", "dummy")
+    assert (first.success, first.env_id, first.ns, first.sim) == (True, 0, "arena/env_0/arena_env_node", "dummy")
     await rig.until(lambda: [env.env_id for env in fleet.envs] == [0], 3.0, "registered env")
     assert fleet.envs[0].fqn == f"/{first.ns}"
     assert not fleet.envs[0].ready
@@ -194,5 +194,5 @@ async def _holds_pause_until_the_last_release(rig: Rig) -> None:
     ],
     ids=lambda scenario: scenario.__name__.lstrip("_"),
 )
-def test_arena_node_env_lifecycle(arena_rig, scenario) -> None:
+def test_arena_runtime_node_env_lifecycle(arena_rig, scenario) -> None:
     arena_rig(scenario)

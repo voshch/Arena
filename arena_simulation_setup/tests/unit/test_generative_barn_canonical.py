@@ -166,7 +166,7 @@ def test_scenario_file_and_episode_binding(generator):
     assert list(files) == ["scenarios/barn/scenario.yaml"]
     content = yaml.safe_load(files["scenarios/barn/scenario.yaml"])
     assert content == {"format": "arena-scenario/2", "robots": [{"start": [2.25, 3.0, 1.571], "phases": [{"goto": [2.25, 13.0, 1.571]}]}]}
-    assert generator.params() == {"tm_robots": "scenario", "robots_params": {"file": "barn"}}
+    assert generator.params() == {"modes": {"robots": "scenario"}, "params": {"robots": {"file": "barn"}}}
 
 
 def test_world_saves_and_loads_through_the_world_tree(generator, tmp_path: Path):

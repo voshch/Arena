@@ -43,19 +43,19 @@ def _node_levels(description) -> dict[str, str | None]:
 def test_map_server_bringup_is_under_the_namespace() -> None:
     from arena_runtime.env.world_manager.world_manager_ros import map_server_launch_description
 
-    assert set(_node_levels(map_server_launch_description("/arena/env_3/task_generator_node", "warn"))) == {
-        "/arena/env_3/task_generator_node/map_server",
-        "/arena/env_3/task_generator_node/lifecycle_manager_map_server",
+    assert set(_node_levels(map_server_launch_description("/arena/env_3/arena_env_node", "warn"))) == {
+        "/arena/env_3/arena_env_node/map_server",
+        "/arena/env_3/arena_env_node/lifecycle_manager_map_server",
     }
 
 
 def test_map_server_bringup_logs_by_the_env_rule_set() -> None:
     from arena_runtime.env.world_manager.world_manager_ros import map_server_launch_description
 
-    levels = _node_levels(map_server_launch_description("/arena/env_3/task_generator_node", "{**/map_server:info, warn}"))
+    levels = _node_levels(map_server_launch_description("/arena/env_3/arena_env_node", "{**/map_server:info, warn}"))
     assert levels == {
-        "/arena/env_3/task_generator_node/map_server": "info",
-        "/arena/env_3/task_generator_node/lifecycle_manager_map_server": "warn",
+        "/arena/env_3/arena_env_node/map_server": "info",
+        "/arena/env_3/arena_env_node/lifecycle_manager_map_server": "warn",
     }
 
 

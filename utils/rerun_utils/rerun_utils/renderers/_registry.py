@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 import rclpy.node
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 
 @dataclass

@@ -3,7 +3,7 @@
 Most Arena sessions start with `arena launch`. It is a bash composite that
 either:
 
-- **brings up a fresh runtime** if none exists (sim + `arena_node` via
+- **brings up a fresh runtime** if none exists (sim + `arena_runtime_node` via
   `arena_runtime.launch.py`, then waits for `/arena/register_env`), or
 - **attaches additively** to an already-running runtime, with a sim-mismatch
   check on `sim:=`.
@@ -25,7 +25,7 @@ The full argument surface for `arena_runtime.launch.py` and
 
 | Verb | Launch file | What it starts |
 |---|---|---|
-| `arena runtime [args]` | `arena_runtime.launch.py` | Sim + `arena_node`, no envs |
+| `arena runtime [args]` | `arena_runtime.launch.py` | Sim + `arena_runtime_node`, no envs |
 | `arena env [args]` | `env.launch.py` | One env; waits for `/arena/register_env` (10s warning cadence if runtime is absent) |
 | `arena viz [target]` | (ros2 run) | Attaches rviz to a running env; see [arena viz](#arena-viz) |
 
@@ -177,16 +177,16 @@ arena launch \
 
 | Arg | Implication |
 |---|---|
-| `env.n:=3` | Three envs under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
+| `env.n:=3` | Three envs under `arena/env_0/arena_env_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_runtime_node` self-orchestrates the fleet via `/arena/spawn_env`. |
 | `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac`, `sim:=mujoco` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
 
-Slot positions are placed by the shelf packer in `arena_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_node` (default 5 m).
+Slot positions are placed by the shelf packer in `arena_runtime_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_runtime_node` (default 5 m).
 
 ---
 
 ### 6. Runtime / client mode (dynamic envs)
 
-The runtime (`arena_node`) and the simulator can be launched without any
+The runtime (`arena_runtime_node`) and the simulator can be launched without any
 envs, then envs and viz can be added or removed at will.
 
 ```bash
@@ -538,7 +538,7 @@ common entry points. Verbs relevant to bringup:
 | Verb | Wraps | Purpose |
 |---|---|---|
 | `arena launch [--bg] [args]` | bash composite | All-in-one: `arena runtime` + N × `arena env` + optional `arena viz --all`. `--bg` detaches it. |
-| `arena runtime [--bg] [args]` | `arena_runtime.launch.py` | Runtime-only launch (sim + `arena_node`, no envs). `--bg` detaches it. |
+| `arena runtime [--bg] [args]` | `arena_runtime.launch.py` | Runtime-only launch (sim + `arena_runtime_node`, no envs). `--bg` detaches it. |
 | `arena runtime down` | SIGINT to the recorded supervisors | Stop every `--bg` launch and viz of this ROS domain, see [section 6](#6-runtime--client-mode-dynamic-envs). |
 | `arena env [args]` | `env.launch.py` | Attach one env to a running runtime. |
 | `arena env --bg [args]` | `/arena/spawn_env` | Have the runtime spawn and own one env, print its id and log path once it is ACTIVE. |

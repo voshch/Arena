@@ -28,17 +28,17 @@ Panels:
     SyncSource: "PointCloud: points"
   - Class: task_generator_gui::TaskGeneratorPanel
     Name: TaskGeneratorPanel
-    Target: {task_generator_node}
+    Target: {arena_env_node}
   - Class: task_generator_gui::WorldGeneratorPanel
     Name: WorldGeneratorPanel
-    Target: {task_generator_node}
+    Target: {arena_env_node}
     WorldGeneratorTarget: /world_generator
   - Class: rviz_display_control::Reconciler
     Name: DisplayControl
-    Topic: {task_generator_node}/state/display_set
+    Topic: {arena_env_node}/state/display_set
   - Class: task_generator_gui::FleetPanel
     Name: FleetPanel
-    Target: {task_generator_node}
+    Target: {arena_env_node}
 Visualization Manager:
   Class: ""
   Displays: []
@@ -65,14 +65,14 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: {task_generator_node}/initialpose
+        Value: {arena_env_node}/initialpose
     - Class: rviz_default_plugins/SetGoal
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: {task_generator_node}/goal_pose
+        Value: {arena_env_node}/goal_pose
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
       Topic:
@@ -80,9 +80,9 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: {task_generator_node}/clicked_point
+        Value: {arena_env_node}/clicked_point
     - Class: task_generator_gui::SpawnPedestrianTool
-      Target: {task_generator_node}
+      Target: {arena_env_node}
       Model: arenian
   Transformation:
     Current:

@@ -14,7 +14,7 @@ MARKER = "quiet_marker"
 @pytest.fixture(autouse=True)
 def _ros_gate(requires_auditory):
     pytest.importorskip("rclpy")
-    pytest.importorskip("task_generator_msgs.msg")
+    pytest.importorskip("arena_runtime_msgs.msg")
 
 
 def _emission(**overrides: object):

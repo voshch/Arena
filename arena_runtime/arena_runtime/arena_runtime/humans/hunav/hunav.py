@@ -16,12 +16,11 @@ import rclpy.time
 from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
-from arena_runtime_msgs.msg import LockstepChannel
+from arena_runtime_msgs.msg import LockstepChannel, RobotFleet
 from geometry_msgs.msg import Point
 from hunav_msgs.msg import Agent, AgentBehavior, Agents, WallSegment
 from hunav_msgs.srv import ComputeAgent, ComputeAgents, GetAgents, GetWalls, MoveAgent
 from std_srvs.srv import Trigger
-from task_generator_msgs.msg import RobotFleet
 from visualization_msgs.msg import Marker, MarkerArray
 
 from arena_runtime.humans import BaseHumanSimulator, HumanSimulatorOptions, TrackedRobot

@@ -12,7 +12,7 @@ def test_resolve_namespace_finds_manifest_topic() -> None:
     try:
         # any message type will do: resolve_namespace only cares about the topic
         # name suffix, matching the arena viz manifest-suffix convention.
-        node.create_publisher(Empty, "/arena/env_7/task_generator_node/state/viz_manifest", 1)
+        node.create_publisher(Empty, "/arena/env_7/arena_env_node/state/viz_manifest", 1)
 
         namespaces = None
         for _ in range(50):
@@ -22,9 +22,9 @@ def test_resolve_namespace_finds_manifest_topic() -> None:
                 break
 
         assert namespaces is not None
-        assert namespaces.node_ns == "/arena/env_7/task_generator_node"
+        assert namespaces.node_ns == "/arena/env_7/arena_env_node"
         assert namespaces.env_ns == "/arena/env_7"
-        assert namespaces.map_topic == "/arena/env_7/task_generator_node/map"
+        assert namespaces.map_topic == "/arena/env_7/arena_env_node/map"
     finally:
         node.destroy_node()
         discoverer.destroy_node()

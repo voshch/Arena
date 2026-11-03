@@ -9,11 +9,14 @@ from arena_runtime.testing.env_peer import ENV, PLAIN_ENV, Peers, TaskModes, fqn
 def _task_modes() -> TaskModes:
     import importlib
 
-    from task_generator.tasks.registry import MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES, walk_schemas
+    from arena_runtime.env.task_layer import declare_mode_schemas, registered_modes
+
+    from task_generator.tasks import layer
 
     for package in ("robots", "obstacles", "modules"):
         importlib.import_module(f"task_generator.tasks.{package}")
-    return TaskModes(walk_schemas, *(tuple(key.value for key in registry.keys()) for registry in (ROBOTS_MODES, OBSTACLES_MODES, MODULE_MODES)))
+    modes = registered_modes(layer)
+    return TaskModes(lambda node: declare_mode_schemas(layer, node), tuple(modes["robots"]), tuple(modes["obstacles"]), tuple(modes["modules"]))
 
 
 @pytest.fixture(scope="module")
@@ -31,7 +34,7 @@ def loop(rclpy_context: object) -> asyncio.AbstractEventLoop:
 @pytest.fixture(scope="module")
 def peers(loop: asyncio.AbstractEventLoop) -> Peers:
     from arena_mcp.core import ROS
-    from task_generator_msgs.srv import QueryWorlds
+    from arena_runtime_msgs.srv import QueryWorlds
 
     started = Peers(_task_modes())
     for env_id in (ENV, PLAIN_ENV):

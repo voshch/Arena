@@ -11,7 +11,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _ros_gate():
     pytest.importorskip("rclpy")
-    pytest.importorskip("task_generator_msgs.msg")
+    pytest.importorskip("arena_runtime_msgs.msg")
 
 
 def _with_module(body):

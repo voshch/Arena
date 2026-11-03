@@ -7,9 +7,9 @@ layers. Also exposes `subscribe_marker_array`, reused by the PEDESTRIANS rendere
 from __future__ import annotations
 
 import rerun as rr
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 from visualization_msgs.msg import Marker, MarkerArray
 
 from rerun_utils.entity_paths import display_path

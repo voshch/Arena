@@ -42,7 +42,7 @@ class TM_Parametrized(TM_Obstacles):
         )
 
     async def reset(self, *, seed: int) -> tuple[list[Obstacle], list[DynamicObstacle]]:
-        rng = self.node.conf.General.RNG.stream("obstacles", "parametrized")
+        rng = self._ctx.conf.RNG.stream("obstacles", "parametrized")
         dynamic_obstacles: list[DynamicObstacle] = []
         obstacles: list[Obstacle] = []
 

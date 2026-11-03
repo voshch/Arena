@@ -21,7 +21,7 @@ def test_human_launch_takes_replay_and_starts_nothing(rclpy_context) -> None:
 
     def started(simulator: str) -> tuple[list[str], list[type]]:
         ctx = launch.LaunchContext()
-        ctx.launch_configurations.update({"simulator": simulator, "namespace": "env7/task_generator_node"})
+        ctx.launch_configurations.update({"simulator": simulator, "namespace": "env7/arena_env_node"})
         declared: list[str] = []
         actions: list[type] = []
 

@@ -22,8 +22,9 @@ def test_task_context_robots_property_returns_managers_dict():
         simulator=SimpleNamespace(),
         acoustics_simulator=SimpleNamespace(),
         reset_lock=SimpleNamespace(),
-        compromise=lambda _: None,
-        abort_episode=lambda _: None,
+        conf=SimpleNamespace(),
+        episode=SimpleNamespace(),
+        interactive=SimpleNamespace(),
     )
 
     assert ctx.robots is managers_dict
@@ -46,8 +47,9 @@ def test_task_context_robots_empty():
         simulator=SimpleNamespace(),
         acoustics_simulator=SimpleNamespace(),
         reset_lock=SimpleNamespace(),
-        compromise=lambda _: None,
-        abort_episode=lambda _: None,
+        conf=SimpleNamespace(),
+        episode=SimpleNamespace(),
+        interactive=SimpleNamespace(),
     )
 
     assert ctx.robots == {}
@@ -60,7 +62,7 @@ def test_task_context_attributes_accessible():
     rm = SimpleNamespace(managers={"r": SimpleNamespace()})
     wm = SimpleNamespace(test_attr="world")
 
-    ctx = TaskContext(environment_manager=env, robots_manager=rm, world_manager=wm, realizer=SimpleNamespace(), simulator=SimpleNamespace(), acoustics_simulator=SimpleNamespace(), reset_lock=SimpleNamespace(), compromise=lambda _: None, abort_episode=lambda _: None)
+    ctx = TaskContext(environment_manager=env, robots_manager=rm, world_manager=wm, realizer=SimpleNamespace(), simulator=SimpleNamespace(), acoustics_simulator=SimpleNamespace(), reset_lock=SimpleNamespace(), conf=SimpleNamespace(), episode=SimpleNamespace(), interactive=SimpleNamespace())
 
     assert ctx.environment_manager is env
     assert ctx.robots_manager is rm

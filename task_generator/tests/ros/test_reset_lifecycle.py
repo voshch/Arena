@@ -10,9 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-ROBOTS = "reset_order_robots"
-OBSTACLES = "reset_order_obstacles"
-WINDOW = ["set_up", "launch_pending", "before_reset", "staged_params", "staged_human_params", "module_before", "tm_robots", "tm_obstacles", "respawn", "module_after", "after_reset"]
+ROBOTS = "random"
+OBSTACLES = "random"
+WINDOW = ["set_up", "launch_pending", "before_reset", "staged_params", "staged_human_params", "module_before", "tm_robots", "module_plan", "forbid 0", "tm_obstacles", "respawn", "module_after", "after_reset"]
 
 
 @pytest.fixture(autouse=True)
@@ -36,13 +36,17 @@ class _Robots:
 
 
 class _TmRobots:
-    start_poses: dict = {}
-
     def __init__(self, log: list[str]) -> None:
         self.log = log
 
-    async def reset(self) -> None:
+    async def reset(self) -> object:
+        from arena_runtime.env.task_layer import ResetPlan
+
         self.log.append("tm_robots")
+        return ResetPlan()
+
+    async def tick(self, ended: dict, assigned: list) -> None:
+        self.log.append(f"tick {sorted(ended)} {sorted(assigned)}")
 
 
 class _TmObstacles:
@@ -67,11 +71,23 @@ class _Module:
     def before_reset(self) -> None:
         self.log.append("module_before")
 
+    def on_reset_plan(self, plan: object) -> None:
+        del plan
+        self.log.append("module_plan")
+
     def after_reset(self) -> None:
         self.log.append("module_after")
 
 
-def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> list[str]:
+class _OverridingModule(_Module):
+    def on_reset_plan(self, plan: object) -> None:
+        from arena_runtime.env.task_layer import RobotReset
+
+        super().on_reset_plan(plan)
+        plan.robots["r0"] = RobotReset(start_pose="module_start")
+
+
+def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]], module: type[_Module] = _Module) -> list[str]:
     import rclpy
     import rclpy.executors
     from std_msgs.msg import Empty
@@ -87,6 +103,7 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> l
     from arena_runtime.acoustics import AcousticsSimulatorRegistry
     from arena_runtime.humans import HumanSimulatorRegistry
     from arena_runtime.env.episode_node import EpisodeNode
+    from task_generator.modes import Modes
     from task_generator.tasks.task import Task
 
     log: list[str] = []
@@ -143,12 +160,13 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> l
             environment = _Environment(node=node, simulator=simulator, human_simulator=human, realizer=realizer)
             node._environment_manager = environment
             node._robots_manager = _Robots(log)
-            task = Task(node=node, ctx=SimpleNamespace(robots={}), params=SimpleNamespace(TM_CONFIG=SimpleNamespace(value=""), TM_ROBOTS=SimpleNamespace(value=ROBOTS), TM_OBSTACLES=SimpleNamespace(value=OBSTACLES)))
-            task._Task__param_tm_robots = ROBOTS
-            task._Task__param_tm_obstacles = OBSTACLES
+            node._world_manager = SimpleNamespace(forbid=lambda zones: log.append(f"forbid {len(zones)}"))
+            task = Task(node=node, ctx=SimpleNamespace(robots={}), params=SimpleNamespace(TM_CONFIG=SimpleNamespace(value=""), TM_ROBOTS=SimpleNamespace(value=Modes.TM_Robots(ROBOTS)), TM_OBSTACLES=SimpleNamespace(value=Modes.TM_Obstacles(OBSTACLES))))
+            task._Task__param_tm_robots = Modes.TM_Robots(ROBOTS)
+            task._Task__param_tm_obstacles = Modes.TM_Obstacles(OBSTACLES)
             task._Task__tm_robots = _TmRobots(log)
             task._Task__tm_obstacles = _TmObstacles(log, error)
-            task._Task__modules = [_Module(log)]
+            task._Task__modules = [module(log)]
             node._task = task
             node._pub_reset_start = node.create_publisher(Empty, "reset_start", 1)
             node._pub_reset_end = node.create_publisher(Empty, "reset_end", 1)
@@ -166,15 +184,39 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]]) -> l
 
 
 def test_a_reset_runs_every_step_in_order_inside_the_paused_window(rclpy_context) -> None:
+    from arena_runtime.env.task_layer import EpisodeRecord
+
     async def body(node) -> None:
-        await node._reset_episode(3)
+        await node._reset_episode(EpisodeRecord(seed=3))
 
     assert _on_task(None, body) == WINDOW
 
 
 def test_a_failing_mode_still_closes_the_paused_window(rclpy_context) -> None:
+    from arena_runtime.env.task_layer import EpisodeRecord
+
     async def body(node) -> None:
         with pytest.raises(RuntimeError, match="no obstacles today"):
-            await node._reset_episode(3)
+            await node._reset_episode(EpisodeRecord(seed=3))
 
     assert _on_task(RuntimeError("no obstacles today"), body) == [*WINDOW[: WINDOW.index("tm_obstacles") + 1], "after_reset"]
+
+
+def test_a_tick_reaches_the_robot_mode_with_the_phases_that_ended_and_the_robots_assigned(rclpy_context) -> None:
+    async def body(node) -> None:
+        await node._task.tick({"r1": object(), "r0": object()}, ["r2"])
+
+    assert _on_task(None, body)[-1] == "tick ['r0', 'r1'] ['r2']"
+
+
+def test_a_module_changes_the_plan_after_the_robot_mode_and_before_the_env_applies_it(rclpy_context) -> None:
+    from arena_runtime.env.task_layer import EpisodeRecord
+
+    plans: list[object] = []
+
+    async def body(node) -> None:
+        plans.append(await node._task.reset_robots(EpisodeRecord()))
+
+    log = _on_task(None, body, _OverridingModule)
+    assert log[log.index("tm_robots") + 1] == "module_plan"
+    assert plans[0].robots["r0"].start_pose == "module_start"

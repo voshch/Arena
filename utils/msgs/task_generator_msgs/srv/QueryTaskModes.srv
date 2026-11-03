@@ -1,7 +1,0 @@
----
-# Available obstacle TM keys (TM_Obstacles values).
-string[] obstacles
-# Available robot TM keys (TM_Robots values).
-string[] robots
-# Available module TM keys (TM_Module values).
-string[] modules

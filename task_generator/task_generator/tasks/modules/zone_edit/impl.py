@@ -18,7 +18,7 @@ _HANDLE_Z = 0.05
 
 class Mod_ZoneEdit(TM_Module):
     def after_reset(self):
-        hub = self.node.markers
+        hub = self._ctx.interactive.markers
         manager = self._ctx.world_manager
         root = manager.loaded_world_path
         menu = [Menu(f"Save world to {root}", self._save)] if root.parts else []
@@ -60,5 +60,5 @@ class Mod_ZoneEdit(TM_Module):
         manager = self._ctx.world_manager
         root = manager.loaded_world_path
         polygons = {zone.name: [(c.x, c.y) for c in zone.polygon] for level in manager.world.all_levels for zone in level.zones}
-        changed = await asyncio.to_thread(write_zone_polygons, root, polygons, self.node.conf.Arena.KG_DERIVE.value or "auto")
+        changed = await asyncio.to_thread(write_zone_polygons, root, polygons, self._ctx.conf.KG_DERIVE.value or "auto")
         self._logger.info(f"saved {changed} polygon coordinates to {root}")

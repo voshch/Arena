@@ -6,7 +6,7 @@ import contextlib
 import threading
 import traceback
 import typing
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import arena_robots.Robot
 import arena_runtime_msgs.msg
@@ -20,13 +20,12 @@ import attrs
 import rclpy
 import rclpy.lifecycle
 import rclpy.qos
-import task_generator_msgs.msg
-import task_generator_msgs.srv
 import tf2_ros
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Sensor import SensorType
+from arena_runtime_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest, RecordedTopics
 from arena_simulation_setup.shared.judge import Sample, WallGrid
 from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.utils.articulation import family_members
@@ -36,7 +35,6 @@ from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.exceptions import InvalidHandle
 from rclpy.impl.implementation_singleton import rclpy_implementation
 from rclpy.lifecycle import TransitionCallbackReturn
-from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest, RecordedTopics
 
 from arena_runtime.acoustics import AcousticsSimulatorRegistry, BaseAcousticsSimulator
 from arena_runtime.env.colors import RobotColors
@@ -61,6 +59,7 @@ if typing.TYPE_CHECKING:
 
     from arena_runtime.env.adapters import AdapterDisplayHint
     from arena_runtime.env.robot_manager import RobotManager
+    from arena_runtime.env.robot_manager.task_runner import PhaseState
     from arena_runtime.shared import SemanticCfg
     from arena_runtime.sim._semantics import SemanticChange, SemanticEntitySnapshot
 
@@ -142,7 +141,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         self._semantics_dirty = False
 
         self._pub_state_robots = self.create_publisher(
-            task_generator_msgs.msg.RobotFleet,
+            arena_runtime_msgs.msg.RobotFleet,
             self.service_namespace("state", "robots"),
             _LATCHED,
         )
@@ -160,13 +159,13 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         )
 
         self._pub_state_robots_pending = self.create_publisher(
-            task_generator_msgs.msg.RobotQueue,
+            arena_runtime_msgs.msg.RobotQueue,
             self.service_namespace("state", "robots", "pending"),
             _LATCHED,
         )
 
         self._pub_state_semantics = self.create_publisher(
-            task_generator_msgs.msg.SemanticSnapshot,
+            arena_runtime_msgs.msg.SemanticSnapshot,
             self.service_namespace("state", "semantics"),
             _LATCHED,
         )
@@ -190,7 +189,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
             10,
         )
 
-        self._pub_state_robots_pending.publish(task_generator_msgs.msg.RobotQueue())
+        self._pub_state_robots_pending.publish(arena_runtime_msgs.msg.RobotQueue())
 
     # EPISODE LOOP HOOKS
 
@@ -208,10 +207,11 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
     async def _teardown_episode(self) -> None:
         """Runs in teardown after the tick loop stops, before the robots and the simulator go."""
 
-    def _on_tick(self) -> None:
-        """Runs on every sim tick after the robots are judged, before the semantics flush."""
+    async def _on_tick(self, ended: Mapping[str, PhaseState]) -> None:
+        """Runs on every sim tick after the robots are judged, before the semantics flush, `ended` mapping each robot to the phase that ended on this tick."""
+        del ended
 
-    def _extra_semantic_states(self) -> list[task_generator_msgs.msg.SemanticEntityState]:
+    def _extra_semantic_states(self) -> list[arena_runtime_msgs.msg.SemanticEntityState]:
         """Entities the episode loop appends to every semantics snapshot."""
         return []
 
@@ -356,7 +356,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
             await self._arena_unpause_window_client.call_timeout(rel)
 
     async def step_tick(self) -> float | None:
-        """Advance the held sim by one physics step through arena_node, None when it refuses or does not answer."""
+        """Advance the held sim by one physics step through arena_runtime_node, None when it refuses or does not answer."""
         req = arena_runtime_msgs.srv.LifecycleStep.Request()
         req.seconds = _ONE_TICK
         res = await self._arena_step_client.call_timeout(req)
@@ -435,8 +435,8 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
 
     # SEMANTICS
 
-    def _semantic_entity_state_msg(self, snap: SemanticEntitySnapshot) -> task_generator_msgs.msg.SemanticEntityState:
-        msg = task_generator_msgs.msg.SemanticEntityState()
+    def _semantic_entity_state_msg(self, snap: SemanticEntitySnapshot) -> arena_runtime_msgs.msg.SemanticEntityState:
+        msg = arena_runtime_msgs.msg.SemanticEntityState()
         msg.entity = snap.entity
         msg.kind = snap.kind
         msg.discrete_names = list(snap.discrete.keys())
@@ -488,13 +488,13 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
                 return self._stringify_float(float(value))
         return None
 
-    def _zone_semantic_states(self) -> list[task_generator_msgs.msg.SemanticEntityState]:
+    def _zone_semantic_states(self) -> list[arena_runtime_msgs.msg.SemanticEntityState]:
         """Inert zone annotations from the loaded world, env-prefixed, appended to every snapshot."""
-        states: list[task_generator_msgs.msg.SemanticEntityState] = []
+        states: list[arena_runtime_msgs.msg.SemanticEntityState] = []
         for name, zone in self._iter_zones():
             if not zone.semantics:
                 continue
-            msg = task_generator_msgs.msg.SemanticEntityState()
+            msg = arena_runtime_msgs.msg.SemanticEntityState()
             msg.entity = name
             msg.kind = "zone"
             discrete_names: list[str] = []
@@ -528,7 +528,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
     def _publish_semantics_snapshot(self) -> None:
         """Immediate publish, world-boundary only. Change-driven publishes ride the tick flush."""
         self._semantics_dirty = False
-        msg = task_generator_msgs.msg.SemanticSnapshot()
+        msg = arena_runtime_msgs.msg.SemanticSnapshot()
         msg.stamp = self.sim_time.to_msg()
         msg.env_id = self._env_id
         msg.world = self._world_manager.loaded_world
@@ -648,9 +648,9 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
 
     async def _cb_set_semantic(
         self,
-        request: task_generator_msgs.srv.SetSemantic.Request,
-        response: task_generator_msgs.srv.SetSemantic.Response,
-    ) -> task_generator_msgs.srv.SetSemantic.Response:
+        request: arena_runtime_msgs.srv.SetSemantic.Request,
+        response: arena_runtime_msgs.srv.SetSemantic.Response,
+    ) -> arena_runtime_msgs.srv.SetSemantic.Response:
         """External untrusted write: full validation, structured error_msg, no bare-name resolution."""
         reason = self._apply_semantic_checked(request.entity, request.field, request.value)
         response.success = not reason
@@ -706,8 +706,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
                     raise
                 try:
                     self._sample = self._build_sample()
-                    await self._tick_robots()
-                    self._on_tick()
+                    await self._on_tick(await self._tick_robots())
                     if self._semantics_dirty:
                         self._publish_semantics_snapshot()
                 except asyncio.CancelledError:
@@ -738,19 +737,20 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         """The loaded world's walls rasterized the way the replay judge rasterizes them."""
         return WallGrid.of_level(compacted)
 
-    async def _tick_robots(self) -> None:
+    async def _tick_robots(self) -> dict[str, PhaseState]:
         if self._robots_manager is None:
-            return
+            return {}
         managers = list(self._robots_manager.managers.values())
         for manager in managers:
             judged = self._sample.robots.get(manager.name)
             if judged is not None and manager.runner.active is not None:
                 manager.publish_task_pose(Pose(Position(judged[0], judged[1]), Orientation.from_yaw(judged[2])))
-        await asyncio.gather(*(manager.tick(self._sample, self._judge_zones) for manager in managers))
+        transitions = await asyncio.gather(*(manager.tick(self._sample, self._judge_zones) for manager in managers))
         if any(manager.runner.changed for manager in managers):
             for manager in managers:
                 manager.runner.changed = False
             self._semantics_dirty = True
+        return {manager.name: transition.ended for manager, transition in zip(managers, transitions, strict=True) if transition.ended is not None}
 
     def ped_names(self) -> list[str]:
         """Bare names of the pedestrians the human simulator currently tracks."""
@@ -767,14 +767,14 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
             "violated": ",".join(runner.violated),
         }
 
-    def _robot_semantic_states(self) -> list[task_generator_msgs.msg.SemanticEntityState]:
+    def _robot_semantic_states(self) -> list[arena_runtime_msgs.msg.SemanticEntityState]:
         """Task progress of every robot as a `robot` entity, fields grow-only so change-driven snapshots keep every transition."""
-        states: list[task_generator_msgs.msg.SemanticEntityState] = []
+        states: list[arena_runtime_msgs.msg.SemanticEntityState] = []
         if self._robots_manager is None:
             return states
         for manager in self._robots_manager.managers.values():
             fields = self._robot_fields(manager)
-            msg = task_generator_msgs.msg.SemanticEntityState()
+            msg = arena_runtime_msgs.msg.SemanticEntityState()
             msg.entity = self._realizer.prefix(manager.name)
             msg.kind = "robot"
             msg.discrete_names = list(fields.keys())
@@ -986,33 +986,33 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
 
     async def _cb_query_worlds(
         self,
-        request: task_generator_msgs.srv.QueryWorlds.Request,
-        response: task_generator_msgs.srv.QueryWorlds.Response,
-    ) -> task_generator_msgs.srv.QueryWorlds.Response:
+        request: arena_runtime_msgs.srv.QueryWorlds.Request,
+        response: arena_runtime_msgs.srv.QueryWorlds.Response,
+    ) -> arena_runtime_msgs.srv.QueryWorlds.Response:
         response.ids = _available(World.WorldIdentifier)
         return response
 
     async def _cb_query_robots(
         self,
-        request: task_generator_msgs.srv.QueryRobots.Request,
-        response: task_generator_msgs.srv.QueryRobots.Response,
-    ) -> task_generator_msgs.srv.QueryRobots.Response:
+        request: arena_runtime_msgs.srv.QueryRobots.Request,
+        response: arena_runtime_msgs.srv.QueryRobots.Response,
+    ) -> arena_runtime_msgs.srv.QueryRobots.Response:
         response.ids = _available(arena_robots.Robot.RobotIdentifier)
         return response
 
     async def _cb_query_static_obstacles(
         self,
-        request: task_generator_msgs.srv.QueryStaticObstacles.Request,
-        response: task_generator_msgs.srv.QueryStaticObstacles.Response,
-    ) -> task_generator_msgs.srv.QueryStaticObstacles.Response:
+        request: arena_runtime_msgs.srv.QueryStaticObstacles.Request,
+        response: arena_runtime_msgs.srv.QueryStaticObstacles.Response,
+    ) -> arena_runtime_msgs.srv.QueryStaticObstacles.Response:
         response.ids = await _available_async(arena_simulation_setup.tree.assets.Object.ObjectIdentifier, network=True)
         return response
 
     async def _cb_query_dynamic_obstacles(
         self,
-        request: task_generator_msgs.srv.QueryDynamicObstacles.Request,
-        response: task_generator_msgs.srv.QueryDynamicObstacles.Response,
-    ) -> task_generator_msgs.srv.QueryDynamicObstacles.Response:
+        request: arena_runtime_msgs.srv.QueryDynamicObstacles.Request,
+        response: arena_runtime_msgs.srv.QueryDynamicObstacles.Response,
+    ) -> arena_runtime_msgs.srv.QueryDynamicObstacles.Response:
         response.ids = await _available_async(
             arena_simulation_setup.tree.assets.Human.HumanIdentifier,
             network=True,
@@ -1021,17 +1021,17 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
 
     async def _cb_query_environments(
         self,
-        request: task_generator_msgs.srv.QueryEnvironments.Request,
-        response: task_generator_msgs.srv.QueryEnvironments.Response,
-    ) -> task_generator_msgs.srv.QueryEnvironments.Response:
+        request: arena_runtime_msgs.srv.QueryEnvironments.Request,
+        response: arena_runtime_msgs.srv.QueryEnvironments.Response,
+    ) -> arena_runtime_msgs.srv.QueryEnvironments.Response:
         response.ids = _available(arena_simulation_setup.tree.configs.environment.EnvironmentIdentifier)
         return response
 
     async def _cb_query_parametrizeds(
         self,
-        request: task_generator_msgs.srv.QueryParametrizeds.Request,
-        response: task_generator_msgs.srv.QueryParametrizeds.Response,
-    ) -> task_generator_msgs.srv.QueryParametrizeds.Response:
+        request: arena_runtime_msgs.srv.QueryParametrizeds.Request,
+        response: arena_runtime_msgs.srv.QueryParametrizeds.Response,
+    ) -> arena_runtime_msgs.srv.QueryParametrizeds.Response:
         response.ids = _available(arena_simulation_setup.tree.configs.parametrized.ParametrizedIdentifier)
         return response
 
@@ -1078,43 +1078,43 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryWorlds,
+            arena_runtime_msgs.srv.QueryWorlds,
             self.service_namespace("query", "worlds"),
             self._cb_query_worlds,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryRobots,
+            arena_runtime_msgs.srv.QueryRobots,
             self.service_namespace("query", "robots"),
             self._cb_query_robots,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryStaticObstacles,
+            arena_runtime_msgs.srv.QueryStaticObstacles,
             self.service_namespace("query", "static_obstacles"),
             self._cb_query_static_obstacles,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryDynamicObstacles,
+            arena_runtime_msgs.srv.QueryDynamicObstacles,
             self.service_namespace("query", "dynamic_obstacles"),
             self._cb_query_dynamic_obstacles,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryEnvironments,
+            arena_runtime_msgs.srv.QueryEnvironments,
             self.service_namespace("query", "environments"),
             self._cb_query_environments,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryParametrizeds,
+            arena_runtime_msgs.srv.QueryParametrizeds,
             self.service_namespace("query", "parametrizeds"),
             self._cb_query_parametrizeds,
         )
 
         self.create_service(
-            task_generator_msgs.srv.SetSemantic,
+            arena_runtime_msgs.srv.SetSemantic,
             self.service_namespace("semantics", "set"),
             self._cb_set_semantic,
         )

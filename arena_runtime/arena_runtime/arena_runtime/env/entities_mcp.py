@@ -9,15 +9,15 @@ from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, env_ns, ms
 if TYPE_CHECKING:
     from arena_humansim_msgs.msg import AgentMeta
     from arena_people_msgs.msg import Pedestrian
+    from arena_runtime_msgs.msg import SemanticEntityState
     from geometry_msgs.msg import PoseStamped
-    from task_generator_msgs.msg import SemanticEntityState
 
 domain = Domain(
     "entities",
     """Things in one env: obstacles, robots, sounds, semantics, the map server, pedestrians and humansim behavior.
     Spawn, move and pedestrian poses are in the env's map frame, humansim poses in the engine's world frame.
     Every tool takes env_id, optional when exactly one env runs. entities_ped_* need the env's human simulator to be humansim (human:=arena).""",
-    requires=("task_generator_msgs", "arena_people_msgs", "arena_runtime"),
+    requires=("arena_runtime_msgs", "arena_people_msgs", "arena_runtime"),
 )
 
 EnvId = Annotated[int | None, Field(description="env to act on, optional when exactly one env runs")]
@@ -94,7 +94,7 @@ def _check(response: _Outcome, what: str) -> None:
 @domain.tool()
 async def entities_spawn_static(model: str, env_id: EnvId = None, x: OptionalX = None, y: OptionalY = None, yaw: Yaw = 0.0) -> dict[str, object]:
     """Spawn a static obstacle model (episode_catalog kind=static_obstacles) into the running episode; returns its handle for entities_move."""
-    from task_generator_msgs.srv import SpawnStatic
+    from arena_runtime_msgs.srv import SpawnStatic
 
     node = await tg(env_id)
     pose, use_pose = _placement(x, y, yaw)
@@ -106,7 +106,7 @@ async def entities_spawn_static(model: str, env_id: EnvId = None, x: OptionalX =
 @domain.tool()
 async def entities_spawn_dynamic(model: str, env_id: EnvId = None, x: OptionalX = None, y: OptionalY = None, yaw: Yaw = 0.0) -> dict[str, object]:
     """Spawn a dynamic obstacle or pedestrian model (episode_catalog kind=dynamic_obstacles) into the running episode."""
-    from task_generator_msgs.srv import SpawnDynamic
+    from arena_runtime_msgs.srv import SpawnDynamic
 
     node = await tg(env_id)
     pose, use_pose = _placement(x, y, yaw)
@@ -127,8 +127,8 @@ async def entities_spawn_robot(
     args: Annotated[dict[str, str | int | float | bool] | None, Field(description="robot args forwarded to Robot.parse, e.g. {'mobile': 'nav2', 'mobile.local_planner': 'dwb'}")] = None,
 ) -> dict[str, object]:
     """Add a robot model (episode_catalog kind=robots) to the env's fleet; returns the instance name."""
+    from arena_runtime_msgs.srv import SpawnRobot
     from diagnostic_msgs.msg import KeyValue
-    from task_generator_msgs.srv import SpawnRobot
 
     node = await tg(env_id)
     pose, use_pose = _placement(x, y, yaw)
@@ -142,7 +142,7 @@ async def entities_spawn_robot(
 @domain.tool(destructive=True)
 async def entities_despawn_robot(name: str, env_id: EnvId = None) -> dict[str, object]:
     """Toggle a robot's removal: stage a live robot for teardown on the next reset, or undo a staged spawn or despawn."""
-    from task_generator_msgs.srv import DespawnRobot
+    from arena_runtime_msgs.srv import DespawnRobot
 
     node = await tg(env_id)
     response = await ROS.call(DespawnRobot, f"{node}/runtime/despawn_robot", DespawnRobot.Request(name=name))
@@ -159,7 +159,7 @@ async def entities_move(
     yaw: Yaw = 0.0,
 ) -> dict[str, object]:
     """Teleport a robot or a runtime-spawned obstacle or sound to a pose in the env's map frame."""
-    from task_generator_msgs.srv import MoveEntity
+    from arena_runtime_msgs.srv import MoveEntity
 
     node = await tg(env_id)
     response = await ROS.call(MoveEntity, f"{node}/runtime/move", MoveEntity.Request(entity=name, pose=_stamped(x, y, yaw)), timeout=30.0)
@@ -193,7 +193,7 @@ def _semantic(state: SemanticEntityState) -> dict[str, object]:
 @domain.tool(read_only=True)
 async def entities_semantics(env_id: EnvId = None) -> dict[str, object]:
     """Semantic state of every annotated entity (doors, elevators, signals, schedules, sounds, ...): discrete, continuous and predicate fields and members."""
-    from task_generator_msgs.msg import SemanticSnapshot
+    from arena_runtime_msgs.msg import SemanticSnapshot
 
     node = await tg(env_id)
     snapshot = await ROS.latest(SemanticSnapshot, f"{node}/state/semantics", qos=LATCHED, hint="the env has not finished its first reset")
@@ -208,7 +208,7 @@ async def entities_set_semantic(
     env_id: EnvId = None,
 ) -> dict[str, object]:
     """Write one semantic field of an annotated entity."""
-    from task_generator_msgs.srv import SetSemantic
+    from arena_runtime_msgs.srv import SetSemantic
 
     node = await tg(env_id)
     text = str(value).lower() if isinstance(value, bool) else str(value)
@@ -217,7 +217,7 @@ async def entities_set_semantic(
     return {"env": node, "entity": entity, "field": field, "value": text}
 
 
-SOUNDS_HINT = "runtime sounds need the sounds module: episode_queue tm_modules=[..., 'sounds'] then episode_reset"
+SOUNDS_HINT = "runtime sounds need the sounds module: episode_queue modes={'modules': [..., 'sounds']} then episode_reset"
 
 
 @domain.tool()
@@ -236,7 +236,7 @@ async def entities_spawn_sound(
     initially_active: bool = True,
 ) -> dict[str, object]:
     """Spawn an environment sound at a pose; returns the entity name entities_remove_sound and entities_move take."""
-    from task_generator_msgs.srv import SpawnSound
+    from arena_runtime_msgs.srv import SpawnSound
 
     customize = bool(asset_id) or source_volume_db is not None or not loop or not initially_active
     if customize and source_volume_db is None:
@@ -260,7 +260,7 @@ async def entities_spawn_sound(
 @domain.tool(destructive=True)
 async def entities_remove_sound(entity: Annotated[str, Field(description="the entity name entities_spawn_sound returned")], env_id: EnvId = None) -> dict[str, object]:
     """Remove a runtime-spawned sound."""
-    from task_generator_msgs.srv import RemoveSound
+    from arena_runtime_msgs.srv import RemoveSound
 
     node = await tg(env_id)
     response = await ROS.call(RemoveSound, f"{node}/runtime/remove_sound", RemoveSound.Request(entity=entity), hint=SOUNDS_HINT)

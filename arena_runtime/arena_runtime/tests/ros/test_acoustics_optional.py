@@ -66,7 +66,7 @@ for action in env_actions:
 print(json.dumps(found))
 """
 
-_BASE_ARGS = {"env.managed": "true", "sim": "dummy", "env.id": "7", "env.ns": "env7/task_generator_node"}
+_BASE_ARGS = {"env.managed": "true", "sim": "dummy", "env.id": "7", "env.ns": "env7/arena_env_node"}
 _STRIPPED = ("arena_auditory", "arena_hearing")
 _ACOUSTICS = "launch/acoustics/acoustics.launch.py"
 _AUDITORY = "arena_auditory/launch/arena_auditory.launch.py"
@@ -92,7 +92,7 @@ def _found(proc: subprocess.CompletedProcess[str]) -> dict:
 
 
 def _auditory_params(found: dict) -> dict:
-    return {name: params for name, params in found["params"].items() if name != "task_generator_node"}
+    return {name: params for name, params in found["params"].items() if name != "arena_env_node"}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -112,21 +112,20 @@ def test_acoustics_none_launches_without_arena_auditory() -> None:
     found = _found(_launch({"acoustics": "none"}, with_auditory=False))
     assert _ACOUSTICS not in found["includes"]
     assert _HEARING not in found["includes"]
-    assert found["params"]["task_generator_node"]["acoustics"] == "none"
-    assert "robot.mobile.params_overlay" not in found["params"]["task_generator_node"]
+    assert found["params"]["arena_env_node"]["acoustics"] == "none"
+    assert "robot.mobile.params_overlay" not in found["params"]["arena_env_node"]
 
 
-@pytest.mark.parametrize(
-    "args",
-    [
-        {"acoustics": "none", "auditory.static_sounds": "[{name: radio, asset_id: radio_loop, position: {x: 1.0, y: 2.0}}]"},
-        {"acoustics": "none", "task.modules": "sounds"},
-    ],
-)
-def test_sounds_module_runs_without_arena_auditory(args: dict[str, str]) -> None:
-    found = _found(_launch(args, with_auditory=False))
-    assert "sounds" in found["params"]["task_generator_node"]["task.modules"].split(",")
+def test_a_task_axis_launch_arg_reaches_the_node_without_arena_auditory() -> None:
+    found = _found(_launch({"acoustics": "none", "task.modules": "sounds"}, with_auditory=False))
+    assert found["params"]["arena_env_node"]["task.modules"] == "sounds"
     assert _ACOUSTICS not in found["includes"]
+
+
+def test_the_launch_declares_no_task_axis_default() -> None:
+    found = _found(_launch({"acoustics": "none", "auditory.static_sounds": "[{name: radio, asset_id: radio_loop, position: {x: 1.0, y: 2.0}}]"}, with_auditory=False))
+    params = found["params"]["arena_env_node"]
+    assert not {"task.robots", "task.obstacles", "task.modules"} & params.keys()
 
 
 def test_acoustics_arena_without_arena_auditory_names_the_feature() -> None:
@@ -180,8 +179,8 @@ def test_hearing_included_only_when_enabled() -> None:
     assert _HEARING in found["includes"]
     assert "robot.hearing.srp.hop_s" in found["includes"][_ARENA_HEARING]
     assert "robot.hearing.policy" not in found["includes"][_ARENA_HEARING]
-    assert found["params"]["task_generator_node"]["robot.mobile.params_overlay"].endswith("arena_hearing/config/nav2_overlay.yaml")
-    assert "robot.hearing.srp.hop_s" not in found["params"]["task_generator_node"]
+    assert found["params"]["arena_env_node"]["robot.mobile.params_overlay"].endswith("arena_hearing/config/nav2_overlay.yaml")
+    assert "robot.hearing.srp.hop_s" not in found["params"]["arena_env_node"]
 
 
 @pytest.mark.usefixtures("requires_auditory", "requires_hearing")

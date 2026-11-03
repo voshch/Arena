@@ -174,4 +174,5 @@ is set and passed through unchanged otherwise. `DEFAULT_MODEL` is
 
 ## Test assets
 
-[testing.py](src/arena_simulation_setup/testing.py) generates stand-ins for the assets test suites resolve, so no suite reads a bucket: clips through `write_clip`, seeded WAVs under the default sound manifests, and material descriptors without textures. `install_fake_assets()` writes them to a temporary `ARENA_ASSETS_DIR_LOCAL`, which resolves ahead of every bucket for the process and its children. Each package's `tests/conftest.py` calls it from `pytest_configure`.
+[testing.py](src/arena_simulation_setup/testing.py) sets `ARENA_ASSETS_NET=off`, so every
+`NetResolver` answers a miss at once with no egress, and generates stand-ins for the assets test suites resolve, so no suite reads a bucket: clips through `write_clip`, seeded WAVs under the default sound manifests, and material descriptors without textures. `install_fake_assets()` writes them to a temporary `ARENA_ASSETS_DIR_LOCAL`, which resolves ahead of every bucket for the process and its children. Each package's `tests/conftest.py` calls it from `pytest_configure`.

@@ -26,6 +26,27 @@ Parameters live under `task.<mode>.<leaf>`. Mode names are shared across the
 three axes; e.g. `task.scenario.file` is read by both `TM_Robots.scenario` and
 `TM_Obstacles.scenario`, which intentionally load the same scenario file.
 
+`reset()` computes the next episode and returns a `ResetPlan`: one `RobotReset`
+per robot in `robots` (its `start_pose`, `task` and `humans`) and the
+`forbidden_zones`. `EpisodeNode` submits the tasks, forbids the zones and places
+the robots.
+
+## Mid-episode assignment
+
+`tick(ended, assigned)` runs every sim tick of a running episode after the
+robots are judged. `ended` maps a robot name to the `PhaseState` that ended on
+this tick, `assigned` holds the robots given a task from outside (RunTask,
+SubmitTask) since the last tick, and the base class does nothing. A mode reassigns a robot from there through
+`RobotManager.submit_task` (drops the robot's unfinished phases and appends the
+new ones), `RobotManager.stop_task` or `move`. `explore` hands a robot whose task
+just ended a fresh random goal and teleports a robot that ran into
+`task.episode.timeout`, except a robot assigned from outside, which it leaves
+alone until the next reset. Its `done` is always `False`. `guided` assigns from
+its own goal clicks. `TM_Composite.tick` hands each sub-mode the part of `ended`
+and `assigned` that belongs to its robots, runs every sub-mode even when one
+raises, then raises the first error. A robot's runner state is reachable as
+`ctx.robots[name].runner` (`active_state`, `outcomes`).
+
 ## Level selection
 
 `TM_Robots` is level-agnostic: it places robots on the whole compacted map (all loaded
@@ -70,13 +91,13 @@ physics and its planner gets no hint that they are passable.
 ## Task modes (`TM_Robots` subclasses)
 
 `TM_Robots` ([`__init__.py`](__init__.py)) is the base: one instance drives
-all robots in its scope, exposing `reset`, `set_position`, `set_goal`, and
-an async `done` flag. Shipped modes:
+all robots in its scope, exposing `reset`, `tick`, `set_position`, `set_goal`,
+and an async `done` flag. Shipped modes:
 
 | Kind | File | Behavior |
 | --- | --- | --- |
 | `random` | [`random/`](random/) | one random reachable goal per robot per episode |
-| `explore` | [`explore/`](explore/) | extends `random`; when a robot finishes or times out, a fresh random goal is assigned |
+| `explore` | [`explore/`](explore/) | extends `random`; in `tick`, a robot whose task just ended gets a fresh random goal and a timed-out robot is teleported |
 | `guided` | [`guided/`](guided/) | external controller drives the goal sequence. 2D Nav Goal clicks append waypoints, which show as numbered drag handles with Delete, Insert after and Clear chain menus |
 | `stationary` | [`stationary/`](stationary/) | robot stays parked without goal dispatch, at `pos_x`/`pos_y`/`pos_theta` or a free pose sampled per episode |
 | `scenario` | [`scenario/`](scenario/) | reads `start`/`goal` pairs from the world's scenario YAML. A robot past the `robots:` entries, or on an entry without `phases`, stays parked, and an episode with only parked robots runs until `task.episode.timeout` |
@@ -87,6 +108,33 @@ an async `done` flag. Shipped modes:
 Modes are registered by `Modes.TM_Robots` enum value in
 [`tasks/registry.py`](../registry.py). `null` and `composite` are not in
 the enum, they are only reachable via `set_tm_robots_composite`.
+
+## Adding a TM_Robots mode
+
+1. Create `tasks/robots/<name>/` as a package.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has parameters, and register it on `ROBOTS_MODES`.
+3. In `impl.py`: define the class extending `TM_Robots`; override `reset` to return a `ResetPlan`.
+4. Add `<NAME> = "<name>"` to `Modes.TM_Robots` in [`modes.py`](../../modes.py).
+5. `declare_mode_schemas(layer, node)` picks up your schema automatically at node init.
+
+`reset` runs with the sim paused and fills these fields of the plan, leaving the
+obstacle fields to the obstacle mode:
+
+| Field | Meaning |
+|---|---|
+| `robots` | A `RobotReset` per robot. A robot left out keeps its adapter's own placement. |
+| `robots[name].start_pose` | Where the robot starts. |
+| `robots[name].task` | The `TaskRequest` it runs. Without one it stays parked. |
+| `robots[name].humans` | Names its task may refer to. |
+| `forbidden_zones` | Zones later placement keeps out of, in the map frame. |
+
+`reset` submits nothing and moves nothing: `EpisodeNode` submits the tasks, forbids
+the zones, resets the obstacle mode and places the robots, in that order. Sampling
+through `get_positions_on_map` still reserves what it samples at once. In a
+`composite`, each sub-mode's zones apply before the next sub-mode resets, so list
+modes with declared positions first. `ResetPlan.merge` is last-one-wins: a later
+plan's `RobotReset` replaces that robot's whole entry, its other fields add up.
+Assign during the episode with `RobotManager.submit_task` and `move`.
 
 ## Request types
 
@@ -203,7 +251,7 @@ allocation and:
    allocated robots through `ctx.robots`.
 3. Instantiates one sub-TM per spec and wraps them all in
    [`TM_Composite`](composite.py), whose `done` is `all(sub.done)` and
-   whose `set_position` / `set_goal` fan out.
+   whose `tick` / `set_position` / `set_goal` fan out.
 
 Entry point: the `task.config` node param, read by
 `Task.create` and at every reset. A set config takes precedence over

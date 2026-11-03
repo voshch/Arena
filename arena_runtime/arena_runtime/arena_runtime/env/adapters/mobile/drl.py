@@ -189,7 +189,7 @@ class DrlAdapter(MobileAdapter):
                 *self.bringup._launch_actions(
                     use_sim_time=ctx.use_sim_time,
                     frame=ctx.frame,
-                    task_generator_node=ctx.task_generator_node,
+                    arena_env_node=ctx.arena_env_node,
                     global_planner=self._global_planner if self._depends_global_plan else "none",
                     **kwargs,
                 ),

@@ -26,10 +26,10 @@ class TM_Scenario(TM_Obstacles):
         await self._ctx.environment_manager.configure_gestures(self._gesture_mode.value)
         world_description = self._ctx.world_manager.world_compacted()
 
-        is_valid = make_is_valid(self._ctx.world_manager.map, self.node.conf.Obstacles.SAFE_DIST.value)
+        is_valid = make_is_valid(self._ctx.world_manager.map, self._ctx.conf.SAFE_DIST.value)
 
         zone_conv = world_description.zone_converter(
-            self.node.conf.General.RNG.stream("obstacles", "scenario"),
+            self._ctx.conf.RNG.stream("obstacles", "scenario"),
             is_valid=is_valid,
         )
 
@@ -54,8 +54,8 @@ class TM_Scenario(TM_Obstacles):
         ]
         await self._ctx.environment_manager.setup_regions(regions)
 
-        self.node.register_timeline(scenario.timeline, seed)
-        self.node.register_conditions(scenario.conditions)
+        self._ctx.episode.register_timeline(scenario.timeline, seed)
+        self._ctx.episode.register_conditions(scenario.conditions)
 
         return scenario.objects, [self._with_itinerary(obstacle) for obstacle in scenario.humans]
 

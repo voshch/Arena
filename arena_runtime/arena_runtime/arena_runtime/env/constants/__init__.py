@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Constants:
+    ENV_NODE_NAMESPACE = "arena_env_node"
     DEFAULT_PEDESTRIAN_MODEL = "arenian"
 
     class HumanSimulator(Enum):

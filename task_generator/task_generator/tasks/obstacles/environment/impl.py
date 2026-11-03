@@ -133,7 +133,7 @@ class TM_Environment(TM_Obstacles):
         occupancy_grid[max(top, 0) : max(bottom, 0), max(left, 0) : max(right, 0)] = WorldOccupancy.FULL
 
     def _parse_environment(self, environment_file: str) -> _ParsedConfig:
-        rng = self.node.conf.General.RNG.stream("obstacles", "environment")
+        rng = self._ctx.conf.RNG.stream("obstacles", "environment")
 
         environment = arena_simulation_setup.tree.configs.environment.EnvironmentIdentifier(environment_file).resolve_sync()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import math
 import typing
 from collections.abc import Sequence
@@ -13,6 +14,15 @@ from arena_simulation_setup.shared.task import LoopPhase, TaskPhase
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 Outcome = typing.Literal["pending", "met", "failed", "dropped"]
+
+
+class DropReason(enum.StrEnum):
+    """Why a pending phase was dropped, kept as its reason."""
+
+    REPLACED = "replaced"
+    STOPPED = "stopped"
+    POLICY = "policy"
+
 
 PED_STANDOFF_M = 0.8
 
@@ -31,6 +41,7 @@ class LoopRun:
 
     phase: LoopPhase
     monitor: UntilMonitor | None
+    request: int
     resume: int | None = None
 
 
@@ -45,6 +56,7 @@ class PhaseState:
     instruction: dict[str, str] | None = None
     loop: LoopRun | None = None
     slot: int = 0
+    request: int = 0
 
 
 @attrs.define
@@ -99,44 +111,55 @@ class TaskRunner:
 
     def submit(self, phases: Sequence[TaskPhase], conditions: Sequence[EpisodeCondition] = ()) -> list[PhaseState]:
         """Append resolved phases, dropping whatever of the previous request had not finished."""
-        for state in self.phases:
-            if state.outcome == "pending":
-                state.outcome = "dropped"
+        self.stop(DropReason.REPLACED)
         for scoped in self.scoped:
             if scoped.last is None and not scoped.id.startswith("e"):
                 scoped.last = len(self.phases) - 1
         first = len(self.phases)
+        request = self._requests
+        self._requests += 1
         states: list[PhaseState] = []
         runs: list[LoopRun] = []
         for phase in phases:
             if isinstance(phase, LoopPhase):
                 until = phase.until_node
-                run = LoopRun(phase=phase, monitor=UntilMonitor(until, self.robot) if until is not None else None)
+                run = LoopRun(phase=phase, monitor=UntilMonitor(until, self.robot) if until is not None else None, request=request)
                 states.extend(self._iteration(run, first + len(states)))
                 run.resume = first + len(states)
                 runs.append(run)
             else:
-                states.append(PhaseState(index=first + len(states), phase=phase, monitor=PhaseMonitor(phase, self.robot)))
+                states.append(PhaseState(index=first + len(states), phase=phase, monitor=PhaseMonitor(phase, self.robot), request=request))
         self.phases.extend(states)
         for run in runs:
             if run.resume == len(self.phases):
                 run.resume = None
-        request = self._requests
-        self._requests += 1
         self.scoped.extend(ScopedCondition(id=f"r{request}:{i}", condition=c, monitor=ConditionMonitor(c, self.robot), first=first) for i, c in enumerate(conditions))
         self.active = first if states else None
         self.changed = True
         return states
 
     def _iteration(self, run: LoopRun, first: int) -> list[PhaseState]:
-        return [PhaseState(index=first + slot, phase=phase, monitor=PhaseMonitor(phase, self.robot), loop=run, slot=slot) for slot, phase in enumerate(run.phase.phases)]
+        return [PhaseState(index=first + slot, phase=phase, monitor=PhaseMonitor(phase, self.robot), loop=run, slot=slot, request=run.request) for slot, phase in enumerate(run.phase.phases)]
 
-    def stop(self) -> None:
+    def stop(self, reason: DropReason = DropReason.STOPPED) -> None:
+        """Drop every pending phase for `reason`."""
         for state in self.phases:
             if state.outcome == "pending":
                 state.outcome = "dropped"
+                state.reason = reason
         self.active = None
         self.changed = True
+
+    def request_outcome(self, request: int) -> Outcome | None:
+        """How the phases one submit appended ended, None while one is pending: dropped by a later submit or a stop, failed by a phase or a failure policy, else met."""
+        states = [state for state in self.phases if state.request == request]
+        if any(state.outcome == "dropped" and state.reason in (DropReason.REPLACED, DropReason.STOPPED) for state in states):
+            return "dropped"
+        if any(state.outcome == "pending" for state in states):
+            return None
+        if any(state.outcome == "failed" or (state.outcome == "dropped" and state.reason == DropReason.POLICY) for state in states):
+            return "failed"
+        return "met"
 
     @property
     def active_state(self) -> PhaseState | None:
@@ -240,7 +263,7 @@ class TaskRunner:
             self._apply_policy(scoped.condition.on_failure, f"condition {scoped.id} ({render_until(scoped.condition.p_node)}) violated on robot {self.robot}", transition)
 
     def _apply_policy(self, policy: OnFailure, reason: str, transition: Transition) -> None:
-        self.stop()
+        self.stop(DropReason.POLICY)
         transition.stop = True
         if policy == "abort_episode":
             transition.abort = reason
@@ -261,4 +284,4 @@ class TaskRunner:
         }
 
 
-__all__ = ["PED_STANDOFF_M", "LoopRun", "Outcome", "PhaseState", "ScopedCondition", "TaskRunner", "Transition", "standoff_pose"]
+__all__ = ["PED_STANDOFF_M", "DropReason", "LoopRun", "Outcome", "PhaseState", "ScopedCondition", "TaskRunner", "Transition", "standoff_pose"]

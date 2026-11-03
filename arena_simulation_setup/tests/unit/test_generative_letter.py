@@ -94,7 +94,7 @@ def test_text_that_draws_nothing_is_rejected():
 
 def test_pedestrian_count_binds_random_dynamic_obstacles():
     generator, _ = build('A', pedestrians=4)
-    assert generator.params() == {'tm_obstacles': 'random', 'obstacles_params': {'dynamic.n': [4, 4]}}
+    assert generator.params() == {'modes': {'obstacles': 'random'}, 'params': {'obstacles': {'dynamic.n': [4, 4]}}}
 
 
 def test_no_pedestrian_count_leaves_the_episode_alone():

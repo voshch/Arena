@@ -9,8 +9,8 @@
 
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
-#include "task_generator_msgs/srv/queue_episode.hpp"
-#include "task_generator_msgs/srv/reset_episode.hpp"
+#include "arena_runtime_msgs/srv/queue_episode.hpp"
+#include "arena_runtime_msgs/srv/reset_episode.hpp"
 #include "world_generator_msgs/srv/generate_world.hpp"
 #include "world_generator_msgs/msg/alphabet.hpp"
 
@@ -61,13 +61,13 @@ protected:
     rclcpp::Node::SharedPtr node;
 
     std::string world_generator_node;
-    std::string task_generator_node;
+    std::string arena_env_node;
 
     std::shared_ptr<rclcpp::AsyncParametersClient> params_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr generate_client_;
     rclcpp::Client<world_generator_msgs::srv::GenerateWorld>::SharedPtr generate_world_client_;
-    rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client_;
-    rclcpp::Client<task_generator_msgs::srv::ResetEpisode>::SharedPtr reset_episode_client_;
+    rclcpp::Client<arena_runtime_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client_;
+    rclcpp::Client<arena_runtime_msgs::srv::ResetEpisode>::SharedPtr reset_episode_client_;
     rclcpp::Subscription<world_generator_msgs::msg::Alphabet>::SharedPtr alphabet_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr resetting_sub_;
     rclcpp::TimerBase::SharedPtr algorithms_timer_;
@@ -100,7 +100,7 @@ protected:
     void setupUi();
     void loadAlgorithms();
     // Apply the generator's episode binding (JSON from generate_world) onto a queue request.
-    void applyEpisodeBinding(task_generator_msgs::srv::QueueEpisode::Request& req, const std::string& json);
+    void applyEpisodeBinding(arena_runtime_msgs::srv::QueueEpisode::Request& req, const std::string& json);
     // Send a preview GenerateWorld request built from the current widgets. Coalesces while one is in flight.
     void requestPreview();
     // Repopulate the algorithm list, rebuilding the tree when the set or the node changed.

@@ -1,6 +1,9 @@
 import asyncio
+from collections.abc import Collection, Mapping
 
 from arena_runtime.env.request import GoToPhase, TaskRequest
+from arena_runtime.env.robot_manager.task_runner import PhaseState
+from arena_runtime.env.task_layer import ResetPlan
 from arena_runtime.shared import Pose
 
 from task_generator.tasks.mode import TaskMode
@@ -16,14 +19,12 @@ class TM_Robots(TaskMode):
         _ctx (TaskContext): Shared task context.
     """
 
-    _start_poses: dict[str, Pose]
+    async def reset(self) -> ResetPlan:
+        """The starts and tasks this mode wants for the next episode, computed with the sim paused."""
+        return ResetPlan()
 
-    @property
-    def start_poses(self) -> dict[str, Pose]:
-        return self._start_poses
-
-    async def reset(self) -> None:
-        self._start_poses = {}
+    async def tick(self, ended: Mapping[str, PhaseState], assigned: Collection[str]) -> None:
+        """Runs every sim tick of a running episode, ended maps a robot to the phase that ended on this tick and assigned holds the robots given a task from outside since the last tick."""
 
     async def teardown(self) -> None:
         """Release everything this mode drives; called when the mode is replaced or the task ends."""

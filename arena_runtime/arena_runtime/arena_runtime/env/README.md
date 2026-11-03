@@ -23,23 +23,31 @@ for tests that need a live node to run managers on.
 episode record and queue, the staged params, the reset cycle, the termination
 watcher, the scenario timeline, the episode conditions, `run_episode` and the
 entity spawn services (`runtime/spawn_*`, `runtime/move`). The ROS node is named
-`task_generator_node`, started by the `env_node` console script through
-[`env.launch.py`](../../launch/env.launch.py), which `arena_node` launches for
+`Constants.ENV_NODE_NAMESPACE` (`arena_env_node`), the one source of the name
+the registry, the env peers and the launch derive from, started by the `arena_env_node` console script through
+[`env.launch.py`](../../launch/env.launch.py), which `arena_runtime_node` launches for
 every `spawn_env`.
 
 The task layer is reached only through [`task_layer.py`](task_layer.py):
-`task_layer()` loads the module the `arena_runtime.task_layer` entry point group
-names (`task_generator`'s
-[`tasks/layer.py`](../../../../task_generator/task_generator/tasks/layer.py)),
-and the `TaskLayer`, `EpisodeTask` and `RobotModes` protocols,
-`TaskContext`, `ResetPlan` and `TaskParams` are all `EpisodeNode`
-sees of it. The `task.robots`, `task.obstacles`, `task.config` and
-`task.modules` params are the layer's `TaskParams`, reached as
+`task_layer(name)` loads the module registered as `name` under the
+`arena_runtime.task_layer` entry point group. The `task_layer` launch arg selects
+it for an env, `$ARENA_TASK_LAYER` for a process that has no launch args (the
+MCP domains, suite parsing), and the default is `task_generator`'s
+[`tasks/layer.py`](../../../../task_generator/task_generator/tasks/layer.py).
+`spawn_env` refuses a name nothing registers. `task_layer_name(name)` is the one
+source of the runtime name (the argument, else `$ARENA_TASK_LAYER`, else
+`task_generator`): the node resolves it once and sets its `task_layer` param to
+it, so a live env reports the runtime it runs and the MCP tools on that env load
+the same one. The `TaskLayer` and `EpisodeTask` protocols, `TaskContext`,
+`TaskConfiguration`, `ResetPlan`, `RobotReset`, `EpisodeRecord`,
+`TaskModeOverrides` and `TaskParams` are all `EpisodeNode` sees of it. The
+selection params of the runtime's axes are its `TaskParams`, reached as
 `node.task_params`. The node is what task modes get as `self.node`, and it
 builds the `TaskContext` they work on in `_set_up_task` (between the managers
 and the world sync, the one abstract hook) and binds its collision callback on
 the robots manager there. The optional hooks of `EnvNode` it overrides: simulator incidents (`_compromise`, logged by
-default), its tick (`_on_tick`, after the robots are judged), entity snapshots
+default), its tick (`async _on_tick(ended)`, after the robots are judged, `ended`
+mapping each robot to the `PhaseState` that ended on this tick), entity snapshots
 (`_extra_semantic_states`), env displays (`_interaction_displays`), a step once the
 env is initialized (`_after_setup`) and its teardown (`_teardown_episode`, after the tick
 loop stops, before the robots and the simulator), plus `on_task_submitted` and
@@ -47,18 +55,53 @@ loop stops, before the robots and the simulator), plus `on_task_submitted` and
 
 ### Episode loop
 
-`_run_reset_cycle` builds the next record and resets the task, and
+`_build_next_record` builds the next record, `_run_reset_cycle` resets the task, and
 `_termination_watcher` ends the episode. Episode end state lives on the node:
 `abort_episode(reason)` and `force_reset()` set the flags, `_episode_done`
 returns true on a flag, on the `Robot.TIMEOUT` sim-time limit (which aborts with
-`timeout`) or when the task is done.
+`timeout`) or when the task is done. Every sim tick the node judges the robots
+and then, while the episode is RUNNING and the reset lock is free, awaits
+`EpisodeTask.tick(ended, assigned)` with the phases that ended on it and the
+robots given a task from outside (`SubmitTask`, `RunTask`) since the last task
+tick, so a task can reassign a robot the moment its task finishes and keep its
+hands off one assigned from outside. The node keeps that set, hands it over at
+each task tick and clears it at every reset. A task error in the tick is logged
+and does not stop the loop.
+
+The next episode is one function of `EpisodeRuntime.pending` (a
+`TaskModeOverrides`, merged into by `queue_episode` and `reset_episode`) and an
+explicit world or seed: its id is the current one plus one, its world the
+explicit one, else `pending.world`, else the loaded world, else the current one,
+its seed the explicit one (when not negative), else `pending.seed` (when not
+negative), else derived from `run_seed|world|episode_id`, and its modes the live
+`task_params.resolve(pending.modes)`, the full selection the build then selects
+(an empty value on a single-mode axis keeps the live mode, an empty modules axis
+leaves the always-on modules). `state/queue` is published
+from that function, so the preview equals the record the build then produces
+unless `run_episode` or `reset_episode` pass a world or seed. A negative seed
+from the runtime means derive it.
+
+The runtime decides once per episode: `next_episode(previous=, queued=pending)`
+runs when an episode's outcome is final (after it is published, so `previous`
+carries the outcome the node assigned: timeout, no progress, collision,
+SKIPPED) and the queue state is republished, and lazily at the start of the
+build when it has not run. The answer replaces `pending` only when it came back:
+a raising `next_episode` at episode end is logged and the build asks again, at
+build time the error ends the episode FATAL, and `pending` is never lost. The
+build clears `pending` and the decision only after it succeeded. One lock
+serializes the decision and every merge into `pending` (`queue_episode`,
+`reset_episode`), so a merge during the decision is kept and the decision never
+overwrites one. A `reset_episode` that arrives while an episode is in flight sets
+`EpisodeRuntime.respawn_requested` (and ends the running episode SKIPPED), which
+`_run_episode` consumes to start the next episode, so one arriving after the
+outcome is set is not lost.
 
 ### Reset semantics
 
 The `resetting` parameter and `state/resetting` belong to the node. Async ROS I/O in
 this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins).
 
-`EpisodeNode._reset_episode(seed)` runs in this order:
+`EpisodeNode._reset_episode(record)` runs in this order:
 
 1. Publish `reset_start` (`std_msgs/Empty`), reseed the RNG and reset the
    scenario asset pointer.
@@ -67,15 +110,20 @@ this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_m
 3. `environment_manager.before_reset_episode()` pauses the simulator. The sim
    is paused for the entire body below; only node-discovery and lifecycle
    signals are observable here.
-4. Apply the staged task and human params.
-5. `Task.prepare_reset(seed)` rebinds the modes the `task.*` params select,
-   calls `module.before_reset()` for every active module, then
-   `tm_robots.reset()` and `tm_obstacles.reset()`. It returns a `ResetPlan`
-   with the obstacles, dynamic obstacles and lights to spawn.
+4. Apply the staged task and human params: each staged full name that the node
+   declares is set in one atomic batch, an undeclared one is warned about and
+   dropped.
+5. `Task.reset_robots(record)` rebinds the modes the `task.*` params select, calls
+   `module.before_reset()` for every active module, resets the robot mode and
+   hands its `ResetPlan` to `module.on_reset_plan(plan)`. The plan holds a
+   `RobotReset` per robot (`start_pose`, `task`, `humans`) and the
+   `forbidden_zones`. The node submits each task from its start pose and forbids
+   the zones. Then `Task.reset_obstacles(plan, record)` adds
+   the obstacles, dynamic obstacles and lights to spawn.
 6. `environment_manager.respawn(callback)` marks all current `INUSE` obstacles
    as `UNUSED`, runs the callback (which spawns the plan), then removes
    everything still `UNUSED`.
-7. Every `RobotManager.reset(...)` runs. Failures are classified: the episode
+7. Every `RobotManager.reset(...)` runs, placed at the `start_pose` of its entry. Failures are classified: the episode
    fails with the reasons, and a run of consecutive reset failures raises.
 8. `Task.after_reset()` calls `module.after_reset()` for every active module.
 9. `environment_manager.after_reset_episode()` unpauses the simulator, and
@@ -84,6 +132,86 @@ this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_m
 **WORLD layer invariant:** entities spawned with `ObstacleLayer.WORLD` (walls,
 doors, floors, world static entities) are never touched during `respawn`. They
 survive all episode resets for the lifetime of the world.
+
+### Task runtimes
+
+`task_generator` is one task runtime among any that register under the
+`arena_runtime.task_layer` entry point group. A runtime is a module with the
+functions of the `TaskLayer` protocol, selected with `task_layer:=<entry point
+name>`:
+
+```python
+setup(entry_points={"arena_runtime.task_layer": ["my_runtime = my_runtime.layer"]})
+```
+
+| `TaskLayer` | What it does |
+|---|---|
+| `declare_task_params(node)` | Returns the `TaskParams`: `resolve(modes)` is the selection `select(modes)` would make live, `select(modes)` sets the listed axes. |
+| `declare_mode_schema(node, axis, mode)` | Declares the params of one mode. `declare_mode_schemas(layer, node)` declares every registered mode. |
+| `create_task(node=, ctx=, params=)` | Binds an `EpisodeTask` to the env's `TaskContext`. |
+| `mode_namespaces()` | The registered modes per axis, each with its param namespace: the one source of param names. `registered_modes(layer)` is its names. |
+| `fleet_only_robots()` | Robot modes reachable only through a fleet config. |
+| `next_episode(previous=, queued=)` | Chooses what the next episode changes, given the finished record and what was queued. |
+
+`mode_param(axis)` is the parameter that selects an axis, `selection_args(modes)`
+the `k:=v` launch arguments that select a whole selection, and
+`validate_modes(modes, vocabulary, multi_axes)` the one validator: a layer
+passes its own vocabulary and its multi-mode axes, the runtime answers the
+canonical selection.
+
+A runtime owns its axes. `TaskModes` is a dict of mode names per axis,
+`TaskModeOverrides(modes, world, seed)` is what an episode changes (an axis left
+out, an empty world and a negative seed keep what is live) and `EpisodeRecord.modes`
+is the selection an episode ran with. `task_generator` has the axes `robots`,
+`obstacles` and `modules` and returns `queued` unchanged. The wire form of
+modes is `encode_modes` and `decode_modes`, one `KeyValue` per axis with the
+names comma-separated. `QueueEpisode.modes`, `EpisodeRecord.modes`,
+`GetTaskModes.modes` and `QueryTaskModes.modes` carry any axis and are the only
+mode fields on the wire. `QueueEpisode` validates the request's modes with
+`TaskLayer.validate_modes` and answers its `ValueError` message unchanged as
+`error_msg`: an unknown axis, an unknown mode and a single-mode axis without
+exactly one name are refused, `[]` clears a multi-mode axis such as modules.
+`QueryTaskModes.namespaces` is `mode_namespaces()` on the wire (`encode_namespaces`,
+`decode_namespaces`): one `KeyValue` per registered mode, keyed `<axis>/<mode>`, valued
+with the mode's param namespace. Clients take param names from it and never build
+`task.<mode>`. `EpisodeRecord.task_layer` is the name of the runtime that ran the
+episode, the env's resolved `task_layer` param.
+
+Staged params are one dict by full name. `QueueEpisode.params` carries full names
+and upserts them. Changing an axis's mode drops
+the staged names under the namespaces the old selection used and the resolved new
+selection does not, so always-on modules never look switched off. `EpisodeRecord.params` carries the effective params of the selected
+modes, with the staged values over them on a QUEUED record.
+
+`arena_evaluation` reads the vocabulary and the mode params through this seam, and
+`$ARENA_TASK_LAYER` selects the runtime for suite parsing.
+
+### Reassigning a robot mid-episode
+
+`RobotManager.submit_task` drops the robot's unfinished phases and appends the
+new ones, `RobotManager.stop_task` drops them and cancels the adapter goals:
+that pair is the reassign operation, from a task's `tick` as much as from the
+services. The runner state stays reachable as `ctx.robots[name].runner`
+(`TaskRunner.active_state`, `outcomes(outcome)`).
+
+The node serves it two ways through one private method that parses the YAML,
+shifts map-frame poses, submits under the reset lock (or stops the robot on an
+empty phase list) and returns the manager and the new phase indices:
+`runtime/submit_task` (`SubmitTask`, answers with the indices) and
+`runtime/run_task` (`RunTask` action). A `RunTask` goal is tracked off the
+runner on each tick: feedback names each of its phases as it leaves `pending`,
+and the goal ends `met` when all its phases are met, `failed` when one failed,
+`dropped` when one was dropped (a later submit or goal for the robot, a stop,
+an episode reset, detected by the episode id the goal was assigned in). An empty
+task ends `met` at once. A goal's outcome comes only from
+`TaskRunner.request_outcome` for the request its submit made. A new goal for a
+robot with a running goal replaces it, the old one ending `dropped`. Cancel stops
+the robot (`stop_task`, which drops with `DropReason.STOPPED`) only while the
+goal's request is open and ends the goal canceled, a cancel that arrives while
+the assign still waits is honored once it returns. `met` and `failed` succeed the
+action, any other `dropped` aborts it. Refused input (unknown robot, bad YAML, env not initialized) aborts the goal
+with `error_msg`. A loop's exit marks its remaining phases `dropped`, so a goal
+over a loop ends `dropped`.
 
 ### Hand spawns
 
@@ -94,9 +222,10 @@ episode, `runtime/spawn_robot` queues or spawns one robot. Without a pose,
 
 ### `EpisodeRecord`
 
-Episode state is tracked in `EpisodeRecord` (an `attrs.define` dataclass on the
-node). Key fields: `episode_id`, `world`, `seed` (derived via blake2b from
-`run_seed|world|episode_id`), snapshot task-mode strings, `outcome_state`,
+Episode state is tracked in `EpisodeRecord` (an `attrs.define` dataclass in
+[`task_layer.py`](task_layer.py)). Key fields: `episode_id`, `world`, `seed`
+(derived via blake2b from `run_seed|world|episode_id`, or chosen by the runtime),
+`modes` (the selection per axis), `outcome_state`,
 `outcome_info`, `goal_uuid`, and `integrity`. A new record is created at every
 NEXT reset. `integrity` lists why the episode is compromised and starts empty:
 every manual mutation (`runtime/spawn_*`, `runtime/move`, `runtime/despawn_robot`,
@@ -123,15 +252,20 @@ configuration, the asset catalogs and task submission to a robot. Resources
 `arena://episode/{env_id}/current` and `arena://episode/{env_id}/history`.
 
 Every tool takes `env_id`, optional when exactly one env runs. `episode_queue`
-keeps every field it is not given, `tm_modules` included, and types per-mode
-params by the node's declaration of `task.<mode>.<leaf>`. Task modes and
-parameter names come from the mode registry and
+keeps every field it is not given and takes `modes` (axis to a name or a list of
+names, `[]` clears an axis with many modes like modules, an axis with one mode
+needs exactly one name), full-name `params`, validates `modes` with the env
+layer's `validate_modes` and types params by the
+node's declaration. Task modes and parameter names come from the env's task
+runtime, which a tool on a live env loads by the env's `task_layer` param, and
 [`constants/runtime.py`](constants/runtime.py): `episode_task_modes` reads the
-live env, or the registry with defaults when no env runs. Spawn, move and
+live env, or the registry of the runtime `task_layer` names (default
+`task_layer_name()`) with defaults when no env runs, `episode_config` takes the
+same optional `task_layer`. `episode_task_modes_active` answers `modes` per axis. Spawn, move and
 pedestrian poses are map-frame. Pausing the sim is a runtime hold, not an
 episode tool.
 
-`runtime/submit_task` (`task_generator_msgs/SubmitTask`) is the node service
+`runtime/submit_task` (`arena_runtime_msgs/SubmitTask`) is the node service
 behind `episode_submit_task` and the goals of the `robots` domain: a `phases:`
 list or `{phases, conditions}` mapping in the scenario format, parsed by
 `TaskRequest.parse` and handed to `RobotManager.submit_task`, answering with the
@@ -191,7 +325,7 @@ Parsing rules:
 - The `robot` param is a `ROSParamT[_RobotDiff]` with a parse callback, so
   it re-computes the diff on every parameter change.
 
-After `set_up()`, the active fleet is published latched on `state/robots` as a `task_generator_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`) per robot. Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
+After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`) per robot. Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
 
 ## `RobotManager`
 
@@ -212,7 +346,8 @@ Key public surface:
 | `pose` | current `Pose` in the map frame; `None` during reset/respawn windows |
 | `start_pos` / `goal_pos` | last set start and goal positions |
 | `goal` | pose of the first `GoToPhase` in the current `TaskRequest`, or `None` |
-| `submit_task(request, start=None)` | hand a typed `TaskRequest` to the adapter, routed across levels from `start` (the live pose when omitted), loop bodies routed and defaulted like top-level phases |
+| `submit_task(request, start=None)` | hand a typed `TaskRequest` to the adapter, routed across levels from `start` (the live pose when omitted), loop bodies routed and defaulted like top-level phases, dropping the unfinished phases of the previous request |
+| `stop_task()` | drop the unfinished phases and cancel the in-flight adapter goals |
 | `move(pose)` | teleport the robot via `EnvironmentManager.move_robot`, blocking until TF shows it at the target |
 | `is_done` | whether the current task request is satisfied |
 | `accepts` | `frozenset[TaskKind]`: the set of task kinds this robot's adapter handles |
@@ -221,9 +356,9 @@ Key public surface:
 | `destroy()` | tear down adapter and remove robot from sim |
 
 A teleport under a hold (every reset) advances the held sim one physics step at
-a time through arena_node's `sim_lifecycle/step` until a TF sample newer than
+a time through arena_runtime_node's `sim_lifecycle/step` until a TF sample newer than
 the step puts the robot within 0.3 m of the target, at most 5 steps per
-attempt and 3 attempts, re-sending the move on each. When arena_node refuses
+attempt and 3 attempts, re-sending the move on each. When arena_runtime_node refuses
 the step (no hold, as for a mid-episode teleport, or another caller's unpause
 window open) or does not answer it within 10 s, the teleport runs inside an
 unpause window instead and polls TF for up to 2 s per attempt.

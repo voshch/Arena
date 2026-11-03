@@ -14,7 +14,7 @@ _spin_in_background = pytest.importorskip("arena_rclpy_mixins.testing").spin_in_
 @pytest.fixture(autouse=True)
 def _ros_gate():
     pytest.importorskip("rclpy")
-    pytest.importorskip("task_generator_msgs.srv")
+    pytest.importorskip("arena_runtime_msgs.srv")
 
 
 @pytest.fixture

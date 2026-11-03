@@ -53,7 +53,7 @@ class AdapterCtx:
     namespace: Namespace
     robot_name: str
     frame: str
-    task_generator_node: str
+    arena_env_node: str
     env_namespace: str
     use_sim_time: bool
     base_frame: str
@@ -211,7 +211,7 @@ class Adapter(ABC):
                 *self.bringup._launch_actions(
                     use_sim_time=ctx.use_sim_time,
                     frame=ctx.frame,
-                    task_generator_node=ctx.task_generator_node,
+                    arena_env_node=ctx.arena_env_node,
                     env_namespace=ctx.env_namespace,
                     sensors=ctx.sensors,
                     **self._bringup_kwargs,

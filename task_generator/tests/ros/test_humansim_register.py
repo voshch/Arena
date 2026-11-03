@@ -12,6 +12,7 @@ from task_generator.tasks.obstacles.prompt import register_prompt_mode
 from task_generator.tasks.registry import OBSTACLES_MODES
 
 register_prompt_mode(Constants.HumanSimulator({human!r}))
+register_prompt_mode(Constants.HumanSimulator({human!r}))
 prompt = Modes.TM_Obstacles.PROMPT
 print(OBSTACLES_MODES.get(prompt).__module__ if prompt in OBSTACLES_MODES else None)
 """

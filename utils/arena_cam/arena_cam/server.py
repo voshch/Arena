@@ -29,7 +29,7 @@ class CamServer(CamNode):
         super().__init__(timeline=None, targets=TargetSelection(include_sim=sim, viz_all=False, viz_env=env_id), node_name=f"arena_cam_env_{env_id}", fps=fps, env=env_id)
         self.channel_env = f"/arena/env_{env_id}"
         self._selected = setup
-        self._generator = f"{self.channel_env}/task_generator_node"
+        self._generator = f"{self.channel_env}/arena_env_node"
         self._pending: Camera | None = None
         self._wake = asyncio.Event()
         self._current: asyncio.Future[None] | None = None

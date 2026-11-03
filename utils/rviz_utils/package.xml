@@ -64,7 +64,7 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>task_generator_msgs</exec_depend>
+  <exec_depend>arena_runtime_msgs</exec_depend>
   <exec_depend>arena_viz</exec_depend>
   <exec_depend>arena_people_msgs</exec_depend>
   <exec_depend>arena_assets</exec_depend>

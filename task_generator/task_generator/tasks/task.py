@@ -1,9 +1,10 @@
 import typing
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.env.request import TaskRequest
-from arena_runtime.env.task_layer import ResetPlan, TaskContext
+from arena_runtime.env.robot_manager.task_runner import PhaseState
+from arena_runtime.env.task_layer import EpisodeRecord, ResetPlan, TaskContext
 from arena_runtime.shared import Pose
 
 from task_generator.modes import Modes
@@ -24,12 +25,13 @@ from .obstacles import TM_Obstacles
 from .robots import TM_Robots
 
 if typing.TYPE_CHECKING:
-    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_rclpy_mixins import ArenaMixinNode
 
-    from task_generator.tasks.layer import ModeParams
+    from task_generator.tasks.layer import TaskModeParams
+    from task_generator.tasks.modules import TM_Module
 
 
-class Task(NodeInterface["EpisodeNode"]):
+class Task(NodeInterface["ArenaMixinNode"]):
     """The task modes bound to one env."""
 
     __param_tm_robots: Modes.TM_Robots | None
@@ -41,7 +43,7 @@ class Task(NodeInterface["EpisodeNode"]):
     __tm_obstacles: TM_Obstacles | None = None
 
     @classmethod
-    async def create(cls, *, node: "EpisodeNode", ctx: TaskContext, params: "ModeParams", modules: Sequence[Modes.TM_Module] = ()) -> "Task":
+    async def create(cls, *, node: "ArenaMixinNode", ctx: TaskContext, params: "TaskModeParams", modules: Sequence[Modes.TM_Module] = ()) -> "Task":
         self = cls(node=node, ctx=ctx, params=params, modules=modules)
         tm_config = self._params.TM_CONFIG.value
         if not tm_config:
@@ -54,17 +56,32 @@ class Task(NodeInterface["EpisodeNode"]):
 
     _ctx: TaskContext
 
-    def __init__(self, *, node: "EpisodeNode", ctx: TaskContext, params: "ModeParams", modules: Sequence[Modes.TM_Module] = ()) -> None:
+    def __init__(self, *, node: "ArenaMixinNode", ctx: TaskContext, params: "TaskModeParams", modules: Sequence[Modes.TM_Module] = ()) -> None:
         super().__init__(node=node)
         self._ctx = ctx
         self._params = params
 
         self._logger.debug('initing modules')
-        self.__modules = []
-        for module in modules:
-            cls = MODULE_MODES.get(module)
-            meta = MODULE_MODES.meta(module)
-            self.__modules.append(cls(ctx=self._ctx, namespace=meta.namespace, task=self, node=self.node))
+        self.__module_instances: dict[Modes.TM_Module, TM_Module] = {}
+        self.__modules: list[TM_Module] = []
+        self._bind_modules(modules)
+
+    def _create_module(self, module: Modes.TM_Module) -> "TM_Module":
+        cls = MODULE_MODES.get(module)
+        meta = MODULE_MODES.meta(module)
+        return cls(ctx=self._ctx, namespace=meta.namespace, task=self, node=self.node)
+
+    def _bind_modules(self, selected: Sequence[Modes.TM_Module]) -> None:
+        """Bind the selected modules in name order, keeping the instances that stay selected."""
+        instances = {module: self.__module_instances[module] for module in selected if module in self.__module_instances}
+        for module, instance in self.__module_instances.items():
+            if module not in instances:
+                instance.teardown()
+        for module in sorted(selected, key=lambda module: module.value):
+            if module not in instances:
+                instances[module] = self._create_module(module)
+        self.__module_instances = instances
+        self.__modules = [instances[module] for module in sorted(instances, key=lambda module: module.value)]
 
     async def _tear_down_tm_robots(self) -> None:
         if self.__tm_robots is not None:
@@ -149,26 +166,37 @@ class Task(NodeInterface["EpisodeNode"]):
             await self.__tm_obstacles.teardown()
             self.__tm_obstacles = None
 
-    async def prepare_reset(self, seed: int) -> ResetPlan:
-        """Rebind the modes the params select, then reset them, with the sim paused."""
+    async def reset_robots(self, record: EpisodeRecord) -> ResetPlan:
+        """Rebind the modes the record selects, run the modules' before hooks and reset the robot mode, with the sim paused."""
+        new_tm_robots = Modes.TM_Robots(record.modes["robots"][0]) if record.modes.get("robots") else self._params.TM_ROBOTS.value
         if new_tm_config := self._params.TM_CONFIG.value:
             if new_tm_config != self.__param_tm_config or frozenset(self._ctx.robots.keys()) != self.__composite_fleet:
                 await self.set_tm_robots_from_config(new_tm_config)
-            elif (new_tm_robots := self._params.TM_ROBOTS.value) != self.__param_tm_robots:
+            elif new_tm_robots != self.__param_tm_robots:
                 self._logger.warning(f"task.robots ignored while task config {new_tm_config} is bound")
                 self.__param_tm_robots = new_tm_robots
-        elif (new_tm_robots := self._params.TM_ROBOTS.value) != self.__param_tm_robots:
+        elif new_tm_robots != self.__param_tm_robots:
             await self.set_tm_robots(new_tm_robots)
 
-        if (new_tm_obstacles := self._params.TM_OBSTACLES.value) != self.__param_tm_obstacles:
+        new_tm_obstacles = Modes.TM_Obstacles(record.modes["obstacles"][0]) if record.modes.get("obstacles") else self._params.TM_OBSTACLES.value
+        if new_tm_obstacles != self.__param_tm_obstacles:
             await self.set_tm_obstacles(new_tm_obstacles)
+
+        if (selected_modules := record.modes.get("modules")) is not None:
+            self._bind_modules([Modes.TM_Module(name) for name in selected_modules])
 
         for module in self.__modules:
             module.before_reset()
 
-        await self.tm_robots.reset()
-        obstacles, dynamic_obstacles = await self.tm_obstacles.reset(seed=seed)
-        return ResetPlan(obstacles=obstacles, dynamic_obstacles=dynamic_obstacles, lights=self.tm_obstacles.lights)
+        plan = await self.tm_robots.reset()
+        for module in self.__modules:
+            module.on_reset_plan(plan)
+        return plan
+
+    async def reset_obstacles(self, plan: ResetPlan, record: EpisodeRecord) -> None:
+        """Reset the obstacle mode into the plan, once the robots' part is applied."""
+        plan.obstacles, plan.dynamic_obstacles = await self.tm_obstacles.reset(seed=record.seed)
+        plan.lights = self.tm_obstacles.lights
 
     def after_reset(self) -> None:
         for module in self.__modules:
@@ -177,6 +205,9 @@ class Task(NodeInterface["EpisodeNode"]):
     @property
     async def done(self) -> bool:
         return await self.tm_robots.done
+
+    async def tick(self, ended: Mapping[str, PhaseState], assigned: Collection[str]) -> None:
+        await self.tm_robots.tick(ended, assigned)
 
     @property
     def tm_obstacles(self) -> TM_Obstacles:
@@ -191,12 +222,12 @@ class Task(NodeInterface["EpisodeNode"]):
     async def set_robot_position(self, pose: Pose):
         """Broadcast a teleport to all robots."""
         await self.tm_robots.set_position(pose)
-        self._ctx.compromise("robots moved by hand")
+        self._ctx.episode.compromise("robots moved by hand")
 
     async def set_robot_goal(self, pose: Pose):
         """Broadcast a goal to all robots."""
         await self.tm_robots.set_goal(pose)
-        self._ctx.compromise("robot goal set by hand")
+        self._ctx.episode.compromise("robot goal set by hand")
 
     async def submit_task(self, request: TaskRequest, robot_name: str) -> None:
         """Submit a typed task request to a specific robot; bypasses TM_Robots."""

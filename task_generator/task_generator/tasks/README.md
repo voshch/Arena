@@ -12,14 +12,16 @@ that wire everything together.
 
 The task modes bound to one env: one `TM_Robots`, one `TM_Obstacles`, and
 zero-or-more `TM_Module` instances. `EpisodeNode` drives it. `Task.create(...)`
-binds the modes the `task.*` params select (`node.task_params`) and calls
+binds the modes the `task.*` params select (the `params` `create_task` passes in) and calls
 `robots_manager.set_up()`. `__init__` only instantiates the modules. Entry
 points:
 
 | Method | Purpose |
 | --- | --- |
 | `Task.create(...)` | async factory; binds the initial modes and calls `robots_manager.set_up()` |
-| `prepare_reset(seed)` | rebind the modes the params select, run `before_reset()` on the modules, reset `tm_robots` and `tm_obstacles`, return a `ResetPlan` |
+| `reset_robots(record)` | rebind the modes the params select, run `before_reset()` on the modules, reset `tm_robots`, run `on_reset_plan(plan)` on the modules, return the `ResetPlan` |
+| `reset_obstacles(plan, record)` | reset `tm_obstacles` into the plan, seeded with `record.seed` |
+| `tick(ended, assigned)` | forward to `tm_robots.tick(ended, assigned)`, `ended` maps a robot to the phase that ended on this tick and `assigned` holds the robots given a task from outside since the last tick |
 | `after_reset()` | run `after_reset()` on the modules |
 | `set_tm_robots(enum)` | swap the active `TM_Robots` mode |
 | `set_tm_robots_from_config(path)` | bind the composite a task config file describes |
@@ -40,7 +42,9 @@ The episode end state (`abort_episode`, `force_reset`, timeout) and the
 Abstract base for all three axes. Provides `_ctx: TaskContext`,
 `_namespace: Namespace`, and a `namespace(*path)` helper for constructing
 parameter names scoped to the mode. Extends `NodeInterface` so every mode has
-access to `self.node`, the `EpisodeNode`.
+access to `self.node`, typed as the generic `ArenaMixinNode`: ROS params,
+publishers, subscriptions, services, clocks. Everything env-specific comes from
+`_ctx`.
 
 ### `TaskContext`
 
@@ -60,12 +64,22 @@ class TaskContext:
     simulator: BaseSim
     acoustics_simulator: BaseAcousticsSimulator
     reset_lock: asyncio.Lock
-    compromise: Callable[[str], None]
-    abort_episode: Callable[[str], None]
+    conf: TaskConfiguration
+    episode: EpisodeContext
+    interactive: InteractiveContext
 
     @property
     def robots(self) -> dict[str, RobotManager]: ...
 ```
+
+`TaskConfiguration` is the part of the env `Configuration` modes read, under the
+same names: `RNG`, `HUMAN`, `SAFE_DIST`, `GOAL_TOLERANCE_RADIUS`, `TIMEOUT` and
+`KG_DERIVE`.
+
+`EpisodeContext` is what a mode may tell the running episode: `compromise`,
+`abort_episode`, `force_reset`, `register_timeline`, `register_conditions` and
+`register_sound_levels`. `InteractiveContext` is the env's rviz side: `markers`, the
+interactive marker hub, `robot_colors` and `tf_buffer`.
 
 `TM_Composite` replaces `robots_manager` with a scoped view so each sub-TM
 only sees its allocated fleet slice.
@@ -92,10 +106,12 @@ Loaders are zero-argument callables that import and return the concrete class
 Metadata is stored on the registry, keyed by enum value, and is reachable via
 `<axis>_MODES.meta(key)` without invoking the loader.
 
-`walk_schemas(node)` (module-level in `registry.py`) is called once at node
-init to fire every registered schema, forward-declaring all TM parameters
-regardless of which modes will be activated. It reads schemas via
-`reg.meta(key).schema` and never triggers a loader.
+`declare_mode_schemas(layer, node)` (in `arena_runtime.env.task_layer`) is called
+once at node init. It walks `layer.mode_namespaces()` and calls the layer's
+`declare_mode_schema(node, axis, mode)` for each registered mode, which fires the
+schema stored in `reg.meta(key).schema`, forward-declaring all TM parameters
+regardless of which modes will be activated. It never triggers a loader. The
+robots and obstacles `scenario` modes share the `task.scenario` namespace.
 
 ## TM package structure
 
@@ -176,9 +192,11 @@ tooltip.
 ## Reset semantics
 
 `EpisodeNode._reset_episode` in arena_runtime drives the reset. It calls
-`Task.prepare_reset(seed)`, which rebinds the modes the params select, runs
-`module.before_reset()` for every active module, then `tm_robots.reset()` and
-`tm_obstacles.reset()`, and returns a `ResetPlan`. After the respawn and the
+`Task.reset_robots(record)`, which rebinds the modes the params select, runs
+`module.before_reset()` for every active module, resets the robot mode, hands its
+`ResetPlan` to `module.on_reset_plan(plan)` and returns it. The node applies it
+(submits each entry's `task` from its `start_pose`, forbids its `forbidden_zones`), then calls
+`Task.reset_obstacles(plan, record)`, which adds the obstacles. After the respawn and the
 robot resets, `Task.after_reset()` runs `module.after_reset()` for every active
 module. The simulator is paused throughout. The full ordering and the WORLD
 layer invariant are in the

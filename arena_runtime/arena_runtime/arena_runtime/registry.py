@@ -4,6 +4,8 @@ import arena_runtime_msgs.msg
 import attrs
 import builtin_interfaces.msg
 
+from arena_runtime.env.constants import Constants
+
 
 def _extent_eq(a: arena_runtime_msgs.msg.WorldExtent, b: arena_runtime_msgs.msg.WorldExtent) -> bool:
     return a.x_min == b.x_min and a.y_min == b.y_min and a.x_max == b.x_max and a.y_max == b.y_max
@@ -69,7 +71,7 @@ class EnvRegistry:
         else:
             env_id = self._next_id
 
-        namespace = requested_ns.lstrip("/") if requested_ns else f"arena/env_{env_id}/task_generator_node"
+        namespace = requested_ns.lstrip("/") if requested_ns else f"arena/env_{env_id}/{Constants.ENV_NODE_NAMESPACE}"
         fqn = f"/{namespace}"
         owner = next((r.env_id for r in self._records.values() if r.fqn == fqn), None)
         if owner is not None:

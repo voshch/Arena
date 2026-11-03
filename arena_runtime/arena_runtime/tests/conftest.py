@@ -93,7 +93,7 @@ def fake_task_layer(monkeypatch: pytest.MonkeyPatch) -> object:
     import importlib.metadata
     from types import SimpleNamespace
 
-    from arena_runtime.env.task_layer import TASK_LAYER_GROUP
+    from arena_runtime.env.task_layer import DEFAULT_TASK_LAYER, TASK_LAYER_GROUP
     from arena_runtime.testing.env_host import FakeTaskLayer
 
     fake = FakeTaskLayer()
@@ -101,7 +101,7 @@ def fake_task_layer(monkeypatch: pytest.MonkeyPatch) -> object:
 
     def entry_points(**kwargs: object) -> object:
         if kwargs.get("group") == TASK_LAYER_GROUP:
-            return [SimpleNamespace(name="fake", load=lambda: fake)]
+            return [SimpleNamespace(name=DEFAULT_TASK_LAYER, load=lambda: fake)]
         return real(**kwargs)
 
     monkeypatch.setattr(importlib.metadata, "entry_points", entry_points)

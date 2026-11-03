@@ -30,7 +30,7 @@ def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
 def register_prompt_mode(human: Constants.HumanSimulator) -> None:
     """Back TM_Obstacles.PROMPT with the prompt implementation of the human simulator."""
     mode = _PROMPT_MODULES.get(human)
-    if mode is None:
+    if mode is None or Modes.TM_Obstacles.PROMPT in OBSTACLES_MODES:
         return
 
     @OBSTACLES_MODES.register(Modes.TM_Obstacles.PROMPT, namespace=NS, schema=declare_schema)

@@ -1,6 +1,6 @@
 # arena: multi-env orchestration layer
 
-`arena_node` ([`arena_node.py`](arena_node.py)) is the single process-level lifecycle
+`arena_runtime_node` ([`arena_runtime_node.py`](arena_runtime_node.py)) is the single process-level lifecycle
 node that lets multiple simulation environments coexist in one ROS graph. It owns
 two primitives (`EnvRegistry`, `HoldRegistry`), serves the
 services that envs and callers use to register and tear down, and publishes latched
@@ -50,7 +50,7 @@ lockstep run is active the sim stays paused and the run steps it for the window.
 Invariant: evicting an env calls `release_all(fqn)` so stale holds never block
 the sim permanently.
 
-## `ArenaNode`: services and topics
+## `ArenaRuntimeNode`: services and topics
 
 Namespace prefix for all names below: `/arena/`.
 
@@ -76,7 +76,7 @@ Namespace prefix for all names below: `/arena/`.
 | `state/sim` | [`SimState.msg`](../../arena_runtime_msgs/msg/SimState.msg) | `alive`/`reason` for the sim lifecycle (`_lifecycle` pause/unpause/step), `header.stamp` is the wall time of the transition |
 | `shutdown_request` | [`ShutdownRequest.msg`](../../arena_runtime_msgs/msg/ShutdownRequest.msg) | Broadcast asking `env_id` to shut down |
 
-`ArenaNode` also subscribes per env to `/<ns>/transition_event` (to track
+`ArenaRuntimeNode` also subscribes per env to `/<ns>/transition_event` (to track
 ACTIVE/INACTIVE/FINALIZED state) and `/<ns>/state/heartbeat` (to detect
 stale envs). A periodic timer applies `sweep_verdict` per record: a managed env
 whose wrapper process exited is evicted immediately, a pre-ready env (still
@@ -93,7 +93,7 @@ When `env_n > 0` at startup the node self-orchestrates an initial fleet via
 
 `state/sim` flips to `alive=false` after two consecutive lifecycle failures
 (pause/unpause returning `False` or raising, a step raising, or a
-`cleanup_namespace` raising `SimUnavailable`) and stays there: `arena_node`
+`cleanup_namespace` raising `SimUnavailable`) and stays there: `arena_runtime_node`
 never self-heals a dead sim, it just fails every pending `spawn_env` and stops
 the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
 
@@ -101,7 +101,7 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
 
 1. **Register**: env calls `register_env` (or is pre-reserved by `spawn_env`).
    Gets back `env_id`, `ns`, and the active `sim` name.
-2. **Launch**: env starts `task_generator_node` under the allocated `ns`;
+2. **Launch**: env starts `arena_env_node` under the allocated `ns`;
    `managed=true` skips re-registration.
 3. **Confirm world**: once the env has rendered its world map, it calls
    `confirm_world` with the map bounds, which cover every level as laid out
@@ -110,13 +110,13 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
    coordinates by the new `reference` offset and republishes its latched
    `map -> env_<n>/map` transform with it.
 4. **Heartbeat**: env publishes [`Heartbeat.msg`](../../arena_runtime_msgs/msg/Heartbeat.msg)
-   on `<ns>/state/heartbeat`; `arena_node` resets the timeout clock on each tick.
+   on `<ns>/state/heartbeat`; `arena_runtime_node` resets the timeout clock on each tick.
    The clock starts at `reserve()` time, so an env is covered from registration.
    The env beats from its own thread, so the beat shows a live process, not a responsive executor.
-5. **Despawn**: caller sends `despawn_env`; `arena_node` publishes a
+5. **Despawn**: caller sends `despawn_env`; `arena_runtime_node` publishes a
    `ShutdownRequest` the env observes and acts on via its own lifecycle.
 6. **Eviction**: on a `sweep_verdict` reason or lifecycle FINALIZED,
-   `arena_node` calls `start_eviction` (marks draining, releases holds),
+   `arena_runtime_node` calls `start_eviction` (marks draining, releases holds),
    logs a warning with the reason and the age of the last heartbeat,
    publishes a `ShutdownRequest`, awaits env disposal (reaping the wrapper
    process for managed envs), and only then cleans up the namespace via

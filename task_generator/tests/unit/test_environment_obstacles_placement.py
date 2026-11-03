@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 import math
 import typing
 
@@ -85,7 +86,7 @@ def on_bench(tmp_path):
         from arena_runtime.env.episode_node import EpisodeNode
         from arena_runtime.acoustics import AcousticsSimulatorRegistry
         from arena_runtime.humans.noop import NoopHumanSimulator
-        from arena_runtime.env.task_layer import TaskContext
+        from arena_runtime.env.task_layer import TaskConfiguration, TaskContext
 
         async def main() -> None:
             node = EpisodeNode()
@@ -104,8 +105,9 @@ def on_bench(tmp_path):
                     simulator=sim,
                     acoustics_simulator=acoustics,
                     reset_lock=asyncio.Lock(),
-                    compromise=lambda reason: None,
-                    abort_episode=lambda reason: None,
+                    conf=TaskConfiguration.of(node.conf),
+                    episode=SimpleNamespace(),
+                    interactive=SimpleNamespace(),
                 )
                 await body(Bench(node, ctx, tmp_path))
             finally:

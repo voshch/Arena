@@ -16,7 +16,7 @@
   <exec_depend>arena_runtime</exec_depend>
   <exec_depend>arena_robots</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
-  <exec_depend>task_generator_msgs</exec_depend>
+  <exec_depend>arena_runtime_msgs</exec_depend>
   <exec_depend>arena_humansim</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>nav_msgs</exec_depend>

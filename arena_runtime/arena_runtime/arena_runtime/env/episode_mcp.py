@@ -6,30 +6,30 @@ import json
 import os
 import time
 from collections.abc import Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Annotated, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 from pydantic import Field
 
 from arena_mcp.core import JOBS, LATCHED, ROS, Domain, ToolError, msgs, robot_ns, tg
 from arena_mcp.core.envs import SUBMIT_TASK_TIMEOUT_S
 from arena_mcp.core.ros import python_to_param
-from arena_runtime.env.task_layer import task_layer
+from arena_runtime.env.task_layer import declare_mode_schemas, decode_modes, encode_modes, task_layer, task_layer_name
 
 if TYPE_CHECKING:
+    from arena_runtime_msgs.msg import EpisodeRecord
     from rcl_interfaces.msg import Parameter, ParameterDescriptor
     from std_msgs.msg import Bool, String
-    from task_generator_msgs.msg import EpisodeRecord
 
     from arena_mcp.core import JobHandle
     from arena_mcp.core.ros import TopicCache
-    from arena_runtime.env.task_layer import TaskLayer
+    from arena_runtime.env.task_layer import TaskLayer, TaskModes
 
 domain = Domain(
     "episode",
     """Episodes of one env's task generator: reset, run, wait, queue the next episode's task modes and params, records and history, catalogs, parameters.
     Every tool takes env_id, optional when exactly one env runs.
     episode_run returns a job (jobs_wait, jobs_cancel). Pausing the sim is a runtime hold, spawning and moving things is the entities domain.""",
-    requires=("task_generator_msgs",),
+    requires=("arena_runtime_msgs",),
 )
 
 HISTORY = 200
@@ -51,7 +51,7 @@ ParamValues = dict[str, bool | int | float | str | list[bool] | list[int] | list
 
 
 def _states() -> dict[int, str]:
-    from task_generator_msgs.msg import EpisodeRecord
+    from arena_runtime_msgs.msg import EpisodeRecord
 
     return msgs.constants(EpisodeRecord)
 
@@ -61,7 +61,7 @@ def _state(name: str) -> int:
 
 
 def _terminal() -> frozenset[int]:
-    from task_generator_msgs.msg import EpisodeRecord
+    from arena_runtime_msgs.msg import EpisodeRecord
 
     return frozenset((EpisodeRecord.SUCCESS, EpisodeRecord.FAILED, EpisodeRecord.SKIPPED, EpisodeRecord.FATAL))
 
@@ -82,12 +82,12 @@ def _params(params: Iterable[Parameter]) -> dict[str, object]:
 
 
 def record(msg: EpisodeRecord) -> dict[str, object]:
-    """An EpisodeRecord with its outcome name, start time in seconds, params as name to value and phases and conditions parsed."""
+    """An EpisodeRecord with its outcome name, start time in seconds, modes as axis to names, params as name to value and phases and conditions parsed."""
     out = msgs.to_dict(msg)
     out["outcome"] = _states().get(msg.outcome_state, str(msg.outcome_state))
     out["start_time"] = msgs.seconds(msg.start_time)
-    out["obstacles_params"] = _params(msg.obstacles_params)
-    out["robots_params"] = _params(msg.robots_params)
+    out["modes"] = decode_modes(msg.modes)
+    out["params"] = _params(msg.params)
     out["human_params"] = _params(msg.human_params)
     out["conditions"] = _json(msg.conditions, [])
     out["phases"] = _json(msg.phases, {})
@@ -95,7 +95,7 @@ def record(msg: EpisodeRecord) -> dict[str, object]:
 
 
 async def _episodes(node: str) -> TopicCache:
-    from task_generator_msgs.msg import EpisodeRecord
+    from arena_runtime_msgs.msg import EpisodeRecord
 
     return await ROS.cache(EpisodeRecord, f"{node}/state/episode", qos=LATCHED, depth=HISTORY)
 
@@ -170,7 +170,7 @@ async def episode_reset(
     timeout_s: Annotated[float, Field(description="upper bound of the wait in seconds")] = RESET_TIMEOUT,
 ) -> dict[str, object]:
     """Start a new episode, ending the running one as SKIPPED; with wait, return the new episode's record once it runs."""
-    from task_generator_msgs.srv import ResetEpisode
+    from arena_runtime_msgs.srv import ResetEpisode
 
     node = await tg(env_id)
     episodes = await _episodes(node)
@@ -203,7 +203,7 @@ async def episode_run(
     seed: Annotated[int, Field(description="seed for an exact replay, -1 derives one")] = -1,
 ) -> dict[str, object]:
     """Run one episode of a managed env (task.episode.auto_reset false) through the RunEpisode action as a job with no result timeout; the result carries state, info, episode_id and the record, jobs_cancel cancels the goal."""
-    from task_generator_msgs.action import RunEpisode
+    from arena_runtime_msgs.action import RunEpisode
 
     from arena_runtime.env.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN
 
@@ -313,32 +313,18 @@ async def episode_history(
     return [record(latest[episode_id]) for episode_id in sorted(latest, reverse=True)[:limit]]
 
 
-async def _registered(node: str) -> dict[str, list[str]]:
-    from task_generator_msgs.srv import QueryTaskModes
-
-    response = await ROS.call(QueryTaskModes, f"{node}/query/task_modes")
-    return {"robots": list(response.robots), "obstacles": list(response.obstacles), "modules": list(response.modules)}
-
-
 async def _queue(node: str) -> TopicCache:
-    from task_generator_msgs.msg import EpisodeRecord
+    from arena_runtime_msgs.msg import EpisodeRecord
 
     cache = await _latched(EpisodeRecord, f"{node}/state/queue")
     await _first(cache)
     return cache
 
 
-class _ActiveModes(TypedDict):
-    tm_robots: str
-    tm_obstacles: str
-    tm_modules: list[str]
+async def _active(node: str) -> TaskModes:
+    from arena_runtime_msgs.srv import GetTaskModes
 
-
-async def _active(node: str) -> _ActiveModes:
-    from task_generator_msgs.srv import GetTaskModes
-
-    response = await ROS.call(GetTaskModes, f"{node}/config/get_task_modes")
-    return {"tm_robots": response.tm_robots, "tm_obstacles": response.tm_obstacles, "tm_modules": list(response.tm_modules)}
+    return decode_modes((await ROS.call(GetTaskModes, f"{node}/config/get_task_modes")).modes)
 
 
 async def _declared(node: str, prefixes: list[str]) -> list[str]:
@@ -348,20 +334,32 @@ async def _declared(node: str, prefixes: list[str]) -> list[str]:
     return sorted((await ROS.call(ListParameters, f"{node}/list_parameters", request)).result.names)
 
 
-async def _typed(node: str, mode: str, values: Mapping[str, object], axis: str) -> list[Parameter]:
+@functools.cache
+def _layer(name: str) -> TaskLayer:
+    try:
+        return task_layer(name)
+    except LookupError as exc:
+        raise ToolError(str(exc), hint="build the package that provides the task modes") from exc
+
+
+async def _env_layer_name(node: str, name: str = "") -> str:
+    """The task layer `name` resolves to, else the one the env's task_layer parameter names."""
+    return task_layer_name(name or (await ROS.get_params(node, ["task_layer"]))["task_layer"])
+
+
+async def _typed(node: str, selected: TaskModes, values: Mapping[str, object]) -> list[Parameter]:
     from rcl_interfaces.msg import Parameter
     from rcl_interfaces.srv import DescribeParameters
 
-    if not mode:
-        raise ToolError(f"no {axis} task mode is queued or active", hint=f"pass tm_{axis} along with the params")
-    prefix = f"task.{mode}"
-    declared = {name[len(prefix) + 1 :] for name in await _declared(node, [prefix])}
+    spaces = _layer(await _env_layer_name(node)).mode_namespaces()
+    prefixes = sorted({str(spaces[axis][mode]) for axis, names in selected.items() for mode in names if mode in spaces.get(axis, {})})
+    declared = set(await _declared(node, prefixes)) if prefixes else set()
     unknown = sorted(set(values) - declared)
     if unknown:
-        raise ToolError(f"{axis} mode {mode!r} has no parameter(s) {unknown}", hint=f"its parameters: {sorted(declared)}, episode_task_modes lists them with types")
-    leaves = list(values)
-    described = await ROS.call(DescribeParameters, f"{node}/describe_parameters", DescribeParameters.Request(names=[f"{prefix}.{leaf}" for leaf in leaves]))
-    return [Parameter(name=leaf, value=python_to_param(values[leaf], descriptor.type)) for leaf, descriptor in zip(leaves, described.descriptors, strict=True)]
+        raise ToolError(f"{unknown} are not parameters of the selected task modes {selected}", hint=f"their parameters: {sorted(declared)}, episode_task_modes lists them with types")
+    names = list(values)
+    described = await ROS.call(DescribeParameters, f"{node}/describe_parameters", DescribeParameters.Request(names=names))
+    return [Parameter(name=name, value=python_to_param(values[name], descriptor.type)) for name, descriptor in zip(names, described.descriptors, strict=True)]
 
 
 def _untyped(values: Mapping[str, object]) -> list[Parameter]:
@@ -373,44 +371,28 @@ def _untyped(values: Mapping[str, object]) -> list[Parameter]:
 @domain.tool(idempotent=True)
 async def episode_queue(
     env_id: EnvId = None,
-    tm_robots: Annotated[str | None, Field(description="robots task mode of the next episode, None keeps the queued one")] = None,
-    tm_obstacles: Annotated[str | None, Field(description="obstacles task mode of the next episode, None keeps the queued one")] = None,
-    tm_modules: Annotated[list[str] | None, Field(description="the full module set of the next episode, None keeps the queued set, [] clears it")] = None,
+    modes: Annotated[dict[str, str | list[str]] | None, Field(description="axis to mode name (a list for an axis with many), replacing that axis' queued selection, [] clears an axis with many modes like modules, an axis with one mode needs exactly one name, an axis left out keeps the queued one")] = None,
     world: Annotated[str | None, Field(description="world of the next episode, None keeps the queued one")] = None,
-    robots_params: Annotated[ParamValues | None, Field(description="leaf name to value for the robots mode, e.g. {'file': 'default'} for task.scenario.file")] = None,
-    obstacles_params: Annotated[ParamValues | None, Field(description="leaf name to value for the obstacles mode")] = None,
+    params: Annotated[ParamValues | None, Field(description="full parameter name to value of the selected modes, e.g. {'task.scenario.file': 'default'}")] = None,
     human_params: Annotated[ParamValues | None, Field(description="'<backend namespace>.<param>' to value for the human simulator")] = None,
 ) -> dict[str, object]:
-    """Stage the next episode: modes, world and per-mode params apply at the next reset, each omitted field keeps what is queued."""
-    from task_generator_msgs.srv import QueueEpisode
+    """Stage the next episode: modes, world and params apply at the next reset, each omitted field keeps what is queued."""
+    from arena_runtime_msgs.srv import QueueEpisode
 
     node = await tg(env_id)
-    registered = await _registered(node)
-    for axis, value in (("robots", tm_robots), ("obstacles", tm_obstacles)):
-        if value and value not in registered[axis]:
-            raise ToolError(f"{value!r} is not a registered {axis} task mode", hint=f"registered: {registered[axis]}")
-    unknown_modules = sorted(set(tm_modules or ()) - set(registered["modules"]))
-    if unknown_modules:
-        raise ToolError(f"{unknown_modules} are not registered modules", hint=f"registered: {registered['modules']}")
+    layer = _layer(await _env_layer_name(node))
+    requested: TaskModes = {axis: [name for name in ([value] if isinstance(value, str) else value) if name] for axis, value in (modes or {}).items()}
+    try:
+        requested = layer.validate_modes(requested)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
     queue = await _queue(node)
     queued = _last(queue)
-    if queued is None:
-        active = await _active(node)
-        robots_mode, obstacles_mode = active["tm_robots"], active["tm_obstacles"]
-    else:
-        robots_mode, obstacles_mode = queued.tm_robots, queued.tm_obstacles
-    request = QueueEpisode.Request(
-        action=QueueEpisode.Request.MERGE,
-        tm_robots=tm_robots or "",
-        tm_obstacles=tm_obstacles or "",
-        tm_modules=list(tm_modules or ()),
-        keep_modules=tm_modules is None,
-        world=world or "",
-    )
-    if robots_params:
-        request.robots_params = await _typed(node, tm_robots or robots_mode, robots_params, "robots")
-    if obstacles_params:
-        request.obstacles_params = await _typed(node, tm_obstacles or obstacles_mode, obstacles_params, "obstacles")
+    selected = {**(decode_modes(queued.modes) if queued is not None else await _active(node)), **requested}
+    values: dict[str, object] = dict(params or {})
+    request = QueueEpisode.Request(action=QueueEpisode.Request.MERGE, modes=encode_modes(requested), world=world or "")
+    if values:
+        request.params = await _typed(node, selected, values)
     if human_params:
         request.human_params = _untyped(human_params)
     response = await ROS.call(QueueEpisode, f"{node}/config/queue_episode", request)
@@ -445,23 +427,15 @@ def _bucket(prefixes: Mapping[str, str], names: list[str], entries: list[dict[st
 
 
 @functools.cache
-def _layer() -> TaskLayer:
-    try:
-        return task_layer()
-    except LookupError as exc:
-        raise ToolError(str(exc), hint="build the package that provides the task modes") from exc
-
-
-@functools.cache
-def _registry_modes() -> dict[str, object]:
+def _registry_modes(name: str) -> dict[str, object]:
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
     from rcl_interfaces.srv import ListParameters
 
-    layer = _layer()
+    layer = _layer(name)
     node = ROSParamServer(f"arena_mcp_task_modes_{os.getpid()}", start_parameter_services=False)
     try:
-        layer.declare_mode_schemas(node)
-        out: dict[str, object] = {"source": "registry"}
+        declare_mode_schemas(layer, node)
+        out: dict[str, object] = {"source": "registry", "task_layer": name}
         for axis, prefixes in layer.mode_namespaces().items():
             names = sorted(node.list_parameters(list(prefixes.values()), ListParameters.Request.DEPTH_RECURSIVE).names)
             entries = [_entry(name, descriptor, param.value) for name, descriptor, param in zip(names, node.describe_parameters(names), node.get_parameters(names), strict=True)]
@@ -476,19 +450,20 @@ async def _live_modes(node: str) -> dict[str, object]:
     from rcl_interfaces.srv import DescribeParameters, GetParameters
     from rclpy.parameter import parameter_value_to_python
 
-    registered = await _registered(node)
-    out: dict[str, object] = {"source": "live", "env": node}
-    for axis, keys in registered.items():
-        prefixes = {key: f"task.{key}" for key in sorted(keys)}
+    name = await _env_layer_name(node)
+    layer = _layer(name)
+    out: dict[str, object] = {"source": "live", "env": node, "task_layer": name}
+    for axis, namespaces in layer.mode_namespaces().items():
+        prefixes = {mode: str(namespace) for mode, namespace in sorted(namespaces.items())}
         names = await _declared(node, list(prefixes.values())) if prefixes else []
         if not names:
-            out[axis] = {key: [] for key in prefixes}
+            out[axis] = {mode: [] for mode in prefixes}
             continue
         described = await ROS.call(DescribeParameters, f"{node}/describe_parameters", DescribeParameters.Request(names=names))
         values = await ROS.call(GetParameters, f"{node}/get_parameters", GetParameters.Request(names=names))
         entries = [_entry(name, descriptor, parameter_value_to_python(value)) for name, descriptor, value in zip(names, described.descriptors, values.values, strict=True)]
         out[axis] = _bucket(prefixes, names, entries)
-    out["fleet_only_robots"] = _layer().fleet_only_robots()
+    out["fleet_only_robots"] = layer.fleet_only_robots()
     return out
 
 
@@ -499,26 +474,27 @@ async def episode_task_modes(
         Literal["auto", "live", "registry"],
         Field(description="live: the env's registered modes and current values. registry: the code's registry with defaults, no env needed. auto: live when an env resolves"),
     ] = "auto",
+    task_layer: Annotated[str, Field(description="task runtime of the registry, empty = $ARENA_TASK_LAYER, else task_generator, a live env answers for its own")] = "",
 ) -> dict[str, object]:
-    """Selectable task modes per axis (robots, obstacles, modules), each with its parameters: leaf name, type, value, description, constraints."""
+    """Selectable task modes per axis of the task runtime, each with its parameters: leaf name, type, value, description, constraints."""
     if source == "registry":
         await ROS.node()
-        return _registry_modes()
+        return _registry_modes(task_layer_name(task_layer))
     try:
         node = await tg(env_id)
     except ToolError as exc:
         if source == "live" or env_id is not None:
             raise
         await ROS.node()
-        return {**_registry_modes(), "reason": exc.message}
+        return {**_registry_modes(task_layer_name(task_layer)), "reason": exc.message}
     return await _live_modes(node)
 
 
 @domain.tool(read_only=True)
 async def episode_task_modes_active(env_id: EnvId = None) -> dict[str, object]:
-    """The task modes the running episode uses."""
+    """The task modes the running episode uses, per axis."""
     node = await tg(env_id)
-    return {"env": node, **await _active(node)}
+    return {"env": node, "modes": await _active(node)}
 
 
 def _episode_params() -> dict[str, str]:
@@ -565,7 +541,7 @@ async def episode_set_params(
 
 
 @functools.cache
-def _config_names() -> tuple[str, ...]:
+def _config_names(layer: str) -> tuple[str, ...]:
     import rclpy
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
     from rcl_interfaces.srv import ListParameters
@@ -576,17 +552,20 @@ def _config_names() -> tuple[str, ...]:
     try:
         before = set(node.list_parameters([], ListParameters.Request.DEPTH_RECURSIVE).names)
         Configuration(node)
-        _layer().declare_task_params(node)
+        _layer(layer).declare_task_params(node)
         return tuple(sorted(set(node.list_parameters([], ListParameters.Request.DEPTH_RECURSIVE).names) - before - set(EPISODE_PARAMS)))
     finally:
         node.destroy_node()
 
 
 @domain.tool(read_only=True)
-async def episode_config(env_id: EnvId = None) -> dict[str, object]:
+async def episode_config(
+    env_id: EnvId = None,
+    task_layer: Annotated[str, Field(description="task runtime whose mode params are included, empty = the env's own")] = "",
+) -> dict[str, object]:
     """The env's startup configuration: every Configuration parameter that is not a task.episode.* one (sim, human, acoustics, world, adapters, task modes, ...)."""
     node = await tg(env_id)
-    values = await ROS.get_params(node, list(_config_names()))
+    values = await ROS.get_params(node, list(_config_names(await _env_layer_name(node, task_layer))))
     return {name: msgs.jsonable(value) for name, value in values.items()}
 
 
@@ -597,10 +576,10 @@ async def episode_catalog(
     world: Annotated[str, Field(description="for scenarios: the world to list, empty means the current one")] = "",
 ) -> list[str]:
     """Names the env's resolvers can load for one kind of asset, network buckets included for obstacles."""
-    import task_generator_msgs.srv
+    import arena_runtime_msgs.srv
 
     type_name, path = CATALOGS[kind]
-    srv_type = getattr(task_generator_msgs.srv, type_name)
+    srv_type = getattr(arena_runtime_msgs.srv, type_name)
     node = await tg(env_id)
     request = srv_type.Request(world=world) if kind == "scenarios" else srv_type.Request()
     response = await ROS.call(srv_type, f"{node}/{path}", request, timeout=60.0)
@@ -615,7 +594,7 @@ async def episode_submit_task(
 ) -> dict[str, object]:
     """Hand a robot a task in the running episode, dropping its unfinished phases; returns the episode-wide phase indices it got."""
     from arena_rclpy_mixins.shared import Namespace
-    from task_generator_msgs.srv import SubmitTask
+    from arena_runtime_msgs.srv import SubmitTask
 
     node = await tg(env_id)
     name = str(Namespace(await robot_ns(env_id, robot)).robot_ns)

@@ -5,11 +5,11 @@ import typing
 from collections.abc import Callable
 
 import arena_robots.SetupFile as robot_setup
+import arena_runtime_msgs.msg
 import attrs
 import diagnostic_msgs.msg
 import geometry_msgs.msg
 import rclpy
-import task_generator_msgs.msg
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.assembly import ResolvedAssembly
 
@@ -473,10 +473,10 @@ class RobotsManager(NodeInterface):
         """Publish the live fleet on state/robots, refresh robot_names, viz, and frame aliases."""
         self.node.rosparam[list[str]].set('robot_names', [robot.name for robot in self.managers.values()])
 
-        fleet = task_generator_msgs.msg.RobotFleet(
+        fleet = arena_runtime_msgs.msg.RobotFleet(
             robots=[
-                task_generator_msgs.msg.RobotState(
-                    descriptor=task_generator_msgs.msg.RobotDescriptor(
+                arena_runtime_msgs.msg.RobotState(
+                    descriptor=arena_runtime_msgs.msg.RobotDescriptor(
                         name=mgr.name,
                         model=mgr.model_name,
                         ns=str(mgr.namespace),
@@ -484,7 +484,7 @@ class RobotsManager(NodeInterface):
                         base_frame=mgr.base_frame.lstrip("/"),
                     ),
                     caps=[
-                        task_generator_msgs.msg.RobotCap(
+                        arena_runtime_msgs.msg.RobotCap(
                             cap=cap,
                             adapter=mgr.cap_adapters.get(cap, 'none'),
                             instance=instance,
@@ -621,9 +621,9 @@ class RobotsManager(NodeInterface):
 
     def publish_queue(self) -> None:
         """Publish the pending spawn/despawn diff (the queue) on state/robots/pending."""
-        msg = task_generator_msgs.msg.RobotQueue(
-            spawn=[task_generator_msgs.msg.RobotDescriptor(name=name, model=robot.model.name) for name, robot in self._diff.to_add.items()],
-            despawn=[task_generator_msgs.msg.RobotDescriptor(name=name, model=self._managers[name].model_name) for name in self._diff.to_remove],
+        msg = arena_runtime_msgs.msg.RobotQueue(
+            spawn=[arena_runtime_msgs.msg.RobotDescriptor(name=name, model=robot.model.name) for name, robot in self._diff.to_add.items()],
+            despawn=[arena_runtime_msgs.msg.RobotDescriptor(name=name, model=self._managers[name].model_name) for name in self._diff.to_remove],
         )
         self.node._pub_state_robots_pending.publish(msg)
 

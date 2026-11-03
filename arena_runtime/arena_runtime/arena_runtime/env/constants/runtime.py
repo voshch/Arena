@@ -4,6 +4,8 @@ import rclpy.node
 from arena_bringup.constants import SimSimulator
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 
+from arena_runtime.env.task_layer import legacy_mode_params, mode_param
+
 from . import Constants
 from .rng import EpisodeRng
 
@@ -40,10 +42,8 @@ DEPRECATED_PARAMS: dict[str, str] = {
     'goal_tolerance_radius': 'task.episode.goto_pose.tolerance.radius',
     'goal_tolerance_angle': 'task.episode.goto_pose.tolerance.angle',
     'no_progress_timeout': 'task.episode.goto_pose.timeout.no_progress',
-    'tm_robots': 'task.robots',
-    'tm_obstacles': 'task.obstacles',
-    'tm_config': 'task.config',
-    'tm_modules': 'task.modules',
+    **legacy_mode_params(),
+    'tm_config': mode_param('config'),
     'train_mode': 'robot.train',
     'static_sounds': 'auditory.static_sounds',
 }

@@ -9,6 +9,7 @@ maps them to live ROS parameters.
 
 | Name | Type | Values |
 | --- | --- | --- |
+| `ENV_NODE_NAMESPACE` | `str` | `"arena_env_node"`, the env node's ROS name and the last segment of an env's namespace |
 | `DEFAULT_PEDESTRIAN_MODEL` | `str` | `"arenian"` |
 | `HumanSimulator` | `Enum` | `dummy`, `none`, `hunav`, `arena`, `replay` |
 | `AcousticsSimulator` | `Enum` | `none`, `arena` |
@@ -103,9 +104,9 @@ Declared directly on `EpisodeNode` at construction time, not via `Configuration`
 
 `robot.train` is declared at the launch level and exposed on the env node's param store for robot adapters (`rosnav_rl`, `nav2`) to read, the node itself does not branch on it. For managed (external-controller-driven) resets pass `task.episode.auto_reset:=false` explicitly, there is no auto-derivation from `train_config`.
 
-The `task.robots`, `task.obstacles`, `task.config` and `task.modules` params are
-not `Configuration` entries. They are `ModeParams` in
-[`tasks/layer.py`](../../../../../task_generator/task_generator/tasks/layer.py),
-reached by the node as `task_params`, which gives the selected mode names as
-strings. `TM_ROBOTS` and `TM_OBSTACLES` default to `random`, `TM_CONFIG` to `''`,
-`TM_MODULES` to `''` as a comma-separated `set[Modes.TM_Module]`.
+The `task.<axis>` selection params of the task runtime are not `Configuration`
+entries. The runtime declares them with their defaults (for `task_generator` the
+`TaskModeParams` in
+[`tasks/layer.py`](../../../../../task_generator/task_generator/tasks/layer.py)),
+and `env.launch.py` declares none: a `task.<axis>:=` launch arg passes through to
+the node's param overrides. The node reaches the selection as `task_params.resolve({})`.

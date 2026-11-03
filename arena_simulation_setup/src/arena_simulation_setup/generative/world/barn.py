@@ -164,7 +164,7 @@ class BarnBase(WorldGeneratorImpl):
         return {f'scenarios/{self.SCENARIO}/scenario.yaml': yaml.safe_dump(self._scenario, sort_keys=False).encode('utf-8')}
 
     def params(self) -> dict[str, typing.Any]:
-        return {'tm_robots': 'scenario', 'robots_params': {'file': self.SCENARIO}}
+        return {'modes': {'robots': 'scenario'}, 'params': {'robots': {'file': self.SCENARIO}}}
 
     def _build(self):
         raise NotImplementedError

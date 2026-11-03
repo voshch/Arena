@@ -12,12 +12,15 @@ class TM_Module(TaskMode):
     _task: "Task"
 
     def before_reset(self): ...
+    def on_reset_plan(self, plan: ResetPlan) -> None: ...
     def after_reset(self): ...
 ```
 
-Both hooks default to no-ops. Subclasses override only the ones they need.
+Every hook defaults to a no-op. Subclasses override only the ones they need.
+`on_reset_plan` runs after the robot mode's reset and before the env applies the
+plan, so a module can read or change any field of it.
 `_task` is the live `Task` instance. The `TaskContext` in `_ctx` gives modules
-access to `world_manager`, `robots_manager` and `abort_episode`.
+access to `world_manager`, `robots_manager`, `episode` and `interactive`.
 
 Modules are instantiated in `Task.__init__` from the `task.modules` ROS param
 (a comma-separated list of `Modes.TM_Module` values, plus the always-on ones). Each is
@@ -69,7 +72,7 @@ one `SoundEmission` per resolved entity, built from the live
 simulator's `emit_sounds`. The wire format and retired-source repeats belong
 to the acoustics backend, a removed sound is simply no longer listed. With
 `acoustics:=none` the noop backend drops them. It serves
-`runtime/spawn_sound` and `runtime/remove_sound` (`task_generator_msgs/srv`)
+`runtime/spawn_sound` and `runtime/remove_sound` (`arena_runtime_msgs/srv`)
 for RViz-driven runtime sources. Toggling a declared sound is a `SetSemantic`
 write, not a module service. A runtime sound not attached to a TF frame gets a
 drag handle with a Remove menu. Dragging moves the source in place while the
@@ -79,12 +82,12 @@ handle moves, so it keeps its entity name and keeps playing.
 
 [`rviz_ui/impl.py`](rviz_ui/impl.py)
 
-Subscribes to `<task_generator_node>/initialpose` (`PoseWithCovarianceStamped`),
-`<task_generator_node>/goal_pose` (`PoseStamped`), and
-`<task_generator_node>/clicked_point` (`PointStamped`), all namespaced under
+Subscribes to `<arena_env_node>/initialpose` (`PoseWithCovarianceStamped`),
+`<arena_env_node>/goal_pose` (`PoseStamped`), and
+`<arena_env_node>/clicked_point` (`PointStamped`), all namespaced under
 the env node so multiple instances do not cross-talk. Forwards
 set-position and set-goal calls to `Task.set_robot_position` /
-`set_robot_goal`; a clicked point calls `EpisodeNode.force_reset()`. Provides
+`set_robot_goal`; a clicked point calls `_ctx.episode.force_reset()`. Provides
 interactive RViz-based control without modifying the active task mode.
 
 It also puts drag handles on the node's marker server (the Handles display).
@@ -123,4 +126,4 @@ mtimes. A world resolved from a download cache is saved into that cache.
 2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the module has tunable parameters (using helpers from [`arena_rclpy_mixins.declarations`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py)), then register the loader with `@MODULE_MODES.register(Modes.TM_Module.<NAME>, namespace=_NS, schema=_declare_schema)`.
 3. In `impl.py`: define the class extending `TM_Module`; override `before_reset` and/or `after_reset`.
 4. Add `<NAME> = "<name>"` to `Modes.TM_Module` in [`modes.py`](../../modes.py).
-5. `walk_schemas` (module-level in `tasks/registry.py`) picks up your schema automatically at node init.
+5. `declare_mode_schemas(layer, node)` picks up your schema automatically at node init.

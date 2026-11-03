@@ -21,7 +21,7 @@ def loop(rclpy_context: object) -> asyncio.AbstractEventLoop:
 @pytest.fixture(scope="module")
 def peers(loop: asyncio.AbstractEventLoop) -> Peers:
     from arena_mcp.core import ROS
-    from task_generator_msgs.srv import QueryWorlds
+    from arena_runtime_msgs.srv import QueryWorlds
 
     started = Peers()
     for env_id in (ENV, PLAIN_ENV):

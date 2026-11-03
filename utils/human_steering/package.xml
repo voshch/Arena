@@ -13,7 +13,7 @@
   <exec_depend>arena_people_msgs</exec_depend>
   <exec_depend>arena_runtime</exec_depend>
   <exec_depend>rviz_utils</exec_depend>
-  <exec_depend>task_generator_msgs</exec_depend>
+  <exec_depend>arena_runtime_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>

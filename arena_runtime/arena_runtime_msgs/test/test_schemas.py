@@ -1,4 +1,4 @@
-"""Field-level schema validation for new task_generator_msgs types.
+"""Field-level schema validation for new arena_runtime_msgs types.
 
 Instantiates each type, populates fields, reads them back, and asserts
 equality. No ROS runtime required, this validates that rosidl-generated
@@ -9,15 +9,14 @@ Run after `colcon build` installs the generated Python bindings.
 
 def test_episode_record_fields():
     from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
-    from task_generator_msgs.msg import EpisodeRecord
+    from diagnostic_msgs.msg import KeyValue
+    from arena_runtime_msgs.msg import EpisodeRecord
 
     r = EpisodeRecord()
     r.episode_id = 7
     r.world = "map1"
     r.seed = 12345
-    r.tm_robots = "random"
-    r.tm_obstacles = "parametrized"
-    r.tm_modules = ["benchmark"]
+    r.modes = [KeyValue(key="robots", value="random"), KeyValue(key="modules", value="benchmark,staged")]
     r.robots = ["husky", "jackal"]
     r.outcome_state = EpisodeRecord.SUCCESS
     r.outcome_info = "reached goal"
@@ -29,25 +28,22 @@ def test_episode_record_fields():
     p.value = ParameterValue()
     p.value.type = ParameterType.PARAMETER_INTEGER
     p.value.integer_value = 4
-    r.obstacles_params = [p]
-    r.robots_params = []
+    p.name = "task.random.static.n"
+    r.params = [p]
     r.human_params = [p]
 
     assert r.episode_id == 7
     assert r.world == "map1"
     assert r.seed == 12345
-    assert r.tm_robots == "random"
-    assert r.tm_obstacles == "parametrized"
-    assert r.tm_modules == ["benchmark"]
+    assert [(m.key, m.value) for m in r.modes] == [("robots", "random"), ("modules", "benchmark,staged")]
     assert list(r.robots) == ["husky", "jackal"]
     assert r.outcome_state == EpisodeRecord.SUCCESS
     assert r.outcome_info == "reached goal"
     assert r.goal_uuid == "abc-123"
     assert list(r.integrity) == ["env_0/jackal moved by hand"]
-    assert len(r.obstacles_params) == 1
-    assert r.obstacles_params[0].name == "static.n"
-    assert r.obstacles_params[0].value.integer_value == 4
-    assert list(r.robots_params) == []
+    assert len(r.params) == 1
+    assert r.params[0].name == "task.random.static.n"
+    assert r.params[0].value.integer_value == 4
     assert [q.name for q in r.human_params] == ["static.n"]
 
     assert EpisodeRecord.QUEUED == 0
@@ -58,8 +54,21 @@ def test_episode_record_fields():
     assert EpisodeRecord.FATAL == 5
 
 
+def test_episode_outcome_constants_match_the_run_episode_result():
+    from arena_runtime_msgs.action import RunEpisode
+    from arena_runtime_msgs.msg import EpisodeRecord
+
+    def constants(cls: type) -> dict[str, int]:
+        return {name: getattr(cls, name) for name in dir(cls) if name.isupper() and isinstance(getattr(cls, name), int)}
+
+    record = constants(EpisodeRecord)
+    assert record == constants(RunEpisode.Result)
+    assert set(record) >= {"QUEUED", "RUNNING", "SUCCESS", "FAILED", "SKIPPED", "FATAL"}
+    assert RunEpisode.Feedback.STARTED == EpisodeRecord.RUNNING
+
+
 def test_reset_episode_srv():
-    from task_generator_msgs.srv import ResetEpisode
+    from arena_runtime_msgs.srv import ResetEpisode
 
     req = ResetEpisode.Request()
     req.world = "maze"
@@ -77,7 +86,7 @@ def test_reset_episode_srv():
 
 
 def test_query_worlds_srv():
-    from task_generator_msgs.srv import QueryWorlds
+    from arena_runtime_msgs.srv import QueryWorlds
 
     req = QueryWorlds.Request()
     res = QueryWorlds.Response()
@@ -88,7 +97,7 @@ def test_query_worlds_srv():
 
 
 def test_query_scenarios_srv():
-    from task_generator_msgs.srv import QueryScenarios
+    from arena_runtime_msgs.srv import QueryScenarios
 
     req = QueryScenarios.Request()
     req.world = "maze"
@@ -100,7 +109,7 @@ def test_query_scenarios_srv():
 
 
 def test_query_robots_srv():
-    from task_generator_msgs.srv import QueryRobots
+    from arena_runtime_msgs.srv import QueryRobots
 
     res = QueryRobots.Response()
     res.ids = ["turtlebot3"]
@@ -108,7 +117,7 @@ def test_query_robots_srv():
 
 
 def test_query_static_obstacles_srv():
-    from task_generator_msgs.srv import QueryStaticObstacles
+    from arena_runtime_msgs.srv import QueryStaticObstacles
 
     res = QueryStaticObstacles.Response()
     res.ids = ["box", "barrel"]
@@ -116,7 +125,7 @@ def test_query_static_obstacles_srv():
 
 
 def test_query_dynamic_obstacles_srv():
-    from task_generator_msgs.srv import QueryDynamicObstacles
+    from arena_runtime_msgs.srv import QueryDynamicObstacles
 
     res = QueryDynamicObstacles.Response()
     res.ids = ["pedestrian_adult"]
@@ -124,7 +133,7 @@ def test_query_dynamic_obstacles_srv():
 
 
 def test_query_environments_srv():
-    from task_generator_msgs.srv import QueryEnvironments
+    from arena_runtime_msgs.srv import QueryEnvironments
 
     res = QueryEnvironments.Response()
     res.ids = ["env_a"]
@@ -132,7 +141,7 @@ def test_query_environments_srv():
 
 
 def test_query_parametrizeds_srv():
-    from task_generator_msgs.srv import QueryParametrizeds
+    from arena_runtime_msgs.srv import QueryParametrizeds
 
     res = QueryParametrizeds.Response()
     res.ids = ["param_set_1"]
@@ -141,14 +150,12 @@ def test_query_parametrizeds_srv():
 
 def test_queue_episode_srv():
     from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
-    from task_generator_msgs.srv import QueueEpisode
+    from diagnostic_msgs.msg import KeyValue
+    from arena_runtime_msgs.srv import QueueEpisode
 
     req = QueueEpisode.Request()
     req.action = QueueEpisode.Request.MERGE
-    req.tm_robots = "random"
-    req.tm_obstacles = "parametrized"
-    req.tm_modules = ["benchmark", "staged"]
-    req.keep_modules = False
+    req.modes = [KeyValue(key="obstacles", value="parametrized"), KeyValue(key="modules", value="")]
     req.world = "maze"
 
     p = Parameter()
@@ -156,19 +163,15 @@ def test_queue_episode_srv():
     p.value = ParameterValue()
     p.value.type = ParameterType.PARAMETER_INTEGER
     p.value.integer_value = 5
-    req.obstacles_params = [p]
-    req.robots_params = []
+    req.params = [p]
     req.human_params = [p]
 
     assert req.action == QueueEpisode.Request.MERGE
     assert QueueEpisode.Request.MERGE == 0
-    assert req.tm_robots == "random"
-    assert req.tm_obstacles == "parametrized"
-    assert req.tm_modules == ["benchmark", "staged"]
-    assert req.keep_modules is False
+    assert [(m.key, m.value) for m in req.modes] == [("obstacles", "parametrized"), ("modules", "")]
     assert req.world == "maze"
-    assert len(req.obstacles_params) == 1
-    assert req.obstacles_params[0].name == "static.n"
+    assert len(req.params) == 1
+    assert req.params[0].name == "static.n"
     assert [q.name for q in req.human_params] == ["static.n"]
 
     res = QueueEpisode.Response()
@@ -178,21 +181,18 @@ def test_queue_episode_srv():
 
 
 def test_get_task_modes_srv():
-    from task_generator_msgs.srv import GetTaskModes
+    from diagnostic_msgs.msg import KeyValue
+    from arena_runtime_msgs.srv import GetTaskModes
 
     res = GetTaskModes.Response()
-    res.tm_robots = "random"
-    res.tm_obstacles = "scenario"
-    res.tm_modules = ["benchmark"]
+    res.modes = [KeyValue(key="robots", value="random")]
 
-    assert res.tm_robots == "random"
-    assert res.tm_obstacles == "scenario"
-    assert res.tm_modules == ["benchmark"]
+    assert [(m.key, m.value) for m in res.modes] == [("robots", "random")]
 
 
 def test_spawn_static_srv():
     from geometry_msgs.msg import PoseStamped
-    from task_generator_msgs.srv import SpawnStatic
+    from arena_runtime_msgs.srv import SpawnStatic
 
     req = SpawnStatic.Request()
     req.model = "barrel"
@@ -213,7 +213,7 @@ def test_spawn_static_srv():
 
 def test_spawn_dynamic_srv():
     from geometry_msgs.msg import PoseStamped
-    from task_generator_msgs.srv import SpawnDynamic
+    from arena_runtime_msgs.srv import SpawnDynamic
 
     req = SpawnDynamic.Request()
     req.model = "pedestrian_adult"
@@ -234,7 +234,7 @@ def test_spawn_dynamic_srv():
 def test_spawn_robot_srv():
     from diagnostic_msgs.msg import KeyValue
     from geometry_msgs.msg import PoseStamped
-    from task_generator_msgs.srv import SpawnRobot
+    from arena_runtime_msgs.srv import SpawnRobot
 
     req = SpawnRobot.Request()
     req.model = "turtlebot3"
@@ -264,7 +264,7 @@ def test_spawn_robot_srv():
 
 
 def test_despawn_robot_srv():
-    from task_generator_msgs.srv import DespawnRobot
+    from arena_runtime_msgs.srv import DespawnRobot
 
     req = DespawnRobot.Request()
     req.name = "turtlebot3_0"
@@ -279,7 +279,7 @@ def test_despawn_robot_srv():
 
 
 def test_robot_queue_msg():
-    from task_generator_msgs.msg import RobotDescriptor, RobotQueue
+    from arena_runtime_msgs.msg import RobotDescriptor, RobotQueue
 
     msg = RobotQueue()
     msg.spawn = [RobotDescriptor(name="jackal_1", model="jackal")]
@@ -294,7 +294,7 @@ def test_robot_queue_msg():
 
 def test_robot_fleet_msg():
     from diagnostic_msgs.msg import KeyValue
-    from task_generator_msgs.msg import RobotCap, RobotDescriptor, RobotFleet, RobotState
+    from arena_runtime_msgs.msg import RobotCap, RobotDescriptor, RobotFleet, RobotState
 
     state = RobotState(
         descriptor=RobotDescriptor(name="jackal_0", model="jackal", ns="/jackal_0", frame="jackal_0"),
@@ -314,7 +314,7 @@ def test_robot_fleet_msg():
 
 
 def test_run_episode_action_goal():
-    from task_generator_msgs.action import RunEpisode
+    from arena_runtime_msgs.action import RunEpisode
 
     goal = RunEpisode.Goal()
     goal.world = "maze"
@@ -322,7 +322,7 @@ def test_run_episode_action_goal():
 
 
 def test_run_episode_action_result():
-    from task_generator_msgs.action import RunEpisode
+    from arena_runtime_msgs.action import RunEpisode
 
     result = RunEpisode.Result()
     result.state = RunEpisode.Result.SUCCESS
@@ -341,7 +341,7 @@ def test_run_episode_action_result():
 
 
 def test_run_episode_action_feedback():
-    from task_generator_msgs.action import RunEpisode
+    from arena_runtime_msgs.action import RunEpisode
 
     fb = RunEpisode.Feedback()
     fb.state = RunEpisode.Feedback.STARTED
@@ -350,7 +350,7 @@ def test_run_episode_action_feedback():
 
 
 def test_spawn_sound_srv():
-    from task_generator_msgs.srv import SpawnSound
+    from arena_runtime_msgs.srv import SpawnSound
 
     req = SpawnSound.Request()
     req.pose.header.frame_id = "map"
@@ -373,7 +373,7 @@ def test_spawn_sound_srv():
 
 
 def test_remove_sound_srv():
-    from task_generator_msgs.srv import RemoveSound
+    from arena_runtime_msgs.srv import RemoveSound
 
     req = RemoveSound.Request()
     req.entity = "runtime_music_1"
@@ -385,9 +385,9 @@ def test_remove_sound_srv():
 
 
 def test_adapter_viz_manifest_plugins():
-    from task_generator_msgs.msg import AdapterPlugin, AdapterVizManifest
+    from arena_runtime_msgs.msg import AdapterPlugin, AdapterVizManifest
 
-    panel = AdapterPlugin(role="panel", class_name="arena_auditory_viz::AuditoryPanel", name="Auditory", properties_json='{"Node": "/env_0/task_generator_node"}')
+    panel = AdapterPlugin(role="panel", class_name="arena_auditory_viz::AuditoryPanel", name="Auditory", properties_json='{"Node": "/env_0/arena_env_node"}')
     tool = AdapterPlugin(role="tool", class_name="arena_auditory_viz::SoundTool", properties_json="{}")
     manifest = AdapterVizManifest(plugins=[panel, tool])
 
@@ -399,7 +399,7 @@ def test_adapter_viz_manifest_plugins():
 
 
 def test_recorded_topics_msg():
-    from task_generator_msgs.msg import RecordedTopic, RecordedTopics
+    from arena_runtime_msgs.msg import RecordedTopic, RecordedTopics
 
     row = RecordedTopic(
         key="sound_events",

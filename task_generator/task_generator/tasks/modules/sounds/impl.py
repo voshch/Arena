@@ -13,6 +13,7 @@ import yaml
 from arena_runtime.acoustics import SoundEmission
 from arena_runtime.env.interactive import Apply, Menu, planar_marker, visual
 from arena_runtime.shared import Orientation
+from arena_runtime_msgs.srv import RemoveSound, SpawnSound
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
 from arena_simulation_setup.tree.assets.sound_catalog import AgentKind, SoundLibrary, selection_seed
 from arena_simulation_setup.tree.World import World, WorldIdentifier
@@ -21,7 +22,6 @@ from arena_simulation_setup.utils.cattrs import converter
 from geometry_msgs.msg import Point, Vector3
 from geometry_msgs.msg import Pose as PoseMsg
 from rclpy.clock import Clock, ClockType
-from task_generator_msgs.srv import RemoveSound, SpawnSound
 from visualization_msgs.msg import Marker
 
 from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
@@ -171,6 +171,20 @@ class Mod_Sounds(TM_Module):
             clock=Clock(clock_type=ClockType.STEADY_TIME),
         )
 
+    def teardown(self) -> None:
+        self.node.destroy_timer(self._timer)
+        self.node.destroy_service(self._spawn_service)
+        self.node.destroy_service(self._remove_service)
+        for entity in list(self._runtime):
+            self._remove_runtime(entity)
+        for entity in self._attached:
+            self._ctx.simulator.detach_semantics(entity)
+        self._sounds.clear()
+        self._sound_state.clear()
+        self._attached.clear()
+        self._warned_inert.clear()
+        self._ctx.acoustics_simulator.clear_sounds()
+
     def after_reset(self) -> None:
         for entity in self._attached:
             self._ctx.simulator.detach_semantics(entity)
@@ -181,7 +195,7 @@ class Mod_Sounds(TM_Module):
         world_name = self._ctx.world_manager.loaded_world
         world_view = WorldIdentifier(world_name).resolve_sync()
         self._library.use_world(world_view.path)
-        world = world_view.load(derive=self.node.conf.Arena.KG_DERIVE.value or "auto")
+        world = world_view.load(derive=self._ctx.conf.KG_DERIVE.value or "auto")
         scenario = self._active_scenario()
         indexed_entities = _index_static_entities(world, scenario.objects if scenario is not None else ())
 
@@ -207,7 +221,7 @@ class Mod_Sounds(TM_Module):
 
         self._sounds = resolved
         self._attached = attached
-        self.node.register_sound_levels({name: sound.level_db for name, sound in resolved.items()})
+        self._ctx.episode.register_sound_levels({name: sound.level_db for name, sound in resolved.items()})
         self._logger.info(f"loaded {len(resolved)} sound(s), {len(episode_sounds)} scenario, {len(attached) - len(episode_sounds)} launch")
 
     def _active_scenario(self) -> Scenario | None:
@@ -272,7 +286,7 @@ class Mod_Sounds(TM_Module):
         if _has_initial_sounding(snd.semantics) or realized_name in self._warned_inert:
             return
         self._warned_inert.add(realized_name)
-        self._logger.warning(f"sound {snd.name!r} has neither sound_on nor a sounding value, so it stays silent until toggled: ros2 service call {self.node.service_namespace('semantics', 'set')} task_generator_msgs/srv/SetSemantic \"{{entity: {realized_name}, field: sounding, value: 'true'}}\"")
+        self._logger.warning(f"sound {snd.name!r} has neither sound_on nor a sounding value, so it stays silent until toggled: ros2 service call {self.node.service_namespace('semantics', 'set')} arena_runtime_msgs/srv/SetSemantic \"{{entity: {realized_name}, field: sounding, value: 'true'}}\"")
 
     async def _spawn_sound(
         self,
@@ -357,7 +371,7 @@ class Mod_Sounds(TM_Module):
         )
         if frame_id != "map" and not attach_to_frame:
             try:
-                transform = self.node.tf_buffer.lookup_transform(
+                transform = self._ctx.interactive.tf_buffer.lookup_transform(
                     "map",
                     frame_id,
                     rclpy.time.Time(),
@@ -447,7 +461,7 @@ class Mod_Sounds(TM_Module):
         async def remove() -> None:
             self._remove_runtime(entity)
 
-        self.node.markers.put(
+        self._ctx.interactive.markers.put(
             planar_marker(entity, pose, description=entity, scale=0.6, visuals=[visual(Marker.CUBE, (0.25, 0.25, 0.25), (0.9, 0.8, 0.2, 0.9))]),
             on_pose=on_pose,
             apply=Apply.LIVE,
@@ -465,7 +479,7 @@ class Mod_Sounds(TM_Module):
         self._sound_state.pop(entity, None)
         self._attached.discard(entity)
         self._runtime.discard(entity)
-        self.node.markers.erase(entity)
+        self._ctx.interactive.markers.erase(entity)
         self._ctx.simulator.detach_semantics(entity)
         return True
 

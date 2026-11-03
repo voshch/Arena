@@ -27,6 +27,7 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from arena_runtime.env.constants.runtime import EPISODE_PARAMS
+from arena_runtime.env.task_layer import TASK_PARAM_PREFIX, mode_param
 from arena_runtime.hearing import nav2_overlay
 from arena_runtime.flags import expand_flag_namespace, truthy
 
@@ -44,7 +45,7 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
     if not rclpy.ok():
         rclpy.init(args=[])
 
-    node = Node(f"task_generator_launch_{os.getpid()}_{env_id}")
+    node = Node(f"arena_env_launch_{os.getpid()}_{env_id}")
     logger = node.get_logger()
     try:
         cli = node.create_client(RegisterEnv, "/arena/register_env")
@@ -58,7 +59,7 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
                 next_log = now + _REGISTER_LOG_INTERVAL_SEC
 
         req = RegisterEnv.Request()
-        req.caller_id = f"/task_generator_launch_{os.getpid()}"
+        req.caller_id = f"/arena_env_launch_{os.getpid()}"
         req.env_id = env_id
         req.ns = ns
 
@@ -152,9 +153,8 @@ def generate_launch_description() -> launch.LaunchDescription:
         description="YAML list of world-independent sound entities (radios, alarms), same Sound schema as world.yaml sounds. Non-empty enables the sounds module even with acoustics:=none, where nothing hears them.",
     )
     robot = LaunchArgument(name="robot", default_value="auto")
-    tm_robots = LaunchArgument(name="task.robots", default_value="explore")
     tm_config = LaunchArgument(
-        name="task.config",
+        name=mode_param("config"),
         default_value="",
         description="Task config file (task_modes list). Overrides task.robots. Bare names resolve under arena_bringup/configs/tasks.",
     )
@@ -175,8 +175,11 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="60.0",
         description="Horizontal fov in degrees of the pedestrian views.",
     )
-    tm_obstacles = LaunchArgument(name="task.obstacles", default_value="random")
-    tm_modules = LaunchArgument(name="task.modules", default_value="rviz_ui")
+    task_layer = LaunchArgument(
+        name="task_layer",
+        default_value="",
+        description="Task runtime: an entry point name of the arena_runtime.task_layer group. Empty = $ARENA_TASK_LAYER, else task_generator.",
+    )
     LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""))
     world = LaunchArgument(name="world", default_value="map_empty")
     world_lighting = LaunchArgument(
@@ -242,7 +245,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     train_mode = LaunchArgument(name="robot.train", default_value="false")
     parameter_file = LaunchArgument(
         name="task.params",
-        default_value=os.path.join(bringup_dir, "configs", "task_generator.yaml"),
+        default_value=os.path.join(bringup_dir, "configs", "task.yaml"),
     )
 
     def _build_env_actions(
@@ -285,20 +288,11 @@ def generate_launch_description() -> launch.LaunchDescription:
             raise RuntimeError(f"robot.hearing:={hearing_val} needs acoustics:=arena")
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
-        tm_modules_val = launch.utilities.perform_substitutions(
-            context,
-            launch.utilities.normalize_to_list_of_substitutions(tm_modules.substitution),
-        )
-        configured_modules = [value.strip() for value in tm_modules_val.split(",") if value.strip()]
         static_sounds_val = launch.utilities.perform_substitutions(
             context,
             launch.utilities.normalize_to_list_of_substitutions(auditory_static_sounds.substitution),
         ).strip()
-        static_sounds = static_sounds_val not in ("", "[]")
-        if (acoustics_val != "none" or static_sounds) and "sounds" not in configured_modules:
-            configured_modules.append("sounds")
-        tm_modules_val = ",".join(configured_modules)
-        if static_sounds and acoustics_val == "none":
+        if static_sounds_val not in ("", "[]") and acoustics_val == "none":
             launch.logging.get_logger("arena_runtime.env.launch").warning("auditory.static_sounds are inaudible with acoustics:=none, select an acoustics backend (acoustics:=arena) to hear them")
 
         planner_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(planner.substitution))
@@ -406,7 +400,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 continue
             if k in declared:
                 continue
-            if k.startswith(("task.", "robot.")) and not k.startswith(_HEARING_PREFIX):
+            if k.startswith((TASK_PARAM_PREFIX, "robot.")) and not k.startswith(_HEARING_PREFIX):
                 # `robot.<cap>.<key>:=<val>` lands as a kwarg in
                 # RobotManager._adapter_kwargs_for, overlaying the cap-file
                 # YAML for the bound adapter.
@@ -422,6 +416,10 @@ def generate_launch_description() -> launch.LaunchDescription:
         scenario_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(scenario_file.substitution)).strip()
         if scenario_val:
             dotted_overrides["task.scenario.file"] = scenario_val
+
+        task_layer_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(task_layer.substitution))
+        if task_layer_val:
+            dotted_overrides["task_layer"] = task_layer_val
 
         tm_config_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(tm_config.substitution)).strip()
         if tm_config_val:
@@ -452,9 +450,9 @@ def generate_launch_description() -> launch.LaunchDescription:
             fh.close()
             overrides_files.append(fh.name)
 
-        task_generator_node = launch_ros.actions.Node(
+        arena_env_node = launch_ros.actions.Node(
             package="arena_runtime",
-            executable="env_node",
+            executable="arena_env_node",
             namespace=os.path.dirname(allocated_ns),
             name=os.path.basename(allocated_ns),
             output="screen",
@@ -469,10 +467,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "robot.hearing": hearing_val,
                     "robot.arm_adapter": arm_val,
                     **robot.str_param,
-                    "task.robots": tm_robots.param_value(str),
-                    "task.obstacles": tm_obstacles.param_value(str),
-                    "task.config": tm_config_val,
-                    "task.modules": tm_modules_val,
+                    mode_param("config"): tm_config_val,
                     **world.str_param,
                     "world.lighting": world_lighting.param_value(str),
                     "world.levels": world_levels.param_value(str),
@@ -494,7 +489,7 @@ def generate_launch_description() -> launch.LaunchDescription:
 
         aiomonitor_port = 20101 + max(allocated_id, 0) * 10
         debug_window_cb = launch.event_handlers.OnProcessStart(
-            target_action=task_generator_node,
+            target_action=arena_env_node,
             on_start=[
                 ExecuteProcess(
                     cmd=[
@@ -532,13 +527,13 @@ def generate_launch_description() -> launch.LaunchDescription:
 
         shutdown_on_node_exit = RegisterEventHandler(
             OnProcessExit(
-                target_action=task_generator_node,
-                on_exit=[launch.actions.Shutdown(reason="task_generator_node exited")],
+                target_action=arena_env_node,
+                on_exit=[launch.actions.Shutdown(reason="arena_env_node exited")],
             )
         )
 
         env_actions: list[launch.LaunchDescriptionEntity] = [
-            IsolatedGroupAction([*tf_remaps, *acoustics_actions, *hearing_actions, human_launch, pedestrian_marker_node, task_generator_node, data_recorder_process]),
+            IsolatedGroupAction([*tf_remaps, *acoustics_actions, *hearing_actions, human_launch, pedestrian_marker_node, arena_env_node, data_recorder_process]),
         ]
         if truthy(debug_flags.get("debug.aiomonitor")):
             env_actions.append(launch.actions.RegisterEventHandler(debug_window_cb))

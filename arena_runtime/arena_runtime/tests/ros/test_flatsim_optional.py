@@ -24,7 +24,7 @@ def _python(code: str, cwd: os.PathLike[str]) -> subprocess.CompletedProcess[str
 
 
 def test_runtime_imports_without_flatsim(tmp_path) -> None:
-    code = "import importlib.util\nimport arena_runtime.arena_node, arena_runtime.sim\nassert importlib.util.find_spec('flatsim_msgs') is None\nassert importlib.util.find_spec('flatsim') is None"
+    code = "import importlib.util\nimport arena_runtime.arena_runtime_node, arena_runtime.sim\nassert importlib.util.find_spec('flatsim_msgs') is None\nassert importlib.util.find_spec('flatsim') is None"
     proc = _python(code, tmp_path)
     assert proc.returncode == 0, proc.stderr
 

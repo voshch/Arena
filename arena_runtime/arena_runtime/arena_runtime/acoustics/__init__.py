@@ -10,7 +10,7 @@ import attrs
 import rclpy.node
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
-from task_generator_msgs.msg import AdapterDisplay, AdapterPlugin, RecordedTopic
+from arena_runtime_msgs.msg import AdapterDisplay, AdapterPlugin, RecordedTopic
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.env.constants import Constants

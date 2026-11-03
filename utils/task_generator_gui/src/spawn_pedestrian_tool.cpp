@@ -19,7 +19,7 @@ SpawnPedestrianTool::SpawnPedestrianTool()
   shortcut_key_ = 'p';
 
   target_node_property_ = new rviz_common::properties::StringProperty(
-    "Target", "/task_generator_node",
+    "Target", "/arena_env_node",
     "Namespace of the task_generator node providing runtime/spawn_dynamic.",
     getPropertyContainer(), SLOT(updateClient()), this);
 
@@ -46,7 +46,7 @@ void SpawnPedestrianTool::updateClient()
   if (!service_node_) {
     return;
   }
-  client_ = service_node_->create_client<task_generator_msgs::srv::SpawnDynamic>(
+  client_ = service_node_->create_client<arena_runtime_msgs::srv::SpawnDynamic>(
     target_node_property_->getStdString() + "/runtime/spawn_dynamic");
 }
 
@@ -56,7 +56,7 @@ void SpawnPedestrianTool::onPoseSet(double x, double y, double theta)
     updateClient();
   }
 
-  auto request = std::make_shared<task_generator_msgs::srv::SpawnDynamic::Request>();
+  auto request = std::make_shared<arena_runtime_msgs::srv::SpawnDynamic::Request>();
   request->model = model_property_->getStdString();
   request->use_pose = true;
 

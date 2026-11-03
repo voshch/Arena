@@ -286,8 +286,8 @@ def test_barn_seed_deterministic():
 
 def test_barn_episode_binding():
     params = WorldGeneratorBarn({}, random.Random(0)).params()
-    assert params["tm_robots"] == "scenario"
-    assert params["robots_params"] == {"file": WorldGeneratorBarn.SCENARIO}
+    assert params["modes"] == {"robots": "scenario"}
+    assert params["params"] == {"robots": {"file": WorldGeneratorBarn.SCENARIO}}
 
 
 def test_default_episode_binding_empty():
@@ -359,5 +359,5 @@ def test_barn_cylinder_seed_deterministic():
 
 def test_barn_cylinder_episode_binding():
     params = WorldGeneratorBarnCylinder({}, random.Random(0)).params()
-    assert params["tm_robots"] == "scenario"
-    assert params["robots_params"] == {"file": WorldGeneratorBarnCylinder.SCENARIO}
+    assert params["modes"] == {"robots": "scenario"}
+    assert params["params"] == {"robots": {"file": WorldGeneratorBarnCylinder.SCENARIO}}

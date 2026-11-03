@@ -261,7 +261,7 @@ command whose placement got no reading is placed again on the next tick.
 
 ### `SimLifecycle`
 
-[`_interface.py`](_interface.py): process-singleton host counterpart to `BaseSim`. Owned by `arena_node` (one instance per process), drives sim-wide pause/unpause and namespace cleanup that cuts across env-scoped simulators.
+[`_interface.py`](_interface.py): process-singleton host counterpart to `BaseSim`. Owned by `arena_runtime_node` (one instance per process), drives sim-wide pause/unpause and namespace cleanup that cuts across env-scoped simulators.
 
 | Abstract method | Purpose |
 | --- | --- |
@@ -271,14 +271,14 @@ command whose placement got no reading is placed again on the next tick.
 
 Registered in `LifecycleRegistry` alongside `SimulatorRegistry` ([`__init__.py`](__init__.py)).
 
-`arena_node` wraps the registered `SimLifecycle` in a liveness-accounting
+`arena_runtime_node` wraps the registered `SimLifecycle` in a liveness-accounting
 proxy: two consecutive `pause`/`unpause` failures (`False` or raised) or step
 failures mark the sim dead, published latched on `state/sim`
 ([`SimState.msg`](../../../arena_runtime_msgs/msg/SimState.msg)), see the
 [arena_runtime README](../README.md) topic table.
 Adapters signal a dead transport (a timed-out service call, not a genuine
 rejection) by raising [`SimUnavailable`](_interface.py) instead of returning
-`False`. `cleanup_namespace` should let it propagate. `arena_node` never
+`False`. `cleanup_namespace` should let it propagate. `arena_runtime_node` never
 retries or recovers a dead sim on its own.
 
 ## `BaseSim`
@@ -323,7 +323,7 @@ dummy, flatsim and gazebo hosts are what
 [`tests/ros/`](../../tests/ros/) exercises (gazebo against a headless gz server on an empty world), the gate math itself is
 [`lockstep_gates.py`](../lockstep_gates.py) and has ROS-free unit tests.
 
-`arena_node` exposes it as `sim_lifecycle/step` (valid only while holds are
+`arena_runtime_node` exposes it as `sim_lifecycle/step` (valid only while holds are
 active and no unpause window is open), plus the lockstep control plane
 driving the [`LockstepScheduler`](../lockstep.py). Every adapter advances at
 least one physics step for any positive delta, so a delta below half a step
@@ -466,7 +466,7 @@ are what Arena sends it.
 - [`FlatsimHost`](flatsim_simulator/flatsim_simulator.py): `pause` and `unpause` are
   `control_world` calls. `step_seconds` sends `multi_step` in chunks of at
   most one sim second, the server takes the steps before it answers, and the
-  call returns once arena_node's own clock carries the returned time.
+  call returns once arena_runtime_node's own clock carries the returned time.
   `cleanup_namespace` deletes every entity, floor and robot whose name starts
   with the env prefix `env_<id>/`.
 - [`FlatsimSimulator`](flatsim_simulator/flatsim_simulator.py): the per-env client. It

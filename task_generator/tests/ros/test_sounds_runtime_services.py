@@ -10,7 +10,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _ros_gate():
     pytest.importorskip("rclpy")
-    pytest.importorskip("task_generator_msgs.msg")
+    pytest.importorskip("arena_runtime_msgs.msg")
 
 
 def _during_reset(call):
@@ -43,7 +43,7 @@ def _during_reset(call):
 
 
 def test_remove_sound_during_a_reset_waits_for_the_reset_to_finish(rclpy_context) -> None:
-    from task_generator_msgs.srv import RemoveSound
+    from arena_runtime_msgs.srv import RemoveSound
 
     waited, response = _during_reset(lambda module: module._remove_sound(RemoveSound.Request(entity="radio"), RemoveSound.Response()))
     assert waited
@@ -52,7 +52,7 @@ def test_remove_sound_during_a_reset_waits_for_the_reset_to_finish(rclpy_context
 
 
 def test_spawn_sound_during_a_reset_waits_for_the_reset_to_finish(rclpy_context) -> None:
-    from task_generator_msgs.srv import SpawnSound
+    from arena_runtime_msgs.srv import SpawnSound
 
     waited, response = _during_reset(lambda module: module._spawn_sound(SpawnSound.Request(kind="no_such_kind"), SpawnSound.Response()))
     assert waited

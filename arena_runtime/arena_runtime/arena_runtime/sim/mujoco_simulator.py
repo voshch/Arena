@@ -97,8 +97,8 @@ from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable, sloped_box
 
 """
-MujocoHost is constructed once by arena_node and owns process-singleton resources for MuJoCo: the lifecycle (pause/unpause/cleanup/step) and its service clients.
-MujocoSimulator is per-env on task_generator_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
+MujocoHost is constructed once by arena_runtime_node and owns process-singleton resources for MuJoCo: the lifecycle (pause/unpause/cleanup/step) and its service clients.
+MujocoSimulator is per-env on arena_env_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
 """
 
 _MUJOCO_PHYSICS_DT = 0.002

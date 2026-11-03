@@ -45,10 +45,10 @@ setup(
     license='TODO',
     entry_points={
         'console_scripts': [
-            'arena_node = arena_runtime.arena_node:main',
+            'arena_runtime_node = arena_runtime.arena_runtime_node:main',
             'urdf_publisher = arena_runtime.urdf_publisher:main',
             'clock_relay = arena_runtime.clock_relay:main',
-            'env_node = arena_runtime.env_node:main',
+            'arena_env_node = arena_runtime.arena_env_node:main',
             'generate_map = arena_runtime.env.map_generator:main',
         ],
         'arena_mcp.domains': [

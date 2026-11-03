@@ -6,6 +6,7 @@ import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.env.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Pose, Position, PositionRadius
 from arena_simulation_setup.tree.World import WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import RobotGoal
@@ -53,14 +54,14 @@ class TM_Scenario(TM_Robots):
     _idle_robots: set[str]
     _mechanism_map: ROSParamT[bool]
 
-    async def reset(self) -> None:
-        await super().reset()
+    async def reset(self) -> ResetPlan:
+        plan = await super().reset()
 
-        zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self.node.conf.General.RNG.stream("robots", "scenario"))
+        zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self._ctx.conf.RNG.stream("robots", "scenario"))
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(self._config.value).resolve_sync()
         scenario = scenario_view.load(converter=zone_conv)
         SCENARIO_ROBOTS = scenario.robots
-        declared_pedestrians = frozenset(human.name for human in scenario.humans)
+        humans = frozenset(human.name for human in scenario.humans)
 
         managed_robots = list(self._ctx.robots.values())
 
@@ -82,7 +83,7 @@ class TM_Scenario(TM_Robots):
 
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
             start_pose = to_map_frame(config.start, config.start_zone, config.level, realizer)
-            self._start_poses[robot.name] = start_pose
+            entry = plan.robots[robot.name] = RobotReset(start_pose=start_pose, humans=humans)
 
             phases = [localize_phase(phase, config.goal_level, realizer) for phase in config.phases]
             forbidden: list[PositionRadius] = [PositionRadius(x=pose.position.x, y=pose.position.y, radius=robot.safe_distance) for pose in (start_pose, *(goto for phase in phases for goto in goto_poses(phase)))]
@@ -93,11 +94,12 @@ class TM_Scenario(TM_Robots):
             # timeout (or until another non-idle robot finishes) so that
             # recordings can capture pedestrians passing a parked robot.
             if phases:
-                await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)), start_pose, pedestrians=declared_pedestrians)
-            self._ctx.world_manager.forbid(forbidden)
+                entry.task = TaskRequest(phases=phases, conditions=list(config.conditions))
+            plan.forbidden_zones.extend(forbidden)
 
         agents = [name for robot in managed_robots for name in (robot.name, robot.robot.sim_path) if name]
         self._ctx.world_manager.set_mechanism_map(bool(self._mechanism_map.value), agents)
+        return plan
 
     async def teardown(self) -> None:
         self._ctx.world_manager.set_mechanism_map(False, [])

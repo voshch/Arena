@@ -44,7 +44,7 @@ class TM_Random(TM_Obstacles):
     _config: _Config
 
     async def reset(self, *, seed: int) -> Obstacles:
-        rng = self.node.conf.General.RNG.stream("obstacles", "random")
+        rng = self._ctx.conf.RNG.stream("obstacles", "random")
 
         N_STATIC_OBSTACLES = int(rng.integers(*self._config.N_STATIC_OBSTACLES.value, endpoint=True))
         N_INTERACTIVE_OBSTACLES = int(rng.integers(*self._config.N_INTERACTIVE_OBSTACLES.value, endpoint=True))

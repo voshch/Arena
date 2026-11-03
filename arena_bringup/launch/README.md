@@ -1,6 +1,6 @@
 # arena_bringup launch
 
-Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim + `arena_node`). Envs are attached via `env.launch.py`; the `arena launch` bash composite orchestrates both.
+Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim + `arena_runtime_node`). Envs are attached via `env.launch.py`; the `arena launch` bash composite orchestrates both.
 
 ## Arguments
 
@@ -37,12 +37,12 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `complexity` | string | `1` | `1` map+position known; `2` map known AMCL; `3` SLAM |
 | `record.dir` | string | `` (empty) | Directory for data recording; empty disables |
 | `record.auto` | bool string | `true` | `false` = do not auto-start the recorder even when `record.dir` is set (the benchmark runner starts its own) |
-| `task.robots` | string | `explore` | Robot task mode (legacy single-kind shorthand) |
+| `task.robots` | string | task runtime's (`explore`) | Robot task mode (legacy single-kind shorthand) |
 | `task.config` | string | `` (empty) | Path to a [TaskModeSpec YAML](../configs/tasks/README.md); empty -> synthesize from `task.robots` (wins if both set) |
-| `task.obstacles` | string | `random` | Obstacle task mode |
-| `task.modules` | string | `rviz_ui` | Comma-separated task modules to load |
+| `task.obstacles` | string | task runtime's (`random`) | Obstacle task mode |
+| `task.modules` | string | task runtime's (`clear_forbidden_zones`, `rviz_ui`, plus `sounds` with acoustics) | Comma-separated task modules to load, the always-on ones added |
 | `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = use the `task.params` default) |
-| `task.params` | string | `configs/task_generator.yaml` | Env node ROS parameter YAML |
+| `task.params` | string | `configs/task.yaml` | Env node ROS parameter YAML |
 | `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/`. A comma list (`hospital_1,office_1`) stacks the worlds as the levels of one world, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#linked-levels) |
@@ -102,7 +102,7 @@ the env node's robot launcher to silence nav2 nodes by default) - those
 later calls can use the merge form to layer rules on top of the user's spec
 without clobbering it. With `fallback=True` a merge lands just above the first
 `**/*` catch-all instead, so it covers only nodes no earlier rule names. The
-env passes its active rule set to `task_generator_node` as the `log_level`
+env passes its active rule set to `arena_env_node` as the `log_level`
 parameter, and the robot launcher starts from it and adds its nav2 and moveit
 quiet rules as a fallback: `log_level:='{**/planner_server:info, warn}'` keeps
 `planner_server` at `info` while the other nav2 nodes stay at `error`.
@@ -123,14 +123,14 @@ quiet rules as a fallback: `log_level:='{**/planner_server:info, warn}'` keeps
 2. **`IsolatedGroupAction` -> `sim.launch.py`** - the physics simulator.
 3. **`world_generator`** node (`arena_simulation_setup`) - generates world
    assets.
-4. **`arena_node`** (`LifecycleNode`) - the multi-env orchestrator.
+4. **`arena_runtime_node`** (`LifecycleNode`) - the multi-env orchestrator.
 
 Envs are not included here. Each env is started separately via
 `env.launch.py` (either manually via `arena env` or orchestrated by
 `arena launch`). Each env includes:
 
 - `human.launch.py` - starts the human simulator (if any) for that environment.
-- The `task_generator_node` with all forwarded args plus `namespace` and `prefix`.
+- The `arena_env_node` with all forwarded args plus `namespace` and `prefix`.
 
 Environments are positioned on a *snail grid* (`snail_grid(d)`) that spirals
 outward from the origin with spacing `d`, so multiple parallel environments do

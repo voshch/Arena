@@ -9,9 +9,9 @@ from collections.abc import Sequence
 
 import attrs
 from arena_rclpy_mixins.qos import best_effort
+from arena_runtime_msgs.msg import AdapterDisplay, AdapterPlugin, RecordedTopic
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
-from task_generator_msgs.msg import AdapterDisplay, AdapterPlugin, RecordedTopic
 
 from arena_runtime.acoustics import AcousticsSimulatorOptions, BaseAcousticsSimulator, PedestrianHearing, SoundEmission
 

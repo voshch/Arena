@@ -6,9 +6,12 @@ import random
 import traceback
 import typing
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import arena_cam_msgs.srv
+import arena_runtime_msgs.action
+import arena_runtime_msgs.msg
+import arena_runtime_msgs.srv
 import arena_simulation_setup.tree.assets.Human
 import arena_simulation_setup.tree.assets.Object
 import arena_simulation_setup.tree.configs.environment
@@ -19,12 +22,10 @@ import geometry_msgs.msg
 import rclpy
 import rclpy.lifecycle
 import rclpy.qos
-import task_generator_msgs.action
-import task_generator_msgs.msg
-import task_generator_msgs.srv
 import yaml
-from arena_rclpy_mixins.Time import Time
+from arena_robots.Robot import RobotIdentifier
 from arena_robots.SetupFile import Config as RobotSetupConfig
+from arena_runtime_msgs.msg import AdapterDisplay
 from arena_simulation_setup.shared.conditions import Node
 from arena_simulation_setup.shared.judge import NodeMonitor, zone_polygons
 from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
@@ -41,7 +42,6 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.parameter import Parameter
 from std_msgs.msg import Bool, Empty, Int16, String
-from task_generator_msgs.msg import AdapterDisplay
 
 from arena_runtime.env.adapters import ResetContext
 from arena_runtime.env.constants import Constants
@@ -51,11 +51,30 @@ from arena_runtime.env.interactive import MarkerHub
 from arena_runtime.env.interactive.entities import EntityHandles
 from arena_runtime.env.node import _LATCHED, EnvNode, _available
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
-from arena_runtime.env.task_layer import EpisodeTask, TaskContext, task_layer
+from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+from arena_runtime.env.run_task import RunningTask
+from arena_runtime.env.task_layer import (
+    EpisodeContext,
+    EpisodeRecord,
+    EpisodeTask,
+    InteractiveContext,
+    TaskConfiguration,
+    TaskContext,
+    TaskModeOverrides,
+    TaskModes,
+    declare_mode_schemas,
+    decode_modes,
+    encode_modes,
+    encode_namespaces,
+    registered_modes,
+    task_layer,
+    task_layer_name,
+)
 from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot
 
 if typing.TYPE_CHECKING:
     from arena_runtime.env.robot_manager import RobotManager
+    from arena_runtime.env.robot_manager.task_runner import PhaseState
 
 _MAX_CONSECUTIVE_RESET_FAILURES = 3
 
@@ -78,42 +97,14 @@ class _TimelineState(typing.TypedDict):
 
 
 @attrs.define
-class EpisodeRecord:
-    episode_id: int = 0
-    world: str = ""
-    seed: int = -1
-    tm_robots: str = ""
-    tm_obstacles: str = ""
-    tm_modules: list[str] = attrs.Factory(list)
-    robots: list[str] = attrs.Factory(list)
-    outcome_state: int = 0
-    outcome_info: str = ""
-    goal_uuid: str = ""
-    goal_dist_start: float = 0.0
-    goal_dist_min: float = 0.0
-    path_length: float = 0.0
-    integrity: list[str] = attrs.Factory(list)
-    start_time: Time = attrs.Factory(Time)
-
-
-@attrs.define
-class TaskModeOverrides:
-    tm_robots: str = ""
-    tm_obstacles: str = ""
-    tm_modules: list[str] = attrs.Factory(list)
-    keep_modules: bool = False
-    world: str = ""
-
-
-@attrs.define
 class EpisodeRuntime:
     current: EpisodeRecord = attrs.Factory(EpisodeRecord)
     run_seed: str = attrs.field(factory=lambda: uuid.uuid4().hex)
     pending_outcomes: dict = attrs.Factory(dict)
-    pending_overrides: TaskModeOverrides | None = None
-    pending_world: str = ""
-    pending_seed: int = -1
+    pending: TaskModeOverrides = attrs.Factory(TaskModeOverrides)
+    decided: bool = False
     action_in_flight: bool = False
+    respawn_requested: bool = False
 
 
 def _is_map_frame(frame_id: str) -> bool:
@@ -141,12 +132,14 @@ class EpisodeNode(EnvNode):
     _entities: EntityHandles
 
     def __init__(self, **kwargs: typing.Any) -> None:
-        self._task_layer = task_layer()
-        super().__init__("task_generator", automatically_declare_parameters_from_overrides=True, **kwargs)
+        super().__init__(Constants.ENV_NODE_NAMESPACE, automatically_declare_parameters_from_overrides=True, **kwargs)
 
+        layer_name = task_layer_name(self.rosparam[str].get("task_layer", ""))
+        self.rosparam[str].set("task_layer", layer_name)
+        self._task_layer = task_layer(layer_name)
         self.ROSParam[bool]("resetting", True)
         self.task_params = self._task_layer.declare_task_params(self)
-        self._task_layer.declare_mode_schemas(self)
+        declare_mode_schemas(self._task_layer, self)
 
         run_seed = self.rosparam[str].get("run_seed", "")
         queue_depth = self.rosparam[int].get("episode_queue_depth", 10)
@@ -194,8 +187,7 @@ class EpisodeNode(EnvNode):
         self._consecutive_reset_failures = 0
         self._reset_sim_time = 0
 
-        self._staged_obstacles_params: dict[str, ParameterValue] = {}
-        self._staged_robots_params: dict[str, ParameterValue] = {}
+        self._staged_params: dict[str, ParameterValue] = {}
         self._staged_human_params: dict[str, ParameterValue] = {}
         self._human_params: dict[str, ParameterValue] = {}
 
@@ -233,13 +225,13 @@ class EpisodeNode(EnvNode):
         self._pub_state_resetting.publish(Bool(data=False))
 
         self._pub_state_episode = self.create_publisher(
-            task_generator_msgs.msg.EpisodeRecord,
+            arena_runtime_msgs.msg.EpisodeRecord,
             self.service_namespace("state", "episode"),
             _EPISODE_QOS,
         )
 
         self._pub_state_queue = self.create_publisher(
-            task_generator_msgs.msg.EpisodeRecord,
+            arena_runtime_msgs.msg.EpisodeRecord,
             self.service_namespace("state", "queue"),
             rclpy.qos.QoSProfile(
                 depth=queue_depth,
@@ -251,7 +243,11 @@ class EpisodeNode(EnvNode):
         self._episode_task: asyncio.Task | None = None
         self._shutting_down = False
 
-        self._publish_bootstrap_queue_state()
+        self._run_tasks: dict[str, RunningTask] = {}
+        self._assigned: set[str] = set()
+        self._pending_lock = asyncio.Lock()
+
+        self._publish_queue_state()
 
     @property
     def episode_id(self) -> int:
@@ -268,6 +264,7 @@ class EpisodeNode(EnvNode):
 
         self._task = await self._task_layer.create_task(
             node=self,
+            params=self.task_params,
             ctx=TaskContext(
                 environment_manager=self._environment_manager,
                 robots_manager=self._robots_manager,
@@ -276,18 +273,30 @@ class EpisodeNode(EnvNode):
                 simulator=self._simulator,
                 acoustics_simulator=self._acoustics_simulator,
                 reset_lock=self._reset_lock,
-                compromise=self._compromise,
-                abort_episode=self.abort_episode,
+                conf=TaskConfiguration.of(self.conf),
+                episode=EpisodeContext(
+                    compromise=self._compromise,
+                    abort_episode=self.abort_episode,
+                    force_reset=self.force_reset,
+                    register_timeline=self.register_timeline,
+                    register_conditions=self.register_conditions,
+                    register_sound_levels=self.register_sound_levels,
+                ),
+                interactive=InteractiveContext(markers=self.markers, robot_colors=self.robot_colors, tf_buffer=self.tf_buffer),
             ),
         )
 
     def _after_setup(self) -> None:
         self._publish_queue_state()
 
-    def _on_tick(self) -> None:
+    async def _on_tick(self, ended: Mapping[str, "PhaseState"]) -> None:
         self._evaluate_timeline(self._sample.t)
+        self._advance_run_tasks()
+        if self._task is not None and self._episodes.current.outcome_state == arena_runtime_msgs.action.RunEpisode.Result.RUNNING and not self._reset_lock.locked():
+            assigned, self._assigned = self._assigned, set()
+            await self._task.tick(ended, assigned)
 
-    def _extra_semantic_states(self) -> list[task_generator_msgs.msg.SemanticEntityState]:
+    def _extra_semantic_states(self) -> list[arena_runtime_msgs.msg.SemanticEntityState]:
         return [self._timeline_semantic_state()]
 
     def _interaction_displays(self) -> list[AdapterDisplay]:
@@ -302,30 +311,6 @@ class EpisodeNode(EnvNode):
                 group="Interaction",
             )
         ]
-
-    def _publish_bootstrap_queue_state(self) -> None:
-        # Latch a minimal state/queue at construction so the rviz panel can
-        # build its mode comboboxes and param tree before managers exist,
-        # instead of waiting for _build_next_record at first reset.
-        current_robots = self.task_params.robots
-        current_obstacles = self.task_params.obstacles
-        current_modules = self.task_params.modules
-
-        msg = task_generator_msgs.msg.EpisodeRecord()
-        msg.episode_id = 0
-        msg.world = ""
-        msg.seed = -1
-        msg.tm_robots = current_robots
-        msg.tm_obstacles = current_obstacles
-        msg.tm_modules = list(current_modules)
-        msg.robots = []
-        msg.outcome_state = task_generator_msgs.msg.EpisodeRecord.QUEUED
-        msg.outcome_info = ""
-        msg.goal_uuid = ""
-        msg.integrity = []
-        msg.obstacles_params = self._params_for_mode(current_obstacles)
-        msg.robots_params = self._params_for_mode(current_robots)
-        self._pub_state_queue.publish(msg)
 
     def on_activate(self, state: rclpy.lifecycle.State) -> TransitionCallbackReturn:
         super().on_activate(state)
@@ -397,34 +382,31 @@ class EpisodeNode(EnvNode):
         return True, identifier.name
 
     async def _cb_cam_play(self, request: arena_cam_msgs.srv.Play.Request, response: arena_cam_msgs.srv.Play.Response) -> arena_cam_msgs.srv.Play.Response:
-        if self._episodes.current.outcome_state != task_generator_msgs.action.RunEpisode.Result.RUNNING:
+        if self._episodes.current.outcome_state != arena_runtime_msgs.action.RunEpisode.Result.RUNNING:
             response.message = "no episode is running, cam.setup plays at the next episode start"
             return response
         response.success, response.message = await self._play_camera(request.root, request.params)
         return response
 
-    def _params_for_mode(self, mode: str) -> list[RclParameter]:
-        if not mode:
-            return []
-        prefix = f"task.{mode}"
-        names = self.list_parameters(prefixes=[prefix], depth=10).names
-        if not names:
-            return []
-        params = self.get_parameters(list(names))
-        result: list[RclParameter] = []
-        for p in params:
-            leaf = p.name[len(prefix) + 1 :]
-            result.append(RclParameter(name=leaf, value=p.get_parameter_value()))
-        return result
+    def _mode_namespaces(self, modes: TaskModes) -> dict[tuple[str, str], str]:
+        """The param namespace of every selected mode the layer registers one for, by (axis, mode)."""
+        spaces = self._task_layer.mode_namespaces()
+        return {(axis, mode): str(spaces[axis][mode]) for axis, names in modes.items() for mode in names if mode in spaces.get(axis, {})}
 
-    def _record_to_msg(self, record: EpisodeRecord) -> task_generator_msgs.msg.EpisodeRecord:
-        msg = task_generator_msgs.msg.EpisodeRecord()
+    def _mode_params(self, modes: TaskModes) -> dict[str, ParameterValue]:
+        """Live value of every parameter under the namespaces of the selected modes, by full name."""
+        prefixes = sorted(set(self._mode_namespaces(modes).values()))
+        names = self.list_parameters(prefixes=prefixes, depth=10).names if prefixes else []
+        return {p.name: p.get_parameter_value() for p in self.get_parameters(list(names))}
+
+    def _record_to_msg(self, record: EpisodeRecord, params: Mapping[str, ParameterValue]) -> arena_runtime_msgs.msg.EpisodeRecord:
+        msg = arena_runtime_msgs.msg.EpisodeRecord()
         msg.episode_id = record.episode_id
         msg.world = record.world
         msg.seed = record.seed
-        msg.tm_robots = record.tm_robots
-        msg.tm_obstacles = record.tm_obstacles
-        msg.tm_modules = list(record.tm_modules)
+        msg.modes = encode_modes(record.modes)
+        msg.task_layer = self.rosparam[str].get("task_layer", "")
+        msg.params = [RclParameter(name=name, value=value) for name, value in params.items()]
         msg.robots = list(record.robots)
         msg.outcome_state = record.outcome_state
         msg.outcome_info = record.outcome_info
@@ -439,9 +421,8 @@ class EpisodeNode(EnvNode):
         return msg
 
     def _publish_episode_state(self) -> None:
-        msg = self._record_to_msg(self._episodes.current)
-        msg.obstacles_params = self._params_for_mode(self._episodes.current.tm_obstacles)
-        msg.robots_params = self._params_for_mode(self._episodes.current.tm_robots)
+        record = self._episodes.current
+        msg = self._record_to_msg(record, self._mode_params(record.modes))
         msg.human_params = [RclParameter(name=k, value=v) for k, v in self._human_params.items()]
         self._pub_state_episode.publish(msg)
 
@@ -543,9 +524,9 @@ class EpisodeNode(EnvNode):
 
         task.add_done_callback(_on_done)
 
-    def _timeline_semantic_state(self) -> task_generator_msgs.msg.SemanticEntityState:
+    def _timeline_semantic_state(self) -> arena_runtime_msgs.msg.SemanticEntityState:
         """The `timeline` entity: sim time of the tick each stimulus fired on, per `stimulus.<agent>.<need>`, grow-only."""
-        msg = task_generator_msgs.msg.SemanticEntityState()
+        msg = arena_runtime_msgs.msg.SemanticEntityState()
         msg.entity = self._realizer.prefix("timeline")
         msg.kind = "timeline"
         msg.discrete_names = list(self._stimuli_fired.keys())
@@ -602,111 +583,61 @@ class EpisodeNode(EnvNode):
         self._episodes.current.outcome_info = info
         self._publish_episode_state()
 
+    @property
+    def _loaded_world(self) -> str:
+        return "" if self._robots_manager is None else self._world_manager.loaded_world
+
+    def _next_record(self, world: str = "", seed: int = -1) -> EpisodeRecord:
+        """The record the next episode runs as: pending overrides over what is live, an explicit world or seed over both."""
+        pending = self._episodes.pending
+        episode_id = self._episodes.current.episode_id + 1
+        resolved_world = world or pending.world or self._loaded_world or self._episodes.current.world
+        run_seed = self.rosparam[str].get("run_seed", "") or self._episodes.run_seed
+        if seed < 0:
+            seed = pending.seed if pending.seed >= 0 else _derive_seed(run_seed, resolved_world, episode_id)
+        return EpisodeRecord(episode_id=episode_id, world=resolved_world, seed=seed, modes=self.task_params.resolve(pending.modes))
+
     def _publish_queue_state(self) -> None:
-        overrides = self._episodes.pending_overrides
-        current_robots = self.task_params.robots
-        current_obstacles = self.task_params.obstacles
-        current_modules = self.task_params.modules
-        record_world = self._episodes.current.world
-        loaded_world = self._world_manager.loaded_world
-        queued_robots = [m.model_name for m in self._robots_manager.managers.values()] if self._robots_manager is not None else []
-
-        if overrides is None:
-            queued_tm_robots = current_robots
-            queued_tm_obstacles = current_obstacles
-            queued_tm_modules = current_modules
-            queued_world = record_world or loaded_world
-        else:
-            queued_tm_robots = overrides.tm_robots or current_robots
-            queued_tm_obstacles = overrides.tm_obstacles or current_obstacles
-            queued_tm_modules = current_modules if overrides.keep_modules else overrides.tm_modules
-            queued_world = overrides.world or record_world or loaded_world
-
-        obstacles_live = self._params_for_mode(queued_tm_obstacles)
-        robots_live = self._params_for_mode(queued_tm_robots)
-
-        obstacles_map = {p.name: p.value for p in obstacles_live}
-        for leaf, pv in self._staged_obstacles_params.items():
-            obstacles_map[leaf] = pv
-        robots_map = {p.name: p.value for p in robots_live}
-        for leaf, pv in self._staged_robots_params.items():
-            robots_map[leaf] = pv
-
-        # When the two pools share the same mode (e.g. both 'scenario'), they
-        # also share the underlying ROS param namespace. Mirror staged edits
-        # across pools so the UI shows a single coherent value instead of one
-        # side stuck on the live (unstaged) value.
-        if queued_tm_obstacles and queued_tm_obstacles == queued_tm_robots:
-            for leaf, pv in self._staged_obstacles_params.items():
-                if leaf not in self._staged_robots_params:
-                    robots_map[leaf] = pv
-            for leaf, pv in self._staged_robots_params.items():
-                if leaf not in self._staged_obstacles_params:
-                    obstacles_map[leaf] = pv
-
-        msg = task_generator_msgs.msg.EpisodeRecord()
-        msg.episode_id = self._episodes.current.episode_id
-        msg.world = queued_world
-        msg.seed = -1
-        msg.tm_robots = queued_tm_robots
-        msg.tm_obstacles = queued_tm_obstacles
-        msg.tm_modules = list(queued_tm_modules)
-        msg.robots = list(queued_robots)
-        msg.outcome_state = task_generator_msgs.msg.EpisodeRecord.QUEUED
-        msg.outcome_info = ""
-        msg.goal_uuid = ""
-        msg.integrity = []
-        msg.obstacles_params = [RclParameter(name=k, value=v) for k, v in obstacles_map.items()]
-        msg.robots_params = [RclParameter(name=k, value=v) for k, v in robots_map.items()]
+        record = self._next_record()
+        if self._robots_manager is not None:
+            record.robots = [m.model_name for m in self._robots_manager.managers.values()]
+        record.outcome_state = arena_runtime_msgs.msg.EpisodeRecord.QUEUED
+        msg = self._record_to_msg(record, self._mode_params(record.modes) | self._staged_params)
         msg.human_params = [RclParameter(name=k, value=v) for k, v in (self._human_params | self._staged_human_params).items()]
         self._pub_state_queue.publish(msg)
 
-    async def _build_next_record(self, world: str, seed: int) -> None:
-        new_id = self._episodes.current.episode_id + 1
+    async def _decide_next(self) -> None:
+        """Ask the task layer once per episode what the next one changes, keeping the answer only when it came back."""
+        async with self._pending_lock:
+            if self._episodes.decided:
+                return
+            self._episodes.pending = await self._task_layer.next_episode(previous=self._episodes.current, queued=self._episodes.pending)
+            self._episodes.decided = True
 
-        overrides = self._episodes.pending_overrides
-        self._episodes.pending_overrides = None
+    async def _decide_after_episode(self) -> None:
+        try:
+            await self._decide_next()
+        except Exception as e:
+            self.get_logger().error(f"next_episode failed, asking again when the next episode builds: {e!r}")
+        self._publish_queue_state()
 
-        if overrides is not None and overrides.world:
-            world = world or overrides.world
-            # World swap itself happens inside `_run_reset_cycle`'s hold window.
-
-        resolved_world = world or self._world_manager.loaded_world or self._episodes.current.world
-        run_seed = self.rosparam[str].get("run_seed", "") or self._episodes.run_seed
-        resolved_seed = seed if seed >= 0 else _derive_seed(run_seed, resolved_world, new_id)
-
-        current_robots = self.task_params.robots
-        current_obstacles = self.task_params.obstacles
-        current_modules = self.task_params.modules
-
-        if overrides is None:
-            tm_robots, tm_obstacles, tm_modules = current_robots, current_obstacles, current_modules
-        else:
-            tm_robots = overrides.tm_robots or current_robots
-            tm_obstacles = overrides.tm_obstacles or current_obstacles
-            tm_modules = current_modules if overrides.keep_modules else overrides.tm_modules
-
-        if tm_robots and tm_robots != current_robots:
-            self.rosparam[str].set("task.robots", tm_robots)
-        if tm_obstacles and tm_obstacles != current_obstacles:
-            self.rosparam[str].set("task.obstacles", tm_obstacles)
-
-        self._episodes.current = EpisodeRecord(
-            episode_id=new_id,
-            world=resolved_world,
-            seed=resolved_seed,
-            tm_robots=tm_robots,
-            tm_obstacles=tm_obstacles,
-            tm_modules=tm_modules,
-        )
+    async def _build_next_record(self, world: str, seed: int) -> EpisodeRecord:
+        await self._decide_next()
+        record = self._next_record(world, seed)
+        self.task_params.select(record.modes)
+        self._episodes.current = record
+        self._episodes.pending = TaskModeOverrides()
+        self._episodes.decided = False
         self._goal_progress.reset()
 
         self._publish_queue_state()
+        return record
 
     async def _run_reset_cycle(self) -> None:
         if self._task is None or self._robots_manager is None:
             raise RuntimeError("task generator not initialized")
         async with self._reset_lock:
+            self._assigned.clear()
             self.markers.clear()
             self._entities.clear()
             self._start_time = self.sim_time
@@ -721,7 +652,7 @@ class EpisodeNode(EnvNode):
             try:
                 if record.world:
                     await self._world_manager.apply_world(record.world)
-                await self._reset_episode(record.seed)
+                await self._reset_episode(record)
             finally:
                 compacted = self._world_manager.world_compacted()
                 self._judge_zones = zone_polygons(compacted)
@@ -739,7 +670,7 @@ class EpisodeNode(EnvNode):
             # This is the first instant at which the reset world, robot and
             # pedestrians are all committed. Dataset export clips audio to it.
             record.start_time = self.sim_time
-            record.outcome_state = task_generator_msgs.action.RunEpisode.Result.RUNNING
+            record.outcome_state = arena_runtime_msgs.action.RunEpisode.Result.RUNNING
             self._publish_episode_state()
             if self._cam_setup.value:
                 self._cam_task = asyncio.ensure_future(self._play_camera(self._cam_setup.value))
@@ -749,25 +680,19 @@ class EpisodeNode(EnvNode):
             log.warn(f"EPISODE STARTED #{record.episode_id}")
             log.info(f"  world:        {record.world}")
             log.info(f"  seed:         {record.seed}")
-            log.info(f"  tm_robots:    {record.tm_robots}")
-            log.info(f"  tm_obstacles: {record.tm_obstacles}")
-            log.info(f"  tm_modules:   {record.tm_modules}")
+            for axis, names in record.modes.items():
+                log.info(f"  {axis}: {names}")
             log.info(f"  robots:       {record.robots}")
 
             def _fmt(v: object) -> object:
                 # rclpy returns int/float-array params as array.array, which renders as "array('q', [...])".
                 return list(v) if isinstance(v, array.array) else v
 
-            obstacles_params = self._params_for_mode(record.tm_obstacles)
-            robots_params = self._params_for_mode(record.tm_robots)
-            if obstacles_params:
-                log.info(f"  {record.tm_obstacles} params:")
-                for p in obstacles_params:
-                    log.info(f"    {p.name}: {_fmt(Parameter.from_parameter_msg(p).value)}")
-            if robots_params:
-                log.info(f"  {record.tm_robots} params:")
-                for p in robots_params:
-                    log.info(f"    {p.name}: {_fmt(Parameter.from_parameter_msg(p).value)}")
+            params = self._mode_params(record.modes)
+            if params:
+                log.info("  params:")
+                for name, value in params.items():
+                    log.info(f"    {name}: {_fmt(Parameter.from_parameter_msg(RclParameter(name=name, value=value)).value)}")
 
     def _sample_goal_progress(self) -> None:
         assert self._robots_manager is not None
@@ -810,9 +735,9 @@ class EpisodeNode(EnvNode):
                     continue
                 self._close_condition_scopes()
                 if self._abort_reason is not None:
-                    fut.set_result((task_generator_msgs.action.RunEpisode.Result.FAILED, self._abort_reason))
+                    fut.set_result((arena_runtime_msgs.action.RunEpisode.Result.FAILED, self._abort_reason))
                 else:
-                    fut.set_result((task_generator_msgs.action.RunEpisode.Result.SUCCESS, ""))
+                    fut.set_result((arena_runtime_msgs.action.RunEpisode.Result.SUCCESS, ""))
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -851,7 +776,7 @@ class EpisodeNode(EnvNode):
             return True
         return await self._task.done
 
-    async def _reset_episode(self, seed: int) -> None:
+    async def _reset_episode(self, record: EpisodeRecord) -> None:
         assert self._task is not None and self._robots_manager is not None
         self._force_reset = False
         self._abort_reason = None
@@ -860,7 +785,7 @@ class EpisodeNode(EnvNode):
         try:
             self._pub_reset_start.publish(Empty())
 
-            self.conf.General.RNG.reseed(seed)
+            self.conf.General.RNG.reseed(record.seed)
             point_scenario_assets(None)
 
             await self._robots_manager.set_up()
@@ -872,7 +797,12 @@ class EpisodeNode(EnvNode):
                 self._apply_staged_params()
                 await self._apply_staged_human_params()
 
-                plan = await self._task.prepare_reset(seed)
+                plan = await self._task.reset_robots(record)
+                for name, entry in plan.robots.items():
+                    if entry.task is not None:
+                        await self._robots_manager.managers[name].submit_task(entry.task, entry.start_pose, pedestrians=entry.humans)
+                self._world_manager.forbid(plan.forbidden_zones)
+                await self._task.reset_obstacles(plan, record)
 
                 async def respawn() -> None:
                     await asyncio.gather(
@@ -888,7 +818,7 @@ class EpisodeNode(EnvNode):
                         manager.reset(
                             ResetContext(
                                 rng=self.conf.General.RNG.stream("robot-adapter", name),
-                                start_pose=self._task.tm_robots.start_poses.get(name),
+                                start_pose=entry.start_pose if (entry := plan.robots.get(name)) else None,
                                 episode_index=self.episode_id,
                             )
                         )
@@ -942,28 +872,26 @@ class EpisodeNode(EnvNode):
             self._close_condition_scopes()
         fut = self._episodes.pending_outcomes.get(self._episodes.current.episode_id)
         if fut is not None and not fut.done():
-            fut.set_result((task_generator_msgs.action.RunEpisode.Result.FAILED, reason))
+            fut.set_result((arena_runtime_msgs.action.RunEpisode.Result.FAILED, reason))
 
     # SERVICE CALLBACKS
 
     async def _cb_reset_episode(
         self,
-        request: task_generator_msgs.srv.ResetEpisode.Request,
-        response: task_generator_msgs.srv.ResetEpisode.Response,
-    ) -> task_generator_msgs.srv.ResetEpisode.Response:
+        request: arena_runtime_msgs.srv.ResetEpisode.Request,
+        response: arena_runtime_msgs.srv.ResetEpisode.Response,
+    ) -> arena_runtime_msgs.srv.ResetEpisode.Response:
         if self._task is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
-        self._episodes.pending_world = request.world
-        self._episodes.pending_seed = request.seed
+        async with self._pending_lock:
+            self._episodes.pending.merge(TaskModeOverrides(world=request.world, seed=request.seed))
         if self._episodes.action_in_flight:
-            episode_id = self._episodes.current.episode_id
-            fut = self._episodes.pending_outcomes.get(episode_id)
+            self._episodes.respawn_requested = True
+            fut = self._episodes.pending_outcomes.get(self._episodes.current.episode_id)
             if fut is not None and not fut.done():
-                fut.set_result((task_generator_msgs.action.RunEpisode.Result.SKIPPED, "reset"))
-            else:
-                self.force_reset()
+                fut.set_result((arena_runtime_msgs.action.RunEpisode.Result.SKIPPED, "reset"))
         else:
             self._spawn_episode()
         response.success = True
@@ -971,9 +899,9 @@ class EpisodeNode(EnvNode):
 
     async def _cb_query_scenarios(
         self,
-        request: task_generator_msgs.srv.QueryScenarios.Request,
-        response: task_generator_msgs.srv.QueryScenarios.Response,
-    ) -> task_generator_msgs.srv.QueryScenarios.Response:
+        request: arena_runtime_msgs.srv.QueryScenarios.Request,
+        response: arena_runtime_msgs.srv.QueryScenarios.Response,
+    ) -> arena_runtime_msgs.srv.QueryScenarios.Response:
         world_name = request.world or self._episodes.current.world
         try:
             world_view = World.WorldIdentifier(world_name).resolve_sync()
@@ -985,36 +913,22 @@ class EpisodeNode(EnvNode):
 
     async def _cb_queue_episode(
         self,
-        request: task_generator_msgs.srv.QueueEpisode.Request,
-        response: task_generator_msgs.srv.QueueEpisode.Response,
-    ) -> task_generator_msgs.srv.QueueEpisode.Response:
-        Req = task_generator_msgs.srv.QueueEpisode.Request
+        request: arena_runtime_msgs.srv.QueueEpisode.Request,
+        response: arena_runtime_msgs.srv.QueueEpisode.Response,
+    ) -> arena_runtime_msgs.srv.QueueEpisode.Response:
+        Req = arena_runtime_msgs.srv.QueueEpisode.Request
         if request.action != Req.MERGE:
             valid = ", ".join(f"{name}={val}" for name, val in (("MERGE", Req.MERGE),))
             response.success = False
             response.error_msg = f"action: unknown value {request.action!r}. Valid: {valid}"
             return response
 
-        def reject(field: str, value: str, allowed: list[str]) -> None:
+        try:
+            requested = self._task_layer.validate_modes(decode_modes(request.modes))
+        except ValueError as e:
             response.success = False
-            response.error_msg = f"{field}: unknown value {value!r}. Allowed: {', '.join(allowed)}"
-
-        vocabulary = self._task_layer.mode_vocabulary()
-        for field, value, allowed in (
-            ("tm_robots", request.tm_robots, vocabulary.robots),
-            ("tm_obstacles", request.tm_obstacles, vocabulary.obstacles),
-        ):
-            if value and value not in allowed:
-                reject(field, value, allowed)
-                return response
-
-        validated_modules: list[str] = []
-        if not request.keep_modules:
-            for mod_str in request.tm_modules:
-                if mod_str not in vocabulary.modules:
-                    reject("tm_modules", mod_str, vocabulary.modules)
-                    return response
-                validated_modules.append(mod_str)
+            response.error_msg = str(e)
+            return response
 
         namespaces = sorted(Constants.HUMAN_PARAM_NAMESPACES.values())
         for p in request.human_params:
@@ -1028,29 +942,21 @@ class EpisodeNode(EnvNode):
                 response.error_msg = f"human_params: {p.name!r} has no known namespace. Namespaces: {', '.join(namespaces)}"
                 return response
 
-        existing = self._episodes.pending_overrides or TaskModeOverrides(keep_modules=True)
-        if request.tm_robots:
-            if request.tm_robots != existing.tm_robots:
-                # Mode switch: drop stale leaves from the prior mode's namespace.
-                self._staged_robots_params.clear()
-            existing.tm_robots = request.tm_robots
-        if request.tm_obstacles:
-            if request.tm_obstacles != existing.tm_obstacles:
-                self._staged_obstacles_params.clear()
-            existing.tm_obstacles = request.tm_obstacles
-        if not request.keep_modules:
-            existing.tm_modules = list(validated_modules)
-            existing.keep_modules = False
-        if request.world:
-            existing.world = request.world
-        self._episodes.pending_overrides = existing
+        async with self._pending_lock:
+            pending = self._episodes.pending
+            before = self._mode_namespaces(self.task_params.resolve(pending.modes))
+            after = self._mode_namespaces(self.task_params.resolve({**pending.modes, **requested}))
+            params: dict[str, ParameterValue] = {p.name: p.value for p in request.params}
 
-        for p in request.obstacles_params:
-            self._staged_obstacles_params[p.name] = p.value
-        for p in request.robots_params:
-            self._staged_robots_params[p.name] = p.value
-        for p in request.human_params:
-            self._staged_human_params[p.name] = p.value
+            kept = set(after.values())
+            stale = tuple(f"{namespace}." for key, namespace in before.items() if key not in after and namespace not in kept)
+            for name in [name for name in self._staged_params if name.startswith(stale)]:
+                del self._staged_params[name]
+
+            pending.merge(TaskModeOverrides(modes=requested, world=request.world))
+            self._staged_params.update(params)
+            for p in request.human_params:
+                self._staged_human_params[p.name] = p.value
 
         mid_episode = self._episodes.action_in_flight and self._episodes.current.episode_id > 0
         if mid_episode:
@@ -1062,43 +968,18 @@ class EpisodeNode(EnvNode):
         return response
 
     def _apply_staged_params(self) -> None:
-        pairs: list[tuple[dict[str, ParameterValue], str]] = [
-            (self._staged_obstacles_params, self.task_params.obstacles),
-            (self._staged_robots_params, self.task_params.robots),
-        ]
-
         log = self.get_logger()
-
-        # Merge by full_name: TM_Robots and TM_Obstacles can share a mode name
-        # (e.g. both 'scenario') and therefore the same underlying ROS param.
-        # When both pools stage the same full_name, prefer whichever value
-        # differs from the live value, so a stale snapshot from the unedited
-        # side does not reset the user's actual edit.
-        merged: dict[str, tuple[ParameterValue, object]] = {}
-        for staged, mode_value in pairs:
-            if not staged or not mode_value:
-                staged.clear()
-                continue
-            for leaf, pv in staged.items():
-                full_name = f"task.{mode_value}.{leaf}"
-                # Staged dicts accumulate across mode switches; a leaf valid for a prior
-                # mode may not be declared under the current namespace.
-                if not self.has_parameter(full_name):
-                    log.warning(f"staged param {full_name!r} not declared under active mode; dropping")
-                    continue
-                new_value = Parameter.from_parameter_msg(RclParameter(name=full_name, value=pv)).value
-                if full_name in merged:
-                    _, prev_value = merged[full_name]
-                    if prev_value != self.get_parameter(full_name).value:
-                        continue
-                merged[full_name] = (pv, new_value)
-            staged.clear()
-
-        if merged:
-            batch = [Parameter.from_parameter_msg(RclParameter(name=n, value=pv)) for n, (pv, _) in merged.items()]
+        batch: list[Parameter] = []
+        for name, value in self._staged_params.items():
+            if self.has_parameter(name):
+                batch.append(Parameter.from_parameter_msg(RclParameter(name=name, value=value)))
+            else:
+                log.warning(f"staged param {name!r} is not declared, dropping")
+        self._staged_params.clear()
+        if batch:
             result = self.set_parameters_atomically(batch)
             if not result.successful:
-                log.warning(f"staged params {list(merged)} rejected: {result.reason}")
+                log.warning(f"staged params {[p.name for p in batch]} rejected: {result.reason}")
 
     async def _apply_staged_human_params(self) -> None:
         staged = [RclParameter(name=k, value=v) for k, v in self._staged_human_params.items()]
@@ -1108,23 +989,20 @@ class EpisodeNode(EnvNode):
 
     async def _cb_get_task_modes(
         self,
-        request: task_generator_msgs.srv.GetTaskModes.Request,
-        response: task_generator_msgs.srv.GetTaskModes.Response,
-    ) -> task_generator_msgs.srv.GetTaskModes.Response:
-        response.tm_robots = self.task_params.robots
-        response.tm_obstacles = self.task_params.obstacles
-        response.tm_modules = self.task_params.modules
+        request: arena_runtime_msgs.srv.GetTaskModes.Request,
+        response: arena_runtime_msgs.srv.GetTaskModes.Response,
+    ) -> arena_runtime_msgs.srv.GetTaskModes.Response:
+        response.modes = encode_modes(self.task_params.resolve({}))
         return response
 
     async def _cb_query_task_modes(
         self,
-        request: task_generator_msgs.srv.QueryTaskModes.Request,
-        response: task_generator_msgs.srv.QueryTaskModes.Response,
-    ) -> task_generator_msgs.srv.QueryTaskModes.Response:
-        names = self._task_layer.mode_names()
-        response.obstacles = names.obstacles
-        response.robots = names.robots
-        response.modules = names.modules
+        request: arena_runtime_msgs.srv.QueryTaskModes.Request,
+        response: arena_runtime_msgs.srv.QueryTaskModes.Response,
+    ) -> arena_runtime_msgs.srv.QueryTaskModes.Response:
+        modes = registered_modes(self._task_layer)
+        response.modes = encode_modes(modes)
+        response.namespaces = encode_namespaces(self._task_layer.mode_namespaces())
         return response
 
     def _pose_from_request(self, stamped: geometry_msgs.msg.PoseStamped) -> Pose:
@@ -1136,9 +1014,9 @@ class EpisodeNode(EnvNode):
 
     async def _cb_spawn_static(
         self,
-        request: task_generator_msgs.srv.SpawnStatic.Request,
-        response: task_generator_msgs.srv.SpawnStatic.Response,
-    ) -> task_generator_msgs.srv.SpawnStatic.Response:
+        request: arena_runtime_msgs.srv.SpawnStatic.Request,
+        response: arena_runtime_msgs.srv.SpawnStatic.Response,
+    ) -> arena_runtime_msgs.srv.SpawnStatic.Response:
         if self._task is None:
             response.success = False
             response.error_msg = "task generator not initialized"
@@ -1159,9 +1037,9 @@ class EpisodeNode(EnvNode):
 
     async def _cb_spawn_dynamic(
         self,
-        request: task_generator_msgs.srv.SpawnDynamic.Request,
-        response: task_generator_msgs.srv.SpawnDynamic.Response,
-    ) -> task_generator_msgs.srv.SpawnDynamic.Response:
+        request: arena_runtime_msgs.srv.SpawnDynamic.Request,
+        response: arena_runtime_msgs.srv.SpawnDynamic.Response,
+    ) -> arena_runtime_msgs.srv.SpawnDynamic.Response:
         if self._task is None:
             response.success = False
             response.error_msg = "task generator not initialized"
@@ -1183,17 +1061,21 @@ class EpisodeNode(EnvNode):
 
     def _add_pending_robot(self, model: str, name: str | None, pose: Pose | None, args: dict[str, str]) -> str:
         assert self._robots_manager is not None
-        resolved_pose = pose if pose is not None else random_robot_pose(self._world_manager, self._robots_manager)
         assigned_name = name or self._robots_manager.next_name(model)
-        (config,) = RobotSetupConfig.parse({"robot": model, "name": assigned_name, "pos": resolved_pose.to_2d(), **args})
+        (config,) = RobotSetupConfig.parse({"robot": model, "name": assigned_name, **args})
+        if "pos" not in config.extra:
+            if pose is None:
+                clearance = footprint_radius(RobotIdentifier.parse(config.robot).resolve_sync()) + self.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
+                pose = random_robot_pose(self._world_manager, self._robots_manager, safe_dist=clearance)
+            config.extra["pos"] = pose.to_2d()
         self._robots_manager.add_pending(assigned_name, Robot.from_setup(config, node=self))
         return assigned_name
 
     async def _cb_despawn_robot(
         self,
-        request: task_generator_msgs.srv.DespawnRobot.Request,
-        response: task_generator_msgs.srv.DespawnRobot.Response,
-    ) -> task_generator_msgs.srv.DespawnRobot.Response:
+        request: arena_runtime_msgs.srv.DespawnRobot.Request,
+        response: arena_runtime_msgs.srv.DespawnRobot.Response,
+    ) -> arena_runtime_msgs.srv.DespawnRobot.Response:
         if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
@@ -1210,9 +1092,9 @@ class EpisodeNode(EnvNode):
 
     async def _cb_spawn_robot(
         self,
-        request: task_generator_msgs.srv.SpawnRobot.Request,
-        response: task_generator_msgs.srv.SpawnRobot.Response,
-    ) -> task_generator_msgs.srv.SpawnRobot.Response:
+        request: arena_runtime_msgs.srv.SpawnRobot.Request,
+        response: arena_runtime_msgs.srv.SpawnRobot.Response,
+    ) -> arena_runtime_msgs.srv.SpawnRobot.Response:
         if not self.rosparam[bool].get("initialized", False) or self._task is None or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
@@ -1235,9 +1117,9 @@ class EpisodeNode(EnvNode):
 
     async def _cb_move_entity(
         self,
-        request: task_generator_msgs.srv.MoveEntity.Request,
-        response: task_generator_msgs.srv.MoveEntity.Response,
-    ) -> task_generator_msgs.srv.MoveEntity.Response:
+        request: arena_runtime_msgs.srv.MoveEntity.Request,
+        response: arena_runtime_msgs.srv.MoveEntity.Response,
+    ) -> arena_runtime_msgs.srv.MoveEntity.Response:
         if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
@@ -1266,30 +1148,31 @@ class EpisodeNode(EnvNode):
             response.error_msg = str(e)
         return response
 
+    async def _assign_task(self, robot: str, task_yaml: str) -> tuple["RobotManager", list[int]]:
+        """Hand a robot the parsed task, replacing its unfinished phases, an empty one stopping it, and return its manager and the episode-wide indices of the new phases."""
+        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
+            raise ValueError("task generator not initialized")
+        manager = self._robots_manager.managers.get(robot)
+        if manager is None:
+            raise ValueError(f"unknown robot {robot!r}, robots: {sorted(self._robots_manager.managers)}")
+        task = TaskRequest.parse(yaml.safe_load(task_yaml) or [])
+        self._ezilear_phases(task.phases)
+        async with self._reset_lock:
+            first = len(manager.runner.phases)
+            if task.phases:
+                await manager.submit_task(task)
+            else:
+                manager.stop_task()
+            self._assigned.add(robot)
+            return manager, list(range(first, len(manager.runner.phases)))
+
     async def _cb_submit_task(
         self,
-        request: task_generator_msgs.srv.SubmitTask.Request,
-        response: task_generator_msgs.srv.SubmitTask.Response,
-    ) -> task_generator_msgs.srv.SubmitTask.Response:
-        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
-            response.success = False
-            response.error_msg = "task generator not initialized"
-            return response
-        manager = self._robots_manager.managers.get(request.robot)
-        if manager is None:
-            response.success = False
-            response.error_msg = f"unknown robot {request.robot!r}, robots: {sorted(self._robots_manager.managers)}"
-            return response
+        request: arena_runtime_msgs.srv.SubmitTask.Request,
+        response: arena_runtime_msgs.srv.SubmitTask.Response,
+    ) -> arena_runtime_msgs.srv.SubmitTask.Response:
         try:
-            task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
-            self._ezilear_phases(task.phases)
-            async with self._reset_lock:
-                first = len(manager.runner.phases)
-                if task.phases:
-                    await manager.submit_task(task)
-                else:
-                    manager.stop_task()
-                response.phase_indices = list(range(first, len(manager.runner.phases)))
+            _, response.phase_indices = await self._assign_task(request.robot, request.task_yaml)
             response.success = True
         except Exception as e:
             response.success = False
@@ -1304,6 +1187,75 @@ class EpisodeNode(EnvNode):
             elif isinstance(phase, LoopPhase):
                 self._ezilear_phases(phase.phases)
 
+    # RUN TASK ACTION
+
+    def _run_task_goal_callback(self, goal_request: object) -> GoalResponse:
+        return GoalResponse.REJECT if self._shutting_down else GoalResponse.ACCEPT
+
+    def _run_task_cancel_callback(self, goal_handle: ServerGoalHandle) -> CancelResponse:
+        self.event_loop.call_soon_threadsafe(self._stop_run_task, bytes(goal_handle.goal_id.uuid))
+        return CancelResponse.ACCEPT
+
+    def _stop_run_task(self, goal_id: bytes) -> None:
+        for robot, run in list(self._run_tasks.items()):
+            if run.goal_id == goal_id:
+                manager = self._robots_manager.managers.get(robot) if self._robots_manager is not None and run.episode_id == self.episode_id else None
+                if manager is not None and manager.runner.request_outcome(run.request) is None:
+                    manager.stop_task()
+                self._advance_run_task(robot, run)
+                return
+
+    async def _run_task_execute_callback(self, goal_handle: ServerGoalHandle) -> arena_runtime_msgs.action.RunTask.Result:
+        result = await self.loop_future(self._run_task(goal_handle))
+        assert isinstance(result, arena_runtime_msgs.action.RunTask.Result)
+        return result
+
+    async def _run_task(self, goal_handle: ServerGoalHandle) -> arena_runtime_msgs.action.RunTask.Result:
+        result = arena_runtime_msgs.action.RunTask.Result()
+        robot = goal_handle.request.robot
+        try:
+            manager, indices = await self._assign_task(robot, goal_handle.request.task_yaml)
+        except Exception as e:
+            result.error_msg = str(e)
+            goal_handle.abort()
+            return result
+        result.phase_indices = indices
+        if not indices:
+            result.outcome = "met"
+            goal_handle.succeed()
+            return result
+        run = RunningTask(handle=goal_handle, episode_id=self.episode_id, request=manager.runner.phases[indices[0]].request, phases=indices, done=self.event_loop.create_future())
+        replaced = self._run_tasks.get(robot)
+        self._run_tasks[robot] = run
+        if replaced is not None:
+            self._advance_run_task(robot, replaced)
+        if goal_handle.is_cancel_requested:
+            self._stop_run_task(run.goal_id)
+        result.outcome = await run.done
+        result.phase_indices = run.phases
+        if goal_handle.is_cancel_requested:
+            goal_handle.canceled()
+        elif result.outcome in ("met", "failed"):
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+        return result
+
+    def _advance_run_tasks(self) -> None:
+        for robot, run in list(self._run_tasks.items()):
+            self._advance_run_task(robot, run)
+
+    def _advance_run_task(self, robot: str, run: RunningTask) -> None:
+        manager = None if self._robots_manager is None else self._robots_manager.managers.get(robot)
+        runner = manager.runner if manager is not None and run.episode_id == self.episode_id else None
+        for index, phase_outcome in run.ended(runner):
+            run.handle.publish_feedback(arena_runtime_msgs.action.RunTask.Feedback(phase_indices=run.phases, phase_index=index, outcome=phase_outcome))
+        outcome = "dropped" if runner is None else runner.request_outcome(run.request)
+        if outcome is not None:
+            if self._run_tasks.get(robot) is run:
+                del self._run_tasks[robot]
+            run.done.set_result(outcome)
+
     # ACTION SERVER
 
     def _goal_callback(self, goal_request: object) -> GoalResponse:
@@ -1315,11 +1267,11 @@ class EpisodeNode(EnvNode):
         if fut is not None and not fut.done():
             self.event_loop.call_soon_threadsafe(
                 fut.set_result,
-                (task_generator_msgs.action.RunEpisode.Result.SKIPPED, "cancelled"),
+                (arena_runtime_msgs.action.RunEpisode.Result.SKIPPED, "cancelled"),
             )
         return CancelResponse.ACCEPT
 
-    async def _execute_callback(self, goal_handle: ServerGoalHandle) -> task_generator_msgs.action.RunEpisode.Result:
+    async def _execute_callback(self, goal_handle: ServerGoalHandle) -> arena_runtime_msgs.action.RunEpisode.Result:
         result = await self.loop_future(
             self._run_episode(
                 world=goal_handle.request.world,
@@ -1327,7 +1279,7 @@ class EpisodeNode(EnvNode):
                 goal_handle=goal_handle,
             )
         )
-        assert isinstance(result, task_generator_msgs.action.RunEpisode.Result)
+        assert isinstance(result, arena_runtime_msgs.action.RunEpisode.Result)
         return result
 
     async def _run_episode(
@@ -1336,74 +1288,69 @@ class EpisodeNode(EnvNode):
         world: str = "",
         seed: int = -1,
         goal_handle: ServerGoalHandle | None = None,
-    ) -> task_generator_msgs.action.RunEpisode.Result:
+    ) -> arena_runtime_msgs.action.RunEpisode.Result:
         if self._shutting_down or self._episodes.action_in_flight:
             if goal_handle is not None:
                 goal_handle.abort()
-            return task_generator_msgs.action.RunEpisode.Result(
-                state=task_generator_msgs.action.RunEpisode.Result.SKIPPED,
+            return arena_runtime_msgs.action.RunEpisode.Result(
+                state=arena_runtime_msgs.action.RunEpisode.Result.SKIPPED,
                 info=RUN_EPISODE_SHUTTING_DOWN if self._shutting_down else RUN_EPISODE_BUSY,
             )
 
-        if not world:
-            world = self._episodes.pending_world
-        if seed < 0 <= self._episodes.pending_seed:
-            seed = self._episodes.pending_seed
-        self._episodes.pending_world = ""
-        self._episodes.pending_seed = -1
-
         self._episodes.action_in_flight = True
+        record: EpisodeRecord | None = None
         episode_id = 0
         respawn = True
-        outcome_state = task_generator_msgs.action.RunEpisode.Result.FAILED
+        outcome_state = arena_runtime_msgs.action.RunEpisode.Result.FAILED
         outcome_info = ""
         try:
-            await self._build_next_record(world, seed)
-            if goal_handle is not None:
-                self._episodes.current.goal_uuid = bytes(goal_handle.goal_id.uuid).hex()
-
-                feedback = task_generator_msgs.action.RunEpisode.Feedback()
-                feedback.state = task_generator_msgs.action.RunEpisode.Feedback.STARTED
-                goal_handle.publish_feedback(feedback)
-
             try:
+                record = await self._build_next_record(world, seed)
+                if goal_handle is not None:
+                    record.goal_uuid = bytes(goal_handle.goal_id.uuid).hex()
+
+                    feedback = arena_runtime_msgs.action.RunEpisode.Feedback()
+                    feedback.state = arena_runtime_msgs.action.RunEpisode.Feedback.STARTED
+                    goal_handle.publish_feedback(feedback)
+
                 await self._run_reset_cycle()
             except Exception as e:
                 self.get_logger().error(f"reset_cycle failed: {e!r}\n{traceback.format_exc()}")
-                outcome_state = task_generator_msgs.action.RunEpisode.Result.FATAL
+                outcome_state = arena_runtime_msgs.action.RunEpisode.Result.FATAL
                 outcome_info = repr(e)
                 respawn = False
             else:
-                episode_id = self._episodes.current.episode_id
+                episode_id = record.episode_id
                 fut = self.event_loop.create_future()
                 self._episodes.pending_outcomes[episode_id] = fut
 
                 try:
                     outcome_state, outcome_info = await fut
                 except asyncio.CancelledError:
-                    outcome_state = task_generator_msgs.action.RunEpisode.Result.SKIPPED
+                    outcome_state = arena_runtime_msgs.action.RunEpisode.Result.SKIPPED
                     outcome_info = "cancelled"
 
             if not outcome_info:
                 elapsed = (self.sim_time - self._start_time).to_seconds()
                 verb = {
-                    task_generator_msgs.action.RunEpisode.Result.SUCCESS: "finished",
-                    task_generator_msgs.action.RunEpisode.Result.FAILED: "failed",
-                    task_generator_msgs.action.RunEpisode.Result.FATAL: "failed",
-                    task_generator_msgs.action.RunEpisode.Result.SKIPPED: "skipped",
+                    arena_runtime_msgs.action.RunEpisode.Result.SUCCESS: "finished",
+                    arena_runtime_msgs.action.RunEpisode.Result.FAILED: "failed",
+                    arena_runtime_msgs.action.RunEpisode.Result.FATAL: "failed",
+                    arena_runtime_msgs.action.RunEpisode.Result.SKIPPED: "skipped",
                 }.get(outcome_state, "ended")
                 outcome_info = f"{verb} after {elapsed:.1f}s"
 
-            self._episodes.current.outcome_state = outcome_state
-            self._episodes.current.outcome_info = outcome_info
-            self._publish_episode_state()
+            if record is not None:
+                record.outcome_state = outcome_state
+                record.outcome_info = outcome_info
+                self._publish_episode_state()
 
             if episode_id > 0:
                 state_label = {
-                    task_generator_msgs.action.RunEpisode.Result.SUCCESS: "SUCCESS",
-                    task_generator_msgs.action.RunEpisode.Result.FAILED: "FAILED",
-                    task_generator_msgs.action.RunEpisode.Result.SKIPPED: "SKIPPED",
-                    task_generator_msgs.action.RunEpisode.Result.FATAL: "FATAL",
+                    arena_runtime_msgs.action.RunEpisode.Result.SUCCESS: "SUCCESS",
+                    arena_runtime_msgs.action.RunEpisode.Result.FAILED: "FAILED",
+                    arena_runtime_msgs.action.RunEpisode.Result.SKIPPED: "SKIPPED",
+                    arena_runtime_msgs.action.RunEpisode.Result.FATAL: "FATAL",
                 }.get(outcome_state, str(outcome_state))
                 duration = self.sim_time.to_seconds() - self._start_time.to_seconds()
                 log = self.get_logger()
@@ -1415,29 +1362,31 @@ class EpisodeNode(EnvNode):
                 log.warn("=============")
                 if self._send_end_message_on_end():
                     respawn = False
+                else:
+                    await self._decide_after_episode()
         finally:
             self._episodes.action_in_flight = False
             self._episodes.pending_outcomes.pop(episode_id, None)
+            respawn_requested, self._episodes.respawn_requested = self._episodes.respawn_requested, False
 
-        result = task_generator_msgs.action.RunEpisode.Result()
+        result = arena_runtime_msgs.action.RunEpisode.Result()
         result.state = outcome_state
         result.info = outcome_info
         result.episode_id = episode_id
 
         if goal_handle is not None:
-            if outcome_state == task_generator_msgs.action.RunEpisode.Result.SKIPPED:
+            if outcome_state == arena_runtime_msgs.action.RunEpisode.Result.SKIPPED:
                 goal_handle.canceled()
             elif outcome_state in (
-                task_generator_msgs.action.RunEpisode.Result.FAILED,
-                task_generator_msgs.action.RunEpisode.Result.FATAL,
+                arena_runtime_msgs.action.RunEpisode.Result.FAILED,
+                arena_runtime_msgs.action.RunEpisode.Result.FATAL,
             ):
                 goal_handle.abort()
             else:
                 goal_handle.succeed()
 
-        service_driven = outcome_state == task_generator_msgs.action.RunEpisode.Result.SKIPPED and outcome_info == "reset"
-        fatal = outcome_state == task_generator_msgs.action.RunEpisode.Result.FATAL
-        if respawn and rclpy.ok() and not fatal and (service_driven or self.rosparam[bool].get_unsafe("task.episode.auto_reset")):
+        fatal = outcome_state == arena_runtime_msgs.action.RunEpisode.Result.FATAL
+        if respawn and rclpy.ok() and not fatal and (respawn_requested or self.rosparam[bool].get_unsafe("task.episode.auto_reset")):
             self._spawn_episode()
 
         return result
@@ -1462,7 +1411,7 @@ class EpisodeNode(EnvNode):
         await super()._set_up_services()
 
         self.create_service(
-            task_generator_msgs.srv.ResetEpisode,
+            arena_runtime_msgs.srv.ResetEpisode,
             self.service_namespace("lifecycle", "reset_episode"),
             self._cb_reset_episode,
         )
@@ -1475,7 +1424,7 @@ class EpisodeNode(EnvNode):
 
         self._run_episode_action_server = ActionServer(
             self,
-            task_generator_msgs.action.RunEpisode,
+            arena_runtime_msgs.action.RunEpisode,
             self.service_namespace("lifecycle", "run_episode"),
             execute_callback=self._execute_callback,
             goal_callback=self._goal_callback,
@@ -1484,61 +1433,71 @@ class EpisodeNode(EnvNode):
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryScenarios,
+            arena_runtime_msgs.srv.QueryScenarios,
             self.service_namespace("query", "scenarios"),
             self._cb_query_scenarios,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueueEpisode,
+            arena_runtime_msgs.srv.QueueEpisode,
             self.service_namespace("config", "queue_episode"),
             self._cb_queue_episode,
         )
 
         self.create_service(
-            task_generator_msgs.srv.GetTaskModes,
+            arena_runtime_msgs.srv.GetTaskModes,
             self.service_namespace("config", "get_task_modes"),
             self._cb_get_task_modes,
         )
 
         self.create_service(
-            task_generator_msgs.srv.QueryTaskModes,
+            arena_runtime_msgs.srv.QueryTaskModes,
             self.service_namespace("query", "task_modes"),
             self._cb_query_task_modes,
         )
 
         self.create_service(
-            task_generator_msgs.srv.SpawnStatic,
+            arena_runtime_msgs.srv.SpawnStatic,
             self.service_namespace("runtime", "spawn_static"),
             self._cb_spawn_static,
         )
 
         self.create_service(
-            task_generator_msgs.srv.SpawnDynamic,
+            arena_runtime_msgs.srv.SpawnDynamic,
             self.service_namespace("runtime", "spawn_dynamic"),
             self._cb_spawn_dynamic,
         )
 
         self.create_service(
-            task_generator_msgs.srv.SpawnRobot,
+            arena_runtime_msgs.srv.SpawnRobot,
             self.service_namespace("runtime", "spawn_robot"),
             self._cb_spawn_robot,
         )
 
         self.create_service(
-            task_generator_msgs.srv.DespawnRobot,
+            arena_runtime_msgs.srv.DespawnRobot,
             self.service_namespace("runtime", "despawn_robot"),
             self._cb_despawn_robot,
         )
 
         self.create_service(
-            task_generator_msgs.srv.MoveEntity,
+            arena_runtime_msgs.srv.MoveEntity,
             self.service_namespace("runtime", "move"),
             self._cb_move_entity,
         )
 
         self.create_service(
-            task_generator_msgs.srv.SubmitTask,
+            arena_runtime_msgs.srv.SubmitTask,
             self.service_namespace("runtime", "submit_task"),
             self._cb_submit_task,
+        )
+
+        self._run_task_action_server = ActionServer(
+            self,
+            arena_runtime_msgs.action.RunTask,
+            self.service_namespace("runtime", "run_task"),
+            execute_callback=self._run_task_execute_callback,
+            goal_callback=self._run_task_goal_callback,
+            cancel_callback=self._run_task_cancel_callback,
+            callback_group=ReentrantCallbackGroup(),
         )

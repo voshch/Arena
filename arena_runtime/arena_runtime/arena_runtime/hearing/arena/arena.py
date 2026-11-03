@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from arena_runtime_msgs.msg import AdapterDisplay
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
-from task_generator_msgs.msg import AdapterDisplay
 
 from arena_runtime.hearing import BaseHearing
 

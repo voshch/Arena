@@ -7,6 +7,8 @@ import types
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
+from arena_runtime.env.constants import Constants
+
 if TYPE_CHECKING:
     import rclpy.qos
     from geometry_msgs.msg import Pose
@@ -21,7 +23,7 @@ SCENARIOS = {"map_empty": ["crowd", "default"], "small_warehouse": ["aisles"]}
 
 
 def fqn(env_id: int) -> str:
-    return f"/arena/env_{env_id}/task_generator_node"
+    return f"/arena/env_{env_id}/{Constants.ENV_NODE_NAMESPACE}"
 
 
 class _RecordedResponse(Protocol):
@@ -53,23 +55,24 @@ def _peer_class(modes: TaskModes) -> type:
     from arena_people_msgs.msg import Pedestrian, Pedestrians
     from arena_people_msgs.srv import MovePedestrians
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
+    from arena_runtime_msgs import srv
+    from arena_runtime_msgs.action import RunEpisode
+    from arena_runtime_msgs.msg import EpisodeRecord, RobotFleet, RobotState, SemanticEntityState, SemanticSnapshot
     from arena_simulation_setup.shared.task import TaskRequest
     from rclpy.callback_groups import ReentrantCallbackGroup
     from std_msgs.msg import Bool, String
     from std_srvs.srv import Empty, Trigger
-    from task_generator_msgs import srv
-    from task_generator_msgs.action import RunEpisode
-    from task_generator_msgs.msg import EpisodeRecord, RobotFleet, RobotState, SemanticEntityState, SemanticSnapshot
 
     from arena_runtime.env.constants.runtime import Configuration
+    from arena_runtime.env.task_layer import decode_modes, encode_modes, encode_namespaces, mode_param
 
     class TaskGeneratorPeer(ROSParamServer):
         """Serves the env node's interfaces with the real Configuration and mode schemas declared."""
 
         def __init__(self, env_id: int, human: str) -> None:
-            super().__init__("task_generator_node", namespace=f"/arena/env_{env_id}", parameter_overrides=[rclpy.Parameter("world", value="map_empty"), rclpy.Parameter("human", value=human)])
+            super().__init__(Constants.ENV_NODE_NAMESPACE, namespace=f"/arena/env_{env_id}", parameter_overrides=[rclpy.Parameter("world", value="map_empty"), rclpy.Parameter("human", value=human)])
             self.conf = Configuration(self)
-            for name, default in (("task.robots", "random"), ("task.obstacles", "random"), ("task.config", ""), ("task.modules", "")):
+            for name, default in ((mode_param("robots"), "random"), (mode_param("obstacles"), "random"), (mode_param("config"), ""), (mode_param("modules"), "")):
                 self.declare_parameter(name, default)
             self.declare_parameter("task.episode.auto_reset", False)
             self.declare_parameter("task.episode.fail_on_collision", False)
@@ -154,12 +157,14 @@ def _peer_class(modes: TaskModes) -> type:
                 self.serve_humansim(humansim_srv, AgentMeta)
 
         def record(self, state: int, episode_id: int | None = None, seed: int = 0, world: str = "map_empty") -> EpisodeRecord:
-            msg = EpisodeRecord(episode_id=self.episode_id if episode_id is None else episode_id, world=world, seed=seed, tm_robots="random", tm_obstacles="random", tm_modules=["sounds"], robots=["jackal"], outcome_state=state)
+            msg = EpisodeRecord(episode_id=self.episode_id if episode_id is None else episode_id, world=world, seed=seed, robots=["jackal"], outcome_state=state)
+            msg.modes = encode_modes({"robots": ["random"], "obstacles": ["random"], "modules": ["sounds"]})
+            msg.task_layer = "task_generator"
             msg.path_length = 3.5
             msg.goal_dist_start = 4.0
             msg.phases = '{"jackal_0": {"phases": [{"goto": [1.0, 2.0, 0.0]}]}}'
             msg.conditions = '[{"op": "never", "p": "collision", "q": null, "text": "no collisions"}]'
-            msg.robots_params = [rclpy.Parameter("n", value=3).to_parameter_msg()]
+            msg.params = [rclpy.Parameter("task.random.n", value=3).to_parameter_msg()]
             msg.start_time.sec = 12
             return msg
 
@@ -195,24 +200,20 @@ def _peer_class(modes: TaskModes) -> type:
             return response
 
         def on_task_modes(self, request: srv.QueryTaskModes.Request, response: srv.QueryTaskModes.Response) -> srv.QueryTaskModes.Response:
-            response.robots = sorted(modes.robots)
-            response.obstacles = sorted(modes.obstacles)
-            response.modules = sorted(modes.modules)
+            response.modes = encode_modes({"robots": sorted(modes.robots), "obstacles": sorted(modes.obstacles), "modules": sorted(modes.modules)})
+            response.namespaces = encode_namespaces({"robots": {m: mode_param(m) for m in modes.robots}, "obstacles": {m: mode_param(m) for m in modes.obstacles}, "modules": {m: mode_param(m) for m in modes.modules}})
             return response
 
         def on_get_task_modes(self, request: srv.GetTaskModes.Request, response: srv.GetTaskModes.Response) -> srv.GetTaskModes.Response:
-            response.tm_robots = self.get_parameter("task.robots").value
-            response.tm_obstacles = self.get_parameter("task.obstacles").value
-            response.tm_modules = sorted(module for module in self.get_parameter("task.modules").get_parameter_value().string_value.split(",") if module)
+            modules = sorted(module for module in self.get_parameter(mode_param("modules")).get_parameter_value().string_value.split(",") if module)
+            response.modes = encode_modes({"robots": [self.get_parameter(mode_param("robots")).value], "obstacles": [self.get_parameter(mode_param("obstacles")).value], "modules": modules})
             return response
 
         def on_queue(self, request: srv.QueueEpisode.Request, response: srv.QueueEpisode.Response) -> srv.QueueEpisode.Response:
             self.queued.append(request)
             msg = self.record(EpisodeRecord.QUEUED, episode_id=0, world=request.world or "map_empty")
-            msg.tm_robots = request.tm_robots or "random"
-            msg.tm_obstacles = request.tm_obstacles or "random"
-            msg.robots_params = list(request.robots_params)
-            msg.obstacles_params = list(request.obstacles_params)
+            msg.modes = encode_modes({**decode_modes(msg.modes), **decode_modes(request.modes)})
+            msg.params = list(request.params)
             self.pub_queue.publish(msg)
             response.success = True
             return response

@@ -98,8 +98,8 @@ from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable, sloped_box
 
 """
-IsaacHost is constructed once by arena_node and owns process-singleton resources for Isaac: the lifecycle (pause/unpause/cleanup) and the pause/unpause/delete service clients.
-IsaacSimulator is per-env on task_generator_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
+IsaacHost is constructed once by arena_runtime_node and owns process-singleton resources for Isaac: the lifecycle (pause/unpause/cleanup) and the pause/unpause/delete service clients.
+IsaacSimulator is per-env on arena_env_node and adapts env-namespace state (per-robot publishers, env-prefixed entity names) over those shared resources.
 """
 
 

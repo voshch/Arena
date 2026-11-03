@@ -370,7 +370,7 @@ class RobotManager(NodeInterface):
             self._publish_goal_task = None
 
     def stop_task(self) -> None:
-        """Drop the unfinished phases and cancel every in-flight adapter goal."""
+        """Drop the unfinished phases and cancel every in-flight adapter goal, the stop half of reassigning the robot with `submit_task`."""
         self._stop_current_task()
         for adapter in self._adapter_instances:
             adapter.cancel_goals()
@@ -593,7 +593,7 @@ class RobotManager(NodeInterface):
         return attrs.evolve(phase, pose=Pose(position=position, orientation=Orientation.identity()))
 
     async def submit_task(self, request: TaskRequest, start: Pose | None = None, pedestrians: Iterable[str] = ()) -> None:
-        """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted, `pedestrians` names the episode's declared pedestrians that are not spawned yet."""
+        """Resolve a typed TaskRequest and append it to this episode's phases, dropping the unfinished ones of the previous request: with `stop_task` the way to reassign the robot. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted, `pedestrians` names the episode's declared pedestrians that are not spawned yet."""
         from arena_runtime.env.request import GoToPhase, LoopPhase, TaskKind, kind_of, leaf_phases
         from arena_runtime.env.robot_manager.elevator_routing import route_phases
 
@@ -744,7 +744,7 @@ class RobotManager(NodeInterface):
         return RuntimeError(f"teleport of robot {self.name!r} never landed: after {_TELEPORT_ATTEMPTS} attempts the robot is {observed} from target ({target.position.x:.2f}, {target.position.y:.2f}), tolerance {_TELEPORT_TOLERANCE}m")
 
     async def _teleport_stepped(self, target: Pose) -> bool:
-        """Teleport on the held sim one physics step at a time, False when arena_node refuses or misses a step."""
+        """Teleport on the held sim one physics step at a time, False when arena_runtime_node refuses or misses a step."""
         last_error: float | None = None
         for attempt in range(1, _TELEPORT_ATTEMPTS + 1):
             await self._send_teleport()
@@ -819,7 +819,7 @@ class RobotManager(NodeInterface):
 
         launch_arguments = {
             'robot': self.model_name,
-            'task_generator_node': os.path.join(self.node.get_namespace(), self.node.get_name()),
+            'arena_env_node': self.node.get_fully_qualified_name(),
             'namespace': self.namespace,
             'frame': self._robot.frame.tf(),
             'use_sim_time': 'True',
@@ -838,7 +838,7 @@ class RobotManager(NodeInterface):
             namespace=self.namespace,
             robot_name=self.model_name,
             frame=self._robot.frame.tf(),
-            task_generator_node=os.path.join(self.node.get_namespace(), self.node.get_name()),
+            arena_env_node=self.node.get_fully_qualified_name(),
             env_namespace=self.node.get_namespace(),
             use_sim_time=True,
             base_frame=self._config.model_params.base_frame,

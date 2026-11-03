@@ -68,7 +68,7 @@ def _tee_subprocess_output(
 
 @dataclasses.dataclass
 class ManagedEnv:
-    """Per-env state owned by ArenaNode: subscriptions, optional spawn future, optional wrapper Popen."""
+    """Per-env state owned by ArenaRuntimeNode: subscriptions, optional spawn future, optional wrapper Popen."""
 
     env_id: int
     namespace: str
@@ -79,7 +79,7 @@ class ManagedEnv:
     log_path: pathlib.Path | None = None
     tee_thread: threading.Thread | None = None
 
-    async def dispose(self, node: ArenaNode, *, grace_seconds: float) -> None:
+    async def dispose(self, node: ArenaRuntimeNode, *, grace_seconds: float) -> None:
         """Drop subs, cancel pending spawn future, reap the wrapper pgid."""
         for sub in (self.transition_sub, self.heartbeat_sub):
             with contextlib.suppress(Exception):
@@ -117,7 +117,7 @@ _LIFECYCLE_FAILURE_LIMIT = 2
 class _LifecycleLiveness(SimLifecycle):
     """Lifecycle proxy: two consecutive failures mark the sim dead, step callers report explicitly."""
 
-    def __init__(self, node: ArenaNode, inner: SimLifecycle) -> None:
+    def __init__(self, node: ArenaRuntimeNode, inner: SimLifecycle) -> None:
         self._node = node
         self._inner = inner
         self._failures = 0
@@ -161,7 +161,7 @@ class _LifecycleLiveness(SimLifecycle):
         return ok
 
 
-class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
+class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
     _lifecycle: _LifecycleLiveness
     _holds: HoldRegistry
     _env_registry: EnvRegistry
@@ -822,7 +822,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         """Reap a wrapper-python pgid, members outliving the wrapper included: optional grace, SIGTERM-pgid, SIGKILL-pgid.
 
         The wrapper is started with start_new_session=True so killpg targets its
-        own group, not arena_node's.
+        own group, not arena_runtime_node's.
         """
         if await _group_gone(popen, grace_seconds):
             return
@@ -852,7 +852,7 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self.get_logger().info(f"reaping {len(envs)} managed env(s)")
         for env in envs:
             with contextlib.suppress(Exception):
-                self._publish_shutdown_request(env.env_id, "arena_node_teardown")
+                self._publish_shutdown_request(env.env_id, "arena_runtime_node_teardown")
         await asyncio.gather(
             *(env.dispose(self, grace_seconds=_ENV_DISPOSE_GRACE_S) for env in envs),
             return_exceptions=True,
@@ -889,8 +889,15 @@ sys.exit(ls.run())
             response.error_msg = f"sim dead: {self._sim_dead_reason}"
             return response
 
+        requested: dict[str, str] = {}
+        for source in (self.get_parameter("env_args").value or [], request.launch_args):
+            for s in source:
+                if ":=" in s:
+                    k, v = s.split(":=", 1)
+                    requested[k] = v
+
         try:
-            task_layer_entry_point()
+            task_layer_entry_point(requested.get("task_layer", ""))
         except LookupError as e:
             response.success = False
             response.error_msg = str(e)
@@ -922,13 +929,7 @@ sys.exit(ls.run())
             "sim": sim_name,
         }
 
-        merged: dict[str, str] = {}
-        for source in (self.get_parameter("env_args").value or [], request.launch_args):
-            for s in source:
-                if ":=" in s:
-                    k, v = s.split(":=", 1)
-                    merged[k] = v
-        merged.update(per_spawn_fixed)
+        merged = {**requested, **per_spawn_fixed}
 
         launch_args: list[list[str]] = [[k, v] for k, v in merged.items()]
 
@@ -1067,4 +1068,4 @@ sys.exit(ls.run())
 
 def main(args: list[str] | None = None) -> None:
     del args
-    ArenaNode.run_main()
+    ArenaRuntimeNode.run_main()

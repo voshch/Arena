@@ -26,13 +26,13 @@ def _declared(path: str) -> set[str]:
     return {entity.name for entity in PythonLaunchDescriptionSource(path).get_launch_description(ctx).entities if isinstance(entity, launch.actions.DeclareLaunchArgument)}
 
 
-def _arena_nodes() -> dict:
+def _arena_runtime_nodes() -> dict:
     import launch
     from launch.launch_description_sources import PythonLaunchDescriptionSource
     from launch_ros.actions import Node
 
     ctx = launch.LaunchContext()
-    ctx.launch_configurations.update({"namespace": "env7/task_generator_node", "environment_namespace": "env7"})
+    ctx.launch_configurations.update({"namespace": "env7/arena_env_node", "environment_namespace": "env7"})
     nodes: dict = {}
 
     def walk(entity) -> None:
@@ -64,6 +64,6 @@ def _parameters(node) -> dict:
 def test_pedestrian_hearing_defaults_off() -> None:
     from arena_auditory.params import all_params
 
-    assert "pedestrian_listeners.enabled" not in _parameters(_arena_nodes()["sound_propagation_node"])
+    assert "pedestrian_listeners.enabled" not in _parameters(_arena_runtime_nodes()["sound_propagation_node"])
     assert all_params()["pedestrian_listeners.enabled"].default is False
     assert "auditory.pedestrian_listeners.enabled" not in _declared(_launch_path("env.launch.py"))

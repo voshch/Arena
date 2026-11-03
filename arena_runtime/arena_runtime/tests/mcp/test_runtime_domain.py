@@ -1,4 +1,4 @@
-"""The runtime MCP domain against an in-process ArenaNode on the dummy sim and a peer env speaking the env protocol."""
+"""The runtime MCP domain against an in-process ArenaRuntimeNode on the dummy sim and a peer env speaking the env protocol."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ async def _start(rig: Rig) -> None:
     from arena_runtime_msgs.srv import ConfirmWorld, LifecycleHold, RegisterEnv
     from lifecycle_msgs.msg import State, TransitionEvent
 
-    from arena_runtime.arena_node import ArenaNode
+    from arena_runtime.arena_runtime_node import ArenaRuntimeNode
 
     await ROS.node()
     started = time.monotonic()
@@ -100,7 +100,7 @@ async def _start(rig: Rig) -> None:
             super().__init__("mcp_other_holder")
             self.hold = self.create_client(LifecycleHold, "/arena/sim_lifecycle/hold")
 
-    arena = ArenaNode()
+    arena = ArenaRuntimeNode()
     arena.declare_parameter("physics_dt", DT)
     arena.declare_parameter("sim", "dummy")
     arena.declare_parameter("heartbeat_timeout_sec", 600.0)
@@ -204,7 +204,7 @@ def test_envs_lists_registered_env_with_slot_and_heartbeat(rig: Rig) -> None:
     assert len(rows) == 1
     row = rows[0]
     assert row["env_id"] == env_id
-    assert row["fqn"] == f"/arena/env_{env_id}/task_generator_node"
+    assert row["fqn"] == f"/arena/env_{env_id}/arena_env_node"
     assert row["ns"] == f"/arena/env_{env_id}"
     assert row["ready"] and row["placed"]
     assert row["slot"]["size"] == pytest.approx([14.0, 12.0])

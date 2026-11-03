@@ -161,18 +161,18 @@ def test_node_logs_by_file_name_then_by_logger(tmp_path):
     other = root / "map_server_manager_43_1792401415689.log"
     other.write_text("noise\n")
     python = root / "python3_44_1792401415690.log"
-    python.write_text("[INFO] [1.0] [arena.env_0.task_generator_node]: reset done\n")
+    python.write_text("[INFO] [1.0] [arena.env_0.arena_env_node]: reset done\n")
     (run / "launch.log").write_text("[INFO] [launch]: All log files can be found below\n")
     os.utime(other, (time.time() + 5, time.time() + 5))
     assert system.node_log(root, "/map_server") == named
-    assert system.node_log(root, "/arena/env_0/task_generator_node") == python
-    assert system.node_log(root, "task_generator_node") == python
+    assert system.node_log(root, "/arena/env_0/arena_env_node") == python
+    assert system.node_log(root, "arena_env_node") == python
     assert system.node_log(root, "launch") == run / "launch.log"
     with pytest.raises(ToolError, match="no log of"):
-        system.node_log(root, "/arena/env_1/task_generator_node")
+        system.node_log(root, "/arena/env_1/arena_env_node")
     with pytest.raises(ToolError, match="no ROS log directory"):
         system.node_log(tmp_path / "missing", "x")
-    assert tail_file(python, 1) == "[INFO] [1.0] [arena.env_0.task_generator_node]: reset done"
+    assert tail_file(python, 1) == "[INFO] [1.0] [arena.env_0.arena_env_node]: reset done"
 
 
 def test_logs_of_a_job_and_argument_checks(tmp_path):

@@ -1,6 +1,6 @@
 """
-GazeboHost is constructed once by arena_node and owns process-singleton resources for Gazebo: the gz_services_bridge launch, the lifecycle (pause/unpause), and the control-world client.
-GazeboSimulator is per-env on task_generator_node and adapts env-namespace state (spawned-name tracking, per-env service clients) over those shared resources. Sim_path prefixing is owned by the Realizer.
+GazeboHost is constructed once by arena_runtime_node and owns process-singleton resources for Gazebo: the gz_services_bridge launch, the lifecycle (pause/unpause), and the control-world client.
+GazeboSimulator is per-env on arena_env_node and adapts env-namespace state (spawned-name tracking, per-env service clients) over those shared resources. Sim_path prefixing is owned by the Realizer.
 """
 
 import asyncio

@@ -10,9 +10,9 @@ def test_tm_obstacles_default_returns_random():
     assert d is Modes.TM_Obstacles.RANDOM
 
 
-def test_tm_robots_default_returns_random():
+def test_tm_robots_default_returns_explore():
     d = Modes.TM_Robots.default()
-    assert d is Modes.TM_Robots.RANDOM
+    assert d is Modes.TM_Robots.EXPLORE
 
 
 def test_tm_module_default_returns_empty_set():

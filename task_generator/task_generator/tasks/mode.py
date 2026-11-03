@@ -5,7 +5,7 @@ from arena_runtime._node import NodeInterface
 from arena_runtime.env.task_layer import TaskContext
 
 if typing.TYPE_CHECKING:
-    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_rclpy_mixins import ArenaMixinNode
 
 
 class Namespaced:
@@ -18,13 +18,13 @@ class Namespaced:
 class TaskModeKwargs(typing.TypedDict):
     ctx: TaskContext
     namespace: Namespace
-    node: "EpisodeNode"
+    node: "ArenaMixinNode"
 
 
-class TaskMode(NodeInterface["EpisodeNode"], Namespaced):
+class TaskMode(NodeInterface["ArenaMixinNode"], Namespaced):
     _ctx: TaskContext
 
-    def __init__(self, *, ctx: TaskContext, namespace: Namespace, node: "EpisodeNode") -> None:
+    def __init__(self, *, ctx: TaskContext, namespace: Namespace, node: "ArenaMixinNode") -> None:
         super().__init__(node=node)
         self._ctx = ctx
         self._namespace = namespace

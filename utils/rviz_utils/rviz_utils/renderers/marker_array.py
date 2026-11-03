@@ -6,8 +6,8 @@ overlays and static-geometry layers that are not pedestrian data.
 
 from __future__ import annotations
 
+from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
-from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
 from rviz_utils.renderers._registry import rviz_extra as _rviz_extra

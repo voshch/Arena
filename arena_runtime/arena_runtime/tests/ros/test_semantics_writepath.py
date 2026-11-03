@@ -645,22 +645,60 @@ def test_record_to_msg_serializes_episode_conditions() -> None:
     import json
 
     from arena_simulation_setup.shared.conditions import EpisodeCondition
-    from arena_runtime.env.episode_node import EpisodeRecord, EpisodeNode
+    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_runtime.env.task_layer import EpisodeRecord
+    from arena_runtime.testing.env_host import FakeTaskLayer
 
     stub = _node_stub()
+    stub._task_layer = FakeTaskLayer()
     stub._episode_conditions = [
         EpisodeCondition.parse({"op": "eventually", "p": "robot in ward_a", "text": "Deliver the package."}),
     ]
-    msg = EpisodeNode._record_to_msg(stub, EpisodeRecord())
+    msg = EpisodeNode._record_to_msg(stub, EpisodeRecord(), {})
     assert json.loads(msg.conditions) == [{"op": "eventually", "p": "robot in ward_a", "text": "Deliver the package."}]
 
 
 def test_record_to_msg_empty_conditions_serializes_empty_list() -> None:
     import json
 
-    from arena_runtime.env.episode_node import EpisodeRecord, EpisodeNode
+    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_runtime.env.task_layer import EpisodeRecord
+    from arena_runtime.testing.env_host import FakeTaskLayer
 
     stub = _node_stub()
+    stub._task_layer = FakeTaskLayer()
     stub._episode_conditions = []
-    msg = EpisodeNode._record_to_msg(stub, EpisodeRecord())
+    msg = EpisodeNode._record_to_msg(stub, EpisodeRecord(), {})
     assert json.loads(msg.conditions) == []
+
+
+def test_record_to_msg_carries_the_modes_and_the_full_name_params_of_the_record() -> None:
+    from rcl_interfaces.msg import ParameterType, ParameterValue
+
+    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_runtime.env.task_layer import EpisodeRecord, decode_modes
+    from arena_runtime.testing.env_host import FakeTaskLayer
+
+    stub = _node_stub()
+    stub._task_layer = FakeTaskLayer()
+    stub._episode_conditions = []
+    record = EpisodeRecord(episode_id=4, modes={"robots": ["fake_robots"], "obstacles": ["fake_obstacles"], "modules": ["a", "b"]})
+    value = ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=3)
+    msg = EpisodeNode._record_to_msg(stub, record, {"task.fake_robots.n": value, "task.fake_obstacles.m": value})
+
+    assert decode_modes(msg.modes) == record.modes
+    assert sorted(p.name for p in msg.params) == ["task.fake_obstacles.m", "task.fake_robots.n"]
+
+
+def test_record_to_msg_carries_the_axes_of_a_runtime_with_other_axes() -> None:
+    from arena_runtime.env.episode_node import EpisodeNode
+    from arena_runtime.env.task_layer import EpisodeRecord, decode_modes
+    from arena_runtime.testing.env_host import FakeTaskLayer
+
+    stub = _node_stub()
+    stub._task_layer = FakeTaskLayer()
+    stub._episode_conditions = []
+    record = EpisodeRecord(modes={"patrol": ["loop"]})
+    msg = EpisodeNode._record_to_msg(stub, record, {})
+
+    assert decode_modes(msg.modes) == {"patrol": ["loop"]}

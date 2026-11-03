@@ -28,7 +28,7 @@ class Modes:
 
         @classmethod
         def default(cls) -> "Modes.TM_Robots":
-            return cls.RANDOM
+            return cls.EXPLORE
 
     @enum.unique
     class TM_Module(enum.Enum):

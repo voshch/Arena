@@ -18,7 +18,7 @@
   <exec_depend>arena_assets</exec_depend>
   <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_mcp</exec_depend>
-  <exec_depend>task_generator_msgs</exec_depend>
+  <exec_depend>arena_runtime_msgs</exec_depend>
   <exec_depend>rosgraph_msgs</exec_depend>
   <exec_depend>arena_humansim</exec_depend>
   <exec_depend>python3-scipy</exec_depend>

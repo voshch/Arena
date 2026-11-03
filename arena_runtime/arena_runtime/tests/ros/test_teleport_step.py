@@ -1,4 +1,4 @@
-"""Robot teleport against an in-process ArenaNode on the dummy sim, with a body node that follows set-pose on the next sim tick."""
+"""Robot teleport against an in-process ArenaRuntimeNode on the dummy sim, with a body node that follows set-pose on the next sim tick."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
     from arena_rclpy_mixins.spin import create_executor
     from arena_rclpy_mixins.Time import Time
     from arena_runtime._node import NodeInterface
-    from arena_runtime.arena_node import ArenaNode
+    from arena_runtime.arena_runtime_node import ArenaRuntimeNode
 
     from arena_runtime.env.robot_manager.robot_manager import RobotManager
     from arena_runtime.env.episode_node import EpisodeNode
@@ -69,7 +69,7 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
             self._tf.sendTransform(tf)
 
     class Bench(ArenaMixinNode):
-        """The task_generator side: the real hold, step and unpause window calls against arena_node."""
+        """The task_generator side: the real hold, step and unpause window calls against arena_runtime_node."""
 
         hold = EpisodeNode.hold
         release = EpisodeNode.release
@@ -105,7 +105,7 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
             self._stop_pub = node.create_publisher(geometry_msgs.msg.Twist, "/probe/stop", 1)
 
     executor = create_executor()
-    arena = ArenaNode()
+    arena = ArenaRuntimeNode()
     arena.declare_parameter("physics_dt", DT)
     arena.declare_parameter("sim", "dummy")
     body = Body()
