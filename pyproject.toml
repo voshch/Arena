@@ -183,6 +183,7 @@ exclude = [
     "**/build",
     "**/install",
     "**/log",
+    "deps",
     "arena_robots/deps",
     "**/tests",
     "**/test",
