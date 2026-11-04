@@ -315,6 +315,10 @@ def test_concourse_validation_errors() -> None:
     with pytest.raises(ValueError, match="exceeds concourse length"):
         ConcourseConfiguration(length=20.0, elevators=[ElevatorBayFeature(at_s=25.0)])
 
+    # Elevator door_width exceeds cabin_width
+    with pytest.raises(ValueError, match="cannot exceed cabin_width"):
+        ElevatorBayFeature(cabin_width=2.0, door_width=2.5)
+
     # Duplicate flow stream names
     with pytest.raises(ValueError, match="Flow stream names must be unique"):
         ConcourseConfiguration(
@@ -406,6 +410,42 @@ def test_concourse_empty_robot_target_branch_normalizes_to_none() -> None:
     world = gen.compute()
     assert len(world.all_levels) == 1
     assert "dock_start" in {z.name for z in world.all_levels[0].zones}
+
+
+def test_concourse_with_elevator_creates_proper_elevator_entity() -> None:
+    """Verify that elevator features instantiate first-class Elevator entities with valid door_side and bounds."""
+    config = {
+        "length": 24.0,
+        "width": 4.0,
+        "elevators": [
+            {"at_s": 0.0, "cabin_width": 2.5, "cabin_depth": 2.5, "door_width": 1.4},
+            {"at_s": 24.0, "cabin_width": 2.5, "cabin_depth": 2.5, "door_width": 1.4},
+        ],
+    }
+    gen = WorldGeneratorConcourse(config, random.Random(42))
+    world = gen.compute()
+    level = world.all_levels[0]
+
+    assert len(level.elevators) == 2
+    elev_start, elev_end = level.elevators[0], level.elevators[1]
+
+    assert elev_start.name == "elevator_0"
+    assert elev_start.size == [2.5, 2.5, 2.5]
+    # At start (s=0, tangent=(1,0), extrude_dir=(-1,0)), door faces back into concourse (+x)
+    assert elev_start.door_side == "+x"
+
+    assert elev_end.name == "elevator_1"
+    assert elev_end.size == [2.5, 2.5, 2.5]
+    # At end (s=24, tangent=(1,0), extrude_dir=(1,0)), door faces back into concourse (-x)
+    assert elev_end.door_side == "-x"
+
+    # Both elevator dock sockets must exist in zones
+    zones = {z.name for z in level.zones}
+    assert "dock_elevator_0" in zones
+    assert "dock_elevator_1" in zones
+
+    # World must pass full validation
+    assert world.validate() == []
 
 
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:

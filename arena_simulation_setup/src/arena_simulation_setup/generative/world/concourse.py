@@ -6,7 +6,7 @@ import dataclasses
 import enum
 import math
 import random
-from typing import ClassVar, cast, final
+from typing import ClassVar, Literal, cast, final
 
 import numpy as np
 import shapely
@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from typing_extensions import override
 
-from arena_simulation_setup.shared import Door, Position
+from arena_simulation_setup.shared import Door, Elevator, Position
 from arena_simulation_setup.tree.World import World
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
 
@@ -128,6 +128,14 @@ class ElevatorBayFeature(BaseModel):
     cabin_width: float = Field(2.5, ge=1.2)
     cabin_depth: float = Field(2.5, ge=1.2)
     door_width: float = Field(1.4, ge=0.8)
+    destinations: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_door_width(self) -> ElevatorBayFeature:
+        """Ensure doorway width does not exceed elevator cabin width."""
+        if self.door_width > self.cabin_width:
+            raise ValueError(f"door_width ({self.door_width} m) cannot exceed cabin_width ({self.cabin_width} m)")
+        return self
 
 
 class PillarFeature(BaseModel):
@@ -403,6 +411,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._spine = self._build_spine()
         self._validate_actual_spine_bounds()
         self._doors = []
+        self._elevators = []
         self._dock_metadata = {}
         self._semantic_zones = []
 
@@ -422,8 +431,9 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         docks = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if z_name.startswith("dock_")]
         others = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if not z_name.startswith("dock_")]
         world, self.diagnostics = compile_layout(Layout(areas=areas, regions=[*docks, *others]))
-        # Doors have no Layout IR form per design contract (see README.md:37 and hallway.py:119)
+        # Doors and elevators have no Layout IR form per design contract (see README.md:37 and hallway.py:119)
         world.all_levels[0].doors.extend(self._doors)
+        world.all_levels[0].elevators.extend(self._elevators)
 
         # Verify that all generated dock socket zones survive layout compilation
         surviving_zones = {z.name for z in world.all_levels[0].zones}
@@ -618,7 +628,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         }
 
     def _build_elevators(self, total_len: float) -> None:
-        """Construct enclosed elevator passenger compartments as dock sockets."""
+        """Construct enclosed elevator passenger compartments as dock sockets and proper Elevator entities."""
         for idx, elev in enumerate(self.config.elevators):
             anchor = self._anchor_at(elev.at_s)
             px, py = anchor.point
@@ -639,6 +649,25 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                 "nav_pose": [round(cabin_cx, 2), round(cabin_cy, 2), round(yaw_out, 3)],
                 "is_room": False,
             }
+
+            # Door faces outward from the cabin back into the concourse corridor
+            door_dx = -extrude_dir[0]
+            door_dy = -extrude_dir[1]
+            door_side: Literal["+x", "-x", "+y", "-y"]
+            if abs(door_dx) >= abs(door_dy):
+                door_side = "+x" if door_dx > 0 else "-x"
+            else:
+                door_side = "+y" if door_dy > 0 else "-y"
+
+            self._elevators.append(
+                Elevator(
+                    name=f"elevator_{idx}",
+                    position=Position(round(cabin_cx, 2), round(cabin_cy, 2), 0.0),
+                    size=[round(elev.cabin_width, 2), round(elev.cabin_depth, 2), 2.5],
+                    door_side=door_side,
+                    destinations=list(elev.destinations),
+                )
+            )
 
     def _apply_pillar_obstacles(self, half_w: float) -> None:
         """Subtract pillar obstacles from semantic zone geometries."""
