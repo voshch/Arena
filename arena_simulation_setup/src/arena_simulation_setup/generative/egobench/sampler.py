@@ -11,7 +11,7 @@ import attrs
 
 from arena_simulation_setup.generative.world import WorldGenerator
 
-from .manifest import Axis, Encounter, Manifest, Scalar, Space, axis_draw, axis_values
+from .manifest import Axis, Encounter, Manifest, Pedestrian, Scalar, Space, axis_draw, axis_values
 
 
 @attrs.frozen
@@ -20,6 +20,7 @@ class Sample:
     world: dict[str, Scalar]
     world_seed: int
     encounter: Encounter
+    pedestrian: Pedestrian
     lateral_offset: float
     robot_speed: float
     ped_speed: float
@@ -34,7 +35,7 @@ class Sample:
     @property
     def scenario_key(self) -> str:
         """Name of this sample's scenario inside its world."""
-        return f"{self.encounter.value}__off{self.lateral_offset:.2f}__r{self.robot_speed:.2f}__p{self.ped_speed:.2f}__{self.agent_type}"
+        return f"{self.encounter.value}__{self.pedestrian.value}__off{self.lateral_offset:.2f}__r{self.robot_speed:.2f}__p{self.ped_speed:.2f}__{self.agent_type}"
 
     def to_dict(self) -> dict[str, Scalar | dict[str, Scalar]]:
         return {
@@ -42,6 +43,7 @@ class Sample:
             "world": dict(self.world),
             "world_seed": self.world_seed,
             "encounter": self.encounter.value,
+            "pedestrian": self.pedestrian.value,
             "lateral_offset": self.lateral_offset,
             "robot_speed": self.robot_speed,
             "ped_speed": self.ped_speed,
@@ -58,6 +60,7 @@ class Sample:
             world=dict(world),
             world_seed=int(_scalar(data["world_seed"])),
             encounter=Encounter(data["encounter"]),
+            pedestrian=Pedestrian(data["pedestrian"]),
             lateral_offset=float(_scalar(data["lateral_offset"])),
             robot_speed=float(_scalar(data["robot_speed"])),
             ped_speed=float(_scalar(data["ped_speed"])),
@@ -81,12 +84,13 @@ def _world_seed(manifest: Manifest, variant: int) -> int:
     return manifest.seed * 1000 + variant
 
 
-def _make(manifest: Manifest, space: Space, world: dict[str, Scalar], variant: int, encounter: Encounter, offset: Scalar, robot: Scalar, ped: Scalar, agent: Scalar) -> Sample:
+def _make(manifest: Manifest, space: Space, world: dict[str, Scalar], variant: int, encounter: Encounter, pedestrian: Pedestrian, offset: Scalar, robot: Scalar, ped: Scalar, agent: Scalar) -> Sample:
     return Sample(
         space=space,
         world=_world(space, world),
         world_seed=_world_seed(manifest, variant),
         encounter=encounter,
+        pedestrian=pedestrian,
         lateral_offset=float(offset),
         robot_speed=float(robot),
         ped_speed=float(ped),
@@ -100,15 +104,16 @@ def _grid(manifest: Manifest) -> list[Sample]:
         names = list(axes)
         for values in itertools.product(*(axis_values(axes[name]) for name in names)):
             world = dict(zip(names, values, strict=True))
-            for variant, encounter, offset, robot, ped, agent in itertools.product(
+            for variant, encounter, pedestrian, offset, robot, ped, agent in itertools.product(
                 range(manifest.world_variants),
                 manifest.encounters,
+                manifest.pedestrians,
                 axis_values(manifest.lateral_offset),
                 axis_values(manifest.robot_speed),
                 axis_values(manifest.ped_speed),
                 axis_values(manifest.agent_type),
             ):
-                samples.append(_make(manifest, space, world, variant, encounter, offset, robot, ped, agent))
+                samples.append(_make(manifest, space, world, variant, encounter, pedestrian, offset, robot, ped, agent))
     return samples
 
 
@@ -127,6 +132,7 @@ def _random(manifest: Manifest) -> list[Sample]:
                 world,
                 rng.randrange(manifest.world_variants),
                 rng.choice(manifest.encounters),
+                rng.choice(manifest.pedestrians),
                 axis_draw(manifest.lateral_offset, rng),
                 axis_draw(manifest.robot_speed, rng),
                 axis_draw(manifest.ped_speed, rng),

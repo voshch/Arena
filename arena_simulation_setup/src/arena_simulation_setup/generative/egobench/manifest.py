@@ -41,6 +41,13 @@ class Encounter(enum.Enum):
     STANDING = "standing"
 
 
+class Pedestrian(enum.Enum):
+    """How the pedestrian walks its route."""
+
+    FIXED = "fixed"  # ignores the robot and starts on the clock, the same route under every planner
+    REACTIVE = "reactive"  # avoids the robot under the social force model and starts as the robot nears
+
+
 class Span(pydantic.BaseModel):
     """A numeric range, gridded by `step` or drawn uniformly without one."""
 
@@ -101,6 +108,7 @@ class Manifest(pydantic.BaseModel):
     world_variants: int = pydantic.Field(1, ge=1)  # world seeds per world configuration
     worlds: dict[Space, dict[str, Axis]]
     encounters: list[Encounter] = pydantic.Field(min_length=1)
+    pedestrians: list[Pedestrian] = pydantic.Field(default_factory=lambda: [Pedestrian.FIXED], min_length=1)
     lateral_offset: Axis = 1.2  # m between the robot's route and the pedestrian's lane
     robot_speed: Axis = 0.5  # m/s
     ped_speed: Axis = 1.2  # m/s

@@ -1,4 +1,4 @@
-"""One pedestrian placed against a straight robot leg by encounter type, and the scenario that plays it."""
+"""One pedestrian placed against a straight robot leg by encounter type, and the scenario that plays it on a fixed or a reactive route."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from arena_simulation_setup.generative.scenario.zone_screen import RUNTIME_SAFE_
 from arena_simulation_setup.shared.pathing import Point
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, parse_scenario
 
-from .manifest import Encounter
+from .manifest import Encounter, Pedestrian
 from .sampler import Sample
 
 ROBOT_RADIUS = 0.35
@@ -29,6 +29,7 @@ GAP_M = 3.0  # head start of a followed or leading pedestrian
 MIN_RELEASE_M = 0.5  # robot travel before a release, so the trigger never holds at the start
 ENCOUNTER_AT = 0.5  # fraction of the robot's leg where the encounter is designed
 PED_NAME = "ped_0"
+FIXED_PLANNER = "straight"  # HumanSim local planner that ignores every neighbour
 
 PARALLEL = (Encounter.ONCOMING, Encounter.OVERTAKE, Encounter.OVERTAKEN, Encounter.FOLLOW, Encounter.LEAD, Encounter.STANDING)
 CROSSING = (Encounter.CROSSING_LEFT, Encounter.CROSSING_RIGHT)
@@ -202,6 +203,11 @@ def _pose(pt: Point, theta: float) -> list[float]:
     return [round(pt[0], 3), round(pt[1], 3), round(theta, 3)]
 
 
+def release_time(sample: Sample, placement: Placement) -> float:
+    """Seconds into the episode the robot reaches the release at its nominal speed."""
+    return round(max(placement.release or 0.0, 0.0) / sample.robot_speed, 2)
+
+
 def build(sample: Sample, placement: Placement, notes: Sequence[str] = ()) -> Generated:
     """The scenario, its agent types and the provenance of one placed sample."""
     rng = random.Random(f"{sample.world_key}:{sample.scenario_key}")
@@ -214,11 +220,13 @@ def build(sample: Sample, placement: Placement, notes: Sequence[str] = ()) -> Ge
         steps["stay"] = dict(STAND_STEP)
         ref = files.switching(ref, need=GO, to="walk", steps=steps)
         stimulus = [{"agents": [PED_NAME], "need": GO}]
-        if placement.release <= 0.0:
-            timeline.append({"at": 0.0, "stimulus": stimulus})
+        if placement.release <= 0.0 or sample.pedestrian is Pedestrian.FIXED:
+            timeline.append({"at": release_time(sample, placement), "stimulus": stimulus})
         else:
             point, radius = release_point([placement.robot.start, placement.robot.end], placement.release)
             timeline.append({"when": within(radius, point), "stimulus": stimulus})
+    if sample.pedestrian is Pedestrian.FIXED:
+        files.docs[ref]["local_planner"] = FIXED_PLANNER
     human = {
         "name": PED_NAME,
         "model": mesh_for(profile(sample.agent_type), rng),
@@ -244,6 +252,7 @@ def build(sample: Sample, placement: Placement, notes: Sequence[str] = ()) -> Ge
             "ped_route": [[round(x, 3), round(y, 3)] for x, y in placement.ped_route()],
             "meet": [round(placement.meet[0], 3), round(placement.meet[1], 3)],
             "release_arc": None if placement.release is None else round(placement.release, 3),
+            "release_time": None if placement.release is None else release_time(sample, placement),
         },
         "notes": list(notes),
     }

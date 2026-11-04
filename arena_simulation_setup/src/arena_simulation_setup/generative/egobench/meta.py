@@ -18,7 +18,7 @@ from arena_simulation_setup.tree.World import World
 
 from . import scenario_corridor, scenario_open
 from .encounter import Generated, Rejected
-from .manifest import Encounter, Scalar, Space
+from .manifest import Encounter, Pedestrian, Scalar, Space
 from .sampler import Sample
 
 SCENARIO_GENERATORS: dict[Space, Callable[[Layout, Sample], Generated | Rejected]] = {
@@ -57,6 +57,7 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
         world: str = pydantic.Field('{"corridor_width": 3.0}', json_schema_extra={"widget": "text"})  # the space's generator configuration as JSON
         world_seed: int = pydantic.Field(0, ge=0)
         encounter: str = Encounter.ONCOMING.value
+        pedestrian: str = Pedestrian.FIXED.value
         lateral_offset: float = 1.2  # m, + = pedestrian on the robot's left
         robot_speed: float = pydantic.Field(0.5, gt=0)
         ped_speed: float = pydantic.Field(1.2, gt=0)
@@ -79,6 +80,11 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
         def _encounter(cls, value: str) -> str:
             return Encounter(value).value
 
+        @pydantic.field_validator("pedestrian")
+        @classmethod
+        def _pedestrian(cls, value: str) -> str:
+            return Pedestrian(value).value
+
     config: Configuration
     sample: Sample
     _world: WorldGenerator
@@ -96,6 +102,7 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
             world=values,
             world_seed=self.config.world_seed,
             encounter=Encounter(self.config.encounter),
+            pedestrian=Pedestrian(self.config.pedestrian),
             lateral_offset=self.config.lateral_offset,
             robot_speed=self.config.robot_speed,
             ped_speed=self.config.ped_speed,
@@ -115,6 +122,7 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
                 "world": json.dumps(sample.world),
                 "world_seed": sample.world_seed,
                 "encounter": sample.encounter.value,
+                "pedestrian": sample.pedestrian.value,
                 "lateral_offset": sample.lateral_offset,
                 "robot_speed": sample.robot_speed,
                 "ped_speed": sample.ped_speed,

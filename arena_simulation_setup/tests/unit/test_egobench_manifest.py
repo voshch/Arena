@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pydantic
 import pytest
-from arena_simulation_setup.generative.egobench.manifest import Encounter, Manifest, Space, Span
+from arena_simulation_setup.generative.egobench.manifest import Encounter, Manifest, Pedestrian, Space, Span
 from arena_simulation_setup.generative.egobench.sampler import Sample, sample
 
 
@@ -87,9 +87,25 @@ def test_samples_on_one_world_share_its_key():
 
 
 def test_a_sample_survives_its_dict_form():
-    original = sample(manifest())[0]
+    original = sample(manifest(pedestrians=["reactive"]))[0]
     assert Sample.from_dict(original.to_dict()) == original
     assert original.encounter is Encounter.ONCOMING
+    assert original.pedestrian is Pedestrian.REACTIVE
+
+
+def test_pedestrians_default_to_a_fixed_route():
+    assert {s.pedestrian for s in sample(manifest())} == {Pedestrian.FIXED}
+
+
+def test_both_pedestrian_kinds_double_the_grid_and_name_their_scenarios():
+    samples = sample(manifest(pedestrians=["fixed", "reactive"]))
+    assert len(samples) == 2 * 24
+    assert {s.scenario_key.split("__")[1] for s in samples} == {"fixed", "reactive"}
+
+
+def test_an_unknown_pedestrian_kind_is_rejected():
+    with pytest.raises(pydantic.ValidationError, match="pedestrians"):
+        manifest(pedestrians=["scripted"])
 
 
 def test_a_manifest_loads_from_yaml(tmp_path: Path):

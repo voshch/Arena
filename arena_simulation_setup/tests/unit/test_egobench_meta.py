@@ -7,7 +7,7 @@ import pydantic
 import pytest
 import yaml
 from arena_simulation_setup.generative.egobench import cli
-from arena_simulation_setup.generative.egobench.manifest import Encounter, Manifest, Space
+from arena_simulation_setup.generative.egobench.manifest import Encounter, Manifest, Pedestrian, Space
 from arena_simulation_setup.generative.egobench.meta import Unplaceable, WorldGeneratorEgoBench
 from arena_simulation_setup.generative.egobench.sampler import Sample, sample
 from arena_simulation_setup.generative.scenario.materialize import is_generated
@@ -20,7 +20,7 @@ MVP = Path(__file__).parents[2] / "configs" / "egobench" / "mvp.yaml"
 
 
 def one(encounter: Encounter = Encounter.ONCOMING, space: Space = Space.CORRIDOR, **world: float) -> Sample:
-    return Sample(space=space, world=world or {"corridor_width": 3.0}, world_seed=1, encounter=encounter, lateral_offset=1.2, robot_speed=0.5, ped_speed=1.2, agent_type="adult")
+    return Sample(space=space, world=world or {"corridor_width": 3.0}, world_seed=1, encounter=encounter, pedestrian=Pedestrian.FIXED, lateral_offset=1.2, robot_speed=0.5, ped_speed=1.2, agent_type="adult")
 
 
 def manifest(**overrides: object) -> Manifest:
@@ -39,6 +39,17 @@ def test_the_generator_is_registered_and_runs_on_its_defaults():
 def test_an_unknown_encounter_is_rejected_by_the_configuration():
     with pytest.raises(pydantic.ValidationError):
         WorldGeneratorEgoBench({"encounter": "dancing"}, random.Random(0))
+
+
+def test_an_unknown_pedestrian_kind_is_rejected_by_the_configuration():
+    with pytest.raises(pydantic.ValidationError):
+        WorldGeneratorEgoBench({"pedestrian": "scripted"}, random.Random(0))
+
+
+def test_the_generator_carries_the_pedestrian_kind_into_its_scenario():
+    generator = WorldGeneratorEgoBench({"pedestrian": "reactive", "world": '{"corridor_width": 3.0, "branches": 4}', "world_seed": 3}, random.Random(0))
+    assert generator.sample.pedestrian is Pedestrian.REACTIVE
+    assert "__reactive__" in generator.params()["robots_params"]["file"]
 
 
 def test_an_encounter_that_does_not_fit_fails_the_world():
@@ -106,7 +117,8 @@ def test_the_cli_fails_when_nothing_is_placed(tmp_path: Path):
     assert cli.main([str(path), "--out", str(tmp_path)]) == 1
 
 
-def test_the_mvp_manifest_spans_three_encounters_at_five_offsets():
+def test_the_mvp_manifest_spans_three_encounters_at_five_offsets_for_both_pedestrian_kinds():
     samples = sample(Manifest.load(MVP))
+    assert {s.pedestrian for s in samples} == set(Pedestrian)
     assert {s.encounter for s in samples} == {Encounter.ONCOMING, Encounter.CROSSING_LEFT, Encounter.CROSSING_RIGHT}
     assert sorted({s.lateral_offset for s in samples}) == [0.6, 0.8, 1.0, 1.2, 1.4]

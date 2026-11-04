@@ -5,8 +5,8 @@ import math
 import pytest
 import shapely
 from arena_simulation_setup.generative.egobench import scenario_corridor, scenario_open
-from arena_simulation_setup.generative.egobench.encounter import MIN_RELEASE_M, Generated, Rejected
-from arena_simulation_setup.generative.egobench.manifest import Encounter, Space
+from arena_simulation_setup.generative.egobench.encounter import FIXED_PLANNER, MIN_RELEASE_M, Generated, Rejected
+from arena_simulation_setup.generative.egobench.manifest import Encounter, Pedestrian, Space
 from arena_simulation_setup.generative.egobench.sampler import Sample
 from arena_simulation_setup.generative.egobench.scenario_corridor import runs
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
@@ -14,10 +14,10 @@ from arena_simulation_setup.generative.world.layout import Area, Layout, Segment
 from arena_simulation_setup.tree.World.Scenario import parse_scenario
 
 
-def sample(encounter: Encounter, space: Space = Space.CORRIDOR, **overrides: float) -> Sample:
+def sample(encounter: Encounter, space: Space = Space.CORRIDOR, pedestrian: Pedestrian = Pedestrian.FIXED, **overrides: float) -> Sample:
     values = {"lateral_offset": 1.2, "robot_speed": 0.5, "ped_speed": 1.2}
     values.update(overrides)
-    return Sample(space=space, world={}, world_seed=0, encounter=encounter, agent_type="adult", **values)
+    return Sample(space=space, world={}, world_seed=0, encounter=encounter, pedestrian=pedestrian, agent_type="adult", **values)
 
 
 def corridor(width: float = 3.0, arm: float = 0.0) -> Layout:
@@ -75,12 +75,36 @@ def test_a_negative_offset_puts_the_pedestrian_on_the_right():
     assert math.cos(theta) * (py - sy) - math.sin(theta) * (px - sx) < 0
 
 
-def test_the_pedestrian_is_released_when_the_robot_has_driven_its_lead():
-    result = generated(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING)))
+def ped_type(result: Generated) -> dict:
+    return result.types[result.scenario["humans"][0]["agent"]["agent_type"].removeprefix("./")]
+
+
+def test_a_reactive_pedestrian_is_released_when_the_robot_has_driven_its_lead():
+    result = generated(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING, pedestrian=Pedestrian.REACTIVE)))
     assert result.provenance["design"]["release_arc"] >= MIN_RELEASE_M
     (entry,) = result.scenario["timeline"]
     assert entry["when"].startswith("robot within ")
     assert entry["stimulus"] == [{"agents": ["ped_0"], "need": "go"}]
+    assert "local_planner" not in ped_type(result)
+
+
+def test_a_fixed_pedestrian_starts_on_the_clock_when_a_nominal_robot_reaches_the_release():
+    result = generated(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING)))
+    design = result.provenance["design"]
+    (entry,) = result.scenario["timeline"]
+    assert "when" not in entry
+    assert entry["at"] == pytest.approx(design["release_arc"] / 0.5, abs=0.01)
+    assert design["release_time"] == entry["at"]
+
+
+def test_a_fixed_pedestrian_ignores_the_robot():
+    assert ped_type(generated(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING))))["local_planner"] == FIXED_PLANNER
+
+
+def test_both_pedestrian_kinds_walk_the_same_route():
+    fixed, reactive = (design(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING, pedestrian=kind))) for kind in Pedestrian)
+    assert fixed["ped_route"] == reactive["ped_route"]
+    assert fixed["robot_start"] == reactive["robot_start"]
 
 
 def test_a_standing_pedestrian_faces_the_robot_and_is_never_released():
