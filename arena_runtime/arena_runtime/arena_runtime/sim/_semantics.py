@@ -1063,9 +1063,9 @@ class OccupancyCapSemantics(SemanticKind):
     @classmethod
     def attach(cls, mech: MechanismITF, entity: str, cfgs: Sequence[SemanticCfg], *, polygon: Sequence[tuple[float, float]] | None = None) -> SemanticKind:
         discrete, continuous, predicates = cls._classify(cfgs)
-        params = _merge_params(cfgs)
+        cap = next((cfg.value for cfg in cfgs if cfg.name == 'cap' and cfg.value is not None), 0)
         ring = [(float(x), float(y)) for x, y in (polygon or [])]
-        return cls(mech, entity, ring, float(params.get('cap', 0)), discrete, continuous, predicates)
+        return cls(mech, entity, ring, float(cap), discrete, continuous, predicates)
 
     def _inside(self) -> list[str]:
         return [name for name, (x, y) in _agents_xy(self._mech) if _in_polygon(x, y, self._polygon)]

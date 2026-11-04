@@ -7,6 +7,7 @@ since the door/elevator runtime types live there.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -188,8 +189,8 @@ def _sound_cfgs(sound_on=None, regime=None, volume=None):
 
 def _occupancy_cfgs(cap):
     return [
-        _MCfg("state", "occupancy", params={"cap": cap}),
-        _MCfg("state", "cap"),
+        _MCfg("state", "occupancy"),
+        _MCfg("state", "cap", value=cap),
         _MCfg("predicate", "over_cap"),
     ]
 
@@ -707,6 +708,32 @@ def test_occupancy_not_over_cap():
     _manager(mech)
     occ = OccupancyCapSemantics.attach(mech, "lobby", _occupancy_cfgs(cap=5), polygon=_SQUARE)
     assert occ.snapshot().predicates["over_cap"] is False
+
+
+def test_occupancy_cap_preset_param_sets_the_cap():
+    from arena_simulation_setup.shared.semantics import parse_semantics
+
+    mech = _Mech(robots=[("a", (1.0, 1.0)), ("b", (2.0, 2.0))])
+    _manager(mech)
+    occ = OccupancyCapSemantics.attach(mech, "lobby", parse_semantics([{"preset": "occupancy_cap", "params": {"cap": 4}}]), polygon=_SQUARE)
+    snap = occ.snapshot()
+    assert snap.continuous["cap"] == pytest.approx(4.0)
+    assert snap.predicates["over_cap"] is False
+
+
+def test_occupancy_cap_of_the_shipped_regimes_world_is_not_over_with_two_people():
+    from arena_simulation_setup.tree.World import WorldView
+
+    world = WorldView(Path(__file__).resolve().parents[4] / "arena_simulation_setup" / "worlds" / "mechanisms_regimes").load()
+    zone = next(zone for level in world.levels.values() for zone in level.zones if zone.name == "waiting_room")
+    cfgs = [cfg for cfg in zone.semantics if cfg.name in OccupancyCapSemantics.CONTINUOUS + OccupancyCapSemantics.PREDICATES]
+    mech = _Mech(robots=[("a", (9.0, 39.0)), ("b", (10.0, 40.0))])
+    _manager(mech)
+    occ = OccupancyCapSemantics.attach(mech, "waiting_room", cfgs, polygon=[(corner.x, corner.y) for corner in zone.polygon])
+    snap = occ.snapshot()
+    assert snap.continuous["occupancy"] == pytest.approx(2.0)
+    assert snap.continuous["cap"] == pytest.approx(4.0)
+    assert snap.predicates["over_cap"] is False
 
 
 def test_occupancy_cap_writable_and_reset():
