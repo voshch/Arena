@@ -14,6 +14,15 @@ if not (STORE_HOST / "store_host.py").is_file():
     pytest.skip("needs the arena_assets checkout for its loopback store", allow_module_level=True)
 
 
+def _environment(workspace: Path, **extra: str) -> dict[str, str]:
+    inherited = {key: value for key, value in os.environ.items() if not key.startswith("ARENA_") and not key.endswith("_BUCKETS")}
+    return {**inherited, "ARENA_WS_DIR": str(workspace), "ARENA_ASSETS_NET": "on", "PYTHONPATH": os.pathsep.join([str(ARENA / "_meta"), os.environ.get("PYTHONPATH", "")]), **extra}
+
+
+def _asset(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, "-m", "arena_cli", "asset", *args], env=env, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+
+
 @pytest.fixture
 def store(monkeypatch):
     monkeypatch.syspath_prepend(str(STORE_HOST))
@@ -33,19 +42,17 @@ def store(monkeypatch):
 
 @pytest.fixture
 def arena(store, tmp_path):
-    env = {
-        **os.environ,
-        "ARENA_ASSETS_URL": store.base,
-        "ARENA_ASSETS_TOKEN": "tok",
-        "ARENA_ASSETS_NET": "on",
-        "ARENA_ASSETS_DIR": str(tmp_path / "cache"),
-        "ARENA_ASSETS_DIR_LOCAL": str(tmp_path / "local"),
-        "ASSET_BUCKETS": "default,arena-internal",
-        "PYTHONPATH": os.pathsep.join([str(ARENA / "_meta"), os.environ.get("PYTHONPATH", "")]),
-    }
+    env = _environment(
+        tmp_path,
+        ARENA_ASSETS_URL=store.base,
+        ARENA_ASSETS_TOKEN="tok",
+        ARENA_ASSETS_DIR=str(tmp_path / "cache"),
+        ARENA_ASSETS_DIR_LOCAL=str(tmp_path / "local"),
+        ASSET_BUCKETS="default,arena-internal",
+    )
 
     def run(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, "-m", "arena_cli", "asset", *args], env=env, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+        return _asset(env, *args)
 
     return run
 
@@ -113,12 +120,7 @@ def test_rm_needs_confirmation_without_a_terminal(arena):
     assert "needs confirmation, pass --yes" in done.stderr
 
 
-def test_pull_without_a_cache_directory_says_which_variable_to_set(arena, monkeypatch):
-    monkeypatch.delenv("ARENA_DATA_DIR", raising=False)
-    env = {key: value for key, value in os.environ.items() if key not in ("ARENA_ASSETS_DIR", "ARENA_DATA_DIR")}
-    env["PYTHONPATH"] = os.pathsep.join([str(ARENA / "_meta"), os.environ.get("PYTHONPATH", "")])
-    env["ARENA_ASSETS_NET"] = "on"
-    env["WORLD_BUCKETS"] = "public/worlds"
-    done = subprocess.run([sys.executable, "-m", "arena_cli", "asset", "pull", "world", "anything"], env=env, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+def test_pull_without_a_cache_directory_says_which_variable_to_set(tmp_path):
+    done = _asset(_environment(tmp_path), "pull", "world", "anything")
     assert done.returncode == 1
     assert "no asset cache directory: set ARENA_DATA_DIR or ARENA_ASSETS_DIR" in done.stderr
