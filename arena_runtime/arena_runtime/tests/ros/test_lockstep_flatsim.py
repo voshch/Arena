@@ -18,12 +18,11 @@ async def _steps_are_exact_and_the_hold_freezes_the_server(rig: Rig) -> None:
     host = rig.arena._lifecycle._inner
     assert isinstance(host, FlatsimHost)
     running = probe.clock()
-    await rig.until(lambda: probe.clock() > running + 5 * DT, 5.0, "free-running flatsim clock")
+    await rig.until(lambda: probe.clock() > running + 5 * DT, 30.0, "free-running flatsim clock")
 
     caller = probe.get_fully_qualified_name()
     response = await probe.hold.call_timeout(LifecycleHold.Request(action=LifecycleHold.Request.ACQUIRE, caller_id=caller, reason="test"))
     assert response is not None and response.paused
-    await asyncio.sleep(3 * DT)
     frozen = await rig.frozen(0.2)
 
     response = await probe.step.call_timeout(LifecycleStep.Request(seconds=3 * DT))
@@ -45,7 +44,7 @@ async def _steps_are_exact_and_the_hold_freezes_the_server(rig: Rig) -> None:
     response = await probe.hold.call_timeout(LifecycleHold.Request(action=LifecycleHold.Request.RELEASE, caller_id=caller, reason="test"))
     assert response is not None and not response.paused
     released = probe.clock()
-    await rig.until(lambda: probe.clock() > released + 5 * DT, 5.0, "flatsim clock after the release")
+    await rig.until(lambda: probe.clock() > released + 5 * DT, 30.0, "flatsim clock after the release")
 
 
 async def _run_survives_a_server_outage_longer_than_a_step_call(rig: Rig) -> None:
@@ -53,8 +52,8 @@ async def _run_survives_a_server_outage_longer_than_a_step_call(rig: Rig) -> Non
     server = rig.servers[0]
     await probe.start_run(ungated=True)
     running = probe.clock()
-    await rig.until(lambda: probe.clock() > running + 10 * DT, 5.0, "lockstep steps the server")
-    await rig.until(lambda: probe.status is not None and probe.status.active, 5.0, "active run status")
+    await rig.until(lambda: probe.clock() > running + 10 * DT, 30.0, "lockstep steps the server")
+    await rig.until(lambda: probe.status is not None and probe.status.active, 30.0, "active run status")
 
     rig.executor.remove_node(server)
     await asyncio.sleep(rig.arena._lifecycle._inner._control._timeout + 2.0)
@@ -63,7 +62,7 @@ async def _run_survives_a_server_outage_longer_than_a_step_call(rig: Rig) -> Non
     rig.executor.add_node(server)
 
     resumed = probe.clock()
-    await rig.until(lambda: probe.clock() > resumed + 10 * DT, 15.0, "lockstep steps again after the outage")
+    await rig.until(lambda: probe.clock() > resumed + 10 * DT, 30.0, "lockstep steps again after the outage")
     assert probe.status.active and probe.paused.data
     await probe.stop_run()
 

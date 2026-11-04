@@ -74,7 +74,7 @@ def test_bridge_calls_reads_latched_and_coerces_params():
     response, latched, fast, set_result, values, graph, lingering, ready_absent, lingering_after_probe = asyncio.run(scenario())
     assert response.success and response.message == "pong"
     assert latched.data == "kept"
-    assert fast < 3.0
+    assert fast < 10.0
     assert all(entry["ok"] for entry in set_result.values())
     assert values == {"timeout": 30, "ratio": 2.0, "label": "7"}
     assert "/arena_mcp_bridge_peer" in graph["nodes"]

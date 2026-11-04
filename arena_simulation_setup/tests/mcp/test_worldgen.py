@@ -32,14 +32,9 @@ SMALL_CONFIGS = {
 
 
 @pytest.fixture
-def writable_root(tmp_path):
-    previous = os.environ.get("ARENA_ASSETS_DIR_LOCAL")
-    os.environ["ARENA_ASSETS_DIR_LOCAL"] = str(tmp_path)
-    yield tmp_path
-    if previous is None:
-        del os.environ["ARENA_ASSETS_DIR_LOCAL"]
-    else:
-        os.environ["ARENA_ASSETS_DIR_LOCAL"] = previous
+def writable_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARENA_ASSETS_DIR_LOCAL", str(tmp_path))
+    return tmp_path
 
 
 def _call(name, arguments):
@@ -257,11 +252,13 @@ asyncio.run(main())
 def test_queue_sends_the_world_and_its_binding_to_the_env_queue_service(tmp_path):
     pytest.importorskip("rclpy")
     pytest.importorskip("arena_runtime_msgs")
-    env = {**os.environ, "ROS_DOMAIN_ID": str(90 + os.getpid() % 10), "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST", "ARENA_DATA_DIR": str(tmp_path)}
+    env = {**os.environ, "ROS_DOMAIN_ID": str(int(os.environ["ROS_DOMAIN_ID"]) + 100 if os.environ.get("ROS_DOMAIN_ID") else 90 + os.getpid() % 10), "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST", "ARENA_DATA_DIR": str(tmp_path)}
     done = subprocess.run([sys.executable, "-c", QUEUE_PEER], capture_output=True, text=True, timeout=120, env=env, check=False)
     assert done.returncode == 0, done.stderr[-3000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     if "busy" in out:
+        if os.environ.get("CI"):
+            pytest.fail(f"ROS domain {env['ROS_DOMAIN_ID']} is in use by {out['busy']}")
         pytest.skip(f"ROS domain {env['ROS_DOMAIN_ID']} is in use by {out['busy']}")
     assert out["result"]["queued"] == "gen_barn"
     assert out["result"]["service"] == "/worldgen_test/env_7/arena_env_node/config/queue_episode"

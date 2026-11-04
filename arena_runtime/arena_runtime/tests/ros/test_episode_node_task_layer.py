@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
 pytest.importorskip("rclpy")
 pytest.importorskip("arena_runtime_msgs.msg")
+
+
+async def _settled_ticks(task: object, window: float = 1.0) -> int:
+    deadline = time.monotonic() + 20.0
+    count = len(task.ticks)
+    stable_since = time.monotonic()
+    while time.monotonic() - stable_since < window:
+        assert time.monotonic() < deadline, "the tick count never settled"
+        await asyncio.sleep(0.05)
+        if len(task.ticks) != count:
+            count = len(task.ticks)
+            stable_since = time.monotonic()
+    return count
+
+
+async def _ticks_beyond(task: object, count: int, extra: int) -> None:
+    deadline = time.monotonic() + 30.0
+    while len(task.ticks) < count + extra:
+        assert time.monotonic() < deadline, f"only {len(task.ticks) - count} of {extra} further ticks"
+        await asyncio.sleep(0.05)
 
 
 async def _on_running_env(body: object) -> None:
@@ -113,7 +134,7 @@ def test_the_task_is_ticked_only_while_an_episode_runs_with_the_phases_that_ende
             if env._episodes.current.outcome_state != RunEpisode.Result.RUNNING:
                 break
             await asyncio.sleep(0.1)
-        settled = len(fake_task_layer.task.ticks)
+        settled = await _settled_ticks(fake_task_layer.task)
         await asyncio.sleep(1.0)
         assert len(fake_task_layer.task.ticks) == settled
 
@@ -131,8 +152,7 @@ def test_the_task_is_not_ticked_while_the_reset_lock_is_held(rclpy_context: obje
                 break
             await asyncio.sleep(0.1)
         async with env._reset_lock:
-            await asyncio.sleep(0.2)
-            settled = len(fake_task_layer.task.ticks)
+            settled = await _settled_ticks(fake_task_layer.task, 0.5)
             await asyncio.sleep(1.0)
             assert len(fake_task_layer.task.ticks) == settled
 
@@ -151,7 +171,7 @@ def test_robots_assigned_from_outside_reach_the_next_tick_once_and_a_reset_clear
                 break
             await asyncio.sleep(0.1)
         assert env._assigned == set()
-        await asyncio.sleep(0.5)
+        await _ticks_beyond(fake_task_layer.task, len(fake_task_layer.task.ticks), 5)
         assert all("ghost" not in assigned for _, assigned in fake_task_layer.task.ticks)
 
         env._assigned.add("ghost")

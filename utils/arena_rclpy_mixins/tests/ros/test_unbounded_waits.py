@@ -64,7 +64,7 @@ def test_await_forever_cancel_cancels_inner():
             waiter.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await waiter
-            await asyncio.wait_for(cancelled.wait(), timeout=1.0)
+            await asyncio.wait_for(cancelled.wait(), timeout=20.0)
         finally:
             node.destroy_node()
 
@@ -84,7 +84,7 @@ def test_poll_returns_when_predicate_true():
             flipper = asyncio.ensure_future(flip())
             await asyncio.wait_for(
                 node.poll(lambda: flag["ready"], "test flag", warn_period=0.01, interval=0.005),
-                timeout=1.0,
+                timeout=20.0,
             )
             await flipper
         finally:

@@ -115,7 +115,7 @@ def test_the_queue_preview_published_before_an_episode_equals_the_record_it_buil
     async def body(env: object, rig: object) -> None:
         queue = _watch_queue(env, rig)
         await asyncio.wait_for(env._run_episode(), TIMEOUT)
-        await asyncio.sleep(0.5)
+        await _until(lambda: queue and queue[-1].episode_id == env._episodes.current.episode_id + 1 and queue[-1].seed == 5, "the preview of the next episode")
         preview = queue[-1]
 
         await asyncio.wait_for(env._run_episode(), TIMEOUT)

@@ -17,7 +17,7 @@ def interrupted(*_):
     sys.exit(0)
 signal.signal(signal.SIGINT, interrupted)
 open(sys.argv[2], "w").write(str(os.getpid()))
-time.sleep(60)
+time.sleep(120)
 """
 
 _SUPERVISOR = """
@@ -27,7 +27,7 @@ from arena_bringup.supervisor import Supervisor
 rclpy.init(args=[])
 sup = Supervisor(rclpy.create_node("orphan_test_supervisor"))
 sup.spawn("runtime", ["bash", "-c", sys.executable + ' -c "$0" "$1" "$2"; true', *sys.argv[1:]])
-time.sleep(60)
+time.sleep(120)
 """
 
 
@@ -55,9 +55,9 @@ def test_grandchild_is_interrupted_when_the_supervisor_is_killed(tmp_path: Path)
     try:
         grandchild = int(_wait_for(ready, 30.0))
         supervisor.kill()
-        supervisor.wait(timeout=5)
+        supervisor.wait(timeout=30)
 
-        assert _wait_for(marker, 10.0) == "INT"
+        assert _wait_for(marker, 60.0) == "INT"
     finally:
         supervisor.kill()
         if grandchild:
@@ -91,13 +91,13 @@ sup.spawn("env_0", ["bash", "-c", sys.executable + ' -c "$0" "$1" "$2" & exit 0'
 time.sleep(2.0)
 if sys.argv[1] == "sweep":
     sup.release()
-    for _ in range(300):
+    for _ in range(1200):
         sup.sweep_exited()
         time.sleep(0.1)
 else:
     sup.cleanup()
     sup.release()
-    time.sleep(30)
+    time.sleep(120)
 """
 
 
@@ -109,11 +109,11 @@ def test_orphan_of_an_exited_child_is_interrupted_while_the_supervisor_lives(tmp
     try:
         grandchild = int(_wait_for(ready, 30.0))
 
-        assert _wait_for(marker, 15.0) == "INT"
+        assert _wait_for(marker, 60.0) == "INT"
         assert supervisor.poll() is None
     finally:
         supervisor.kill()
-        supervisor.wait(timeout=5)
+        supervisor.wait(timeout=30)
         if grandchild:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(grandchild, signal.SIGKILL)

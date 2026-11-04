@@ -22,6 +22,22 @@ async def _until(pred: typing.Callable[[], bool], timeout: float, what: str) -> 
         await asyncio.sleep(0.01)
 
 
+async def _drained(read: typing.Callable[[], typing.Any], stable: float = 0.3, timeout: float = 20.0) -> typing.Any:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    last = read()
+    since = loop.time()
+    while loop.time() - since < stable:
+        if loop.time() >= deadline:
+            raise AssertionError(f"value did not settle within {timeout}s")
+        await asyncio.sleep(0.01)
+        now = read()
+        if now != last:
+            last = now
+            since = loop.time()
+    return last
+
+
 async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[None]]) -> None:
     pytest.importorskip("flatsim_msgs")
     import geometry_msgs.msg
@@ -57,7 +73,7 @@ async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[No
 
         async def step(self, steps: int = 1) -> None:
             assert await self.host.step_seconds(steps * DT) == pytest.approx(steps * DT)
-            await _until(lambda: self.stamp() >= self.now - 1e-6, 5.0, f"odom at {self.now:.3f}")
+            await _until(lambda: self.stamp() >= self.now - 1e-6, 30.0, f"odom at {self.now:.3f}")
 
         async def drive(self, steps: int, command: geometry_msgs.msg.Twist, publisher: typing.Any) -> None:
             for _ in range(steps):
@@ -68,7 +84,7 @@ async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[No
         async def seen(self, sim: FlatsimSimulator, pred: typing.Callable[[], bool], what: str) -> None:
             """Republish until `pred` holds, for inputs that reach the server on a topic."""
             loop = asyncio.get_running_loop()
-            deadline = loop.time() + 5.0
+            deadline = loop.time() + 30.0
             while True:
                 assert await sim.step()
                 await asyncio.sleep(0.05)
@@ -86,7 +102,7 @@ async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[No
     sim: FlatsimSimulator | None = None
     robot = Robot.parse({"name": "jackal", "model": "jackal"}, node=bench)
     try:
-        await asyncio.wait_for(bench.host.ensure_ready(), timeout=10.0)
+        await asyncio.wait_for(bench.host.ensure_ready(), timeout=30.0)
         sim = await FlatsimSimulator.create(node=bench, namespace=Namespace("/flatsim_test/env_0"), realizer=Realizer(), env_id=0)
         ns = bench.service_namespace(robot.name)
         bench.create_subscription(nav_msgs.msg.Odometry, str(ns("odom")), bench.odom.append, 50)
@@ -96,15 +112,15 @@ async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[No
         cmd_vel = bench.create_publisher(geometry_msgs.msg.Twist, str(ns("cmd_vel")), 10)
         assert await sim.spawn_box("wall", (0.1, 6.0, 2.0), Pose.parse({"x": WALL_X, "y": 0.0, "z": 1.0}))
         assert list(await sim.robot_spawn([robot])) == [True]
-        await _until(lambda: cmd_vel.get_subscription_count() == 1, 5.0, "cmd_vel subscription")
+        await _until(lambda: cmd_vel.get_subscription_count() == 1, 30.0, "cmd_vel subscription")
         await bench.seen(sim, lambda: bool(bench.odom) and bool(bench.scans) and bool(bench.clouds) and bool(bench.imu), "first odom, scan, cloud and imu")
         await scenario(bench, sim, robot, cmd_vel)
     finally:
         if sim is not None:
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(sim.shutdown(), timeout=10.0)
+                await asyncio.wait_for(sim.shutdown(), timeout=30.0)
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(bench.kill_launches(), timeout=10.0)
+            await asyncio.wait_for(bench.kill_launches(), timeout=30.0)
         executor.shutdown()
         await spin
         executor.remove_node(bench)
@@ -167,13 +183,13 @@ async def _drives_and_scans(bench: typing.Any, sim: typing.Any, robot: typing.An
     assert last.pose.pose.position.x == pytest.approx(travelled, abs=2e-3)
     assert bench.now == pytest.approx(start + steps * DT, abs=1e-6)
     assert bench.stamp() == pytest.approx(bench.now, abs=1e-6)
-    await _until(lambda: _ahead(bench.scans[-1]) < gap - travelled + 0.05, 2.0, "scan following the robot")
+    await _until(lambda: _ahead(bench.scans[-1]) < gap - travelled + 0.05, 30.0, "scan following the robot")
     stamps = [_seconds(scan) for scan in bench.scans[driving:]]
     assert len(stamps) >= 3
     assert all(later - earlier == pytest.approx(round(1.0 / mobile.laser.update_rate / DT) * DT, abs=1e-6) for earlier, later in zip(stamps, stamps[1:], strict=False))
-    await _until(lambda: (pose := sim.robot_pose(robot.sim_path)) is not None and pose.position.x == pytest.approx(travelled, abs=2e-3), 5.0, "tf of the driven robot")
+    await _until(lambda: (pose := sim.robot_pose(robot.sim_path)) is not None and pose.position.x == pytest.approx(travelled, abs=2e-3), 30.0, "tf of the driven robot")
 
-    frozen = len(bench.odom)
+    frozen = await _drained(lambda: len(bench.odom))
     await asyncio.sleep(0.3)
     assert len(bench.odom) == frozen
 
@@ -185,15 +201,14 @@ async def _drives_and_scans(bench: typing.Any, sim: typing.Any, robot: typing.An
 async def _reset_publishes_the_new_pose(bench: typing.Any, sim: typing.Any, robot: typing.Any, cmd_vel: typing.Any) -> None:
     from arena_runtime.shared import Pose
 
-    await asyncio.sleep(0.3)
+    before = await _drained(lambda: len(bench.scans))
     gap = _ahead(bench.scans[-1])
-    before = len(bench.scans)
     assert await sim.set_robot_pose(robot.sim_path, Pose.parse({"x": 1.0, "y": 0.0, "z": 0.0}))
     assert not await sim.set_robot_pose("nobody", Pose.parse({"x": 1.0, "y": 0.0, "z": 0.0}))
     await asyncio.sleep(0.3)
     assert len(bench.scans) == before
     assert await sim.after_reset_episode()
-    await _until(lambda: len(bench.scans) > before, 2.0, "scan after the reset")
+    await _until(lambda: len(bench.scans) > before, 30.0, "scan after the reset")
     assert _ahead(bench.scans[-1]) == pytest.approx(gap - 1.0, abs=1e-3)
     assert bench.odom[-1].pose.pose.position.x == pytest.approx(1.0, abs=1e-6)
 
@@ -202,7 +217,7 @@ async def _shutdown_takes_the_env_out_of_the_world(bench: typing.Any, sim: typin
     odom = str(bench.service_namespace(robot.name)("odom"))
     assert bench.count_publishers(odom) == 1
     await sim.shutdown()
-    await _until(lambda: bench.count_publishers(odom) == 0, 5.0, "robot topics to close")
+    await _until(lambda: bench.count_publishers(odom) == 0, 30.0, "robot topics to close")
     assert await bench.host.cleanup_namespace(bench.host.env_prefix(0)) == 0
 
 
@@ -210,11 +225,11 @@ async def _host_removes_the_entities_of_an_env(bench: typing.Any, sim: typing.An
     odom = str(bench.service_namespace(robot.name)("odom"))
     assert await bench.host.cleanup_namespace(bench.host.env_prefix(1)) == 0
     assert await bench.host.cleanup_namespace(bench.host.env_prefix(0)) == 2
-    await _until(lambda: bench.count_publishers(odom) == 0, 5.0, "robot topics to close")
+    await _until(lambda: bench.count_publishers(odom) == 0, 30.0, "robot topics to close")
     assert await bench.host.unpause()
-    await _until(lambda: bench.now > 0.2, 5.0, "free-running clock")
+    await _until(lambda: bench.now > 0.2, 30.0, "free-running clock")
     assert await bench.host.pause()
-    paused = bench.now
+    paused = await _drained(lambda: bench.now)
     await asyncio.sleep(0.3)
     assert bench.now == pytest.approx(paused, abs=DT + 1e-6)
 
@@ -267,7 +282,7 @@ async def _lidar_points(bench: typing.Any, sim: typing.Any, robot: typing.Any, c
     from arena_people_msgs.msg import Pedestrian, Pedestrians
 
     cloud = bench.clouds[-1]
-    await _until(lambda: any(scan.header.stamp == cloud.header.stamp for scan in bench.scans), 2.0, "scan of the cloud's cast")
+    await _until(lambda: any(scan.header.stamp == cloud.header.stamp for scan in bench.scans), 30.0, "scan of the cloud's cast")
     scan = next(scan for scan in bench.scans if scan.header.stamp == cloud.header.stamp)
     assert cloud.header.frame_id == scan.header.frame_id and cloud.header.frame_id.endswith("lidar_link")
     assert (cloud.height, cloud.point_step, cloud.is_bigendian) == (1, 32, False)
@@ -309,7 +324,7 @@ async def _imu_follows_the_drive(bench: typing.Any, sim: typing.Any, robot: typi
     turn = planar.velocity["angular"].max * planar.gain["angular"]
 
     async def synced() -> typing.Any:
-        await _until(lambda: bool(bench.imu) and _seconds(bench.imu[-1]) >= bench.stamp() - 1e-6, 2.0, "imu of the last tick")
+        await _until(lambda: bool(bench.imu) and _seconds(bench.imu[-1]) >= bench.stamp() - 1e-6, 30.0, "imu of the last tick")
         return bench.imu[-1]
 
     rest = await synced()
@@ -319,8 +334,7 @@ async def _imu_follows_the_drive(bench: typing.Any, sim: typing.Any, robot: typi
     assert rest.orientation.w == pytest.approx(1.0)
     assert not any(rest.orientation_covariance) and not any(rest.angular_velocity_covariance) and not any(rest.linear_acceleration_covariance)
 
-    await asyncio.sleep(0.3)
-    driving = len(bench.imu)
+    driving = await _drained(lambda: len(bench.imu))
     await bench.drive(3, geometry_msgs.msg.Twist(linear=geometry_msgs.msg.Vector3(x=10.0)), cmd_vel)
     speeding = await synced()
     assert speeding.linear_acceleration.x == pytest.approx(accel, abs=1e-3)

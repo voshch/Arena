@@ -97,6 +97,7 @@ import asyncio
 import importlib.abc
 import json
 import sys
+import time
 
 import rclpy
 import rclpy.parameter
@@ -121,6 +122,13 @@ from arena_runtime.testing.env_host import arena_on_dummy
 
 def summary(msg):
     return [msg.episode_id, msg.world, msg.seed, decode_modes(msg.modes)]
+
+
+async def until(predicate):
+    deadline = time.monotonic() + 30.0
+    while not predicate():
+        assert time.monotonic() < deadline, "timed out waiting for the published records"
+        await asyncio.sleep(0.05)
 
 
 async def main():
@@ -149,10 +157,10 @@ async def main():
             out["namespaces"] = decode_namespaces(queried.namespaces)
             env.trigger_activate()
             results = [await asyncio.wait_for(env._run_episode(), 60.0)]
-            await asyncio.sleep(1.0)
+            await until(lambda: queue and queue[-1].episode_id == 2 and queue[-1].seed == 42)
             out["preview"] = summary(queue[-1])
             results.append(await asyncio.wait_for(env._run_episode(), 60.0))
-            await asyncio.sleep(1.0)
+            await until(lambda: {msg.episode_id for msg in episodes if msg.outcome_state == EpisodeRecord.RUNNING} >= {1, 2})
             out["states"] = [result.state for result in results]
             out["success"] = results[0].SUCCESS
             running = list({msg.episode_id: msg for msg in episodes if msg.outcome_state == EpisodeRecord.RUNNING}.values())

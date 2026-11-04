@@ -123,7 +123,8 @@ def test_anim_reader_ignores_groups_it_does_not_know(tmp_path: Path) -> None:
     assert AnimationView(directory).clip.angles.shape == (4, 1)
 
 
-def test_anim_needing_a_newer_reader_falls_back_to_the_npz(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_anim_needing_a_newer_reader_falls_back_to_the_npz(tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(logging.getLogger("arena_simulation_setup.tree.assets.Animation"), "propagate", True)
     directory = _npz_clip(tmp_path / "newer")
     write_anim(directory / "newer.anim", _anim_arrays(), {"loop": False}, requires=2)
     view = AnimationView(directory)
