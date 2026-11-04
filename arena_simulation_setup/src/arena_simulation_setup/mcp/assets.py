@@ -23,7 +23,8 @@ def _ready() -> str | None:
 domain = Domain(
     "assets",
     """Resolvable Arena data of every kind `arena asset` moves (assets_kinds lists them) through the same code the `arena asset` verbs run.
-    find and ls show what each resolver answers, pull fetches into the local cache, push publishes to the kind's bucket after the preflight that refuses unresolvable references.
+    find and ls show what each resolver answers, pull fetches into the local cache, push publishes to the kind's bucket after the preflight that refuses unresolvable references, rm removes a published asset.
+    browse walks the asset store by folders.
     import_sources lists the upstream datasets `arena asset import` converts from, import_items one dataset's importable items, and import converts chosen items into the imported root as a job.
     retarget_animation turns SMPL-X motion files into Animation clips as a job.
     rig_human writes rig/<name>.rig and rig/<name>.sdf into a human bundle from its skin.
@@ -90,12 +91,33 @@ def assets_push(
     force: Annotated[bool, Field(description="publish despite a failed preflight or a world that ships in the repo")] = False,
     only: Annotated[str | None, Field(description="publish only the files matching GLOB[,GLOB], the bucket's other files stay as they are")] = None,
 ) -> dict[str, object]:
-    """Publish one asset to its kind's bucket after the preflight `arena asset push` runs, which refuses references nobody else could resolve, with GCS_ACCESS_TOKEN set."""
+    """Publish one asset to its kind's bucket after the preflight `arena asset push` runs, which refuses references nobody else could resolve, with ARENA_ASSETS_TOKEN set."""
     done = cli.run("asset", "push", kind, *((name,) if name else ("--all",)), "--yes", *(("--bucket", bucket) if bucket else ()), *(("--force",) if force else ()), *(("--only", only) if only else ()), timeout=3600, check=False)
     if done["exit_code"] != 0:
         reason = (done["stderr"] + done["stdout"]).strip().splitlines()[-30:]
         raise ToolError(f"{kind} {name} was not published:\n" + "\n".join(reason), hint="bundle the missing references under the asset directory, or pass force=true")
     return {"kind": kind, "name": name, "published": done["stdout"].strip().splitlines()[-1:]}
+
+
+@domain.tool(read_only=True, open_world=True)
+def assets_browse(path: Annotated[str | None, Field(description="<bucket>[/<folder>...] on the asset store, none lists the sources and the kinds reading each")] = None) -> dict[str, object]:
+    """Folders (object count and bytes below each) and files directly inside one folder of the asset store, like `arena asset browse`."""
+    done = cli.run("asset", "browse", *((path,) if path else ()), "--json", check=False, clip=None)
+    if done["exit_code"] != 0:
+        reason = (done["stderr"] or done["stdout"]).strip().splitlines()[-1:]
+        raise ToolError(f"{path or 'the store'} could not be browsed: {' '.join(reason)}", hint="assets_browse without a path lists the sources")
+    listed = json.loads(done["stdout"])
+    return {"sources": listed} if path is None else typing.cast(dict[str, object], listed)
+
+
+@domain.tool(destructive=True, open_world=True)
+def assets_rm(kind: Kind, name: Annotated[str, Field(description="asset name")], bucket: Bucket = None) -> dict[str, object]:
+    """Remove every file of a published asset from its bucket and drop its cached copy, like `arena asset rm --yes`. The store allows it to the uploader or an admin, with ARENA_ASSETS_TOKEN set."""
+    done = cli.run("asset", "rm", kind, name, "--yes", *(("--bucket", bucket) if bucket else ()), timeout=600, check=False)
+    if done["exit_code"] != 0:
+        reason = (done["stderr"] + done["stdout"]).strip().splitlines()[-5:]
+        raise ToolError(f"{kind} {name} was not removed:\n" + "\n".join(reason), hint="assets_browse shows what the bucket holds")
+    return {"kind": kind, "name": name, "removed": done["stdout"].strip().splitlines()[-1:]}
 
 
 @domain.tool(read_only=True, open_world=True)

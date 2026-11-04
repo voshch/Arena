@@ -7,7 +7,6 @@ import subprocess
 import sys
 import textwrap
 import threading
-import time
 from collections.abc import Iterator
 
 import pytest
@@ -102,9 +101,13 @@ def test_with_an_endpoint_a_local_cache_is_expanded_into_the_request(endpoint: t
 
 
 class _Slow(http.server.BaseHTTPRequestHandler):
+    release = threading.Event()
+    responded = threading.Event()
+
     def do_POST(self) -> None:
         self.rfile.read(int(self.headers['Content-Length']))
-        time.sleep(3.0)
+        self.release.wait(60.0)
+        type(self).responded.set()
         self.send_response(500)
         self.end_headers()
 
@@ -114,26 +117,29 @@ class _Slow(http.server.BaseHTTPRequestHandler):
 
 def test_with_an_endpoint_the_genai_client_keeps_its_timeout() -> None:
     pytest.importorskip('google.genai')
+    _Slow.release = threading.Event()
+    _Slow.responded = threading.Event()
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), _Slow)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         out = _run(
             """
-            import time
             from arena_simulation_setup.utils.llm import genai
             client = genai.Client(http_options=genai.types.HttpOptions(timeout=300))
-            began = time.monotonic()
             try:
                 client.models.generate_content(model='m', contents='ping')
             except Exception as exc:
-                print(type(exc).__name__, time.monotonic() - began < 2.0)
+                print(type(exc).__name__)
             """,
             LLM_API_ENDPOINT=f'http://127.0.0.1:{server.server_address[1]}',
         )
+        answered = _Slow.responded.is_set()
     finally:
+        _Slow.release.set()
         server.shutdown()
         server.server_close()
-    assert out.endswith('True'), out
+    assert out, out
+    assert not answered, f"the client waited for the stalled server instead of timing out: {out}"
 
 
 def test_with_an_endpoint_the_openai_clients_keep_their_options() -> None:

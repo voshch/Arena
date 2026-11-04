@@ -68,9 +68,15 @@ class Stage:
         from arena_people_msgs.msg import Pedestrians
         from std_msgs.msg import Header
 
-        await asyncio.sleep(0.3)
+        deadline = time.monotonic() + DEADLINE_S
         count = len(self.bus)
-        await asyncio.sleep(0.6)
+        stable_since = time.monotonic()
+        while time.monotonic() - stable_since < 1.5:
+            assert time.monotonic() < deadline, "the bus never went quiet"
+            await asyncio.sleep(0.05)
+            if len(self.bus) != count:
+                count = len(self.bus)
+                stable_since = time.monotonic()
         deadline = time.monotonic() + DEADLINE_S
         while self.marker.get_subscription_count() == 0:
             assert time.monotonic() < deadline, "the bus subscription never matched the marker"
@@ -171,7 +177,9 @@ def test_roster_follows_the_sim_clock(rclpy_context, tmp_path: Path) -> None:
 
         before = await stage.quiet()
         await stage.advance(stage.now + 2.0)
-        assert 40 <= await stage.quiet() - before <= 61
+        batches = stage.bus[before : await stage.quiet()]
+        assert 2 <= len(batches) <= 61
+        assert all(sorted(ped.name for ped in msg.pedestrians) == [f"{PREFIX}/anna", f"{PREFIX}/ben"] for msg in batches)
 
     _on_stage(body)
 

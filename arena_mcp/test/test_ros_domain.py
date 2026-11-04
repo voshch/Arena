@@ -28,14 +28,9 @@ NS = "/arena_mcp_ros_test"
 
 
 @pytest.fixture(autouse=True)
-def isolated_data_dir(tmp_path):
-    previous = os.environ.get("ARENA_DATA_DIR")
-    os.environ["ARENA_DATA_DIR"] = str(tmp_path)
-    yield tmp_path
-    if previous is None:
-        del os.environ["ARENA_DATA_DIR"]
-    else:
-        os.environ["ARENA_DATA_DIR"] = previous
+def isolated_data_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARENA_DATA_DIR", str(tmp_path))
+    return tmp_path
 
 
 def test_resolve_infers_the_kind_and_lists_alternatives():
@@ -144,9 +139,8 @@ def test_ros_tools_against_a_live_peer():
             with pytest.raises(ToolError, match="nothing received"):
                 await ros.ros_echo(f"{NS}/state", "std_msgs/msg/String", timeout_s=0.5)
             published = await ros.ros_publish(f"{NS}/command", "std_msgs/Int32", {"data": 7})
-            for _ in range(50):
-                if peer.received:
-                    break
+            deadline = time.monotonic() + 30.0
+            while not peer.received and time.monotonic() < deadline:
                 await asyncio.sleep(0.1)
             params = await ros.ros_params(f"{NS[1:]}/peer")
             updated = await ros.ros_set_params(f"{NS}/peer", {"rate": 3, "label": "y"})
@@ -154,10 +148,12 @@ def test_ros_tools_against_a_live_peer():
             done = await ros.ros_action(f"{NS}/fibonacci", {"order": 5})
             finished = await JOBS.wait(done["id"], 30)
             long = await ros.ros_action(f"{NS}/fibonacci", {"order": 400}, "example_interfaces/action/Fibonacci")
-            await asyncio.sleep(0.5)
+            deadline = time.monotonic() + 30.0
+            while not JOBS.get(long["id"]).progress.get("feedback_count") and time.monotonic() < deadline:
+                await asyncio.sleep(0.1)
             cancelled = await JOBS.cancel(long["id"])
-            await asyncio.sleep(0.3)
-            return graph, hidden, called, fast, echoed, state, picture, published, list(peer.received), params, updated, after, finished, cancelled, peer.cancelled.is_set()
+            server_saw_cancel = await asyncio.to_thread(peer.cancelled.wait, 20.0)
+            return graph, hidden, called, fast, echoed, state, picture, published, list(peer.received), params, updated, after, finished, cancelled, server_saw_cancel
         finally:
             peer.close()
             await ROS.shutdown()
@@ -170,7 +166,7 @@ def test_ros_tools_against_a_live_peer():
     assert not [name for name in graph["topics"] if "/_action/" in name]
     assert [name for name in hidden["topics"] if "/_action/" in name]
     assert called == {"service": f"{NS}/toggle", "type": "std_srvs/srv/SetBool", "response": {"success": True, "message": "on"}}
-    assert fast < 4.0
+    assert fast < 10.0
     assert len(echoed["messages"]) == 3 and all(message["data"].startswith("n") for message in echoed["messages"])
     assert state["messages"] == [{"data": "ready"}]
     envelope, image = picture

@@ -82,7 +82,7 @@ async def _flush(backend, received: list[tuple[str, bool]]) -> None:
 
     marker = ContinuousAudioSourceState()
     marker.source.id = MARKER
-    deadline = time.monotonic() + 5.0
+    deadline = time.monotonic() + 20.0
     while not any(source == MARKER for source, _ in received):
         assert time.monotonic() < deadline, "the marker never got through"
         backend._source_publisher.publish(marker)
@@ -135,15 +135,15 @@ def test_a_removed_sounding_source_repeats_inactive(rclpy_context) -> None:
             lambda msg: received.append((msg.source.id, msg.source.active)),
             best_effort(CONTINUOUS_QOS_DEPTH),
         )
-        deadline = time.monotonic() + 5.0
-        while backend._source_publisher.get_subscription_count() == 0:
+        deadline = time.monotonic() + 20.0
+        while backend._source_publisher.get_subscription_count() == 0 or sub.get_publisher_count() == 0:
             assert time.monotonic() < deadline, "subscription never matched"
             await asyncio.sleep(0.02)
         backend.emit_sounds([_emission(), _emission(entity="env_0/alarm", active=False)])
         for _ in range(INACTIVE_REPEATS + 2):
             await asyncio.sleep(0.05)
             backend.emit_sounds([])
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 20.0
         while len(received) < 2 + INACTIVE_REPEATS:
             assert time.monotonic() < deadline, f"received so far: {received}"
             await asyncio.sleep(0.02)
@@ -171,8 +171,8 @@ def test_a_source_cleared_at_reset_does_not_retire(rclpy_context) -> None:
             lambda msg: received.append((msg.source.id, msg.source.active)),
             best_effort(CONTINUOUS_QOS_DEPTH),
         )
-        deadline = time.monotonic() + 5.0
-        while backend._source_publisher.get_subscription_count() == 0:
+        deadline = time.monotonic() + 20.0
+        while backend._source_publisher.get_subscription_count() == 0 or sub.get_publisher_count() == 0:
             assert time.monotonic() < deadline, "subscription never matched"
             await asyncio.sleep(0.02)
         backend.emit_sounds([_emission()])

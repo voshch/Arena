@@ -14,27 +14,34 @@ _NOISE = ("Traceback", "context is not valid", "context is invalid", "never retr
 
 
 def _env() -> dict[str, str]:
-    return {**os.environ, "ROS_DOMAIN_ID": os.environ.get("ROS_DOMAIN_ID", str(60 + os.getpid() % 30))}
+    suite = os.environ.get("ROS_DOMAIN_ID")
+    return {**os.environ, "ROS_DOMAIN_ID": str(60 + os.getpid() % 30) if suite is None else str(int(suite) + 100)}
 
 
 def _run(mode: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([sys.executable, str(_CHILD), mode], env=_env(), capture_output=True, text=True, timeout=30, check=False)
+    return subprocess.run([sys.executable, str(_CHILD), mode], env=_env(), capture_output=True, text=True, timeout=90, check=False)
+
+
+def _await_line(proc: subprocess.Popen[str], line: str, deadline: float) -> None:
+    assert proc.stdout is not None and proc.stderr is not None
+    while (read := proc.stdout.readline()).strip() != line:
+        if not read:
+            proc.wait(timeout=60)
+            raise AssertionError(f"child exited with {proc.returncode} before printing {line}: {proc.stderr.read()}")
+        assert time.monotonic() < deadline, f"child never printed {line}"
 
 
 def _exits_quietly(mode: str, sig: signal.Signals = signal.SIGINT, *, again_after: str | None = None) -> None:
     proc = subprocess.Popen([sys.executable, str(_CHILD), mode], env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None
     try:
-        deadline = time.monotonic() + 20.0
-        while proc.stdout.readline().strip() != "READY":
-            assert time.monotonic() < deadline, "child never became ready"
+        deadline = time.monotonic() + 60.0
+        _await_line(proc, "READY", deadline)
         time.sleep(0.5)
         proc.send_signal(sig)
         if again_after is not None:
-            while proc.stdout.readline().strip() != again_after:
-                assert time.monotonic() < deadline + 20.0, f"child never printed {again_after}"
+            _await_line(proc, again_after, deadline + 60.0)
             proc.send_signal(sig)
-        _, stderr = proc.communicate(timeout=20)
+        _, stderr = proc.communicate(timeout=60)
     finally:
         proc.kill()
     assert proc.returncode == 0, stderr
@@ -111,11 +118,11 @@ def test_spin_node_on_events_executor_sigterm_with_many_subscriptions_is_quiet()
 def test_async_main_reports_loop_stall():
     proc = subprocess.Popen([sys.executable, str(_CHILD), "async_stall"], env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.stdout is not None
-    deadline = time.monotonic() + 40.0
+    deadline = time.monotonic() + 90.0
     while proc.stdout.readline().strip() != "RESUMED":
         assert time.monotonic() < deadline, "child never resumed"
     proc.send_signal(signal.SIGINT)
-    _, stderr = proc.communicate(timeout=20)
+    _, stderr = proc.communicate(timeout=60)
     assert proc.returncode == 0, stderr
     assert "event loop stalled" in stderr, stderr
     assert "Thread 0x" in stderr, stderr
@@ -130,11 +137,11 @@ def test_async_main_exits_when_teardown_overruns_its_deadline():
     proc = subprocess.Popen([sys.executable, str(_CHILD), "async_swallowed_cancel"], env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.stdout is not None
     try:
-        deadline = time.monotonic() + 20.0
+        deadline = time.monotonic() + 60.0
         while proc.stdout.readline().strip() != "READY":
             assert time.monotonic() < deadline, "child never became ready"
         proc.send_signal(signal.SIGINT)
-        _, stderr = proc.communicate(timeout=20)
+        _, stderr = proc.communicate(timeout=60)
     finally:
         proc.kill()
     assert proc.returncode == 1, stderr

@@ -44,7 +44,7 @@ def test_async_service_awaits_own_client(kind: str):
         node = AsyncNode(f"bridge_service_{kind}")
         loop_thread = threading.get_ident()
         handler_threads: list[int] = []
-        inner = node.create_client_wrapper(Trigger, f"bridge_inner_{kind}", timeout=2.0)
+        inner = node.create_client_wrapper(Trigger, f"bridge_inner_{kind}", timeout=30.0)
 
         def _inner(request: Trigger.Request, response: Trigger.Response) -> Trigger.Response:
             response.success = True
@@ -61,12 +61,12 @@ def test_async_service_awaits_own_client(kind: str):
         callback_group = rclpy.callback_groups.ReentrantCallbackGroup()
         node.create_service(Trigger, f"bridge_inner_{kind}", _inner, callback_group=callback_group)
         node.create_service(Trigger, f"bridge_outer_{kind}", _outer, callback_group=callback_group)
-        outer = node.create_client_wrapper(Trigger, f"bridge_outer_{kind}", timeout=5.0)
+        outer = node.create_client_wrapper(Trigger, f"bridge_outer_{kind}", timeout=30.0)
         executor = _executor(kind)
         executor.add_node(node)
         thread = _spin(executor)
         try:
-            assert await outer.ensure(timeout_sec=5.0)
+            assert await outer.ensure(timeout_sec=30.0)
             result = await outer.call_timeout(Trigger.Request())
             assert result is not None
             assert result.success, result.message
@@ -74,7 +74,7 @@ def test_async_service_awaits_own_client(kind: str):
             assert handler_threads == [loop_thread]
         finally:
             executor.shutdown()
-            thread.join(timeout=2.0)
+            thread.join(timeout=30.0)
             node.destroy_node()
 
     asyncio.run(main())
@@ -107,12 +107,12 @@ def test_async_subscription_runs_on_loop_in_order(kind: str):
                 await asyncio.sleep(0.01)
             for i in range(total):
                 pub.publish(String(data=str(i)))
-            await asyncio.wait_for(done.wait(), timeout=5.0)
+            await asyncio.wait_for(done.wait(), timeout=30.0)
             assert [data for data, _ in received] == [str(i) for i in range(total)]
             assert {ident for _, ident in received} == {loop_thread}
         finally:
             executor.shutdown()
-            thread.join(timeout=2.0)
+            thread.join(timeout=30.0)
             node.destroy_node()
 
     asyncio.run(main())
@@ -143,12 +143,12 @@ def test_async_service_error_stops_events_executor_spin():
         thread = threading.Thread(target=_spin_catching, daemon=True)
         thread.start()
         try:
-            assert await client.ensure(timeout_sec=5.0)
+            assert await client.ensure(timeout_sec=30.0)
             assert await client.call_timeout(Trigger.Request()) is None
             assert [str(e) for e in errors] == ["handler failed"]
         finally:
             executor.shutdown()
-            thread.join(timeout=2.0)
+            thread.join(timeout=30.0)
             node.destroy_node()
 
     asyncio.run(main())
@@ -162,7 +162,7 @@ def test_async_action_execute_awaits_loop_on_events_executor():
         from example_interfaces.action import Fibonacci
 
         node = AsyncNode("bridge_action")
-        inner = node.create_client_wrapper(Trigger, "bridge_action_inner", timeout=2.0)
+        inner = node.create_client_wrapper(Trigger, "bridge_action_inner", timeout=30.0)
 
         def _inner(request: Trigger.Request, response: Trigger.Response) -> Trigger.Response:
             response.success = True
@@ -179,18 +179,18 @@ def test_async_action_execute_awaits_loop_on_events_executor():
 
         node.create_service(Trigger, "bridge_action_inner", _inner)
         server = rclpy.action.ActionServer(node, Fibonacci, "bridge_action", execute_callback=_execute)
-        client = node.create_action_client_wrapper(Fibonacci, "bridge_action", timeout=5.0)
+        client = node.create_action_client_wrapper(Fibonacci, "bridge_action", timeout=30.0)
         executor = create_executor()
         executor.add_node(node)
         thread = _spin(executor)
         try:
-            assert await client.ensure(timeout_sec=5.0)
-            response = await client.send_and_await(Fibonacci.Goal(order=7), timeout_sec=5.0)
+            assert await client.ensure(timeout_sec=30.0)
+            response = await client.send_and_await(Fibonacci.Goal(order=7), timeout_sec=30.0)
             assert response is not None
             assert list(response.result.sequence) == [7, 1]
         finally:
             executor.shutdown()
-            thread.join(timeout=2.0)
+            thread.join(timeout=30.0)
             server.destroy()
             node.destroy_node()
 

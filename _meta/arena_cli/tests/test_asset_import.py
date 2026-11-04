@@ -155,7 +155,10 @@ def test_cached_list_expiry(assets_dir) -> None:
     assert listed_items(os.path.join(assets_dir, "missing.json"), now) == ([], True)
 
 
-def test_listing_path_follows_the_importer_cache_layout(assets_dir) -> None:
+def test_listing_path_follows_the_importer_cache_layout(assets_dir, monkeypatch) -> None:
     assert import_listing("world", "barn") == os.path.join(assets_dir, ".import", "barn", "items.world.json")
     del os.environ["ARENA_ASSETS_DIR"]
+    monkeypatch.setenv("ARENA_DATA_DIR", assets_dir)
+    assert import_listing("world", "barn") == os.path.join(assets_dir, "assets", ".import", "barn", "items.world.json")
+    monkeypatch.delenv("ARENA_DATA_DIR")
     assert import_listing("world", "barn") is None

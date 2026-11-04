@@ -18,6 +18,9 @@ def _ros_gate():
     pytest.importorskip("arena_runtime_msgs.srv")
 
 
+MARKER_KIND = "marker_kind"
+
+
 def _heard_state(listener_id: str, sound_type: str, audible: bool, *, source_id: str = "environment:alarm_0", active: bool = True):
     from arena_auditory_msgs.msg import ContinuousHeardSoundState
 
@@ -72,12 +75,11 @@ def _stimuli(backend: str, drive, expected: int) -> list[tuple[int, str, float]]
             human = _Recording(node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
             await drive(node, human)
 
-            deadline = time.monotonic() + 5.0
-            while len(human.calls) < expected:
+            deadline = time.monotonic() + 20.0
+            while len([call for call in human.calls if call[1] != MARKER_KIND]) < expected:
                 assert time.monotonic() < deadline, f"calls so far: {human.calls}"
                 await asyncio.sleep(0.02)
-            await asyncio.sleep(0.2)
-            return list(human.calls)
+            return [call for call in human.calls if call[1] != MARKER_KIND]
         finally:
             stop.set()
             thread.join(timeout=1.0)
@@ -87,7 +89,7 @@ def _stimuli(backend: str, drive, expected: int) -> list[tuple[int, str, float]]
 
 
 def _published(messages: list):
-    async def drive(node, _human) -> None:
+    async def drive(node, human) -> None:
         from arena_auditory_msgs.msg import ContinuousHeardSoundState
         from arena_rclpy_mixins.qos import best_effort
         from arena_runtime.acoustics.arena.arena import CONTINUOUS_QOS_DEPTH
@@ -95,12 +97,18 @@ def _published(messages: list):
         from arena_auditory.api import CONTINUOUS_HEARD_SOUNDS
 
         publisher = node.create_publisher(ContinuousHeardSoundState, str(node.service_namespace(CONTINUOUS_HEARD_SOUNDS)), best_effort(CONTINUOUS_QOS_DEPTH))
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 20.0
         while publisher.get_subscription_count() == 0:
             assert time.monotonic() < deadline, "subscription never matched"
             await asyncio.sleep(0.02)
         for msg in messages:
             publisher.publish(msg)
+            await asyncio.sleep(0.1)
+        marker = _heard_state("agent:99", MARKER_KIND, True)
+        deadline = time.monotonic() + 20.0
+        while not any(call[1] == MARKER_KIND for call in human.calls):
+            assert time.monotonic() < deadline, "the marker never got through"
+            publisher.publish(marker)
             await asyncio.sleep(0.1)
 
     return drive

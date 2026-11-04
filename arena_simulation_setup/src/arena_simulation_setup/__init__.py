@@ -3,7 +3,8 @@ from pathlib import Path
 
 ASS_DIR: Path
 AB_DIR: Path
-ARENA_ASSETS_DIR: Path = Path(os.environ.get('ARENA_ASSETS_DIR', os.path.join(os.getcwd(), '_assets')))
+NO_ASSETS_DIR: Path = Path('/dev/null/arena-assets')
+ARENA_ASSETS_DIR: Path = Path(os.environ['ARENA_ASSETS_DIR']) if os.environ.get('ARENA_ASSETS_DIR') else Path(os.environ['ARENA_DATA_DIR']) / 'assets' if os.environ.get('ARENA_DATA_DIR') else NO_ASSETS_DIR
 DOMAIN_DEFAULT: str = 'Common'
 
 

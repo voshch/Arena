@@ -47,7 +47,7 @@ jobs:
       UV_CACHE_DIR: /github/home/.cache/uv
       UV_LINK_MODE: copy
       PYTEST_ADDOPTS: ${{ github.event_name == 'schedule' && '-m network' || '' }}
-      ARENA_ASSETS_ENDPOINT: ${{ github.event_name != 'schedule' && 'http://127.0.0.1:9' || '' }}
+      ARENA_ASSETS_URL: ${{ github.event_name != 'schedule' && 'http://127.0.0.1:9' || '' }}
     steps:
       - run: type -P ccache curl git vcs zstd > /dev/null || { apt-get update && apt-get install -y --no-install-recommends ca-certificates ccache curl git python3-vcstool zstd; }
       - uses: voshch/ci/trial-merge@v1
@@ -78,7 +78,7 @@ jobs:
           uv venv --system-site-packages /opt/venv
           export VIRTUAL_ENV=/opt/venv
           members=$(python3 -c 'import re, tomllib, pathlib; norm = lambda n: re.sub(r"[-_.]+", "-", n).lower(); ws = pathlib.Path(".uv-workspace"); tested = {norm(n) for n in pathlib.Path("tested.txt").read_text().split()}; [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if norm(n) in tested]')
-          uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $members)
+          .github/ci/sync-python.sh $(printf -- '--package %s ' arena-rosnav $members)
       - uses: actions/cache@v4
         with:
           path: /github/home/.cache/ccache

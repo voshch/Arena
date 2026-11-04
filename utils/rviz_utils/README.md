@@ -9,15 +9,18 @@ ROS4HRI visualization bridge and rviz config utilities for Arena.
 Subscribes `<env_ns>/arena_peds` and projects each pedestrian into the
 REP-155 `<env_ns>/humans/` namespace: tracked-id lists, per-person engagement,
 per-body `joint_states`, URDF latched on `bodies/<id>/urdf`, and TF
-`body_<id>`.  Drives a pool of `robot_state_publisher` subprocesses
-([`hri/body_pool.py`](rviz_utils/hri/body_pool.py)) so `hri_rviz/Skeletons3D`
-can render animated skeletons.
+`body_<id>`. [`hri/body_frames.py`](rviz_utils/hri/body_frames.py) computes the
+joint frames in-process by the rules of `robot_state_publisher` (moving joints per
+body at most every 50 ms of the tick's stamp, fixed joints latched on `/tf_static`), so
+`hri_rviz/Skeletons3D` can render animated skeletons without a process or DDS
+participant per body. Only the first `max_bodies` (32) of an env get joint frames, the
+others keep their URDF, root frame and face.
 
 Body and joint frames are published on `<env_ns>/humans/tf`. Nodes that
 listen only to the env's `/tf` never receive them. `hri_producer` subscribes
 to `arena_peds` only while `humans/tf` or `humans/faces/tracked` has a subscriber
 (checked once per second), so an unwatched env costs it no roster work and no
-`joint_states` traffic. A consumer that needs pedestrians in the world tree subscribes
+joint frames. `bodies/<id>/joint_states` is sent only while it has a subscriber. A consumer that needs pedestrians in the world tree subscribes
 both: `rviz_config` relays the env `/tf` and `<env_ns>/humans/tf` into
 `<env_ns>/viewer/tf` for rviz, and the evaluation recorder merges both into
 `/tf` in the bag.

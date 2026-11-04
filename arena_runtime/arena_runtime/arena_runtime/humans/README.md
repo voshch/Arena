@@ -201,7 +201,7 @@ humansim's clip sets (`ClipSet.pair`) place the pair with.
 
 Adding a clip: write it with `write_clip(Path("arena_simulation_setup/assets/Common/Animation/<name>"), frames, meta)`
 (frames are the players' `{"t", "angles", "root_xy_yaw", "animation_state"}` dicts), check it with
-`arena asset find animation <name>`, then publish it with `arena asset push animation <name>` (needs `GCS_ACCESS_TOKEN`).
+`arena asset find animation <name>`, then publish it with `arena asset push animation <name>` (needs `ARENA_ASSETS_TOKEN`).
 A clip from CMU mocap (the cgspeed BVH conversion, the `cmu_mb` rig of the human assets) comes from
 [`bvh.py`](bvh.py): `python3 -m arena_runtime.humans.bvh 22_14.bvh --skin <human>/meshes/<human>.dae -o
 .../Animation/squat --from 0.72 --to 1.75` turns each bone's rotation into its bind frame, read off any human asset's
@@ -223,7 +223,7 @@ env level (`<env_ns>/`) and shared by every backend:
 | --- | --- | --- | --- |
 | `arena_peds` | each backend (`publish_arena_peds`) | reliable, volatile | Pedestrian state feed (positions/velocities/`body`). `joint_state` carries only driven joints, the bare semantic joint names filled by `GaitGenerator` unless the backend overrides it (non-empty = upstream wins). |
 | `humans/bodies/tracked`, `humans/persons/*`, `humans/bodies/<id>/joint_states` | `hri_producer` node | per REP-155 | **Canonical** ROS4HRI projection of `arena_peds`: id lists, per-person engagement, per-body joint states, per-body URDF on param `human_description_<id>`. |
-| `humans/tf` | `hri_producer` node and its `robot_state_publisher` pool | reliable, volatile | TF `body_<id>` and the joint frames, kept off the env `/tf` and published only while subscribed. |
+| `humans/tf` | `hri_producer` node | reliable, volatile | TF `body_<id>` and the joint frames, kept off the env `/tf` and published only while subscribed. |
 | `pedestrian_markers/extra` | base class (`publish_markers`) | best-effort, volatile | Backend-internal debug overlay (e.g. arena_humansim forwards its module markers and retargets `arena_humansim_viz_node` here with the env offset). Off by default. The arena_humansim adapter subscribes to the engine's `viz` only while this topic has a subscriber, so an unwatched env costs the engine no marker work. |
 | `pedestrian_markers/static` | base class (`publish_static_markers`) | reliable, transient-local, depth 1 | Latched static scene as one combined topic. |
 | `pedestrian_markers/static_*` | adapter | reliable, transient-local, depth 1 | Latched static scene split per bucket (`/static_walls`, `/static_objects`, ...). |
@@ -231,7 +231,7 @@ env level (`<env_ns>/`) and shared by every backend:
 **Rendering contract.** The canonical human view is an animated articulated skeleton, produced by the
 [`hri_producer`](../../../../utils/rviz_utils/rviz_utils/scripts/hri_producer.py) node, which subscribes
 `arena_peds` and projects it into the ROS4HRI (REP-155) `humans/` namespace: id lists, per-person
-engagement, and a per-body `robot_state_publisher` (pooled) driven from `humans/bodies/<id>/joint_states`
+engagement, and the joint frames of each body computed in the node from the same joint positions it sends on `humans/bodies/<id>/joint_states`,
 against a URDF built from the body rig template (`rviz_utils.hri.urdf`). The [`hri_rviz/Skeletons3D`](https://github.com/ros4hri/hri_rviz)
 display renders one kinematic model per body.
 

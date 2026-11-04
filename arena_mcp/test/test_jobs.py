@@ -53,20 +53,24 @@ def test_cancel_stops_the_whole_process_group_with_sigint():
     async def scenario():
         jobs = Jobs()
         job = await jobs.start_process("sleep", "sleeps", [sys.executable, "-c", script])
-        for _ in range(100):
-            if jobs.tail(job.id):
-                break
+        deadline = time.monotonic() + 30.0
+        while not jobs.tail(job.id) and time.monotonic() < deadline:
             await asyncio.sleep(0.1)
         child = int(jobs.tail(job.id).split()[0])
         cancelled = await jobs.cancel(job.id)
-        await asyncio.sleep(0.5)
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline and not ("interrupted" in jobs.tail(job.id) and _gone(child)):
+            await asyncio.sleep(0.1)
         return jobs, cancelled, child
+
+    def _gone(pid):
+        return not os.path.exists(f"/proc/{pid}") or open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[0] == "Z"
 
     jobs, cancelled, child = asyncio.run(scenario())
     assert cancelled.state == CANCELLED
     assert cancelled.error == "stopped by SIGINT"
     assert "interrupted" in jobs.tail(cancelled.id)
-    assert not os.path.exists(f"/proc/{child}") or open(f"/proc/{child}/stat").read().rsplit(")", 1)[1].split()[0] == "Z"
+    assert _gone(child)
 
 
 def test_task_job_result_failure_and_cancel():
@@ -138,7 +142,9 @@ def test_a_new_server_sees_detached_jobs_and_marks_dead_ones_lost():
         jobs = Jobs()
         live = await jobs.start_process("live", "lives on", [sys.executable, "-c", "import time; time.sleep(30)"])
         dead = await jobs.start_process("dead", "dies", [sys.executable, "-c", "pass"])
-        await asyncio.sleep(1.0)
+        deadline = time.monotonic() + 20.0
+        while dead.alive and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
         return live, dead
 
     live, dead = asyncio.run(scenario())

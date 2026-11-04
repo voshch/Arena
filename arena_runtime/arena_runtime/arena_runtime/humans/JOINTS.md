@@ -20,7 +20,7 @@ matches the body's generated URDF. The gait generator takes the agent id and suf
 ### Publish all 52
 
 Publish a position for all 52 base joints each tick (unanimated -> 0.0) so
-`robot_state_publisher` does not warn. Fixed joints (`torso`, `head`) are
+every joint frame stays on `humans/tf`. Fixed joints (`torso`, `head`) are
 not part of the contract and never appear in `JointState`. Per-joint advisory limits
 live in `GaitGenerator.LIMITS`: generators may clamp their output to them, the stream
 and presentation layers never enforce them. Outside the shoulder triples they match the

@@ -135,6 +135,10 @@ this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_m
 9. `environment_manager.after_reset_episode()` unpauses the simulator, and
    `reset_end` is published.
 
+Each reset logs one info line, `reset took <s> (<step> <s>, ...)`, with the wall-clock
+seconds of the hold, the world swap and each step above. `setup()` logs `setup took`
+the same way for the env's one-time setup.
+
 **WORLD layer invariant:** entities spawned with `ObstacleLayer.WORLD` (walls,
 doors, floors, world static entities) are never touched during `respawn`. They
 survive all episode resets for the lifetime of the world.

@@ -80,9 +80,9 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
             super().__init__("teleport_bench")
             self.tf_buffer = tf2_ros.Buffer()
             self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-            self._arena_hold_client = self.create_client_wrapper(arena_runtime_msgs.srv.LifecycleHold, "/arena/sim_lifecycle/hold", timeout=5.0)
-            self._arena_unpause_window_client = self.create_client_wrapper(arena_runtime_msgs.srv.LifecycleUnpauseWindow, "/arena/sim_lifecycle/unpause_window", timeout=5.0)
-            self._arena_step_client = self.create_client_wrapper(arena_runtime_msgs.srv.LifecycleStep, "/arena/sim_lifecycle/step", timeout=5.0)
+            self._arena_hold_client = self.create_client_wrapper(arena_runtime_msgs.srv.LifecycleHold, "/arena/sim_lifecycle/hold", timeout=30.0)
+            self._arena_unpause_window_client = self.create_client_wrapper(arena_runtime_msgs.srv.LifecycleUnpauseWindow, "/arena/sim_lifecycle/unpause_window", timeout=30.0)
+            self._arena_step_client = self.create_client_wrapper(arena_runtime_msgs.srv.LifecycleStep, "/arena/sim_lifecycle/step", timeout=30.0)
 
     class Environment:
         def __init__(self, body: Body) -> None:
@@ -122,13 +122,13 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
             if "already running" in str(e):
                 pytest.skip(str(e))
             raise
-        assert await bench._arena_step_client.ensure(timeout_sec=10.0)
-        await _until(lambda: bench.sim_time.to_seconds() > 0.0, 5.0, "dummy /clock")
-        await _until(lambda: bench.tf_buffer.can_transform("map", base, Time()), 5.0, "body TF")
+        assert await bench._arena_step_client.ensure(timeout_sec=30.0)
+        await _until(lambda: bench.sim_time.to_seconds() > 0.0, 30.0, "dummy /clock")
+        await _until(lambda: bench.tf_buffer.can_transform("map", base, Time()), 30.0, "body TF")
         await scenario(arena, body, bench, Robot(bench, Environment(body)))
     finally:
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(arena.teardown(), timeout=5.0)
+            await asyncio.wait_for(arena.teardown(), timeout=30.0)
         if arena._clock_task is not None:
             arena._clock_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -153,7 +153,17 @@ def _ticks(advance: float) -> int:
 
 
 async def _frozen(bench: typing.Any, seconds: float) -> float:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 20.0
     before = bench.sim_time.to_seconds()
+    since = loop.time()
+    while loop.time() - since < 0.3:
+        assert loop.time() < deadline, "sim clock did not settle"
+        await asyncio.sleep(0.02)
+        now = bench.sim_time.to_seconds()
+        if now != before:
+            before = now
+            since = loop.time()
     await asyncio.sleep(seconds)
     assert bench.sim_time.to_seconds() == pytest.approx(before, abs=1e-9), "sim clock moved while held"
     return before
@@ -164,7 +174,6 @@ def test_held_teleport_steps_until_landed() -> None:
 
     async def scenario(arena: typing.Any, body: typing.Any, bench: typing.Any, robot: typing.Any) -> None:
         await bench.hold("reset")
-        await asyncio.sleep(5 * DT)
         before = await _frozen(bench, 0.2)
         await robot._apply_pose(_target())
         assert arena._windows.is_empty()
@@ -183,7 +192,6 @@ def test_held_teleport_that_never_lands_stops_at_the_cap() -> None:
 
     async def scenario(arena: typing.Any, body: typing.Any, bench: typing.Any, robot: typing.Any) -> None:
         await bench.hold("reset")
-        await asyncio.sleep(5 * DT)
         before = await _frozen(bench, 0.2)
         with pytest.raises(RuntimeError, match="never landed"):
             await robot._apply_pose(_target())

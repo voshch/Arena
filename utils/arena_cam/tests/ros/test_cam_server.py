@@ -40,12 +40,17 @@ class Server:
 
     def __enter__(self) -> Server:
         self._process = subprocess.Popen([sys.executable, "-m", "arena_cam.cli", "serve", "--env", "0", "--sim", "--fps", str(FPS)])
-        assert self.play_client.wait_for_service(timeout_sec=30.0)
+        assert self.play_client.wait_for_service(timeout_sec=60.0)
         return self
 
     def __exit__(self, *_exc: object) -> None:
-        self._process.send_signal(signal.SIGINT)
-        self._process.wait(timeout=30)
+        try:
+            self._process.send_signal(signal.SIGINT)
+            self._process.wait(timeout=30)
+        finally:
+            if self._process.poll() is None:
+                self._process.kill()
+                self._process.wait()
 
     def _call(self, client: object, request: object) -> object:
         future = client.call_async(request)
@@ -86,9 +91,9 @@ def test_stop_ends_the_take_and_the_server_stays_up() -> None:
         assert server.play("long", {"long": LONG}).success
         assert runtime.wait(lambda: len(runtime.keyframes) > 3)
         assert server.stop().success
-        time.sleep(0.5)
+        assert runtime.stable(lambda: len(runtime.keyframes))
         streamed = len(runtime.keyframes)
-        time.sleep(0.5)
+        assert runtime.stable(lambda: len(runtime.keyframes))
         assert len(runtime.keyframes) == streamed
         assert server.play("next", {"next": NEXT}).success
         assert runtime.wait(lambda: "second_link" in runtime.references)
@@ -98,7 +103,7 @@ def test_a_finished_take_leaves_the_server_ready() -> None:
     with Runtime() as runtime, Server(runtime) as server:
         assert server.play("short", {"short": SHORT}).success
         assert runtime.wait(lambda: len(runtime.keyframes) > 3)
-        time.sleep(1.0)
+        assert runtime.stable(lambda: len(runtime.keyframes))
         assert server.play("next", {"next": NEXT}).success
         assert runtime.wait(lambda: "second_link" in runtime.references)
 

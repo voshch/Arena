@@ -23,6 +23,13 @@ def _spin_in_background(node, stop: threading.Event) -> threading.Thread:
     return thread
 
 
+async def _republish_until_done(pub, messages, waiter: asyncio.Future) -> None:
+    while not waiter.done():
+        for message in messages:
+            pub.publish(message)
+        await asyncio.sleep(0.05)
+
+
 def test_arrives_returns_first_message():
     async def main():
         node = _make_node("arrives_basic")
@@ -31,17 +38,12 @@ def test_arrives_returns_first_message():
         try:
             pub = node.create_publisher(PoseStamped, "arrives_basic_topic", 10)
 
-            async def _publish_later() -> None:
-                await asyncio.sleep(0.1)
-                msg = PoseStamped()
-                msg.header.stamp.sec = 42
-                pub.publish(msg)
-
-            asyncio.ensure_future(_publish_later())
-            result = await asyncio.wait_for(
-                node.arrives("arrives_basic_topic", PoseStamped, warn_period=0.01),
-                timeout=2.0,
-            )
+            msg = PoseStamped()
+            msg.header.stamp.sec = 42
+            waiter = asyncio.ensure_future(node.arrives("arrives_basic_topic", PoseStamped, warn_period=0.01))
+            publisher = asyncio.ensure_future(_republish_until_done(pub, [msg], waiter))
+            result = await asyncio.wait_for(waiter, timeout=30.0)
+            await publisher
             assert result.header.stamp.sec == 42
         finally:
             stop.set()
@@ -61,26 +63,21 @@ def test_arrives_filters_on_min_stamp():
         try:
             pub = node.create_publisher(PoseStamped, "arrives_min_stamp_topic", 10)
 
-            async def _publish_stale_then_fresh() -> None:
-                await asyncio.sleep(0.05)
-                stale = PoseStamped()
-                stale.header.stamp.sec = 1
-                pub.publish(stale)
-                await asyncio.sleep(0.1)
-                fresh = PoseStamped()
-                fresh.header.stamp.sec = 5
-                pub.publish(fresh)
-
-            asyncio.ensure_future(_publish_stale_then_fresh())
-            result = await asyncio.wait_for(
+            stale = PoseStamped()
+            stale.header.stamp.sec = 1
+            fresh = PoseStamped()
+            fresh.header.stamp.sec = 5
+            waiter = asyncio.ensure_future(
                 node.arrives(
                     "arrives_min_stamp_topic",
                     PoseStamped,
                     min_stamp=Time(sec=3, nanosec=0),
                     warn_period=0.01,
-                ),
-                timeout=2.0,
+                )
             )
+            publisher = asyncio.ensure_future(_republish_until_done(pub, [stale, fresh], waiter))
+            result = await asyncio.wait_for(waiter, timeout=30.0)
+            await publisher
             assert result.header.stamp.sec == 5
         finally:
             stop.set()

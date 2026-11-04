@@ -65,12 +65,15 @@ def test_run_job_returns_the_outcome_with_the_seed_it_was_given(run, peers):
 
 def test_run_rejects_a_second_goal_and_cancel_cancels_the_goal(run, peers):
     job = run(episode.episode_run(env_id=ENV, world="forever"))
-    run(asyncio.sleep(0.3))
+    deadline = time.monotonic() + 20
+    while not peers.humansim.running_goal and time.monotonic() < deadline:
+        run(asyncio.sleep(0.05))
+    assert peers.humansim.running_goal
     started = time.monotonic()
     with pytest.raises(ToolError, match="rejected") as rejected:
         run(episode.episode_run(env_id=ENV))
     assert "single-flight" in str(rejected.value)
-    assert time.monotonic() - started < 5
+    assert time.monotonic() - started < 30
     cancelled = run(JOBS.cancel(job["id"])).as_dict()
     assert cancelled["state"] == "cancelled"
     deadline = time.monotonic() + 10
@@ -93,8 +96,11 @@ def test_history_keeps_terminal_outcomes_through_auto_reset_bursts(run, peers):
     run(episode.episode_history(env_id=ENV))
     first = peers.humansim.episode_id
     peers.humansim.burst([EpisodeRecord.SUCCESS, EpisodeRecord.FAILED, EpisodeRecord.FATAL])
-    run(asyncio.sleep(0.5))
+    deadline = time.monotonic() + 20
     history = run(episode.episode_history(env_id=ENV, limit=50))
+    while first + 3 not in {entry["episode_id"] for entry in history} and time.monotonic() < deadline:
+        run(asyncio.sleep(0.1))
+        history = run(episode.episode_history(env_id=ENV, limit=50))
     outcomes = {entry["episode_id"]: entry["outcome"] for entry in history}
     assert outcomes[first] == "success"
     assert outcomes[first + 1] == "failed"

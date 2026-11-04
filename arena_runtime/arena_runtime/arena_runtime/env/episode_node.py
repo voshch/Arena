@@ -50,6 +50,7 @@ from arena_runtime.env.goal_progress import GoalProgressTracker
 from arena_runtime.env.interactive import MarkerHub
 from arena_runtime.env.interactive.entities import EntityHandles
 from arena_runtime.env.node import _LATCHED, EnvNode, _available
+from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
 from arena_runtime.env.robot_manager.robot_manager import footprint_radius
 from arena_runtime.env.run_task import RunningTask
@@ -647,14 +648,17 @@ class EpisodeNode(EnvNode):
             self._pub_state_resetting.publish(Bool(data=True))
 
             record = self._episodes.current
+            clock = PhaseClock()
             await self.hold("reset")
+            clock.lap("hold")
             for manager in self._robots_manager.managers.values():
                 manager.begin_episode()
             self._known_subjects.clear()
             try:
                 if record.world:
                     await self._world_manager.apply_world(record.world)
-                await self._reset_episode(record)
+                    clock.lap("world")
+                await self._reset_episode(record, clock)
             finally:
                 compacted = self._world_manager.world_compacted()
                 self._judge_zones = zone_polygons(compacted)
@@ -662,6 +666,8 @@ class EpisodeNode(EnvNode):
                 for manager in self._robots_manager.managers.values():
                     manager.set_episode_conditions(self._episode_conditions)
                 await self.release("reset")
+                clock.lap("release")
+                self.get_logger().info(f"reset took {clock}")
                 self._pub_state_resetting.publish(Bool(data=False))
             record.robots = [m.model_name for m in self._robots_manager.managers.values()]
 
@@ -778,7 +784,7 @@ class EpisodeNode(EnvNode):
             return True
         return await self._task.done
 
-    async def _reset_episode(self, record: EpisodeRecord) -> None:
+    async def _reset_episode(self, record: EpisodeRecord, clock: PhaseClock) -> None:
         assert self._task is not None and self._robots_manager is not None
         self._force_reset = False
         self._abort_reason = None
@@ -791,20 +797,26 @@ class EpisodeNode(EnvNode):
             point_scenario_assets(None)
 
             await self._robots_manager.set_up()
+            clock.lap("set_up")
             await self._robots_manager.launch_pending()
+            clock.lap("launch")
 
             await environment.before_reset_episode()
+            clock.lap("before")
 
             try:
                 self._apply_staged_params()
                 await self._apply_staged_human_params()
 
                 plan = await self._task.reset_robots(record)
+                clock.lap("plan_robots")
                 for name, entry in plan.robots.items():
                     if entry.task is not None:
                         await self._robots_manager.managers[name].submit_task(entry.task, entry.start_pose, pedestrians=entry.humans)
+                clock.lap("submit")
                 self._world_manager.forbid(plan.forbidden_zones)
                 await self._task.reset_obstacles(plan, record)
+                clock.lap("plan_obstacles")
 
                 async def respawn() -> None:
                     await asyncio.gather(
@@ -814,6 +826,7 @@ class EpisodeNode(EnvNode):
                     await environment.spawn_mode_lights(plan.lights)
 
                 await environment.respawn(respawn)
+                clock.lap("respawn")
 
                 robot_outcomes = await asyncio.gather(
                     *(
@@ -828,6 +841,7 @@ class EpisodeNode(EnvNode):
                     ),
                     return_exceptions=True,
                 )
+                clock.lap("robot_reset")
                 reasons: list[str] = []
                 for name, outcome in zip(self._robots_manager.managers, robot_outcomes, strict=True):
                     if isinstance(outcome, BaseException):
@@ -852,6 +866,7 @@ class EpisodeNode(EnvNode):
                 self._task.after_reset()
             finally:
                 await environment.after_reset_episode()
+                clock.lap("after")
 
         except Exception as e:
             self.get_logger().error(repr(e))

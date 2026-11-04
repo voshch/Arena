@@ -11,7 +11,7 @@ from urdf_parser_py import urdf as urdf_parser
 
 from arena_assets.rig import rig_of
 
-from .body_pool import _origin_matrix
+from .body_frames import _origin_matrix
 from .rig import _rot_axis
 
 # gaze_<id> in face_<id>: z along the face's x, x right, y down

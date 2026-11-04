@@ -1,0 +1,23 @@
+#!/bin/sh
+old="$ARENA_DIR/_assets"
+new="${ARENA_DATA_DIR:-$ARENA_WS_DIR/data}/assets"
+[ -d "$old" ] || exit 0
+move() {
+    [ -e "$old/$1" ] || return 0
+    mkdir -p "$(dirname "$new/$2")" || return 1
+    if [ -e "$new/$2" ]; then
+        rm -rf "$old/$1"
+    else
+        mv "$old/$1" "$new/$2"
+    fi
+}
+move public public || exit 1
+move arena-internal arena-internal || exit 1
+move default default || exit 1
+move arena-worlds-prod-public public/worlds || exit 1
+move arena-benchmarks-prod-public public/benchmarks || exit 1
+move .index .index || exit 1
+move .import .import || exit 1
+move .cache .cache || exit 1
+move _composed _composed || exit 1
+echo "moved the asset cache to $new"

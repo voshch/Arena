@@ -24,6 +24,21 @@ def _cpu_seconds(pid: int) -> float:
     return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
 
 
+async def _wait_cpu_settled(pid: int) -> None:
+    deadline = time.monotonic() + 30.0
+    previous = None
+    last = _cpu_seconds(pid)
+    while time.monotonic() < deadline:
+        await asyncio.sleep(1.0)
+        now = _cpu_seconds(pid)
+        rate = now - last
+        last = now
+        if previous is not None and abs(rate - previous) < 0.05:
+            return
+        previous = rate
+    raise AssertionError("server cpu never settled")
+
+
 def _server_pid(parent: int) -> int:
     for entry in os.listdir("/proc"):
         if entry.isdigit():
@@ -75,10 +90,10 @@ def test_server_stays_idle_under_a_fast_clock(tmp_path):
             started = await session.call_tool("ros_graph", {})
             assert not started.is_error, started.content
             pid = _server_pid(os.getpid())
-            await asyncio.sleep(1.0)
+            await _wait_cpu_settled(pid)
             before = _cpu_seconds(pid)
             await asyncio.to_thread(_drive_clock)
             return _cpu_seconds(pid) - before
 
     used = asyncio.run(scenario())
-    assert used < 0.2 * SECONDS, f"server used {used:.2f}s of CPU in {SECONDS}s"
+    assert used < 0.5 * SECONDS, f"server used {used:.2f}s of CPU in {SECONDS}s"

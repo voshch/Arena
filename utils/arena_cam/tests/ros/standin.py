@@ -180,3 +180,18 @@ class Runtime:
                     return True
             time.sleep(0.02)
         return False
+
+    def stable(self, read: Callable[[], object], window: float = 1.0, timeout: float = 20.0) -> bool:
+        deadline = time.monotonic() + timeout
+        with self.lock:
+            value = read()
+        since = time.monotonic()
+        while time.monotonic() < deadline:
+            time.sleep(0.02)
+            with self.lock:
+                current = read()
+            if current != value:
+                value, since = current, time.monotonic()
+            elif time.monotonic() - since >= window:
+                return True
+        return False
