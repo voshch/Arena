@@ -291,12 +291,14 @@ def _oriented_box(
     hl = length / 2.0
     hw = width / 2.0
     cx, cy = center
-    return Polygon([
-        (cx + dx * hl + px * hw, cy + dy * hl + py * hw),
-        (cx - dx * hl + px * hw, cy - dy * hl + py * hw),
-        (cx - dx * hl - px * hw, cy - dy * hl - py * hw),
-        (cx + dx * hl - px * hw, cy + dy * hl - py * hw),
-    ])
+    return Polygon(
+        [
+            (cx + dx * hl + px * hw, cy + dy * hl + py * hw),
+            (cx - dx * hl + px * hw, cy - dy * hl + py * hw),
+            (cx - dx * hl - px * hw, cy - dy * hl - py * hw),
+            (cx + dx * hl - px * hw, cy + dy * hl - py * hw),
+        ]
+    )
 
 
 @final
@@ -442,6 +444,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._elevators = []
         self._dock_metadata = {}
         self._semantic_zones = []
+        self._pillar_obstacles = []
 
         half_w = self.config.width / 2.0
         total_len = self._spine.length
@@ -455,7 +458,13 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         # Validate dock socket references early so compute() (preview) and files() (save) fail fast
         self._validate_dock_references()
 
-        areas = [Area(polygon=poly) for _, _, poly in self._semantic_zones]
+        corridor_poly = self._buffered_main_corridor(half_w)
+        if self._pillar_obstacles:
+            corridor_poly = corridor_poly.difference(shapely.unary_union(self._pillar_obstacles))
+        branch_polys = [poly for name, _, poly in self._semantic_zones if name.startswith(("room_", "branch_"))]
+        elev_polys = [poly for name, _, poly in self._semantic_zones if name.startswith("dock_elevator_")]
+        free_space = shapely.unary_union([corridor_poly, *branch_polys, *elev_polys])
+        areas = [Area(polygon=free_space)]
         docks = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if z_name.startswith("dock_")]
         others = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if not z_name.startswith("dock_")]
         world, self.diagnostics = compile_layout(Layout(areas=areas, regions=[*docks, *others]))
@@ -729,6 +738,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             else:
                 pillar_obstacles.append(shapely.box(cx - p.width / 2.0, cy - p.depth / 2.0, cx + p.width / 2.0, cy + p.depth / 2.0))
 
+        self._pillar_obstacles = pillar_obstacles
         if pillar_obstacles:
             combined = shapely.ops.unary_union(pillar_obstacles)
             updated_zones: list[tuple[str, str, Polygon | MultiPolygon]] = []

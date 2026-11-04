@@ -499,9 +499,7 @@ def test_concourse_dock_zones_rotate_with_angled_paths_and_branches() -> None:
     cfg_branch = {
         "length": 36.0,
         "width": 4.0,
-        "branches": [
-            {"at_s": 18.0, "width": 3.5, "length": 10.0, "side": "left", "angle_deg": 60.0}
-        ],
+        "branches": [{"at_s": 18.0, "width": 3.5, "length": 10.0, "side": "left", "angle_deg": 60.0}],
     }
     gen_branch = WorldGeneratorConcourse(cfg_branch, random.Random(42))
     world_branch = gen_branch.compute()
