@@ -2,8 +2,8 @@
 """ROS4HRI producer node: projects Arena pedestrians into the REP-155 /humans/... representation.
 
 Publishes hri_msgs tracks, per-person metadata, per-body joint_states, and TF
-for each body frame.  Drives a pool of robot_state_publisher subprocesses
-(rviz_utils.hri.body_pool) so hri_rviz can render animated skeletons.
+for each body and joint frame (rviz_utils.hri.body_frames), so hri_rviz can render
+animated skeletons.
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 from sensor_msgs.msg import CameraInfo, JointState
-from std_msgs.msg import Bool, Float32, String
+from std_msgs.msg import Bool, Float32, Header, String
 from arena_runtime.humans.gait import GaitGenerator
 from tf2_msgs.msg import TFMessage
 
-from rviz_utils.hri import BodyPool
+from rviz_utils.hri import BodyFrames
 from rviz_utils.hri.face import GAZE_IN_FACE, FaceChain, matrix_from_pose, pinhole_k, quat_from_matrix, root_drop
 from rviz_utils.hri.rig import ped_positions, semantic_positions
 
@@ -102,7 +102,8 @@ class HriProducer(Node):
         self._face_view_pub: dict[str, LazyPublisher[FaceView]] = {}
         self._face_chain: dict[str, FaceChain] = {}
         self._root_drop: dict[str, float] = {}
-        self._pool = BodyPool(self, self._humans_ns, max_bodies=max_bodies)
+        self._tf_static_pub = self.create_publisher(TFMessage, "/tf_static", _LATCHED_QOS)
+        self._frames = BodyFrames(max_bodies=max_bodies)
         self._gait = GaitGenerator()
         self._prev_stamp_sec: dict[str, float] = {}
 
@@ -113,7 +114,7 @@ class HriProducer(Node):
             IdsList, f"{self._humans_ns}/persons/tracked", _LATCHED_QOS
         )
 
-        self._body_js_pub: dict[str, rclpy.publisher.Publisher] = {}
+        self._body_js_pub: dict[str, LazyPublisher[JointState]] = {}
         self._body_urdf_pub: dict[str, rclpy.publisher.Publisher] = {}
         self._person_body_id_pub: dict[str, rclpy.publisher.Publisher] = {}
         self._person_anon_pub: dict[str, rclpy.publisher.Publisher] = {}
@@ -140,10 +141,12 @@ class HriProducer(Node):
     def _ensure_body_publishers(self, body_id: str) -> None:
         if body_id in self._body_js_pub:
             return
-        self._body_js_pub[body_id] = self.create_publisher(
-            JointState,
-            f"{self._humans_ns}/bodies/{body_id}/joint_states",
-            _LIVE_QOS,
+        self._body_js_pub[body_id] = LazyPublisher(
+            self.create_publisher(
+                JointState,
+                f"{self._humans_ns}/bodies/{body_id}/joint_states",
+                _LIVE_QOS,
+            )
         )
         self._face_view_pub[body_id] = LazyPublisher(
             self.create_publisher(FaceView, f"{self._humans_ns}/faces/{body_id}/view", _LIVE_QOS)
@@ -153,13 +156,12 @@ class HriProducer(Node):
             String, f"{self._humans_ns}/bodies/{body_id}/urdf", _LATCHED_QOS
         )
         self._body_urdf_pub[body_id] = urdf_pub
-        urdf = self._pool.urdf_for(body_id)
+        urdf = self._frames.urdf_for(body_id)
         if urdf is not None:
             urdf_pub.publish(String(data=urdf))
 
     def _destroy_body_publishers(self, body_id: str) -> None:
         for registry in (
-            self._body_js_pub,
             self._body_urdf_pub,
             self._person_body_id_pub,
             self._person_anon_pub,
@@ -169,9 +171,10 @@ class HriProducer(Node):
             pub = registry.pop(body_id, None)
             if pub is not None:
                 self.destroy_publisher(pub)
-        view = self._face_view_pub.pop(body_id, None)
-        if view is not None:
-            self.destroy_publisher(view.publisher)
+        for lazy in (self._body_js_pub, self._face_view_pub):
+            pub = lazy.pop(body_id, None)
+            if pub is not None:
+                self.destroy_publisher(pub.publisher)
         self._face_chain.pop(body_id, None)
 
     def _ensure_person_publishers(self, person_id: str) -> None:
@@ -199,12 +202,15 @@ class HriProducer(Node):
 
         current_ids: set[str] = {self._body_id(ped.id) for ped in msg.pedestrians}
 
-        for bid in self._pool.active_ids() - current_ids:
+        for bid in self._frames.active_ids() - current_ids:
             self._gait.forget(self._ped_id(bid))
             self._prev_stamp_sec.pop(bid, None)
             self._destroy_body_publishers(bid)
 
-        self._pool.sync(current_ids)
+        self._frames.sync(current_ids)
+        static = self._frames.static_transforms(stamp)
+        if static is not None:
+            self._tf_static_pub.publish(static)
 
         ids_list = IdsList(ids=sorted(current_ids))
         self._bodies_tracked_pub.publish(ids_list)
@@ -228,7 +234,7 @@ class HriProducer(Node):
             tf.transform.translation.y = ped.pose.position.y
             if ped.model_uri not in self._root_drop:
                 self._root_drop[ped.model_uri] = root_drop(ped.model_uri)
-            tf.transform.translation.z = ped.pose.position.z + self._pool.foot_offset(bid) + self._root_drop[ped.model_uri]
+            tf.transform.translation.z = ped.pose.position.z + self._frames.foot_offset(bid) + self._root_drop[ped.model_uri]
             tf.transform.rotation = ped.pose.orientation
             transforms.append(tf)
 
@@ -249,11 +255,11 @@ class HriProducer(Node):
                 self._prev_stamp_sec[bid] = now_sec
                 speed = math.hypot(ped.twist.linear.x, ped.twist.linear.y)
                 positions = semantic_positions(self._gait.compute(ped.id, ped.animation_state, speed, dt), ped.model_uri, bid)
-            js = JointState()
-            js.header.stamp = stamp
-            js.name = list(positions)
-            js.position = list(positions.values())
-            self._body_js_pub[bid].publish(js)
+            self._body_js_pub[bid].publish(lambda positions=positions: JointState(header=Header(stamp=stamp), name=list(positions), position=list(positions.values())))
+            if self._tf_pub.wanted:
+                bones = self._frames.moving_transforms(bid, positions, stamp)
+                if bones is not None:
+                    self._tf_pub.publisher.publish(bones)
 
             view = self._face_view_pub[bid]
             if view.wanted:
@@ -273,7 +279,7 @@ class HriProducer(Node):
         """face_<id> in the body's parent frame and gaze_<id> under it, None while the body has no URDF."""
         chain = self._face_chain.get(bid)
         if chain is None:
-            urdf = self._pool.urdf_for(bid)
+            urdf = self._frames.urdf_for(bid)
             if urdf is None:
                 return None
             chain = self._face_chain[bid] = FaceChain.from_urdf(urdf, bid)
@@ -307,7 +313,6 @@ class HriProducer(Node):
         return info
 
     def destroy_node(self) -> None:
-        self._pool.teardown()
         self._world_node.destroy_node()
         super().destroy_node()
 

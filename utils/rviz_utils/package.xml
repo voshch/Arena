@@ -70,7 +70,6 @@
   <exec_depend>arena_assets</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>hri_msgs</exec_depend>
-  <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>topic_tools</exec_depend>
@@ -79,6 +78,7 @@
   <exec_depend>hri_rviz</exec_depend>
   <exec_depend>arena_runtime</exec_depend>
   <exec_depend>rviz_display_control_msgs</exec_depend>
+  <test_depend>robot_state_publisher</test_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

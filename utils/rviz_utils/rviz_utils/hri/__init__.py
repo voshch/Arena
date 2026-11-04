@@ -1,5 +1,5 @@
 """ROS4HRI helper sub-package for the hri_producer node."""
 
-from .body_pool import BodyPool
+from .body_frames import BodyFrames
 
-__all__ = ["BodyPool"]
+__all__ = ["BodyFrames"]

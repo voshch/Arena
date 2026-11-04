@@ -9,7 +9,7 @@ from arena_simulation_setup.shared.body import DEFAULT_STANCE, SEMANTIC_DOFS, fo
 from geometry_msgs.msg import Quaternion
 from urdf_parser_py import urdf as urdf_parser
 
-from rviz_utils.hri.body_pool import _origin_matrix
+from rviz_utils.hri.body_frames import _origin_matrix
 from rviz_utils.hri.rig import _rot_axis, ped_positions, semantic_positions
 from rviz_utils.hri.urdf import REP155_FRAMES, ball_angles, body_positions, body_urdf
 
