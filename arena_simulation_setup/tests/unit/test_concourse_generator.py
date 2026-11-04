@@ -392,6 +392,7 @@ class _Recorder:
     calls: list[tuple[str, object, object]] = field(default_factory=list)
 
     def declare_forward(self, name: str, value: object, *, descriptor: object = None) -> None:
+        """Record parameter declarations forwarded by declare_config_params."""
         self.calls.append((name, value, descriptor))
 
 
