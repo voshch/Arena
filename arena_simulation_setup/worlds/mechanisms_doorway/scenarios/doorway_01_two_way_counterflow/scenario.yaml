@@ -1,0 +1,51 @@
+format: arena-scenario/2
+robots:
+- name: robot
+  start: [3.0, 6.0, 0.0]
+  phases:
+  - {goto: [23.0, 6.0, 0.0]}
+humans:
+- name: ped_east_1
+  pose: [21.0, 6.3, 3.14]
+  model: adult
+  velocity: 1.2
+  waypoints:
+  - [15.0, 6.3, 3.14]
+  - [13.0, 6.3, 3.14]
+  - [10.0, 6.3, 3.14]
+  - [3.0, 6.3, 3.14]
+- name: ped_east_2
+  pose: [18.0, 5.7, 3.14]
+  model: adult
+  velocity: 1.1
+  waypoints:
+  - [14.0, 5.7, 3.14]
+  - [12.0, 5.7, 3.14]
+  - [5.0, 5.7, 3.14]
+- name: ped_west_1
+  pose: [6.0, 6.2, 0.0]
+  model: adult
+  velocity: 1.3
+  waypoints:
+  - [11.0, 6.2, 0.0]
+  - [13.0, 6.2, 0.0]
+  - [16.0, 6.2, 0.0]
+  - [22.0, 6.2, 0.0]
+- name: ped_side_transit
+  pose: [5.0, 10.6, 0.0]
+  model: adult
+  velocity: 1.2
+  waypoints:
+  - [12.0, 10.6, 0.0]
+  - [14.0, 10.6, 0.0]
+  - [21.0, 10.6, 0.0]
+- name: ped_side_counter
+  pose: [20.0, 10.6, 3.14]
+  model: adult
+  velocity: 1.1
+  waypoints:
+  - [14.0, 10.6, 3.14]
+  - [12.0, 10.6, 3.14]
+  - [4.0, 10.6, 3.14]
+conditions:
+- {op: eventually, p: robot in east_mid, text: Reach east hallway through main sliding door.}

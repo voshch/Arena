@@ -271,6 +271,34 @@ class ConcourseConfiguration(BaseConfiguration):
         return self
 
 
+def _oriented_box(
+    center: tuple[float, float],
+    length: float,
+    width: float,
+    dir_vec: tuple[float, float],
+) -> Polygon:
+    """Create a rectangular Polygon of given length and width oriented along dir_vec.
+
+    length is measured along dir_vec; width is measured perpendicular to dir_vec.
+    """
+    dx, dy = dir_vec
+    norm = math.hypot(dx, dy)
+    if norm > 1e-9:
+        dx, dy = dx / norm, dy / norm
+    else:
+        dx, dy = 1.0, 0.0
+    px, py = -dy, dx
+    hl = length / 2.0
+    hw = width / 2.0
+    cx, cy = center
+    return Polygon([
+        (cx + dx * hl + px * hw, cy + dy * hl + py * hw),
+        (cx - dx * hl + px * hw, cy - dy * hl + py * hw),
+        (cx - dx * hl - px * hw, cy - dy * hl - py * hw),
+        (cx + dx * hl - px * hw, cy + dy * hl - py * hw),
+    ])
+
+
 @final
 class WorldGeneratorConcourse(WorldGeneratorImpl):
     """Procedural concourse world and crowd scenario generator."""
@@ -613,11 +641,11 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         depth = min(self.config.dock_depth, branch.length * BRANCH_DOCK_DEPTH_RATIO)
         dock_cx = tip_x - dir_x * (depth / 2.0)
         dock_cy = tip_y - dir_y * (depth / 2.0)
-        dock_poly = shapely.box(
-            dock_cx - branch.width * BRANCH_DOCK_WIDTH_RATIO,
-            dock_cy - depth / 2.0,
-            dock_cx + branch.width * BRANCH_DOCK_WIDTH_RATIO,
-            dock_cy + depth / 2.0,
+        dock_poly = _oriented_box(
+            (dock_cx, dock_cy),
+            length=depth,
+            width=branch.width * (2.0 * BRANCH_DOCK_WIDTH_RATIO),
+            dir_vec=(dir_x, dir_y),
         )
         self._semantic_zones.append((dock_name, f"Dock Socket for Branch {idx} ({side.value})", dock_poly))
 
@@ -722,7 +750,12 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
         dock_s_cx = p_start[0] + t0[0] * (depth / 2.0)
         dock_s_cy = p_start[1] + t0[1] * (depth / 2.0)
-        dock_s_poly = shapely.box(dock_s_cx - depth / 2.0, dock_s_cy - half_w, dock_s_cx + depth / 2.0, dock_s_cy + half_w)
+        dock_s_poly = _oriented_box(
+            (dock_s_cx, dock_s_cy),
+            length=depth,
+            width=half_w * 2.0,
+            dir_vec=t0,
+        )
         self._semantic_zones.append(("dock_start", "Terminal Dock Socket Start", dock_s_poly))
         self._dock_metadata["dock_start"] = {
             "nav_pose": [round(dock_s_cx, 2), round(dock_s_cy, 2), round(yaw0, 3)],
@@ -736,7 +769,12 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
         dock_e_cx = p_end[0] - tn[0] * (depth / 2.0)
         dock_e_cy = p_end[1] - tn[1] * (depth / 2.0)
-        dock_e_poly = shapely.box(dock_e_cx - depth / 2.0, dock_e_cy - half_w, dock_e_cx + depth / 2.0, dock_e_cy + half_w)
+        dock_e_poly = _oriented_box(
+            (dock_e_cx, dock_e_cy),
+            length=depth,
+            width=half_w * 2.0,
+            dir_vec=tn,
+        )
         self._semantic_zones.append(("dock_end", "Terminal Dock Socket End", dock_e_poly))
         self._dock_metadata["dock_end"] = {
             "nav_pose": [round(dock_e_cx, 2), round(dock_e_cy, 2), round(yaw_end_norm, 3)],

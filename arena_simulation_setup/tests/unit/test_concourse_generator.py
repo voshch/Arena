@@ -490,3 +490,50 @@ def test_schema_bridge_enum_default_list_skip_and_optional_str() -> None:
 
     # Verify optional string field is declared
     assert "test_prefix.robot_target_branch" in declared_names
+
+
+def test_concourse_dock_zones_rotate_with_angled_paths_and_branches() -> None:
+    """Verify that dock zones are oriented along local path tangents and branch directions."""
+    # 1. 60-degree angled branch on straight spine
+    cfg_branch = {
+        "length": 36.0,
+        "width": 4.0,
+        "branches": [
+            {"at_s": 18.0, "width": 3.5, "length": 10.0, "side": "left", "angle_deg": 60.0}
+        ],
+    }
+    gen_branch = WorldGeneratorConcourse(cfg_branch, random.Random(42))
+    world_branch = gen_branch.compute()
+    dock_branch = next(z for z in world_branch.all_levels[0].zones if z.name == "dock_branch_0_left")
+    # Verify polygon edges are not axis-aligned (i.e. edges are angled at 60 / 150 deg)
+    xs = [p.x for p in dock_branch.polygon]
+    ys = [p.y for p in dock_branch.polygon]
+    # No two consecutive vertices have identical X or identical Y
+    for i in range(len(dock_branch.polygon)):
+        p1 = dock_branch.polygon[i]
+        p2 = dock_branch.polygon[(i + 1) % len(dock_branch.polygon)]
+        dx = abs(p2.x - p1.x)
+        dy = abs(p2.y - p1.y)
+        if math.hypot(dx, dy) > 0.01:
+            assert dx > 0.05, "Edge should not be purely vertical (aligned with world Y)"
+            assert dy > 0.05, "Edge should not be purely horizontal (aligned with world X)"
+
+    # 2. 75-degree smooth L-bend trunk terminal
+    cfg_bend = {
+        "shape": "smooth_l_bend",
+        "length": 40.0,
+        "width": 4.5,
+        "bend_angle_deg": 75.0,
+    }
+    gen_bend = WorldGeneratorConcourse(cfg_bend, random.Random(42))
+    world_bend = gen_bend.compute()
+    dock_end = next(z for z in world_bend.all_levels[0].zones if z.name == "dock_end")
+    # End terminal is oriented at 75 degrees, so edges are non-axis-aligned
+    for i in range(len(dock_end.polygon)):
+        p1 = dock_end.polygon[i]
+        p2 = dock_end.polygon[(i + 1) % len(dock_end.polygon)]
+        dx = abs(p2.x - p1.x)
+        dy = abs(p2.y - p1.y)
+        if math.hypot(dx, dy) > 0.01:
+            assert dx > 0.05, "End dock edge should be rotated with bend angle"
+            assert dy > 0.05, "End dock edge should be rotated with bend angle"
