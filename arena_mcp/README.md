@@ -25,7 +25,7 @@ async def demo_state(env_id: int | None = None) -> dict[str, object]:
 - `@domain.tool(read_only, destructive, idempotent, open_world)` sets the MCP annotations. Only tools annotated to return a dict get a structured output schema, every other result (lists, images, audio, mixed content) goes out as plain content. Sync tools run in a worker thread, ROS calls belong in async tools.
 - `ROS` is the server's one ROS node: service calls that fail fast when nothing serves the name and leave no client behind (a lingering client makes a name like `/arena/register_env` look live), action goals, latched-topic caches, one-call topic reads, publishers, parameters with type coercion, the graph and sim time. QoS names map to the `arena_rclpy_mixins.qos` profiles. A crashed executor fails every later call with the error instead of a timeout.
 - `tg`, `env_ns`, `env_table`, `fleet` and `robot_ns` resolve env ids and robot names against the runtime's registry (`ENVS_TOPIC`). `SUBMIT_TASK_TIMEOUT_S` bounds a task generator's `runtime/submit_task`, which waits on the reset lock. `data_dir()` is `$ARENA_DATA_DIR`.
-- `JOBS` and `cli.job` run long work as jobs: in-process tasks end with the server, process jobs run in their own session, outlive it and are listed again by the next server, which tells a reused pid apart by its start time (`job.alive`). `cli` runs verbs through the `_arena_cli` function a sourced shell exports, in `$ARENA_WS_DIR`. `proc.stop_group` stops a process group with SIGINT first, then SIGTERM and SIGKILL after the grace windows of `arena_bringup.reaper`, and `JOBS.stopper` gives a job kind its own stop. A cancel hook's `ToolError` reaches the `jobs_cancel` caller and leaves the job running.
+- `JOBS` and `cli.job` run long work as jobs: in-process tasks end with the server, process jobs run in their own session, outlive it and are listed again by the next server, which tells a reused pid apart by its start time (`job.alive`, the owning process for a task job). `cli` runs verbs through the `_arena_cli` function a sourced shell exports, in `$ARENA_WS_DIR`. `proc.stop_group` stops a process group with SIGINT first, then SIGTERM and SIGKILL after the grace windows of `arena_bringup.reaper`, and `JOBS.stopper` gives a job kind its own stop. A cancel hook's `ToolError` reaches the `jobs_cancel` caller and leaves the job running.
 - `msgs` converts messages to and from plain dicts without dropping fields, `media` turns PNGs, image messages and occupancy grids into image content, `ToolError(message, hint)` is the error type.
 - Tests go in a `mcp/` subdirectory of the package's tests with `pytest.importorskip("arena_mcp")`, and run the real tools against real files and real ROS nodes created in the test.
 
@@ -46,6 +46,22 @@ _meta/tools/arena-mcp [...] ls [DOMAIN ...] [--json]
 `.mcp.json` at the Arena root registers the launcher as the server `arena` with `serve`, for clients that read project configuration. Pass domain names after `serve` to serve only those.
 
 Inside the container, `arena mcp` lists the installed domains, served or unavailable with the reason, and prints the registration line. `arena mcp ls [DOMAIN ...] [--json]` adds each named domain's tools, `arena mcp serve [DOMAIN ...]` serves them.
+
+## Calling a tool from a terminal
+
+`arena mcp call TOOL [KEY=VALUE ...]` (`python3 -m arena_mcp call`) runs one tool in its own short-lived process, through the same server code as `serve`, loading only the tool's domain. `arena mcp call TOOL --help` prints the tool's description and parameters, and `arena mcp call <TAB>` completes tool names and then their keys from the completion manifest.
+
+```
+arena mcp call worlds_preview name=map_empty
+arena mcp call entities_spawn_static model=fixture_cabinet_a01 x=2 y=0
+arena mcp call system_launch sim=dummy world=map_empty 'args={"task.robots": "explore"}'
+```
+
+- A string parameter takes the value as is, any other parses it as JSON and falls back to the text, and `null` clears an optional parameter. An unknown or repeated key, a missing required one, or an unknown tool exits 2 and names what exists.
+- Stdout carries only the result: text as is, a dict as JSON, image and audio content saved under `$ARENA_DATA_DIR/mcp/<hostname>/media` with the path printed. Logs and tool errors go to stderr. The exit code is 0 on success, 1 on a tool error or a job that did not succeed, 130 after Ctrl-C.
+- A job the tool starts runs in the foreground, in-process and process jobs alike, since nothing would watch it after the call exits. Its log streams to stderr and its progress follows once a second, its final status goes to stdout. Ctrl-C cancels it the way `jobs_cancel` does, and a second Ctrl-C exits at once and may leave it running.
+- Other processes see the job: `arena mcp call jobs_status job_id=<id>` or `jobs_wait` from a second terminal, or a running server's `jobs_status`, read its record. A task job records its owning process, and counts as lost once that process is gone.
+- Each call starts its own ROS node only if the tool touches ROS. That node first waits one DDS announcement period (`ROS.settle_discovery`), which adds about 3.5 s, so the call sees the whole graph. A fresh publisher waits for its subscribers to match, and for their acknowledgement before the process exits. What a server keeps between calls, such as a cached topic, lasts for that one call.
 
 ## system
 

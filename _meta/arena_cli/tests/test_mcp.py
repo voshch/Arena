@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from arena_cli import cli
-from arena_cli.complete import Context, _expand
+from arena_cli.complete import Context, _expand, render
 
 META = Path(__file__).resolve().parents[2]
 LAUNCHER = META / "tools" / "arena-mcp"
@@ -52,6 +52,7 @@ def test_help_lists_the_forms_and_subcommands(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "arena mcp ls [DOMAIN ...] [--json]" in result.stdout
     assert "arena mcp serve [DOMAIN ...]" in result.stdout
+    assert "arena mcp call TOOL [KEY=VALUE ...]" in result.stdout
     assert "_meta/tools/arena-mcp" in result.stdout
     assert "Commands:" in result.stdout and "serve" in result.stdout.split("Commands:")[1]
 
@@ -66,7 +67,7 @@ def test_subcommand_help_explains_it(tmp_path: Path) -> None:
 def test_bad_subcommand_lists_the_accepted_ones(tmp_path: Path) -> None:
     result = arena(tmp_path, "mcp", "start")
     assert result.returncode == 1
-    assert "No such command 'start'. Commands: ls, serve" in result.stderr
+    assert "No such command 'start'. Commands: ls, serve, call" in result.stderr
 
 
 def test_mcp_sits_in_the_attach_section(tmp_path: Path) -> None:
@@ -93,9 +94,35 @@ def test_ls_of_an_unknown_domain_lists_the_installed_ones(tmp_path: Path) -> Non
 
 @needs_arena_mcp
 def test_completion_offers_subcommands_and_installed_domains() -> None:
-    assert candidates([]) == {"ls", "serve"}
+    assert candidates([]) == {"ls", "serve", "call"}
     assert "jobs" in candidates(["serve"])
     assert {"jobs", "--json"} <= candidates(["ls"])
+
+
+def test_call_help_explains_values_jobs_and_exit_codes(tmp_path: Path) -> None:
+    result = arena(tmp_path, "mcp", "call", "--help")
+    assert result.returncode == 0
+    assert result.stdout.startswith("Usage: arena mcp call")
+    assert "parses it as JSON" in result.stdout and "Ctrl-C cancels" in result.stdout and "130" in result.stdout
+
+
+@needs_arena_mcp
+def test_call_runs_a_tool_and_passes_its_help_through(tmp_path: Path) -> None:
+    result = arena(tmp_path, "mcp", "call", "jobs_status", "--help")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("Usage: arena mcp call jobs_status")
+    assert "job_id" in result.stdout
+
+
+def test_call_completion_offers_tools_then_the_keys_not_given() -> None:
+    values = {"mcp.tools": {"jobs_status": "One job."}, "mcp.args.jobs_status": {"job_id=": "string", "lines=": "integer"}}
+    ctx = Context("", {"values": values})
+    spec = cli._VERBS["mcp"].complete
+    assert [(value, desc) for value, desc, _ in _expand(spec, ["call"], "", ctx).items] == [("jobs_status", "One job.")]
+    keys = _expand(spec, ["call", "jobs_status"], "", ctx)
+    assert {value for value, _, _ in keys.items} == {"job_id=", "lines="}
+    assert render(keys, "")[0] == "@nospace"
+    assert {value for value, _, _ in _expand(spec, ["call", "jobs_status", "job_id=x"], "", ctx).items} == {"lines="}
 
 
 def test_launcher_derives_the_dev_container_project_from_the_workspace() -> None:

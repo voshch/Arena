@@ -60,11 +60,15 @@ class Job:
     pid: int | None = None
     pid_start: int | None = None
     exit_code: int | None = None
+    owner: int | None = None
+    owner_start: int | None = None
 
     @property
     def alive(self) -> bool:
-        """Whether the job's process still runs, a reused pid counting as gone."""
-        return self.pid is not None and alive(self.pid, self.pid_start)
+        """Whether the job's process, or a task job's owning process, still runs, a reused pid counting as gone."""
+        if self.pid is not None:
+            return alive(self.pid, self.pid_start)
+        return self.owner is not None and alive(self.owner, self.owner_start)
 
     @property
     def log_path(self) -> Path:
@@ -144,6 +148,9 @@ class Jobs:
     ) -> Job:
         """Run body in the server's event loop as a job, its return value becomes the job result."""
         job = self._new(kind, title)
+        job.owner = os.getpid()
+        job.owner_start = start_time(job.owner)
+        job.save()
         handle = JobHandle(job)
 
         async def run() -> None:
@@ -233,12 +240,25 @@ class Jobs:
                 job.save()
             self._jobs[job.id] = job
 
+    def _reread(self, job_id: str) -> None:
+        try:
+            self._jobs[job_id] = Job(**json.loads((jobs_root() / f"{job_id}.json").read_text()))
+        except (OSError, ValueError, TypeError):
+            return
+
+    def started_here(self) -> list[Job]:
+        """The jobs this process started."""
+        return [self._jobs[job_id] for job_id in self._tasks]
+
     def get(self, job_id: str) -> Job:
         self._load()
         job = self._jobs.get(job_id)
+        if job_id not in self._tasks and (job is None or job.state == RUNNING):
+            self._reread(job_id)
+            job = self._jobs.get(job_id)
         if job is None:
             raise ToolError(f"no job {job_id!r}", hint="jobs_list shows the known jobs")
-        if job.state == RUNNING and job.id not in self._tasks and job.pid is not None and not job.alive:
+        if job.state == RUNNING and job.id not in self._tasks and not job.alive:
             self._finish(job, LOST, error="exited while no server watched it")
         return job
 
