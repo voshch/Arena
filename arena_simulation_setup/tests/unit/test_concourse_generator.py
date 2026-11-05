@@ -351,6 +351,17 @@ def test_concourse_validation_errors() -> None:
     with pytest.raises(ValueError, match="not found in dock sockets"):
         _ = invalid_flow_gen.compute()
 
+    # Flow whose source and sink are the same dock fails early on compute()
+    same_dock_gen = WorldGeneratorConcourse(
+        {
+            "length": 20.0,
+            "flows": [FlowStreamSpec(name="loop", source_dock="dock_start", sink_dock="dock_start").model_dump()],
+        },
+        rng,
+    )
+    with pytest.raises(ValueError, match="source_dock and sink_dock are both 'dock_start'"):
+        _ = same_dock_gen.compute()
+
     # Invalid robot_target_branch fails early on compute()
     invalid_target_gen = WorldGeneratorConcourse(
         {

@@ -833,6 +833,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             if self.config.robot_target_branch not in available_docks:
                 raise ValueError(f"robot_target_branch '{self.config.robot_target_branch}' not found in dock sockets: {sorted(available_docks)}")
         for spec in self.config.flows:
+            if spec.source_dock == spec.sink_dock:
+                raise ValueError(f"Flow '{spec.name}' source_dock and sink_dock are both '{spec.source_dock}'")
             if spec.source_dock not in available_docks:
                 raise ValueError(f"Flow '{spec.name}' source_dock '{spec.source_dock}' not found in dock sockets: {sorted(available_docks)}")
             if spec.sink_dock not in available_docks:
