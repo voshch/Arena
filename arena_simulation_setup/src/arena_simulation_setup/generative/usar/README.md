@@ -21,11 +21,11 @@ ros2 run arena_simulation_setup generate_usar configs/usar/mvp.yaml --write --ou
 
 It prints every rejected task with its reason and exits 1 when no task was placed. Tasks on the same world configuration and seed share one world, which holds all their scenarios.
 
-Run a task with the `search` robots mode, which dispatches the robot to its own start and judges it on the person:
+Run a task with the `search` robots mode. It sends no goal and only judges the robot on reaching the person, so a search driver has to move it:
 
 ```bash
 export ARENA_WORLD_PATH=/opt/arena_ws/data/usar_mvp
-arena launch world:=<world> task.robots:=search task.obstacles:=scenario task.scenario.file:=<task> acoustics:=arena
+arena launch world:=<world> task.robots:=search task.obstacles:=scenario task.scenario.file:=<task> acoustics:=arena robot.mobile.mapping:=slam robot.hearing:=srp robot.hearing.driver.enabled:=true
 ```
 
 ## Manifest
