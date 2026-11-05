@@ -125,6 +125,10 @@ class Manifest(pydantic.BaseModel):
             unknown = sorted(set(axes) - set(fields))
             if unknown:
                 raise ValueError(f"{space.value} has no configuration field {', '.join(unknown)}, it has {', '.join(sorted(fields))}")
+        for label, axis in (("robot_speed", self.robot_speed), ("ped_speed", self.ped_speed)):
+            lowest = axis.min if isinstance(axis, Span) else min(float(v) for v in axis_values(axis))
+            if lowest <= 0:
+                raise ValueError(f"{label} must be above 0, got {lowest}")
         if isinstance(self.agent_type, Span):
             raise ValueError("agent_type names profiles, it cannot be a span")
         unknown_types = sorted({str(t) for t in axis_values(self.agent_type)} - set(PROFILES))

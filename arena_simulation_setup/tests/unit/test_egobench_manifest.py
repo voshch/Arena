@@ -117,3 +117,9 @@ def test_a_manifest_loads_from_yaml(tmp_path: Path):
 def test_an_unknown_pedestrian_profile_is_named():
     with pytest.raises(pydantic.ValidationError, match="no pedestrian profile robot"):
         manifest(agent_type=["adult", "robot"])
+
+
+@pytest.mark.parametrize(("field", "axis"), [("robot_speed", 0.0), ("ped_speed", [1.2, -0.5]), ("ped_speed", {"min": 0.0, "max": 1.2, "step": 0.6})])
+def test_a_speed_at_or_below_zero_is_rejected(field: str, axis: object):
+    with pytest.raises(pydantic.ValidationError, match=f"{field} must be above 0"):
+        manifest(**{field: axis})
