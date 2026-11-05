@@ -532,6 +532,36 @@ def test_concourse_angled_branch_door_and_jambs_sit_outside_the_corridor() -> No
     assert dock.intersection(shapely.box(0.0, -2.0, 35.0, 2.0)).area < 1e-6
 
 
+def test_concourse_corner_fillet_rounds_the_bend_without_widening_straights() -> None:
+    """Verify the fillet cuts the outer corner of a bend, keeps straight sections at the nominal width and keeps branch doors on the wall."""
+    base = {
+        "shape": "l_bend",
+        "bend_angle_deg": 45.0,
+        "length": 24.0,
+        "width": 4.0,
+        "branches": [{"at_s": 4.0, "side": "left", "width": 3.0, "length": 6.0, "door_width": 1.2}],
+    }
+    sharp = WorldGeneratorConcourse(base, random.Random(42)).compute()
+    rounded = WorldGeneratorConcourse({**base, "corner_fillet_radius": 6.0}, random.Random(42)).compute()
+
+    def free_space(world: World) -> shapely.Geometry:
+        return shapely.union_all([shapely.Polygon([(p.x, p.y) for p in z.polygon]) for z in world.all_levels[0].zones])
+
+    assert not free_space(rounded).contains(shapely.Point(2.0, 2.05))
+    assert free_space(rounded).contains(shapely.Point(2.0, -1.95))
+    assert free_space(rounded).contains(shapely.Point(2.0, 1.95))
+
+    tip_distance = 2.0 / math.cos(math.radians(22.5))
+    bisector = math.radians(-67.5)
+    tip = shapely.Point(12.0 + 0.95 * tip_distance * math.cos(bisector), 0.95 * tip_distance * math.sin(bisector))
+    assert free_space(sharp).contains(tip)
+    assert not free_space(rounded).contains(tip)
+
+    door = rounded.all_levels[0].doors[0]
+    assert round(door.start.y, 3) == 2.0
+    assert round(door.end.y, 3) == 2.0
+
+
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     """Verify config_from_params maps empty strings to None and ROS panel configs compute."""
     pytest.importorskip("rclpy")

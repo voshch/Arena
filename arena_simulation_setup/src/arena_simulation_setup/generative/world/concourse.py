@@ -27,7 +27,6 @@ from .layout import Area, Layout, Region, compile_layout
 SCENARIO = "default"
 
 ANCHOR_EPSILON_DS = 0.05
-FILLET_EXTRA_RATIO = 0.15
 MERGE_GAP_M = 0.2
 ELEVATOR_AXIS_TOLERANCE_DEG = 10.0
 BUFFER_PAD_M = 0.05
@@ -229,7 +228,7 @@ class ConcourseConfiguration(BaseConfiguration):
     )
     width: float = Field(4.0, ge=1.5, description="Main concourse walkway width in meters")
     bend_angle_deg: float = Field(45.0, ge=10.0, le=120.0, description="Angle in degrees for L-bend and S-bend shapes")
-    corner_fillet_radius: float = Field(0.0, ge=0.0, le=10.0, description="Corner fillet radius in meters (0 for sharp corners)")
+    corner_fillet_radius: float = Field(0.0, ge=0.0, le=10.0, description="Spine corner fillet radius in meters for l_bend and s_bend (0 for sharp corners)")
     curve_samples: int = Field(24, ge=8, le=64, description="Sampling resolution for smooth curves")
     s_bend_lateral_ratio: float = Field(0.28, ge=0.05, le=1.0, description="Lateral shift ratio relative to length for smooth S-bends")
     dock_depth: float = Field(1.5, ge=0.5, le=4.0, description="Longitudinal depth in meters of terminal dock socket zones")
@@ -371,14 +370,43 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         if shape == ConcourseShape.L_BEND:
             half = total_len * 0.5
             ang = math.radians(self.config.bend_angle_deg)
-            return LineString([(0.0, 0.0), (half, 0.0), (half + half * math.cos(ang), half * math.sin(ang))])
+            return LineString(self._fillet_polyline([(0.0, 0.0), (half, 0.0), (half + half * math.cos(ang), half * math.sin(ang))]))
 
         seg = total_len / 3.0
         ang = math.radians(self.config.bend_angle_deg)
         p1 = (seg, 0.0)
         p2 = (seg + seg * math.cos(ang), seg * math.sin(ang))
         p3 = (p2[0] + seg, p2[1])
-        return LineString([(0.0, 0.0), p1, p2, p3])
+        return LineString(self._fillet_polyline([(0.0, 0.0), p1, p2, p3]))
+
+    def _fillet_polyline(self, pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """Replace each interior vertex by a tangent arc of the configured fillet radius."""
+        radius = self.config.corner_fillet_radius
+        if radius <= 0.0:
+            return pts
+        out = [pts[0]]
+        for a, b, c in zip(pts, pts[1:], pts[2:], strict=False):
+            len_in = math.dist(a, b)
+            len_out = math.dist(b, c)
+            u1 = ((b[0] - a[0]) / len_in, (b[1] - a[1]) / len_in)
+            u2 = ((c[0] - b[0]) / len_out, (c[1] - b[1]) / len_out)
+            cross = u1[0] * u2[1] - u1[1] * u2[0]
+            turn = math.atan2(abs(cross), u1[0] * u2[0] + u1[1] * u2[1])
+            if turn < 1e-6:
+                out.append(b)
+                continue
+            tangent_len = min(radius * math.tan(turn / 2.0), len_in / 2.0, len_out / 2.0)
+            arc_radius = tangent_len / math.tan(turn / 2.0)
+            side = math.copysign(1.0, cross)
+            start = (b[0] - u1[0] * tangent_len, b[1] - u1[1] * tangent_len)
+            center = (start[0] - u1[1] * side * arc_radius, start[1] + u1[0] * side * arc_radius)
+            start_angle = math.atan2(start[1] - center[1], start[0] - center[0])
+            steps = max(2, round(self.config.curve_samples * turn / math.pi))
+            for k in range(steps + 1):
+                angle = start_angle + side * turn * k / steps
+                out.append((center[0] + arc_radius * math.cos(angle), center[1] + arc_radius * math.sin(angle)))
+        out.append(pts[-1])
+        return out
 
     def _discretize_smooth_curve(
         self,
@@ -418,8 +446,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
     def _buffered_main_corridor(self, half_w: float) -> Polygon:
         """Compute the base polygon covering the full main concourse corridor."""
         join_style = "round" if self.config.corner_fillet_radius > 0 else "mitre"
-        fillet_extra = self.config.corner_fillet_radius * FILLET_EXTRA_RATIO
-        return self._spine.buffer(half_w + fillet_extra, cap_style="flat", join_style=join_style)
+        return self._spine.buffer(half_w, cap_style="flat", join_style=join_style)
 
     def _validate_actual_spine_bounds(self) -> None:
         """Validate feature attachment stations against the evaluated spine arc length."""
@@ -486,7 +513,6 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         """Slice the main concourse spine into corridor and intersection zones."""
         main_corridor_poly = self._buffered_main_corridor(half_w)
         join_style = "round" if self.config.corner_fillet_radius > 0 else "mitre"
-        fillet_extra = self.config.corner_fillet_radius * FILLET_EXTRA_RATIO
 
         intervals: list[tuple[float, float, str]] = []
         for branch in sorted(self.config.branches, key=lambda b: b.at_s):
@@ -519,7 +545,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         int_idx = 0
         for s0, s1, z_type in seg_slices:
             sub_line = shapely.ops.substring(self._spine, s0, s1)
-            sub_poly = sub_line.buffer(half_w + fillet_extra + BUFFER_PAD_M, cap_style="flat", join_style=join_style).intersection(main_corridor_poly)
+            sub_poly = sub_line.buffer(half_w + BUFFER_PAD_M, cap_style="flat", join_style=join_style).intersection(main_corridor_poly)
             if sub_poly.is_empty:
                 continue
             geom = cast("Polygon | MultiPolygon", sub_poly)
