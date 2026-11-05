@@ -96,6 +96,14 @@ def axis_draw(axis: Axis, rng: random.Random) -> Scalar:
     return axis
 
 
+def check_world_fields(space: Space, keys: typing.Iterable[str]) -> None:
+    """Raise on a key that is no configuration field of the space's world generator."""
+    fields = WorldGenerator.config_model(space.generator).model_fields
+    unknown = sorted(set(keys) - set(fields))
+    if unknown:
+        raise ValueError(f"{space.value} has no configuration field {', '.join(unknown)}, it has {', '.join(sorted(fields))}")
+
+
 class Manifest(pydantic.BaseModel):
     """The dimensions of one dataset; every axis is a value, a list of values or a span."""
 
@@ -121,10 +129,7 @@ class Manifest(pydantic.BaseModel):
         if self.sampling == "random" and self.samples == 0:
             raise ValueError("random sampling needs a sample count above 0")
         for space, axes in self.worlds.items():
-            fields = WorldGenerator.config_model(space.generator).model_fields
-            unknown = sorted(set(axes) - set(fields))
-            if unknown:
-                raise ValueError(f"{space.value} has no configuration field {', '.join(unknown)}, it has {', '.join(sorted(fields))}")
+            check_world_fields(space, axes)
         for label, axis in (("robot_speed", self.robot_speed), ("ped_speed", self.ped_speed)):
             lowest = axis.min if isinstance(axis, Span) else min(float(v) for v in axis_values(axis))
             if lowest <= 0:

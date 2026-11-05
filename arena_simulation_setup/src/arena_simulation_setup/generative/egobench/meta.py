@@ -18,7 +18,7 @@ from arena_simulation_setup.tree.World import World
 
 from . import scenario_corridor, scenario_open
 from .encounter import Generated, Rejected
-from .manifest import Encounter, Pedestrian, Scalar, Space
+from .manifest import Encounter, Pedestrian, Scalar, Space, check_world_fields
 from .sampler import Sample
 
 SCENARIO_GENERATORS: dict[Space, Callable[[Layout, Sample], Generated | Rejected]] = {
@@ -97,6 +97,7 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
             raise ValueError(f"world must be a JSON object of {self.config.space} settings, got {self.config.world!r}")
         values: dict[str, Scalar] = world
         space = Space(self.config.space)
+        check_world_fields(space, values)
         self.sample = Sample(
             space=space,
             world=values,

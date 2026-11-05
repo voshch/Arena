@@ -46,6 +46,11 @@ def test_an_unknown_pedestrian_kind_is_rejected_by_the_configuration():
         WorldGeneratorEgoBench({"pedestrian": "scripted"}, random.Random(0))
 
 
+def test_a_world_field_of_another_space_is_rejected_by_the_configuration():
+    with pytest.raises(ValueError, match="open has no configuration field corridor_width"):
+        WorldGeneratorEgoBench({"space": "open", "world": '{"corridor_width": 3.0}'}, random.Random(0))
+
+
 def test_the_generator_carries_the_pedestrian_kind_into_its_scenario():
     generator = WorldGeneratorEgoBench({"pedestrian": "reactive", "world": '{"corridor_width": 3.0, "branches": 4}', "world_seed": 3}, random.Random(0))
     assert generator.sample.pedestrian is Pedestrian.REACTIVE
