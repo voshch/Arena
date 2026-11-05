@@ -486,6 +486,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._build_elevators(total_len)
         self._apply_pillar_obstacles(half_w)
         self._build_trunk_dock_sockets()
+        self._validate_dock_pillar_clearance()
 
         # Validate dock socket references early so compute() (preview) and files() (save) fail fast
         self._validate_dock_references()
@@ -828,6 +829,22 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._dock_metadata["dock_end"] = {
             "nav_pose": [round(dock_e_cx, 2), round(dock_e_cy, 2), round(yaw_end_norm, 3)],
         }
+
+    def _validate_dock_pillar_clearance(self) -> None:
+        """Ensure pillars neither split a dock socket into pieces nor cover its nav pose."""
+        if not self._pillar_obstacles:
+            return
+        pillars = shapely.unary_union(self._pillar_obstacles)
+        for name, _, poly in self._semantic_zones:
+            if name not in self._dock_metadata:
+                continue
+            remaining = poly.difference(pillars)
+            pieces = [part for part in shapely.get_parts(remaining) if part.area > 1e-6]
+            if len(pieces) > 1:
+                raise ValueError(f"Pillars split dock socket '{name}' into {len(pieces)} pieces")
+            x, y = cast("list[float]", self._dock_metadata[name]["nav_pose"])[:2]
+            if pillars.intersects(Point(x, y)):
+                raise ValueError(f"A pillar covers the nav pose of dock socket '{name}'")
 
     def _validate_dock_references(self) -> None:
         """Ensure all dock references in flows and robot target resolve to valid socket zones."""

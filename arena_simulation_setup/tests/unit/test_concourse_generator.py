@@ -606,6 +606,32 @@ def test_concourse_flow_field_descriptions_cite_existing_agent_types_and_behavio
     assert "social_aware" not in tree_description
 
 
+def test_concourse_rejects_pillar_that_splits_a_dock_socket() -> None:
+    """Verify a pillar spanning a dock socket so it falls into pieces fails on compute."""
+    config = {
+        "length": 24.0,
+        "width": 4.0,
+        "pillars": [{"at_s": 0.8, "shape": "rectangle", "width": 0.2, "depth": 3.9}],
+    }
+    with pytest.raises(ValueError, match="split dock socket 'dock_start'"):
+        _ = WorldGeneratorConcourse(config, random.Random(42)).compute()
+
+
+def test_concourse_rejects_pillar_covering_a_dock_nav_pose() -> None:
+    """Verify a pillar standing on a dock nav pose fails on compute."""
+    config = {"length": 24.0, "width": 4.0, "pillars": [{"at_s": 0.75, "radius": 0.35}]}
+    with pytest.raises(ValueError, match="covers the nav pose of dock socket 'dock_start'"):
+        _ = WorldGeneratorConcourse(config, random.Random(42)).compute()
+
+
+def test_concourse_keeps_dock_whole_under_its_name_when_a_pillar_clips_it() -> None:
+    """Verify a pillar clipping a dock edge leaves one zone carrying the dock name."""
+    config = {"length": 24.0, "width": 4.0, "pillars": [{"at_s": 1.0, "lateral_offset": 1.5, "radius": 0.3}]}
+    world = WorldGeneratorConcourse(config, random.Random(42)).compute()
+    dock_zones = [z.name for z in world.all_levels[0].zones if z.name.startswith("dock_start")]
+    assert dock_zones == ["dock_start"]
+
+
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     """Verify config_from_params maps empty strings to None and ROS panel configs compute."""
     pytest.importorskip("rclpy")
