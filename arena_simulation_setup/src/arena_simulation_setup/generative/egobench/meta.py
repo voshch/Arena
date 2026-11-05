@@ -46,7 +46,7 @@ def pack(sample: Sample, generated: Generated) -> dict[str, bytes]:
 
 def binding(sample: Sample) -> dict[str, typing.Any]:
     """Episode binding running the sample's scenario on both task axes."""
-    return {"tm_robots": "scenario", "tm_obstacles": "scenario", "robots_params": {"file": sample.scenario_key}, "obstacles_params": {"file": sample.scenario_key}}
+    return {"modes": {"robots": "scenario", "obstacles": "scenario"}, "params": {"robots": {"file": sample.scenario_key}, "obstacles": {"file": sample.scenario_key}}}
 
 
 class WorldGeneratorEgoBench(WorldGeneratorImpl):

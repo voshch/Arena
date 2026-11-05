@@ -33,7 +33,7 @@ def test_the_generator_is_registered_and_runs_on_its_defaults():
     assert WorldGeneratorType.EGOBENCH in WorldGenerator.available()
     generator = WorldGenerator(WorldGeneratorType.EGOBENCH, {}, 0)
     assert generator.compute().all_levels[0].zones
-    assert generator.params()["tm_obstacles"] == "scenario"
+    assert generator.params()["modes"]["obstacles"] == "scenario"
 
 
 def test_an_unknown_encounter_is_rejected_by_the_configuration():
@@ -49,7 +49,7 @@ def test_an_unknown_pedestrian_kind_is_rejected_by_the_configuration():
 def test_the_generator_carries_the_pedestrian_kind_into_its_scenario():
     generator = WorldGeneratorEgoBench({"pedestrian": "reactive", "world": '{"corridor_width": 3.0, "branches": 4}', "world_seed": 3}, random.Random(0))
     assert generator.sample.pedestrian is Pedestrian.REACTIVE
-    assert "__reactive__" in generator.params()["robots_params"]["file"]
+    assert "__reactive__" in generator.params()["params"]["robots"]["file"]
 
 
 def test_an_encounter_that_does_not_fit_fails_the_world():
@@ -61,8 +61,8 @@ def test_an_encounter_that_does_not_fit_fails_the_world():
 def test_the_episode_binding_names_the_sample_scenario():
     item = one()
     params = WorldGeneratorEgoBench.of(item).params()
-    assert params["robots_params"] == params["obstacles_params"] == {"file": item.scenario_key}
-    assert params["tm_robots"] == "scenario"
+    assert params["params"]["robots"] == params["params"]["obstacles"] == {"file": item.scenario_key}
+    assert params["modes"] == {"robots": "scenario", "obstacles": "scenario"}
 
 
 def test_a_saved_world_carries_its_marked_scenario_types_and_provenance(tmp_path: Path):
