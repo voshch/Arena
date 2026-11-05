@@ -184,10 +184,10 @@ class FlowStreamSpec(BaseModel):
         description="Target sink dock socket zone name (e.g. dock_start, dock_end, dock_branch_0_right)",
     )
     rate: float = Field(default=DEFAULT_OPPOSING_FLOW_RATE, ge=0.02, le=5.0, description="Pedestrian spawn rate in agents/second")
-    agent_type: str = Field(default="adult", description="Agent model/type: adult, blind_pedestrian, aware_pedestrian, etc.")
+    agent_type: str = Field(default="adult", description="Humansim agent type: adult, elder, child, hurried, distracted, etc.")
     velocity_min: float = Field(default=DEFAULT_FLOW_VELOCITY_MIN, ge=0.2, description="Minimum desired speed in m/s")
     velocity_max: float = Field(default=DEFAULT_FLOW_VELOCITY_MAX, ge=0.2, description="Maximum desired speed in m/s")
-    behavior_tree: str = Field(default="default", description="Behavior tree policy: default, social_aware, etc.")
+    behavior_tree: str = Field(default="default", description="Behavior tree name from configs/hunav/behavior_trees: default, BTRegularNav.xml, BTScaredNav.xml, etc.")
     active_window: tuple[float, float] = Field(default=(0.0, DEFAULT_ACTIVE_WINDOW_END_S), description="Active time window (t_start, t_end)")
     max_concurrent: int = Field(default=-1, description="Max concurrent agents alive (-1 for unlimited)")
     max_total: int = Field(default=-1, description="Total agents to spawn over episode (-1 for unlimited)")

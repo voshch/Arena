@@ -585,6 +585,23 @@ def test_concourse_room_default_door_fits_a_narrow_room_opening() -> None:
     assert math.hypot(door.end.x - door.start.x, door.end.y - door.start.y) <= 0.9 + 1e-3
 
 
+def test_concourse_flow_field_descriptions_cite_existing_agent_types_and_behavior_trees() -> None:
+    """Verify FlowStreamSpec descriptions cite only humansim agent types and hunav behavior trees that exist."""
+    builtin_agents = pytest.importorskip("arena_humansim.core.agents").BUILTIN_AGENTS
+
+    agent_description = FlowStreamSpec.model_fields["agent_type"].description or ""
+    tree_description = FlowStreamSpec.model_fields["behavior_tree"].description or ""
+    for agent in ("adult", "elder", "child", "hurried", "distracted"):
+        assert agent in builtin_agents
+        assert agent in agent_description
+    trees_dir = Path(__file__).resolve().parents[2] / "configs" / "hunav" / "behavior_trees"
+    for tree in ("default.xml", "BTRegularNav.xml", "BTScaredNav.xml"):
+        assert (trees_dir / tree).is_file()
+        assert tree in tree_description or tree.removesuffix(".xml") in tree_description
+    assert "blind_pedestrian" not in agent_description
+    assert "social_aware" not in tree_description
+
+
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     """Verify config_from_params maps empty strings to None and ROS panel configs compute."""
     pytest.importorskip("rclpy")
