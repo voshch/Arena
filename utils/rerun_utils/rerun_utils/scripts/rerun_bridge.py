@@ -25,6 +25,11 @@ from rerun_utils.renderers import REGISTRY, RendererCtx
 from rerun_utils.tf_mirror import TFMirror
 
 
+def env_namespace(taskgen_node: str) -> str:
+    """The env's topic namespace from its task generator node (`/arena/env_0/arena_env_node` -> `/arena/env_0`), as rviz_config reads it."""
+    return os.path.dirname(taskgen_node.rstrip('/')).rstrip('/')
+
+
 class RerunBridge(ArenaMixinNode):
     robots: list[RobotDescriptor]
     viz_manifest: AdapterVizManifest
@@ -113,7 +118,7 @@ class RerunBridge(ArenaMixinNode):
         self.get_logger().info(f"rerun web viewer: open {viewer_url}")
 
         self._tf_mirror = TFMirror(self, self._env_id, self._tf_namespace)
-        self._ctx = RendererCtx(env_id=self._env_id, node=self)
+        self._ctx = RendererCtx(env_id=self._env_id, node=self, env_namespace=env_namespace(self._TASKGEN_NODE), tf_namespace=self._tf_namespace)
         self._dispatch_manifest()
 
         loop = asyncio.get_running_loop()

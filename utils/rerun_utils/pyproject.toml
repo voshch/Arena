@@ -3,9 +3,12 @@ name = "rerun_utils"
 version = "0.0.0"
 dependencies = [
     "numpy",
-    "rerun-sdk>=0.21",
+    "rerun-sdk>=0.38",
 ]
 dynamic = ["description", "license", "maintainers", "scripts"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
 
 [tool.uv]
 package = false

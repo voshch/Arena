@@ -7,7 +7,7 @@ from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from geometry_msgs.msg import PolygonStamped
 
-from rerun_utils.entity_paths import display_path
+from rerun_utils.entity_paths import display_path, in_frame
 from rerun_utils.renderers._registry import RendererCtx, register
 
 
@@ -25,6 +25,6 @@ def render_polygon(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Render
         if len(pts) < 2:
             return
         pts.append(pts[0])
-        rr.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]))
+        rr.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]), *in_frame(msg.header.frame_id))
 
     ctx.node.create_subscription(PolygonStamped, d.topic, cb, 10)

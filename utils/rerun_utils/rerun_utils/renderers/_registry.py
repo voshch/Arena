@@ -16,6 +16,8 @@ class RendererCtx:
 
     env_id: int
     node: rclpy.node.Node
+    env_namespace: str = ""  # where the env's topics live, e.g. /arena/env_0 (its task generator's namespace)
+    tf_namespace: str = ""  # prefix of the env's /tf topics, "" when tf is global (always under Isaac and MuJoCo)
 
 
 RendererFn = Callable[[AdapterDisplay, "RobotDescriptor | None", RendererCtx], None]

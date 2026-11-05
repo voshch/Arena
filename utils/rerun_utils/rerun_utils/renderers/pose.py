@@ -7,7 +7,7 @@ from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from geometry_msgs.msg import PoseStamped
 
-from rerun_utils.entity_paths import display_path
+from rerun_utils.entity_paths import display_path, in_frame
 from rerun_utils.renderers._registry import RendererCtx, register
 
 
@@ -37,6 +37,7 @@ def render_pose(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
                 vectors=[_yaw_to_dir(q.x, q.y, q.z, q.w)],
                 colors=[color],
             ),
+            *in_frame(msg.header.frame_id),
         )
 
     ctx.node.create_subscription(PoseStamped, d.topic, cb, 10)
