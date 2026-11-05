@@ -29,6 +29,7 @@ SCENARIO = "default"
 ANCHOR_EPSILON_DS = 0.05
 FILLET_EXTRA_RATIO = 0.15
 MERGE_GAP_M = 0.2
+ELEVATOR_AXIS_TOLERANCE_DEG = 10.0
 BUFFER_PAD_M = 0.05
 TRUNK_DOCK_WIDTH_RATIO = 0.85
 BRANCH_DOCK_DEPTH_RATIO = 0.45
@@ -670,15 +671,16 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             anchor = self._anchor_at(elev.at_s)
             px, py = anchor.point
             tx, ty = anchor.tangent
-            extrude_dir = (-tx, -ty) if elev.at_s < total_len / 2.0 else (tx, ty)
+            along_x = abs(tx) >= abs(ty)
+            off_axis_deg = math.degrees(math.atan2(min(abs(tx), abs(ty)), max(abs(tx), abs(ty))))
+            if off_axis_deg > ELEVATOR_AXIS_TOLERANCE_DEG:
+                raise ValueError(f"Elevator {idx} spine tangent is {off_axis_deg:.1f} deg off the nearest axis, cabins need at most {ELEVATOR_AXIS_TOLERANCE_DEG} deg")
+            snapped = (math.copysign(1.0, tx), 0.0) if along_x else (0.0, math.copysign(1.0, ty))
+            extrude_dir = (-snapped[0], -snapped[1]) if elev.at_s < total_len / 2.0 else snapped
             cabin_cx = px + extrude_dir[0] * (elev.cabin_depth / 2.0)
             cabin_cy = py + extrude_dir[1] * (elev.cabin_depth / 2.0)
-            cabin_box = shapely.box(
-                cabin_cx - elev.cabin_width / 2.0,
-                cabin_cy - elev.cabin_depth / 2.0,
-                cabin_cx + elev.cabin_width / 2.0,
-                cabin_cy + elev.cabin_depth / 2.0,
-            )
+            size_x, size_y = (elev.cabin_depth, elev.cabin_width) if along_x else (elev.cabin_width, elev.cabin_depth)
+            cabin_box = shapely.box(cabin_cx - size_x / 2.0, cabin_cy - size_y / 2.0, cabin_cx + size_x / 2.0, cabin_cy + size_y / 2.0)
             dock_name = f"dock_elevator_{idx}"
             self._semantic_zones.append((dock_name, f"Elevator Cabin Dock Socket {idx}", cabin_box))
             yaw_out = math.atan2(-extrude_dir[1], -extrude_dir[0])
@@ -700,7 +702,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                 Elevator(
                     name=f"elevator_{idx}",
                     position=Position(round(cabin_cx, 2), round(cabin_cy, 2), 0.0),
-                    size=[round(elev.cabin_width, 2), round(elev.cabin_depth, 2), 2.5],
+                    size=[round(size_x, 2), round(size_y, 2), 2.5],
                     door_side=door_side,
                     destinations=list(elev.destinations),
                 )

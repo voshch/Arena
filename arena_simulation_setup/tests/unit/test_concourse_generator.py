@@ -20,6 +20,7 @@ from arena_simulation_setup.generative.world.concourse import (
     SideBranchFeature,
     WorldGeneratorConcourse,
 )
+from arena_simulation_setup.tree.World import World
 from arena_simulation_setup.tree.World.Scenario import ScenarioView
 
 
@@ -447,6 +448,63 @@ def test_concourse_with_elevator_creates_proper_elevator_entity() -> None:
 
     # World must pass full validation
     assert world.validate() == []
+
+
+def _zone_polygon(world: World, name: str) -> shapely.Polygon:
+    zone = next(z for z in world.all_levels[0].zones if z.name == name)
+    return shapely.Polygon([(p.x, p.y) for p in zone.polygon])
+
+
+def test_concourse_elevator_cabin_extends_behind_spine_end_with_width_across_corridor() -> None:
+    """Verify a non-square cabin sits beyond the spine end, depth along the spine and width across it."""
+    config = {
+        "length": 24.0,
+        "width": 4.0,
+        "elevators": [
+            {"at_s": 0.0, "cabin_width": 3.0, "cabin_depth": 2.0, "door_width": 1.4},
+            {"at_s": 24.0, "cabin_width": 3.0, "cabin_depth": 2.0, "door_width": 1.4},
+        ],
+    }
+    world = WorldGeneratorConcourse(config, random.Random(42)).compute()
+    corridor = shapely.box(0.0, -2.0, 24.0, 2.0)
+    for idx, x_range in enumerate(((-2.0, 0.0), (24.0, 26.0))):
+        cabin = _zone_polygon(world, f"dock_elevator_{idx}")
+        min_x, min_y, max_x, max_y = cabin.bounds
+        assert (round(min_x, 3), round(max_x, 3)) == x_range
+        assert (round(min_y, 3), round(max_y, 3)) == (-1.5, 1.5)
+        assert cabin.intersection(corridor).area < 1e-6
+        elevator = world.all_levels[0].elevators[idx]
+        assert elevator.size == [2.0, 3.0, 2.5]
+        assert (elevator.position.x, elevator.position.y) == (round(cabin.centroid.x, 2), round(cabin.centroid.y, 2))
+
+
+def test_concourse_elevator_on_vertical_spine_end_swaps_cabin_extents() -> None:
+    """Verify a cabin at the end of a spine heading along y takes depth on y and width on x."""
+    config = {
+        "shape": "l_bend",
+        "bend_angle_deg": 90.0,
+        "length": 24.0,
+        "width": 4.0,
+        "elevators": [{"at_s": 24.0, "cabin_width": 3.0, "cabin_depth": 2.0, "door_width": 1.4}],
+    }
+    world = WorldGeneratorConcourse(config, random.Random(42)).compute()
+    cabin = _zone_polygon(world, "dock_elevator_0")
+    min_x, min_y, max_x, max_y = cabin.bounds
+    assert round(max_x - min_x, 3) == 3.0
+    assert round(max_y - min_y, 3) == 2.0
+    elevator = world.all_levels[0].elevators[0]
+    assert elevator.size == [3.0, 2.0, 2.5]
+    assert elevator.door_side == "-y"
+
+
+def test_concourse_rejects_elevator_on_skewed_spine_end() -> None:
+    """Verify an elevator at a spine end far from axis alignment fails on compute."""
+    gen = WorldGeneratorConcourse(
+        {"shape": "l_bend", "bend_angle_deg": 45.0, "length": 24.0, "elevators": [{"at_s": 24.0}]},
+        random.Random(42),
+    )
+    with pytest.raises(ValueError, match="off the nearest axis"):
+        _ = gen.compute()
 
 
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
