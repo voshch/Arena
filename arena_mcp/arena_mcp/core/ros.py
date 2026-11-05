@@ -33,6 +33,9 @@ class ActionType[GoalT](Protocol):
 LATCHED = "latched"
 RELIABLE = "reliable"
 SENSOR = "sensor"
+SETTLE_S = 3.5
+PEER_MATCH_S = 0.3
+ACK_S = 1.0
 
 
 def profile(kind: str, depth: int) -> QoSProfile:
@@ -98,9 +101,10 @@ def _resolve(future: asyncio.Future[Any], value: object) -> None:
 
 
 class Ros:
-    """The server's one ROS node, created on first use and shared by every domain."""
+    """The server's one ROS node, created on first use and shared by every domain, settle_discovery holding its first use for one DDS announcement period."""
 
     def __init__(self) -> None:
+        self.settle_discovery = False
         self._node: Any = None
         self._executor: Any = None
         self._thread: threading.Thread | None = None
@@ -134,6 +138,8 @@ class Ros:
                 self._executor.add_node(self._node)
                 self._thread = threading.Thread(target=self._spin, name="arena_mcp_ros", daemon=True)
                 self._thread.start()
+                if self.settle_discovery:
+                    await asyncio.sleep(SETTLE_S)
             return self._node
 
     def _spin(self) -> None:
@@ -162,7 +168,12 @@ class Ros:
         if self._node is None:
             return
         import rclpy
+        from rclpy.duration import Duration
 
+        if self.settle_discovery:
+            for publisher in self._publishers.values():
+                with contextlib.suppress(Exception):
+                    publisher.wait_for_all_acked(Duration(seconds=ACK_S))
         self._closing = True
         with contextlib.suppress(Exception):
             self._executor.shutdown(timeout_sec=2.0)
@@ -307,8 +318,22 @@ class Ros:
             self._publishers[key] = publisher
         return publisher
 
+    async def matched(self, publisher: Publisher, topic: str, timeout: float = 1.0) -> None:
+        """Wait up to timeout for the subscribers already in the graph to match publisher."""
+        node = await self.node()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(timeout, 0.0)
+        while publisher.get_subscription_count() < node.count_subscribers(topic) and loop.time() < deadline:
+            await asyncio.sleep(0.05)
+        if self.settle_discovery:
+            await asyncio.sleep(PEER_MATCH_S)
+
     async def publish[MsgT](self, msg_type: type[MsgT], topic: str, msg: MsgT, *, qos: str = RELIABLE) -> None:
-        (await self.publisher(msg_type, topic, qos=qos)).publish(msg)
+        fresh = (topic, msg_type, qos) not in self._publishers
+        publisher = await self.publisher(msg_type, topic, qos=qos)
+        if fresh:
+            await self.matched(publisher, topic)
+        publisher.publish(msg)
 
     async def graph(self) -> dict[str, list[str]]:
         """Live node, service, action and topic names."""

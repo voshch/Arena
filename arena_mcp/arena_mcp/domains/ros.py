@@ -219,12 +219,8 @@ async def ros_publish(
     full, _ = resolve(type_name, "msg")
     msg_type = load(full, "msg")
     msg = msgs.fill(msg_type, message)
-    node = await ROS.node()
     publisher = await ROS.publisher(msg_type, topic, qos=qos)
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + max(match_s, 0.0)
-    while publisher.get_subscription_count() < node.count_subscribers(topic) and loop.time() < deadline:
-        await asyncio.sleep(0.05)
+    await ROS.matched(publisher, topic, match_s)
     publisher.publish(msg)
     return {"topic": topic, "type": full, "qos": qos, "subscribers": publisher.get_subscription_count()}
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import enum
 import importlib.metadata
+import importlib.util
 import json
 import os
 import re
@@ -126,6 +127,15 @@ def _task_layers() -> tuple[dict[str, list[str]], list[str]]:
     return {"task_layer": names, **{mode_param(axis): sorted(modes) for axis, modes in sorted(axes.items())}}, deps
 
 
+def _mcp_tools() -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Tool names and their `key=` candidates, empty when arena_mcp is unavailable."""
+    if importlib.util.find_spec("arena_mcp") is None:
+        return {}, []
+    from arena_mcp.call import completion_values
+
+    return completion_values()
+
+
 def _task_axis_args(values: dict) -> dict[str, dict[str, str]]:
     from arena_runtime.env.task_layer import TASK_PARAM_PREFIX
 
@@ -153,6 +163,9 @@ def _values() -> tuple[dict[str, list[str] | dict[str, str]], list[str]]:
     asset_values, asset_deps = _asset_names()
     values.update(asset_values)
     values.update({f"asset.import.{kind}": names for kind, names in _import_sources().items()})
+    mcp_values, mcp_deps = _mcp_tools()
+    values.update(mcp_values)
+    deps += mcp_deps
     deps += [*asset_deps, os.environ["ARENA_ASSETS_DIR_LOCAL"], os.environ["ARENA_ASSETS_DIR_IMPORTED"], str(arena / "arena_simulation_setup" / "worlds")]
     return values, deps
 

@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from arena_cli.common import CLIError, _exec, _host_path, make_verb
-from arena_cli.complete import Flags, Static, Union
+from arena_cli.complete import Context, Dynamic, Flags, Static, Union
 
 DESCRIPTION = """Serve the Arena MCP domains to an MCP client over stdio.
 
@@ -14,6 +14,7 @@ Usage:
   arena mcp                           installed domains, served or unavailable with the reason, and how to register the server
   arena mcp ls [DOMAIN ...] [--json]  the same list, with the tools of each named domain, --json for every field
   arena mcp serve [DOMAIN ...]        serve the named domains, every served one by default, over stdio
+  arena mcp call TOOL [KEY=VALUE ...]  run one tool in the foreground and print its result
 
 On the host an MCP client runs _meta/tools/arena-mcp, which attaches to the running
 arena container (a fork with --fork, another machine with --host) and serves from
@@ -78,6 +79,29 @@ def serve(argv: list[str]) -> None:
     _exec(*_python_mcp("serve", *argv))
 
 
+def call(argv: list[str]) -> None:
+    """Run one tool in the foreground and print its result.
+
+    `arena mcp call TOOL [KEY=VALUE ...]`. 'arena mcp ls DOMAIN' lists the tools,
+    'arena mcp call TOOL --help' a tool's parameters. A string parameter takes VALUE
+    as is, any other parses it as JSON (poses='[[1, 2, 0]]'), and null clears an
+    optional one. Image and audio results are saved under
+    $ARENA_DATA_DIR/mcp/<hostname>/media, their paths printed. A job the tool starts
+    runs in the foreground: its log goes to stderr, its final status to stdout, and
+    Ctrl-C cancels it. Exit code 0 on success, 1 on a tool error or a job that did not
+    succeed, 2 on bad usage, 130 after Ctrl-C.
+    """
+    _require()
+    _exec(*_python_mcp("call", *argv))
+
+
+def _call_candidates(words: list[str], _cur: str, ctx: Context) -> dict[str, str]:
+    if not words:
+        return dict(ctx.values("mcp.tools") or {})
+    given = {word.partition("=")[0] + "=" for word in words[1:]}
+    return {key: kind for key, kind in dict(ctx.values(f"mcp.args.{words[0]}") or {}).items() if key not in given}
+
+
 DOMAINS = Static(domains)
 
 COMMANDS = {
@@ -85,5 +109,6 @@ COMMANDS = {
     for v in (
         make_verb("ls", ls, passthrough=True, complete=Union(DOMAINS, Flags({"--json": "every field of each domain and tool"}))),
         make_verb("serve", serve, passthrough=True, complete=DOMAINS),
+        make_verb("call", call, passthrough=True, complete=Dynamic(_call_candidates)),
     )
 }
