@@ -567,7 +567,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             for side in sides:
                 outside_branch, tip_pt, dir_vec = self._build_branch_polygon(branch, anchor, side)
                 outside_clipped = cast("Polygon | MultiPolygon", outside_branch.difference(main_poly))
-                door_w = branch.door_width if branch.door_width is not None else (DEFAULT_ROOM_DOOR_WIDTH_M if branch.is_room else None)
+                door_w = branch.door_width if branch.door_width is not None else (min(DEFAULT_ROOM_DOOR_WIDTH_M, branch.width) if branch.is_room else None)
 
                 placement = BranchPlacement(
                     branch_index=idx,

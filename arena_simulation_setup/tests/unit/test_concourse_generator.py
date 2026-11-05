@@ -562,6 +562,18 @@ def test_concourse_corner_fillet_rounds_the_bend_without_widening_straights() ->
     assert round(door.end.y, 3) == 2.0
 
 
+def test_concourse_room_default_door_fits_a_narrow_room_opening() -> None:
+    """Verify the default room door never exceeds the room width."""
+    config = {
+        "length": 24.0,
+        "width": 4.0,
+        "branches": [{"at_s": 12.0, "side": "left", "width": 0.9, "length": 4.0, "is_room": True}],
+    }
+    level = WorldGeneratorConcourse(config, random.Random(42)).compute().all_levels[0]
+    door = level.doors[0]
+    assert math.hypot(door.end.x - door.start.x, door.end.y - door.start.y) <= 0.9 + 1e-3
+
+
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     """Verify config_from_params maps empty strings to None and ROS panel configs compute."""
     pytest.importorskip("rclpy")
