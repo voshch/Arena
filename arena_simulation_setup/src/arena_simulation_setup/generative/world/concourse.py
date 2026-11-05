@@ -29,6 +29,7 @@ SCENARIO = "default"
 ANCHOR_EPSILON_DS = 0.05
 MERGE_GAP_M = 0.2
 ELEVATOR_AXIS_TOLERANCE_DEG = 10.0
+ELEVATOR_END_TOLERANCE_M = 0.05
 BUFFER_PAD_M = 0.05
 TRUNK_DOCK_WIDTH_RATIO = 0.85
 BRANCH_DOCK_DEPTH_RATIO = 0.45
@@ -458,6 +459,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         for i, elevator in enumerate(self.config.elevators):
             if elevator.at_s > actual_len:
                 raise ValueError(f"Elevator {i} at_s ({elevator.at_s} m) exceeds actual spine length ({actual_len:.2f} m for shape '{shape_name}')")
+            if elevator.at_s > ELEVATOR_END_TOLERANCE_M and abs(elevator.at_s - actual_len) > ELEVATOR_END_TOLERANCE_M:
+                raise ValueError(f"Elevator {i} at_s ({elevator.at_s} m) must be 0 (spine start) or {actual_len:.2f} m (spine end)")
         for i, pillar in enumerate(self.config.pillars):
             if pillar.at_s > actual_len:
                 raise ValueError(f"Pillar {i} at_s ({pillar.at_s} m) exceeds actual spine length ({actual_len:.2f} m for shape '{shape_name}')")

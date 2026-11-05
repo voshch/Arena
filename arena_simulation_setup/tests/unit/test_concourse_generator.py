@@ -316,6 +316,10 @@ def test_concourse_validation_errors() -> None:
     with pytest.raises(ValueError, match="exceeds concourse length"):
         ConcourseConfiguration(length=20.0, elevators=[ElevatorBayFeature(at_s=25.0)])
 
+    # Elevator away from both spine ends fails on compute()
+    with pytest.raises(ValueError, match="must be 0 .spine start. or 24.00 m .spine end."):
+        _ = WorldGeneratorConcourse({"length": 24.0, "elevators": [{"at_s": 12.0}]}, random.Random(42)).compute()
+
     # Elevator door_width exceeds cabin_width
     with pytest.raises(ValueError, match="cannot exceed cabin_width"):
         ElevatorBayFeature(cabin_width=2.0, door_width=2.5)
