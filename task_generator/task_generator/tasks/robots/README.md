@@ -86,7 +86,8 @@ robot walks it. Each crossing becomes three phases, all in the abstract frame:
    robot centre 0.1 m past the mouth
 
 Steps and treads are solid geometry every sensor sees, the robot climbs them under its own
-physics and its planner gets no hint that they are passable.
+physics and its planner gets no hint that they are passable. A ramp needs none of this: it
+stays on its level, so a goal across it is an ordinary goto for any robot.
 
 ## Task modes (`TM_Robots` subclasses)
 

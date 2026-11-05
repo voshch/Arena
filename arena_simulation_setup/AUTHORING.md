@@ -500,6 +500,40 @@ the pedestrian simulation, the judge and evaluation keep the side-by-side
 layout in either case: a robot's `map -> odom` follows the level it stands
 on, and pedestrians reach the simulator on `sim_peds` in its own frame.
 
+### Ramps
+
+A `ramps:` entry gives a level floor that is not flat, without another level.
+The level stays one flat plan for the map, the pedestrian simulation, the
+planner and the judge, so nothing is split at a seam and nobody teleports: only
+heights change. Full field reference: [Ramps fields](worlds/README.md#ramps-fields).
+
+```yaml
+levels:
+- id: '0'
+  zones:
+  - {name: hall, polygon: [[0, 0], [60, 0], [60, 12], [0, 12]]}
+  ramps:
+  - {name: ramp, mouth: [10, 6], size: [24, 12], rise: 1.0}
+  - {name: deck, mouth: [34, 6], size: [26, 12], base: 1.0}
+```
+
+This is the `ramp_demo` world: a 24 m ramp rising 1 m from the floor to a level
+deck. A ramp's mouth is its low end, at height `base`, and it rises `rise` over
+its length. `rise: 0`, the default, makes a level deck, so any floor height is a
+ramp too. Where footprints overlap the first entry wins, and off every ramp the
+height is 0.
+
+Pedestrians take the height of the ramp under them, and robots spawn and
+teleport onto it, on every simulator that has heights. A robot drives on the
+slab under its own physics, the planner gets a flat map and the costmap's door
+mask keeps the slab from reading as a wall, which a planar lidar makes of a
+slope until the robot is on it. A slab does not close the space under it, so run
+it from wall to wall or add walls, and leave no gap at its ends.
+
+`floor: false` spawns no slab, for a world that already has the surface in it,
+such as a scan with its collider. A world with `defaults: {floor: false}` does
+this for every ramp.
+
 ### Microphones
 
 A level's optional `microphones:` list places audio listeners for the

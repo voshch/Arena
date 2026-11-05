@@ -91,6 +91,10 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
         def realize(self, pose: object) -> object:
             return pose
 
+        def ramp_height(self, position: object) -> float:
+            del position
+            return 0.0
+
         async def move_robot(self, robots: typing.Sequence[types.SimpleNamespace]) -> tuple[bool, ...]:
             self._body.pending = (robots[0].pose.position.x, robots[0].pose.position.y)
             return (True,)

@@ -175,13 +175,15 @@ Each tick the shim then:
 - Runs escalator belts: `travel` advances by `Stairs.belt * dt` (towards the seam on a boarding half, mouth-ward on an exit half or one whose partner was dropped) and every spawned tread is re-posed to `treads(travel)`, where the velocity took it, all treads of all halves in one `move_boxes` call. Every tread stays on the stair: one that runs off the far end comes back at the mouth sunk `Stairs.sink` (1 mm on steps) through the landing plate (`STAIRS_PLATE` thick, flush with the floor, over a pit the floor opens for it), slides out just below the floor and rises into place once clear of the plate. On a whole stair the wrap itself happens under the plates at both ends. A stopped escalator keeps `travel` and gets zero tread velocities through `set_box_velocities`, a restarted one its belt velocity again. Gazebo sends that call as one gz `/world/default/set_pose_vector` request run off the event loop and drops a tick's batch while the previous one is still in flight, Isaac and MuJoCo send one fire-and-forget `EditPrims` with every tread, flatsim skips the treads it never spawned. The stairs_demo world (four escalator halves of nine treads) costs one request and 36 poses per tick, which take about 0.2 ms of tick time to compute, instead of 36 `SetEntityPose` calls per tick (1080 per second at 30 Hz).
 - Reports `running` changes of escalator halves to the human simulator in one `stairs_changed` call, starting from running at spawn and including the restart an episode reset causes.
 
-Semantic kinds `stairs` and `escalator` attach to every spawned half on gazebo, isaac, mujoco and flatsim:
+A ramp arrives through `spawn_stairs` too, as one `Stairs` of kind `ramp` with no partner: a static `<name>/base_0` slab with its top on the walking surface, or nothing with `floor` off. It has no seam, so the shim never moves anyone on it. Flatsim spawns no slab, a planar robot drives across the ramp. `EnvironmentManager.ramp_height` gives a robot's spawn and teleport poses the height of the ramp under them.
+
+Semantic kinds `stairs`, `escalator` and `ramp` attach to every spawned half or ramp on gazebo, isaac, mujoco and flatsim:
 
 | Field | Kind | Type | Meaning |
 | --- | --- | --- | --- |
-| `occupants` | stairs, escalator | continuous | agents inside the half's footprint, robots by sim path and pedestrians by name |
-| members | stairs, escalator | | those agents, robots first |
-| `just_crossed` | stairs, escalator | predicate | true for the one tick after a robot teleport through this half's seam, or after a pedestrian on this half shows up on its partner |
+| `occupants` | stairs, escalator, ramp | continuous | agents inside the half's footprint, robots by sim path and pedestrians by name |
+| members | stairs, escalator, ramp | | those agents, robots first |
+| `just_crossed` | stairs, escalator, ramp | predicate | true for the one tick after a robot teleport through this half's seam, or after a pedestrian on this half shows up on its partner, never on a ramp |
 | `running` | escalator | discrete, writable | `true` (initial) or `false`, a write sets both halves of the pair, a stopped belt freezes its treads |
 | `direction` | escalator | discrete | `up` when the boarding half of the pair is the bottom one, `down` when it is the top one, on both halves, empty without a boarding half |
 

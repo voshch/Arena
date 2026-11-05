@@ -146,6 +146,22 @@ how it splits into halves and opens floors, dressing and staircase kinds.
 The world's top-level `layout` (`stacked` or `spread`, default `spread`) and
 each level's `elevation` (default a storey of 3 m per level) set the rise.
 
+### `Ramps` fields
+
+Floor heights within one level, with no seam, teleport or route. See
+[Ramps](../AUTHORING.md#ramps).
+
+| key | default | meaning |
+| --- | --- | --- |
+| `name` | required | unique across the world, a place for `robot in` atoms and zone references |
+| `mouth` | required | `[x, y]` middle of the low end, in the level frame |
+| `mouth_side` | `-x` | side the low end faces (`+x`, `-x`, `+y`, `-y`), the ramp running up away from it |
+| `size` | required | `[length, width]` in meters, length along the slope |
+| `base` | `0` | height of the low end |
+| `rise` | `0` | height gained over the length, 0 or more, 0 for a level deck |
+| `floor` | the world's `defaults.floor` | a material for the slab, `true` for the default material, `false` for no slab where the world already has the surface |
+| `sides` | none | `{left, right}` seen walking up, each `{kind or material, height}`, a wall above the surface where `height` is positive |
+
 ### `microphones`
 
 A level list of audio listeners for the acoustics pipeline:
@@ -579,3 +595,4 @@ wrapping whichever of the above resolved first. Call `view.load()` to parse
 | `office_1` | Office floor plan |
 | `reception` | Reception area |
 | `stairs_demo` | Two levels joined by a stair, an up escalator on a belt and a down escalator on steps |
+| `ramp_demo` | One level with a 24 m ramp up to a level deck, a robot and two walkers shuttling over it |

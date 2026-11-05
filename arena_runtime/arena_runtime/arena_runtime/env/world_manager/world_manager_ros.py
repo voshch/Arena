@@ -22,6 +22,7 @@ import numpy as np
 import PIL.Image
 import rclpy.logging
 import rclpy.qos
+import shapely
 import visualization_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -453,7 +454,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         png_bytes: bytes,
         map_yaml_text: str,
     ) -> None:
-        """Publish an OccupancyGrid: 0 inside door polygons, -1 elsewhere, without the doors the mechanism map serves as blocked. Aligned to the static map."""
+        """Publish an OccupancyGrid: 0 inside door polygons and over ramp slabs, which a planar lidar reads as a wall until the robot is on the slope, -1 elsewhere, without the doors the mechanism map serves as blocked. Aligned to the static map."""
         img = PIL.Image.open(io.BytesIO(png_bytes))
         width, height = img.size
 
@@ -463,6 +464,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         doors = mechanism_map.mask_doors(description.all_doors, self._world_doors(), self._mechanism_served)
         polys = [p for d in doors for p in render_door_polygons(d)] + [p for e in description.all_elevators for p in render_elevator_polygons(e)]
+        polys += [shapely.Polygon([(corner.x, corner.y) for corner in stair.corners()]) for stair in description.stairs if stair.kind == 'ramp' and stair.floor]
         data = door_mask(polys, description.all_walls, width, height, resolution, (float(origin_world[0]), float(origin_world[1])), _DOOR_MASK_BUFFER_M)
 
         shifted_origin = self._environment_manager.realize(Position(x=float(origin_world[0]), y=float(origin_world[1])))

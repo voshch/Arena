@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 WORLD_KEYS = frozenset({'format', 'layout', 'defaults', 'schedules', 'signals', 'levels'})
 DEFAULT_KEYS = frozenset({'floor', 'ceiling', 'wall', 'door'})
-LEVEL_KEYS = frozenset({'id', 'elevation', 'zones', 'walls', 'doors', 'elevators', 'stairs', 'escalators', 'objects', 'humans', 'lights', 'sounds', 'microphones', 'pedestrian_walls'})
+LEVEL_KEYS = frozenset({'id', 'elevation', 'zones', 'walls', 'doors', 'elevators', 'stairs', 'escalators', 'ramps', 'objects', 'humans', 'lights', 'sounds', 'microphones', 'pedestrian_walls'})
+RAMP_KEYS = frozenset({'name', 'mouth', 'mouth_side', 'size', 'base', 'rise', 'floor', 'sides'})
 STAIRS_KEYS = frozenset({'name', 'kind', 'mouth', 'mouth_side', 'size', 'to', 'exit', 'style', 'speed', 'direction', 'tread', 'landing_length', 'plank', 'headroom', 'material', 'surfaces', 'sides', 'rails', 'models'})
 STAIRS_SURFACE_KEYS = frozenset({'material', 'model'})
 STAIRS_MODEL_KEYS = frozenset({'model', 'at', 'yaw'})
@@ -205,6 +206,30 @@ def _stair_halves(path: str, raw: Mapping, kind: str, level_id: str, layout: str
     return bottom, top
 
 
+def _ramp(path: str, raw: object, defaults: Mapping, c: ArenaConverter) -> Stairs:
+    """A level's ramp from `base` at its mouth up `rise` over its length, a slab in the `floor` material unless the floor is off, a side wall only where one is asked for."""
+    raw = _keys(path, raw, RAMP_KEYS, frozenset({'name', 'mouth', 'size'}))
+    size = raw['size']
+    if not isinstance(size, list) or len(size) != 2 or min(float(v) for v in size) <= 0.0:
+        raise WorldFormatError(f'{path}.size: expected a positive [length, width], got {size!r}')
+    length, width = float(size[0]), float(size[1])
+    rise = _at(f'{path}.rise', lambda: float(raw.get('rise', 0.0)))
+    if rise < 0.0:
+        raise WorldFormatError(f'{path}.rise: the mouth is the low end, expected 0 or more, got {rise!r}')
+    base = _at(f'{path}.base', lambda: float(raw.get('base', 0.0)))
+    mouth_side = str(raw.get('mouth_side', '-x'))
+    if mouth_side not in _SIDES:
+        raise WorldFormatError(f'{path}.mouth_side: expected one of {sorted(_SIDES)}, got {mouth_side!r}')
+    ax, ay = (-v for v in _SIDES[mouth_side])
+    mouth = _at(f'{path}.mouth', lambda: Position.parse(raw['mouth']))
+    floor = raw['floor'] if 'floor' in raw else defaults.get('floor', True)
+    material = {'material': floor} if isinstance(floor, str) and floor else {}
+    position = [mouth.x + ax * length / 2.0, mouth.y + ay * length / 2.0, base]
+    ramp = _named(path, {'name': str(raw['name']), 'kind': 'ramp', 'position': position, 'mouth_side': mouth_side, 'size': [length, width], 'rise': rise, 'floor': floor not in (False, None, ''), **material}, Stairs, c)
+    sides = _keys(f'{path}.sides', raw.get('sides') or {}, frozenset({'left', 'right'}))
+    return attrs.evolve(ramp, sides=_stair_dressing(path, {'sides': {name: {'height': 0.0, **(sides.get(name) or {})} for name in ('left', 'right')}}, width)[1])
+
+
 def _resolve_stair_kind(name: str) -> dict:
     return StairsIdentifier(name).resolve_sync()
 
@@ -326,6 +351,7 @@ def parse_level(path: str, raw: object, defaults: Mapping, c: ArenaConverter = c
         walls=[_wall(f'{path}.walls[{i}]', item, defaults) for i, item in enumerate(_items(f'{path}.walls', raw.get('walls')))],
         doors=[_named(f'{path}.doors[{i}]', item, Door, c, door_default) for i, item in enumerate(_items(f'{path}.doors', raw.get('doors')))],
         elevators=[_named(f'{path}.elevators[{i}]', item, Elevator, c) for i, item in enumerate(_items(f'{path}.elevators', raw.get('elevators')))],
+        stairs=[_ramp(f'{path}.ramps[{i}]', item, defaults, c) for i, item in enumerate(_items(f'{path}.ramps', raw.get('ramps')))],
         objects=[_named(f'{path}.objects[{i}]', item, Obstacle, c) for i, item in enumerate(_items(f'{path}.objects', raw.get('objects')))],
         humans=[_named(f'{path}.humans[{i}]', item, DynamicObstacle, c) for i, item in enumerate(_items(f'{path}.humans', raw.get('humans')))],
         lights=[_named(f'{path}.lights[{i}]', item, Light, c) for i, item in enumerate(_items(f'{path}.lights', raw.get('lights')))],

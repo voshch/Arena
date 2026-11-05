@@ -25,7 +25,7 @@ from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime_msgs.msg import LockstepChannel
-from arena_simulation_setup.shared import Placement, Stairs
+from arena_simulation_setup.shared import Placement, Stairs, stair_height
 from arena_simulation_setup.shared.body import DEFAULT_STANCE, load_stance
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
@@ -82,11 +82,6 @@ def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
         position = placement.place(Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z))
         ped.pose.position.x, ped.pose.position.y, ped.pose.position.z = position.x, position.y, position.z
     return placed
-
-
-def stair_height(stairs: Iterable[Stairs], x: float, y: float) -> float:
-    """Walking surface height at a map point on the first stair half holding it, 0 off every stair."""
-    return next((stair.height(stair.along(x, y)) for stair in stairs if stair.contains(x, y, stair.reach)), 0.0)
 
 
 def stair_running(stair: Stairs, stairs: Iterable[Stairs], running: Mapping[str, bool]) -> bool:

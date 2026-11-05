@@ -6,7 +6,7 @@ from .light_state import ObjectLightSettings
 from .semantics import SemanticCfg
 from .task import GoToPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
 from .walls import Wall
-from .world import LIGHT_FIXTURES, Ceiling, CeilingLights, Door, Elevator, Floor, Light, LightFixture, Placement, Schedule, Signal, Sound, Stairs, cct_to_rgb, object_light
+from .world import LIGHT_FIXTURES, Ceiling, CeilingLights, Door, Elevator, Floor, Light, LightFixture, Placement, Schedule, Signal, Sound, Stairs, cct_to_rgb, object_light, stair_height
 
 __all__ = [
     "Pose",
@@ -21,6 +21,7 @@ __all__ = [
     "Ceiling",
     "Elevator",
     "Stairs",
+    "stair_height",
     "Door",
     "Schedule",
     "SemanticCfg",
