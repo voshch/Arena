@@ -165,6 +165,19 @@ class PedMechanics:
         return stops if any(stop.holds for stop in stops) else None
 
 
+#: Angle of a model's annotated front (`face` in annotation.yaml) in its own frame.
+_FACE_ANGLE = {"+x": 0.0, "+y": math.pi / 2, "-x": math.pi, "-y": -math.pi / 2}
+
+
+def facing_pose(pose: Pose2DMsg, face: str | None) -> Pose2DMsg:
+    """The pose the engine approaches and queues an object from: it lines people up behind its theta (theta + pi),
+    looking along theta, so theta turns until that side is the model's annotated front. Without a known `face` (a
+    model without one, an object without a model such as a FLOWEDIT demand-only node) the front is +x, the side the
+    FLOWEDIT generator turns into the room and the side its demand-only nodes are turned to."""
+    theta = pose.theta + _FACE_ANGLE.get(face or "+x", 0.0) - math.pi
+    return Pose2DMsg(x=pose.x, y=pose.y, theta=math.atan2(math.sin(theta), math.cos(theta)))
+
+
 def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[AffordanceSlot]) -> int:
     """Queue length at which needs-driven agents pass the object over: the scenario's capacity or seat count, else the most of its sit slots held together, at least 1."""
     if "capacity" in humansim:
@@ -1275,11 +1288,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 obstacle_type = ""
                 raw_slots: list = []
                 bounding_box = None
+                annotation: dict = {}
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
-                        annotation: dict = yaml.safe_load(f.read())
+                        annotation = yaml.safe_load(f.read()) or {}
                     raw_slots = list((annotation.get("affordances") or {}).get("sit") or [])
                     bounding_box = annotation["bounding_box"]
                     (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounding_box
@@ -1308,7 +1322,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 info = WorldObjectInfoMsg()
                 info.object_id = obstacle.sim_path
                 info.type = str(humansim.get("type", obstacle_type))
-                info.pose = pose
+                info.pose = facing_pose(pose, annotation.get("face"))
                 info.capacity = seat_capacity(humansim, slots)
                 satisfies: dict = humansim.get("satisfies") or {}
                 info.satisfies_keys = list(satisfies.keys())
