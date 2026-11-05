@@ -1660,12 +1660,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         return ok
 
+    async def _seed_engine(self) -> None:
+        """Hand the engine a seed from this episode's RNG, like the seats and walker params; it re-roots its streams on the remove-all that follows."""
+        seed = int(self.node.conf.General.RNG.stream("humansim", "engine").integers(2**63 - 1))
+        request = SetParametersAtomically.Request(parameters=[Parameter("seed", value=seed).to_parameter_msg()])
+        response = await self._set_params_client.call_timeout(request)
+        if response is None or not response.result.successful:
+            reason = response.result.reason if response is not None else "timeout"
+            self._logger.warning(f"arena_humansim kept its seed, the crowd will not follow the episode seed: {reason}")
+
     async def _remove_pedestrians_impl(self) -> bool:
         """Remove all dynamic agents from arena_humansim."""
         request = RemoveAgents.Request()
         request.agent_ids = []  # empty = remove all
 
         try:
+            await self._seed_engine()
             response = await self._remove_client.call_timeout(request)
             self._next_deferred_id = _DEFERRED_ID_BASE
             self._deferred_spawns.clear()
