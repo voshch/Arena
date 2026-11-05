@@ -451,8 +451,8 @@ def test_concourse_with_elevator_creates_proper_elevator_entity() -> None:
 
 
 def _zone_polygon(world: World, name: str) -> shapely.Polygon:
-    zone = next(z for z in world.all_levels[0].zones if z.name == name)
-    return shapely.Polygon([(p.x, p.y) for p in zone.polygon])
+    pieces = [shapely.Polygon([(p.x, p.y) for p in z.polygon]) for z in world.all_levels[0].zones if z.name == name or (z.name.startswith(f"{name}_") and z.name[len(name) + 1 :].isdigit())]
+    return shapely.union_all(pieces)
 
 
 def test_concourse_elevator_cabin_extends_behind_spine_end_with_width_across_corridor() -> None:
@@ -505,6 +505,31 @@ def test_concourse_rejects_elevator_on_skewed_spine_end() -> None:
     )
     with pytest.raises(ValueError, match="off the nearest axis"):
         _ = gen.compute()
+
+
+def test_concourse_angled_branch_door_and_jambs_sit_outside_the_corridor() -> None:
+    """Verify a 45-degree branch door lies clear of the corridor and its jambs cut the branch zone."""
+    config = {
+        "length": 35.0,
+        "width": 4.0,
+        "branches": [{"at_s": 17.5, "side": "left", "angle_deg": 45.0, "width": 3.0, "length": 6.0, "door_width": 1.2}],
+    }
+    world = WorldGeneratorConcourse(config, random.Random(42)).compute()
+    door = world.all_levels[0].doors[0]
+    assert door.start.y >= 2.0 - 1e-3
+    assert door.end.y >= 2.0 - 1e-3
+
+    branch = _zone_polygon(world, "branch_0_left")
+    dir_x = dir_y = math.sqrt(0.5)
+    mid_x = (door.start.x + door.end.x) / 2.0
+    mid_y = (door.start.y + door.end.y) / 2.0
+    assert branch.contains(shapely.Point(mid_x + dir_x * 0.5, mid_y + dir_y * 0.5))
+    for sign in (-1.0, 1.0):
+        jamb_point = shapely.Point(mid_x - dir_y * 1.05 * sign, mid_y + dir_x * 1.05 * sign)
+        assert not branch.contains(jamb_point)
+
+    dock = _zone_polygon(world, "dock_branch_0_left")
+    assert dock.intersection(shapely.box(0.0, -2.0, 35.0, 2.0)).area < 1e-6
 
 
 def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:

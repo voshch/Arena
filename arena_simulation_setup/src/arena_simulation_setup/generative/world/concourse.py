@@ -99,6 +99,7 @@ class BranchPlacement:
     anchor: SpineAnchor
     tip_point: tuple[float, float]
     direction: tuple[float, float]
+    junction_distance: float
 
 
 class SideBranchFeature(BaseModel):
@@ -549,6 +550,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                     anchor=anchor,
                     tip_point=tip_pt,
                     direction=dir_vec,
+                    junction_distance=self._branch_junction_distance(branch, anchor),
                 )
 
                 if door_w is not None and door_w < branch.width:
@@ -560,6 +562,12 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                     self._semantic_zones.append((f"{z_prefix}_{idx}_{side.value}", f"{z_desc} {idx} ({side.value})", outside_clipped))
 
                 self._register_branch_dock_socket(branch, placement)
+
+    @staticmethod
+    def _branch_junction_distance(branch: SideBranchFeature, anchor: SpineAnchor) -> float:
+        """Distance along the branch axis from the spine to the cross-section clear of the corridor."""
+        rad = math.radians(branch.angle_deg)
+        return (anchor.half_width + branch.width / 2.0 * abs(math.cos(rad))) / math.sin(rad)
 
     def _build_branch_polygon(
         self,
@@ -576,9 +584,9 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         dir_y = ty * math.cos(rad) + sign * ny * math.sin(rad)
 
         px, py = anchor.point
-        half_w = anchor.half_width
-        tip_x = px + dir_x * (half_w + branch.length)
-        tip_y = py + dir_y * (half_w + branch.length)
+        reach = self._branch_junction_distance(branch, anchor) + branch.length
+        tip_x = px + dir_x * reach
+        tip_y = py + dir_y * reach
         branch_line = LineString([(px, py), (tip_x, tip_y)])
         outside_branch = branch_line.buffer(branch.width / 2.0, cap_style="flat", join_style="mitre")
         return outside_branch, (tip_x, tip_y), (dir_x, dir_y)
@@ -594,7 +602,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         dir_x, dir_y = placement.direction
         door_w = placement.door_width
         px, py = placement.anchor.point
-        p_junc = (px + dir_x * placement.anchor.half_width, py + dir_y * placement.anchor.half_width)
+        p_junc = (px + dir_x * placement.junction_distance, py + dir_y * placement.junction_distance)
         trans_x, trans_y = -dir_y, dir_x
         half_bw = branch.width / 2.0
         half_dw = door_w / 2.0
@@ -629,7 +637,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         tip_x, tip_y = placement.tip_point
         dir_x, dir_y = placement.direction
         px, py = placement.anchor.point
-        p_junc = (px + dir_x * placement.anchor.half_width, py + dir_y * placement.anchor.half_width)
+        p_junc = (px + dir_x * placement.junction_distance, py + dir_y * placement.junction_distance)
         trans_x, trans_y = -dir_y, dir_x
 
         if door_w is not None:
