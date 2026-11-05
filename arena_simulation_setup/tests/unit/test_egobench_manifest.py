@@ -123,3 +123,9 @@ def test_an_unknown_pedestrian_profile_is_named():
 def test_a_speed_at_or_below_zero_is_rejected(field: str, axis: object):
     with pytest.raises(pydantic.ValidationError, match=f"{field} must be above 0"):
         manifest(**{field: axis})
+
+
+@pytest.mark.parametrize("overrides", [{"seed": -1}, {"world_variants": 1001}])
+def test_world_seeds_stay_deterministic_and_distinct(overrides: dict[str, int]):
+    with pytest.raises(pydantic.ValidationError):
+        manifest(**overrides)

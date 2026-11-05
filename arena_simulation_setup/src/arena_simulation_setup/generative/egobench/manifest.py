@@ -102,10 +102,10 @@ class Manifest(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
     name: str
-    seed: int = 0
+    seed: int = pydantic.Field(0, ge=0)
     sampling: typing.Literal["grid", "random"] = "grid"
     samples: int = pydantic.Field(0, ge=0)  # 0 = the whole grid, required above 0 for random
-    world_variants: int = pydantic.Field(1, ge=1)  # world seeds per world configuration
+    world_variants: int = pydantic.Field(1, ge=1, le=1000)  # world seeds per world configuration
     worlds: dict[Space, dict[str, Axis]]
     encounters: list[Encounter] = pydantic.Field(min_length=1)
     pedestrians: list[Pedestrian] = pydantic.Field(default_factory=lambda: [Pedestrian.FIXED], min_length=1)
