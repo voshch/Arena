@@ -49,6 +49,13 @@ def test_the_search_goal_dispatches_the_start_and_names_the_target():
     assert (phase.pose.position.x, phase.pose.position.y) == (2.0, 3.0)
 
 
+def test_the_search_goal_is_judged_but_never_sent_to_the_planner():
+    from task_generator.tasks.robots.search.impl import search_goal
+
+    (phase,) = search_goal(_entry(), "caller", 1.5).phases
+    assert not phase.dispatch
+
+
 def test_the_dispatch_pose_lands_on_the_start_on_every_level():
     from arena_runtime.env.task_api import Realizer
     from task_generator.tasks.robots.scenario.impl import localize_phase, to_map_frame

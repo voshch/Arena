@@ -26,10 +26,10 @@ def search_target(humans: Sequence[str], configured: str) -> str:
 
 
 def search_goal(entry: RobotGoal, target: str, radius: float) -> RobotGoal:
-    """A scenario robot entry as one goto judged on the target and dispatched to the robot's own start."""
+    """A scenario robot entry as one judge-only goto on the target, its pose the robot's own start."""
     if entry.phases:
         raise ValueError("a search scenario gives its robots a start only, since their phases would reach the planner")
-    phase = GoToPhase(pose=entry.start, target=target, tolerance_radius=radius, pose_zone=entry.start_zone)
+    phase = GoToPhase(pose=entry.start, target=target, tolerance_radius=radius, pose_zone=entry.start_zone, dispatch=False)
     return attrs.evolve(entry, goal_level=entry.level, phases=[phase])
 
 

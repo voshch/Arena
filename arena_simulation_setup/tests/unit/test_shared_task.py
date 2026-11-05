@@ -110,6 +110,7 @@ def test_scoped_conditions_and_text_parse():
         {"goto": [1.0, 2.0, 0.5], "tolerance_radius": 0.3, "tolerance_angle": 0.1, "hold_time": 1.0},
         {"goto": "kitchen", "until": "robot in kitchen", "on_failure": "abort_episode"},
         {"goto": "kitchen", "pose": [3.0, 4.0, 0.0]},
+        {"goto": "caller", "pose": [3.0, 4.0, 0.0], "dispatch": False},
         {"hold_time": 5.0},
         {"until": "not alice in kitchen"},
         {"gesture": "wave", "instance": "left"},
@@ -125,6 +126,11 @@ def test_phase_round_trips_through_parse_and_serialize(value):
     again = TaskPhase.parse(phase.serialize())
     assert again == phase
     assert again.serialize() == phase.serialize()
+
+
+def test_a_goto_is_dispatched_unless_marked_judge_only():
+    assert TaskPhase.parse({"goto": [1.0, 2.0]}).dispatch
+    assert not TaskPhase.parse({"goto": "caller", "dispatch": False}).dispatch
 
 
 def test_phase_serialize_omits_defaults():
