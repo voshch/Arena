@@ -463,7 +463,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             corridor_poly = corridor_poly.difference(shapely.unary_union(self._pillar_obstacles))
         branch_polys = [poly for name, _, poly in self._semantic_zones if name.startswith(("room_", "branch_"))]
         elev_polys = [poly for name, _, poly in self._semantic_zones if name.startswith("dock_elevator_")]
-        free_space = shapely.unary_union([corridor_poly, *branch_polys, *elev_polys])
+        free_space = cast("Polygon | MultiPolygon", shapely.unary_union([corridor_poly, *branch_polys, *elev_polys]))
         areas = [Area(polygon=free_space)]
         docks = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if z_name.startswith("dock_")]
         others = [Region(name=z_name, polygon=z_poly, description=z_desc) for z_name, z_desc, z_poly in self._semantic_zones if not z_name.startswith("dock_")]
