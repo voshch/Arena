@@ -56,8 +56,8 @@ _SPEED_RANGE_MPS = (0.0, 3.0)
 _STATE_LABELS = (("Auto", None), ("Idle", 0), ("Walking", 1), ("Running", 2))
 _JOINT_GROUPS = (
     ("Torso / Head", ("r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest", "r_head", "y_head", "p_head")),
-    ("Left arm", ("l_y_collar", "l_p_collar", "l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "l_elbow", "l_r_wrist", "l_wrist")),
-    ("Right arm", ("r_y_collar", "r_p_collar", "r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow", "r_r_wrist", "r_wrist")),
+    ("Left arm", ("l_y_collar", "l_p_collar", "l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "l_elbow", "l_r_wrist", "l_wrist", "l_d_wrist")),
+    ("Right arm", ("r_y_collar", "r_p_collar", "r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow", "r_r_wrist", "r_wrist", "r_d_wrist")),
     ("Left leg", ("l_y_hip", "l_p_hip", "l_r_hip", "l_knee", "l_y_ankle", "l_ankle")),
     ("Right leg", ("r_y_hip", "r_p_hip", "r_r_hip", "r_knee", "r_y_ankle", "r_ankle")),
 )

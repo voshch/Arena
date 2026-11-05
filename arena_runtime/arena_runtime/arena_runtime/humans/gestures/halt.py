@@ -69,7 +69,7 @@ class HaltGesture(PointGesture):
     def _palm_out(self, clip: GestureClip, opts: dict, twist: Callable[[np.ndarray], float], *, ramp: bool) -> GestureClip:
         """Wrist DOFs on the clip and its release arc. ``ramp``: the clip rises from the hanging arm, else it starts on a held palm."""
         side = clip.side
-        tw, ext = wrist_dofs(side)
+        tw, ext, _ = wrist_dofs(side)
         park = self._forearm(clip.frames[clip.hold_end], side, opts)
         park_twist = self._palm_twist(park, side)
 

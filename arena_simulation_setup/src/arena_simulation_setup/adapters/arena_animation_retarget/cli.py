@@ -152,7 +152,7 @@ def _window(value: str) -> str | tuple[int, int]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="animation_retarget", description="Retarget SMPL-X motion onto Arena's 40-DOF human wire.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap = argparse.ArgumentParser(prog="animation_retarget", description="Retarget SMPL-X motion onto Arena's 42-DOF human wire.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("src", nargs="+", type=Path, help="SMPL-X .npz files and/or directories (recursive)")
     ap.add_argument("-o", "--out", type=Path, required=True, help="Animation directory to write clip folders into")
     g = ap.add_argument_group("naming and annotation")

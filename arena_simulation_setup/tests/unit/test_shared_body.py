@@ -271,8 +271,9 @@ def test_rest_offsets_need_every_mapped_joints_parent(template: Template) -> Non
 
 
 def test_the_semantic_vocabulary_ends_with_curl_and_spread_per_hand() -> None:
-    assert len(SEMANTIC_DOFS) == 52
-    assert SEMANTIC_DOFS[40:] == (
+    assert len(SEMANTIC_DOFS) == 54
+    assert SEMANTIC_DOFS[40:42] == ("l_d_wrist", "r_d_wrist")
+    assert SEMANTIC_DOFS[42:] == (
         *(f"l_curl_{digit}" for digit in FINGERS),
         "l_spread",
         *(f"r_curl_{digit}" for digit in FINGERS),
@@ -364,7 +365,7 @@ def test_digit_dofs_round_trip_through_the_body_pose_over_a_stance() -> None:
     rng = np.random.default_rng(12)
     for stance in (DEFAULT_STANCE, _stance(3)):
         for _ in range(50):
-            angles = {dof: float(rng.uniform(-0.4, 0.4) if dof.endswith("spread") else rng.uniform(-0.3, 1.5)) for dof in SEMANTIC_DOFS[40:]}
+            angles = {dof: float(rng.uniform(-0.4, 0.4) if dof.endswith("spread") else rng.uniform(-0.3, 1.5)) for dof in SEMANTIC_DOFS[42:]}
             assert body_to_semantic(semantic_to_body(angles, stance), stance) == pytest.approx({**body_to_semantic(semantic_to_body({}, stance), stance), **angles}, abs=1e-9)
 
 

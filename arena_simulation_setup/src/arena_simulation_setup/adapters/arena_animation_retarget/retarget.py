@@ -74,7 +74,7 @@ class Clip:
 
 @dataclass
 class Prepared:
-    """One motion ready for the IK: rotation-retarget start (T, 40) and per-frame targets in the body base frame."""
+    """One motion ready for the IK: rotation-retarget start (T, 42) and per-frame targets in the body base frame."""
 
     init: np.ndarray
     targets: dict[str, np.ndarray]
@@ -285,9 +285,10 @@ def prepare(motion: Motion, fold_tilt: bool = True, height: float = 1.75) -> Pre
         e = _hinge(_T(S) @ Fo)
         put(f"{s}_elbow", e)
         f_r = S @ _rot(SK.ELBOW_AXIS, e)
-        a1, b1, _ = _euler(_T(f_r @ Q[f"{s}_elbow"].T @ ARM_REST[s]) @ (g(f"{s}_wrist") @ ARM_REST[s]), "ZXY").T
+        a1, b1, c1 = _euler(_T(f_r @ Q[f"{s}_elbow"].T @ ARM_REST[s]) @ (g(f"{s}_wrist") @ ARM_REST[s]), "ZXY").T
         put(f"{s}_r_wrist", -a1 if s == "l" else a1)
         put(f"{s}_wrist", b1 if s == "l" else -b1)
+        put(f"{s}_d_wrist", -c1)  # radial deviation, about -y on both sides
 
         Th, Sh = g(f"{s}_hip") @ Q[f"{s}_hip"], g(f"{s}_knee") @ Q[f"{s}_knee"]
         hy, hp, hr = _euler(BT @ Th, "ZXY").T  # = Rz(-y) Rx(+-p) Ry(-r) of the contract, exactly

@@ -85,7 +85,7 @@ the outgoing message it checks `ped.joint_state.name`:
 - **non-empty**: upstream backend supplied its own joint state (override path: an upstream producer that already computes joint angles).
 - **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (40 DOF, no body suffix).
 
-Last, [`wire.py`](wire.py) compiles the 40 into `ped.body` over the model's stance ([BODY.md](BODY.md)), leaving only driven joints in `joint_state`. `ped.body` feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac, MuJoCo and Gazebo pedestrian rigs.
+Last, [`wire.py`](wire.py) compiles the 42 into `ped.body` over the model's stance ([BODY.md](BODY.md)), leaving only driven joints in `joint_state`. `ped.body` feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac, MuJoCo and Gazebo pedestrian rigs.
 
 A model whose bundle ships a `.rig` with drivers (wheelchair bundles: `l_wheel`, `r_wheel`) gets those joints
 set on top, whoever filled the field: [`drivers.py`](drivers.py) rolls each wheel over the distance its contact

@@ -1,4 +1,4 @@
-"""Arena's 40-DOF human wire contract: the target skeleton.
+"""Arena's 42-DOF human wire contract: the target skeleton.
 
 The axes, chain order and FK come from ``arena_runtime``'s ``humans/pointing/skeleton.py`` (URDF-faithful, what RViz draws and
 the Isaac bone map consumes), so they are never restated here. That module is plain numpy, but importing it through its
@@ -44,7 +44,9 @@ def load_skeleton() -> ModuleType:
 
 SK = load_skeleton()
 
-# The wire DOFs a full-body clip carries (40), in contract naming.
-WIRE: list[str] = ["r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest", "r_head", "y_head", "p_head"] + [
-    f"{s}_{d}" for s in "lr" for d in ("y_collar", "p_collar", "y_shoulder", "p_shoulder", "r_shoulder", "elbow", "r_wrist", "wrist", "y_hip", "p_hip", "r_hip", "knee", "y_ankle", "ankle")
-]
+# The wire DOFs a full-body clip carries (42), in contract naming.
+WIRE: list[str] = (
+    ["r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest", "r_head", "y_head", "p_head"]
+    + [f"{s}_{d}" for s in "lr" for d in ("y_collar", "p_collar", "y_shoulder", "p_shoulder", "r_shoulder", "elbow", "r_wrist", "wrist", "y_hip", "p_hip", "r_hip", "knee", "y_ankle", "ankle")]
+    + [f"{s}_d_wrist" for s in "lr"]
+)
