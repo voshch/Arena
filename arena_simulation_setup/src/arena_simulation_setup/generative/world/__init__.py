@@ -24,6 +24,7 @@ class WorldGeneratorType(enum.Enum):
     CORRIDOR = "corridor"
     OPEN = "open"
     EGOBENCH = "egobench"
+    ROOMS = "rooms"
 
 
 class BaseConfiguration(pydantic.BaseModel):
@@ -216,3 +217,10 @@ def lazy_EgoBench() -> type[WorldGeneratorImpl]:
     from ..egobench.meta import WorldGeneratorEgoBench
 
     return WorldGeneratorEgoBench
+
+
+@WorldGenerator.register(WorldGeneratorType.ROOMS)
+def lazy_Rooms() -> type[WorldGeneratorImpl]:
+    from .rooms import WorldGeneratorRooms
+
+    return WorldGeneratorRooms
