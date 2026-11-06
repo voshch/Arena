@@ -171,11 +171,11 @@ class RobotManager(NodeInterface):
 
     @property
     def goal(self) -> Pose | None:
-        """Map-frame pose of the active GoToPhase, or None."""
+        """Map-frame pose of the active GoToPhase, None without one or for a judge-only goto."""
         from arena_runtime.env.request import GoToPhase
 
         state = self._runner.active_state
-        if state is None or not isinstance(state.phase, GoToPhase) or state.phase.pose is None:
+        if state is None or not isinstance(state.phase, GoToPhase) or state.phase.pose is None or not state.phase.dispatch:
             return None
         return self._environment_manager.realize(state.phase.pose)
 

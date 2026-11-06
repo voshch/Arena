@@ -93,6 +93,26 @@ def test_a_judge_only_goto_never_reaches_the_adapter() -> None:
     assert manager.active_dispatch_phase() is None
 
 
+def test_a_judge_only_goto_gives_progress_and_rviz_no_goal() -> None:
+    manager = _manager(_Adapter())
+    _run(manager, 0.0, 1.0)
+    assert manager._runner.active_state is not None
+    assert manager.goal is None
+
+
+def test_a_dispatched_goto_gives_progress_and_rviz_its_pose() -> None:
+    manager = _manager(_Adapter())
+
+    async def episode() -> None:
+        manager._runner.submit([GoToPhase(pose=Pose.parse([5.0, 0.0, 0.0]), tolerance_radius=1.0, tolerance_angle=6.3)])
+        await manager.reset(SimpleNamespace(start_pose=None))
+        await manager.tick(Sample(t=0.0, robots={FRAME: (0.0, 0.0, 0.0)}), {})
+
+    asyncio.run(episode())
+    assert manager.goal is not None
+    assert (manager.goal.position.x, manager.goal.position.y) == (5.0, 0.0)
+
+
 def test_a_judge_only_goto_is_met_by_the_judge_whatever_the_planner_reports() -> None:
     manager = _manager(_Adapter(status=STATUS_CANCELED))
     _run(manager, 0.0, 4.5)
