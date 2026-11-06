@@ -163,7 +163,9 @@ def _joint_element(joint: dict) -> ET.Element:
     for iface in joint.get('command_interfaces', []):
         ET.SubElement(el, 'command_interface', {'name': str(iface)})
     for iface in joint.get('state_interfaces', []):
-        ET.SubElement(el, 'state_interface', {'name': str(iface)})
+        state = ET.SubElement(el, 'state_interface', {'name': str(iface)})
+        if iface == 'position' and joint.get('initial_value') is not None:
+            ET.SubElement(state, 'param', {'name': 'initial_value'}).text = str(joint['initial_value'])
     return el
 
 

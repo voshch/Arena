@@ -69,3 +69,21 @@ def transform_urdf_for_bridge(
             parent.insert(rc_idx + offset, block)
 
     tree.write(out_path, encoding='utf-8', xml_declaration=True)
+
+
+def mock_arm_hardware(urdf_xml: str) -> str:
+    """Rewrite a URDF for flatsim: every ros2_control block becomes mock_components/GenericSystem and keeps only its position-commanded and mimic joints, the base joints stay with the sim."""
+    root = ET.fromstring(urdf_xml)
+    for block in list(root.iter('ros2_control')):
+        parent = next(p for p in root.iter() if block in list(p))
+        plugin = block.find('hardware/plugin')
+        if plugin is None:
+            continue
+        plugin.text = 'mock_components/GenericSystem'
+        for joint in block.findall('joint'):
+            commands = [c.get('name') for c in joint.findall('command_interface')]
+            if 'position' not in commands and joint.get('mimic') != 'true':
+                block.remove(joint)
+        if block.find('joint') is None:
+            parent.remove(block)
+    return ET.tostring(root, encoding='unicode')

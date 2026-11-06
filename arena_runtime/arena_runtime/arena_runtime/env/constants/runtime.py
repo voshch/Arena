@@ -167,6 +167,16 @@ def Configuration(server: ROSParamServer) -> type:
                 'moveit',
             )
 
+            LIFT_ADAPTER = server.ROSParam[str](
+                'robot.lift_adapter',
+                'direct',
+            )
+
+            GRIPPER_ADAPTER = server.ROSParam[str](
+                'robot.gripper_adapter',
+                'direct',
+            )
+
             HEARING = server.ROSParam[str](
                 'robot.hearing',
                 'none',

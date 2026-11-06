@@ -465,7 +465,7 @@ process for the whole runtime, started by `sim.launch.py` through
 selecting the sim without it fails with the install hint. The server owns
 `/clock`, steps one world that holds every env at its realizer offset, as
 Gazebo and Isaac do, and publishes each robot's
-`map -> odom`, `odom -> base`, Odometry, zero joint states and sensor
+`map -> odom`, `odom -> base`, Odometry, zero joint states for the base joints and sensor
 messages. Its interface is documented in the flatsim README, the notes here
 are what Arena sends it.
 
@@ -496,9 +496,14 @@ are what Arena sends it.
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
   `pivot` x the body turns about and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
-  sideways only when `is_holonomic`. No controller_manager runs. The adapter
+  sideways only when `is_holonomic`. The base controller does not run. The adapter
   launches `robot_state_publisher`, the server gets the URDF and the tf topic
   of the env.
+- Arm, torso and gripper joints: a ros2_control robot with controllers besides its
+  base controller and `joint_state_broadcaster` gets a `controller_manager` on `mock_components/GenericSystem`
+  (`mock_arm_hardware` in [_urdf.py](_urdf.py)), which keeps only the position-commanded
+  and mimic joints, so those joints track their commands kinematically and the same
+  `control.yaml` controllers load. The server leaves these joints out of its joint states.
 - Odometry: the pose is the exact body pose. The twist is the wheel reading,
   the body twist divided by the gain and taken at the pivot, so it tracks the
   command like a wheel-odometry twist does while the IMU reports the body rate.

@@ -124,6 +124,8 @@ class AdapterMeta:
 ADAPTERS: dict[str, ClassRegistry[str, type[Adapter]]] = {
     "mobile": ClassRegistry(),
     "arm": ClassRegistry(),
+    "lift": ClassRegistry(),
+    "gripper": ClassRegistry(),
 }
 
 
@@ -326,4 +328,4 @@ __all__ = [
     "SensorTypeOrStr",
 ]
 
-from . import arm, mobile  # noqa: F401, E402
+from . import arm, gripper, lift, mobile  # noqa: F401, E402
