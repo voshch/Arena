@@ -329,6 +329,9 @@ keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 | `interaction_radius` | Overrides the interaction kind's default approach radius for this object. |
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
 
+The pose theta the engine receives is the object's yaw turned to the model's annotated `face`, and queues form at
+that front. An object without an annotated `face` keeps its yaw, so queues form behind it (at yaw + 180 degrees).
+
 ```yaml
 objects:
   - name: reception_desk
