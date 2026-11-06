@@ -18,6 +18,7 @@ import numpy as np
 import yaml
 from arena_simulation_setup.tree.assets.human_rig import SUB_BUNDLE
 
+from arena_assets.impl import Face
 from arena_assets.utils import human
 from arena_assets.utils.human import Legs, PelvisClearance, Proportions
 from arena_runtime.humans.pointing import skeleton as S
@@ -36,7 +37,25 @@ SEATED_ARMS = {"y_shoulder": 0.25, "p_shoulder": 0.3, "elbow": 0.8, "r_wrist": 1
 TORSO_JOINTS = ("r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest")
 SETTLE_S = 0.4  # s, the body moves between where it stands and where it rests
 LIE_S = 1.0  # s, the body moves between standing beside a bed and lying on it
-_FACING = {"+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+y": (0.0, 1.0), "-y": (0.0, -1.0)}
+
+
+def _front(face: Face) -> float:
+    return math.remainder(math.radians(face.angle + 180.0), math.tau)
+
+
+def front_angle(face: object) -> float | None:
+    """Angle in rad of an annotated `face` (an enum value or a legacy numeric angle) in the model frame, None when it names no face."""
+    if isinstance(face, str):
+        try:
+            return _front(Face(face))
+        except ValueError:
+            try:
+                face = float(face)
+            except ValueError:
+                return None
+    if isinstance(face, (int, float)) and not isinstance(face, bool):
+        return next((_front(f) for f in Face if f.angle == float(face)), None)
+    return None
 
 
 @attrs.frozen
@@ -114,9 +133,10 @@ def load_body(model_uri: str) -> BodyMeasurements | None:
             proportions = TYPICAL_PROPORTIONS
     if annotation.get("pelvis_clearance") and annotation.get("legs"):
         return BodyMeasurements(clearance=PelvisClearance(**annotation["pelvis_clearance"]), legs=Legs(**annotation["legs"]), proportions=proportions)
-    forward = _FACING.get(str(annotation.get("face", "+x")))
-    if forward is None or skin is None:
+    angle = front_angle(annotation["face"]) if "face" in annotation else 0.0
+    if angle is None or skin is None:
         return None
+    forward = (math.cos(angle), math.sin(angle))
     return BodyMeasurements(clearance=human.pelvis_clearance(skin, np.array(forward)), legs=human.legs(skin), proportions=proportions)
 
 
