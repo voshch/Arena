@@ -439,6 +439,9 @@ class EnvironmentManager(NodeInterface):
             for stair in level.stairs:
                 realized_f = self._realizer.realize(stair, fid)
                 self.node._register_semantic_entity(stair.name, realized_f.name)
+                # A planar simulator keeps a robot at its spawn height, where a slab blocks it and walkers rise out of its lidar.
+                if stair.kind == 'ramp' and not self.stacks_levels:
+                    continue
                 stairs_list.append(realized_f)
                 level_stairs[fid].append(realized_f)
         stairs = tuple(stairs_list)

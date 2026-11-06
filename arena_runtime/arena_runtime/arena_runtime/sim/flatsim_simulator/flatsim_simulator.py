@@ -24,7 +24,6 @@ from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
 from arena_rclpy_mixins.qos import reliable
 from arena_rclpy_mixins.Time import Time
-from arena_simulation_setup.shared import Stairs
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
 from flatsim_msgs.msg import Box, Disc, Discs, EntityPose, EntityPoses, Fan, Outline, Ring, SensorSpec
@@ -430,10 +429,6 @@ class FlatsimSimulator(BaseSim):
         names, self._wall_names, self._floor_names = [*self._wall_names, *self._floor_names], [], []
         await self._remove(names)
         return True
-
-    async def spawn_stairs(self, stairs: Sequence[Stairs]) -> bool:
-        """Drop ramps, whose slabs would block a planar robot."""
-        return await super().spawn_stairs([stair for stair in stairs if stair.kind != 'ramp'])
 
     async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None, *, velocity: tuple[float, float, float] | None = None, comb: bool = False) -> bool:
         del material, velocity, comb
