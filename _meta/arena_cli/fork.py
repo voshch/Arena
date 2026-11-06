@@ -12,6 +12,7 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -536,6 +537,48 @@ def split_lanes(argv: list[str]) -> tuple[int | None, list[str]]:
     return None, argv
 
 
+def split_viz(argv: list[str]) -> tuple[bool, str | None, list[str]]:
+    """Take `--viz` and `--viz-port N` (or `--viz-port=N`) out of argv, returning (viz, port or None, the rest)."""
+    port = _flag(argv, "--viz-port")
+    rest: list[str] = []
+    skip = False
+    for i, a in enumerate(argv):
+        if skip:
+            skip = False
+        elif a == "--viz-port":
+            skip = i + 1 < len(argv)
+        elif not a.startswith("--viz-port=") and a != "--viz":
+            rest.append(a)
+    if port is not None and not port.isdigit():
+        raise CLIError(f"--viz-port takes a port number, got '{port}'")
+    return "--viz" in argv, port, rest
+
+
+def _start_dashboard(run_id: str, port: str | None, data_root: str | None) -> subprocess.Popen[str]:
+    """Start `evaluation_cli serve` for a shared run in its own process group, returning once it printed its URL."""
+    argv = ["ros2", "run", "arena_evaluation", "evaluation_cli", "serve", "--run-id", run_id, "--exit-with", str(os.getpid())]
+    argv += [*(["--port", port] if port else []), *(["--data-root", data_root] if data_root else [])]
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, start_new_session=True)
+    assert proc.stdout is not None
+    line = proc.stdout.readline()
+    proc.stdout.close()
+    if not line.startswith("viz: "):
+        raise CLIError(f"--viz: the dashboard exited rc={proc.wait()} before it listened, no lane started")
+    print(f"lanes: {line.strip()}", flush=True)
+    return proc
+
+
+def _stop_dashboard(proc: subprocess.Popen[str]) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        proc.wait(5)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+
+
 def run_shared(n: int, args: list[str]) -> None:
     """Run one `arena evaluation benchmark` across N lanes, one pool fork each, on the dev tree as it is now, as one run dir."""
     _require_dev()
@@ -548,6 +591,16 @@ def run_shared(n: int, args: list[str]) -> None:
         run_id = f"{datetime.datetime.now(tz=datetime.UTC).strftime('%Y%m%d-%H%M%S')}-{stem}-x{n}"
         args = [*args, "--run-id", run_id]
     data_root = _flag(args, "--data-root") or "$ARENA_DATA_DIR/benchmarks"
+    viz, viz_port, args = split_viz(args)
+    dashboard = _start_dashboard(run_id, viz_port, _flag(args, "--data-root")) if viz else None
+    try:
+        _run_lanes(n, args, run_id, data_root)
+    finally:
+        if dashboard is not None:
+            _stop_dashboard(dashboard)
+
+
+def _run_lanes(n: int, args: list[str], run_id: str, data_root: str) -> None:
     pool = _pool(n)
 
     token = secrets.token_hex(4)
