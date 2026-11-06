@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from geometry_msgs.msg import Point
 from nav_msgs.msg import OccupancyGrid
 from rerun_utils.entity_paths import frame_name, in_frame
 from rerun_utils.marker_geometry import convert, posed
-from rerun_utils.renderers.map import FREE, OCCUPIED, UNKNOWN, grid_quad, grid_texture
+from rerun_utils.renderers.map import FREE, OCCUPIED, UNKNOWN, downsample, grid_cells, grid_key, grid_quad, grid_texture, is_overlay, occupied_cells
 from rerun_utils.renderers.marker_array import MarkerLog, MarkerStore
 from visualization_msgs.msg import Marker
 
@@ -36,12 +37,12 @@ def test_map_quad_turns_with_the_origin_yaw() -> None:
 
 
 def test_map_texture_rows_start_at_the_origin() -> None:
-    tex = grid_texture(_grid(2, 2, 1.0, 0.0, 0.0, data=[100, 0, -1, 50]))
+    tex = grid_texture(grid_cells(_grid(2, 2, 1.0, 0.0, 0.0, data=[100, 0, -1, 50])))
     assert tex.shape == (2, 2, 3)
-    assert tex[0, 0].tolist() == OCCUPIED.tolist()
-    assert tex[0, 1].tolist() == FREE.tolist()
-    assert tex[1, 0].tolist() == UNKNOWN.tolist()
-    assert (FREE > tex[1, 1]).all() and (tex[1, 1] > OCCUPIED).all()
+    assert tex[0, 0, :3].tolist() == OCCUPIED.tolist()
+    assert tex[0, 1, :3].tolist() == FREE.tolist()
+    assert tex[1, 0, :3].tolist() == UNKNOWN.tolist()
+    assert (FREE > tex[1, 1, :3]).all() and (tex[1, 1, :3] > OCCUPIED).all()
 
 
 def _marker(type_: int, x: float = 0.0, y: float = 0.0, yaw: float = 0.0, points: list[tuple[float, float, float]] | None = None) -> Marker:
@@ -189,6 +190,40 @@ def test_the_log_clears_the_kinds_a_group_lost_and_logs_the_kinds_it_has() -> No
     third = log.entries({("agents", "map"): []})
     assert [(e.entity, e.archetype is None) for e in third] == [("env_0/hunav/agents/map/boxes", True)]
     assert log.entries({("agents", "map"): []}) == []
+
+
+def test_a_grid_is_an_overlay_when_the_manifest_styles_it_as_a_costmap() -> None:
+    from arena_viz import StyleSpec
+
+    assert is_overlay(StyleSpec(extra={"rviz": {"Color Scheme": "costmap"}}))
+    assert not is_overlay(StyleSpec(extra={"rviz": {"Color Scheme": "map"}}))
+    assert not is_overlay(StyleSpec())
+
+
+def test_an_overlay_draws_only_the_cells_with_a_cost_at_their_centers() -> None:
+    grid = _grid(2, 2, 1.0, 3.0, 4.0, yaw=math.pi / 2, data=[100, 0, -1, 50])
+    centers, colors = occupied_cells(grid, grid_cells(grid), 0.02)
+    assert centers == pytest.approx(np.array([[2.5, 4.5, 0.02], [1.5, 5.5, 0.02]]))
+    assert colors[0].tolist() == OCCUPIED.tolist()
+    assert (FREE > colors[1]).all() and (colors[1] > OCCUPIED).all()
+
+
+def test_downsampling_keeps_the_darkest_cell_of_each_block_and_small_grids_as_they_are() -> None:
+    cells = np.zeros((5, 3), dtype=np.int16)
+    cells[4, 2] = 100
+    small = downsample(cells, cap=8)
+    assert small is cells
+    reduced = downsample(cells, cap=3)
+    assert reduced.shape == (3, 2)
+    assert reduced[2, 1] == 100 and reduced.sum() == 100
+
+
+def test_a_grid_key_changes_with_the_data_and_not_with_the_stamp() -> None:
+    a, b = _grid(2, 1, 1.0, 0.0, 0.0, data=[0, 0]), _grid(2, 1, 1.0, 0.0, 0.0, data=[0, 0])
+    b.header.stamp.sec = 5
+    assert grid_key(a) == grid_key(b)
+    b.data = [0, 100]
+    assert grid_key(a) != grid_key(b)
 
 
 def test_arrow_shaft_width_follows_the_scale_rviz_reads_for_its_form() -> None:
