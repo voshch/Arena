@@ -25,6 +25,14 @@ def _label(p: Pedestrian) -> str:
     return f"{name} ({p.agent_type})" if p.agent_type else name
 
 
+def body_centers(peds: list[Pedestrian]) -> list[list[float]]:
+    return [[p.pose.position.x, p.pose.position.y, p.pose.position.z + RADIUS] for p in peds]
+
+
+def heading_origins(peds: list[Pedestrian]) -> list[list[float]]:
+    return [[p.pose.position.x, p.pose.position.y, p.pose.position.z + HEIGHT * 0.6] for p in peds]
+
+
 @register(DisplayKind.PEDESTRIANS)
 def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererCtx) -> None:
     style = StyleSpec.from_json(d.style_json)
@@ -44,7 +52,7 @@ def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Re
             rr.Capsules3D(
                 lengths=[HEIGHT - 2 * RADIUS] * len(peds),
                 radii=[RADIUS] * len(peds),
-                translations=[[p.pose.position.x, p.pose.position.y, RADIUS] for p in peds],
+                translations=body_centers(peds),
                 colors=[color if p.animation_state != Pedestrian.IDLE else IDLE for p in peds],
                 labels=[_label(p) for p in peds],
                 fill_mode="solid",
@@ -54,16 +62,16 @@ def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Re
         rr.log(
             f"{entity}/headings",
             rr.Arrows3D(
-                origins=[[p.pose.position.x, p.pose.position.y, HEIGHT * 0.6] for p in peds],
+                origins=heading_origins(peds),
                 vectors=[[p.twist.linear.x * 0.6, p.twist.linear.y * 0.6, 0.0] for p in peds],
                 colors=[color],
             ),
             *frame,
         )
 
-    ctx.node.create_subscription(Pedestrians, peds_topic(ctx), cb, QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT))
+    ctx.node.create_subscription(Pedestrians, peds_topic(ctx.env_namespace), cb, QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT))
 
 
-def peds_topic(ctx: RendererCtx) -> str:
+def peds_topic(env_namespace: str) -> str:
     """The env's pedestrian roster: `<env namespace>/arena_peds`, published there whatever the tf mode."""
-    return f"{ctx.env_namespace.rstrip('/')}/arena_peds"
+    return f"{env_namespace.rstrip('/')}/arena_peds"

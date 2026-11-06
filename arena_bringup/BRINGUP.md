@@ -324,7 +324,7 @@ Backend-specific knobs pass straight through:
 | Backend | Args | Notes |
 |---|---|---|
 | `rviz` | `view:=map\|robot\|robot3p`, `robot:=<int>\|all` | `robot:=all` fans out one window per robot. |
-| `rerun` | `web_port:=<int>`, `grpc_port:=<int>` | Defaults 9090/9876; auto-bumped per env under `--all` to avoid collisions. Requires `pip install 'rerun-sdk>=0.21'` once. |
+| `rerun` | `web_port:=<int>`, `grpc_port:=<int>` | Defaults 9090/9876; auto-bumped per env under `--all` to avoid collisions. Requires `pip install 'rerun-sdk>=0.38'` once. |
 
 Rerun opens a browser-based viewer (no X server, container-friendly); for
 the default `web_port:=9090` go to `http://localhost:9090/`.

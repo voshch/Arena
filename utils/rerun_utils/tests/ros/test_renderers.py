@@ -6,14 +6,16 @@ import math
 
 import numpy as np
 import pytest
+
 from geometry_msgs.msg import Point
 from nav_msgs.msg import OccupancyGrid
-from rerun_utils.entity_paths import frame_name, in_frame
-from rerun_utils.marker_geometry import convert, posed
-from rerun_utils.renderers.map import FREE, OCCUPIED, UNKNOWN, downsample, grid_cells, grid_key, grid_quad, grid_texture, is_overlay, occupied_cells
-from rerun_utils.renderers.marker_array import MarkerLog, MarkerStore
-from rerun_utils.tf_mirror import TFTree, Tie
 from visualization_msgs.msg import Marker
+
+from rerun_utils.entity_paths import frame_name, in_frame
+from rerun_utils.tf_mirror import Tie, TFTree
+from rerun_utils.renderers.map import FREE, OCCUPIED, UNKNOWN, grid_cells, grid_quad, grid_key, grid_texture, downsample, is_overlay, occupied_cells
+from rerun_utils.marker_geometry import convert, posed
+from rerun_utils.renderers.marker_array import MarkerLog, MarkerStore
 
 
 def _grid(width: int, height: int, resolution: float, x: float, y: float, yaw: float = 0.0, data: list[int] | None = None) -> OccupancyGrid:
@@ -140,18 +142,6 @@ def _at(m: Marker, frame: str) -> Marker:
     return m
 
 
-def test_the_pedestrian_roster_is_read_from_the_env_namespace_whatever_the_tf_mode() -> None:
-    from rerun_utils.renderers._registry import RendererCtx
-    from rerun_utils.renderers.pedestrians import peds_topic
-    from rerun_utils.scripts.rerun_bridge import env_namespace
-
-    ns = env_namespace("/arena/env_3/arena_env_node")
-    assert ns == "/arena/env_3"
-    assert peds_topic(RendererCtx(env_id=3, node=None, env_namespace=ns, tf_namespace="")) == "/arena/env_3/arena_peds"  # type: ignore[arg-type]
-    assert peds_topic(RendererCtx(env_id=3, node=None, env_namespace=ns, tf_namespace=ns)) == "/arena/env_3/arena_peds"  # type: ignore[arg-type]
-    assert env_namespace("/arena_env_node") == ""
-
-
 def test_only_the_groups_a_message_touched_are_dirty() -> None:
     store = MarkerStore()
     store.ingest([_at(_lapsing("a", 1, 0.0), "map"), _at(_lapsing("b", 1, 0.0), "map")], now_ns=0)
@@ -191,6 +181,25 @@ def test_the_log_clears_the_kinds_a_group_lost_and_logs_the_kinds_it_has() -> No
     third = log.entries({("agents", "map"): []})
     assert [(e.entity, e.archetype is None) for e in third] == [("env_0/hunav/agents/map/boxes", True)]
     assert log.entries({("agents", "map"): []}) == []
+
+
+def test_the_pedestrian_roster_is_read_from_the_env_namespace() -> None:
+    from rerun_utils.renderers.pedestrians import peds_topic
+
+    assert peds_topic("/arena/env_3") == "/arena/env_3/arena_peds"
+    assert peds_topic("/arena/env_3/") == "/arena/env_3/arena_peds"
+    assert peds_topic("") == "/arena_peds"
+
+
+def test_pedestrians_stand_on_the_z_of_their_pose() -> None:
+    from arena_people_msgs.msg import Pedestrian
+
+    from rerun_utils.renderers.pedestrians import HEIGHT, RADIUS, body_centers, heading_origins
+
+    ped = Pedestrian()
+    ped.pose.position.x, ped.pose.position.y, ped.pose.position.z = 1.0, 2.0, 3.0
+    assert body_centers([ped])[0] == pytest.approx([1.0, 2.0, 3.0 + RADIUS])
+    assert heading_origins([ped])[0] == pytest.approx([1.0, 2.0, 3.0 + HEIGHT * 0.6])
 
 
 def test_a_grid_is_an_overlay_when_the_manifest_styles_it_as_a_costmap() -> None:

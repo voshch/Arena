@@ -63,7 +63,7 @@ renderer.
 
 | Kind | Status |
 |---|---|
-| `MAP` | `rr.Mesh3D` quad at the grid's metric size, origin and frame, textured free / cost / occupied / unknown |
+| `MAP` | `rr.Mesh3D` quad at the grid's metric size, origin and frame, textured free / cost / occupied / unknown; a grid styled as a costmap is `rr.Points3D` of its cells with a cost, slightly above the map |
 | `TF` | no-op (handled by `TFMirror` unconditionally) |
 | `PATH` | `rr.LineStrips3D` in the path's frame |
 | `POSE` | `rr.Arrows3D` (one arrow at pose+yaw) in the pose's frame |
@@ -73,13 +73,19 @@ renderer.
 | `IMAGE` | `rr.Image` |
 | `IMU` | `rr.Scalars` per axis |
 | `POLYGON` | `rr.LineStrips3D` (closed loop) in the polygon's frame |
-| `PEDESTRIANS` | `rr.Capsules3D` + heading arrows from `<env>/arena_peds` (the display's ROS4HRI topic has no rerun skeleton plugin) |
+| `PEDESTRIANS` | a reduced capsule view (one capsule and a heading arrow per person) of `<env ns>/arena_peds`, standing on the pose z; the display's ROS4HRI topic has no rerun skeleton plugin |
 | `ROBOT_MODEL` | URDF via `rerun-loader-urdf-python` (optional, warn-and-skip if absent) |
 | `FOOT_CONTACT` | warn-and-skip |
 | `TRAJECTORY` | warn-and-skip (MoveIt-only) |
 | `PLANNING_SCENE` | warn-and-skip (MoveIt-only) |
 | `INTERACTIVE_MARKERS` | nothing logged (rviz-only drag handles) |
-| `MARKER_ARRAY` | cubes, spheres, cylinders, arrows, lines, points, cube/sphere lists, triangles and text per namespace and frame; added markers kept until deleted; mesh resources skipped |
+| `MARKER_ARRAY` | cubes, spheres, cylinders, arrows, lines, points, cube/sphere lists, triangles and text per namespace and frame; added markers kept until deleted |
+
+Marker fidelity against rviz. Arrow shafts follow `scale` (two-point arrows: `scale.x`; pose arrows: `scale.y`); the
+arrow head size is fixed by rerun. Not drawn: mesh resources (`MESH_RESOURCE`, `mesh_use_embedded_materials`), per-point
+colors on line strips and lists, the `scale.z` height of text (rerun labels have one size), the second axis of a
+cylinder's ellipse (the larger of `scale.x` and `scale.y` sets the radius), and `frame_locked` (data always rides its
+frame's transform at the time it is logged).
 
 ### Entity-path convention
 
@@ -88,6 +94,8 @@ renderer.
 - env-level displays: `env_<id>/<display_name>`
 - per-robot displays: `env_<id>/robots/<robot.name>/<display_name>`
 - TF tree: one entity per frame, `env_<id>/tf/<child_frame>`, holding the transform into that frame
+- frame names are global to a recording: the bridge names the recording `arena_env_<id>`, so run one bridge per env (the
+  `env_<id>` entity root is only the tie-in point of the env's tf roots, not a frame namespace)
 - data in a ROS frame logs `rr.CoordinateFrame(<frame_id>)` next to it (`entity_paths.in_frame`), so it rides the TF
   chain wherever its entity sits; marker arrays log under `<display>/<namespace>/<frame>/<kind>`.
 
