@@ -5,16 +5,13 @@ from __future__ import annotations
 import math
 
 import pytest
-
-pytest.importorskip("rclpy")
-
 from geometry_msgs.msg import Point
 from nav_msgs.msg import OccupancyGrid
-from visualization_msgs.msg import Marker
-
 from rerun_utils.entity_paths import frame_name, in_frame
+from rerun_utils.marker_geometry import convert, posed
 from rerun_utils.renderers.map import FREE, OCCUPIED, UNKNOWN, grid_quad, grid_texture
-from rerun_utils.renderers.marker_array import _archetypes, _posed
+from rerun_utils.renderers.marker_array import MarkerLog, MarkerStore
+from visualization_msgs.msg import Marker
 
 
 def _grid(width: int, height: int, resolution: float, x: float, y: float, yaw: float = 0.0, data: list[int] | None = None) -> OccupancyGrid:
@@ -60,7 +57,7 @@ def _marker(type_: int, x: float = 0.0, y: float = 0.0, yaw: float = 0.0, points
 
 def test_list_points_follow_the_marker_pose() -> None:
     m = _marker(Marker.LINE_STRIP, x=1.0, y=2.0, yaw=math.pi / 2, points=[(1.0, 0.0, 0.0)])
-    assert _posed(m, m.points)[0] == pytest.approx([1.0, 3.0, 0.0])
+    assert posed(m, m.points)[0] == pytest.approx([1.0, 3.0, 0.0])
 
 
 def test_each_marker_kind_becomes_its_archetype() -> None:
@@ -75,21 +72,13 @@ def test_each_marker_kind_becomes_its_archetype() -> None:
     ]
     text = _marker(Marker.TEXT_VIEW_FACING)
     text.text = "hello"
-    out = _archetypes([*markers, text])
+    out = convert([*markers, text]).archetypes()
     assert set(out) == {"boxes", "spheres", "cylinders", "arrows", "lines", "points", "triangles", "text"}
 
 
 def test_line_list_is_one_segment_per_point_pair() -> None:
-    from rerun_utils.renderers import marker_array
-
-    calls: list[list] = []
-    real = marker_array.rr.LineStrips3D
-    marker_array.rr.LineStrips3D = lambda strips, **_: calls.append(strips)  # type: ignore[assignment]
-    try:
-        _archetypes([_marker(Marker.LINE_LIST, points=[(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)])])
-    finally:
-        marker_array.rr.LineStrips3D = real  # type: ignore[assignment]
-    assert len(calls[0]) == 2
+    geometry = convert([_marker(Marker.LINE_LIST, points=[(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)])])
+    assert len(geometry.strips.strips) == 2
 
 
 def test_frame_names_drop_the_leading_slash_and_empty_means_the_env_root() -> None:
@@ -118,8 +107,6 @@ S = 1_000_000_000
 
 
 def test_a_marker_lapses_its_lifetime_after_it_arrived() -> None:
-    from rerun_utils.renderers.marker_array import MarkerStore
-
     store = MarkerStore()
     store.ingest([_lapsing("agents", 1, 1.0), _lapsing("walls", 1, 0.0)], now_ns=10 * S)
     assert store.lapsing()
@@ -130,8 +117,6 @@ def test_a_marker_lapses_its_lifetime_after_it_arrived() -> None:
 
 
 def test_resending_a_marker_renews_its_lifetime() -> None:
-    from rerun_utils.renderers.marker_array import MarkerStore
-
     store = MarkerStore()
     store.ingest([_lapsing("agents", 1, 1.0)], now_ns=0)
     store.ingest([_lapsing("agents", 1, 1.0)], now_ns=S - 1)
@@ -140,8 +125,6 @@ def test_resending_a_marker_renews_its_lifetime() -> None:
 
 
 def test_delete_and_deleteall_still_remove_markers() -> None:
-    from rerun_utils.renderers.marker_array import MarkerStore
-
     store = MarkerStore()
     store.ingest([_lapsing("a", 1, 0.0), _lapsing("a", 2, 0.0), _lapsing("b", 1, 0.0)], now_ns=0)
     store.ingest([_lapsing("a", 1, 0.0, Marker.DELETE)], now_ns=0)
@@ -150,56 +133,9 @@ def test_delete_and_deleteall_still_remove_markers() -> None:
     assert not store.groups()
 
 
-class _Clock:
-    def __init__(self) -> None:
-        self.ns = 0
-
-    def now(self):  # noqa: ANN201 - stands in for rclpy.time.Time
-        clock = self
-
-        class _T:
-            nanoseconds = clock.ns
-
-        return _T()
-
-
-class _Node:
-    def __init__(self) -> None:
-        self.clock, self.subs, self.timers = _Clock(), [], []
-
-    def get_clock(self) -> _Clock:
-        return self.clock
-
-    def create_subscription(self, _type, topic, cb, _qos):  # noqa: ANN001, ANN201
-        self.subs.append((topic, cb))
-
-    def create_timer(self, period, cb):  # noqa: ANN001, ANN201
-        self.timers.append((period, cb))
-
-
-def test_the_bridge_clears_a_lapsed_marker_between_messages(monkeypatch: pytest.MonkeyPatch) -> None:
-    from arena_runtime_msgs.msg import AdapterDisplay
-    from visualization_msgs.msg import MarkerArray
-
-    from rerun_utils.renderers import marker_array
-    from rerun_utils.renderers._registry import RendererCtx
-
-    logged: list[tuple[str, str]] = []
-    monkeypatch.setattr(marker_array.rr, "log", lambda entity, archetype, *_: logged.append((entity, type(archetype).__name__)))
-    node = _Node()
-    marker_array.subscribe_marker_array(RendererCtx(env_id=0, node=node), AdapterDisplay(topic="/hunav/markers", style_json="{}"), "env_0/hunav")
-    ((_, cb),) = node.subs
-    m = _lapsing("agents", 1, 1.0)
-    m.header.frame_id = "map"
-    cb(MarkerArray(markers=[m]))
-    assert logged == [("env_0/hunav/agents/map/boxes", "Boxes3D")]
-    ((_, tick),) = node.timers
-    node.clock.ns = S // 2
-    tick()
-    assert len(logged) == 1
-    node.clock.ns = S
-    tick()
-    assert logged[-1] == ("env_0/hunav/agents/map/boxes", "Clear")
+def _at(m: Marker, frame: str) -> Marker:
+    m.header.frame_id = frame
+    return m
 
 
 def test_the_pedestrian_roster_is_read_from_the_env_namespace_whatever_the_tf_mode() -> None:
@@ -212,3 +148,54 @@ def test_the_pedestrian_roster_is_read_from_the_env_namespace_whatever_the_tf_mo
     assert peds_topic(RendererCtx(env_id=3, node=None, env_namespace=ns, tf_namespace="")) == "/arena/env_3/arena_peds"  # type: ignore[arg-type]
     assert peds_topic(RendererCtx(env_id=3, node=None, env_namespace=ns, tf_namespace=ns)) == "/arena/env_3/arena_peds"  # type: ignore[arg-type]
     assert env_namespace("/arena_env_node") == ""
+
+
+def test_only_the_groups_a_message_touched_are_dirty() -> None:
+    store = MarkerStore()
+    store.ingest([_at(_lapsing("a", 1, 0.0), "map"), _at(_lapsing("b", 1, 0.0), "map")], now_ns=0)
+    assert set(store.take_dirty()) == {("a", "map"), ("b", "map")}
+    assert store.take_dirty() == {}
+    store.ingest([_at(_lapsing("b", 2, 0.0), "map")], now_ns=0)
+    assert set(store.take_dirty()) == {("b", "map")}
+
+
+def test_a_group_that_lost_its_markers_is_dirty_and_empty() -> None:
+    store = MarkerStore()
+    store.ingest([_at(_lapsing("a", 1, 1.0), "map"), _at(_lapsing("b", 1, 0.0), "map")], now_ns=0)
+    store.take_dirty()
+    assert store.expire(S)
+    assert store.take_dirty() == {("a", "map"): []}
+    store.ingest([_lapsing("b", 1, 0.0, Marker.DELETE)], now_ns=S)
+    assert store.take_dirty() == {("b", "map"): []}
+
+
+def test_a_marker_moving_to_another_frame_dirties_both_groups() -> None:
+    store = MarkerStore()
+    store.ingest([_at(_lapsing("a", 1, 0.0), "map")], now_ns=0)
+    store.take_dirty()
+    store.ingest([_at(_lapsing("a", 1, 0.0), "odom")], now_ns=0)
+    assert store.take_dirty() == {("a", "map"): [], ("a", "odom"): store.groups()[("a", "odom")]}
+
+
+def test_the_log_clears_the_kinds_a_group_lost_and_logs_the_kinds_it_has() -> None:
+    log = MarkerLog("env_0/hunav")
+    cube = _at(_lapsing("agents", 1, 0.0), "map")
+    sphere = _at(_marker(Marker.SPHERE), "map")
+    sphere.ns = "agents"
+    first = log.entries({("agents", "map"): [cube, sphere]})
+    assert {e.entity for e in first if e.archetype is not None} == {"env_0/hunav/agents/map/boxes", "env_0/hunav/agents/map/spheres"}
+    second = log.entries({("agents", "map"): [cube]})
+    assert [(e.entity, e.archetype is None) for e in second] == [("env_0/hunav/agents/map/boxes", False), ("env_0/hunav/agents/map/spheres", True)]
+    third = log.entries({("agents", "map"): []})
+    assert [(e.entity, e.archetype is None) for e in third] == [("env_0/hunav/agents/map/boxes", True)]
+    assert log.entries({("agents", "map"): []}) == []
+
+
+def test_arrow_shaft_width_follows_the_scale_rviz_reads_for_its_form() -> None:
+    two_point = _marker(Marker.ARROW, points=[(0, 0, 0), (1, 0, 0)])
+    two_point.scale.x, two_point.scale.y = 0.1, 0.3
+    posed_arrow = _marker(Marker.ARROW)
+    posed_arrow.scale.x, posed_arrow.scale.y, posed_arrow.scale.z = 2.0, 0.08, 0.2
+    geometry = convert([two_point, posed_arrow])
+    assert geometry.arrows.radii == pytest.approx([0.05, 0.04])
+    assert geometry.arrows.vectors[1] == pytest.approx([2.0, 0.0, 0.0])
