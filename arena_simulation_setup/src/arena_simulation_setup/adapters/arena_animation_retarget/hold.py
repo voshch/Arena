@@ -154,6 +154,7 @@ def apply(clip: Clip, hold: Hold, body: str | Path | None = None, verbose: bool 
     radius, angle = float(p["radius"]), float(p["angle"])
     mirror = {s: (1.0 if s == "l" else -1.0) for s in "lr"}  # y sign of a left-side target for this hand
     start = [positions(b) for b in base] if hold.task in ("cane", "rolling", "frame") else []
+    phase, path = np.zeros(T), np.zeros((T, 3))  # set below for the tasks that use them
 
     if hold.task in ("cane", "rolling"):
         phase = _gait_phase(np.array([q["right_ankle"][0] - q["left_ankle"][0] for q in start]))  # the tip lands opposite the striking foot, either hand

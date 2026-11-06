@@ -206,10 +206,10 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--hold-body needs --hold")
     if a.pair and a.hold:
         ap.error("--hold applies to single-person clips, not --pair")
+    from . import hold as hold_mod
+
     held = None
     if a.hold:
-        from . import hold as hold_mod
-
         try:
             held = hold_mod.Hold.parse(a.hold)
         except ValueError as e:
