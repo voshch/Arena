@@ -182,7 +182,7 @@ def _default_sides() -> dict[str, StairsSide]:
 
 @attrs.define
 class Stairs(Named):
-    """Half of a stair or escalator: open at the mouth, cut at the seam, where a crossing lands on the `to` half of another level. A ramp is whole and has no seam: it stays on its level, its surface rising `rise` from `position.z` at the mouth."""
+    """Half of a stair or escalator: open at the mouth, cut at the seam, where a crossing lands on the `to` half of another level. A ramp is whole and stays on its level."""
 
     position: Position = attrs.field(converter=Position.converter)
     kind: typing.Literal['stairs', 'escalator', 'ramp'] = 'stairs'
@@ -242,7 +242,7 @@ class Stairs(Named):
 
     @property
     def belt(self) -> float:
-        """Belt speed along the axis, 0 on stairs, towards the seam on a boarding escalator half and away from it on an exit half."""
+        """Belt speed along the axis, 0 on stairs and ramps, towards the seam on a boarding escalator half and away from it on an exit half."""
         if self.kind != 'escalator':
             return 0.0
         return self.speed if self.boards else -self.speed
@@ -323,7 +323,7 @@ class Stairs(Named):
         return self.flat, self.length - (self.flat if self.whole else 0.0)
 
     def height(self, along: float) -> float:
-        """Ramp height `along` meters from the mouth, level over the landings, rising to half the rise at the seam, sinking on a top half, a ramp's rising its whole rise."""
+        """Ramp height `along` meters from the mouth, level over the landings, rising to half the rise at the seam, sinking on a top half. A ramp rises all of `rise`."""
         start, end = self.ramp
         t = min(max((along - start) / (end - start), 0.0), 1.0) * (self.rise if self.kind == 'ramp' else self.rise / 2.0)
         return -t if self.top else t
@@ -455,7 +455,7 @@ class Stairs(Named):
 
     @property
     def drop(self) -> float:
-        """Depth of the base slabs' top under the ramp line, clear of the lowest tread or plank, a ramp's slab being its walking surface."""
+        """Depth of the base slabs' top under the ramp line, clear of the lowest tread or plank, 0 on a ramp."""
         if self.kind == 'ramp':
             return 0.0
         if self.style == 'belt':
@@ -557,7 +557,7 @@ class Stairs(Named):
         return [_on_top(box) for box in self.treads(travel)]
 
     def static_boxes(self) -> list[tuple[str, MaterialIdentifier, StairsBox]]:
-        """Static boxes of a half as (name, material, box): stair steps, each a tread plate on a riser body when `risers` is set, an escalator's base slabs and landing plates, or a ramp's slab unless the world already has a floor there."""
+        """Static boxes of a half as (name, material, box): stair steps, each a tread plate on a riser body when `risers` is set, an escalator's base slabs and landing plates, or a ramp's slab unless `floor` is off."""
         if self.kind == 'ramp':
             return [(f'base_{i}', self.material_of('steps'), box) for i, box in enumerate(self.base())] if self.floor else []
         if self.kind == 'escalator':
@@ -648,7 +648,7 @@ class Stairs(Named):
 
 
 def stair_height(stairs: typing.Iterable[Stairs], x: float, y: float) -> float:
-    """Walking surface height at a map point on the first stair half or ramp holding it, 0 off every one."""
+    """Walking surface height at a map point on the first stair half or ramp holding it, 0 elsewhere."""
     return next((stair.position.z + stair.height(stair.along(x, y)) for stair in stairs if stair.contains(x, y, stair.reach)), 0.0)
 
 

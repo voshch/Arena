@@ -502,10 +502,9 @@ on, and pedestrians reach the simulator on `sim_peds` in its own frame.
 
 ### Ramps
 
-A `ramps:` entry gives a level floor that is not flat, without another level.
-The level stays one flat plan for the map, the pedestrian simulation, the
-planner and the judge, so nothing is split at a seam and nobody teleports: only
-heights change. Full field reference: [Ramps fields](worlds/README.md#ramps-fields).
+A `ramps:` entry gives a level a sloped or raised floor without adding a level.
+The map, pedestrian simulation, planner and judge keep one flat plan with no
+seam or teleport. Only heights change. Fields: [Ramps fields](worlds/README.md#ramps-fields).
 
 ```yaml
 levels:
@@ -519,20 +518,17 @@ levels:
 
 This is the `ramp_demo` world: a 24 m ramp rising 1 m from the floor to a level
 deck. A ramp's mouth is its low end, at height `base`, and it rises `rise` over
-its length. `rise: 0`, the default, makes a level deck, so any floor height is a
-ramp too. Where footprints overlap the first entry wins, and off every ramp the
-height is 0.
+its length. `rise: 0`, the default, makes a level deck. Where footprints overlap
+the first entry wins. Off every ramp the height is 0.
 
-Pedestrians take the height of the ramp under them, and robots spawn and
-teleport onto it, on every simulator that has heights. A robot drives on the
-slab under its own physics, the planner gets a flat map and the costmap's door
-mask keeps the slab from reading as a wall, which a planar lidar makes of a
-slope until the robot is on it. A slab does not close the space under it, so run
-it from wall to wall or add walls, and leave no gap at its ends.
+Pedestrians take the height of the ramp under them. Robots spawn and teleport
+onto it, then drive on the slab under their own physics. A planar lidar reads a
+slope as a wall until the robot is on it, so the global costmap's door mask
+frees the slab. A slab leaves the space under it open, so run it wall to wall or
+add walls, and leave no gap at its ends.
 
-`floor: false` spawns no slab, for a world that already has the surface in it,
-such as a scan with its collider. A world with `defaults: {floor: false}` does
-this for every ramp.
+`floor: false` spawns no slab, for a world that already has the surface, such as
+a scan with its collider. `defaults: {floor: false}` does this for every ramp.
 
 ### Microphones
 

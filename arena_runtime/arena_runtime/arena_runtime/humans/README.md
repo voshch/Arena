@@ -573,7 +573,7 @@ slide across the map.
 `publish_arena_peds` sets each pedestrian's z to the walking surface of the stair half it stands on
 (`stair_height`): rising from 0 at the mouth to half the stair's rise at the seam on a bottom half, sinking
 to minus half the rise on a top half, 0 off every stair. On a ramp it is the ramp's base plus its height there. A
-ramp sends no teleport zone, the engine walks over it as plain floor.
+ramp sends no teleport zone, so the engine treats it as plain floor.
 
 ## HuNavSim default agent template
 

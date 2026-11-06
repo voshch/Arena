@@ -432,7 +432,7 @@ class FlatsimSimulator(BaseSim):
         return True
 
     async def spawn_stairs(self, stairs: Sequence[Stairs]) -> bool:
-        """A planar robot drives across a ramp, whose slab would only block it."""
+        """Drop ramps, whose slabs would block a planar robot."""
         return await super().spawn_stairs([stair for stair in stairs if stair.kind != 'ramp'])
 
     async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None, *, velocity: tuple[float, float, float] | None = None, comb: bool = False) -> bool:

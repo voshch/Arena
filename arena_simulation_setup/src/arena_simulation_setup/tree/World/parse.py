@@ -207,7 +207,7 @@ def _stair_halves(path: str, raw: Mapping, kind: str, level_id: str, layout: str
 
 
 def _ramp(path: str, raw: object, defaults: Mapping, c: ArenaConverter) -> Stairs:
-    """A level's ramp from `base` at its mouth up `rise` over its length, a slab in the `floor` material unless the floor is off, a side wall only where one is asked for."""
+    """A level's ramp, with no side walls unless asked for."""
     raw = _keys(path, raw, RAMP_KEYS, frozenset({'name', 'mouth', 'size'}))
     size = raw['size']
     if not isinstance(size, list) or len(size) != 2 or min(float(v) for v in size) <= 0.0:

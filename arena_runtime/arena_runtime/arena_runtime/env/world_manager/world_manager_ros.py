@@ -454,7 +454,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         png_bytes: bytes,
         map_yaml_text: str,
     ) -> None:
-        """Publish an OccupancyGrid: 0 inside door polygons and over ramp slabs, which a planar lidar reads as a wall until the robot is on the slope, -1 elsewhere, without the doors the mechanism map serves as blocked. Aligned to the static map."""
+        """Publish an OccupancyGrid: 0 inside door polygons and over ramp slabs, -1 elsewhere, without the doors the mechanism map serves as blocked. Aligned to the static map."""
         img = PIL.Image.open(io.BytesIO(png_bytes))
         width, height = img.size
 
