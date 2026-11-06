@@ -73,6 +73,13 @@ def test_the_test_split_follows_from_the_world_keys_alone():
     assert held_out(keys, 1) == held_out(list(reversed(keys)), 1) == {"usar_rooms_a"}
 
 
+def test_a_limited_run_keeps_the_full_runs_split():
+    full = {o.task.world_key: o.split for o in cli.run(manifest(world_variants=3, test_worlds=1)).outcomes}
+    for limit in range(1, len(tasks(manifest(world_variants=3, test_worlds=1))) + 1):
+        report = cli.run(manifest(world_variants=3, test_worlds=1), limit=limit)
+        assert {o.task.world_key: o.split for o in report.outcomes}.items() <= full.items()
+
+
 def test_holding_out_every_world_is_refused():
     with pytest.raises(pydantic.ValidationError, match="test worlds"):
         manifest(test_worlds=2)

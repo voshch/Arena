@@ -17,7 +17,7 @@ ros2 run arena_simulation_setup generate_usar configs/usar/mvp.yaml --write --ou
 |---|---|
 | `--write` | write the worlds and the index, a dry run without it |
 | `--out DIR` | write every world to `DIR/<world>` and the index to `DIR/<name>.index.yaml`. Without it worlds go to the writable world root, and the index next to them |
-| `--limit N` | only the first N tasks |
+| `--limit N` | only the first N tasks, each world in its split of the full run |
 
 It prints every rejected task with its reason and exits 1 when no task was placed. Tasks on the same world configuration and seed share one world, which holds all their scenarios.
 

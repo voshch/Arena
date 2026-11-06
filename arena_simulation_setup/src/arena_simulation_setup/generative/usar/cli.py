@@ -57,12 +57,12 @@ def _view(key: str, out: Path | None) -> WorldView:
 def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: bool = False) -> Report:
     """Generate every task, one world per world configuration and seed, writing only with `write`."""
     items = tasks(manifest)
+    test = held_out([item.world_key for item in items], manifest.test_worlds)
     if limit:
         items = items[:limit]
     groups: dict[str, list[Task]] = {}
     for item in items:
         groups.setdefault(item.world_key, []).append(item)
-    test = held_out(list(groups), manifest.test_worlds)
     outcomes: list[Outcome] = []
     worlds: dict[str, Path] = {}
     for key, members in groups.items():
