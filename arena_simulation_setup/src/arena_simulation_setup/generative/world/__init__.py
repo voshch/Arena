@@ -7,7 +7,7 @@ import pydantic
 
 from arena_simulation_setup.tree.World import World
 
-from .layout import Diagnostics, GridFrame, Note
+from .layout import Diagnostics, GridFrame, Layout, Note
 
 
 class WorldGeneratorType(enum.Enum):
@@ -24,6 +24,7 @@ class WorldGeneratorType(enum.Enum):
     CORRIDOR = "corridor"
     OPEN = "open"
     CONCOURSE = "concourse"
+    EGOBENCH = "egobench"
 
 
 class BaseConfiguration(pydantic.BaseModel):
@@ -72,6 +73,10 @@ class WorldGeneratorImpl(abc.ABC):
         """Cell grid of the last compute in world metres, for generators drawn on one."""
         return None
 
+    def layout(self) -> 'Layout | None':
+        """Layout IR of the last compute, for generators built on it."""
+        return None
+
     def params(self) -> dict[str, typing.Any]:
         """Episode binding applied when this world is queued: modes (axis -> mode names) plus
         params (axis -> leaf name -> value, the leaves of that axis's mode). Empty (default) leaves the prior episode untouched."""
@@ -114,6 +119,9 @@ class WorldGenerator:
 
     def frame(self) -> GridFrame | None:
         return self._active.frame()
+
+    def layout(self) -> Layout | None:
+        return self._active.layout()
 
     @property
     def diagnostics(self) -> Diagnostics | None:
@@ -209,3 +217,10 @@ def lazy_Concourse() -> type[WorldGeneratorImpl]:
     from .concourse import WorldGeneratorConcourse
 
     return WorldGeneratorConcourse
+
+
+@WorldGenerator.register(WorldGeneratorType.EGOBENCH)
+def lazy_EgoBench() -> type[WorldGeneratorImpl]:
+    from ..egobench.meta import WorldGeneratorEgoBench
+
+    return WorldGeneratorEgoBench
