@@ -170,7 +170,7 @@ def _wm_ros(doors: list[Door], level_origin=(10.0, 0.0)):
     return wm, snapshots, loads
 
 
-def test_door_mask_frees_ramp_slabs_but_not_a_ramp_without_one():
+def test_door_mask_leaves_ramps_to_the_sensors():
     from arena_simulation_setup.shared import Stairs
     from builtin_interfaces.msg import Time as TimeMsg
 
@@ -187,7 +187,7 @@ def test_door_mask_frees_ramp_slabs_but_not_a_ramp_without_one():
     wm._publish_door_mask(Level(id="1", stairs=[slab, scan]), png, yaml_text)
 
     cell = lambda x, y: sent[-1].data[int(y / sent[-1].info.resolution) * sent[-1].info.width + int(x / sent[-1].info.resolution)]
-    assert (cell(4.0, 1.0), cell(4.0, 3.0), cell(8.0, 1.0)) == (0, -1, -1)
+    assert (cell(4.0, 1.0), cell(4.0, 3.0), cell(8.0, 1.0)) == (-1, -1, -1)
 
 
 def test_world_manager_ros_mechanism_map_follows_semantics():

@@ -522,10 +522,9 @@ its length. `rise: 0`, the default, makes a level deck. Where footprints overlap
 the first entry wins. Off every ramp the height is 0.
 
 Pedestrians take the height of the ramp under them. Robots spawn and teleport
-onto it, then drive on the slab under their own physics. A robot's point cloud
-can mark the slope, so the global costmap's door mask frees the slab. The mask
-doesn't reach the local costmap, so nav2 can stall on a slope and, above 0.8 m,
-miss walkers. A slab leaves the space under it open, so run it wall to wall or
+onto it, then drive on the slab under their own physics. Their sensors see the
+slope as it is, so nav2's costmaps can mark it, stall the robot on it and,
+above 0.8 m, miss walkers. A slab leaves the space under it open, so run it wall to wall or
 add walls, and leave no gap at its ends. Flatsim has no floor heights, so a ramp
 is plain floor there.
 
