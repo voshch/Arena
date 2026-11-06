@@ -2994,11 +2994,18 @@ dependencies = [
     { name = "rerun-sdk" },
 ]
 
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "numpy" },
-    { name = "rerun-sdk", specifier = ">=0.21" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+    { name = "rerun-sdk", specifier = ">=0.38" },
 ]
+provides-extras = ["test"]
 
 [[package]]
 name = "rich"

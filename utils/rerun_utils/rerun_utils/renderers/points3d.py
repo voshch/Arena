@@ -9,7 +9,7 @@ from arena_viz import DisplayKind, StyleSpec
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2
 
-from rerun_utils.entity_paths import tf_path
+from rerun_utils.entity_paths import display_path, in_frame
 from rerun_utils.renderers._registry import RendererCtx, register
 
 
@@ -31,14 +31,13 @@ def render_points3d(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Rende
     if not style.enabled:
         return
     color = style.color or (180, 180, 255)
+    entity = display_path(ctx.env_id, robot, d.name)
 
     def cb(msg: PointCloud2) -> None:
         pts = _read_xyz(msg)
         if pts.size == 0:
             return
-        entity = f"{tf_path(ctx.env_id, msg.header.frame_id)}/{d.name}"
-        rr.log(entity, rr.Points3D(pts, colors=[color], radii=0.02))
+        rr.log(entity, rr.Points3D(pts, colors=[color], radii=0.02), *in_frame(msg.header.frame_id))
 
     qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
     ctx.node.create_subscription(PointCloud2, d.topic, cb, qos)
-    del robot
