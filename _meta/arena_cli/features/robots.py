@@ -402,6 +402,28 @@ def cmd_check(arena: Path, args: argparse.Namespace) -> int:
     return 1
 
 
+def request_refs(arena: Path, spec: str) -> tuple[str, list[str]]:
+    """Base robot and the component families a `name[mount=type/variant,...]` request places."""
+    base, _, rest = spec.partition("[")
+    refs: list[str] = []
+    for part in rest.rstrip("]").split(","):
+        lhs, _, rhs = part.partition("=")
+        rhs = rhs.strip()
+        if not rhs or rhs == "none":
+            continue
+        family = resolve_component_ref(arena, rhs if "/" in rhs else f"{lhs.strip()}/{rhs}")
+        if family is not None:
+            refs.append(family)
+    return base.strip(), refs
+
+
+def _spec_ready(arena: Path, spec: str, ready: list[str]) -> bool:
+    base, refs = request_refs(arena, spec)
+    status = submodule_status(arena)
+    subs = robot_submodules(arena)
+    return base in ready and all(status.get(p) == "init" for ref in refs for p in subs.get(ref, []))
+
+
 def _ready_robots(arena: Path) -> list[str]:
     subs = robot_submodules(arena)
     status = submodule_status(arena)
@@ -478,7 +500,8 @@ def _check_sim(argv: list[str]) -> None:
             break
     names = [a for a in head if ":=" not in a and not a.startswith("-")]
     rest = [a for a in head if ":=" in a] + rest
-    ready = _ready_robots(Path(common._env("ARENA_DIR")))
+    arena = Path(common._env("ARENA_DIR"))
+    ready = _ready_robots(arena)
     if "--all" in head:
         if names:
             raise common.CLIError("robots check --sim: --all is mutually exclusive with robot names")
@@ -487,7 +510,7 @@ def _check_sim(argv: list[str]) -> None:
             raise common.CLIError("robots check --sim: no ready robots, see 'arena feature robots ls'")
     elif not names:
         raise common.CLIError(f"robots check --sim: specify robot name(s) or --all, ready: {', '.join(ready) or 'none'}")
-    unknown = [name for name in names if name not in ready]
+    unknown = [name for name in names if not _spec_ready(arena, name, ready)]
     if unknown:
         raise common.CLIError(f"robots check --sim: not ready: {', '.join(unknown)}, run 'arena feature robots add {' '.join(unknown)}' (ready: {', '.join(ready) or 'none'})")
     suite = planners.preflight_suite(list(dict.fromkeys(names)))
@@ -500,6 +523,7 @@ def check(argv: list[str]) -> None:
     `arena feature robots check [--all] [-q]`: static URI check, `--all` includes robots whose mesh submodules are not checked out.
     `arena feature robots check --sim [--lanes N] <name...|--all> [sim:=...] [KEY:=VALUE ...]`: per robot two episodes of
     map_empty's `preflight` scenario under its default planner, verdict wedged/weak/ok, exit 3 on either (needs the evaluation feature).
+    A name may carry a morphology request, `rbkairos[arm_mount=arm/fr3]`, which needs the base robot and each placed component fetched.
     """
     if "--sim" in argv:
         _check_sim([a for a in argv if a != "--sim"])

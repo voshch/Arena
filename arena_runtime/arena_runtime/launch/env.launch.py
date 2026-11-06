@@ -227,6 +227,16 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="moveit",
         description="arm adapter kind",
     )
+    lift = LaunchArgument(
+        name="robot.lift",
+        default_value="direct",
+        description="lift adapter kind",
+    )
+    gripper = LaunchArgument(
+        name="robot.gripper",
+        default_value="direct",
+        description="gripper adapter kind",
+    )
     record_dir = LaunchArgument(
         name="record.dir",
         default_value="",
@@ -289,6 +299,8 @@ def generate_launch_description() -> launch.LaunchDescription:
             raise RuntimeError(f"robot.hearing:={hearing_val} needs acoustics:=arena")
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
+        lift_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(lift.substitution))
+        gripper_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(gripper.substitution))
         static_sounds_val = launch.utilities.perform_substitutions(
             context,
             launch.utilities.normalize_to_list_of_substitutions(auditory_static_sounds.substitution),
@@ -469,6 +481,8 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "robot.mobile_adapter": mobile_val,
                     "robot.hearing": hearing_val,
                     "robot.arm_adapter": arm_val,
+                    "robot.lift_adapter": lift_val,
+                    "robot.gripper_adapter": gripper_val,
                     **robot.str_param,
                     mode_param("config"): tm_config_val,
                     **world.str_param,
