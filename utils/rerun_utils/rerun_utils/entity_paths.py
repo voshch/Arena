@@ -5,6 +5,9 @@ from __future__ import annotations
 import rerun as rr
 from arena_runtime_msgs.msg import RobotDescriptor
 
+#: Implicit transform frame of the recording root, the target frame of views on `/`; one recording per env.
+ENV_ORIGIN = "tf#/"
+
 
 def env_root(env_id: int) -> str:
     return f"env_{env_id}"
@@ -20,6 +23,11 @@ def display_path(env_id: int, robot: RobotDescriptor | None, display_name: str) 
 def tf_path(env_id: int, frame: str) -> str:
     """The entity that holds the transform into `frame`, one per frame as rerun requires."""
     return f"{env_root(env_id)}/tf/{frame_name(frame)}"
+
+
+def root_path(env_id: int, frame: str) -> str:
+    """The entity that ties the root `frame` to the env's origin, apart from the one that would hold its parent."""
+    return f"{env_root(env_id)}/tf_roots/{frame_name(frame)}"
 
 
 def frame_name(frame_id: str) -> str:

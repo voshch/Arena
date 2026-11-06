@@ -12,6 +12,7 @@ from rerun_utils.entity_paths import frame_name, in_frame
 from rerun_utils.marker_geometry import convert, posed
 from rerun_utils.renderers.map import FREE, OCCUPIED, UNKNOWN, downsample, grid_cells, grid_key, grid_quad, grid_texture, is_overlay, occupied_cells
 from rerun_utils.renderers.marker_array import MarkerLog, MarkerStore
+from rerun_utils.tf_mirror import TFTree, Tie
 from visualization_msgs.msg import Marker
 
 
@@ -224,6 +225,45 @@ def test_a_grid_key_changes_with_the_data_and_not_with_the_stamp() -> None:
     assert grid_key(a) == grid_key(b)
     b.data = [0, 100]
     assert grid_key(a) != grid_key(b)
+
+
+def _roots_after(edges: list[tuple[str, str]]) -> tuple[frozenset[str], set[str]]:
+    """The tree's roots and the frames left tied once the ties it asked for are applied in order."""
+    tree, tied = TFTree(), set()
+    for child, parent in edges:
+        for tie in tree.ingest(child, parent):
+            if tie.tied:
+                tied.add(tie.frame)
+            else:
+                tied.discard(tie.frame)
+    return tree.roots, tied
+
+
+def test_the_roots_do_not_depend_on_the_order_transforms_arrive_in() -> None:
+    chain = [("odom", "map"), ("base_link", "odom"), ("laser", "base_link")]
+    for order in (chain, chain[::-1], [chain[1], chain[0], chain[2]]):
+        roots, tied = _roots_after(order)
+        assert roots == {"map"}
+        assert tied == {"map"}
+
+
+def test_a_frame_seen_first_as_a_parent_is_untied_once_it_gains_a_parent() -> None:
+    tree = TFTree()
+    assert tree.ingest("odom", "map") == [Tie("map", True)]
+    assert tree.ingest("map", "world") == [Tie("map", False), Tie("world", True)]
+    assert tree.ingest("base_link", "odom") == []
+
+
+def test_one_shared_tree_has_one_root_whatever_the_env_frames_are() -> None:
+    edges = [("env_0/map", "world"), ("env_1/map", "world"), ("env_0/base", "env_0/map"), ("env_1/base", "env_1/map")]
+    for order in (edges, edges[::-1]):
+        roots, tied = _roots_after(order)
+        assert roots == tied == {"world"}
+
+
+def test_two_separate_trees_have_two_roots() -> None:
+    roots, _ = _roots_after([("a_child", "a"), ("b_child", "b")])
+    assert roots == {"a", "b"}
 
 
 def test_arrow_shaft_width_follows_the_scale_rviz_reads_for_its_form() -> None:
