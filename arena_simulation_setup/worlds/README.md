@@ -310,7 +310,7 @@ Every phase also takes `until: "<clause>[ or <clause>...]"` with a clause being
 `<atom>[ and <atom>...][ for <seconds>]` (` or ` binds loosest, a ` for ` dwell
 belongs to its clause, ` and ` binds tightest; the phase completes once any
 clause has held, every atom together, for its dwell, after arrival for a goto),
-`hold_time: <s>` (park time at a goto goal), `conditions:` (clauses judged
+`hold_time: <s>` (park time at a goto goal), `dispatch: false` (a goto judged but never sent to a planner), `conditions:` (clauses judged
 over this phase only), `text:` (instruction for language-conditioned planners)
 and `on_failure: continue | stop_task | abort_episode`. A `loop:` entry repeats
 its phases in order; its `until` is judged on every tick, drops the running
