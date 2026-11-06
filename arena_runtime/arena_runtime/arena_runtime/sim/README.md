@@ -247,7 +247,13 @@ gets one `JointCommand` per object: a semantic write
 (`ArticulatedObject.command`) marks the joints it moves as driving, each
 driving joint's reference ramps toward its target at the joint's speed but
 at most `LEAD` (0.25 s of motion) ahead of the joint, and a joint within its
-settle gap leaves the drive and is set onto its target (`place`). The
+settle gap leaves the drive and is set onto its target (`place`). A joint
+no semantic write drives whose `latch` holds (`Articulation.latch_holds`)
+and that sits within `LATCH_CATCH` (0.01 rad, 5 mm) of its closed value is driven toward
+closed and held there (`JointCommand.hold`): MuJoCo locks its range at the
+reference within `HOLD_SLACK`, in the model and the spec, until the hold
+lets go, and Gazebo and Isaac, whose messages carry no hold, keep only the
+drive of bounded effort. The
 reading that comes back is the current value, clamped into each joint's
 range, a joint no drive holds takes its target along, and `blocked` holds
 while a driving joint lags its reference by `LAG_BLOCKED` of the lead. A

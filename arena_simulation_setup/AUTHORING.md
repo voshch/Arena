@@ -581,7 +581,13 @@ when unset). In a physics simulator a written target switches on a drive
 of bounded effort, which follows a reference ramped at that velocity and
 lets go once the joint is within 0.05 rad or 1 cm, setting it onto the
 target. A joint no drive holds moves only when pushed, and its target
-follows it. Link masses come from the link boxes (150 kg/m3, 0.2 to 20 kg).
+follows it. A joint with a `latch` (see [Object articulation](../arena_assets/README.md#object-articulation))
+catches when it comes within 0.01 rad (5 mm on a slide) of its closed value while its
+handle sits short of the release fraction, and a push does not open it until
+the handle is pressed: MuJoCo locks the joint's range at closed, Gazebo and
+Isaac hold it with its drive of bounded effort only. A semantic write that
+moves it opens it without the handle, and flatsim and dummy have no pushes
+to hold against. Link masses come from the link boxes (150 kg/m3, 0.2 to 20 kg).
 A joint's friction, damping, armature and spring are the ones its asset
 authors (see [Object articulation](../arena_assets/README.md#object-articulation)),
 else its role's (a drawer rubs harder than a bare slide), else its kind's,

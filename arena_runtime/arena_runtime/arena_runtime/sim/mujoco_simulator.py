@@ -544,7 +544,11 @@ class MujocoSimulator(BaseSim, NodeInterface):
         return await asyncio.gather(*map(spawn, objects))
 
     async def _articulated_drive(self, commands: Sequence[ArticulatedCommand]) -> Sequence[Values | None]:
-        request = DriveArticulated.Request(env_id=self._env_id, commands=[JointCommand(name=self._NS_PRIM(command.runtime.name), **command_fields(command)) for command in commands])
+        messages = []
+        for command in commands:
+            fields = command_fields(command)
+            messages.append(JointCommand(name=self._NS_PRIM(command.runtime.name), hold=[joint in command.hold for joint in fields["joints"]], **fields))
+        request = DriveArticulated.Request(env_id=self._env_id, commands=messages)
         response = await self._clients.DriveArticulated.call_timeout(request)
         if response is None:
             return [None] * len(commands)

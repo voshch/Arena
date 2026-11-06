@@ -34,6 +34,7 @@ LEAD = 0.25
 LAG_BLOCKED = 0.9
 MOTION_TOLERANCE = 1e-3
 SURFACE_FRICTION = 0.5
+LATCH_CATCH = {JointType.REVOLUTE: 0.01, JointType.PRISMATIC: 0.005}
 JOINT_CODES = {JointType.REVOLUTE: 0, JointType.PRISMATIC: 1, JointType.CONTINUOUS: 2, JointType.FIXED: 3}
 
 Disc = tuple[str, tuple[float, float], float]
@@ -104,12 +105,13 @@ class JointDynamics:
 
 @attrs.frozen
 class JointCommand:
-    """One object's drive references, the joints whose drives are on, and the joints set onto their reference at rest."""
+    """One object's drive references, the joints whose drives are on, the joints set onto their reference at rest, and the latched joints locked at their reference where the simulator supports it."""
 
     runtime: ArticulatedObject
     reference: Values
     drive: frozenset[str]
     place: frozenset[str]
+    hold: frozenset[str] = frozenset()
 
 
 def joint_gap(joint: Joint, current: float, target: float) -> float:
@@ -571,10 +573,11 @@ def place(runtime: ArticulatedObject) -> JointCommand:
 
 
 def drive(runtime: ArticulatedObject, dt: float) -> JointCommand:
-    """Ramp each driven joint's reference toward its target at the joint's speed, at most LEAD seconds ahead of the joint, a joint within its settle gap released onto the target."""
+    """Ramp each driven joint's reference toward its target at the joint's speed, at most LEAD seconds ahead of the joint, a joint within its settle gap released onto the target, and hold an undriven latched joint within LATCH_CATCH of closed at its closed value."""
     reference = dict(runtime.current)
     driven: set[str] = set()
     settled: set[str] = set()
+    held: set[str] = set()
     for joint in runtime.articulation.movable:
         name = joint.name
         if name not in runtime.driving:
@@ -593,8 +596,18 @@ def drive(runtime: ArticulatedObject, dt: float) -> JointCommand:
         ahead = joint_gap(joint, current, ramped)
         reference[name] = joint.clamp(current + max(-lead, min(lead, ahead)))
         driven.add(name)
+    closed = runtime.articulation.initial()
+    for joint in runtime.articulation.movable:
+        name = joint.name
+        if name in runtime.driving or not runtime.articulation.latch_holds(joint, runtime.current):
+            continue
+        if abs(joint_gap(joint, runtime.current[name], closed[name])) > LATCH_CATCH[joint.type]:
+            continue
+        reference[name] = closed[name]
+        driven.add(name)
+        held.add(name)
     runtime.reference = reference
-    return JointCommand(runtime, reference, frozenset(driven), frozenset(settled))
+    return JointCommand(runtime, reference, frozenset(driven), frozenset(settled), frozenset(held))
 
 
 def take_reading(runtime: ArticulatedObject, values: Values) -> None:

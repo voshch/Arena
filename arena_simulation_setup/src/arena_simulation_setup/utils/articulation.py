@@ -153,6 +153,21 @@ def _fraction(field: str, value: object) -> float:
     return number
 
 
+@attrs.define(kw_only=True)
+class Latch:
+    """A catch holding its joint at its closed value while the `by` joint sits short of `release`, a fraction of its range."""
+
+    by: str = attrs.field(converter=lambda value: _name("joint", value))
+    release: float = attrs.field(default=0.5, converter=lambda value: _fraction("latch release", value))
+
+    @classmethod
+    def parse(cls, value: Latch | Mapping[str, typing.Any]) -> Latch:
+        return value if isinstance(value, Latch) else cls(**_strict("latch", cls, value))
+
+    def unstructure(self) -> dict[str, object]:
+        return _rounded(self)
+
+
 def family_members[V](fields: Mapping[str, V], family: str) -> dict[str, V]:
     """The `<family>.<member>` entries of one entity's fields, by member."""
     prefix = f"{family}."
@@ -243,6 +258,7 @@ class Joint:
     velocity: float | None = attrs.field(default=None, converter=attrs.converters.optional(float))
     role: str | None = attrs.field(default=None, converter=_role)
     dynamics: Dynamics | None = attrs.field(default=None, converter=attrs.converters.optional(Dynamics.parse))
+    latch: Latch | None = attrs.field(default=None, converter=attrs.converters.optional(Latch.parse))
 
     def __attrs_post_init__(self) -> None:
         if self.parent == self.child:
@@ -255,6 +271,12 @@ class Joint:
             raise ValueError(f"joint {self.name} velocity must be > 0, got {self.velocity}")
         if self.dynamics is not None and self.type is JointType.FIXED:
             raise ValueError(f"fixed joint {self.name} takes no dynamics")
+        if self.latch is not None and self.type is JointType.FIXED:
+            raise ValueError(f"fixed joint {self.name} takes no latch")
+        if self.latch is not None and self.limit is None:
+            raise ValueError(f"{self.type} joint {self.name} takes a latch only with a limit")
+        if self.latch is not None and self.latch.by == self.name:
+            raise ValueError(f"joint {self.name} cannot latch on itself")
 
     @property
     def movable(self) -> bool:
@@ -323,6 +345,8 @@ class Joint:
             result["role"] = self.role
         if self.dynamics is not None:
             result["dynamics"] = self.dynamics.unstructure()
+        if self.latch is not None:
+            result["latch"] = self.latch.unstructure()
         return result
 
 
@@ -425,6 +449,12 @@ class Articulation:
         if repeated := sorted({node for node in nodes if nodes.count(node) > 1}):
             raise ValueError(f"source nodes belong to one link each, {', '.join(repeated)} is listed twice")
         by_name = self.joint_map
+        for joint in self.joints:
+            if joint.latch is None:
+                continue
+            by = by_name.get(joint.latch.by)
+            if by is None or by.limit is None:
+                raise ValueError(f"joint {joint.name} latches on {joint.latch.by!r}, which is no limited joint, limited joints: {', '.join(j.name for j in self.joints if j.limit is not None)}")
         for state, values in self.states.items():
             if state in RESERVED_STATES or state in by_name:
                 raise ValueError(f"state name {state!r} is taken, avoid {', '.join(sorted(RESERVED_STATES))} and the joint names")
@@ -605,6 +635,13 @@ class Articulation:
             if all(abs(values.get(joint, 0.0) - target) <= tolerance for joint, target in targets.items()):
                 return state
         return ""
+
+    def latch_holds(self, joint: Joint, values: Mapping[str, float]) -> bool:
+        """Whether the joint's latch is engaged at the values: its `by` joint short of the release fraction of its range."""
+        if joint.latch is None:
+            return False
+        by = self.joint_map[joint.latch.by]
+        return position(values.get(by.name, 0.0), by.bounds) < joint.latch.release
 
     def link_poses(self, values: Mapping[str, float]) -> dict[str, Pose]:
         """Model-frame pose of each link's geometry at the joint values, unnamed joints at 0."""
