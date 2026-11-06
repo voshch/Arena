@@ -52,10 +52,10 @@ def test_the_person_hides_at_the_requested_corner_count(corners: int):
     assert hideout.route[0] == hideout.start and hideout.route[-1] == hideout.person
 
 
-def test_an_adversarial_spot_misleads_at_least_as_much_as_any_random_one():
+@pytest.mark.parametrize("seed", range(10))
+def test_an_adversarial_spot_misleads_at_least_as_much_as_a_random_one_from_the_same_spots(seed: int):
     world = rooms(2)
-    adversarial = placed(world, 1, Hiding.ADVERSARIAL)
-    assert all(adversarial.misdirection >= placed(world, 1, Hiding.RANDOM, seed).misdirection - 1e-9 for seed in range(10))
+    assert placed(world, 1, Hiding.ADVERSARIAL, seed).misdirection >= placed(world, 1, Hiding.RANDOM, seed).misdirection - 1e-9
 
 
 def test_an_unreachable_corner_count_is_rejected():
