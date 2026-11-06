@@ -23,6 +23,7 @@ CABIN_DOOR_THRESHOLD = 0.6
 
 
 ActivationDistance = typing.NewType('ActivationDistance', tuple[float, float])
+DoorKind = typing.Literal['sliding', 'sliding_split', 'hinged', 'teleport', 'sliding_top']
 
 
 _POCKET_OVERLAP_M = 0.01
@@ -64,6 +65,7 @@ class Elevator(Named):
     position: Position = attrs.field(converter=Position.converter)
     size: list[float] = attrs.field(factory=lambda: [2.0, 2.0, 2.0])
     door_side: typing.Literal['+x', '-x', '+y', '-y'] | None = None
+    door_kind: DoorKind = 'sliding_split'
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('elevator'))
     destinations: list[str] = attrs.field(factory=list, converter=lambda value: [str(name).strip() for name in value])
     # must cover v_max * transition_time plus latency so the door is fully open before arrival
@@ -689,7 +691,7 @@ class Placement:
 class Door(Named):
     start: Position = attrs.field(converter=Position.converter)
     end: Position = attrs.field(converter=Position.converter)
-    kind: typing.Literal['sliding', 'hinged', 'teleport', 'sliding_top'] = 'sliding'
+    kind: DoorKind = 'sliding'
     width: float = 0.1
     height: float = attrs.field(default=2.0)
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('door'))
@@ -734,8 +736,8 @@ class Door(Named):
         ]
 
 
-def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door]) -> bool:
-    """Whether a leaf sliding from `start` past `end` by its own length covers the span of a collinear door among `others`."""
+def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door], reach: float = 1.0) -> bool:
+    """Whether the pocket from `end` to `reach` span lengths past it covers the span of a collinear door among `others`."""
     length = math.hypot(end.x - start.x, end.y - start.y)
     if length == 0.0:
         return False
@@ -745,15 +747,17 @@ def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Se
             continue
         along = sorted((p.x - start.x) * ux + (p.y - start.y) * uy for p in (other.start, other.end))
         across = max(abs((p.y - start.y) * ux - (p.x - start.x) * uy) for p in (other.start, other.end))
-        if across <= door.width and min(along[1], 2.0 * length) - max(along[0], length) > _POCKET_OVERLAP_M:
+        if across <= door.width and min(along[1], (1.0 + reach) * length) - max(along[0], length) > _POCKET_OVERLAP_M:
             return True
     return False
 
 
 def clear_door_pockets(doors: typing.Sequence[Door]) -> list[Door]:
-    """Keep open sliding leaves off other doors' spans: such a door slides the other way, or teleports open when that side is taken too."""
+    """Keep open sliding leaves off other doors' spans: a split door turns sliding, a sliding door slides the other way, or teleports open when that side is taken too."""
     result = list(doors)
     for index, door in enumerate(result):
+        if door.kind == 'sliding_split' and (_leaf_rests_on(door.start, door.end, door, result, 0.5) or _leaf_rests_on(door.end, door.start, door, result, 0.5)):
+            door = result[index] = attrs.evolve(door, kind='sliding')
         if door.kind != 'sliding' or not _leaf_rests_on(door.start, door.end, door, result):
             continue
         result[index] = attrs.evolve(door, kind='teleport') if _leaf_rests_on(door.end, door.start, door, result) else attrs.evolve(door, start=door.end, end=door.start)

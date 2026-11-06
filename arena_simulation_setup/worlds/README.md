@@ -87,7 +87,7 @@ the result from `Level.all_walls`.
 | --- | --- | --- |
 | `name` | required | unique within the world |
 | `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken |
-| `kind` | `sliding` | `sliding`, `sliding_top`, `teleport` implemented. `hinged` is accepted but falls back to `teleport` at runtime with a warning |
+| `kind` | `sliding` | `sliding`, `sliding_split` (two half-span leaves part from the middle, each opening past its own end by half the span, a `sliding` leaf when either pocket rests on another door's span), `sliding_top`, `teleport`, `hinged` |
 | `width` | `0.1` | metres |
 | `height` | `2.0` | metres |
 | `material` | door default | `MaterialIdentifier` |
@@ -104,6 +104,7 @@ the result from `Level.all_walls`.
 | `position` | required | cabin center |
 | `size` | `[2.0, 2.0, 2.0]` | cabin `[x, y, z]` |
 | `door_side` | inferred | cabin face the door opens on (`+x`, `-x`, `+y`, `-y`), inferred from the nearest wall (<= 1 m) at load when absent, `+x` without one |
+| `door_kind` | `sliding_split` | cabin door kind, any [door](#door-fields) `kind` |
 | `material` | elevator default | `MaterialIdentifier` |
 | `destinations` | `[]` | names of the cabins a ride goes to, on any level. The runtime rides to the first |
 | `activation_distance` | `3.0` | metres, the reach of an outside call while the cabin is empty; a cabin with a rider aboard reopens only for a body within 0.6 m of its door |

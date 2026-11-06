@@ -226,7 +226,9 @@ A door's `activation_distance` takes a scalar or a pair `[a, b]` (the larger
 value is the trigger radius).
 
 Door `kind` is one of `sliding` (default, slab slides along the span),
-`sliding_top` (slab lifts), `teleport` (slab vanishes) and `hinged`: the slab
+`sliding_split` (two half-span leaves part from the middle, each into its own
+end's wall, the default of an elevator's `door_kind`), `sliding_top` (slab
+lifts), `teleport` (slab vanishes) and `hinged`: the slab
 rotates about the first span point by up to 90 deg over `transition_time`.
 `swing_direction: 1` (default) opens towards the left normal of the span,
 `swing_direction: -1` towards the right. Like sliding doors, a hinged slab

@@ -116,10 +116,13 @@ Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as 
 
 #### Shim behaviour
 
-- Door kinds: `sliding` (slides along start->end), `sliding_top` (lifts), `teleport` (drops away) and
-  `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`). Sliding and hinged slabs are tested
-  against agent discs: an opening step holds when the slab would enter an agent (the swing arc of a hinged
-  door, the wall pocket past the end of a sliding one), so an agent pressed against a half-open sliding slab
+- Door kinds: `sliding` (slides along start->end), `sliding_split` (boxes `<door>_a` and `<door>_b`, the span
+  halves, part from the middle by half the span each, a synthesized cabin door's kind unless its elevator's
+  `door_kind` says otherwise), `sliding_top`
+  (lifts), `teleport` (drops away) and `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`).
+  Sliding and hinged slabs are tested against agent discs: an opening step holds when the slab would enter an
+  agent (the swing arc of a hinged door, the wall pocket past the end of a sliding one, either pocket of a split
+  one), so an agent pressed against a half-open sliding slab
   does not stop it, and a blocked close re-triggers the door and sets `close_blocked` (semantic
   `blocked_close`) until the remaining path is clear.
 - Elevators: the cabins linked through their destinations form a group served by one car, which starts at
