@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 
-VENDORED = {"deps"}
+VENDORED = {"deps", "meshes"}
 
 MD_LINK = re.compile(r"\[[^\]]*\]\(\s*([^)\s]+?)(?:\s+\"[^\"]*\")?\s*\)")
 HTML_REF = re.compile(r"(?:src|href)=\"([^\"]+)\"")
