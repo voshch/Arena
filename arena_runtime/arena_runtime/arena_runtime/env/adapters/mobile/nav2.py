@@ -153,9 +153,13 @@ class Nav2Adapter(MobileAdapter):
         from slam_toolbox.srv import Reset  # noqa: PLC0415  # only slam mapping needs slam_toolbox
 
         node_name = robot.namespace(_SLAM_NODE)
-        if not await self._call_active(robot, node_name, Reset, os.path.abspath(node_name("reset")), Reset.Request()):
+        try:
+            if not await self._call_active(robot, node_name, Reset, os.path.abspath(node_name("reset")), Reset.Request()):
+                return False
+            return await self._clear_costmap(robot, "global")
+        except TimeoutError as exc:
+            robot.node.get_logger().warning(f"{robot.namespace}: slam map not reset, the navigation stack is still coming up ({exc})")
             return False
-        return await self._clear_costmap(robot, "global")
 
     async def before_move(
         self,
