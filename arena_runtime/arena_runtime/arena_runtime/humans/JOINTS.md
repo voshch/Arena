@@ -1,13 +1,14 @@
 # Human skeleton joint contract
 
-The 52 semantic joints every pose producer speaks: the gait generator (`GaitGenerator`), gestures,
+The 54 semantic joints every pose producer speaks: the gait generator (`GaitGenerator`), gestures,
 clips and possession. Each tick the publisher compiles them into the wire pose `Pedestrian.body`
 over the ped's bundle ([BODY.md](BODY.md)), which every renderer reads. (Contract v2: the single
 torso triple became the three-triple spine stack of the Spine stack section. Every pre-stack
 recording carries 24 names and needs the zero-fill migration described there. Contract v4 added
 the two-DOF wrists, every pre-v4 recording carries 36 names and loads with the wrists at 0.0.
 Contract v5 added the twelve finger DOFs, every pre-v5 recording carries 40 names and loads with
-the fingers at 0.0.)
+the fingers at 0.0. Contract v6 added the wrist deviation `l/r_d_wrist`, every pre-v6 recording
+loads with it at 0.0.)
 
 ## 1. Semantic contract (normative)
 
@@ -17,9 +18,9 @@ Every joint/link carries a `_<ID>` suffix where **`<ID> = str(pedestrian.id)`**.
 `sensor_msgs/JointState.name[i]` MUST be the full suffixed name (e.g. `l_r_hip_7`) so it
 matches the body's generated URDF. The gait generator takes the agent id and suffixes it.
 
-### Publish all 52
+### Publish all 54
 
-Publish a position for all 52 base joints each tick (unanimated -> 0.0) so
+Publish a position for all 54 base joints each tick (unanimated -> 0.0) so
 every joint frame stays on `humans/tf`. Fixed joints (`torso`, `head`) are
 not part of the contract and never appear in `JointState`. Per-joint advisory limits
 live in `GaitGenerator.LIMITS`: generators may clamp their output to them, the stream
@@ -123,6 +124,12 @@ extension (the hand swings outward). Both are mirrored in the URDF like `p_hip`
 so the raw URDF meaning coincides with the wire semantic on both sides. The `wrist`
 link keeps its ros4hri name and carries the hand.
 
+`l/r_d_wrist` (v6) is radial/ulnar deviation, applied AFTER the flexion (`elbow -> r_wrist ->
+wrist -> d_wrist`), about the palm normal `(0,-1,0)` on both sides: positive is radial (the hand
+tilts toward the thumb, forward at rest), negative ulnar. Without it the fist axis always sits at
+right angles to the forearm; with it a cane held along the index finger can continue the forearm
+line. Limits [-0.6, 0.35] (35 deg ulnar, 20 deg radial).
+
 ### Fingers (v5)
 
 `l/r_curl_thumb`, `l/r_curl_index`, `l/r_curl_middle`, `l/r_curl_ring`, `l/r_curl_pinky` and
@@ -141,7 +148,7 @@ gesture curls every digit of its arm's hand but the index, each fading with its 
 ### Driven joints
 
 A ped whose model ships a `.rig` with drivers carries those joints
-after the 52, named by the driver keys (wheelchair bundles: `l_wheel`, `r_wheel`). A
+after the 54, named by the driver keys (wheelchair bundles: `l_wheel`, `r_wheel`). A
 driven joint is turned by the ped's motion, not by the gait phase. A
 `from: distance` driver is a wheel of `radius` meters, `lateral` meters left of the
 root, that rolls without slipping over the path of its own contact point: a turn
@@ -152,7 +159,7 @@ frames.
 
 The publisher integrates them from successive ped poses ([`drivers.py`](drivers.py))
 and sets them on every ped of such a model, possessed ones included. The possession
-stream itself carries only the 52. Renderers turn each driver's `bone` about its `axis` from
+stream itself carries only the 54. Renderers turn each driver's `bone` about its `axis` from
 the `.rig` and skip it on a skeleton without the bone. The RViz body has no
 such joints and ignores them.
 
@@ -197,7 +204,8 @@ forward, palm toward the thigh. `r_wrist` is forearm pronation (positive turns t
 backward, both sides), `wrist` is the hand hinge (positive = extension, back of the hand
 toward the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
 (`r_wrist`: `(0,0,-1)` left / `(0,0,1)` right, `wrist`: `(1,0,0)` left / `(-1,0,0)`
-right), so the RViz adapter passes both through untouched. The `halt` gesture and
+right), so the RViz adapter passes both through untouched. `d_wrist` (v6) follows the hinge: radial/ulnar
+deviation about `(0,-1,0)` on both sides, positive toward the thumb. The `halt` gesture and
 the electric-chair operating poses write them, other default animations leave them
 at 0.0. Recordings that predate them carry no wrist values and are read as 0.0 (the
 loaders zero-fill, same migration as the spine stack).
@@ -258,7 +266,7 @@ which coincides with the semantic meaning (gait idles both at `0.0`), so only th
 shoulder triples need the Section 1 exception. The spine stack is not reflected
 either: single links on the midline, same axes as the head triple.
 
-### The 40 body DOFs
+### The 42 body DOFs
 
 | # | base name | axis | limits [lo, hi] (rad) | role |
 |---|---|---|---|---|
@@ -302,6 +310,8 @@ either: single links on the midline, same axes as the head triple.
 | 38 | `l_wrist` | (1,0,0) | [-1.4, 1.2] | L wrist, positive extension |
 | 39 | `r_r_wrist` | (0,0,1) | [-1.4, 1.4] | R forearm twist, positive pronation |
 | 40 | `r_wrist` | (-1,0,0) | [-1.4, 1.2] | R wrist, positive extension |
+| 41 | `l_d_wrist` | (0,-1,0) | [-0.6, 0.35] | L wrist deviation, positive radial |
+| 42 | `r_d_wrist` | (0,-1,0) | [-0.6, 0.35] | R wrist deviation, positive radial |
 
 The spine/chest limits are per-segment halves of the lumped waist range: the stack's
 advisory sum intentionally exceeds the old lumped range (real spines bend further

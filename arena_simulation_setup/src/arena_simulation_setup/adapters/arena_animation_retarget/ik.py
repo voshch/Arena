@@ -1,4 +1,4 @@
-"""Whole-body IK for the 40-DOF wire, batched over every frame of every clip, on the GPU when there is one.
+"""Whole-body IK for the 42-DOF wire, batched over every frame of every clip, on the GPU when there is one.
 
 One least-squares objective per frame, solved jointly with L-BFGS from the rotation retarget:
 
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 # Hard limits (rad) from JOINTS.md's table, only where anatomy fixes them.
 HARD_LIMITS: dict[str, tuple[float, float]] = {}
 for _s in "lr":
-    HARD_LIMITS.update({f"{_s}_elbow": (0.0, 2.6), f"{_s}_knee": (-2.6, 0.0), f"{_s}_r_wrist": (-1.4, 1.4), f"{_s}_wrist": (-1.4, 1.2), f"{_s}_ankle": (-0.9, 0.6), f"{_s}_y_ankle": (-0.6, 0.6), f"{_s}_y_collar": (-0.5, 0.5), f"{_s}_p_collar": (-0.2, 0.6)})
+    HARD_LIMITS.update({f"{_s}_elbow": (0.0, 2.6), f"{_s}_knee": (-2.6, 0.0), f"{_s}_r_wrist": (-1.4, 1.4), f"{_s}_wrist": (-1.4, 1.2), f"{_s}_d_wrist": (-0.6, 0.35), f"{_s}_ankle": (-0.9, 0.6), f"{_s}_y_ankle": (-0.6, 0.6), f"{_s}_y_collar": (-0.5, 0.5), f"{_s}_p_collar": (-0.2, 0.6)})
 HARD_LIMITS.update({"r_head": (-1.0, 1.0), "y_head": (-1.4, 1.4), "p_head": (-1.5, 1.5)})
 
 ANCHOR_JOINTS = ("l_wrist", "r_wrist", "l_elbow", "r_elbow")  # order of the anchor targets
@@ -97,7 +97,7 @@ def _chunks(lengths: list[int], budget: int) -> list[list[int]]:
 
 
 def solve(preps: list[Prepared], config: IKConfig | None = None, device: str = "auto", chunk_frames: int = 400_000, height: float = 1.75, verbose: bool = False) -> list[np.ndarray]:
-    """IK for every prepared motion; returns the (T, 40) wire angles per motion, in WIRE order."""
+    """IK for every prepared motion; returns the (T, 42) wire angles per motion, in WIRE order."""
     cfg = config or IKConfig()
     dev = pick_device(device)
     fk = ContractFK(height, device=dev, dtype=torch.float32)

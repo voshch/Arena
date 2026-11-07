@@ -33,7 +33,7 @@ class Axis:
 
 
 class ContractFK:
-    """``fk(theta)`` with theta (N, 40) in ``WIRE`` order -> (positions, frames), dicts of (N, 3) / (N, 3, 3)."""
+    """``fk(theta)`` with theta (N, 42) in ``WIRE`` order -> (positions, frames), dicts of (N, 3) / (N, 3, 3)."""
 
     def __init__(self, height: float = 1.75, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> None:
         self.body = b = SK.Body(height)
@@ -86,11 +86,11 @@ class ContractFK:
             s_r = c_r @ a1(a(f"{s}_y_shoulder")) @ a2(a(f"{s}_p_shoulder")) @ a3(a(f"{s}_r_shoulder"))
             el = sh + self._v(s_r, self.DOWN) * b.upperarm
             f_r = s_r @ self.hinge(a(f"{s}_elbow"))
-            pr, ex = self.wrist[s]
+            pr, ex, dv = self.wrist[s]
             pos[f"{s}_shoulder"], pos[f"{s}_elbow"] = sh, el
             pos[f"{s}_wrist"] = el + self._v(f_r, self.DOWN) * b.forearm
             fr[f"{s}_upperarm"], fr[f"{s}_forearm"] = s_r, f_r
-            fr[f"{s}_hand"] = f_r @ pr(a(f"{s}_r_wrist")) @ ex(a(f"{s}_wrist"))
+            fr[f"{s}_hand"] = f_r @ pr(a(f"{s}_r_wrist")) @ ex(a(f"{s}_wrist")) @ dv(a(f"{s}_d_wrist"))
         for s in "lr":
             hip = pelvis + self.hip_off[s]
             x1, x2, x3 = self.hip[s]

@@ -41,7 +41,7 @@ from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.animation_manager import AnimationManager
 from arena_runtime.humans.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from arena_runtime.humans.gestures import Channel, GestureLayer, GestureRequest
-from arena_runtime.humans.hands import POINT_CLIP, clip_pose
+from arena_runtime.humans.hands import POINT_CLIP, Grip, clip_pose, held_pose
 from arena_runtime.humans.itinerary import semantic_atom
 from arena_runtime.humans.possession import PossessionTable
 from arena_runtime.humans.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
@@ -327,10 +327,11 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
-            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
+            profile = self._pose_profile_for(ped.agent_type)
+            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=profile)
             state = self._gait.joint_state(angles, stamp=stamp)
             if state is not None:
-                hands = self._hands(ped.id, now_sec)
+                hands = self._hands(ped.id, now_sec, profile.hold)
                 state.name = [*state.name, *hands]
                 state.position = [*state.position, *hands.values()]
             ped.joint_state = state
@@ -395,8 +396,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             )
         return state
 
-    def _hands(self, agent_id: int, now: float) -> dict[str, float]:
-        """Digit DOFs of a generated ped's playing body clips, empty leaves its hands in their neutral stance."""
+    def _hands(self, agent_id: int, now: float, hold: Mapping[str, Grip] | None = None) -> dict[str, float]:
+        """Digit DOFs of a generated ped's playing body clips over the grasp of each hand holding a prop ({side: Grip}), empty leaves its hands in their neutral stance."""
         phases = self._gestures.phases(agent_id)
         sides = self._gestures.sides(agent_id)
 
@@ -404,7 +405,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             kind, _channel, _phase, clip = phases.get(slot, ("", "", "", ""))
             return f"{POINT_CLIP}_{sides[slot]}" if kind == POINT_CLIP and slot in sides else clip
 
-        return clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now)
+        return clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now, held_pose(hold or {}))
 
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""
@@ -534,7 +535,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if section is None:
                 self._logger.warning(f"agent type {agent_type!r} not found, using the default pose profile")
                 return default_profile()
-            return resolve_pose_profile(section)
+            profile = resolve_pose_profile(section)
+            held_pose(profile.hold)
+            return profile
         except (ValueError, OSError, yaml.YAMLError) as e:
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()

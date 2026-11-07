@@ -69,6 +69,7 @@ SEMANTIC_DOFS: tuple[str, ...] = (
     *(f"{s}_{dof}" for s in "lr" for dof in ("y_hip", "p_hip", "r_hip", "knee")),
     *(f"{s}_{dof}" for s in "lr" for dof in ("y_ankle", "ankle")),
     *(f"{s}_{dof}" for s in "lr" for dof in ("r_wrist", "wrist")),
+    *(f"{s}_d_wrist" for s in "lr"),
     *(f"{s}_{dof}" for s in "lr" for dof in (*(f"curl_{digit}" for digit in FINGERS), "spread")),
 )
 
@@ -199,7 +200,7 @@ def _groups() -> tuple[_Group, ...]:
         groups += [
             _Group(f"{side}_collar", (f"{s}_y_collar", f"{s}_p_collar"), (-m * _Z, m * _X)),
             _Group(f"{side}_elbow", (f"{s}_elbow",), (-_Y,)),
-            _Group(f"{side}_wrist", (f"{s}_r_wrist", f"{s}_wrist"), (-m * _Z, m * _X)),
+            _Group(f"{side}_wrist", (f"{s}_r_wrist", f"{s}_wrist", f"{s}_d_wrist"), (-m * _Z, m * _X, -_Y)),
             _Group(f"{side}_hip", (f"{s}_y_hip", f"{s}_p_hip", f"{s}_r_hip"), (-_Z, m * _X, -_Y)),
             _Group(f"{side}_knee", (f"{s}_knee",), (-_Y,)),
             _Group(f"{side}_ankle", (f"{s}_y_ankle", f"{s}_ankle"), (-_Z, -_Y)),

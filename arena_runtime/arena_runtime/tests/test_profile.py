@@ -10,6 +10,7 @@ import pytest
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
 from arena_runtime.humans.gait import LIMITS, GaitGenerator
+from arena_runtime.humans.hands import Grip
 from arena_runtime.humans.profile import (
     DEFAULT_WALK,
     JOINT_NAMES,
@@ -475,3 +476,38 @@ def test_limp_section_breaks_antiphase_on_the_right_leg_only() -> None:
         for joint in ("l_knee", "l_r_hip", "l_p_shoulder", "r_p_shoulder", "l_elbow", "r_elbow"):
             assert limp[joint] == base[joint]
         assert limp["waist"] != base["waist"]
+
+
+def test_pose_hold_names_each_hand_grip_radius_and_inherits_per_hand(tmp_path: Path) -> None:
+    builtin = tmp_path / "builtin"
+    builtin.mkdir()
+    (builtin / "walker.yaml").write_text("name: walker\npose:\n  hold: {l: 0.0125, r: 0.0125}\n")
+    (builtin / "rollator.yaml").write_text("name: rollator\nextends: walker\npose:\n  hold: {r: 0.015}\n")
+
+    assert resolve_pose_profile(agent_type_pose_section("rollator", builtin)).hold == {"l": Grip(0.0125), "r": Grip(0.015)}
+    assert resolve_pose_profile({"hold": {"r": {"radius": 0.0125, "angle": 45}}}).hold == {"r": Grip(0.0125, 45.0)}
+    assert resolve_pose_profile({"hold": {"l": {"radius": 0.008, "curls": [0.5, 1, 1.1, 1.2, 1.3]}}}).hold == {"l": Grip(0.008, 0.0, (0.5, 1.0, 1.1, 1.2, 1.3))}
+    assert resolve_pose_profile({"hold": {"l": {"radius": 0.008, "angle": 42, "wrap": True}}}).hold == {"l": Grip(0.008, 42.0, None, True)}
+    assert resolve_pose_profile({}).hold == {}
+    assert resolve_pose_profile({"hold": None}).hold == {}
+
+
+@pytest.mark.parametrize(
+    "hold",
+    [
+        {"right": 0.0125},
+        {"r": 0.2},
+        {"r": "thick"},
+        {"r": True},
+        [0.0125],
+        {"r": {"radius": 0.0125, "angle": 120}},
+        {"r": {"radius": 0.0125, "grip": 1}},
+        {"r": {"radius": 0.0125, "curls": [1, 1, 1]}},
+        {"r": {"radius": 0.0125, "curls": [1, 1, 1, 1, 2]}},
+        {"r": {"radius": 0.0125, "curls": "fist"}},
+        {"r": {"radius": 0.0125, "wrap": "yes"}},
+    ],
+)
+def test_pose_hold_rejects_unknown_hands_and_implausible_radii(hold: object) -> None:
+    with pytest.raises(ValueError, match="hold"):
+        resolve_pose_profile({"hold": hold})

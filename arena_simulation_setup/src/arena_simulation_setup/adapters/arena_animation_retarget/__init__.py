@@ -1,4 +1,4 @@
-"""Retarget SMPL-X body motion onto Arena's 40-DOF human wire clips (rotation retarget + whole-body IK on the GPU).
+"""Retarget SMPL-X body motion onto Arena's 42-DOF human wire clips (rotation retarget + whole-body IK on the GPU).
 
 from arena_simulation_setup.adapters.arena_animation_retarget import load, retarget, retarget_batch, write_clip
 clip = retarget(load("wave.npz"))                       # one motion

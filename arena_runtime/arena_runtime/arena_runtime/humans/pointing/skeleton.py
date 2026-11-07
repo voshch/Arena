@@ -41,9 +41,9 @@ HIP_AXES = {
 }
 ELBOW_AXIS = np.array([0.0, -1.0, 0.0])
 REFLECT = {"l": 1.0, "r": -1.0}
-WRIST_AXES = {  # (pronation axis, extension axis)
-    "l": (np.array([0.0, 0.0, -1.0]), np.array([1.0, 0.0, 0.0])),
-    "r": (np.array([0.0, 0.0, 1.0]), np.array([-1.0, 0.0, 0.0])),
+WRIST_AXES = {  # (pronation axis, extension axis, radial deviation axis)
+    "l": (np.array([0.0, 0.0, -1.0]), np.array([1.0, 0.0, 0.0]), np.array([0.0, -1.0, 0.0])),
+    "r": (np.array([0.0, 0.0, 1.0]), np.array([-1.0, 0.0, 0.0]), np.array([0.0, -1.0, 0.0])),
 }
 
 
@@ -205,8 +205,8 @@ def fk(angles: dict, body: Body, root_xy_yaw: tuple[float, float, float] = (0.0,
         frames[f"{side}_forearm"] = f_r
         pos[f"{side}_wrist"] = el + body.forearm * (f_r @ DOWN)
         # hand at rest: fingers along -z, palm toward -y*REFLECT
-        pronation, extension = WRIST_AXES[side]
-        frames[f"{side}_hand"] = f_r @ rot_axis(pronation, a.get(f"{side}_r_wrist", 0.0)) @ rot_axis(extension, a.get(f"{side}_wrist", 0.0))
+        pronation, extension, deviation = WRIST_AXES[side]
+        frames[f"{side}_hand"] = f_r @ rot_axis(pronation, a.get(f"{side}_r_wrist", 0.0)) @ rot_axis(extension, a.get(f"{side}_wrist", 0.0)) @ rot_axis(deviation, a.get(f"{side}_d_wrist", 0.0))
 
     for side in ("l", "r"):
         hip = pelvis + root_r @ np.array([0.0, REFLECT[side] * body.waist_length / 2, 0.0])
