@@ -357,6 +357,10 @@ class MechanismITF:
         """Attach a human simulator for ped position reads and teleport dispatch."""
         self._human_simulator = hs
 
+    def stair_travel(self) -> dict[str, float]:
+        """How far the treads of each spawned stair half have moved, by stair name."""
+        return {name: runtime.travel for name, runtime in self._stair_runtime.items()}
+
     # defaults: shim logic. Override only if the simulator has native support.
     async def spawn_doors(self, doors: Sequence[Door]) -> bool:
         from ._mechanism_shim import shim_spawn_doors

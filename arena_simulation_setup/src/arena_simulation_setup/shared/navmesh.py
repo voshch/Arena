@@ -24,7 +24,6 @@ NAV_HEADROOM = 0.4
 NAV_SKIN = 0.02
 WALL_THICKNESS = 0.05
 WALL_HEIGHT = 2.0
-BRIDGED_GAP = 0.01
 _EPS = 1e-6
 
 
@@ -164,11 +163,6 @@ def _stair_rect(stair: Stairs) -> tuple[float, float, float, float]:
     return _rect([stair.local(along, across) for along in alongs for across in (-half, half)])
 
 
-def _tread(stair: Stairs, along: float) -> float:
-    """Walking surface of a stair half at rest, gaps narrower than `BRIDGED_GAP` walked over."""
-    return max(stair.surface(min(max(a, 0.0), stair.length)) for a in (along - BRIDGED_GAP, along, along + BRIDGED_GAP))
-
-
 def _level_field(level: NavLevel, resolution: float) -> _Field | None:
     """The walking heights of a level: floors, overridden by stair halves, overridden by landing plates."""
     floors = [_floor_rect(floor) for floor in level.floors]
@@ -192,11 +186,10 @@ def _level_field(level: NavLevel, resolution: float) -> _Field | None:
         along, across = stair.along(x, y), stair.across(x, y)
         beside = np.abs(across) <= stair.width / 2.0 + _EPS
         block = field.z[si, sj]
-        inside = beside & (along >= -_EPS) & (along <= stair.length + _EPS)
-        block[inside] = [stair.position.z + _tread(stair, a) for a in along[inside]]
+        covered = beside & (along >= -_EPS) & (along <= stair.length + _EPS)
         for begin, end in stair.plate_zones:
-            plate = beside & (along >= begin - _EPS) & (along <= end + _EPS)
-            block[plate] = stair.position.z + (stair.height(0.0) if begin < 0.0 else stair.height(stair.length))
+            covered |= beside & (along >= begin - _EPS) & (along <= end + _EPS)
+        block[covered] = [stair.position.z + stair.footing(a) for a in along[covered]]
     return field
 
 

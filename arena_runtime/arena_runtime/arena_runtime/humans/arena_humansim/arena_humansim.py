@@ -1618,7 +1618,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
     async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
-        request = SetTeleportZones.Request(zones=[self._zone_msg(elevator) for elevator in elevators] + [self._stair_zone_msg(stair) for stair in self._known_stairs])
+        request = SetTeleportZones.Request(zones=[self._zone_msg(elevator) for elevator in elevators] + [self._stair_zone_msg(stair) for stair in self._known_stairs if stair.kind != 'ramp'])
         try:
             response = await self._set_teleport_zones_client.call_timeout(request)
         except Exception as e:

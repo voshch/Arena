@@ -242,11 +242,33 @@ def _dressing(value: StairsSide | StairsRail, default: StairsSide | StairsRail, 
     return result
 
 
+def dump_ramp(ramp: Stairs, defaults: Mapping) -> dict:
+    """The authored entry of a ramp, its floor only where it differs from the world's default."""
+    result: dict = {'name': ramp.name, 'mouth': [_number(ramp.mouth.x, POSITION_DECIMALS), _number(ramp.mouth.y, POSITION_DECIMALS)]}
+    if ramp.mouth_side != _STAIRS_DEFAULTS.mouth_side:
+        result['mouth_side'] = ramp.mouth_side
+    result['size'] = [_number(ramp.length), _number(ramp.width)]
+    if ramp.position.z:
+        result['base'] = _number(ramp.position.z)
+    if ramp.rise:
+        result['rise'] = _number(ramp.rise)
+    floor = False if not ramp.floor else short(ramp.material) if ramp.material != _STAIRS_DEFAULTS.material else True
+    if floor != defaults.get('floor', True):
+        result['floor'] = floor
+    sides = {name: _dressing(side, StairsSide(height=0.0)) for name, side in ramp.sides.items()}
+    if any(sides.values()):
+        result['sides'] = {name: side for name, side in sides.items() if side}
+    return result
+
+
 def _stair_entries(world: World, level: Level) -> dict[str, list[dict]]:
-    """The stair and escalator entries a level authors, one per stair whose bottom half it holds."""
+    """The stair, escalator and ramp entries a level authors, one per stair whose bottom half it holds."""
     tops = {stair.group: (level_id, stair) for level_id, other in world.levels.items() for stair in other.stairs if stair.top}
-    entries: dict[str, list[dict]] = {'stairs': [], 'escalators': []}
+    entries: dict[str, list[dict]] = {'stairs': [], 'escalators': [], 'ramps': []}
     for stair in level.stairs:
+        if stair.kind == 'ramp':
+            entries['ramps'].append(dump_ramp(stair, world.defaults))
+            continue
         if stair.top or stair.group not in tops:
             continue
         to, top = tops[stair.group]
@@ -270,6 +292,7 @@ def dump_level(level: Level, defaults: Mapping, stairs: Mapping[str, list[dict]]
         ('elevators', [_fields(elevator) for elevator in level.elevators]),
         ('stairs', list((stairs or {}).get('stairs', []))),
         ('escalators', list((stairs or {}).get('escalators', []))),
+        ('ramps', list((stairs or {}).get('ramps', []))),
         ('objects', [_fields(entity, keep=frozenset({'name', 'model', 'pose'})) for entity in level.objects]),
         ('humans', [_fields(human, keep=frozenset({'name', 'model', 'pose'})) for human in level.humans]),
         ('lights', [_fields(light, skip=frozenset({'extra', 'owner', 'rig', 'fixtures', 'fixture_ranks'})) for light in level.lights]),

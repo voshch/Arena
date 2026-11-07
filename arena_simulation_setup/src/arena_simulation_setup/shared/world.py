@@ -109,6 +109,7 @@ STAIRS_LANDING_BACKOFF = 0.1
 STAIRS_PLATE = 0.05
 STAIRS_GAP = 0.001
 STAIRS_SINK = 0.001
+STAIRS_BRIDGED_GAP = 0.01
 STAIRS_CLEARANCE = 0.06
 STAIRS_PLANK = 0.03
 STAIRS_BASE = 0.15
@@ -184,10 +185,10 @@ def _default_sides() -> dict[str, StairsSide]:
 
 @attrs.define
 class Stairs(Named):
-    """Half of a stair or escalator: open at the mouth, cut at the seam, where a crossing lands on the `to` half of another level."""
+    """Half of a stair or escalator: open at the mouth, cut at the seam, where a crossing lands on the `to` half of another level. A ramp is whole and stays on its level."""
 
     position: Position = attrs.field(converter=Position.converter)
-    kind: typing.Literal['stairs', 'escalator'] = 'stairs'
+    kind: typing.Literal['stairs', 'escalator', 'ramp'] = 'stairs'
     size: list[float] = attrs.field(factory=lambda: [2.6, 1.4])
     mouth_side: typing.Literal['+x', '-x', '+y', '-y'] = '-x'
     to: str = ''
@@ -210,6 +211,7 @@ class Stairs(Named):
     group: str = ''
     overhang: float = 0.0
     stacked: bool = False
+    floor: bool = True
     joined: bool = attrs.field(default=False, init=False)
     whole: bool = attrs.field(default=False, init=False)
 
@@ -243,8 +245,8 @@ class Stairs(Named):
 
     @property
     def belt(self) -> float:
-        """Belt speed along the axis, 0 on stairs, towards the seam on a boarding escalator half and away from it on an exit half."""
-        if self.kind == 'stairs':
+        """Belt speed along the axis, 0 on stairs and ramps, towards the seam on a boarding escalator half and away from it on an exit half."""
+        if self.kind != 'escalator':
             return 0.0
         return self.speed if self.boards else -self.speed
 
@@ -324,9 +326,9 @@ class Stairs(Named):
         return self.flat, self.length - (self.flat if self.whole else 0.0)
 
     def height(self, along: float) -> float:
-        """Ramp height `along` meters from the mouth, level over the landings, rising to half the rise at the seam, sinking on a top half."""
+        """Ramp height `along` meters from the mouth, level over the landings, rising to half the rise at the seam, sinking on a top half. A ramp rises all of `rise`."""
         start, end = self.ramp
-        t = min(max((along - start) / (end - start), 0.0), 1.0) * self.rise / 2.0
+        t = min(max((along - start) / (end - start), 0.0), 1.0) * (self.rise if self.kind == 'ramp' else self.rise / 2.0)
         return -t if self.top else t
 
     @property
@@ -366,10 +368,11 @@ class Stairs(Named):
                     kind, material = self._style(side.kind, side.material)
                     walls.append(Wall(start=self.local(0.0, across), end=self.local(self.length, across), kind=kind, material=material, height=side.height))
                 continue
-            walls.extend(self._along_surface(across, ('', fixture), top=0.0, bottom=-(abs(self.height(self.length)) + self.drop + STAIRS_BASE)))
+            if self.kind != 'ramp':
+                walls.extend(self._along_surface(across, ('', fixture), top=0.0, bottom=-(abs(self.height(self.length)) + self.drop + STAIRS_BASE)))
             if side.height > 0.0:
                 walls.extend(self._along_surface(across, self._style(side.kind, side.material), height=side.height))
-        if not self.joined:
+        if not self.joined and self.kind != 'ramp':
             top = self.height(self.length) + max(side.height for side in self.sides.values())
             walls.append(Wall(start=self.local(self.length, -half), end=self.local(self.length, half), material=fixture, top=top, bottom=low))
         if self.top and self.overhang > 0.0:
@@ -425,7 +428,7 @@ class Stairs(Named):
         n, pitch = self.tread_count, self.pitch
         if self.kind == 'stairs':
             return [(i * pitch, pitch) for i in range(n)]
-        if self.style == 'belt':
+        if self.style == 'belt' or self.kind == 'ramp':
             return []
         return [(start, pitch) for start in self.tread_starts(travel) if not self.under_plate(start)]
 
@@ -455,7 +458,9 @@ class Stairs(Named):
 
     @property
     def drop(self) -> float:
-        """Depth of the base slabs' top under the ramp line, clear of the lowest tread or plank."""
+        """Depth of the base slabs' top under the ramp line, clear of the lowest tread or plank, 0 on a ramp."""
+        if self.kind == 'ramp':
+            return 0.0
         if self.style == 'belt':
             return STAIRS_SINK + 2.0 * STAIRS_GAP + self.plank / math.cos(self.slope) + self._sag
         return self.riser + 2.0 * STAIRS_GAP
@@ -485,8 +490,8 @@ class Stairs(Named):
         return self.height(self.length) / (ramp_end - ramp_start)
 
     def surface(self, along: float, travel: float = 0.0) -> float:
-        """Walking surface height `along` meters from the mouth: the top of the tread there, the belt, or the base between treads."""
-        if self.kind == 'escalator' and self.style == 'belt':
+        """Walking surface height `along` meters from the mouth: the top of the tread there, the belt or ramp, or the base between treads."""
+        if self.kind == 'ramp' or (self.kind == 'escalator' and self.style == 'belt'):
             return self.height(along)
         for start, length in self.spans(travel):
             if start <= along <= start + length:
@@ -494,6 +499,15 @@ class Stairs(Named):
         if self.kind == 'stairs':
             return self.height(along)
         return self.height(along) - self.riser - 2.0 * STAIRS_GAP
+
+    def footing(self, along: float, travel: float = 0.0) -> float:
+        """Height a body stands at `along` meters from the mouth: a landing plate over its zone, else the highest walking surface within `STAIRS_BRIDGED_GAP`."""
+        for begin, end in self.plate_zones:
+            if begin <= along <= end:
+                return self.height(0.0) if begin < 0.0 else self.height(self.length)
+        if not self.spans(travel):
+            return self.surface(min(max(along, 0.0), self.length), travel)
+        return max(self.surface(min(max(a, 0.0), self.length), travel) for a in (along - STAIRS_BRIDGED_GAP, along, along + STAIRS_BRIDGED_GAP))
 
     def steps(self) -> list[StairsBox]:
         """Static step boxes of a stair half, a solid stair rising to the seam or a well sinking to it."""
@@ -555,7 +569,9 @@ class Stairs(Named):
         return [_on_top(box) for box in self.treads(travel)]
 
     def static_boxes(self) -> list[tuple[str, MaterialIdentifier, StairsBox]]:
-        """Static boxes of a half as (name, material, box): stair steps, each a tread plate on a riser body when `risers` is set, or an escalator's base slabs and landing plates."""
+        """Static boxes of a half as (name, material, box): stair steps, each a tread plate on a riser body when `risers` is set, an escalator's base slabs and landing plates, or a ramp's slab unless `floor` is off."""
+        if self.kind == 'ramp':
+            return [(f'base_{i}', self.material_of('steps'), box) for i, box in enumerate(self.base())] if self.floor else []
         if self.kind == 'escalator':
             return [*((f'base_{i}', self.material_of('fixture'), box) for i, box in enumerate(self.base())), *((f'plate_{i}', self.material_of('landings'), box) for i, box in enumerate(self.plates()))]
         steps = self.material_of('steps')
@@ -641,6 +657,23 @@ class Stairs(Named):
         along = start + span / 2.0 * math.cos(tilt) + self.plank / 2.0 * math.sin(tilt)
         z = low + span / 2.0 * math.sin(tilt) - self.plank / 2.0 * math.cos(tilt)
         return (span, width, self.plank), Pose(position=self.local(along, 0.0, z), orientation=Orientation.from_euler((0.0, -tilt, self.yaw)))
+
+
+def stair_height(stairs: typing.Iterable[Stairs], x: float, y: float, travel: typing.Mapping[str, float] | None = None) -> float:
+    """Footing at a map point on the first stair half or ramp holding it, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
+    stairs = tuple(stairs)
+    travel = travel or {}
+    stair = next((stair for stair in stairs if stair.contains(x, y, stair.reach)), None)
+    if stair is None:
+        return 0.0
+    along = stair.along(x, y)
+    bottom = stair if not stair.top else next((other for other in stairs if other.group == stair.group and not other.top), None)
+    if not stair.joined or bottom is None:
+        return stair.position.z + stair.footing(along, travel.get(stair.name, 0.0))
+    body, moved = bottom.whole_stair(), travel.get(bottom.name, 0.0)
+    if stair.top:
+        return stair.position.z + body.footing(2.0 * bottom.length - along, moved) - stair.rise
+    return stair.position.z + body.footing(along, moved)
 
 
 STOREY = 3.0

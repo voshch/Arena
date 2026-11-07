@@ -303,7 +303,7 @@ class RobotManager(NodeInterface):
         return kwargs
 
     async def set_up_robot(self):
-        self._robot.pose.position.z += self._config.model_params.z_offset
+        self._robot.pose.position.z += self._config.model_params.z_offset + self._environment_manager.footing(self._robot.pose.position)
         self._robot = (await self._environment_manager.spawn_robot((self._robot,)))[0]
         await self._environment_manager.spawn_robot_lights(self.name, [attrs.evolve(light, name=f'{self.name}_{light.name}', frame=self.frame.tf(light.frame)) for light in self._config.model_params.lights])
 
@@ -785,7 +785,7 @@ class RobotManager(NodeInterface):
             raise self._teleport_never_landed(target, last_error)
 
     async def _apply_pose(self, pose: Pose):
-        pose.position.z += self._config.model_params.z_offset
+        pose.position.z += self._config.model_params.z_offset + self._environment_manager.footing(pose.position)
         self.robot.pose = pose
 
         # TF reports the realized map frame, pose is env-local

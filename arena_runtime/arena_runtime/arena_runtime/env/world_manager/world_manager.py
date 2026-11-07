@@ -472,7 +472,7 @@ class WorldManager(NodeInterface):
             polygons = [shapely.Polygon([(corner.x, corner.y) for corner in zone.polygon]) for zone in level.zones if len(zone.polygon) >= 3]
             if polygons:
                 self._zone_masks[level_id] = _zone_mask(self.map_for_floor(level_id), polygons)
-            stairs = [shapely.Polygon([(corner.x, corner.y) for corner in stair.corners()]) for stair in level.stairs]
+            stairs = [shapely.Polygon([(corner.x, corner.y) for corner in stair.corners()]) for stair in level.stairs if stair.kind != 'ramp']
             if stairs:
                 self._stair_masks[level_id] = _zone_mask(self.map_for_floor(level_id), stairs)
                 ox, oy = self.map.level_origins.get(level_id, (0.0, 0.0))
