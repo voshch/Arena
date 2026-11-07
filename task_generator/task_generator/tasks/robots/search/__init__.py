@@ -16,6 +16,9 @@ _NS = _REGISTRY_NAMESPACE("search")
 def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:
     declare_string(node, ns("target"), "", label="Target", description="Scenario human to find. Empty picks the scenario's only human.")
     declare_double(node, ns("radius"), 1.5, label="Found radius", description="Distance in m to the target at which the robot has found it.", lo=0.1, hi=10.0)
+    declare_bool(node, ns("line_of_sight"), False, label="Line of sight", description="Count the target found only while no wall lies between the robot and it.")
+    declare_double(node, ns("dwell_s"), 0.0, label="Dwell", description="Seconds the robot has to keep the target found before the episode succeeds, 0 = at once.", lo=0.0, hi=60.0)
+    declare_bool(node, ns("linger_after_completion"), False, label="Linger after completion", description="Keep the episode running after every robot found the target, until the episode timeout.")
     declare_bool(node, ns("mechanism_map"), False, label="Mechanism map", description="Serve the planner map with every door blocked that no robot of this mode can open and that is not open right now.")
 
 

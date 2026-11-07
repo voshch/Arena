@@ -99,3 +99,55 @@ def test_the_robot_has_found_the_target_within_the_radius(distance: float, found
     (phase,) = search_goal(_entry(), "caller", 1.5).phases
     sample = Sample(t=0.0, robots={"robot_0": (10.0 + distance, 5.0, 0.0)}, peds={"caller": (10.0, 5.0)})
     assert arrived(phase, sample, {}, "robot_0") is found
+
+
+def _monitor(**knobs: object):
+    from arena_simulation_setup.shared.judge import PhaseMonitor
+    from task_generator.tasks.robots.search.impl import search_goal
+
+    (phase,) = search_goal(_entry(), "caller", 1.5, **knobs).phases
+    return phase, PhaseMonitor(phase, "robot_0")
+
+
+def _at(t: float, robot_x: float, walls=None):
+    from arena_simulation_setup.shared.judge import Sample
+
+    return Sample(t=t, robots={"robot_0": (robot_x, 5.0, 0.0)}, peds={"caller": (5.0, 5.0)}, walls=walls)
+
+
+def test_without_line_of_sight_or_dwell_arrival_alone_finds_the_target():
+    phase, monitor = _monitor()
+    assert phase.until is None
+    assert monitor.step(_at(0.0, 6.0), {})
+
+
+def test_a_dwell_needs_the_target_found_for_its_whole_duration():
+    _, monitor = _monitor(dwell_s=2.0)
+    assert not monitor.step(_at(0.0, 6.0), {})
+    assert not monitor.step(_at(1.0, 6.0), {})
+    assert monitor.step(_at(2.5, 6.0), {})
+
+
+def test_leaving_the_target_restarts_the_dwell():
+    _, monitor = _monitor(dwell_s=2.0)
+    assert not monitor.step(_at(0.0, 6.0), {})
+    assert not monitor.step(_at(1.5, 9.0), {})
+    assert not monitor.step(_at(2.0, 6.0), {})
+    assert not monitor.step(_at(3.5, 6.0), {})
+    assert monitor.step(_at(4.5, 6.0), {})
+
+
+def _wall_at(x: float):
+    import numpy as np
+    from arena_simulation_setup.shared.judge import WallGrid
+
+    cells = np.zeros((200, 200), dtype=bool)
+    cells[:, int(x / 0.05)] = True
+    return WallGrid(cells=cells, origin=(0.0, 0.0), resolution=0.05)
+
+
+def test_line_of_sight_finds_the_target_only_without_a_wall_between():
+    _, blocked = _monitor(line_of_sight=True)
+    assert not blocked.step(_at(0.0, 6.0, walls=_wall_at(5.5)), {})
+    _, clear = _monitor(line_of_sight=True)
+    assert clear.step(_at(0.0, 6.0, walls=_wall_at(8.0)), {})

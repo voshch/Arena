@@ -25,11 +25,19 @@ def search_target(humans: Sequence[str], configured: str) -> str:
     return humans[0]
 
 
-def search_goal(entry: RobotGoal, target: str, radius: float) -> RobotGoal:
+def found_until(target: str, radius: float, line_of_sight: bool, dwell_s: float) -> str | None:
+    """The `until` a search goto holds on top of arrival, None when arrival alone finds the target."""
+    found = f"robot sees {target} within {radius}" if line_of_sight else f"robot within {radius} of {target}"
+    if dwell_s > 0.0:
+        return f"{found} for {dwell_s}"
+    return found if line_of_sight else None
+
+
+def search_goal(entry: RobotGoal, target: str, radius: float, *, line_of_sight: bool = False, dwell_s: float = 0.0) -> RobotGoal:
     """A scenario robot entry as one judge-only goto on the target, its pose the robot's own start."""
     if entry.phases:
         raise ValueError("a search scenario gives its robots a start only, since their phases would reach the planner")
-    phase = GoToPhase(pose=entry.start, target=target, tolerance_radius=radius, pose_zone=entry.start_zone, dispatch=False)
+    phase = GoToPhase(pose=entry.start, target=target, tolerance_radius=radius, pose_zone=entry.start_zone, dispatch=False, until=found_until(target, radius, line_of_sight, dwell_s))
     return attrs.evolve(entry, goal_level=entry.level, phases=[phase])
 
 
@@ -38,10 +46,12 @@ class TM_Search(TM_Scenario):
 
     _target: ROSParamT[str]
     _radius: ROSParamT[float]
+    _line_of_sight: ROSParamT[bool]
+    _dwell_s: ROSParamT[float]
 
     def robot_goals(self, entries: Sequence[RobotGoal], humans: frozenset[str]) -> list[RobotGoal]:
         target = search_target(sorted(humans), self._target.value)
-        return [search_goal(entry, target, self._radius.value) for entry in entries]
+        return [search_goal(entry, target, self._radius.value, line_of_sight=self._line_of_sight.value, dwell_s=self._dwell_s.value) for entry in entries]
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Robots.__init__(self, **kwargs)
@@ -51,3 +61,5 @@ class TM_Search(TM_Scenario):
         self._mechanism_map = self.node.ROSParam[bool](self.namespace("mechanism_map"), False)
         self._target = self.node.ROSParam[str](self.namespace("target"), "")
         self._radius = self.node.ROSParam[float](self.namespace("radius"), 1.5)
+        self._line_of_sight = self.node.ROSParam[bool](self.namespace("line_of_sight"), False)
+        self._dwell_s = self.node.ROSParam[float](self.namespace("dwell_s"), 0.0)
