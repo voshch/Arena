@@ -79,7 +79,9 @@ Namespace prefix for all names below: `/arena/`.
 `ArenaRuntimeNode` also subscribes per env to `/<ns>/transition_event` (to track
 ACTIVE/INACTIVE/FINALIZED state) and `/<ns>/state/heartbeat` (to detect
 stale envs). A periodic timer applies `sweep_verdict` per record: a managed env
-whose wrapper process exited is evicted immediately, a pre-ready env (still
+whose wrapper process exited, or a registered env whose heartbeat publisher left
+the graph after it had matched (a node that died in configure, before its first
+heartbeat), is evicted immediately, a pre-ready env (still
 bootstrapping, e.g. loading its world) is evicted after `bootstrap_timeout_sec`
 when one is set (`env.bootstrap_timeout:=<s>` at launch, default 0 = never),
 measured from `reserve()` time rather than heartbeat silence, so an env that

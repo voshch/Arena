@@ -86,6 +86,13 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
         node.destroy_node()
 
 
+def _on_env_node_exit(event: launch.events.process.ProcessExited, context: launch.LaunchContext) -> list[launch.LaunchDescriptionEntity]:
+    """Shut the env launch down, failing it when arena_env_node exited non-zero on its own."""
+    if event.returncode != 0 and not context.is_shutdown:
+        raise RuntimeError(f"arena_env_node exited with code {event.returncode}")
+    return [launch.actions.Shutdown(reason="arena_env_node exited")]
+
+
 def generate_launch_description() -> launch.LaunchDescription:
     bringup_dir = get_package_share_directory("arena_bringup")
 
@@ -545,7 +552,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         shutdown_on_node_exit = RegisterEventHandler(
             OnProcessExit(
                 target_action=arena_env_node,
-                on_exit=[launch.actions.Shutdown(reason="arena_env_node exited")],
+                on_exit=_on_env_node_exit,
             )
         )
 

@@ -58,6 +58,13 @@ class Supervisor:
         """Children whose process group still has a member, an exited leader's orphans included."""
         return [(r, p) for r, p in self._children.items() if p.poll() is None or _exists(p.pid)]
 
+    def env_failure(self) -> tuple[str, int] | None:
+        """The first env child whose launch exited non-zero, with its exit code."""
+        for role, proc in self._children.items():
+            if role.startswith('env_') and proc.poll() not in (None, 0):
+                return role, proc.returncode
+        return None
+
     def sweep_exited(self) -> None:
         """Stop the process group of every child whose leader exited, in the background."""
         for role, proc in self._children.items():
@@ -222,23 +229,37 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
 
+def env_failed(sup: Supervisor) -> int | None:
+    """Exit code to end the launch with when an env child failed, after saying which."""
+    failure = sup.env_failure()
+    if failure is None:
+        return None
+    role, rc = failure
+    sys.stderr.write(f'arena launch: {role} exited with rc={rc}, shutting down\n')
+    return rc
+
+
 def wait_until(
     predicate: Callable[[], bool],
     *,
+    sup: Supervisor,
     runtime_proc: subprocess.Popen | None,
     label: str,
     period_s: float = 1.0,
-) -> bool:
+) -> int | None:
+    """None once predicate holds, else the exit code the launch ends with."""
     waited = 0
     while not predicate():
         if runtime_proc is not None and runtime_proc.poll() is not None:
             sys.stderr.write(f'arena launch: runtime exited before {label} (rc={runtime_proc.returncode})\n')
-            return False
+            return 1
+        if (rc := env_failed(sup)) is not None:
+            return rc
         time.sleep(period_s)
         waited += 1
         if waited % 10 == 0:
             sys.stderr.write(f'arena launch: waiting for {label} ({waited}s elapsed)\n')
-    return True
+    return None
 
 
 def preload_world(args: argparse.Namespace) -> None:
@@ -273,12 +294,15 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
             ],
         )
         runtime = sup.runtime()
-        if not wait_until(
-            lambda: sup.has_service(REGISTER_ENV_SERVICE),
-            runtime_proc=runtime,
-            label='/arena/register_env',
-        ):
-            return 1
+        if (
+            rc := wait_until(
+                lambda: sup.has_service(REGISTER_ENV_SERVICE),
+                sup=sup,
+                runtime_proc=runtime,
+                label='/arena/register_env',
+            )
+        ) is not None:
+            return rc
 
     existing_ns = sup.viz_namespaces()
     target_count = len(existing_ns) + args.env_n
@@ -304,12 +328,15 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
         panel = args.steering == 'true'
 
     if args.viz or panel:
-        if not wait_until(
-            lambda: len(sup.viz_namespaces()) >= target_count,
-            runtime_proc=runtime,
-            label=f'{target_count} env(s)',
-        ):
-            return 1
+        if (
+            rc := wait_until(
+                lambda: len(sup.viz_namespaces()) >= target_count,
+                sup=sup,
+                runtime_proc=runtime,
+                label=f'{target_count} env(s)',
+            )
+        ) is not None:
+            return rc
         for ns in sorted(sup.viz_namespaces() - existing_ns):
             if args.viz:
                 for role, cmd in viz_backends.viz_commands(ns, viz_backends.env_idx_from_ns(ns), args.viz_args):
@@ -320,15 +347,14 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
                     ['rqt', '--standalone', 'human_steering', '--args', '--ns', ns],
                 )
 
-    if runtime is not None:
-        while runtime.poll() is None:
-            sup.sweep_exited()
-            time.sleep(1.0)
-        return runtime.returncode
-    while sup.alive():
+    while runtime.poll() is None if runtime is not None else sup.alive():
+        if (rc := env_failed(sup)) is not None:
+            return rc
         sup.sweep_exited()
         time.sleep(1.0)
-    return 0
+    if runtime is not None:
+        return runtime.returncode
+    return env_failed(sup) or 0
 
 
 def main(argv: list[str] | None = None) -> int:
