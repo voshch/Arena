@@ -71,6 +71,7 @@ _REDISPATCH_MIN_S = 2.0
 @requires_map_server
 class Nav2Adapter(MobileAdapter):
     kind: ClassVar[str] = "nav2"
+    mappings: ClassVar[frozenset[str]] = frozenset({"static", "slam"})
 
     def __init__(self, robot_manager: RobotManager, **kwargs: object):
         super().__init__(robot_manager, **kwargs)
