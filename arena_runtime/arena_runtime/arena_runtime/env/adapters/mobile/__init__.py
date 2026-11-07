@@ -24,7 +24,12 @@ _TRAIL_QOS = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy
 
 
 class MobileAdapter(Adapter):
+    mappings: ClassVar[frozenset[str]] = frozenset({"static"})
+
     def __init__(self, robot_manager: RobotManager, **kwargs: object):
+        mapping = kwargs.get("mapping", "static")
+        if mapping not in self.mappings:
+            raise ValueError(f"{robot_manager.namespace}: robot.mobile.mapping:={mapping} is not supported by the {self.kind} adapter, which maps {sorted(self.mappings)}")
         super().__init__(robot_manager, **kwargs)
         self._trail = nav_msgs.msg.Path()
         self._trail.header.frame_id = "map"

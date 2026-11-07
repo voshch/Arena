@@ -948,6 +948,11 @@ timeline entry. See
 [worlds/three_storied_residential/scenarios/fire_alarm/scenario.yaml](worlds/three_storied_residential/scenarios/fire_alarm/scenario.yaml)
 for the reference timeline.
 
+Two `every:` entries with the same period and different offsets toggle a looped
+sound's `sounding`, which makes an intermittent caller.
+[worlds/hospital_1/scenarios/search_caller/scenario.yaml](worlds/hospital_1/scenarios/search_caller/scenario.yaml)
+calls for 2 s every 8 s from a hidden human for the `search` robots mode.
+
 A `stimulus` drives behavior-tree agents whose agent type declares the need
 and a transition on it, as for [pedestrian stimuli](#pedestrian-stimuli). Here
 `edge_0` waits until the robot comes within 4.2 m of `(12.1, 4.0)` and the

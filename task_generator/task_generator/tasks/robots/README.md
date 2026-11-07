@@ -103,6 +103,7 @@ and an async `done` flag. Shipped modes:
 | `guided` | [`guided/`](guided/) | external controller drives the goal sequence. 2D Nav Goal clicks append waypoints, which show as numbered drag handles with Delete, Insert after and Clear chain menus |
 | `stationary` | [`stationary/`](stationary/) | robot stays parked without goal dispatch, at `pos_x`/`pos_y`/`pos_theta` or a free pose sampled per episode |
 | `scenario` | [`scenario/`](scenario/) | reads `start`/`goal` pairs from the world's scenario YAML. A robot past the `robots:` entries, or on an entry without `phases`, stays parked, and an episode with only parked robots runs until `task.episode.timeout` |
+| `search` | [`search/`](search/) | `scenario` for a hidden human: each robot gets one goto judged on the human (`task.search.target`, default the scenario's only human) within `task.search.radius` (1.5 m), with `task.search.line_of_sight` also without a wall between them and with `task.search.dwell_s` for that long without a break, judge-only (`dispatch: false`), so neither the human's pose nor any other goal reaches the planner and a search driver owns the robot's navigation. Reads `task.scenario.file`, runs with `task.obstacles:=scenario`, refuses scenario robot phases. Example: [`hospital_1/scenarios/search_caller`](../../../../arena_simulation_setup/worlds/hospital_1/scenarios/search_caller/scenario.yaml) |
 | `characterization` | [`characterization/`](characterization/) | open-loop maneuver sweep: publishes exact `cmd_vel` profiles through the robot's rated envelope (no nav goals), tags each maneuver with `characterization_phase` markers, odom stall watchdog |
 | `null` | [`composite.py`](composite.py) | idle sink for robots unallocated by the fleet manager |
 | `composite` | [`composite.py`](composite.py) | fan-out: each sub-TM sees a scoped `TaskContext` covering only its allocated robots |
@@ -160,7 +161,7 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
 - `LoopPhase(phases, until?)`: the phases repeated in order; the `until` is
   judged on every tick and, once it holds, drops the running phase and
   continues with the phase after the loop.
-- `GoToPhase(pose | target, tolerance_radius?, tolerance_angle?, hold_time?, signal?)`:
+- `GoToPhase(pose | target, tolerance_radius?, tolerance_angle?, hold_time?, signal?, dispatch?)`:
   navigate to a pose, or to a zone, door, elevator or pedestrian by name. A
   zone target dispatches to a free map cell inside the zone with the robot's
   spawn clearance, a door or elevator to a point inside its polygon, and a
@@ -179,6 +180,9 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
   rejects a signal the robot's adapter cannot send (`Adapter.signals`). With
   neither pose nor target the phase holds the robot where it stands once the
   reset has placed it.
+  With `dispatch: false` the phase is judged as usual but never sent to the
+  robot's adapter, so no planner sees its pose and another node drives the
+  robot (the `search` mode uses it).
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
   result. A reach pose's `frame` (the base frame by default) is a robot link,
   put under the robot's TF prefix unless it already carries it.

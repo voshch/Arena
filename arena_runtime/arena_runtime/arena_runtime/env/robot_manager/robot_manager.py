@@ -171,11 +171,11 @@ class RobotManager(NodeInterface):
 
     @property
     def goal(self) -> Pose | None:
-        """Map-frame pose of the active GoToPhase, or None."""
+        """Map-frame pose of the active GoToPhase, None without one or for a judge-only goto."""
         from arena_runtime.env.request import GoToPhase
 
         state = self._runner.active_state
-        if state is None or not isinstance(state.phase, GoToPhase) or state.phase.pose is None:
+        if state is None or not isinstance(state.phase, GoToPhase) or state.phase.pose is None or not state.phase.dispatch:
             return None
         return self._environment_manager.realize(state.phase.pose)
 
@@ -443,12 +443,15 @@ class RobotManager(NodeInterface):
         return None if ped is None else standoff_pose((here.position.x, here.position.y), ped)
 
     async def _dispatch(self, state_index: int) -> None:
-        """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state."""
+        """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state, a judge-only goto to none."""
         from arena_runtime.env.adapters.mobile import MobileAdapter
         from arena_runtime.env.request import ElevatorRidePhase, GoToPhase, kind_of
 
         state = self._runner.phases[state_index]
         phase = state.phase
+        if isinstance(phase, GoToPhase) and not phase.dispatch:
+            state.dispatched = True
+            return
         if isinstance(phase, GoToPhase) and phase.pose is None:
             pose = self._dispatch_pose(phase)
             if pose is None:
@@ -516,7 +519,8 @@ class RobotManager(NodeInterface):
                 adapter.on_phase_tick(dispatched, self)
             ride = state.phase if isinstance(state.phase, ElevatorRidePhase) else None
             boarded = state.monitor.held
-            transition = self._runner.step(sample, zones, action_done, (None, None) if ride is not None else self._outcome_for_phase(state.phase), adapter.signal)
+            unjudged = ride is not None or (isinstance(state.phase, GoToPhase) and not state.phase.dispatch)
+            transition = self._runner.step(sample, zones, action_done, (None, None) if unjudged else self._outcome_for_phase(state.phase), adapter.signal)
             if ride is not None and transition.ended is state:
                 self._set_elevator_target(ride, release=True)
                 if state.outcome == "met":
@@ -568,13 +572,15 @@ class RobotManager(NodeInterface):
         return self._runner.done
 
     def active_dispatch_phase(self) -> TaskPhase | None:
-        """The active phase as its adapter received it, goto poses in the map frame."""
+        """The active phase as its adapter received it, goto poses in the map frame, None for a judge-only goto."""
         from arena_runtime.env.request import GoToPhase
 
         state = self._runner.active_state
         if state is None or not state.dispatched:
             return None
         phase = state.phase
+        if isinstance(phase, GoToPhase) and not phase.dispatch:
+            return None
         if isinstance(phase, GoToPhase) and phase.pose is not None:
             return attrs.evolve(phase, pose=self._environment_manager.realize(phase.pose))
         return phase
