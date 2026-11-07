@@ -91,7 +91,7 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
         def realize(self, pose: object) -> object:
             return pose
 
-        def ramp_height(self, position: object) -> float:
+        def footing(self, position: object) -> float:
             del position
             return 0.0
 

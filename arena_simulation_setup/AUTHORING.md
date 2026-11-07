@@ -521,8 +521,9 @@ deck. A ramp's mouth is its low end, at height `base`, and it rises `rise` over
 its length. `rise: 0`, the default, makes a level deck. Where footprints overlap
 the first entry wins. Off every ramp the height is 0.
 
-Pedestrians take the height of the ramp under them. Robots spawn and teleport
-onto it, then drive on the slab under their own physics. Their sensors see the
+Pedestrians, robots and objects stand on the ramp under them, an object's `z`
+counting from the ramp's surface. Robots spawn and teleport onto it, then drive
+on the slab under their own physics. Their sensors see the
 slope as it is, so nav2's costmaps can mark it, stall the robot on it and,
 above 0.8 m, miss walkers. A slab leaves the space under it open, so run it wall to wall or
 add walls, and leave no gap at its ends. Flatsim has no floor heights, so a ramp

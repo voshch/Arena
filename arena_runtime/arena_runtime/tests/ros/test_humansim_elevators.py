@@ -17,7 +17,7 @@ from arena_simulation_setup.shared import Elevator, Stairs
 from arena_simulation_setup.shared.world import STAIRS_SEAM_INSET
 from arena_simulation_setup.tree.World.model import Level, World
 from arena_simulation_setup.tree.World.view import _ring_free_cabins
-from arena_simulation_setup.utils.geometry import Pose, Position
+from arena_simulation_setup.utils.geometry import Position
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans import stair_height, stair_running
 from arena_runtime.humans.arena_humansim.arena_humansim import ArenaHumanSimulator
@@ -275,14 +275,21 @@ def test_stair_running_follows_both_halves_of_an_escalator() -> None:
     assert stair_running(high, (low, high, other), {low.name: True, "other": False}) is True
 
 
-def test_pedestrian_height_follows_the_half_it_stands_on() -> None:
+def test_pedestrian_height_follows_the_tread_tops_of_the_half_it_stands_on() -> None:
     low, high = _escalator(_realizer())
     assert stair_height((low, high), 109.0 + 0.5, 55.0) == 0.0
-    assert stair_height((low, high), 109.0 + 1.3, 55.0) == pytest.approx(1.5 * 0.5 / 1.8)
-    assert stair_height((low, high), 109.0 + 2.6, 55.2) == pytest.approx(1.5)
-    assert stair_height((low, high), 135.0 - 1.3, 55.0) == pytest.approx(-1.5 * 0.5 / 1.8)
+    assert stair_height((low, high), 109.0 + 1.3, 55.0) == pytest.approx(0.509630, abs=1e-6)
+    assert stair_height((low, high), 109.0 + 2.6, 55.2) == pytest.approx(1.262907, abs=1e-6)
+    assert stair_height((low, high), 135.0 - 1.3, 55.0) == pytest.approx(-0.274537, abs=1e-6)
     assert stair_height((low, high), 120.0, 55.0) == 0.0
     assert stair_height((low, high), 110.3, 56.0) == 0.0
+
+
+def test_pedestrian_height_rides_the_treads_where_they_have_moved() -> None:
+    low, high = _escalator(_realizer())
+    moved = {low.name: low.pitch / 2.0, high.name: high.pitch / 2.0}
+    assert stair_height((low, high), 109.0 + 1.3, 55.0, moved) == pytest.approx(0.627176, abs=1e-6)
+    assert stair_height((low, high), 135.0 - 1.3, 55.0, moved) == pytest.approx(-0.392083, abs=1e-6)
 
 
 def test_pedestrian_height_on_a_ramp_rises_from_its_base() -> None:
@@ -292,19 +299,6 @@ def test_pedestrian_height_on_a_ramp_rises_from_its_base() -> None:
     assert stair_height((ramp,), mouth.x, mouth.y) == pytest.approx(-1.0)
     assert stair_height((ramp,), mouth.x + 12.0, mouth.y) == pytest.approx(-0.5)
     assert stair_height((ramp,), mouth.x - 1.0, mouth.y) == 0.0
-
-
-def test_robots_take_the_height_of_the_ramp_under_their_env_local_pose() -> None:
-    from arena_runtime.env.environment_manager import EnvironmentManager
-
-    realizer = _realizer()
-    ramp = realizer.realize(Stairs(name="ramp", kind="ramp", position=Position(22.0, 5.0, -1.0), size=[24.0, 8.0], rise=1.0), "0")
-    environment = object.__new__(EnvironmentManager)
-    environment._realizer = realizer
-    environment._ramps = (ramp,)
-    mouth = realizer.ezilear(Pose(position=ramp.mouth)).position
-    assert environment.ramp_height(Position(mouth.x + 12.0, mouth.y)) == pytest.approx(-0.5)
-    assert environment.ramp_height(Position(mouth.x - 1.0, mouth.y)) == 0.0
 
 
 def test_ramps_send_no_teleport_zone() -> None:

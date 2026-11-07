@@ -337,7 +337,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
         for ped in out.pedestrians:
-            ped.pose.position.z = stair_height(self._known_stairs, ped.pose.position.x, ped.pose.position.y)
+            ped.pose.position.z = self.footing(ped.pose.position.x, ped.pose.position.y)
             drivers = self._drivers_for(ped.model_uri)
             if not drivers.rollers and not drivers.joystick:
                 continue
@@ -953,6 +953,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """Remember the realized stair halves of the world, sent along with the next elevators, every belt running."""
         self._known_stairs = tuple(stairs)
         self._stair_running = {}
+
+    def footing(self, x: float, y: float) -> float:
+        """Height a body stands at a realized map point on the known stairs and ramps, their treads where the simulator moved them, 0 off all of them."""
+        return stair_height(self._known_stairs, x, y, self._simulator.stair_travel())
 
     async def stairs_changed(self, running: Mapping[str, bool]) -> None:
         """Escalator halves by realized name whose belt started (True) or stopped (False), every teleport zone sent again."""
