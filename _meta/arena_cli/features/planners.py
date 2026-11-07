@@ -43,7 +43,7 @@ _SOAK_SUITE = {
             "config": {
                 "random": {
                     "dynamic": {"min": 4, "max": 6, "models": ["arenian"]},
-                    "static": {"min": 3, "max": 6, "models": ["shelf"]},
+                    "static": {"min": 3, "max": 6, "models": ["Warehouse/Object/Barrel_Plastic"]},
                     "interactive": {"min": 0, "max": 0},
                 }
             },
