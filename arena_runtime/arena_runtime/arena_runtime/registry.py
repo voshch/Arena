@@ -252,5 +252,5 @@ def sweep_verdict(
         return "process_exited"
     if not record.ready:
         return "bootstrap_timeout" if 0 < bootstrap_timeout < age else None
-    budget = reset_timeout if has_reset_hold else heartbeat_timeout
+    budget = max(heartbeat_timeout, reset_timeout) if has_reset_hold else heartbeat_timeout
     return "heartbeat_timeout" if elapsed > budget else None

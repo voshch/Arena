@@ -95,7 +95,7 @@ arena launch \
 | `lockstep.channels:="a;b"` | Semicolon-separated `name\|topic\|type\|period_s\|hard-or-soft` entries registered under caller `launch`, extra channels, producers self-register their own. `{env}` expands per env |
 | `lockstep.rtf:=N` | Target real-time factor for the lockstep scheduler, 0 or empty = unpaced (wall rate while no channel is registered) |
 | `env.bootstrap_timeout:=N` | Seconds an env may spend never-ACTIVE before eviction, measured from reservation, empty = node default (never) |
-| `env.heartbeat_timeout:=N` | Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (5) |
+| `env.heartbeat_timeout:=N` | Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (30) |
 
 To suppress the arena_humansim node when no human obstacles are needed,
 add `human:=dummy` to the command above.

@@ -216,7 +216,7 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self._lifecycle = _LifecycleLiveness(self, raw_lifecycle)
 
         period = self.rosparam[float].get("heartbeat_period_sec", 1.0)
-        self.rosparam[float].get("heartbeat_timeout_sec", 5.0)
+        self.rosparam[float].get("heartbeat_timeout_sec", 30.0)
         self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
         self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
         slot_buffer = self.rosparam[float].get("slot_buffer", 5.0)
@@ -525,7 +525,7 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         )
 
     async def _check_heartbeats(self) -> None:
-        timeout = self.rosparam[float].get("heartbeat_timeout_sec", 5.0)
+        timeout = self.rosparam[float].get("heartbeat_timeout_sec", 30.0)
         reset_timeout = self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
         bootstrap_timeout = self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
         now = self.wall_time

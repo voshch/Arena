@@ -86,7 +86,7 @@ bootstrapping, e.g. loading its world) is evicted after `bootstrap_timeout_sec`
 when one is set (`env.bootstrap_timeout:=<s>` at launch, default 0 = never),
 measured from `reserve()` time rather than heartbeat silence, so an env that
 keeps heartbeating while stuck in setup is still evicted. A ready env is evicted after
-`heartbeat_timeout_sec` (`env.heartbeat_timeout:=<s>` at launch, default 5 s), stretched to `reset_hold_timeout_sec`
+`heartbeat_timeout_sec` (`env.heartbeat_timeout:=<s>` at launch, default 30 s), at least `reset_hold_timeout_sec`
 (default 30 s) while it holds a "reset" hold. Evicting a still-spawning env
 fails its pending `spawn_env` call, since `dispose` cancels `spawn_ready`.
 
