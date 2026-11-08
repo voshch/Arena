@@ -203,7 +203,7 @@ JOINTS.md, and `body_to_semantic` extracts them back.
 | `<s>_y_collar`, `<s>_p_collar` | `<side>_collar` |
 | `<s>_y_shoulder`, `<s>_p_shoulder`, `<s>_r_shoulder` | `<side>_shoulder` |
 | `<s>_elbow` | `<side>_elbow` |
-| `<s>_r_wrist`, `<s>_wrist` | `<side>_wrist` |
+| `<s>_r_wrist`, `<s>_wrist`, `<s>_d_wrist` | `<side>_wrist` |
 | `<s>_y_hip`, `<s>_p_hip`, `<s>_r_hip` | `<side>_hip` |
 | `<s>_knee` | `<side>_knee` |
 | `<s>_y_ankle`, `<s>_ankle` | `<side>_ankle` |
