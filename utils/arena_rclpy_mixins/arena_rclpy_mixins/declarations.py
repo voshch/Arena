@@ -26,6 +26,24 @@ def _label(label: str) -> str:
     return f"label:{label}" if label else ""
 
 
+def parse_constraints(text: str) -> dict[str, object]:
+    """Inverse of _constraints: label, catalog, choices, pair (int_pair or float_pair) and widget (sketch or text), present only when the token is."""
+    parsed: dict[str, object] = {}
+    for token in text.split(";"):
+        key, _, value = token.partition(":")
+        if key == "label":
+            parsed["label"] = value
+        elif key == "catalog":
+            parsed["catalog"] = value
+        elif key == "enum":
+            parsed["choices"] = value.split(",")
+        elif key == "range":
+            parsed["pair"] = value
+        elif key in ("sketch", "text"):
+            parsed["widget"] = key
+    return parsed
+
+
 def declare_int_pair(
     node: "ROSParamServer",
     name: str,

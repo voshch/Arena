@@ -432,7 +432,7 @@ def _pool(n: int) -> list[str]:
 
 
 def new(argv: list[str]) -> None:
-    """Fork the dev tree into a new fork, or start an existing one.
+    """Create a fork of the dev tree, or start a stopped one.
 
     `arena fork new [<fork>]`, the lowest free pN when no name is given. A
     fork is the dev image over an overlay of a hardlinked snapshot of the built
@@ -647,7 +647,7 @@ def _run_lanes(n: int, args: list[str], run_id: str, data_root: str) -> None:
 
 
 def down(argv: list[str]) -> None:
-    """Delete forks. Bare, the pool forks of --lanes runs.
+    """Delete the named forks. With no name, delete the pool forks of --lanes runs.
 
     `arena fork down [<fork>...]` deletes the named forks, container and edits
     both. Bare it deletes the pool forks p1, p2, ... that `arena evaluation
@@ -674,9 +674,9 @@ def down(argv: list[str]) -> None:
 COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
-        make_verb("new", new),
+        make_verb("new", new, title="New Fork"),
         make_verb("ls", ls),
         make_verb("exec", exec_, passthrough=True),
-        make_verb("down", down),
+        make_verb("down", down, title="Delete Fork"),
     ]
 }

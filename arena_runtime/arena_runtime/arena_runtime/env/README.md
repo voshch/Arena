@@ -160,6 +160,7 @@ setup(entry_points={"arena_runtime.task_layer": ["my_runtime = my_runtime.layer"
 | `declare_mode_schema(node, axis, mode)` | Declares the params of one mode. `declare_mode_schemas(layer, node)` declares every registered mode. |
 | `create_task(node=, ctx=, params=)` | Binds an `EpisodeTask` to the env's `TaskContext`. |
 | `mode_namespaces()` | The registered modes per axis, each with its param namespace: the one source of param names. `registered_modes(layer)` is its names. |
+| `multi_axes()` | The axes that take several modes at once, the ones it passes to `validate_modes`. |
 | `fleet_only_robots()` | Robot modes reachable only through a fleet config. |
 | `next_episode(previous=, queued=)` | Chooses what the next episode changes, given the finished record and what was queued. |
 

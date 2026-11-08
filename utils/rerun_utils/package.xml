@@ -11,6 +11,8 @@
   <depend>rclpy</depend>
   <depend>arena_rclpy_mixins</depend>
   <depend>arena_viz</depend>
+  <exec_depend>arena_mcp</exec_depend>
+  <depend>arena_bringup</depend>
   <depend>arena_runtime_msgs</depend>
   <depend>arena_people_msgs</depend>
   <depend>geometry_msgs</depend>

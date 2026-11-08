@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+meta="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+PYTHONPATH="$meta${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m arena_cli.web "$@"

@@ -13,6 +13,7 @@ from pydantic import Field
 from arena_mcp.core import JOBS, LATCHED, ROS, Domain, ToolError, msgs, robot_ns, tg
 from arena_mcp.core.envs import SUBMIT_TASK_TIMEOUT_S
 from arena_mcp.core.ros import python_to_param
+from arena_runtime.env.catalogs import CATALOGS
 from arena_runtime.env.task_layer import declare_mode_schemas, decode_modes, encode_modes, task_layer, task_layer_name
 
 if TYPE_CHECKING:
@@ -35,16 +36,6 @@ domain = Domain(
 HISTORY = 200
 RESET_TIMEOUT = 120.0
 BUSY = "RunEpisode is single-flight: wait for the running episode (episode_wait until=terminal) or cancel the job that runs it, an env with task.episode.auto_reset true runs its own episodes and is always busy"
-
-CATALOGS = {
-    "worlds": ("QueryWorlds", "query/worlds"),
-    "scenarios": ("QueryScenarios", "query/scenarios"),
-    "robots": ("QueryRobots", "query/robots"),
-    "static_obstacles": ("QueryStaticObstacles", "query/static_obstacles"),
-    "dynamic_obstacles": ("QueryDynamicObstacles", "query/dynamic_obstacles"),
-    "environments": ("QueryEnvironments", "query/environments"),
-    "parametrizeds": ("QueryParametrizeds", "query/parametrizeds"),
-}
 
 EnvId = Annotated[int | None, Field(description="env to act on, optional when exactly one env runs")]
 ParamValues = dict[str, bool | int | float | str | list[bool] | list[int] | list[float] | list[str]]
@@ -165,11 +156,11 @@ def _summary(msg: EpisodeRecord | None) -> str:
 async def episode_reset(
     env_id: EnvId = None,
     world: Annotated[str, Field(description="world to switch to, empty keeps the current one")] = "",
-    seed: Annotated[int, Field(description="seed for an exact replay, -1 derives one")] = -1,
-    wait: Annotated[bool, Field(description="block until the new episode runs")] = True,
+    seed: Annotated[int, Field(ge=-1, le=2**31 - 1, description="seed for an exact replay, -1 derives one")] = -1,
+    wait: Annotated[bool, Field(description="block until the new episode runs and return its record")] = True,
     timeout_s: Annotated[float, Field(description="upper bound of the wait in seconds")] = RESET_TIMEOUT,
 ) -> dict[str, object]:
-    """Start a new episode, ending the running one as SKIPPED; with wait, return the new episode's record once it runs."""
+    """Start a new episode, ending the running one as SKIPPED."""
     from arena_runtime_msgs.srv import ResetEpisode
 
     node = await tg(env_id)
@@ -200,7 +191,7 @@ async def episode_reset(
 async def episode_run(
     env_id: EnvId = None,
     world: Annotated[str, Field(description="world to load first, empty keeps the current one")] = "",
-    seed: Annotated[int, Field(description="seed for an exact replay, -1 derives one")] = -1,
+    seed: Annotated[int, Field(ge=-1, le=2**31 - 1, description="seed for an exact replay, -1 derives one")] = -1,
 ) -> dict[str, object]:
     """Run one episode of a managed env (task.episode.auto_reset false) through the RunEpisode action as a job with no result timeout; the result carries state, info, episode_id and the record, jobs_cancel cancels the goal."""
     from arena_runtime_msgs.action import RunEpisode

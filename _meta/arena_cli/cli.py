@@ -55,9 +55,22 @@ def _register(v: Verb) -> None:
     _VERBS[v.name] = v
 
 
-def verb(name: str, *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: _complete.Spec | None = None) -> Callable[[VerbFn], VerbFn]:
+def registered_verb(name: str) -> Verb:
+    return _VERBS[name]
+
+
+def verb(
+    name: str,
+    *,
+    hidden: bool = False,
+    passthrough: bool = False,
+    help_text: str | None = None,
+    complete: _complete.Spec | None = None,
+    title: str = "",
+    subtitles: dict[str, str] | None = None,
+) -> Callable[[VerbFn], VerbFn]:
     def deco(fn: VerbFn) -> VerbFn:
-        _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text, complete=complete))
+        _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text, complete=complete, title=title, subtitles=subtitles))
         return fn
 
     return deco
@@ -206,8 +219,8 @@ def demo(args: list[str]) -> None:
 RUNTIME_HELP = """Start the runtime only (sim + arena_runtime_node, no envs), or stop the background one.
 
 Usage:
-  arena runtime [--bg] [KEY:=VALUE ...]   start the runtime, fails if another /arena node is up
-  arena runtime down                      stop every background launch and viz of this ROS domain
+  arena runtime [--bg] [KEY:=VALUE ...]   Start the sim and the runtime node without envs. Fails if a runtime is already up on this ROS domain.
+  arena runtime down                      Stop the background runtime and every launch and viz of this ROS domain.
 
 `--bg` detaches the runtime, logging to the ROS log dir, and returns. Attach
 envs afterwards with `arena env`. `down` sends SIGINT to each `--bg` process
@@ -216,7 +229,7 @@ while one survives, and refuses when none runs. A foreground runtime stops with
 Ctrl-C in its terminal."""
 
 
-@verb("runtime", passthrough=True, help_text=RUNTIME_HELP, complete=Union(BG_FLAG, Static({"down": "stop the background launches and viz"}), RUNTIME_ARGS))
+@verb("runtime", passthrough=True, title="Start Runtime", subtitles={"down": "Stop Runtime"}, help_text=RUNTIME_HELP, complete=Union(BG_FLAG, Static({"down": "stop the background launches and viz"}), RUNTIME_ARGS))
 def runtime(args: list[str]) -> int | None:
     if args and args[0] == "down":
         if args[1:]:

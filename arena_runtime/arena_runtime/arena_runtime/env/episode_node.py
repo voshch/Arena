@@ -16,7 +16,6 @@ import arena_simulation_setup.tree.assets.Human
 import arena_simulation_setup.tree.assets.Object
 import arena_simulation_setup.tree.configs.environment
 import arena_simulation_setup.tree.configs.parametrized
-import arena_simulation_setup.tree.World as World
 import attrs
 import geometry_msgs.msg
 import rclpy
@@ -44,12 +43,13 @@ from rclpy.parameter import Parameter
 from std_msgs.msg import Bool, Empty, Int16, String
 
 from arena_runtime.env.adapters import ResetContext
+from arena_runtime.env.catalogs import LISTERS
 from arena_runtime.env.constants import Constants
 from arena_runtime.env.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN
 from arena_runtime.env.goal_progress import GoalProgressTracker
 from arena_runtime.env.interactive import MarkerHub
 from arena_runtime.env.interactive.entities import EntityHandles
-from arena_runtime.env.node import _LATCHED, EnvNode, _available
+from arena_runtime.env.node import _LATCHED, EnvNode
 from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
 from arena_runtime.env.robot_manager.robot_manager import footprint_radius
@@ -921,11 +921,9 @@ class EpisodeNode(EnvNode):
     ) -> arena_runtime_msgs.srv.QueryScenarios.Response:
         world_name = request.world or self._episodes.current.world
         try:
-            world_view = World.WorldIdentifier(world_name).resolve_sync()
+            response.ids = await LISTERS["scenarios"](world_name)
         except FileNotFoundError:
             self.get_logger().warning(f'no scenarios: world {world_name!r} not found')
-            return response
-        response.ids = _available(world_view.scenario)
         return response
 
     async def _cb_queue_episode(
