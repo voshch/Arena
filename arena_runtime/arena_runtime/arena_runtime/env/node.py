@@ -311,6 +311,8 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         self._pub_heartbeat.publish(msg)
 
     def _cb_arena_watchdog(self) -> None:
+        if self._heartbeat_stop.is_set():
+            return
         info = self.get_publishers_info_by_topic("/arena/state/envs")
         if info:
             self._arena_seen = True
