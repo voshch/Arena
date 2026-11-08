@@ -403,7 +403,7 @@ class DrlAdapter(MobileAdapter):
         robot: RobotManager,
     ) -> None:
         phase = robot.active_dispatch_phase()
-        if phase is not None:
+        if isinstance(phase, GoToPhase):
             await self.dispatch_phase(phase, robot)
 
 

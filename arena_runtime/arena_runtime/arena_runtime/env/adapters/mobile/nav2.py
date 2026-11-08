@@ -177,7 +177,7 @@ class Nav2Adapter(MobileAdapter):
         await self._clear_costmap(robot, "local")
 
         phase = robot.active_dispatch_phase()
-        if phase is not None:
+        if isinstance(phase, GoToPhase):
             await self.dispatch_phase(phase, robot)
 
     async def on_cabin_open(self, robot: RobotManager) -> None:
