@@ -74,6 +74,18 @@ def test_the_cane_sweeps_with_the_steps() -> None:
     assert np.corrcoef(lead, side)[0, 1] > 0.8  # tip on the left while the right foot leads (two-point touch)
 
 
+def test_the_left_hand_cane_sweeps_the_mirrored_way() -> None:
+    clip, rep = H.apply(_walk(T=60), H.Hold.parse("cane:side=l,starts=4"))
+    assert rep["grip_mm"][0] < 5.0
+    lead, side = [], []
+    for a in _frames(clip):
+        q = TemplatePose().positions(a)
+        lead.append(q["right_ankle"][0] - q["left_ankle"][0])
+        ax = H.HANDS.palm_frame(q, "l").axis(-60.0)
+        side.append((ax if ax[2] < 0 else -ax)[1])
+    assert np.corrcoef(lead, side)[0, 1] < -0.8  # tip on the right while the right foot leads
+
+
 def test_a_held_clip_drops_the_body_track_so_players_pose_its_angles() -> None:
     clip, _ = H.apply(_walk(T=12, with_body=True), H.Hold.parse("iv:starts=2"))
     assert clip.body_rotations is None and clip.body_pelvis is None

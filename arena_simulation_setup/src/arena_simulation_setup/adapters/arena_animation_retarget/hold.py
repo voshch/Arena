@@ -170,7 +170,7 @@ def apply(clip: Clip, hold: Hold, body: str | Path | None = None, verbose: bool 
             s = sides[0]
             g = np.array([p["gx"], p["gy"] if s == "r" else -p["gy"], p["gz"]])  # gy is given for the right hand
             c = math.cos(phase[i])
-            ty, tz = p["arc"] * c, p["tap"] * (1.0 - c * c)
+            ty, tz = -p["arc"] * c * mirror[s], p["tap"] * (1.0 - c * c)
             lg = p["length"] - p["grip_at"]
             dz, dy = g[2] - tz, ty - g[1]
             tip = np.array([g[0] + math.sqrt(max(1e-6, lg * lg - dz * dz - dy * dy)), ty, tz])
