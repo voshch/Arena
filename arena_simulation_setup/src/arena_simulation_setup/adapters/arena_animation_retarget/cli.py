@@ -13,6 +13,11 @@ of up to --chunk-frames and each chunk is solved in one batched IK on the GPU (-
 directory with P1.npz + P2.npz, the Inter-X layout) and becomes two clips, <name>_a and <name>_b, retargeted together so
 their contacts meet on Arena's bodies (see .pair). Each annotation gets a `pair` block: the
 partner clip and where the partner stands (x forward, y left, relative heading).
+
+--hold TASK[:key=value,...]: after the retarget, every clip's arm(s) are re-solved per frame so the hand closes on a prop
+(cane, rolling, iv, frame, rollator; see .hold), on the character --hold-body names (a bundle directory or model URI,
+posed like the simulators draw it) or Arena's template. Each annotation gets a `hold` block: the task, the body, the
+finger curls for an agent type's pose.hold and the grip's residual error.
 """
 
 from __future__ import annotations
@@ -152,7 +157,7 @@ def _window(value: str) -> str | tuple[int, int]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="animation_retarget", description="Retarget SMPL-X motion onto Arena's 40-DOF human wire.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap = argparse.ArgumentParser(prog="animation_retarget", description="Retarget SMPL-X motion onto Arena's 42-DOF human wire.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("src", nargs="+", type=Path, help="SMPL-X .npz files and/or directories (recursive)")
     ap.add_argument("-o", "--out", type=Path, required=True, help="Animation directory to write clip folders into")
     g = ap.add_argument_group("naming and annotation")
@@ -181,6 +186,9 @@ def _parser() -> argparse.ArgumentParser:
     g.add_argument("--pair", action="store_true", help="each SRC is a two-person interaction -> <name>_a, <name>_b")
     g.add_argument("--window", type=_window, default="auto", help="source frames to keep: auto (touching frames, padded), all, or F0:F1")
     g.add_argument("--passes", type=int, default=2, help="contact IK passes (anchor targets from the previous pass)")
+    g = ap.add_argument_group("hold a prop")
+    g.add_argument("--hold", metavar="TASK[:k=v,...]", help="re-solve the arms so the hand holds a prop: cane, rolling, iv, frame, rollator, keys as in .hold (e.g. iv:gz=1.0,angle=40)")
+    g.add_argument("--hold-body", metavar="BUNDLE|MODEL", help="character to solve the hold on: bundle directory or model URI (Common/casual_male_caucasian_old); default Arena's template body")
     g = ap.add_argument_group("report")
     g.add_argument("--report", type=Path, help="write per-clip fidelity metrics to this CSV")
     g.add_argument("--check", action="store_true", help="print the per-clip fidelity table")
@@ -194,6 +202,18 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.pair and (a.no_fold or a.check or a.no_score):
         ap.error("--pair takes no --no-fold (contacts are solved on upright bodies), --check or --no-score (pairs are scored by their contact error)")
+    if a.hold_body and not a.hold:
+        ap.error("--hold-body needs --hold")
+    if a.pair and a.hold:
+        ap.error("--hold applies to single-person clips, not --pair")
+    from . import hold as hold_mod
+
+    held = None
+    if a.hold:
+        try:
+            held = hold_mod.Hold.parse(a.hold)
+        except ValueError as e:
+            ap.error(str(e))
     from . import fidelity, ik  # torch import after argument parsing: --help stays fast
 
     files = _find_pairs(a.src) if a.pair else _find(a.src)
@@ -226,10 +246,26 @@ def main(argv: list[str] | None = None) -> int:
         t = time.time()
         sols = [p.init for p in preps] if a.method == "none" else ik.solve(preps, cfg, device=str(dev), chunk_frames=a.chunk_frames)
         say(f"  solved {len(preps)} clips / {n} frames in {time.time() - t:.1f} s")
+        unheld = 0
+        written = 0
         for (i, p), s in zip(pending, sols, strict=True):
             clip = resample(p, s, a.fps)
             note = " ".join(x for x in (a.note, f"method {a.method}.") if x)
-            d = write_clip(clip, a.out, names[i], loop=a.loop, desc=a.desc, tags=a.tags, note=note)
+            extra = None
+            if held is not None:
+                th = time.time()
+                try:
+                    clip, rep = hold_mod.apply(clip, held, a.hold_body, verbose=not a.quiet)
+                except Exception as e:  # noqa: BLE001  (a clip that cannot be held, e.g. no strides for a cane, fails alone)
+                    failed.append((files[i], f"hold: {type(e).__name__}: {e}"))
+                    say(f"  skip {files[i]}: hold: {e}")
+                    unheld += 1
+                    continue
+                extra = hold_mod.annotation(rep)
+                note = f"{note} Arms re-solved to hold a prop ({rep['task']}, on {rep['body']})."
+                say(f"  hold {rep['task']} on {rep['body']}: grip error mm mean/p95 {rep['grip_mm']}, axis deg {rep['axis_deg']}, curls {rep['curls']} ({time.time() - th:.0f} s)")
+            d = write_clip(clip, a.out, names[i], loop=a.loop, desc=a.desc, tags=a.tags, note=note, extra=extra)
+            written += len(p)
             row = {"name": names[i], "src": str(files[i]), "frames": len(clip.t), "seconds": round(clip.duration, 3)}
             if not a.no_score:
                 sc = fidelity.score(None, clip, prep=p)
@@ -241,8 +277,8 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 say(d)
             rows.append(row)
-        done += len(pending)
-        frames += n
+        done += len(pending) - unheld
+        frames += written
         pending.clear()
 
     jobs = [(i, files[i], a.up, a.fps_in, a.model, not a.no_fold) for i in todo]

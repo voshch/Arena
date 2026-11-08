@@ -10,7 +10,7 @@ from geometry_msgs.msg import Quaternion
 from urdf_parser_py import urdf as urdf_parser
 
 from rviz_utils.hri.body_frames import _origin_matrix
-from rviz_utils.hri.rig import _rot_axis, ped_positions, semantic_positions
+from rviz_utils.hri.rig import ped_positions, semantic_positions
 from rviz_utils.hri.urdf import REP155_FRAMES, ball_angles, body_positions, body_urdf
 
 _BODY = "env_0_agent_3"
@@ -132,15 +132,3 @@ def test_semantic_positions_pose_the_body_over_the_default_stance_without_a_rig(
     angles = dict.fromkeys(SEMANTIC_DOFS, 0.0) | {"l_knee": -0.7}
     got = semantic_positions(angles, "", _BODY)
     assert got == pytest.approx(body_positions(_BODY, semantic_to_body(angles, DEFAULT_STANCE)))
-
-
-def test_rot_axis_zero_axis_is_identity() -> None:
-    assert np.array_equal(_rot_axis(np.zeros(3), 1.3), np.eye(3))
-
-
-@pytest.mark.parametrize("axis", [(0.0, 0.0, 2.5), (1.0, -2.0, 0.5), (-3.0, 0.0, 0.0)])
-def test_rot_axis_matches_rodrigues_for_non_unit_axis(axis: tuple[float, float, float]) -> None:
-    got = _rot_axis(np.array(axis), 0.8)
-    assert np.allclose(got, _Raxis(axis, 0.8), atol=1e-12)
-    assert np.allclose(got @ np.array(axis), np.array(axis), atol=1e-12)
-    assert np.allclose(got @ got.T, np.eye(3), atol=1e-12)

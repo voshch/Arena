@@ -10,9 +10,9 @@ import numpy as np
 from urdf_parser_py import urdf as urdf_parser
 
 from arena_assets.rig import rig_of
+from arena_assets.utils.geom import axis_rotation
 
 from .body_frames import _origin_matrix
-from .rig import _rot_axis
 
 # gaze_<id> in face_<id>: z along the face's x, x right, y down
 GAZE_IN_FACE = (0.5, -0.5, 0.5, -0.5)
@@ -60,7 +60,7 @@ class FaceChain:
                     if joint.prismatic:
                         r[:3, 3] = joint.axis * q
                     else:
-                        r[:3, :3] = _rot_axis(joint.axis, q)
+                        r[:3, :3] = axis_rotation(joint.axis, q)
                     m = m @ r
         sellion = np.eye(4)
         sellion[:3, 3] = self.sellion

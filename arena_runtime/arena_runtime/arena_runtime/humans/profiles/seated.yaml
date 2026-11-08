@@ -54,6 +54,8 @@ signals:
   l_wrist: {mean: 0.0}
   r_r_wrist: {mean: 0.0}
   r_wrist: {mean: 0.0}
+  l_d_wrist: {mean: 0.0}
+  r_d_wrist: {mean: 0.0}
 joints:
   r_waist: {signal: r_waist, shift: 0.0}
   y_waist: {signal: y_waist, shift: 0.0}
@@ -95,3 +97,5 @@ joints:
   l_wrist: {signal: l_wrist, shift: 0.0}
   r_r_wrist: {signal: r_r_wrist, shift: 0.0}
   r_wrist: {signal: r_wrist, shift: 0.0}
+  l_d_wrist: {signal: l_d_wrist, shift: 0.0}
+  r_d_wrist: {signal: r_d_wrist, shift: 0.0}

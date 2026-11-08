@@ -206,11 +206,17 @@ async def assets_retarget_animation(
     out: Annotated[str, Field(description="Animation directory to write the clip folders into, absolute path")],
     pair: Annotated[bool, Field(description="each source is a two-person interaction, written as <name>_a and <name>_b")] = False,
     loop: Annotated[bool, Field(description="mark the clips as looping")] = False,
+    hold: Annotated[str | None, Field(description="re-solve the arms so the hand holds a prop: cane, rolling, iv, frame or rollator with key=value overrides, e.g. iv:gz=1.0,angle=40")] = None,
+    hold_body: Annotated[str | None, Field(description="character to solve the hold on: a bundle directory or a model URI (Common/casual_male_caucasian_old), none for Arena's template body")] = None,
 ) -> dict[str, object]:
-    """Retarget SMPL-X motion onto Arena's 40-DOF human wire as a job whose result lists the clip directories."""
+    """Retarget SMPL-X motion onto Arena's 42-DOF human wire as a job whose result lists the clip directories."""
+    if hold_body and not hold:
+        raise ToolError("hold_body needs hold", hint="pass hold as well, or drop hold_body")
+    if pair and hold:
+        raise ToolError("hold applies to single-person clips, not pair", hint="hold single clips, or retarget the pair without hold")
     if missing := [source for source in sources if not Path(source).exists()]:
         raise ToolError(f"no such source: {', '.join(missing)}", hint="sources are absolute .npz files or directories")
-    flags = [*(["--pair"] if pair else []), *(["--loop"] if loop else [])]
+    flags = [*(["--pair"] if pair else []), *(["--loop"] if loop else []), *(["--hold", hold] if hold else []), *(["--hold-body", hold_body] if hold_body else [])]
     argv = [sys.executable, "-m", "arena_simulation_setup.adapters.arena_animation_retarget", *sources, "-o", out, *flags]
     job = await JOBS.start_process("retarget", f"retarget {' '.join(sources)}", argv, cwd=cli.ws_dir(), result=_retargeted)
     return job.as_dict()

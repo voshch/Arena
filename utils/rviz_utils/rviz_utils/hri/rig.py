@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import functools
-import math
 import typing
 from collections.abc import Mapping
 
@@ -14,23 +13,6 @@ from .urdf import body_positions
 
 if typing.TYPE_CHECKING:
     from arena_people_msgs.msg import Pedestrian
-
-
-def _rot_axis(axis: np.ndarray, theta: float) -> np.ndarray:
-    """Rodrigues' rotation formula about an arbitrary (non-unit) axis."""
-    norm = np.linalg.norm(axis)
-    if norm < 1e-12:
-        return np.eye(3)
-    x, y, z = axis / norm
-    c, s = math.cos(theta), math.sin(theta)
-    t = 1.0 - c
-    return np.array(
-        [
-            [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
-            [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
-            [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
-        ]
-    )
 
 
 @functools.cache
