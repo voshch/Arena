@@ -54,9 +54,14 @@ def _qpow(q: np.ndarray, e: float) -> np.ndarray:
 
 
 def _quat(m: np.ndarray) -> np.ndarray:
-    """xyzw of the rotation nearest to a (possibly scaled) 3x3 matrix."""
+    """xyzw of the proper rotation nearest to a (possibly scaled or mirrored) 3x3 matrix."""
     u, _, vt = np.linalg.svd(m)
-    return matrix_to_quat(u @ vt)
+    rotation = u @ vt
+    if np.linalg.det(rotation) < 0.0:
+        u = u.copy()
+        u[:, -1] *= -1.0
+        rotation = u @ vt
+    return matrix_to_quat(rotation)
 
 
 @dataclass(frozen=True)

@@ -34,6 +34,17 @@ def test_the_template_body_stands_on_the_floor() -> None:
     assert min(pos[j][2] for j in ("left_ankle", "right_ankle", "left_foot", "right_foot")) == pytest.approx(0.03, abs=1e-9)
 
 
+def test_the_quaternion_of_a_rotation_is_that_rotation() -> None:
+    rotation = quat_to_matrix(np.array([0.2, -0.3, 0.1, 0.9]))
+    assert np.allclose(quat_to_matrix(AP._quat(rotation)), rotation, atol=1e-9)
+
+
+def test_a_mirrored_bone_matrix_lands_on_the_nearest_proper_rotation() -> None:
+    rotation = quat_to_matrix(AP._quat(np.diag([-1.0, 1.0, 1.0])))
+    assert np.linalg.det(rotation) == pytest.approx(1.0)
+    assert np.trace(rotation) == pytest.approx(-1.0)
+
+
 def test_the_character_stands_on_its_lowest_sole_point_in_any_pose(bundle: Path) -> None:
     body = ActorPose(bundle)
     assert body._soles, "a rig with sole joints gives heel and toe points"
