@@ -14,7 +14,8 @@ Sourced from `__init__.py` plus the submodules it re-exports.
 | Name | Kind | What it does | When to use it |
 | --- | --- | --- | --- |
 | `ArenaMixinNode` | class | All mixins composed with `rclpy.node.Node`; override `setup()` / `teardown()` | Base class for every Arena node |
-| `ROSParamServer` | mixin | Typed `.ROSParam[T]` and `.rosparam[T]` descriptors, callback-on-set | Nodes that declare or read ROS params |
+| `ROSParamServer` | mixin | Callback-on-set parameter server, the live handle behind `declare` | Nodes whose parameters change at runtime |
+| `params` | module | `Param[T]`, `ParamGroup`, `declare`, the constraints, `declare_launch_arguments` | Every node parameter and the launch arguments derived from them |
 | `LifecycleClient` | mixin | Sync `get_lifecycle_state`, `change_lifecycle_state`, `wait_for_lifecycle_state` | Driving a peer lifecycle node from sync code |
 | `AsyncLifecycleClient` | mixin | Async `*_async` variants of the above via `ClientWrapper` | Driving a peer lifecycle node from `async` context |
 | `ServiceNamespace` | mixin | `service_namespace(*parts)`: node-FQN-prefixed `Namespace` | Correct service/topic prefixing (rclpy ignores node namespace for services) |
@@ -70,7 +71,7 @@ calling thread until done. It warns if called from the event loop thread itself
 thread, so on a single-threaded executor the awaited coroutine must not need
 ROS callbacks.
 
-## Time and params
+## Time
 
 `TimeNode` subscribes to `/clock` and exposes `.sim_time` (latest simulated
 time), `.wall_time` (datetime-based wall clock), and `.time` (delegates to the
@@ -79,27 +80,45 @@ timer driven by the steady wall clock regardless of `use_sim_time`. The `Time`
 value type supports arithmetic, comparison, and round-trips to all ROS time
 representations.
 
-`ROSParamServer` exposes two per-node helpers bound to `self`:
+## Parameters
 
-- `self.ROSParam[T](name, default)`: declares a param, registers a callback,
-  and keeps a typed `.value` property in sync with the param server.
-- `self.rosparam[T].get(name, default)` / `.set(name, value)` /
-  `.declare_safe(name, value)`: lightweight one-shot param access without a
-  persistent descriptor.
+`params.py` is the one way a node parameter is declared. A `Param[T](name, default,
+description, constraint=..., parse=...)` carries its ROS type (read from the default,
+or from `type_` for an empty list or a required parameter with default `None`), its
+description, and one constraint: `Range(lo, hi, step, lo_open, hi_open)` on numbers
+(`None` = unbounded), `Choices(*values, many=False)` on strings (an Enum default
+derives the choices and the parse), `Catalog(name)` for values a live catalog lists,
+`Pair(lo, hi)` for a `[min, max]` array (one element reads as both, two read sorted
+through the `pair` parse), and `Text(sketch=False)` for multiline text. Float
+parameters reject NaN and infinity unless the default or a bound is infinite.
+`parse` turns the ROS value into `T` on the first read after a change, never at
+declaration.
 
-## Parameter groups
+`declare(node, param)` works on any `rclpy.node.Node`: it declares with the
+descriptor (a launch override keeps its value and gets the descriptor, an integer
+override of a double is redeclared as float), checks the current value against the
+constraint and raises `RuntimeError` naming the parameter when it does not fit,
+registers the validator for later sets, and returns the live handle (`.name`,
+`.value`, `.destroy`). The same name declared again on the same node returns the
+same handle. On a `ROSParamServer` the handle is the cached, callback-driven
+`ROSParam`.
 
-`param_groups.py` declares node parameters as typed `Param[T]` class
-attributes of a `ParamGroup`. A group instance declares them on a
-`ROSParamServer` node and exposes the live `ROSParam`, the class keeps the
-declaration (default, `parse` coercer, launch `description`). `PerRole` gives a
-parameter a default per role name, picked by the group's `role`. A parameter
-with `parse` may take the raw ROS value as its default, `parse` turns it into `T`.
-`configure(config, *groups)` builds an attrs config from live values or
-defaults, `declare_launch_arguments(params, prefix=...)` turns the described
-parameters into empty-default launch arguments. The coercers (`finite`,
-`within`, `positive`, `non_negative`, `count`, `positive_count`, `floats`,
-`names`) validate values on set.
+`ParamGroup` declares `Param[T]` class attributes on a node at construction,
+`ParamGroup(node, namespace="task.random", role="array")`, every name prefixed by
+the namespace, one instance per node, namespace and role. `PerRole` gives a
+parameter a default per role name. `params()`, `by_name(namespace)` and
+`defaults()` read the declarations without a node, `values()` the live values,
+`configure(config, *groups, **given)` builds an attrs config from either.
+`declare_launch_arguments(group.by_name(), prefix=..., reserved=...)` turns every
+parameter not in `reserved` into an empty-default launch argument with the
+description and, for `Choices`, the choices. `parse_constraint(descriptor)` and
+`constraint_json(constraint)` give consumers (`episode_task_modes`, the web runtime
+page) the constraint back from any descriptor.
+
+`tests/unit/test_param_census.py` walks the Arena tree and fails on any
+`declare_parameter`, `ROSParam`, `rosparam.get(name, default)`, `ParameterDescriptor`
+or `declare_safe` outside this module, and on any `Param` or launch argument without
+a description.
 
 `transforms.ThreadedTransformListener` feeds a `tf2_ros.Buffer` from its own
 node and executor thread, so `/tf` traffic never wakes the owning node's

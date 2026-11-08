@@ -31,12 +31,12 @@ class WorldGeneratorType(enum.Enum):
 class BaseConfiguration(pydantic.BaseModel):
     """Common to every generator. Extent is not here: a sketch or a text sizes itself from what is drawn."""
 
-    resolution: float = 0.05  # m / px
-    wall_gap: float = 0.05  # gap between adjacent walls
+    resolution: float = pydantic.Field(0.05, description='Map resolution in meters per pixel.')
+    wall_gap: float = pydantic.Field(0.05, description='Gap between adjacent walls in meters.')
 
 
 class PedestrianConfiguration(BaseConfiguration):
-    pedestrians: int = pydantic.Field(-1, ge=-1)  # -1 leaves the episode's obstacle mode alone
+    pedestrians: int = pydantic.Field(-1, ge=-1, description="Number of pedestrians the queued episode spawns (-1 = leave the episode's obstacle mode alone).")
 
 
 class WorldGeneratorImpl(abc.ABC):

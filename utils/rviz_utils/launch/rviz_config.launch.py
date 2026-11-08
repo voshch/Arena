@@ -20,7 +20,7 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         DeclareLaunchArgument('ns', description='env namespace, e.g. /env_0'),
-        DeclareLaunchArgument('view', default_value='map', choices=['map', 'robot', 'robot3p']),
+        DeclareLaunchArgument('view', default_value='map', choices=['map', 'robot', 'robot3p'], description='Camera view of the generated config.'),
         DeclareLaunchArgument('robot', default_value='0', description='robot index in the fleet'),
         Node(
             package='rviz_utils',

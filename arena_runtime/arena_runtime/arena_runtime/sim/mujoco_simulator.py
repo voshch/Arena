@@ -59,6 +59,7 @@ from arena_people_msgs.srv import (
 )
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Light as LightDefinition
@@ -71,6 +72,7 @@ from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Ceiling as CeilingDefinition
 from arena_runtime.shared import (
     DynamicObstacle,
@@ -275,7 +277,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
         args: dict[str, object] = {
             **robot.extra,
             **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': self.node.rosparam[str].get('optim', ''),
+            'optim': declare(self.node, NodeParams.OPTIM).value,
             'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
         }
         args.pop('resolved_assembly', None)

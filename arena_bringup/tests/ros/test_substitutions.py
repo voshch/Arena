@@ -88,7 +88,7 @@ class TestLaunchArgument:
         import launch.substitutions
         from arena_bringup.substitutions import LaunchArgument
 
-        arg = LaunchArgument("my_arg", default_value="default")
+        arg = LaunchArgument("my_arg", default_value="default", description="probe argument")
         sub = arg.substitution
         assert isinstance(sub, launch.substitutions.LaunchConfiguration)
         ctx = _make_context()
@@ -98,7 +98,7 @@ class TestLaunchArgument:
     def test_dict_returns_name_to_substitution(self) -> None:
         from arena_bringup.substitutions import LaunchArgument
 
-        arg = LaunchArgument("foo", default_value="bar")
+        arg = LaunchArgument("foo", default_value="bar", description="probe argument")
         d = arg.dict
         assert "foo" in d
 
@@ -107,7 +107,7 @@ class TestLaunchArgument:
 
         LaunchArgument._auto_append = None
         target = []
-        LaunchArgument("standalone_arg", default_value="v")
+        LaunchArgument("standalone_arg", default_value="v", description="probe argument")
         assert target == []
 
     def test_auto_append_on_appends_to_list(self) -> None:
@@ -115,7 +115,7 @@ class TestLaunchArgument:
 
         target: list = []
         LaunchArgument.auto_append(target)
-        arg = LaunchArgument("appended_arg", default_value="v")
+        arg = LaunchArgument("appended_arg", default_value="v", description="probe argument")
         LaunchArgument.auto_append(None)
         assert arg in target
 
@@ -125,21 +125,21 @@ class TestLaunchArgument:
         target: list = []
         LaunchArgument.auto_append(target)
         LaunchArgument.auto_append(None)
-        LaunchArgument("not_appended", default_value="v")
+        LaunchArgument("not_appended", default_value="v", description="probe argument")
         assert len(target) == 0
 
     def test_param_value_wraps_substitution(self) -> None:
         import launch_ros.parameter_descriptions
         from arena_bringup.substitutions import LaunchArgument
 
-        arg = LaunchArgument("typed_arg", default_value="42")
+        arg = LaunchArgument("typed_arg", default_value="42", description="probe argument")
         pv = arg.param_value(int)
         assert isinstance(pv, launch_ros.parameter_descriptions.ParameterValue)
 
     def test_param_returns_dict_with_name_key(self) -> None:
         from arena_bringup.substitutions import LaunchArgument
 
-        arg = LaunchArgument("param_arg", default_value="1")
+        arg = LaunchArgument("param_arg", default_value="1", description="probe argument")
         p = arg.param(bool)
         assert "param_arg" in p
 
@@ -147,7 +147,7 @@ class TestLaunchArgument:
         import launch_ros.parameter_descriptions
         from arena_bringup.substitutions import LaunchArgument
 
-        arg = LaunchArgument("str_arg", default_value="hello")
+        arg = LaunchArgument("str_arg", default_value="hello", description="probe argument")
         sp = arg.str_param
         assert "str_arg" in sp
         assert isinstance(sp["str_arg"], launch_ros.parameter_descriptions.ParameterValue)

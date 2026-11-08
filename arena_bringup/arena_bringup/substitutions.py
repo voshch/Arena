@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping, MutableMapping
 import launch
 import launch.actions
 import launch.logging
+import launch.some_substitutions_type
 import launch.substitutions
 import launch.utilities
 import launch_ros.parameter_descriptions
@@ -42,8 +43,18 @@ class LaunchArgument(launch.actions.DeclareLaunchArgument):
         """
         cls._auto_append = target
 
-    def __init__(self, name: str, *args: object, **kwargs: object) -> None:
-        super().__init__(name, *args, **kwargs)
+    def __init__(
+        self,
+        name: str,
+        *,
+        default_value: launch.some_substitutions_type.SomeSubstitutionsType | None = None,
+        description: str,
+        choices: list[str] | None = None,
+        **kwargs: object,
+    ) -> None:
+        if not description.strip():
+            raise ValueError(f'launch argument {name!r} needs a non-empty description')
+        super().__init__(name, default_value=default_value, description=description, choices=choices, **kwargs)
         if self._auto_append is not None:
             self._auto_append.append(self)
 

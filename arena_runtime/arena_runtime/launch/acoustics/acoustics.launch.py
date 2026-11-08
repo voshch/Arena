@@ -13,10 +13,12 @@ def generate_launch_description() -> launch.LaunchDescription:
 
     namespace = LaunchArgument(
         name='namespace',
+        description='Namespace of the acoustics simulator nodes.',
     )
 
     environment_namespace = LaunchArgument(
         name='environment_namespace',
+        description='Namespace of the env whose robots and sounds the acoustics simulator serves.',
     )
 
     launch_acoustics_simulator = SelectAction(launch.substitutions.LaunchConfiguration('simulator'))
@@ -45,6 +47,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     simulator = LaunchArgument(
         name='simulator',
         choices=launch_acoustics_simulator.keys,
+        description='Acoustics simulator backend to launch.',
     )
 
     ld = launch.LaunchDescription(

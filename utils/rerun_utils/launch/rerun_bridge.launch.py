@@ -20,8 +20,8 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         DeclareLaunchArgument('ns', description='env namespace, e.g. /env_0'),
-        DeclareLaunchArgument('web_port', default_value='9090'),
-        DeclareLaunchArgument('grpc_port', default_value='9876'),
+        DeclareLaunchArgument('web_port', default_value='9090', description='Port of the rerun web viewer.'),
+        DeclareLaunchArgument('grpc_port', default_value='9876', description='Port of the rerun gRPC server.'),
         Node(
             package='rerun_utils',
             executable='rerun_bridge',

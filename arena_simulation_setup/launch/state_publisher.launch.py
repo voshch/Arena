@@ -1,4 +1,5 @@
 
+import launch
 import launch_ros.actions
 import launch_ros.parameter_descriptions
 from arena_bringup.future import PythonExpression
@@ -6,15 +7,13 @@ from arena_bringup.substitutions import LaunchArgument, YAMLFileSubstitution
 from launch.substitutions import Command, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
-import launch
-
 
 def generate_launch_description():
     robots_root = FindPackageShare('arena_robots')
 
-    namespace = LaunchArgument('namespace')
-    frame = LaunchArgument('frame')
-    robot = LaunchArgument("robot")
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    robot = LaunchArgument("robot", description="Robot model name under arena_robots/robots.")
 
     control_yaml = YAMLFileSubstitution(
         PathJoinSubstitution([

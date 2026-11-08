@@ -81,6 +81,7 @@ def generate_launch_description():
 
     headless = LaunchArgument(
         'headless',
+        description='true = run gz-sim server-only without the GUI.',
     )
 
     # Injects PedSkeletonPlugin into the world SDF so gpu_lidar perceives

@@ -9,12 +9,13 @@ import arena_runtime_msgs.msg
 import attrs
 import diagnostic_msgs.msg
 import geometry_msgs.msg
-import rclpy
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.assembly import ResolvedAssembly
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.env.environment_manager import EnvironmentManager
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Pose, Position, Robot
 
 from .robot_manager import RobotManager
@@ -273,13 +274,13 @@ class RobotsManager(NodeInterface):
         dispatch = _autoselect_dispatch()
         log = self.node.get_logger()
 
-        mobile_kind = str(self.node.rosparam[str].get("robot.mobile_adapter", ""))
+        mobile_kind = str(self.node.conf.Robot.MOBILE_ADAPTER.value)
         if not mobile_kind or mobile_kind not in dispatch:
             log.warn(f"arena: auto-robot fallback={_ARENA_DEFAULT_ROBOT!r}: mobile_adapter={mobile_kind!r} not in dispatch {sorted(dispatch)}")
             return _ARENA_DEFAULT_ROBOT
 
         planner_param_key = dispatch[mobile_kind]
-        planner_name = str(self.node.rosparam[str].get(planner_param_key, ""))
+        planner_name = str(self.node.rosparam[str].get_unsafe(planner_param_key, ""))
         if not planner_name:
             log.warn(f"arena: auto-robot fallback={_ARENA_DEFAULT_ROBOT!r}: {planner_param_key!r} is empty")
             return _ARENA_DEFAULT_ROBOT
@@ -538,9 +539,9 @@ class RobotsManager(NodeInterface):
 
         # Launch-time seed: read the `robot` param once to populate the initial
         # fleet, then undeclare it so only spawn/despawn deltas mutate the fleet.
-        self.node.rosparam[str].declare_safe('robot', rclpy.Parameter.Type.STRING)
-        self._parse_robot_configurations(self.node.rosparam[str].get('robot', ''))
-        self.node.undeclare_parameter('robot')
+        robot_param = declare(self.node, NodeParams.ROBOT)
+        self._parse_robot_configurations(robot_param.value)
+        robot_param.destroy()
 
     async def launch_pending(self) -> None:
         """Bring up navstacks for managers queued by set_up. Caller controls when this fires

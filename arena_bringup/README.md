@@ -28,6 +28,7 @@ provides launch-time helpers used across all launch files in this package:
 
 - **`LaunchArgument`** / **`SelectAction`** / YAML substitutions
   ([arena_bringup/substitutions.py](arena_bringup/substitutions.py))
+  (`LaunchArgument(name, default_value=..., description=...)`: `description` is a required keyword, empty raises `ValueError`)
 - **`IsolatedGroupAction`**
   ([arena_bringup/actions.py](arena_bringup/actions.py))
 - **`PythonExpression`** / **`IfElseSubstitution`**

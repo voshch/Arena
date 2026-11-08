@@ -6,7 +6,7 @@ Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim 
 
 All arguments are declared with `LaunchArgument` (a thin wrapper around
 `DeclareLaunchArgument` that also auto-appends to the description list and
-exposes `.substitution` / `.dict` / `.param`).
+exposes `.substitution` / `.dict` / `.param`). `description` is a required keyword, an empty one raises `ValueError`.
 
 The table below covers the combined argument surface of `arena launch`. Runtime
 args (`sim`, `headless`, `world`, `use_sim_time`, `log_level`) go to
@@ -45,6 +45,9 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `task.obstacles` | string | task runtime's (`random`) | Obstacle task mode |
 | `task.modules` | string | task runtime's (`clear_forbidden_zones`, `rviz_ui`, plus `sounds` with acoustics) | Comma-separated task modules to load, the always-on ones added |
 | `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = the task layer default) |
+| `task.scenario.linger_after_completion` | bool string | `false` | Keep a completed scenario robot task alive until timeout or external cancellation. |
+| `task_layer` | string | `` (empty) | Task runtime: an entry point name of the `arena_runtime.task_layer` group. Empty = `$ARENA_TASK_LAYER`, else `task_generator`. |
+| `view.fov_deg` | float string | `60.0` | Horizontal fov in degrees of the pedestrian views. |
 | `task.params` | string | `` (empty) | Env node ROS parameter YAML over the task layer's defaults, the mode schemas own those |
 | `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |

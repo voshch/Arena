@@ -5,6 +5,7 @@ import importlib
 import math
 
 import pytest
+from arena_rclpy_mixins.params import Param, ParamGroup
 from arena_simulation_setup.tree.World import WorldIdentifier
 from task_generator.tasks.registry import (
     _REGISTRY_NAMESPACE,
@@ -33,14 +34,14 @@ def test_register_returns_loader_and_records_meta() -> None:
     registry: TaskModeRegistry[str, type] = TaskModeRegistry()
     ns = _REGISTRY_NAMESPACE("mode_a")
 
-    def _schema(node: object, namespace: object) -> None:
-        del node, namespace
+    class _Schema(ParamGroup):
+        COUNT = Param[int]("count", 1, "Number of things.")
 
     def _load() -> type:
         return _ModeA
 
-    assert registry.register("a", namespace=ns, schema=_schema)(_load) is _load
-    assert registry.meta("a") == TaskModeMeta(namespace=ns, schema=_schema)
+    assert registry.register("a", namespace=ns, schema=_Schema)(_load) is _load
+    assert registry.meta("a") == TaskModeMeta(namespace=ns, schema=_Schema)
 
 
 def test_meta_schema_defaults_to_none() -> None:
@@ -187,7 +188,7 @@ def test_declare_mode_schemas_declares_what_every_registered_schema_declares() -
             for key in registry.keys():
                 meta = registry.meta(key)
                 if meta.schema is not None:
-                    meta.schema(reference, meta.namespace)
+                    meta.schema(reference, namespace=meta.namespace)
         declare_mode_schemas(layer, node)
         expected = {name: value for name, value in declared(reference).items() if name not in builtin}
         actual = {name: value for name, value in declared(node).items() if name not in builtin}
@@ -199,6 +200,28 @@ def test_declare_mode_schemas_declares_what_every_registered_schema_declares() -
         assert node.get_parameter(stationary("pos_theta")).value == 0.0
     finally:
         reference.destroy_node()
+        node.destroy_node()
+
+
+def test_every_registered_schema_declares_described_parameters_without_resolving_assets() -> None:
+    pytest.importorskip("rclpy")
+    for package in ("modules", "obstacles", "robots"):
+        importlib.import_module(f"task_generator.tasks.{package}")
+    from arena_rclpy_mixins.ROSParamServer import ROSParamServer
+    from arena_runtime.env.task_layer import declare_mode_schemas
+
+    from task_generator.tasks import layer
+
+    node = ROSParamServer("schemas_described")
+    try:
+        builtin = set(node.get_parameters_by_prefix(""))
+        declare_mode_schemas(layer, node)
+        declared = {name: node.describe_parameter(name) for name in node.get_parameters_by_prefix("") if name not in builtin}
+        assert declared
+        assert all(descriptor.description.strip() for descriptor in declared.values()), [name for name, descriptor in declared.items() if not descriptor.description.strip()]
+        assert "task.demo.vertices" in declared
+        assert "task.parametrized.file" in declared
+    finally:
         node.destroy_node()
 
 

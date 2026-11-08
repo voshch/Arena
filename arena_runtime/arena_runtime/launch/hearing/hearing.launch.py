@@ -13,14 +13,17 @@ def generate_launch_description() -> launch.LaunchDescription:
 
     namespace = LaunchArgument(
         name='namespace',
+        description='Namespace of the hearing nodes.',
     )
 
     environment_namespace = LaunchArgument(
         name='environment_namespace',
+        description='Namespace of the env whose robots the hearing layer serves.',
     )
 
     policy = LaunchArgument(
         name='policy',
+        description='Hearing mask layers: belief, listen or full.',
     )
 
     launch_hearing = SelectAction(launch.substitutions.LaunchConfiguration('frontend'))
@@ -52,6 +55,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     frontend = LaunchArgument(
         name='frontend',
         choices=launch_hearing.keys,
+        description='Hearing front-end that produces the sound detections.',
     )
 
     ld = launch.LaunchDescription(

@@ -394,13 +394,15 @@ async def episode_queue(
 
 
 def _entry(leaf: str, descriptor: ParameterDescriptor, value: object) -> dict[str, object]:
+    from arena_rclpy_mixins.params import constraint_json, parse_constraint
     from rclpy.parameter import Parameter as RclpyParameter
 
     entry: dict[str, object] = {"name": leaf, "type": RclpyParameter.Type(descriptor.type).name.lower(), "value": msgs.jsonable(value)}
     if descriptor.description:
         entry["description"] = descriptor.description
-    if descriptor.additional_constraints:
-        entry["constraints"] = descriptor.additional_constraints
+    constraint = parse_constraint(descriptor)
+    if constraint is not None:
+        entry["constraint"] = constraint_json(constraint)
     if descriptor.read_only:
         entry["read_only"] = True
     for bounds in (*descriptor.floating_point_range, *descriptor.integer_range):
@@ -467,7 +469,7 @@ async def episode_task_modes(
     ] = "auto",
     task_layer: Annotated[str, Field(description="task runtime of the registry, empty = $ARENA_TASK_LAYER, else task_generator, a live env answers for its own")] = "",
 ) -> dict[str, object]:
-    """Selectable task modes per axis of the task runtime, each with its parameters: leaf name, type, value, description, constraints."""
+    """Selectable task modes per axis of the task runtime, each with its parameters: leaf name, type, value, description, constraint."""
     if source == "registry":
         await ROS.node()
         return _registry_modes(task_layer_name(task_layer))

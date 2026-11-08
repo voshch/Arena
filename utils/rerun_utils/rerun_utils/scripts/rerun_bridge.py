@@ -18,8 +18,9 @@ import rclpy.qos
 import rclpy.utilities
 import rerun as rr
 from arena_rclpy_mixins import ArenaMixinNode
-from arena_viz import DisplayKind, env_namespace
+from arena_rclpy_mixins.params import Param, Range, declare
 from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
+from arena_viz import DisplayKind, env_namespace
 
 from rerun_utils.renderers import REGISTRY, RendererCtx
 from rerun_utils.tf_mirror import TFMirror
@@ -35,8 +36,8 @@ class RerunBridge(ArenaMixinNode):
     def __init__(self, TASKGEN_NODE: str = '/arena_env_node') -> None:
         super().__init__('rerun_bridge')
         self._TASKGEN_NODE = TASKGEN_NODE
-        self.declare_parameter('web_port', 9090)
-        self.declare_parameter('grpc_port', 9876)
+        self._web_port = declare(self, Param[int]('web_port', 9090, 'Port of the rerun web viewer.', constraint=Range(lo=1, hi=65535)))
+        self._grpc_port = declare(self, Param[int]('grpc_port', 9876, 'Port of the rerun gRPC server.', constraint=Range(lo=1, hi=65535)))
 
     async def _await_param(
         self,
@@ -95,9 +96,8 @@ class RerunBridge(ArenaMixinNode):
         self.viz_manifest = await self._await_latched(
             AdapterVizManifest, os.path.join(self._TASKGEN_NODE, 'state', 'viz_manifest'))
 
-        web_port = self.get_parameter('web_port').value
-        grpc_port = self.get_parameter('grpc_port').value
-        assert isinstance(web_port, int) and isinstance(grpc_port, int)
+        web_port = self._web_port.value
+        grpc_port = self._grpc_port.value
         rec_id = f"arena_env_{self._env_id}"
         rr.init(rec_id, spawn=False)
         grpc_uri = rr.serve_grpc(

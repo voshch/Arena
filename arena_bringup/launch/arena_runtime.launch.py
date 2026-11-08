@@ -50,16 +50,19 @@ def generate_launch_description():
     use_sim_time = LaunchArgument(
         name='use_sim_time',
         default_value='true',
+        description='Use the simulation clock instead of wall time (false only for real robots).',
     )
 
     world = LaunchArgument(
         name='world',
         default_value='map_empty',
+        description='World the simulator loads, resolved under arena_simulation_setup/worlds.',
     )
 
     headless = LaunchArgument(
         name='headless',
         default_value='False',
+        description='true = hide the simulator GUI (server-only mode).',
     )
 
     LaunchArgument(

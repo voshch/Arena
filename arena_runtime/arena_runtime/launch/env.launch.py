@@ -187,7 +187,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="",
         description="Task runtime: an entry point name of the arena_runtime.task_layer group. Empty = $ARENA_TASK_LAYER, else task_generator.",
     )
-    LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""))
+    LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""), description="Optimization profile name handed to the robot loaders (empty = none).")
     world = LaunchArgument(name="world", default_value="map_empty", description="world the env starts in")
     world_lighting = LaunchArgument(
         name="world.lighting",
@@ -259,7 +259,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="",
         description="comma list of debug tokens (e.g. aiomonitor,map_server); also debug.<token>:=true",
     )
-    train_mode = LaunchArgument(name="robot.train", default_value="false")
+    train_mode = LaunchArgument(name="robot.train", default_value="false", description="true = a training agent publishes cmd_vel directly and the mobile adapter skips its own navigation stack.")
     parameter_file = LaunchArgument(
         name="task.params",
         default_value="",

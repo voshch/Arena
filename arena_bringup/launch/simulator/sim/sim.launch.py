@@ -23,21 +23,25 @@ def generate_launch_description():
 
     use_sim_time = LaunchArgument(
         name='use_sim_time',
+        description='Use the simulation clock instead of wall time.',
     )
 
     headless = LaunchArgument(
         name='headless',
         default_value='False',
+        description='true = hide the simulator GUI (server-only mode).',
     )
 
     physics = LaunchArgument(
         name='sim.isaac.physics',
         default_value='physx',
         choices=['physx', 'newton'],
+        description='sim isaac only. Physics engine, physx or newton.',
     )
 
     world = LaunchArgument(
-        name='world'
+        name='world',
+        description='World the simulator loads, resolved under arena_simulation_setup/worlds.',
     )
 
     dynamics = LaunchArgument(
@@ -161,6 +165,7 @@ def generate_launch_description():
     sim = LaunchArgument(
         name='sim',
         choices=launch_simulator.keys,
+        description='Simulator to start, one of the registered simulator launch files.',
     )
 
     ld = launch.LaunchDescription([

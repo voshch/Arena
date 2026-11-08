@@ -26,6 +26,7 @@ import visualization_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_simulation_setup.shared import Door, Position, Wall
 from arena_simulation_setup.tree.World import Level, World, WorldIdentifier, WorldView
@@ -37,6 +38,7 @@ from arena_runtime.env.environment_manager import EnvironmentManager
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.flags import MapSource, map_source
 from arena_runtime.humans.utils import ObstacleLayer
+from arena_runtime.node_params import NodeParams
 
 from . import markers, mechanism_map
 from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy, door_mask
@@ -190,7 +192,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
     def _publish_anchor_tf(self, ref_x: float, ref_y: float) -> None:
         """Publish the global `map` -> `<prefix>/map` static transform that anchors the env's local frame."""
-        prefix = self.node.rosparam[str].get('prefix', '')
+        prefix = declare(self.node, NodeParams.PREFIX).value
         t = geometry_msgs.msg.TransformStamped()
         t.header.stamp = self.node.get_clock().now().to_msg()
         t.header.frame_id = 'map'
