@@ -400,13 +400,20 @@ def test_explain_turns_dashboard_failures_into_one_line(output: str, expected: s
 def test_sigterm_ends_the_hub_and_removes_its_state(tmp_path: pathlib.Path) -> None:
     import subprocess
 
-    env = {**os.environ, "XDG_RUNTIME_DIR": str(tmp_path), "PYTHONPATH": str(pathlib.Path(web.__file__).resolve().parents[1])}
-    proc = subprocess.Popen([sys.executable, "-m", "arena_cli.web", "--port", "0", "--no-open"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
-    assert proc.stdout is not None and proc.stdout.readline().startswith("arena-web: http://127.0.0.1:")
+    env = {**os.environ, "XDG_RUNTIME_DIR": str(tmp_path), "ARENA_WS_DIR": str(tmp_path), "PYTHONPATH": str(pathlib.Path(web.__file__).resolve().parents[1])}
+    proc = subprocess.Popen([sys.executable, "-m", "arena_cli", "web", "--port", "0", "--no-open"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+    assert proc.stdout is not None and proc.stdout.readline().startswith("arena web: http://127.0.0.1:")
     assert [p.name for p in tmp_path.iterdir()] == [f"arena-web-{proc.pid}"]
     proc.terminate()
     assert proc.wait(15) == 0
     assert list(tmp_path.iterdir()) == []
+
+
+def test_arena_web_is_a_listed_verb_with_its_flags() -> None:
+    verb = cli.registered_verb("web")
+    assert "web" in cli.SECTIONS["Attach"] and not verb.hidden
+    assert verb.short.startswith("Serve the web app")
+    assert {"--port", "--listen", "--prefix", "--only", "--no-open"} <= set(verb.complete.flags)
 
 
 def test_main_refuses_a_taken_port_and_leaves_no_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

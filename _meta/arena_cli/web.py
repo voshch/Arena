@@ -1,4 +1,4 @@
-"""arena-web: one web hub over this machine's Arena runtimes, the dev container and its forks, proxying each container's dashboard."""
+"""`arena web`: one web hub over this machine's Arena runtimes, the dev container and its forks, proxying each container's dashboard."""
 
 from __future__ import annotations
 
@@ -616,7 +616,7 @@ def open_browser(url: str) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="arena-web",
+        prog="arena web",
         description="One web hub over this machine's Arena runtimes: the dev container and its forks, each with its runtime and benchmark pages. Runs until Ctrl-C.",
     )
     parser.add_argument("--listen", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
@@ -633,16 +633,16 @@ def main(argv: list[str] | None = None) -> int:
         server = HubServer((args.listen, args.port), hub, args.prefix)
         hub.start()
         link = f"http://{'127.0.0.1' if args.listen in ('', '0.0.0.0') else args.listen}:{server.server_address[1]}{server.prefix}/"
-        print(f"arena-web: {link} over this machine, {len(hub.targets)} containers", flush=True)
+        print(f"arena web: {link} over this machine, {len(hub.targets)} containers", flush=True)
         if not args.no_open and (reason := open_browser(link)) is not None:
-            print(f"arena-web: not opening a browser, {reason}", file=sys.stderr)
+            print(f"arena web: not opening a browser, {reason}", file=sys.stderr)
         for source, error in hub.errors.items():
-            print(f"arena-web: {source}: {error}", file=sys.stderr)
+            print(f"arena web: {source}: {error}", file=sys.stderr)
         server.serve_forever(poll_interval=0.5)
     except OSError as exc:
         if server is not None:
             raise
-        print(f"arena-web: cannot listen on {args.listen}:{args.port}: {exc.strerror}, pick another with --port", file=sys.stderr)
+        print(f"arena web: cannot listen on {args.listen}:{args.port}: {exc.strerror}, pick another with --port", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         pass
@@ -653,7 +653,3 @@ def main(argv: list[str] | None = None) -> int:
         for signum, handler in previous.items():
             signal.signal(signum, handler)
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

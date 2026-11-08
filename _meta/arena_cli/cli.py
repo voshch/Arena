@@ -39,7 +39,7 @@ the underlying launch file or tool."""
 
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
-    "Attach": ["human", "robot", "cam", "mcp"],
+    "Attach": ["human", "robot", "cam", "web", "mcp"],
     "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall", "settings", "fork"],
     "Data": ["asset"],
     "Features": ["feature", "registry"],
@@ -451,6 +451,35 @@ def _graph_guard(kind: str, name: str, unreachable: str) -> str:
 def _srv_call(service: str, request: str) -> str:
     """Capture one timeout-bounded service call into `$R`, exiting 1 with a message when it times out."""
     return f'R=$(timeout {_SERVICE_TIMEOUT_S} ros2 service call {service} {request} 2>&1) || [ $? -ne 124 ] || {{ echo "no response from {service} within {_SERVICE_TIMEOUT_S} s"; exit 1; }}'
+
+
+@verb(
+    "web",
+    passthrough=True,
+    complete=Flags(
+        {
+            "--port": "listen port, 8760 by default",
+            "--listen": "bind address, 127.0.0.1 by default",
+            "--prefix": "serve under this path, for a reverse proxy",
+            "--only": "show only forks whose name matches this regex",
+            "--no-open": "do not open the browser",
+        },
+        valued=("--port", "--listen", "--prefix", "--only"),
+    ),
+)
+def web(args: list[str]) -> int:
+    """Serve the web app over this machine's arena containers: runtimes, benchmark runs, env views.
+
+    \b
+    Usage:
+      web [--port N] [--listen ADDR] [--prefix PATH] [--only REGEX] [--no-open]
+
+    Listens on http://127.0.0.1:8760 until Ctrl-C and opens it in the browser when a display is set.
+    Each container's dashboard starts on first use through docker exec and ends with the hub.
+    """
+    from arena_cli import web as _web_mod
+
+    return _web_mod.main(args)
 
 
 @verb("lockstep", complete=_LOCKSTEP_SPEC)
