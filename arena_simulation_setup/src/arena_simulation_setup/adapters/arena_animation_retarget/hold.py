@@ -113,9 +113,10 @@ def load_body(spec: str | Path | None) -> tuple[Callable[[Mapping[str, float]], 
 
         from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 
-        found = asyncio.run(HumanIdentifier.parse(str(spec)).resolve_path())
-        if found is None:
-            raise FileNotFoundError(f"hold body {spec}: neither a bundle directory nor a Human model Arena can resolve")
+        try:
+            found = asyncio.run(HumanIdentifier.parse(str(spec)).resolve_path())
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"hold body {spec}: neither a bundle directory nor a Human model Arena can resolve") from exc
         path = Path(found)
     body = ActorPose(path)
     return body.positions, body.stance, path.name
