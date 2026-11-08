@@ -540,13 +540,25 @@ class RobotManager(NodeInterface):
             self._logger.info(f"robot {self.name!r} condition {scoped.id} violated: {render_until(scoped.condition.p_node)}")
         if transition.stop:
             self._stop_current_task()
+            await asyncio.gather(*(adapter.cancel_and_wait() for adapter in self._adapter_instances))
             if transition.abort is not None and self._abort_episode is not None:
                 self._abort_episode(transition.abort)
             return transition
+        if ended is not None:
+            await self._cancel_ended(ended)
         state = self._runner.active_state
         if state is not None and not state.dispatched:
             await self._dispatch(state.index)
         return transition
+
+    async def _cancel_ended(self, ended: PhaseState) -> None:
+        """Cancel the action of a phase that ended before its server finished, a goto that arrived keeps its planner goal."""
+        from arena_runtime.env.request import TaskKind, kind_of
+
+        kind = kind_of(ended.phase)
+        adapter = self._adapters.get(kind)
+        if adapter is not None and (kind is not TaskKind.GOTO_POSE or ended.outcome == "dropped"):
+            await adapter.cancel_and_wait((kind,))
 
     async def _clear_on_cabin_open(self) -> None:
         """Run the adapters' `on_cabin_open` once the cabin that delivered the robot reports its door open."""

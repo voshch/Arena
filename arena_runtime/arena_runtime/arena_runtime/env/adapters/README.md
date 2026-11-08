@@ -38,7 +38,12 @@ any post-teleport work. The episode's first phase is dispatched before `on_reset
 runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
 again after the teleport (rosnav_rl, external) or redispatches it on a later tick (Nav2).
 `cancel_goals()` cancels every client's in-flight goal, `RobotManager.stop_task` calls it on
-each bound adapter.
+each bound adapter. `await cancel_and_wait(kinds)` cancels the in-flight goals of the clients
+of those task kinds (all by default) and waits for the servers to answer, at most 5 s.
+`RobotManager` awaits it for a phase that ends before its action does (a reach `stop`, a loop
+`until` exit) before it dispatches the next phase, and for every adapter when a failure policy
+or an episode abort stops the task. A goto that ended by arriving keeps its planner goal.
+`Client.cancel()` returns the cancel future of the goal, None without one.
 
 ## MoveIt arm scene
 

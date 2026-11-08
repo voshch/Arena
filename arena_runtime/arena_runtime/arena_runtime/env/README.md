@@ -286,6 +286,11 @@ coordinates the way an rviz goal handle's are. An empty phase list stops the
 robot: `RobotManager.stop_task` drops its unfinished phases and cancels the
 in-flight adapter goals.
 
+A phase that ends while its action still runs (a reach `stop` holding, a loop `until`
+exit, a failure policy or an episode abort) has that action canceled and the cancel answered
+before the next phase dispatches. A reach the judge met by `stop` reads no status from its
+client while the action runs, so the canceled status that follows does not fail it.
+
 ### Goal progress
 
 [`goal_progress.py`](goal_progress.py) is `EpisodeNode`'s ROS-independent per-robot goal

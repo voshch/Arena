@@ -153,6 +153,9 @@ def render_phase(phase: TaskPhase, nouns: Nouns | None = None) -> str:
             sentence = f"Move your arm to the {noun(phase.named_target, nouns)} position"
         else:
             sentence = "Move your hand in a straight line to the given pose" if phase.motion == "linear" else "Reach to the given pose"
+        stop = phase.stop_node
+        if stop is not None:
+            sentence += f" and stop once {render_until_text(stop, nouns)}"
     else:
         sentence = "Carry out the step"
     until = phase.until_node

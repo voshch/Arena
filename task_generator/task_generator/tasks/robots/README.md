@@ -193,9 +193,14 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
   a free OMPL path, and a linear reach in an object's frame may touch that
   object with the arm. `speed` in (0, 1] scales velocity and
   acceleration. `relative: true` adds the target to the current tool pose in
-  `frame`. A reach
+  `frame`. `stop` takes the `until` grammar and, unlike `until` (judged after
+  the action ends), meets the phase on the tick it holds while the arm still
+  moves and cancels the motion, for example a push that ends once
+  `{field: chest.openness.prismatic_joint_left_02, le: 0.02}` holds. A reach
   whose arm stalls or reports a non-finite joint state fails as
-  `arm blocked` or `arm state not finite`.
+  `arm blocked` or `arm state not finite`. Any phase that ends while its
+  action still runs (a `stop`, a loop `until`, an abort) cancels the action
+  before the next phase is dispatched.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 

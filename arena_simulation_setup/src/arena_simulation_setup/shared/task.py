@@ -190,7 +190,7 @@ class GoToPhase(TaskPhase):
 
 @attrs.define
 class ReachPhase(TaskPhase):
-    """Move an arm to a pose in `frame` (a robot frame, an episode object or `<object>/<link>`), to a named configuration, or to a random workspace sample."""
+    """Move an arm to a pose in `frame` (a robot frame, an episode object or `<object>/<link>`), to a named configuration, or to a random workspace sample, ended early and canceled when `stop` holds."""
 
     kind: typing.ClassVar[str] = "reach_pose"
     MOTIONS: typing.ClassVar[tuple[str, ...]] = ("free", "linear")
@@ -206,6 +206,7 @@ class ReachPhase(TaskPhase):
     motion: str = "free"
     speed: float | None = None
     relative: bool = False
+    stop: ConditionSource | None = None
 
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
@@ -217,6 +218,13 @@ class ReachPhase(TaskPhase):
             raise ValueError("reach relative and linear motion need a Cartesian target")
         if self.speed is not None and not 0.0 < self.speed <= 1.0:
             raise ValueError(f"reach speed must be in (0, 1], got {self.speed}")
+        if self.stop is not None:
+            parse_node(self.stop)
+
+    @property
+    def stop_node(self) -> Node | None:
+        """The parsed `stop`, None without one."""
+        return None if self.stop is None else parse_node(self.stop)
 
     @classmethod
     def _parse_body(cls, data: dict, common: dict) -> ReachPhase:
@@ -242,6 +250,7 @@ class ReachPhase(TaskPhase):
             motion=str(data.pop("motion", "free")),
             speed=_optional_float(data.pop("speed", None)),
             relative=bool(data.pop("relative", False)),
+            stop=_until(data.pop("stop", None)),
             **common,
         )
 
@@ -266,6 +275,8 @@ class ReachPhase(TaskPhase):
             result["motion"] = self.motion
         if self.relative:
             result["relative"] = True
+        if self.stop is not None:
+            result["stop"] = copy.deepcopy(self.stop)
         return result
 
 
