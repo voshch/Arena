@@ -567,6 +567,11 @@ def _registry(node: rclpy.node.Node) -> _Registry:
     return registry
 
 
+def declared(node: rclpy.node.Node) -> dict[str, Param[object]]:
+    """Every parameter declared through declare on this node, by name."""
+    return _registry(node).params
+
+
 def _current(node: rclpy.node.Node, name: str) -> object:
     import rclpy.exceptions
     from rclpy import Parameter

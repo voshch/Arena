@@ -15,6 +15,8 @@ EXPECTED = {
     "task.episode.goto_pose.timeout.no_progress",
     "task.episode.goto_pose.hold_time",
     "task.episode.goto_pose.signal",
+    "task.episode.node_ping.period",
+    "task.episode.node_ping.misses",
 }
 
 
