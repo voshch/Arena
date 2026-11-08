@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import random
+import time
 import traceback
 import typing
 import uuid
@@ -50,6 +51,7 @@ from arena_runtime.env.goal_progress import GoalProgressTracker
 from arena_runtime.env.interactive import MarkerHub
 from arena_runtime.env.interactive.entities import EntityHandles
 from arena_runtime.env.node import _LATCHED, EnvNode
+from arena_runtime.env.node_watch import NodePinger
 from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
 from arena_runtime.env.robot_manager.robot_manager import footprint_radius
@@ -241,6 +243,10 @@ class EpisodeNode(EnvNode):
         )
 
         self._check_status_task: asyncio.Task | None = None
+        self._node_watch_task: asyncio.Task | None = None
+        self._node_pinger: NodePinger | None = None
+        self._node_ping_due = 0.0
+        self._node_ping_episode: int | None = None
         self._episode_task: asyncio.Task | None = None
         self._shutting_down = False
 
@@ -332,6 +338,8 @@ class EpisodeNode(EnvNode):
             self._episode_task.cancel()
         if self._check_status_task is not None and not self._check_status_task.done():
             self._check_status_task.cancel()
+        if self._node_watch_task is not None and not self._node_watch_task.done():
+            self._node_watch_task.cancel()
         return TransitionCallbackReturn.SUCCESS
 
     async def teardown(self) -> None:
@@ -341,7 +349,7 @@ class EpisodeNode(EnvNode):
         await super().teardown()
 
     def _episode_tasks(self) -> list[asyncio.Task]:
-        return [task for task in (self._check_status_task, self._episode_task) if task is not None and not task.done()]
+        return [task for task in (self._check_status_task, self._node_watch_task, self._episode_task) if task is not None and not task.done()]
 
     async def _teardown_episode(self) -> None:
         await asyncio.gather(*self._episode_tasks(), return_exceptions=True)
@@ -752,6 +760,39 @@ class EpisodeNode(EnvNode):
             self.get_logger().error(f"Error in termination watcher: {e}\n{traceback.format_exc()}")
             raise
 
+    def _on_watchdog(self) -> None:
+        self.event_loop.call_soon_threadsafe(self._watch_nodes)
+
+    def _watch_nodes(self) -> None:
+        if self._shutting_down or (self._node_watch_task is not None and not self._node_watch_task.done()):
+            return
+        period = self.conf.Robot.NODE_PING_PERIOD.value
+        misses = self.conf.Robot.NODE_PING_MISSES.value
+        episode_id = self._episodes.current.episode_id
+        fut = self._episodes.pending_outcomes.get(episode_id)
+        now = time.monotonic()
+        if misses <= 0 or fut is None or fut.done() or now < self._node_ping_due:
+            return
+        self._node_ping_due = now + period
+        self._node_watch_task = asyncio.create_task(self._ping_nodes(period, misses, episode_id))
+
+    async def _ping_nodes(self, period: float, misses: int, episode_id: int) -> None:
+        try:
+            self._node_pinger = self._node_pinger or NodePinger(self, self.get_namespace(), misses)
+            hung = await self._node_pinger.round(period, new_episode=episode_id != self._node_ping_episode)
+            self._node_ping_episode = episode_id
+            if hung is not None:
+                self._on_hung_node(hung)
+        except Exception as e:
+            self.get_logger().error(f"Error in node watcher: {e}\n{traceback.format_exc()}")
+
+    def _on_hung_node(self, name: str) -> None:
+        reason = f"node {name} stopped answering or left its active state"
+        if self.rosparam[bool].get_unsafe("task.episode.auto_reset"):
+            self.get_logger().error(reason)
+        else:
+            self.fail_episode(reason, fatal=True)
+
     def _send_end_message_on_end(self) -> bool:
         desired = self.conf.General.DESIRED_EPISODES.value
         if desired < 0 or self._episodes.current.episode_id < desired:
@@ -879,17 +920,17 @@ class EpisodeNode(EnvNode):
         if self.rosparam[bool].get_unsafe("task.episode.fail_on_collision"):
             self.fail_episode("collision")
 
-    def fail_episode(self, reason: str) -> None:
-        """Abort the running episode as FAILED with ``reason``, unless it is already aborting."""
-        if self._task is None or self._abort_reason is not None:
+    def fail_episode(self, reason: str, *, fatal: bool = False) -> None:
+        """Abort the running episode as FAILED with ``reason``, or FATAL for an env fault (ignored between episodes), unless it is already aborting."""
+        fut = self._episodes.pending_outcomes.get(self._episodes.current.episode_id)
+        if self._task is None or self._abort_reason is not None or (fatal and (fut is None or fut.done())):
             return
-        self.get_logger().warn(f"failing episode: {reason}")
+        self.get_logger().warn(f"{'faulting' if fatal else 'failing'} episode: {reason}")
         self.abort_episode(reason)
         if self._robots_manager is not None:
             self._close_condition_scopes()
-        fut = self._episodes.pending_outcomes.get(self._episodes.current.episode_id)
         if fut is not None and not fut.done():
-            fut.set_result((arena_runtime_msgs.action.RunEpisode.Result.FAILED, reason))
+            fut.set_result((arena_runtime_msgs.action.RunEpisode.Result.FATAL if fatal else arena_runtime_msgs.action.RunEpisode.Result.FAILED, reason))
 
     # SERVICE CALLBACKS
 

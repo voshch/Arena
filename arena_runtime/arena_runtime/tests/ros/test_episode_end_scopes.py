@@ -117,3 +117,46 @@ def test_the_timeout_ends_the_episode_as_aborted() -> None:
 def test_otherwise_the_bound_modes_decide() -> None:
     assert asyncio.run(_done_stub(modes_done=True)._episode_done()) is True
     assert asyncio.run(_done_stub(modes_done=False)._episode_done()) is False
+
+
+def test_fatal_fail_episode_resolves_the_outcome_as_fatal(rclpy_context) -> None:
+    import rclpy
+    import arena_runtime_msgs.action
+    import arena_runtime_msgs.msg
+
+    from arena_runtime.env.episode_node import EpisodeNode
+
+    host = rclpy.create_node("episode_end_fatal_host")
+    publisher = host.create_publisher(arena_runtime_msgs.msg.SemanticSnapshot, "/episode_end_fatal/state/semantics", 10)
+    loop = asyncio.new_event_loop()
+    try:
+        stub = _node_stub(publisher, _runner_with_open_episode_condition(), loop)
+
+        EpisodeNode.fail_episode(stub, "node /env_0/jackal_0/controller_server stopped answering", fatal=True)
+
+        assert stub._abort_reason == "node /env_0/jackal_0/controller_server stopped answering"
+        assert stub._episodes.pending_outcomes[stub._episodes.current.episode_id].result() == (arena_runtime_msgs.action.RunEpisode.Result.FATAL, "node /env_0/jackal_0/controller_server stopped answering")
+    finally:
+        loop.close()
+        host.destroy_node()
+
+
+def test_fatal_fail_episode_between_episodes_leaves_the_task_alone(rclpy_context) -> None:
+    import rclpy
+    import arena_runtime_msgs.msg
+
+    from arena_runtime.env.episode_node import EpisodeNode
+
+    host = rclpy.create_node("episode_end_idle_host")
+    publisher = host.create_publisher(arena_runtime_msgs.msg.SemanticSnapshot, "/episode_end_idle/state/semantics", 10)
+    loop = asyncio.new_event_loop()
+    try:
+        stub = _node_stub(publisher, _runner_with_open_episode_condition(), loop)
+        stub._episodes.pending_outcomes.clear()
+
+        EpisodeNode.fail_episode(stub, "node /env_0/jackal_0/controller_server stopped answering", fatal=True)
+
+        assert stub._abort_reason is None
+    finally:
+        loop.close()
+        host.destroy_node()

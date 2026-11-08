@@ -192,6 +192,9 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
     def _after_setup(self) -> None:
         """Runs once the env is initialized, before it configures."""
 
+    def _on_watchdog(self) -> None:
+        """Runs on the executor at every 1 s wall tick of the arena watchdog until the env shuts down."""
+
     async def _teardown_episode(self) -> None:
         """Runs in teardown after the tick loop stops, before the robots and the simulator go."""
 
@@ -300,6 +303,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
     def _cb_arena_watchdog(self) -> None:
         if self._heartbeat_stop.is_set():
             return
+        self._on_watchdog()
         info = self.get_publishers_info_by_topic("/arena/state/envs")
         if info:
             self._arena_seen = True

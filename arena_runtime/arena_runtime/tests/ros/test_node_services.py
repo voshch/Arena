@@ -410,7 +410,7 @@ def test_a_tearing_down_node_refuses_new_episodes() -> None:
     stub = object.__new__(EpisodeNode)
     stub._episodes = EpisodeRuntime()
     stub._heartbeat_stop = threading.Event()
-    stub._tick_loop_task = stub._check_status_task = stub._episode_task = None
+    stub._tick_loop_task = stub._check_status_task = stub._node_watch_task = stub._episode_task = None
     stub._task = stub._robots_manager = stub._simulator = None
     asyncio.run(stub.teardown())
 
