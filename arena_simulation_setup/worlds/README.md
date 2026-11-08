@@ -87,7 +87,7 @@ the result from `Level.all_walls`.
 | --- | --- | --- |
 | `name` | required | unique within the world |
 | `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken |
-| `kind` | `sliding` | `sliding`, `sliding_top`, `teleport` implemented. `hinged` is accepted but falls back to `teleport` at runtime with a warning |
+| `kind` | `sliding` | `sliding`, `sliding_split` (two half-span leaves part from the middle, each opening past its own end by half the span, a `sliding` leaf when either pocket rests on another door's span), `sliding_top`, `teleport`, `hinged` |
 | `width` | `0.1` | metres |
 | `height` | `2.0` | metres |
 | `material` | door default | `MaterialIdentifier` |
@@ -104,6 +104,7 @@ the result from `Level.all_walls`.
 | `position` | required | cabin center |
 | `size` | `[2.0, 2.0, 2.0]` | cabin `[x, y, z]` |
 | `door_side` | inferred | cabin face the door opens on (`+x`, `-x`, `+y`, `-y`), inferred from the nearest wall (<= 1 m) at load when absent, `+x` without one |
+| `door_kind` | `sliding_split` | cabin door kind, any [door](#door-fields) `kind` |
 | `material` | elevator default | `MaterialIdentifier` |
 | `destinations` | `[]` | names of the cabins a ride goes to, on any level. The runtime rides to the first |
 | `activation_distance` | `3.0` | metres, the reach of an outside call while the cabin is empty; a cabin with a rider aboard reopens only for a body within 0.6 m of its door |
@@ -145,6 +146,22 @@ how it splits into halves and opens floors, dressing and staircase kinds.
 
 The world's top-level `layout` (`stacked` or `spread`, default `spread`) and
 each level's `elevation` (default a storey of 3 m per level) set the rise.
+
+### `Ramps` fields
+
+Floor heights within one level, with no seam, teleport or route. See
+[Ramps](../AUTHORING.md#ramps).
+
+| key | default | meaning |
+| --- | --- | --- |
+| `name` | required | unique across the world, a place for `robot in` atoms and zone references |
+| `mouth` | required | `[x, y]` middle of the low end, in the level frame |
+| `mouth_side` | `-x` | side the low end faces: `+x`, `-x`, `+y` or `-y` |
+| `size` | required | `[length, width]` in meters, length along the slope |
+| `base` | `0` | height of the low end |
+| `rise` | `0` | height gained over the length, not negative, 0 for a level deck |
+| `floor` | the world's `defaults.floor` | slab material, `true` for the default material, `false` for no slab |
+| `sides` | none | `{left, right}` seen walking up, each `{kind or material, height}`, a wall where `height` is positive |
 
 ### `microphones`
 
@@ -310,7 +327,7 @@ Every phase also takes `until: "<clause>[ or <clause>...]"` with a clause being
 `<atom>[ and <atom>...][ for <seconds>]` (` or ` binds loosest, a ` for ` dwell
 belongs to its clause, ` and ` binds tightest; the phase completes once any
 clause has held, every atom together, for its dwell, after arrival for a goto),
-`hold_time: <s>` (park time at a goto goal), `conditions:` (clauses judged
+`hold_time: <s>` (park time at a goto goal), `dispatch: false` (a goto judged but never sent to a planner), `conditions:` (clauses judged
 over this phase only), `text:` (instruction for language-conditioned planners)
 and `on_failure: continue | stop_task | abort_episode`. A `loop:` entry repeats
 its phases in order; its `until` is judged on every tick, drops the running
@@ -579,3 +596,4 @@ wrapping whichever of the above resolved first. Call `view.load()` to parse
 | `office_1` | Office floor plan |
 | `reception` | Reception area |
 | `stairs_demo` | Two levels joined by a stair, an up escalator on a belt and a down escalator on steps |
+| `ramp_demo` | One level with a 24 m ramp up to a level deck, a robot and two walkers shuttling over it |

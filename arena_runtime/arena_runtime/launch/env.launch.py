@@ -86,6 +86,13 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
         node.destroy_node()
 
 
+def _on_env_node_exit(event: launch.events.process.ProcessExited, context: launch.LaunchContext) -> list[launch.LaunchDescriptionEntity]:
+    """Shut the env launch down, failing it when arena_env_node exited non-zero on its own."""
+    if event.returncode != 0 and not context.is_shutdown:
+        raise RuntimeError(f"arena_env_node exited with code {event.returncode}")
+    return [launch.actions.Shutdown(reason="arena_env_node exited")]
+
+
 def generate_launch_description() -> launch.LaunchDescription:
     bringup_dir = get_package_share_directory("arena_bringup")
 
@@ -152,7 +159,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="[]",
         description="YAML list of world-independent sound entities (radios, alarms), same Sound schema as world.yaml sounds. Non-empty enables the sounds module even with acoustics:=none, where nothing hears them.",
     )
-    robot = LaunchArgument(name="robot", default_value="auto")
+    robot = LaunchArgument(name="robot", default_value="auto", description="robot model of the env, auto picks one that fits the planner")
     tm_config = LaunchArgument(
         name=mode_param("config"),
         default_value="",
@@ -181,7 +188,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         description="Task runtime: an entry point name of the arena_runtime.task_layer group. Empty = $ARENA_TASK_LAYER, else task_generator.",
     )
     LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""))
-    world = LaunchArgument(name="world", default_value="map_empty")
+    world = LaunchArgument(name="world", default_value="map_empty", description="world the env starts in")
     world_lighting = LaunchArgument(
         name="world.lighting",
         default_value="authored",
@@ -226,6 +233,16 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="robot.arm",
         default_value="moveit",
         description="arm adapter kind",
+    )
+    lift = LaunchArgument(
+        name="robot.lift",
+        default_value="direct",
+        description="lift adapter kind",
+    )
+    gripper = LaunchArgument(
+        name="robot.gripper",
+        default_value="direct",
+        description="gripper adapter kind",
     )
     record_dir = LaunchArgument(
         name="record.dir",
@@ -289,6 +306,8 @@ def generate_launch_description() -> launch.LaunchDescription:
             raise RuntimeError(f"robot.hearing:={hearing_val} needs acoustics:=arena")
         mobile_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(mobile.substitution)) or {"dummy": "none"}.get(arena_sim, "nav2")
         arm_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(arm.substitution))
+        lift_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(lift.substitution))
+        gripper_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(gripper.substitution))
         static_sounds_val = launch.utilities.perform_substitutions(
             context,
             launch.utilities.normalize_to_list_of_substitutions(auditory_static_sounds.substitution),
@@ -469,6 +488,8 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "robot.mobile_adapter": mobile_val,
                     "robot.hearing": hearing_val,
                     "robot.arm_adapter": arm_val,
+                    "robot.lift_adapter": lift_val,
+                    "robot.gripper_adapter": gripper_val,
                     **robot.str_param,
                     mode_param("config"): tm_config_val,
                     **world.str_param,
@@ -531,7 +552,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         shutdown_on_node_exit = RegisterEventHandler(
             OnProcessExit(
                 target_action=arena_env_node,
-                on_exit=[launch.actions.Shutdown(reason="arena_env_node exited")],
+                on_exit=_on_env_node_exit,
             )
         )
 

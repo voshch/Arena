@@ -27,5 +27,8 @@ setup(
         'console_scripts': [
             'rerun_bridge = rerun_utils.scripts.rerun_bridge:main',
         ],
+        'arena_mcp.domains': [
+            'viz = rerun_utils.mcp:domain',
+        ],
     },
 )

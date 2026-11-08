@@ -574,9 +574,12 @@ out with `belt` 0 and its boarding half with `open` false, every other half is o
 engine frames longer than `TELEPORT_JUMP_M` (2 m) is snapped rather than interpolated, so a crossing does not
 slide across the map.
 
-`publish_arena_peds` sets each pedestrian's z to the walking surface of the stair half it stands on
-(`stair_height`): rising from 0 at the mouth to half the stair's rise at the seam on a bottom half, sinking
-to minus half the rise on a top half, 0 off every stair.
+`footing` gives the height a body stands at on the known stair halves and ramps (`stair_height` over
+`Stairs.footing`, with the treads where the simulator's `stair_travel` has moved them, both halves of a joined
+pair on the whole body its bottom half spawns), the one lookup for
+pedestrians, robots and objects. `publish_arena_peds` sets each pedestrian's z to it:
+the tread top, belt or ramp under it, a landing plate flush with the floor, 0 off every stair. A ramp sends no
+teleport zone, so the engine treats it as plain floor.
 
 ## HuNavSim default agent template
 

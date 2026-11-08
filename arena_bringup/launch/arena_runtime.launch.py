@@ -128,7 +128,7 @@ def generate_launch_description():
     LaunchArgument(
         name='env.heartbeat_timeout',
         default_value='',
-        description='Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (5).',
+        description='Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (30).',
     )
 
     launch_sim = launch.actions.IncludeLaunchDescription(

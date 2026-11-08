@@ -30,7 +30,12 @@ The full argument surface for `arena_runtime.launch.py` and
 | `arena viz [target]` | (ros2 run) | Attaches rviz to a running env; see [arena viz](#arena-viz) |
 
 `arena launch` orchestrates all three (skipping the runtime step if one is
-already up) and is the canonical entry point for most sessions.
+already up) and is the canonical entry point for most sessions. When an env
+it started fails (its `arena_env_node` exits non-zero, a configure error for
+example), it stops everything it started and exits with that env's exit code.
+An env that shuts down cleanly (`arena env <id> down`, an eviction) does not
+fail it: a launch that started the runtime keeps running, an attached one ends
+with 0 once none of its children is left.
 
 ---
 
@@ -90,7 +95,7 @@ arena launch \
 | `lockstep.channels:="a;b"` | Semicolon-separated `name\|topic\|type\|period_s\|hard-or-soft` entries registered under caller `launch`, extra channels, producers self-register their own. `{env}` expands per env |
 | `lockstep.rtf:=N` | Target real-time factor for the lockstep scheduler, 0 or empty = unpaced (wall rate while no channel is registered) |
 | `env.bootstrap_timeout:=N` | Seconds an env may spend never-ACTIVE before eviction, measured from reservation, empty = node default (never) |
-| `env.heartbeat_timeout:=N` | Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (5) |
+| `env.heartbeat_timeout:=N` | Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (30) |
 
 To suppress the arena_humansim node when no human obstacles are needed,
 add `human:=dummy` to the command above.

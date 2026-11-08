@@ -244,6 +244,15 @@ class EnvironmentManager(NodeInterface):
     def ezilear(self, target: Pose) -> Pose:
         return self._realizer.ezilear(target)
 
+    def footing(self, position: Position) -> float:
+        """Height a body stands at an env-local position on the spawned stairs and ramps, 0 off all of them."""
+        point = self.realize(position)
+        return self._human_simulator.footing(point.x, point.y)
+
+    def _on_footing[T: Entity](self, entity: T) -> T:
+        position = entity.pose.position
+        return attrs.evolve(entity, pose=attrs.evolve(entity.pose, position=attrs.evolve(position, z=position.z + self._human_simulator.footing(position.x, position.y))))
+
     def placement(self) -> Placement:
         """The map from the abstract frame into the simulator frame for this env."""
         return self._realizer.placement()
@@ -433,6 +442,9 @@ class EnvironmentManager(NodeInterface):
             for stair in level.stairs:
                 realized_f = self._realizer.realize(stair, fid)
                 self.node._register_semantic_entity(stair.name, realized_f.name)
+                # A planar simulator keeps a robot at its spawn height, where a slab blocks it and walkers rise out of its lidar.
+                if stair.kind == 'ramp' and not self.stacks_levels:
+                    continue
                 stairs_list.append(realized_f)
                 level_stairs[fid].append(realized_f)
         stairs = tuple(stairs_list)
@@ -448,7 +460,7 @@ class EnvironmentManager(NodeInterface):
             if _match_level_id(fid)
         )
         self._human_simulator.spawn_stairs(stairs)
-        statics = tuple(self._realizer.realize(s, fid) for fid, level in _world.levels.items() if _match_level_id(fid) for s in level.all_static_entities)
+        statics = tuple(self._on_footing(self._realizer.realize(s, fid)) for fid, level in _world.levels.items() if _match_level_id(fid) for s in level.all_static_entities)
         if self._skip_obstacles:
             statics = ()
         for static in statics:
@@ -507,7 +519,7 @@ class EnvironmentManager(NodeInterface):
         """
         if self._skip_obstacles:
             return
-        realized = tuple(self._realizer.realize(obstacle, obstacle.level) for obstacle in setups)
+        realized = tuple(self._on_footing(self._realizer.realize(obstacle, obstacle.level)) for obstacle in setups)
         for obstacle in realized:
             if not obstacle.name.startswith(WORLD_ENTITY_PREFIX):
                 self.node._register_semantic_entity(obstacle.name, self._realizer.prefix(obstacle.name))

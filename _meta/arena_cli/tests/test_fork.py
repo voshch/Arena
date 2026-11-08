@@ -375,6 +375,25 @@ def test_split_lanes_rejects_bad_counts(argv: list[str]) -> None:
         fork.split_lanes(argv)
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["--suite", "s", "--viz", "--x"], (True, None, ["--suite", "s", "--x"])),
+        (["--viz-port", "9000", "--viz", "--suite", "s"], (True, "9000", ["--suite", "s"])),
+        (["--viz-port=9001", "--suite", "s"], (False, "9001", ["--suite", "s"])),
+        (["--suite", "s"], (False, None, ["--suite", "s"])),
+    ],
+)
+def test_split_viz_takes_the_dashboard_flags_out(argv: list[str], expected: tuple[bool, str | None, list[str]]) -> None:
+    assert fork.split_viz(argv) == expected
+
+
+@pytest.mark.parametrize(("argv", "match"), [(["--viz", "--viz-port"], "--viz-port needs a value"), (["--viz-port=x"], "--viz-port takes a port number")])
+def test_split_viz_rejects_a_missing_or_bad_port(argv: list[str], match: str) -> None:
+    with pytest.raises(CLIError, match=match):
+        fork.split_viz(argv)
+
+
 def test_flag_reads_both_spellings_and_needs_a_value() -> None:
     assert fork._flag(["--run-id", "r1"], "--run-id") == "r1"
     assert fork._flag(["--run-id=r2"], "--run-id") == "r2"

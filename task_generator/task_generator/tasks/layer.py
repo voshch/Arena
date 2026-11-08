@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import typing
+from collections.abc import Collection
 
 from arena_runtime.env.task_layer import EpisodeRecord, TaskContext, TaskModeOverrides, TaskModes, mode_param
 from arena_runtime.env.task_layer import validate_modes as _validate_modes
@@ -37,6 +38,11 @@ _MULTI_AXES = ("modules",)
 def validate_modes(modes: TaskModes) -> TaskModes:
     """The listed axes' selection in canonical names, ValueError naming the first axis or mode that would not run."""
     return _validate_modes(modes, _VOCABULARY, _MULTI_AXES)
+
+
+def multi_axes() -> Collection[str]:
+    """The axes that take several modes at once."""
+    return _MULTI_AXES
 
 
 def _parse_axis(axis: str, value: object) -> list[str]:

@@ -182,7 +182,7 @@ class TM_Random(TM_Obstacles):
             N_STATIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(STATIC, 'n'), [0, 0], parse=param_to_tuple),
             N_INTERACTIVE_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(INTERACTIVE, 'n'), [0, 0], parse=param_to_tuple),
             N_DYNAMIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(DYNAMIC, 'n'), [0, 0], parse=param_to_tuple),
-            MODELS_STATIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(STATIC, 'models'), ['shelf'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
-            MODELS_INTERACTIVE_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(INTERACTIVE, 'models'), ['shelf'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
+            MODELS_STATIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(STATIC, 'models'), ['Warehouse/Object/Barrel_Plastic'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
+            MODELS_INTERACTIVE_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(INTERACTIVE, 'models'), ['Warehouse/Object/Barrel_Plastic'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
             MODELS_DYNAMIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(DYNAMIC, 'models'), ['arenian'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, HumanIdentifier)),
         )

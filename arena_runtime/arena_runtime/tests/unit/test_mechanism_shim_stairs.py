@@ -208,6 +208,31 @@ def test_stair_boxes_are_static_steps_or_a_static_base_under_moving_treads():
     assert all(prim.material is esc_low.material for prim in stair_boxes(esc_low))
 
 
+def _ramp(**fields: object) -> Stairs:
+    return Stairs(name="ramp", kind="ramp", position=Position(22.0, 5.0, -1.0), size=[24.0, 8.0], rise=1.0, **fields)
+
+
+def test_a_ramp_is_one_static_slab_or_nothing_when_the_world_has_the_floor():
+    assert [(prim.name, prim.velocity, prim.comb) for prim in stair_boxes(_ramp())] == [("ramp/base_0", None, False)]
+    assert stair_boxes(_ramp(floor=False)) == []
+
+
+def test_a_ramp_never_teleports_and_counts_who_stands_on_it():
+    async def scenario():
+        mech = _Mech()
+        await _spawn(mech, _ramp(floor=False))
+        mech.robots["robot"] = _at(33.9, 5.0)
+        await _run(mech, 3)
+        return mech
+
+    mech = asyncio.run(scenario())
+    assert mech.boxes == {}
+    assert mech.teleports == []
+    assert mech.node.get_logger().infos == []
+    assert mech._stair_runtime["ramp"].members == ("robot",)
+    assert mech._stair_runtime["ramp"].treads == {}
+
+
 def test_spawned_stairs_track_their_primitives_until_removed():
     async def scenario():
         mech = _Mech()

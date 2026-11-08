@@ -6,7 +6,7 @@ import typing
 
 import attrs
 import pytest
-from arena_simulation_setup.shared import Stairs, Placement
+from arena_simulation_setup.shared import Placement, Stairs, stair_height
 from arena_simulation_setup.shared.world import STAIRS_BASE, STAIRS_BRUSH_DEPTH, STAIRS_CLEARANCE, STAIRS_GAP, STAIRS_HANDRAIL_BAR, STAIRS_LANDING_BACKOFF, STAIRS_NOSING, STAIRS_PLATE, STAIRS_SEAM_INSET, STAIRS_SINK, StairsBox, StairsModel, StairsRail, StairsSide
 from arena_simulation_setup.tree.assets.Material import Material
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
@@ -304,6 +304,20 @@ def test_a_joined_half_drops_its_seam_wall_and_runs_its_treads_to_the_seam() -> 
     assert half.run == pytest.approx(half.length - 2.0 * STAIRS_GAP)
     starts = [start for start in half.tread_starts(0.0) if start is not None]
     assert max(starts) + half.pitch == pytest.approx(half.length - STAIRS_GAP)
+
+
+@pytest.mark.parametrize('travel', [0.0, 0.07, 0.15, 0.23])
+def test_a_joined_escalator_carries_its_riders_on_the_treads_of_its_whole_body_across_the_seam(travel: float) -> None:
+    low = Stairs(name='low', group='esc', kind='escalator', position=Position(10.3, 2.0), to='high', rise=3.0)
+    high = Stairs(name='high', group='esc', kind='escalator', position=Position(12.9, 2.0), mouth_side='+x', top=True, rise=3.0)
+    low.joined = high.joined = True
+    body = low.whole_stair()
+    moved = {'low': travel, 'high': 0.5}
+    for along in [low.flat + 0.05 + 0.02 * i for i in range(int((body.length - 2.0 * low.flat - 0.1) / 0.02))]:
+        x = low.mouth.x + along
+        level = 0.0 if along <= low.length + low.reach else low.rise
+        assert stair_height((low, high), x, 2.0, moved) + level >= body.height(along) - 1e-9
+        assert stair_height((low, high), x, 2.0, moved) + level == pytest.approx(body.footing(along, travel))
 
 
 def test_stair_geometry_rides_on_the_position_height() -> None:

@@ -79,10 +79,14 @@ Every `task.episode.*` param is also a launch arg (empty = node default), listed
 | `GOAL_TOLERANCE_ANGLE` | `task.episode.goto_pose.tolerance.angle` | 30 degrees (in radians) | default `GoToPhase.tolerance_angle` |
 | `GOAL_HOLD_TIME` | `task.episode.goto_pose.hold_time` | `0.0` | sim seconds, default `GoToPhase.hold_time` |
 | `GOAL_SIGNAL` | `task.episode.goto_pose.signal` | `''` | default `GoToPhase.signal`, empty = Arena judges arrival |
+| `NODE_PING_PERIOD` | `task.episode.node_ping.period` | `10.0` | wall seconds between pings of the env's nodes, also the time a node has to answer |
+| `NODE_PING_MISSES` | `task.episode.node_ping.misses` | `3` | pings in a row a node may miss before it counts as hung, `0` = off |
 | `SPAWN_ROBOT_SAFE_DIST` | `task.episode.spawn.robot_clearance` | `0.25` | metres |
 | `TIMEOUT` | `task.episode.timeout` | `-1` | parsed to `inf` when negative; sim seconds since episode reset, past which the episode ends FAILED with info `"timeout"` |
 | `MOBILE_ADAPTER` | `robot.mobile_adapter` | `'nav2'` | default mobile-cap adapter kind, overridden per robot via scenario `mobile:` |
 | `ARM_ADAPTER` | `robot.arm_adapter` | `'moveit'` | default arm-cap adapter kind, overridden per robot via scenario `arm:` |
+| `LIFT_ADAPTER` | `robot.lift_adapter` | `'direct'` | default lift-cap adapter kind, overridden per robot via `adapters: {lift: ...}` |
+| `GRIPPER_ADAPTER` | `robot.gripper_adapter` | `'direct'` | default gripper-cap adapter kind, overridden per robot via `adapters: {gripper: ...}` |
 
 Adapter-specific tunables (planners, RL agent, ...) live in `caps/<cap>.yaml` and can be overridden at launch time via `<cap>.<key>:=<val>` flags. Each `<cap>.<key>:=<val>` lands on the env node as ROS param `robot.<cap>.<key>` and is merged into the adapter's kwargs on top of the cap-file YAML.
 

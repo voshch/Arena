@@ -18,7 +18,7 @@ TARGETS = ((3.0, 0.0, 1.0), (3.0, -2.0, 1.0), (0.0, 3.0, 1.0), (1.0, -3.0, 1.0))
 
 
 @pytest.fixture(scope="module")
-def halt() -> HaltGesture:
+def halt(point_table: None) -> HaltGesture:
     return HaltGesture()
 
 

@@ -30,6 +30,9 @@ class Record:
     tick_loop_task: object = None
     entities: list[str] = field(default_factory=list)
     displays: list[str] = field(default_factory=list)
+    late_watchdog: str = ""
+    watchdog_ticks: int = 0
+    watchdog_ticks_at_teardown: int = -1
     failure: str = ""
 
 
@@ -42,6 +45,9 @@ def _env_class(record: Record) -> type:
         async def _set_up_task(self) -> None:
             record.order.append("set_up_task")
             record.at_task = {"robots": self._robots_manager is not None, "world": self._world_manager.loaded_world, "initialized": self.rosparam[bool].get("initialized", False)}
+
+        def _on_watchdog(self) -> None:
+            record.watchdog_ticks += 1
 
         def _after_setup(self) -> None:
             record.order.append("after_setup")
@@ -111,10 +117,18 @@ async def _scenario(record: Record) -> None:
             await _until(lambda: DISPLAY in record.displays, "the interaction display in the manifest")
 
             assert record.tick_loop_task is env._tick_loop_task
+            await _until(lambda: record.watchdog_ticks > 0, "a watchdog tick")
             await env.teardown()
+            record.watchdog_ticks_at_teardown = record.watchdog_ticks
+            await asyncio.sleep(1.5)
         finally:
+            watchdog = env._arena_watchdog_timer
             rig.executor.remove_node(env)
             env.destroy_node()
+            try:
+                watchdog.callback()
+            except Exception as e:
+                record.late_watchdog = repr(e)
 
 
 @pytest.fixture(scope="module")
@@ -171,3 +185,15 @@ def test_interaction_displays_reach_the_viz_manifest(record: Record) -> None:
 def test_teardown_stops_the_tick_loop_before_the_episode(record: Record) -> None:
     assert record.at_episode_teardown == {"tick_loop_done": True}
     assert record.order[2:] == ["teardown_episode"]
+
+
+def test_a_watchdog_tick_after_the_node_is_destroyed_leaves_it_alone(record: Record) -> None:
+    assert record.late_watchdog == ""
+
+
+def test_the_arena_watchdog_drives_the_watchdog_hook(record: Record) -> None:
+    assert record.watchdog_ticks > 0
+
+
+def test_the_watchdog_hook_stops_at_teardown(record: Record) -> None:
+    assert record.watchdog_ticks == record.watchdog_ticks_at_teardown

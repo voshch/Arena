@@ -29,13 +29,25 @@ class Verb:
     hidden: bool = False
     passthrough: bool = False
     complete: "Spec | None" = None
+    title: str = ""
+    subtitles: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
-def make_verb(name: str, run: Callable[[list[str]], int | None], *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: "Spec | None" = None) -> Verb:
+def make_verb(
+    name: str,
+    run: Callable[[list[str]], int | None],
+    *,
+    hidden: bool = False,
+    passthrough: bool = False,
+    help_text: str | None = None,
+    complete: "Spec | None" = None,
+    title: str = "",
+    subtitles: dict[str, str] | None = None,
+) -> Verb:
     text = (help_text if help_text is not None else run.__doc__) or ""
     text = "\n".join(line.strip() for line in text.replace("\b", "").strip().splitlines())
     short = text.splitlines()[0] if text else ""
-    return Verb(name, run, short, text, hidden, passthrough, complete)
+    return Verb(name, run, short, text, hidden, passthrough, complete, title, subtitles or {})
 
 
 def _env(name: str) -> str:

@@ -1,0 +1,12 @@
+format: arena-world/2
+defaults:
+  ceiling: false
+levels:
+- id: '0'
+  zones:
+  - {name: hall, polygon: [[0, 0], [60, 0], [60, 12], [0, 12]], floor: Concrete_Smooth}
+  walls:
+  - {path: [[0, 0], [60, 0], [60, 12], [0, 12]], closed: true}
+  ramps:
+  - {name: ramp, mouth: [10.0, 6.0], size: [24.0, 12.0], rise: 1.0, floor: Oak_Planks}
+  - {name: deck, mouth: [34.0, 6.0], size: [26.0, 12.0], base: 1.0, floor: Marble}

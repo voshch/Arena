@@ -32,6 +32,7 @@ from lifecycle_msgs.msg import Transition, TransitionEvent
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy import Parameter
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.event_handler import QoSSubscriptionMatchedInfo, SubscriptionEventCallbacks
 from std_msgs.msg import Bool, Header
 from std_srvs.srv import Trigger
 
@@ -78,6 +79,16 @@ class ManagedEnv:
     popen: subprocess.Popen | None = None
     log_path: pathlib.Path | None = None
     tee_thread: threading.Thread | None = None
+    heartbeat_unmatched: bool = False
+
+    def process_alive(self) -> bool | None:
+        """Wrapper liveness for spawned envs, heartbeat publisher presence for registered ones, None while unknown."""
+        if self.popen is not None:
+            return self.popen.poll() is None
+        return False if self.heartbeat_unmatched else None
+
+    def on_heartbeat_matched(self, info: QoSSubscriptionMatchedInfo) -> None:
+        self.heartbeat_unmatched = info.total_count > 0 and info.current_count == 0
 
     async def dispose(self, node: ArenaRuntimeNode, *, grace_seconds: float) -> None:
         """Drop subs, cancel pending spawn future, reap the wrapper pgid."""
@@ -205,7 +216,7 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         self._lifecycle = _LifecycleLiveness(self, raw_lifecycle)
 
         period = self.rosparam[float].get("heartbeat_period_sec", 1.0)
-        self.rosparam[float].get("heartbeat_timeout_sec", 5.0)
+        self.rosparam[float].get("heartbeat_timeout_sec", 30.0)
         self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
         self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
         slot_buffer = self.rosparam[float].get("slot_buffer", 5.0)
@@ -444,8 +455,19 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         def _heartbeat_cb(msg: arena_runtime_msgs.msg.Heartbeat) -> None:
             self._env_registry.update_heartbeat(env_id, msg.stamp)
 
+        def _heartbeat_matched_cb(info: QoSSubscriptionMatchedInfo) -> None:
+            env = self._envs.get(env_id)
+            if env is not None:
+                env.on_heartbeat_matched(info)
+
         transition_sub = self.create_subscription(TransitionEvent, transition_topic, _transition_cb, 10)
-        heartbeat_sub = self.create_subscription(arena_runtime_msgs.msg.Heartbeat, heartbeat_topic, _heartbeat_cb, 10)
+        heartbeat_sub = self.create_subscription(
+            arena_runtime_msgs.msg.Heartbeat,
+            heartbeat_topic,
+            _heartbeat_cb,
+            10,
+            event_callbacks=SubscriptionEventCallbacks(matched=_heartbeat_matched_cb),
+        )
 
         env = ManagedEnv(
             env_id=env_id,
@@ -503,7 +525,7 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         )
 
     async def _check_heartbeats(self) -> None:
-        timeout = self.rosparam[float].get("heartbeat_timeout_sec", 5.0)
+        timeout = self.rosparam[float].get("heartbeat_timeout_sec", 30.0)
         reset_timeout = self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
         bootstrap_timeout = self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
         now = self.wall_time
@@ -511,7 +533,7 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             elapsed = (now - Time.from_msg(record.last_heartbeat)).to_seconds()
             age = (now - Time.from_msg(record.reserved_at)).to_seconds()
             env = self._envs.get(env_id)
-            process_alive = env.popen.poll() is None if env is not None and env.popen is not None else None
+            process_alive = env.process_alive() if env is not None else None
             # an env mid-reset blocks its loop for seconds; tolerate longer while it holds "reset", but still cap it
             reason = sweep_verdict(
                 record,
