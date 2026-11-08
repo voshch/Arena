@@ -10,6 +10,8 @@ import attrs
 import numpy as np
 from arena_simulation_setup.shared.body import forward, load_template, semantic_to_body
 
+from arena_assets.utils.geom import unit
+
 DIGITS = ("thumb", "index", "middle", "ring", "pinky")
 COUNT_CLIP = "count_fingers"
 COUNT_STEP_S = 0.8
@@ -137,19 +139,15 @@ class PalmFrame:
         return math.cos(a) * self.across + math.sin(a) * self.along
 
 
-def _unit(v: np.ndarray) -> np.ndarray:
-    return v / np.linalg.norm(v)
-
-
 def palm_frame(positions: Mapping[str, np.ndarray], side: str) -> PalmFrame:
     """PalmFrame of a posed hand from body-frame or world joint positions (`forward`), whatever its digits' curls."""
     hand = SIDES[side]
     wrist = np.asarray(positions[f"{hand}_wrist"], dtype=float)
     roots = {digit: np.asarray(positions[f"{hand}_{digit}1"], dtype=float) for digit in DIGITS[1:]}
     knuckles = np.mean(list(roots.values()), axis=0)
-    across = _unit(roots["pinky"] - roots["index"])
+    across = unit(roots["pinky"] - roots["index"])
     along = knuckles - wrist
-    along = _unit(along - (along @ across) * across)
+    along = unit(along - (along @ across) * across)
     palm = np.cross(along, across) if side == "r" else np.cross(across, along)
     half_width = max(abs(float((root - knuckles) @ across)) for root in roots.values())
     return PalmFrame(knuckles=knuckles, across=across, along=along, palm=palm, half_width=half_width)

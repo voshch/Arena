@@ -249,6 +249,33 @@ def test_orientation_iter():
     assert list(o) == pytest.approx([1.0, 0.0, 0.0, 0.0])
 
 
+def test_orientation_xyzw_round_trip():
+    q = [0.1, -0.2, 0.3, 0.9]
+    o = Orientation.from_xyzw(q)
+    assert list(o) == pytest.approx([0.9, 0.1, -0.2, 0.3])
+    assert o.to_xyzw() == pytest.approx(q)
+
+
+def test_orientation_matrix_round_trip():
+    o = Orientation.from_xyzw([0.2, -0.3, 0.1, 0.9]).normalized()
+    assert list(Orientation.from_matrix(o.to_matrix())) == pytest.approx(list(o), abs=1e-12)
+    assert Orientation.from_yaw(math.pi / 2).to_matrix() @ np.array([1.0, 0.0, 0.0]) == pytest.approx([0.0, 1.0, 0.0], abs=1e-12)
+
+
+def test_orientation_normalized():
+    assert list(Orientation(2.0, 0.0, 0.0, 0.0).normalized()) == pytest.approx([1.0, 0.0, 0.0, 0.0])
+    assert list(Orientation(0.0, 0.0, 0.0, 0.0).normalized()) == pytest.approx([1.0, 0.0, 0.0, 0.0])
+
+
+def test_orientation_pow_turns_part_way_along_the_shorter_arc():
+    turn = Orientation.from_yaw(1.0)
+    assert (turn**0.5).to_yaw() == pytest.approx(0.5)
+    negated = Orientation(-turn.w, -turn.x, -turn.y, -turn.z)
+    assert (negated**0.5).to_yaw() == pytest.approx(0.5)
+    assert list(Orientation(-1.0, 0.0, 0.0, 0.0) ** 0.5) == pytest.approx([1.0, 0.0, 0.0, 0.0])
+    assert (turn**0.5 * turn**0.5).to_yaw() == pytest.approx(1.0)
+
+
 # ---------------------------------------------------------------------------
 # Pose
 # ---------------------------------------------------------------------------

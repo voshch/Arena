@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 from arena_assets.rig import write_rig
-from arena_simulation_setup.shared import actor_pose as AP
 from arena_simulation_setup.shared.actor_pose import ActorPose, TemplatePose
 from arena_simulation_setup.shared.body import DEFAULT_STANCE, SEMANTIC_DOFS, load_template, matrix_to_quat, quat_to_matrix, semantic_to_body
 from arena_simulation_setup.testing import make_rig
@@ -34,17 +33,6 @@ def test_the_template_body_stands_on_the_floor() -> None:
     assert min(pos[j][2] for j in ("left_ankle", "right_ankle", "left_foot", "right_foot")) == pytest.approx(0.03, abs=1e-9)
 
 
-def test_the_quaternion_of_a_rotation_is_that_rotation() -> None:
-    rotation = quat_to_matrix(np.array([0.2, -0.3, 0.1, 0.9]))
-    assert np.allclose(quat_to_matrix(AP._quat(rotation)), rotation, atol=1e-9)
-
-
-def test_a_mirrored_bone_matrix_lands_on_the_nearest_proper_rotation() -> None:
-    rotation = quat_to_matrix(AP._quat(np.diag([-1.0, 1.0, 1.0])))
-    assert np.linalg.det(rotation) == pytest.approx(1.0)
-    assert np.trace(rotation) == pytest.approx(-1.0)
-
-
 def test_the_character_stands_on_its_lowest_sole_point_in_any_pose(bundle: Path) -> None:
     body = ActorPose(bundle)
     assert body._soles, "a rig with sole joints gives heel and toe points"
@@ -61,19 +49,18 @@ def test_positions_match_isaacs_wire_pose_provider(bundle: Path) -> None:
     ground = pytest.importorskip("peds.ground")
     from arena_assets.rig import load_rig
 
-    name = bundle.name
-    skin_doc = convert._Collada(str(bundle / "rig" / "meshes" / f"{name}.dae"))
+    body = ActorPose(bundle)
+    assert body.neutral_clip is not None
+    skin_doc = convert._Collada(str(body.skin))
     joints = convert._parse_skeleton(skin_doc)
     skinned = convert._parse_skinned_meshes(skin_doc)
-    clip = bundle / "rig" / "clips" / ("neutral.dae" if (bundle / "rig" / "clips" / "neutral.dae").is_file() else "idle.dae")
-    neutral = convert._neutral_pose(joints, convert._parse_animations(convert._Collada(str(clip))))
-    rig = load_rig(bundle / "rig" / f"{name}.rig")
+    neutral = convert._neutral_pose(joints, convert._parse_animations(convert._Collada(str(body.neutral_clip))))
+    rig = load_rig(bundle / "rig" / f"{bundle.name}.rig")
     soles = convert._rig_soles(rig, joints, skinned)
     prov = external.ExternalPoseProvider(tuple(j.path for j in joints), np.array(neutral[0]), np.array(neutral[1]), rig)
-    sole = ground.Soles(prov._bone_parent, [s["joint"] for s in soles], np.array([s["point"] for s in soles]))
+    sole = ground.Soles(prov._bone_parent, [s["joint"] for s in soles], np.array([s["point"] for s in soles])) if soles else None
     index = {j.name: i for i, j in enumerate(joints)}
     joint_bone = {j: index[rows[0][0]] for j in rig.joints if (rows := rig.bones_of(j)) and rows[0][0] in index}
-    body = ActorPose(bundle)
     clock = 0.0
     for seed in range(10):
         angles = _random_angles(seed)
@@ -86,7 +73,7 @@ def test_positions_match_isaacs_wire_pose_provider(bundle: Path) -> None:
         for i, parent in enumerate(prov._bone_parent):
             R = quat_to_matrix(pose.rotations[i])
             W[i], P[i] = (R, np.array(pose.translations[i])) if parent < 0 else (W[parent] @ R, P[parent] + W[parent] @ np.array(pose.translations[i]))
-        lift = -sole.height(pose)
+        lift = 0.0 if sole is None else -sole.height(pose)
         mine = body.positions(angles)
         for joint, b in joint_bone.items():
             assert mine[joint] == pytest.approx(P[b] + np.array([0.0, 0.0, lift]), abs=1e-6), joint
@@ -136,20 +123,18 @@ def _skin_dae(feet: tuple[str, ...]) -> str:
         ankle, foot = world[f"{side}_ankle"], world[f"{side}_foot"]
         z = min(ankle[2], foot[2]) - 0.03
         verts += [(ankle[0] - 0.05, ankle[1], z, f"{side}_ankle"), (foot[0] + 0.05, foot[1], z, f"{side}_foot"), (ankle[0], ankle[1], z + 0.2, f"{side}_ankle")]
-    verts.append((0.0, 0.0, 1.0, "pelvis"))  # an unweighted vertex (vcount 0) is skipped
+    verts.append((0.0, 0.0, 1.0, "pelvis"))  # an unweighted vertex (vcount 0) belongs to no bone
     points = " ".join(f"{x:.9g} {y:.9g} {z:.9g}" for x, y, z, _ in verts)
     vcount = " ".join("0" if i == len(verts) - 1 else "1" for i in range(len(verts)))
     v = " ".join(f"{names.index(owner)} 0" for x, y, z, owner in verts[:-1])
     inv = " ".join(_m(-world[n]) for n in names)
     return f"""<?xml version="1.0"?><COLLADA xmlns="{NS}" version="1.4.1">
-<library_geometries><geometry id="mesh"><mesh><source id="mp"><float_array id="mpa">{points}</float_array></source>
+<library_geometries><geometry id="mesh"><mesh><source id="mp"><float_array id="mpa">{points}</float_array><technique_common><accessor source="#mpa" count="{len(verts)}" stride="3"/></technique_common></source>
 <vertices id="mv"><input semantic="POSITION" source="#mp"/></vertices></mesh></geometry></library_geometries>
 <library_controllers><controller id="c"><skin source="#mesh"><source id="jn"><Name_array>{" ".join(names)}</Name_array></source>
 <source id="ib"><float_array>{inv}</float_array></source><source id="w"><float_array>1</float_array></source>
 <joints><input semantic="JOINT" source="#jn"/><input semantic="INV_BIND_MATRIX" source="#ib"/></joints>
-<vertex_weights><input semantic="JOINT" source="#jn" offset="0"/><input semantic="WEIGHT" source="#w" offset="1"/><vcount>{vcount}</vcount><v>{v}</v></vertex_weights></skin></controller>
-<controller id="c2"><skin source="#mesh"><source id="jn2"><Name_array>pelvis</Name_array></source><source id="ib2"><float_array>{_m(-world["pelvis"])}</float_array></source>
-<joints><input semantic="JOINT" source="#jn2"/><input semantic="INV_BIND_MATRIX" source="#ib2"/></joints></skin></controller></library_controllers>
+<vertex_weights><input semantic="JOINT" source="#jn" offset="0"/><input semantic="WEIGHT" source="#w" offset="1"/><vcount>{vcount}</vcount><v>{v}</v></vertex_weights></skin></controller></library_controllers>
 <library_visual_scenes><visual_scene id="s"><node id="Armature">{node("pelvis")}</node></visual_scene></library_visual_scenes></COLLADA>"""
 
 
@@ -234,20 +219,12 @@ def test_a_broken_bundle_is_refused(tmp_path: Path) -> None:
         ActorPose(bundle)
     sdf.write_text(good_sdf)
     skin.write_text(good_skin.replace("<visual_scene", "<other_scene").replace("</visual_scene>", "</other_scene>"))
-    with pytest.raises(ValueError, match="visual_scene"):
+    with pytest.raises(ValueError, match="no visual scene"):
         ActorPose(bundle)
     skin.write_text(good_skin.replace(f"<matrix>{_m(PROP_REST)}</matrix>", ""))
-    with pytest.raises(ValueError, match="no <matrix>"):
+    with pytest.raises(ValueError, match="has no matrix"):
         ActorPose(bundle)
     skin.write_text(good_skin)
     rig.unlink()
     with pytest.raises(ValueError, match="no rig"):
         ActorPose(bundle)
-
-
-def test_quaternion_helpers_handle_the_degenerate_cases() -> None:
-    assert AP._qnorm(np.zeros(4)) == pytest.approx([0.0, 0.0, 0.0, 1.0])
-    assert AP._qpow(np.array([0.0, 0.0, 0.0, -1.0]), 0.5) == pytest.approx([0.0, 0.0, 0.0, 1.0])  # identity, either sign
-    half = AP._qpow(-np.array([0.0, 0.0, np.sin(0.5), np.cos(0.5)]), 0.5)  # the negated quaternion of the same turn
-    assert half == pytest.approx([0.0, 0.0, np.sin(0.25), np.cos(0.25)], abs=1e-12)
-    assert AP._quat(2.0 * np.eye(3)) == pytest.approx([0.0, 0.0, 0.0, 1.0])

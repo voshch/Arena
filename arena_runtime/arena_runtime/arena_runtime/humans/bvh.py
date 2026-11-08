@@ -13,6 +13,8 @@ import attrs
 import numpy as np
 from arena_simulation_setup.shared.body import joint_angles
 
+from arena_assets.utils.geom import axis_rotation, swing
+
 from .profile import JOINT_NAMES
 
 DEFAULT_FPS = 20.0
@@ -116,13 +118,6 @@ def parse(text: str) -> Motion:
     return Motion(joints=joints, frame_time=frame_time, values=values.reshape(frames, width))
 
 
-def _axis_rotation(axis: Sequence[float] | np.ndarray, angle: float) -> np.ndarray:
-    x, y, z = np.asarray(axis, dtype=float) / np.linalg.norm(axis)
-    c, s = math.cos(angle), math.sin(angle)
-    k = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
-    return np.eye(3) + s * k + (1.0 - c) * (k @ k)
-
-
 _CHANNEL_AXES = {"Xrotation": (1.0, 0.0, 0.0), "Yrotation": (0.0, 1.0, 0.0), "Zrotation": (0.0, 0.0, 1.0)}
 
 
@@ -136,7 +131,7 @@ def local_rotations(motion: Motion) -> dict[str, np.ndarray]:
         for k, channel in enumerate(joint.channels):
             if channel in _CHANNEL_AXES:
                 angles = np.radians(motion.values[:, col + k])
-                rot = rot @ np.stack([_axis_rotation(_CHANNEL_AXES[channel], a) for a in angles])
+                rot = rot @ axis_rotation(_CHANNEL_AXES[channel], angles)
         col += len(joint.channels)
         out[name] = rot
     return out
@@ -146,7 +141,7 @@ def _heading(rot: np.ndarray) -> np.ndarray:
     """Rotation about the vertical (BVH +y) that turns +z onto the horizontal part of rot's +z."""
     forward = rot[:, 2]
     yaw = math.atan2(forward[0], forward[2])
-    return _axis_rotation((0.0, 1.0, 0.0), yaw)
+    return axis_rotation((0.0, 1.0, 0.0), yaw)
 
 
 def upright_worlds(motion: Motion, rotations: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -160,18 +155,6 @@ def upright_worlds(motion: Motion, rotations: Mapping[str, np.ndarray]) -> dict[
     return worlds
 
 
-def _align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
-    """The smallest rotation turning direction source onto direction target, none when either has no length."""
-    if np.linalg.norm(source) < 1e-9 or np.linalg.norm(target) < 1e-9:
-        return np.eye(3)
-    a, b = source / np.linalg.norm(source), target / np.linalg.norm(target)
-    axis = np.cross(a, b)
-    s = float(np.linalg.norm(axis))
-    if s < 1e-9:
-        return np.eye(3)
-    return _axis_rotation(axis, math.atan2(s, float(np.dot(a, b))))
-
-
 def _hang_legs(bind: BindPose) -> BindPose:
     """The pose with each thigh and shank swung to hang straight down from its hip and each foot keeping its orientation, the wire's leg zero."""
     orientations, positions = dict(bind.orientations), dict(bind.positions)
@@ -183,7 +166,7 @@ def _hang_legs(bind: BindPose) -> BindPose:
         turn = np.eye(3)
         for bone, child in zip(names, names[1:], strict=False):
             reach = turn @ (bind.positions[child] - bind.positions[bone])
-            turn = _align(reach, down) @ turn
+            turn = swing(reach, down) @ turn
             orientations[bone] = turn @ bind.orientations[bone]
             positions[child] = positions[bone] + float(np.linalg.norm(reach)) * down
     return BindPose(orientations=orientations, positions=positions)
@@ -216,7 +199,7 @@ def bone_targets(motion: Motion, bind: BindPose, bones: Sequence[str]) -> dict[s
     out: dict[str, np.ndarray] = {}
     for bone in bones:
         child = next((c for c in motion.joints[bone].children if c in bind.positions), None)
-        align = np.eye(3) if child is None else _align(bind.positions[child] - bind.positions[bone], np.array(motion.joints[child].offset))
+        align = np.eye(3) if child is None else swing(bind.positions[child] - bind.positions[bone], np.array(motion.joints[child].offset))
         out[bone] = worlds[bone] @ align @ bind.orientations[bone]
     return out
 

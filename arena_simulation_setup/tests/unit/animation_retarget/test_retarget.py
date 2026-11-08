@@ -13,11 +13,12 @@ import torch
 import yaml
 from scipy.spatial.transform import Rotation
 
+from arena_assets.utils.geom import axis_rotation
 from arena_simulation_setup.adapters.arena_animation_retarget import fidelity, load, load_clip, retarget, retarget_batch, write_clip
 from arena_simulation_setup.adapters.arena_animation_retarget.contract import SK, WIRE
 from arena_simulation_setup.adapters.arena_animation_retarget.fk_torch import ContractFK
 from arena_simulation_setup.adapters.arena_animation_retarget.ik import HARD_LIMITS
-from arena_simulation_setup.adapters.arena_animation_retarget.retarget import _rot, heading, prepare, resample
+from arena_simulation_setup.adapters.arena_animation_retarget.retarget import heading, prepare, resample
 from arena_simulation_setup.adapters.arena_animation_retarget.smplx import BODY_TO_ROS, REST_OFFSETS, J, Motion, forward_kinematics, rest_offsets_from_model
 
 from arena_simulation_setup.shared.body import BODY_JOINTS, forward, load_template
@@ -247,7 +248,7 @@ def test_the_body_track_keeps_every_bone_on_its_source_direction():
     motion = load_motion(_locals(30, 12), _root(30))
     prep = prepare(motion)
     template = load_template()
-    base = _rot(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
+    base = axis_rotation(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
     children = {"pelvis": "spine1", "spine3": "neck"}
     pairs = [(parent, children.get(parent, joint)) for joint, parent in template.parents.items() if parent is not None and joint in BODY_JOINTS]
     for frame in range(0, 30, 7):
@@ -264,7 +265,7 @@ def test_the_wrist_deviation_keeps_the_hand_on_its_source_direction():
     T = 40
     motion = load_motion(_locals(T, 7, 0.5), _root(T))
     prep = prepare(motion)
-    base = _rot(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
+    base = axis_rotation(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
     body = SK.Body(1.75)
     err = {1.0: [], 0.0: [], -1.0: []}
     for t in range(T):

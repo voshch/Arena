@@ -45,6 +45,7 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import least_squares
 
+from arena_assets.utils.geom import unit
 from arena_simulation_setup.shared.actor_pose import ActorPose, TemplatePose
 from arena_simulation_setup.shared.body import DEFAULT_STANCE
 
@@ -122,10 +123,6 @@ def load_body(spec: str | Path | None) -> tuple[Callable[[Mapping[str, float]], 
     return body.positions, body.stance, path.name
 
 
-def _unit(v: np.ndarray) -> np.ndarray:
-    return v / np.linalg.norm(v)
-
-
 def _gait_phase(lead: np.ndarray) -> np.ndarray:
     """Phase (rad) per frame, 0 at each right heel strike: the frames where the right ankle leads the left the most."""
     n = len(lead)
@@ -175,7 +172,7 @@ def apply(clip: Clip, hold: Hold, body: str | Path | None = None, verbose: bool 
             lg = p["length"] - p["grip_at"]
             dz, dy = g[2] - tz, ty - g[1]
             tip = np.array([g[0] + math.sqrt(max(1e-6, lg * lg - dz * dz - dy * dy)), ty, tz])
-            return {s: (g, _unit(tip - g), False, np.array([0.0, -0.7 * mirror[s], -0.7]))}  # palm toward the midline and down
+            return {s: (g, unit(tip - g), False, np.array([0.0, -0.7 * mirror[s], -0.7]))}  # palm toward the midline and down
         if hold.task == "iv":
             s = sides[0]
             down = np.array([0.0, 0.0, -1.0])  # thumb up: the fist axis (index -> little finger) points down the pole, either hand
@@ -192,7 +189,7 @@ def apply(clip: Clip, hold: Hold, body: str | Path | None = None, verbose: bool 
 
     def forearm_deg(q: Mapping[str, np.ndarray], s: str, ax: np.ndarray) -> float:
         w = "left" if s == "l" else "right"
-        return math.degrees(math.acos(max(-1.0, min(1.0, float(_unit(q[f"{w}_wrist"] - q[f"{w}_elbow"]) @ ax)))))
+        return math.degrees(math.acos(max(-1.0, min(1.0, float(unit(q[f"{w}_wrist"] - q[f"{w}_elbow"]) @ ax)))))
 
     def axis_err(f: object, ax: np.ndarray, free: bool) -> float:
         a = f.axis(angle)  # type: ignore[attr-defined]
@@ -215,17 +212,17 @@ def apply(clip: Clip, hold: Hold, body: str | Path | None = None, verbose: bool 
                 r.extend((f.grip(radius, angle) - g) / 0.004)
                 ax_f = f.axis(angle)
                 r.extend((np.cross(ax_f, ax) if free else (math.copysign(1.0, angle) * ax_f - ax)) / 0.02)
-                r.append((1.0 - float(f.palm @ _unit(palm_dir))) / 0.5)
+                r.append((1.0 - float(f.palm @ unit(palm_dir))) / 0.5)
                 if cane:
                     r.append(max(0.0, forearm_deg(q, s, ax) - p["fa"]) / 3.0)
                 if p.get("elbowdir"):
                     w_ = "left" if s == "l" else "right"
                     sh, el, wr = q[f"{w_}_shoulder"], q[f"{w_}_elbow"], q[f"{w_}_wrist"]
-                    line = _unit(wr - sh)
+                    line = unit(wr - sh)
                     off = (el - sh) - float((el - sh) @ line) * line
-                    want = _unit(np.array([-1.0, p.get("elbowout", 0.35) * mirror[s], 0.0]))
-                    want = _unit(want - float(want @ line) * line)
-                    r.append((1.0 - float(_unit(off) @ want)) / 0.15 * p["elbowdir"])
+                    want = unit(np.array([-1.0, p.get("elbowout", 0.35) * mirror[s], 0.0]))
+                    want = unit(want - float(want @ line) * line)
+                    r.append((1.0 - float(unit(off) @ want)) / 0.15 * p["elbowdir"])
             if p.get("comfort"):
                 for s in tg:
                     r.append(max(0.0, p.get("elbow", 0.35) - a[f"{s}_elbow"]) / 0.1)

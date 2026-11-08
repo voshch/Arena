@@ -43,6 +43,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from arena_assets.utils.geom import axis_rotation
+
 from . import contract as C
 from . import skeleton as S
 
@@ -332,7 +334,7 @@ def _solve_wire_triple(collar_r: np.ndarray, u: np.ndarray, f: np.ndarray, bend:
 def _arm_positions(shoulder: np.ndarray, collar_r: np.ndarray, y: float, p: float, r: float, bend: float, body: S.Body) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     s_r = collar_r @ S.arm_rot(y, p, r)
     el = shoulder + body.upperarm * (s_r @ S.DOWN)
-    f_r = s_r @ S.rot_axis(S.ELBOW_AXIS, bend)
+    f_r = s_r @ axis_rotation(S.ELBOW_AXIS, bend)
     wr = el + body.forearm * (f_r @ S.DOWN)
     return el, wr, f_r @ S.DOWN
 
