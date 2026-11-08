@@ -159,7 +159,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="[]",
         description="YAML list of world-independent sound entities (radios, alarms), same Sound schema as world.yaml sounds. Non-empty enables the sounds module even with acoustics:=none, where nothing hears them.",
     )
-    robot = LaunchArgument(name="robot", default_value="auto")
+    robot = LaunchArgument(name="robot", default_value="auto", description="robot model of the env, auto picks one that fits the planner")
     tm_config = LaunchArgument(
         name=mode_param("config"),
         default_value="",
@@ -188,7 +188,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         description="Task runtime: an entry point name of the arena_runtime.task_layer group. Empty = $ARENA_TASK_LAYER, else task_generator.",
     )
     LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""))
-    world = LaunchArgument(name="world", default_value="map_empty")
+    world = LaunchArgument(name="world", default_value="map_empty", description="world the env starts in")
     world_lighting = LaunchArgument(
         name="world.lighting",
         default_value="authored",

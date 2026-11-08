@@ -8,13 +8,8 @@ import traceback
 import typing
 from collections.abc import Mapping, Sequence
 
-import arena_robots.Robot
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
-import arena_simulation_setup.tree.assets.Human
-import arena_simulation_setup.tree.assets.Object
-import arena_simulation_setup.tree.configs.environment
-import arena_simulation_setup.tree.configs.parametrized
 import arena_simulation_setup.tree.World as World
 import attrs
 import rclpy
@@ -37,6 +32,7 @@ from rclpy.impl.implementation_singleton import rclpy_implementation
 from rclpy.lifecycle import TransitionCallbackReturn
 
 from arena_runtime.acoustics import AcousticsSimulatorRegistry, BaseAcousticsSimulator
+from arena_runtime.env.catalogs import LISTERS
 from arena_runtime.env.colors import RobotColors
 from arena_runtime.env.constants import Constants
 from arena_runtime.env.constants.runtime import Configuration, migrate_deprecated_params
@@ -55,7 +51,6 @@ from arena_runtime.static_tf import StaticTransformBroadcaster
 
 if typing.TYPE_CHECKING:
     from arena_rclpy_mixins.node import AiomonitorConfig
-    from arena_simulation_setup.tree import Identifier
     from std_srvs.srv import Trigger
 
     from arena_runtime.env.adapters import AdapterDisplayHint
@@ -73,14 +68,6 @@ _LATCHED = rclpy.qos.QoSProfile(
 _SIM_TICK_RATE = 30.0
 _ONE_TICK = 1e-6
 _STEP_TIMEOUT = 10.0
-
-
-def _available(identifier: type[Identifier]) -> list[str]:
-    return [item.shortname for item in identifier.listall()]
-
-
-async def _available_async(identifier: type[Identifier], **kwargs: bool) -> list[str]:
-    return [item.shortname for item in await identifier.listall_async(**kwargs)]
 
 
 class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, metaclass=abc.ABCMeta):
@@ -1004,7 +991,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         request: arena_runtime_msgs.srv.QueryWorlds.Request,
         response: arena_runtime_msgs.srv.QueryWorlds.Response,
     ) -> arena_runtime_msgs.srv.QueryWorlds.Response:
-        response.ids = _available(World.WorldIdentifier)
+        response.ids = await LISTERS["worlds"]("")
         return response
 
     async def _cb_query_robots(
@@ -1012,7 +999,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         request: arena_runtime_msgs.srv.QueryRobots.Request,
         response: arena_runtime_msgs.srv.QueryRobots.Response,
     ) -> arena_runtime_msgs.srv.QueryRobots.Response:
-        response.ids = _available(arena_robots.Robot.RobotIdentifier)
+        response.ids = await LISTERS["robots"]("")
         return response
 
     async def _cb_query_static_obstacles(
@@ -1020,7 +1007,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         request: arena_runtime_msgs.srv.QueryStaticObstacles.Request,
         response: arena_runtime_msgs.srv.QueryStaticObstacles.Response,
     ) -> arena_runtime_msgs.srv.QueryStaticObstacles.Response:
-        response.ids = await _available_async(arena_simulation_setup.tree.assets.Object.ObjectIdentifier, network=True)
+        response.ids = await LISTERS["static_obstacles"]("")
         return response
 
     async def _cb_query_dynamic_obstacles(
@@ -1028,10 +1015,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         request: arena_runtime_msgs.srv.QueryDynamicObstacles.Request,
         response: arena_runtime_msgs.srv.QueryDynamicObstacles.Response,
     ) -> arena_runtime_msgs.srv.QueryDynamicObstacles.Response:
-        response.ids = await _available_async(
-            arena_simulation_setup.tree.assets.Human.HumanIdentifier,
-            network=True,
-        )
+        response.ids = await LISTERS["dynamic_obstacles"]("")
         return response
 
     async def _cb_query_environments(
@@ -1039,7 +1023,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         request: arena_runtime_msgs.srv.QueryEnvironments.Request,
         response: arena_runtime_msgs.srv.QueryEnvironments.Response,
     ) -> arena_runtime_msgs.srv.QueryEnvironments.Response:
-        response.ids = _available(arena_simulation_setup.tree.configs.environment.EnvironmentIdentifier)
+        response.ids = await LISTERS["environments"]("")
         return response
 
     async def _cb_query_parametrizeds(
@@ -1047,7 +1031,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         request: arena_runtime_msgs.srv.QueryParametrizeds.Request,
         response: arena_runtime_msgs.srv.QueryParametrizeds.Response,
     ) -> arena_runtime_msgs.srv.QueryParametrizeds.Response:
-        response.ids = _available(arena_simulation_setup.tree.configs.parametrized.ParametrizedIdentifier)
+        response.ids = await LISTERS["parametrizeds"]("")
         return response
 
     async def _cb_require_map(

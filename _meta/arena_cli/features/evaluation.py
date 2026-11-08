@@ -66,6 +66,12 @@ def console(argv: list[str]) -> None:
     common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "console", *argv)
 
 
+def serve(argv: list[str]) -> None:
+    """serve the live web dashboard of benchmark runs on http://127.0.0.1:8765 until Ctrl-C (--port, --host, --data-root, --run-id)"""
+    common._reg_require(NAME)
+    common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "serve", *argv)
+
+
 def acoustic(argv: list[str]) -> None:
     """acoustic field visualization (list, animate, snapshot)"""
     common._reg_require(NAME)
@@ -119,6 +125,7 @@ COMMANDS: dict[str, Verb] = {
         make_verb("ps", ps_, passthrough=True),
         make_verb("kill", kill, passthrough=True),
         make_verb("console", console, passthrough=True),
+        make_verb("serve", serve, passthrough=True),
         make_verb("extract", extract, passthrough=True),
         make_verb("run", run, passthrough=True),
         make_verb("process", process, passthrough=True),

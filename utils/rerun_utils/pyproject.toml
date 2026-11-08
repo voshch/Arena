@@ -5,7 +5,7 @@ dependencies = [
     "numpy",
     "rerun-sdk>=0.38",
 ]
-dynamic = ["description", "license", "maintainers", "scripts"]
+dynamic = ["description", "license", "maintainers", "scripts", "entry-points"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

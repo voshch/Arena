@@ -39,6 +39,16 @@ The bridge follows the same lifecycle as `rviz_utils`:
 7. Each renderer creates a ROS subscription on the bridge node; callbacks
    call `rr.log(...)`.
 
+## MCP tools
+
+The package registers the `viz` MCP domain (`rerun_utils/mcp.py`, entry point `arena_mcp.domains`), which runs the same launch file for an env without a terminal:
+
+- `viz_rerun_start(env_id=None, web_port=0, grpc_port=0)` starts the bridge of the env's task generator detached in its own process group, logging to `$ROS_LOG_DIR/rerun_view_env_<id>_<time>.log`. A port of 0 picks a free one. It returns once the web port accepts connections: `{env_id, ns, pid, web_port, grpc_port, url, started}`. A live view is returned unchanged with `started: false`.
+- `viz_rerun_stop(env_id=None)` sends SIGINT to the group, then SIGTERM and SIGKILL after the reaper grace windows: `{env_id, stopped}`.
+- `viz_rerun_list()` returns `{views: [{env_id, ns, pid, web_port, grpc_port, url, alive}]}`.
+
+`url` is `http://127.0.0.1:<web>/?url=rerun%2Bhttp%3A%2F%2F127.0.0.1%3A<grpc>%2Fproxy`, the form the bridge logs. Views are one JSON file per env under `/tmp/arena-viz/<ROS_DOMAIN_ID>/`, so the MCP server, the CLI and the dashboard share them, and a file whose process is gone is dropped when read. Both this domain and `arena viz backend:=rerun` build the launch command with `arena_bringup.viz_backends.rerun_launch_argv`.
+
 ## Renderer registry
 
 One module per `DisplayKind`, registered via decorator:

@@ -5,7 +5,7 @@ from typing import Annotated
 import pytest
 from pydantic import Field
 
-from arena_mcp.core.domain import Domain
+from arena_mcp.core.domain import Domain, tool_spec
 
 
 def test_tool_names_carry_the_domain_prefix():
@@ -43,6 +43,7 @@ def test_annotations_follow_the_flags():
     assert read.annotations.read_only_hint and read.annotations.idempotent_hint and not read.annotations.destructive_hint
     assert push.annotations.destructive_hint and push.annotations.open_world_hint and not push.annotations.read_only_hint
     assert read.summary == "Reads."
+    assert tool_spec(demo_push) is push
 
 
 def test_resources_live_under_the_domain_uri():
