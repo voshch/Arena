@@ -124,7 +124,7 @@ class PointTable:
         weights /= weights.sum()
         idx = [(ia, ie) for ia, ie, _ in corners]
         linear = sum(w * self.linear[s, ia, ie] for (ia, ie), w in zip(idx, weights, strict=True))
-        q = sum(w * a for a, w in zip(aligned, weights, strict=True))
+        q = np.sum([w * a for a, w in zip(aligned, weights, strict=True)], axis=0)
         r_shoulder = Orientation(*q).to_matrix()
         sw = complex(0.0)
         for (ia, ie), w in zip(idx, weights, strict=True):
