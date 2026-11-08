@@ -190,7 +190,7 @@ class GoToPhase(TaskPhase):
 
 @attrs.define
 class ReachPhase(TaskPhase):
-    """Move an arm to a pose in `frame`, to a named configuration, or to a random workspace sample."""
+    """Move an arm to a pose in `frame` (a robot frame, an episode object or `<object>/<link>`), to a named configuration, or to a random workspace sample."""
 
     kind: typing.ClassVar[str] = "reach_pose"
     MOTIONS: typing.ClassVar[tuple[str, ...]] = ("free", "linear")
