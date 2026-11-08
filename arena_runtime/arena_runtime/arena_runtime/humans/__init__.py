@@ -536,11 +536,20 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._logger.warning(f"agent type {agent_type!r} not found, using the default pose profile")
                 return default_profile()
             profile = resolve_pose_profile(section)
-            held_pose(profile.hold)
-            return profile
         except (ValueError, OSError, yaml.YAMLError) as e:
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()
+        try:
+            held_pose(profile.hold)
+        except Exception as e:  # noqa: BLE001  (a grip that cannot be solved keeps the locomotion profile)
+            self._logger.warning(f"agent type {agent_type!r} grip rejected ({e}), its hands stay unheld")
+            return attrs.evolve(profile, hold={})
+        return profile
+
+    def preload_pose_profiles(self, agent_types: Iterable[str]) -> None:
+        """Resolve pose profiles before the publish tick, which only reads them (a held grip is solved once per type)."""
+        for agent_type in set(agent_types):
+            self._pose_profile_for(agent_type)
 
     def held_seats(self) -> dict[str, list[int]]:
         """Indices into each object's annotated sit slots that agents hold, by object sim path."""

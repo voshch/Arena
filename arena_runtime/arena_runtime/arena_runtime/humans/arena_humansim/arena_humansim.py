@@ -631,6 +631,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Latest agent type per engine agent."""
         types = msg.agent_type if len(msg.agent_type) == len(msg.agent_id) else [""] * len(msg.agent_id)
         self._agent_types = dict(zip(msg.agent_id, types, strict=True))
+        self.preload_pose_profiles(self._agent_type_of(agent_id) for agent_id in msg.agent_id)
 
     def _remember_agent_type_path(self, agent_type: str) -> None:
         """File a path-based agent type under the name the engine reports for it."""
