@@ -247,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         sols = [p.init for p in preps] if a.method == "none" else ik.solve(preps, cfg, device=str(dev), chunk_frames=a.chunk_frames)
         say(f"  solved {len(preps)} clips / {n} frames in {time.time() - t:.1f} s")
         unheld = 0
+        written = 0
         for (i, p), s in zip(pending, sols, strict=True):
             clip = resample(p, s, a.fps)
             note = " ".join(x for x in (a.note, f"method {a.method}.") if x)
@@ -264,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
                 note = f"{note} Arms re-solved to hold a prop ({rep['task']}, on {rep['body']})."
                 say(f"  hold {rep['task']} on {rep['body']}: grip error mm mean/p95 {rep['grip_mm']}, axis deg {rep['axis_deg']}, curls {rep['curls']} ({time.time() - th:.0f} s)")
             d = write_clip(clip, a.out, names[i], loop=a.loop, desc=a.desc, tags=a.tags, note=note, extra=extra)
+            written += len(p)
             row = {"name": names[i], "src": str(files[i]), "frames": len(clip.t), "seconds": round(clip.duration, 3)}
             if not a.no_score:
                 sc = fidelity.score(None, clip, prep=p)
@@ -276,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
                 say(d)
             rows.append(row)
         done += len(pending) - unheld
-        frames += n
+        frames += written
         pending.clear()
 
     jobs = [(i, files[i], a.up, a.fps_in, a.model, not a.no_fold) for i in todo]
