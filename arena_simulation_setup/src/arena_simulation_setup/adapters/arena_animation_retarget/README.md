@@ -1,6 +1,6 @@
 # arena_animation_retarget
 
-Retargets SMPL-X body motion onto Arena's 40-DOF human wire, producing clips for
+Retargets SMPL-X body motion onto Arena's 42-DOF human wire, producing clips for
 `arena_simulation_setup/assets/Common/Animation`. Sources include text-to-motion output from Kimodo and AMASS-style SMPL-X parameter files. Conversion has two stages: a rotation retarget, then whole-body IK solved as one batch on the GPU. An optional third (`--hold`) re-solves the arms so a hand holds a prop.
 
 ```bash

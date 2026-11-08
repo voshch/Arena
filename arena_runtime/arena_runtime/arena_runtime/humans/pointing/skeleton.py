@@ -1,7 +1,7 @@
-"""Forward kinematics and collision proxies for the 40-DOF human.
+"""Forward kinematics and collision proxies for the 42-DOF human.
 
 Bone lengths as a function of ``height``, joint axes and chain order of the
-40-DOF wire skeleton.  Shoulder triples are interpreted in the **wire (anatomical)**
+42-DOF wire skeleton.  Shoulder triples are interpreted in the **wire (anatomical)**
 convention of JOINTS.md section 1a, i.e. ``Rz(y) R((0,-1,0), p) R((0,0,-1), r)``
 relative to the collar frame -- identical to convert_v2's ``SPEC_ARM``.
 

@@ -1,4 +1,4 @@
-"""Wire-contract constants (JOINTS.md v4, 40 DOF) as the PointAt generator needs them."""
+"""Wire-contract constants (JOINTS.md v6, 42 DOF) as the PointAt generator needs them."""
 
 from __future__ import annotations
 
