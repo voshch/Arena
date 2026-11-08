@@ -167,6 +167,17 @@ async def _silent_ready_env_is_swept(rig: Rig) -> None:
     await _evicted(rig, fleet, env, "heartbeat_timeout")
 
 
+async def _registered_env_whose_node_left_before_its_first_heartbeat_is_swept(rig: Rig) -> None:
+    from arena_runtime_msgs.msg import Heartbeat
+
+    fleet = _Fleet(rig)
+    await fleet.ready()
+    env = await fleet.register()
+    heartbeat = await fleet._publisher(Heartbeat, f"/{env.ns}/state/heartbeat")
+    rig.probe.destroy_publisher(heartbeat)
+    await _evicted(rig, fleet, env, "process_exited")
+
+
 async def _holds_pause_until_the_last_release(rig: Rig) -> None:
     fleet = _Fleet(rig)
     first = await fleet.hold("/a", "test", acquire=True)
@@ -189,6 +200,7 @@ async def _holds_pause_until_the_last_release(rig: Rig) -> None:
         _despawn_requests_a_shutdown,
         _finalized_env_is_evicted_and_loses_its_holds,
         _silent_ready_env_is_swept,
+        _registered_env_whose_node_left_before_its_first_heartbeat_is_swept,
         _holds_pause_until_the_last_release,
     ],
     ids=lambda scenario: scenario.__name__.lstrip("_"),

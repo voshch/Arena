@@ -30,7 +30,7 @@ HINGE_MAX_ANGLE = math.pi / 2.0
 
 Disc = tuple[str, tuple[float, float], float]
 Segment = tuple[tuple[float, float], tuple[float, float]]
-DoorKind = typing.Literal['sliding', 'teleport', 'sliding_top', 'hinged']
+DoorKind = typing.Literal['sliding', 'sliding_split', 'teleport', 'sliding_top', 'hinged']
 
 _DOOR_AXES: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
     '+x': ((1.0, 0.0), (0.0, 1.0)),
@@ -52,7 +52,7 @@ def _door_basis(elevator: Elevator) -> tuple[float, float, tuple[float, float], 
 
 def _door_slot(elevator: Elevator) -> tuple[Position, Position]:
     face_cx, face_cy, outward, tangent, tan_extent = _door_basis(elevator)
-    slot_half = tan_extent - DOOR_INSET
+    slot_half = tan_extent - WALL_THICKNESS / 2.0
     cx = face_cx - outward[0] * DOOR_INSET
     cy = face_cy - outward[1] * DOOR_INSET
     z = elevator.position.z
@@ -330,6 +330,8 @@ def _effective_kind(
         return 'teleport'
     if door.kind == 'sliding_top':
         return 'sliding_top'
+    if door.kind == 'sliding_split':
+        return 'sliding_split'
     return 'sliding'
 
 
@@ -346,6 +348,49 @@ def _door_geometry(door: Door) -> tuple[tuple[float, float, float], Pose]:
         position=Position(x=cx, y=cy, z=cz),
         orientation=Orientation.from_yaw(yaw),
     )
+
+
+def _leaf_geometry(door: Door, effective_kind: str) -> tuple[tuple[float, float, float], Pose]:
+    """Return (size, closed_pose) of the moving box: the whole span, or the start half for a split door."""
+    size, closed_pose = _door_geometry(door)
+    if effective_kind != 'sliding_split':
+        return size, closed_pose
+    length, width, height = size
+    yaw = closed_pose.orientation.to_yaw()
+    return (length / 2.0, width, height), Pose(
+        position=Position(
+            x=closed_pose.position.x - math.cos(yaw) * length / 4.0,
+            y=closed_pose.position.y - math.sin(yaw) * length / 4.0,
+            z=closed_pose.position.z,
+        ),
+        orientation=closed_pose.orientation,
+    )
+
+
+def _leaf_names(name: str, effective_kind: str) -> list[str]:
+    """Box names of a door: `<name>`, or `<name>_a` (start half) and `<name>_b` (end half) for a split door."""
+    return [f'{name}_a', f'{name}_b'] if effective_kind == 'sliding_split' else [name]
+
+
+def _mirrored(door: Door, pose: Pose) -> Pose:
+    """Pose point-mirrored through the span midpoint, keeping height and orientation."""
+    return Pose(
+        position=Position(
+            x=door.start.x + door.end.x - pose.position.x,
+            y=door.start.y + door.end.y - pose.position.y,
+            z=pose.position.z,
+        ),
+        orientation=pose.orientation,
+    )
+
+
+def _leaf_poses(name: str, runtime: _DoorRuntime) -> dict[str, Pose]:
+    """Box name to pose at runtime.progress, the end-half leaf of a split door mirrors the start half."""
+    pose = _interp_pose(runtime)
+    if runtime.effective_kind != 'sliding_split':
+        return {name: pose}
+    first, second = _leaf_names(name, runtime.effective_kind)
+    return {first: pose, second: _mirrored(runtime.door, pose)}
 
 
 def _hinge_angle(door: Door, progress: float) -> float:
@@ -369,7 +414,7 @@ def _hinged_pose(door: Door, closed_pose: Pose, progress: float) -> Pose:
 
 
 def _door_open_pose(door: Door, closed_pose: Pose, effective_kind: str) -> Pose:
-    """Return the fully-open pose for a door (Z-drop for teleport, axis-slide for sliding, 90 deg for hinged)."""
+    """Return the fully-open pose for a door (Z-drop for teleport, axis-slide for sliding, half-span slide back past start for the start leaf of a split door, 90 deg for hinged)."""
     if effective_kind == 'hinged':
         return _hinged_pose(door, closed_pose, 1.0)
     if effective_kind == 'teleport':
@@ -398,10 +443,11 @@ def _door_open_pose(door: Door, closed_pose: Pose, effective_kind: str) -> Pose:
         return closed_pose
     ux = (ex - sx) / length
     uy = (ey - sy) / length
+    travel = -length / 2.0 if effective_kind == 'sliding_split' else length
     return Pose(
         position=Position(
-            x=closed_pose.position.x + ux * length,
-            y=closed_pose.position.y + uy * length,
+            x=closed_pose.position.x + ux * travel,
+            y=closed_pose.position.y + uy * travel,
             z=closed_pose.position.z,
         ),
         orientation=closed_pose.orientation,
@@ -415,7 +461,7 @@ def _elevator_synthesized_door(elevator: Elevator) -> Door:
         name=f'{elevator.name}/door',
         start=start,
         end=end,
-        kind='sliding',
+        kind=elevator.door_kind,
         width=CABIN_DOOR_WIDTH,
         height=elevator.size[2],
         activation_distance=ActivationDistance((elevator.activation_distance, elevator.activation_distance)),
@@ -493,53 +539,51 @@ def _swept_arc_blocked(door: Door, p_from: float, p_to: float, discs: Sequence[D
     return False
 
 
-def _swept_slab_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
-    """True when the slab band swept between the two progress values overlaps any agent disc.
-    Vertical kinds (teleport, sliding_top) occupy the slot itself regardless of progress,
-    hinged doors sweep a sector about their start point."""
-    door = runtime.door
-    if runtime.effective_kind == 'hinged':
-        return _swept_arc_blocked(door, p_from, p_to, discs)
+def _band_blocked(door: Door, bands: Sequence[tuple[float, float]], discs: Sequence[Disc]) -> bool:
+    """True when any agent disc overlaps a slab-wide band along the span, each band (from, to) in span lengths from start."""
     sx, sy = door.start.x, door.start.y
     ex, ey = door.end.x, door.end.y
     length = math.hypot(ex - sx, ey - sy)
     if length <= 0.0 or not discs:
         return False
     ux, uy = (ex - sx) / length, (ey - sy) / length
-    lo, hi = (0.0, 0.0) if runtime.effective_kind != 'sliding' else (min(p_from, p_to) * length, max(p_from, p_to) * length)
-    cx = (sx + ex) / 2.0 + ux * (lo + hi) / 2.0
-    cy = (sy + ey) / 2.0 + uy * (lo + hi) / 2.0
-    half_l = length / 2.0 + (hi - lo) / 2.0
     half_w = door.width / 2.0
-    for _name, (x, y), radius in discs:
-        dx, dy = x - cx, y - cy
-        along = abs(dx * ux + dy * uy)
-        across = abs(-dx * uy + dy * ux)
-        if math.hypot(max(along - half_l, 0.0), max(across - half_w, 0.0)) <= radius:
-            return True
+    for a0, a1 in bands:
+        along_center = length * (a0 + a1) / 2.0
+        cx, cy = sx + ux * along_center, sy + uy * along_center
+        half_l = length * abs(a1 - a0) / 2.0
+        for _name, (x, y), radius in discs:
+            dx, dy = x - cx, y - cy
+            along = abs(dx * ux + dy * uy)
+            across = abs(-dx * uy + dy * ux)
+            if math.hypot(max(along - half_l, 0.0), max(across - half_w, 0.0)) <= radius:
+                return True
     return False
+
+
+def _swept_slab_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
+    """True when the slab band swept between the two progress values overlaps any agent disc.
+    Vertical kinds (teleport, sliding_top) occupy the slot itself regardless of progress,
+    hinged doors sweep a sector about their start point, each leaf of a split door sweeps
+    its own band."""
+    door = runtime.door
+    if runtime.effective_kind == 'hinged':
+        return _swept_arc_blocked(door, p_from, p_to, discs)
+    lo, hi = min(p_from, p_to), max(p_from, p_to)
+    if runtime.effective_kind == 'sliding':
+        return _band_blocked(door, [(lo, 1.0 + hi)], discs)
+    if runtime.effective_kind == 'sliding_split':
+        return _band_blocked(door, [(-hi / 2.0, 0.5 - lo / 2.0), (0.5 + lo / 2.0, 1.0 + hi / 2.0)], discs)
+    return _band_blocked(door, [(0.0, 1.0)], discs)
 
 
 def _sliding_entry_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
-    """True when the pocket band a sliding slab enters past the door end between the two progress values overlaps any agent disc."""
-    door = runtime.door
-    sx, sy = door.start.x, door.start.y
-    ex, ey = door.end.x, door.end.y
-    length = math.hypot(ex - sx, ey - sy)
-    if length <= 0.0 or not discs or p_to <= p_from:
+    """True when a wall pocket a sliding slab enters between the two progress values overlaps any agent disc: past the end, or past both ends for a split door."""
+    if p_to <= p_from:
         return False
-    ux, uy = (ex - sx) / length, (ey - sy) / length
-    along_center = length * (1.0 + (p_from + p_to) / 2.0)
-    cx, cy = sx + ux * along_center, sy + uy * along_center
-    half_l = (p_to - p_from) * length / 2.0
-    half_w = door.width / 2.0
-    for _name, (x, y), radius in discs:
-        dx, dy = x - cx, y - cy
-        along = abs(dx * ux + dy * uy)
-        across = abs(-dx * uy + dy * ux)
-        if math.hypot(max(along - half_l, 0.0), max(across - half_w, 0.0)) <= radius:
-            return True
-    return False
+    if runtime.effective_kind == 'sliding_split':
+        return _band_blocked(runtime.door, [(-p_to / 2.0, -p_from / 2.0), (1.0 + p_from / 2.0, 1.0 + p_to / 2.0)], discs)
+    return _band_blocked(runtime.door, [(1.0 + p_from, 1.0 + p_to)], discs)
 
 
 def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence[Disc]) -> None:
@@ -568,7 +612,7 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
         next_progress = min(1.0, runtime.progress + step)
         if runtime.effective_kind == 'hinged' and _swept_slab_blocked(runtime, runtime.progress, next_progress, discs):
             return
-        if runtime.effective_kind == 'sliding' and _sliding_entry_blocked(runtime, runtime.progress, next_progress, discs):
+        if runtime.effective_kind in ('sliding', 'sliding_split') and _sliding_entry_blocked(runtime, runtime.progress, next_progress, discs):
             return
         runtime.progress = next_progress
         if runtime.progress >= 1.0:
@@ -864,7 +908,7 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
         _advance_state(runtime, dt, now, discs)
         if runtime.progress != runtime.last_applied_progress:
             runtime.last_applied_progress = runtime.progress
-            pending.append(mech.move_box(name, _interp_pose(runtime)))
+            pending.extend(mech.move_box(leaf, pose) for leaf, pose in _leaf_poses(name, runtime).items())
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
     _check_door_conflicts(mech)
@@ -1064,17 +1108,20 @@ async def shim_spawn_doors(mech: MechanismITF, doors: Sequence[Door]) -> bool:
     logger = mech.node.get_logger()
     for door in doors:
         kind = _effective_kind(logger, door)
-        size, closed_pose = _door_geometry(door)
-        open_pose = _door_open_pose(door, closed_pose, kind)
-        if await mech.spawn_box(door.name, size, closed_pose, door.material):
-            mech._door_primitives[door.name] = [door.name]
-            mech._door_runtime[door.name] = _DoorRuntime(
-                door=door,
-                closed_pose=closed_pose,
-                open_pose=open_pose,
-                effective_kind=kind,
-            )
+        size, closed_pose = _leaf_geometry(door, kind)
+        runtime = _DoorRuntime(
+            door=door,
+            closed_pose=closed_pose,
+            open_pose=_door_open_pose(door, closed_pose, kind),
+            effective_kind=kind,
+        )
+        spawned = [leaf for leaf, pose in _leaf_poses(door.name, runtime).items() if await mech.spawn_box(leaf, size, pose, door.material)]
+        if len(spawned) == len(_leaf_names(door.name, kind)):
+            mech._door_primitives[door.name] = spawned
+            mech._door_runtime[door.name] = runtime
         else:
+            for leaf in spawned:
+                await mech.delete_box(leaf)
             ok = False
     if mech._door_runtime:
         _ensure_loop(mech)

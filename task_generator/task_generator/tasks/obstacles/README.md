@@ -63,8 +63,8 @@ Declared under the mode namespace (e.g. `task.random.*`):
 | `static.n` | `[0, 0]` | `[min, max]` static obstacle count |
 | `interactive.n` | `[0, 0]` | `[min, max]` interactive obstacle count |
 | `dynamic.n` | `[0, 0]` | `[min, max]` dynamic obstacle count |
-| `static.models` | `[shelf]` | model name list, empty = all ObjectIdentifiers |
-| `interactive.models` | `[shelf]` | model name list, empty = all ObjectIdentifiers |
+| `static.models` | `[Warehouse/Object/Barrel_Plastic]` | model name list, empty = all ObjectIdentifiers |
+| `interactive.models` | `[Warehouse/Object/Barrel_Plastic]` | model name list, empty = all ObjectIdentifiers |
 | `dynamic.models` | `[arenian]` | model name list, empty = all PedestrianIdentifiers |
 
 ### `TM_Parametrized` params

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import importlib.util
+import os
 
 import pytest
 
@@ -9,6 +10,14 @@ _ROS_SKIP_REASON = "ROS2 not discoverable, source install/setup.bash to enable"
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker is None and config.getoption("numprocesses", None) and "ARENA_TEST_DOMAIN_BASE" not in os.environ:
+        raise pytest.UsageError("pytest -n needs ARENA_TEST_DOMAIN_BASE, the first of n free ROS domains: worker n runs on base + n")
+    if worker is not None:
+        from arena_bringup.defaults import gz_discovery_env
+
+        domain = int(os.environ["ARENA_TEST_DOMAIN_BASE"]) + int(worker.removeprefix("gw"))
+        os.environ.update(ROS_DOMAIN_ID=str(domain), GZ_PARTITION=f"arena-{domain}", **gz_discovery_env(domain))
     if importlib.util.find_spec("arena_simulation_setup") is not None:
         from arena_simulation_setup.testing import install_fake_assets
 

@@ -122,7 +122,7 @@ class TaskPhase(ABC):
 
 @attrs.define
 class GoToPhase(TaskPhase):
-    """Navigate to a pose or a named target (judged on the target, `pose` is then the dispatch pose), hold in place with neither."""
+    """Navigate to a pose or a named target (judged on the target, `pose` is then the dispatch pose), hold in place with neither. With `dispatch` false the phase is judged but never sent to a planner."""
 
     kind: typing.ClassVar[str] = "goto_pose"
 
@@ -134,6 +134,7 @@ class GoToPhase(TaskPhase):
     signal: str | None = None
     pose_zone: str = ""
     via: tuple[str, ...] = attrs.field(default=(), converter=tuple, kw_only=True)
+    dispatch: bool = attrs.field(default=True, kw_only=True)
 
     @property
     def hold(self) -> bool:
@@ -162,6 +163,7 @@ class GoToPhase(TaskPhase):
             signal=None if data.get("signal") is None else str(data.pop("signal")),
             pose_zone=pose_zone,
             via=via_list(data.pop("via", None)),
+            dispatch=bool(data.pop("dispatch", True)),
             **common,
         )
 
@@ -181,6 +183,8 @@ class GoToPhase(TaskPhase):
             result["signal"] = self.signal
         if self.via:
             result["via"] = list(self.via)
+        if not self.dispatch:
+            result["dispatch"] = False
         return result
 
 

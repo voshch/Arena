@@ -55,7 +55,7 @@ levels:
   zones:
   - {name: upstairs, polygon: [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]], walls: outline}
   elevators:
-  - {name: lift_1, position: [2.0, 2.0], door_side: '+x', destinations: [lift_0]}
+  - {name: lift_1, position: [2.0, 2.0], door_side: '+x', door_kind: sliding, destinations: [lift_0]}
 """
 
 
@@ -76,6 +76,13 @@ def test_round_trip_gives_an_equal_world() -> None:
     again = parse_world(_written(world))
     assert again == world
     assert again.levels['0'].zones[0].semantics == world.levels['0'].zones[0].semantics
+
+
+def test_elevator_door_kind_is_written_only_when_not_split() -> None:
+    lifts = {lift['name']: lift for level in _written(_world())['levels'] for lift in level.get('elevators', [])}
+    assert 'door_kind' not in lifts['lift_0']
+    assert lifts['lift_1']['door_kind'] == 'sliding'
+    assert _world().levels['0'].elevators[0].door_kind == 'sliding_split'
 
 
 def test_writing_is_idempotent() -> None:

@@ -30,7 +30,12 @@ The full argument surface for `arena_runtime.launch.py` and
 | `arena viz [target]` | (ros2 run) | Attaches rviz to a running env; see [arena viz](#arena-viz) |
 
 `arena launch` orchestrates all three (skipping the runtime step if one is
-already up) and is the canonical entry point for most sessions.
+already up) and is the canonical entry point for most sessions. When an env
+it started fails (its `arena_env_node` exits non-zero, a configure error for
+example), it stops everything it started and exits with that env's exit code.
+An env that shuts down cleanly (`arena env <id> down`, an eviction) does not
+fail it: a launch that started the runtime keeps running, an attached one ends
+with 0 once none of its children is left.
 
 ---
 

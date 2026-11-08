@@ -34,6 +34,18 @@ def test_door_blocked_on_both_sides_teleports_open():
     assert _span(door) == ((0.0, 0.0), (0.8, 0.0))
 
 
+def test_split_door_clear_of_its_neighbors_stays_split():
+    door = clear_door_pockets([_door("lift", (0.0, 0.0), (1.0, 0.0), kind="sliding_split"), _door("far", (2.0, 0.0), (3.0, 0.0))])[0]
+    assert door.kind == "sliding_split"
+    assert _span(door) == ((0.0, 0.0), (1.0, 0.0))
+
+
+def test_split_door_with_a_taken_pocket_slides_away_from_it():
+    door = clear_door_pockets([_door("near", (1.1, 0.0), (1.6, 0.0), kind="teleport"), _door("lift", (0.0, 0.0), (1.0, 0.0), kind="sliding_split")])[1]
+    assert door.kind == "sliding"
+    assert _span(door) == ((1.0, 0.0), (0.0, 0.0))
+
+
 def test_vertical_door_never_reverses():
     door = clear_door_pockets([_door("top", *BEDROOM, kind="sliding_top"), _door("living", *LIVING_ROOM)])[0]
     assert _span(door) == BEDROOM

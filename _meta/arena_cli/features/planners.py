@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -42,7 +43,7 @@ _SOAK_SUITE = {
             "config": {
                 "random": {
                     "dynamic": {"min": 4, "max": 6, "models": ["arenian"]},
-                    "static": {"min": 3, "max": 6, "models": ["shelf"]},
+                    "static": {"min": 3, "max": 6, "models": ["Warehouse/Object/Barrel_Plastic"]},
                     "interactive": {"min": 0, "max": 0},
                 }
             },
@@ -65,9 +66,13 @@ _PREFLIGHT_STAGE = {
 PREFLIGHT_VERDICT = ("--retries", "0", "--strict", "--efficacy", "0.5", "--spawn-budget", "120")
 
 
+def _stage_slug(robot: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", robot).strip("-")
+
+
 def preflight_suite(robots: list[str] | None = None) -> dict:
     """The preflight suite, one stage per robot when robots are named, else one stage on each contestant's own robot."""
-    stages = [{**_PREFLIGHT_STAGE, "name": f"preflight-{robot}", "robot": robot} for robot in robots] if robots else [_PREFLIGHT_STAGE]
+    stages = [{**_PREFLIGHT_STAGE, "name": f"preflight-{_stage_slug(robot)}", "robot": robot} for robot in robots] if robots else [_PREFLIGHT_STAGE]
     return {**_SOAK_SUITE, "launch": {**_SOAK_SUITE["launch"], "env.bootstrap_timeout": 90, "robot.mobile.deadline": 30}, "stages": stages}
 
 

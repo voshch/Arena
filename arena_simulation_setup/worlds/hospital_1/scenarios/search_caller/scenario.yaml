@@ -1,0 +1,20 @@
+format: arena-scenario/2
+robots:
+- start: [10.0, 2.0, 1.5708]
+humans:
+- name: caller
+  model: arenian
+  pose: [6.0, 15.0, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[6.0, 15.0, 0.0]]
+  waypoint_mode: once
+sounds:
+- name: call
+  asset_id: greeting
+  position: [6.0, 15.0]
+  loop: true
+  semantics:
+  - {preset: sound, params: {sounding: false, volume_db: 60.0}}
+timeline:
+- {every: 8.0, offset: 2.0, set: [{entity: call, field: sounding, value: 'true'}]}
+- {every: 8.0, offset: 4.0, set: [{entity: call, field: sounding, value: 'false'}]}

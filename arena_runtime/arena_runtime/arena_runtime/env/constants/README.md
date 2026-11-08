@@ -83,6 +83,8 @@ Every `task.episode.*` param is also a launch arg (empty = node default), listed
 | `TIMEOUT` | `task.episode.timeout` | `-1` | parsed to `inf` when negative; sim seconds since episode reset, past which the episode ends FAILED with info `"timeout"` |
 | `MOBILE_ADAPTER` | `robot.mobile_adapter` | `'nav2'` | default mobile-cap adapter kind, overridden per robot via scenario `mobile:` |
 | `ARM_ADAPTER` | `robot.arm_adapter` | `'moveit'` | default arm-cap adapter kind, overridden per robot via scenario `arm:` |
+| `LIFT_ADAPTER` | `robot.lift_adapter` | `'direct'` | default lift-cap adapter kind, overridden per robot via `adapters: {lift: ...}` |
+| `GRIPPER_ADAPTER` | `robot.gripper_adapter` | `'direct'` | default gripper-cap adapter kind, overridden per robot via `adapters: {gripper: ...}` |
 
 Adapter-specific tunables (planners, RL agent, ...) live in `caps/<cap>.yaml` and can be overridden at launch time via `<cap>.<key>:=<val>` flags. Each `<cap>.<key>:=<val>` lands on the env node as ROS param `robot.<cap>.<key>` and is merged into the adapter's kwargs on top of the cap-file YAML.
 

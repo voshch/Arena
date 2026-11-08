@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from arena_runtime.shared import Pose
 
 _COSTMAP_TIMEOUT_S = 20.0
+_SLAM_NODE = "slam_toolbox"
 _REDISPATCH_MIN_S = 2.0
 
 
@@ -70,16 +71,17 @@ _REDISPATCH_MIN_S = 2.0
 @requires_map_server
 class Nav2Adapter(MobileAdapter):
     kind: ClassVar[str] = "nav2"
+    mappings: ClassVar[frozenset[str]] = frozenset({"static", "slam"})
 
     def __init__(self, robot_manager: RobotManager, **kwargs: object):
         super().__init__(robot_manager, **kwargs)
-        self._costmap_clients: dict[str, ClientWrapper] = {}
+        self._service_clients: dict[str, ClientWrapper] = {}
         self._last_redispatch: float = -_REDISPATCH_MIN_S
 
     async def teardown(self) -> None:
-        for cli in self._costmap_clients.values():
+        for cli in self._service_clients.values():
             self.rm.node.destroy_client(cli.client)
-        self._costmap_clients.clear()
+        self._service_clients.clear()
         await super().teardown()
 
     async def publish_goal_loop(self) -> None:
@@ -142,6 +144,22 @@ class Nav2Adapter(MobileAdapter):
             self.client.cancel()
         await super().on_reset(robot, ctx)
         await self._clear_costmap(robot, "local")
+        await self.reset_map(robot)
+
+    async def reset_map(self, robot: RobotManager) -> bool:
+        """Under robot.mobile.mapping:=slam, empty slam_toolbox's map and the global costmap built on it."""
+        if self._bringup_kwargs.get("mapping") != "slam":
+            return False
+        from slam_toolbox.srv import Reset  # noqa: PLC0415  # only slam mapping needs slam_toolbox
+
+        node_name = robot.namespace(_SLAM_NODE)
+        try:
+            if not await self._call_active(robot, node_name, Reset, os.path.abspath(node_name("reset")), Reset.Request()):
+                return False
+            return await self._clear_costmap(robot, "global")
+        except TimeoutError as exc:
+            robot.node.get_logger().warning(f"{robot.namespace}: slam map not reset, the navigation stack is still coming up ({exc})")
+            return False
 
     async def before_move(
         self,
@@ -183,14 +201,18 @@ class Nav2Adapter(MobileAdapter):
             req = ClearCostmapAroundRobot.Request()
             req.reset_distance = reset_distance
 
+        return await self._call_active(robot, node_name, srv_type, srv_name, req)
+
+    async def _call_active(self, robot: RobotManager, node_name: str, srv_type: type, srv_name: str, req: object) -> bool:
+        """Call a service of a lifecycle node, False while the node is not active or when the call fails."""
         state = await robot.node.get_lifecycle_state_async(node_name, timeout=_COSTMAP_TIMEOUT_S)
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
-        cli = self._costmap_clients.get(srv_name)
+        cli = self._service_clients.get(srv_name)
         if cli is None:
             cli = robot.node.create_client_wrapper(srv_type, srv_name)
-            self._costmap_clients[srv_name] = cli
+            self._service_clients[srv_name] = cli
         if not await cli.ensure(timeout_sec=_COSTMAP_TIMEOUT_S):
             raise TimeoutError(f"{srv_name} not available after {_COSTMAP_TIMEOUT_S}s")
 

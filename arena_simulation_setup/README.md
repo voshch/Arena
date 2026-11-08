@@ -25,6 +25,9 @@ pedestrian agents, and environment templates through the types defined here.
 - [EgoBench generator](src/arena_simulation_setup/generative/egobench/README.md):
   the manifest of world and encounter types, the corridor and open placement
   of one robot and one pedestrian, and the `generate_egobench` outputs.
+- [USAR generator](src/arena_simulation_setup/generative/usar/README.md):
+  rooms worlds with a hidden calling person placed by corners from the entrance,
+  the held-out test worlds and the `generate_usar` outputs.
 
 ## CLI
 
@@ -32,6 +35,7 @@ pedestrian agents, and environment templates through the types defined here.
 |---|---|---|
 | `generate_scenario` | `generate_scenario {zones,classify,populate,promptgen,suite} <world> [--write] ...` | Prints a world's zone roles, asks a model for the missing ones, writes the four base scenarios, realizes prompts on them as timeline cases and writes a benchmark suite over the result. Writing verbs are dry runs without `--write`. See the [generator README](src/arena_simulation_setup/generative/scenario/README.md). |
 | `generate_egobench` | `generate_egobench <manifest> [--out DIR] [--limit N] [--write]` | Samples a manifest into corridor and open worlds with one-pedestrian encounter scenarios, fixed or reactive, and an index of placed and rejected samples. A dry run without `--write`. See the [EgoBench README](src/arena_simulation_setup/generative/egobench/README.md). |
+| `generate_usar` | `generate_usar <manifest> [--out DIR] [--limit N] [--write]` | Generates rooms worlds with hidden-caller search scenarios for the `search` robots mode, split into tuning and test worlds, and an index of placed and rejected tasks. A dry run without `--write`. See the [USAR README](src/arena_simulation_setup/generative/usar/README.md). |
 | `generate_world` | `generate_world "<prompt>" [-e endpoint] [-o outdir]` | Posts a natural-language prompt to a generation server; extracts the returned zip into `worlds/<outdir>/` |
 | `model_staging` | `model_staging <install_dir>` | Creates symlinks in `<install_dir>` for all known robot models and writes a `deps` file |
 | `nav_at_r` | `nav_at_r <world name or dir> [--robot NAME\|DIR \| --radius M] [--walls-only] [--start X,Y] [--image PNG] [--json]` | Prints the NAV@r reachability of a world per level for a footprint radius: value, traversable components, largest share and cut-off zones. See [AUTHORING.md](AUTHORING.md#reachability-navr). |

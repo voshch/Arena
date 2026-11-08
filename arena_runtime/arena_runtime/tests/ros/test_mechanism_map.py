@@ -170,6 +170,26 @@ def _wm_ros(doors: list[Door], level_origin=(10.0, 0.0)):
     return wm, snapshots, loads
 
 
+def test_door_mask_leaves_ramps_to_the_sensors():
+    from arena_simulation_setup.shared import Stairs
+    from builtin_interfaces.msg import Time as TimeMsg
+
+    wm, _snapshots, _loads = _wm_ros([])
+    del wm.__dict__["_publish_door_mask"]
+    sent: list = []
+    wm._door_mask_pub = SimpleNamespace(publish=sent.append)
+    wm._NodeInterface__node.sim_time = SimpleNamespace(to_msg=TimeMsg)
+    wm._environment_manager = SimpleNamespace(realize=lambda position: position)
+    slab = Stairs(name="slab", kind="ramp", position=GeoPosition(4.0, 1.0), size=[4.0, 1.0], rise=0.5)
+    scan = Stairs(name="scan", kind="ramp", position=GeoPosition(4.0, 3.0), size=[4.0, 1.0], rise=0.5, floor=False)
+    png, yaml_text = _blank_map(w=100, h=50, origin=(0.0, 0.0))
+
+    wm._publish_door_mask(Level(id="1", stairs=[slab, scan]), png, yaml_text)
+
+    cell = lambda x, y: sent[-1].data[int(y / sent[-1].info.resolution) * sent[-1].info.width + int(x / sent[-1].info.resolution)]
+    assert (cell(4.0, 1.0), cell(4.0, 3.0), cell(8.0, 1.0)) == (-1, -1, -1)
+
+
 def test_world_manager_ros_mechanism_map_follows_semantics():
     wm, snapshots, loads = _wm_ros([_door("g", gate={"authorized": ["jackal"], "locked": False})])
     png, yaml_text = _blank_map(w=200, h=60, origin=(0.0, 0.0))

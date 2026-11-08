@@ -21,7 +21,7 @@ def gen() -> PointAtGenerator:
 
 
 @pytest.fixture(scope="module")
-def baked() -> BakedPointAt:
+def baked(point_table: None) -> BakedPointAt:
     return BakedPointAt()
 
 

@@ -992,9 +992,24 @@ def test_door_slot_plus_x_inset():
     start, end = _door_slot(e)
     assert start.x == pytest.approx(11.0 - DOOR_INSET)
     assert end.x == pytest.approx(11.0 - DOOR_INSET)
-    assert start.y == pytest.approx(5.0 - 1.0 + DOOR_INSET)
-    assert end.y == pytest.approx(5.0 + 1.0 - DOOR_INSET)
+    assert start.y == pytest.approx(5.0 - 1.0 + WALL_THICKNESS / 2.0)
+    assert end.y == pytest.approx(5.0 + 1.0 - WALL_THICKNESS / 2.0)
     assert start.z == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("door_side", ["+x", "-x", "+y", "-y"])
+def test_closed_cabin_door_meets_both_side_walls(door_side):
+    e = _make_elevator(position=(10.0, 5.0, 0.0), size=(2.0, 3.0, 2.5), door_side=door_side)
+    start, end = _door_slot(e)
+    walls = {name: (size, pose) for name, size, pose in _elevator_wall_geometries(e)}
+    inner_faces = []
+    for side in ("side_pos", "side_neg"):
+        (sx, sy, _), pose = walls[side]
+        axis = 0 if sx < sy else 1
+        center = (pose.position.x, pose.position.y)[axis]
+        inner_faces.append(center - WALL_THICKNESS / 2.0 if center > (10.0, 5.0)[axis] else center + WALL_THICKNESS / 2.0)
+    axis = 1 if door_side in ("+x", "-x") else 0
+    assert sorted(((start.x, start.y)[axis], (end.x, end.y)[axis])) == pytest.approx(sorted(inner_faces))
 
 
 @pytest.mark.parametrize("door_side", ["+x", "-x", "+y", "-y"])
@@ -1018,8 +1033,8 @@ def test_door_slot_minus_y_inset():
     start, end = _door_slot(e)
     assert start.y == pytest.approx(-1.0 + DOOR_INSET)
     assert end.y == pytest.approx(-1.0 + DOOR_INSET)
-    assert start.x == pytest.approx(-1.0 + DOOR_INSET)
-    assert end.x == pytest.approx(1.0 - DOOR_INSET)
+    assert start.x == pytest.approx(-1.0 + WALL_THICKNESS / 2.0)
+    assert end.x == pytest.approx(1.0 - WALL_THICKNESS / 2.0)
 
 
 def test_wall_geometries_plus_x_door():
