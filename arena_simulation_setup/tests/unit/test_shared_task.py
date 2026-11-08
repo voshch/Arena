@@ -85,6 +85,21 @@ def test_reach_pose_survives_serialization_in_full():
     assert again.target.orientation.to_euler() == pytest.approx((0.1, 0.5, -0.3))
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"reach": "stow", "motion": "linear"},
+        {"reach": "random", "relative": True},
+        {"reach": [0.4, 0.0, 0.3], "motion": "curved"},
+        {"reach": [0.4, 0.0, 0.3], "speed": 0.0},
+        {"reach": [0.4, 0.0, 0.3], "speed": 1.5},
+    ],
+)
+def test_reach_rejects_invalid_motion_fields(value):
+    with pytest.raises(ValueError):
+        TaskPhase.parse(value)
+
+
 def test_reach_requires_exactly_one_target():
     with pytest.raises(ValueError):
         ReachPhase()
@@ -118,6 +133,8 @@ def test_scoped_conditions_and_text_parse():
         {"reach": "stow", "planning_time": 2.0, "instance": "left"},
         {"reach": "random"},
         {"reach": [0.4, 0.0, 0.3], "frame": "base_link", "position_tolerance": 0.01},
+        {"reach": [0.3, -0.2, 0.55], "frame": "base_link", "motion": "linear", "speed": 0.1},
+        {"reach": [-0.12, 0.0, 0.0], "relative": True, "motion": "linear"},
         {"goto": [0.0, 0.0, 0.0], "text": "stay", "conditions": [{"op": "always", "p": "robot in hallway", "text": "stay in the hallway"}]},
     ],
 )

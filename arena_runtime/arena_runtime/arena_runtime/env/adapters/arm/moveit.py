@@ -56,6 +56,9 @@ class MoveItArmAdapter(Adapter):
         if isinstance(phase, ReachPhase):
             goal = ReachPose.Goal()
             goal.instance = phase.instance
+            goal.motion = phase.motion
+            goal.speed = float(phase.speed or 0.0)
+            goal.relative = phase.relative
             if phase.random:
                 arms = robot.robot_view.effective_caps(robot.robot.resolved_request, frames=robot.robot.frames).arm
                 if not arms:

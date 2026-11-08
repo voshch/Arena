@@ -186,6 +186,9 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
   result. A reach pose's `frame` (the base frame by default) is a robot link,
   put under the robot's TF prefix unless it already carries it.
+  `motion: linear` moves the tool along a straight line (Pilz LIN) instead of
+  a free OMPL path. `speed` in (0, 1] scales velocity and acceleration.
+  `relative: true` adds the target to the current tool pose in `frame`.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 
