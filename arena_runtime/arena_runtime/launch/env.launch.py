@@ -219,9 +219,9 @@ def generate_launch_description() -> launch.LaunchDescription:
     )
     hearing = LaunchArgument(
         name="robot.hearing",
-        choices=["none", "bus", "srp", "seld"],
+        choices=["none", "bus", "srp", "seld", "call"],
         default_value="none",
-        description="Robot-side hearing layer (arena_hearing) of every fleet robot: belief grid, a Nav2 speed-filter mask merged into each robot's nav2 params, RViz displays. Event source: the simulator bus, the untrained onset + GCC-PHAT front-end on any array, or the live SELDnet front-end on the array its weights were trained on. Needs acoustics:=arena.",
+        description="Robot-side hearing layer (arena_hearing) of every fleet robot: belief grid, a Nav2 speed-filter mask merged into each robot's nav2 params, RViz displays. Event source: the simulator bus, the untrained onset + GCC-PHAT front-end on any array, the live SELDnet front-end on the array its weights were trained on, or the call front-end. Needs acoustics:=arena.",
     )
     hearing_policy = LaunchArgument(
         name="robot.hearing.policy",

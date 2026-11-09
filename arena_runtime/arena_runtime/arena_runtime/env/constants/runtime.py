@@ -89,7 +89,7 @@ class RobotParams(ParamGroup):
     ARM_ADAPTER = Param[str]('robot.arm_adapter', 'moveit', 'Default arm-cap adapter kind of the fleet robots.')
     LIFT_ADAPTER = Param[str]('robot.lift_adapter', 'direct', 'Default lift-cap adapter kind of the fleet robots.')
     GRIPPER_ADAPTER = Param[str]('robot.gripper_adapter', 'direct', 'Default gripper-cap adapter kind of the fleet robots.')
-    HEARING = Param[str]('robot.hearing', 'none', 'Robot hearing front-end of every fleet robot (none, bus, srp or seld).')
+    HEARING = Param[str]('robot.hearing', 'none', 'Robot hearing front-end of every fleet robot (none, bus, srp, seld or call).')
 
 
 class HumanParams(ParamGroup):

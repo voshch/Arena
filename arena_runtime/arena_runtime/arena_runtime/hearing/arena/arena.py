@@ -1,12 +1,14 @@
-"""Backend for robot.hearing:=bus|srp|seld, the arena_hearing belief grid, speed-filter policy and front-ends."""
+"""Backend for robot.hearing:=bus|srp|seld|call, the arena_hearing belief grid, speed-filter policy and front-ends."""
 
 from __future__ import annotations
 
-from arena_runtime_msgs.msg import AdapterDisplay
+from arena_runtime_msgs.msg import AdapterDisplay, RecordedTopic
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
 
 from arena_runtime.hearing import BaseHearing
+
+_RECORDED_TOPIC_FIELDS = ("key", "topic", "msg_type", "robot_scoped", "throttled", "qos_transient_local", "reliable", "depth", "recorded")
 
 
 class ArenaHearing(BaseHearing):
@@ -30,3 +32,12 @@ class ArenaHearing(BaseHearing):
                 ("Wedges", BELIEF_WEDGES, "visualization_msgs/MarkerArray", DisplayKind.MARKER_ARRAY, StyleSpec(enabled=True).to_json()),
             )
         )
+
+    def recorded_topics(self) -> tuple[RecordedTopic, ...]:
+        from arena_rclpy_mixins.params import declare
+
+        from arena_hearing.constants import recorded_topics
+        from arena_runtime.env.constants.runtime import RobotParams
+
+        frontend = declare(self.node, RobotParams.HEARING).value
+        return tuple(RecordedTopic(**dict(zip(_RECORDED_TOPIC_FIELDS, row, strict=True))) for row in recorded_topics((frontend,)))
