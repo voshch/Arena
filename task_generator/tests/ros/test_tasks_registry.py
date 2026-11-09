@@ -23,6 +23,7 @@ def test_registry_has_robots_entries():
     assert Modes.TM_Robots.SCENARIO in ROBOTS_MODES
     assert Modes.TM_Robots.STATIONARY in ROBOTS_MODES
     assert Modes.TM_Robots.CHARACTERIZATION in ROBOTS_MODES
+    assert Modes.TM_Robots.SEARCH in ROBOTS_MODES
 
 
 def test_registry_has_module_entries():

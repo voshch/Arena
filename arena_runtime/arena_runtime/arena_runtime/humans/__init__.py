@@ -25,7 +25,7 @@ from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime_msgs.msg import LockstepChannel
-from arena_simulation_setup.shared import Placement, Stairs
+from arena_simulation_setup.shared import Placement, Stairs, stair_height
 from arena_simulation_setup.shared.body import DEFAULT_STANCE, load_stance
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
@@ -41,7 +41,7 @@ from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.animation_manager import AnimationManager
 from arena_runtime.humans.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from arena_runtime.humans.gestures import Channel, GestureLayer, GestureRequest
-from arena_runtime.humans.hands import POINT_CLIP, clip_pose
+from arena_runtime.humans.hands import POINT_CLIP, Grip, clip_pose, held_pose
 from arena_runtime.humans.itinerary import semantic_atom
 from arena_runtime.humans.possession import PossessionTable
 from arena_runtime.humans.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
@@ -82,11 +82,6 @@ def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
         position = placement.place(Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z))
         ped.pose.position.x, ped.pose.position.y, ped.pose.position.z = position.x, position.y, position.z
     return placed
-
-
-def stair_height(stairs: Iterable[Stairs], x: float, y: float) -> float:
-    """Walking surface height at a map point on the first stair half holding it, 0 off every stair."""
-    return next((stair.height(stair.along(x, y)) for stair in stairs if stair.contains(x, y, stair.reach)), 0.0)
 
 
 def stair_running(stair: Stairs, stairs: Iterable[Stairs], running: Mapping[str, bool]) -> bool:
@@ -327,10 +322,11 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
-            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
+            profile = self._pose_profile_for(ped.agent_type)
+            angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=profile)
             state = self._gait.joint_state(angles, stamp=stamp)
             if state is not None:
-                hands = self._hands(ped.id, now_sec)
+                hands = self._hands(ped.id, now_sec, profile.hold)
                 state.name = [*state.name, *hands]
                 state.position = [*state.position, *hands.values()]
             ped.joint_state = state
@@ -342,7 +338,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
         for ped in out.pedestrians:
-            ped.pose.position.z = stair_height(self._known_stairs, ped.pose.position.x, ped.pose.position.y)
+            ped.pose.position.z = self.footing(ped.pose.position.x, ped.pose.position.y)
             drivers = self._drivers_for(ped.model_uri)
             if not drivers.rollers and not drivers.joystick:
                 continue
@@ -395,8 +391,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             )
         return state
 
-    def _hands(self, agent_id: int, now: float) -> dict[str, float]:
-        """Digit DOFs of a generated ped's playing body clips, empty leaves its hands in their neutral stance."""
+    def _hands(self, agent_id: int, now: float, hold: Mapping[str, Grip] | None = None) -> dict[str, float]:
+        """Digit DOFs of a generated ped's playing body clips over the grasp of each hand holding a prop ({side: Grip}), empty leaves its hands in their neutral stance."""
         phases = self._gestures.phases(agent_id)
         sides = self._gestures.sides(agent_id)
 
@@ -404,7 +400,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             kind, _channel, _phase, clip = phases.get(slot, ("", "", "", ""))
             return f"{POINT_CLIP}_{sides[slot]}" if kind == POINT_CLIP and slot in sides else clip
 
-        return clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now)
+        return clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now, held_pose(hold or {}))
 
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""
@@ -534,10 +530,21 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if section is None:
                 self._logger.warning(f"agent type {agent_type!r} not found, using the default pose profile")
                 return default_profile()
-            return resolve_pose_profile(section)
+            profile = resolve_pose_profile(section)
         except (ValueError, OSError, yaml.YAMLError) as e:
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()
+        try:
+            held_pose(profile.hold)
+        except Exception as e:  # noqa: BLE001  (a grip that cannot be solved keeps the locomotion profile)
+            self._logger.warning(f"agent type {agent_type!r} grip rejected ({e}), its hands stay unheld")
+            return attrs.evolve(profile, hold={})
+        return profile
+
+    def preload_pose_profiles(self, agent_types: Iterable[str]) -> None:
+        """Resolve pose profiles before the publish tick, which only reads them (a held grip is solved once per type)."""
+        for agent_type in set(agent_types):
+            self._pose_profile_for(agent_type)
 
     def held_seats(self) -> dict[str, list[int]]:
         """Indices into each object's annotated sit slots that agents hold, by object sim path."""
@@ -958,6 +965,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """Remember the realized stair halves of the world, sent along with the next elevators, every belt running."""
         self._known_stairs = tuple(stairs)
         self._stair_running = {}
+
+    def footing(self, x: float, y: float) -> float:
+        """Height a body stands at a realized map point on the known stairs and ramps, their treads where the simulator moved them, 0 off all of them."""
+        return stair_height(self._known_stairs, x, y, self._simulator.stair_travel())
 
     async def stairs_changed(self, running: Mapping[str, bool]) -> None:
         """Escalator halves by realized name whose belt started (True) or stopped (False), every teleport zone sent again."""

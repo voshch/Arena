@@ -28,6 +28,7 @@ SMALL_CONFIGS = {
     "letter": {"text": "AB"},
     "corridor": {"width": 12.0, "height": 12.0, "branches": 3},
     "open": {"width": 8.0, "height": 6.0, "obstacles": 4},
+    "concourse": {},
 }
 
 

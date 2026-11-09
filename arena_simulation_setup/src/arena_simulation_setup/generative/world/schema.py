@@ -6,6 +6,7 @@ helpers, so the descriptor mini-DSL (label/range tokens) has a single producer.
 
 from __future__ import annotations
 
+import enum
 import types
 import typing
 
@@ -62,10 +63,27 @@ def _unset_int(field_info: pydantic.fields.FieldInfo) -> int | None:
     return int(ge) - 1
 
 
+def _is_optional_str(field_info: pydantic.fields.FieldInfo) -> bool:
+    """True if field is typed `str | None` with default None."""
+    annotation = field_info.annotation
+    if typing.get_origin(annotation) not in (typing.Union, types.UnionType) or set(typing.get_args(annotation)) != {str, type(None)}:
+        return False
+    return field_info.default is None
+
+
 def config_from_params(model_cls: type[pydantic.BaseModel], config: dict) -> dict:
-    """Map the ROS stand-ins of `int | None` fields in config back to None."""
+    """Map the ROS stand-ins of `int | None` and `str | None` fields in config back to None."""
     unset = {name: _unset_int(info) for name, info in model_cls.model_fields.items()}
-    return {leaf: None if unset.get(leaf) is not None and value == unset[leaf] else value for leaf, value in config.items()}
+    optional_strs = {name for name, info in model_cls.model_fields.items() if _is_optional_str(info)}
+    out: dict[str, object] = {}
+    for leaf, value in config.items():
+        if unset.get(leaf) is not None and value == unset[leaf]:
+            out[leaf] = None
+        elif leaf in optional_strs and value == "":
+            out[leaf] = None
+        else:
+            out[leaf] = value
+    return out
 
 
 def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls: type[pydantic.BaseModel]) -> None:
@@ -106,14 +124,17 @@ def declare_config_params(node: ROSParamServer, namespace_prefix: str, model_cls
                 declare_int(node, name, unset if default is None else default, label=label, description=f"{unset} = unset", lo=unset, hi=int(le) if le is not None else None)
         elif annotation is float:
             declare_double(node, name, float(default), label=label, lo=float(ge) if ge is not None else None, hi=float(le) if le is not None else None)
-        elif annotation is str:
+        elif annotation is str or (isinstance(annotation, type) and issubclass(annotation, str)):
             extra = field_info.json_schema_extra
             widget = extra.get("widget") if isinstance(extra, dict) else None
+            default_str = str(default.value if isinstance(default, enum.Enum) else (default or ""))
             if widget == "sketch":
-                declare_sketch(node, name, str(default), label=label)
+                declare_sketch(node, name, default_str, label=label)
             elif widget == "text":
-                declare_text(node, name, str(default), label=label)
+                declare_text(node, name, default_str, label=label)
             else:
-                declare_string(node, name, str(default), label=label)
+                declare_string(node, name, default_str, label=label)
+        elif origin in (list, tuple):
+            continue
         else:
-            raise ValueError(f"Unsupported annotation {annotation!r} for field '{field_name}'; only bool/int/float/str and 2-tuples thereof are supported")
+            raise ValueError(f"Unsupported annotation {annotation!r} for field '{field_name}'; only bool/int/float/str, 2-tuples thereof, and skipped list/tuple fields are supported")

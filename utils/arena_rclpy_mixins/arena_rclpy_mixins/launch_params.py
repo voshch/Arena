@@ -6,6 +6,7 @@ as strings, which would declare the parameter with the wrong type.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
 import yaml
@@ -36,3 +37,19 @@ def launch_str_to_value(raw: str) -> object:
     if isinstance(parsed, (list, dict, int, float)) and not isinstance(parsed, bool):
         return parsed
     return raw
+
+
+def _yaml_scalar(value: object) -> str:
+    if isinstance(value, float):
+        text = repr(value)
+        return text.replace("e", ".0e") if "e" in text and "." not in text else text
+    return json.dumps(value)
+
+
+def value_to_launch_str(value: object) -> str:
+    """Serialise a bool, number, string or list to a launch value that launch_str_to_value reads back, booleans as true/false."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "[" + ", ".join(_yaml_scalar(item) for item in value) + "]"
+    return _yaml_scalar(value)

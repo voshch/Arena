@@ -119,6 +119,25 @@ are exempt, and so is any point more than 1 m from the mesh.
    fires before `get_adapter` runs.
 5. Set `mobile: <kind>` (or `adapters: {mobile: <kind>}`) in the scenario robot entry or `robot_setup.yaml`.
 
+## Lift and gripper adapters
+
+`lift` and `gripper` adapters accept no task phase (`accepts=()`, no client): they own a ROS command
+surface instead. `robot.lift` / `robot.gripper` (default `direct`) select the kind for every robot
+advertising the cap, `adapters: {lift: none}` in a robot setup file overrides one robot.
+
+| Cap | Kind | Command topic under `<robot_ns>` | Type | Effect |
+|---|---|---|---|---|
+| `lift` | `direct` | `lift/<instance>/command` | `std_msgs/Float64` | height clamped to the instance's `limits: [lower, upper]` (unclamped without it), published on `<controller>/commands` (`Float64MultiArray`) |
+| `gripper` | `direct` | `gripper/<instance>/command` | `control_msgs/GripperCommand` | position clamped between `positions.open` and `positions.close`, `max_effort` capped at the instance's (0 = the instance's), sent as a `GripperCommand` goal to `<controller>/gripper_cmd` |
+| both | `none` | - | - | binds nothing |
+
+`direct` echoes the clamped command on `lift/<instance>/applied` and `gripper/<instance>/applied`
+(same types, transient-local). The gripper goal is fire and forget: the adapter does not await the
+result. `<instance>` is the instance key of `caps/lift.yaml` / `caps/gripper.yaml`, or the mount name
+for component caps. The `robots_lift` and `robots_gripper` MCP tools publish these commands and
+return the echo. Topic names and clamping live in
+[`arena_robots/actuators.py`](../../../../../arena_robots/arena_robots/arena_robots/actuators.py).
+
 ## Declaring visualization displays
 
 Adapters surface displays to any visualizer (rviz, rerun, ...) through

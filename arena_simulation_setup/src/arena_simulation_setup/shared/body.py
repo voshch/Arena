@@ -11,7 +11,9 @@ import numpy as np
 import yaml
 
 from arena_assets.rig import Rig, rig_of
+from arena_assets.utils.geom import axis_rotation, swing
 from arena_simulation_setup import ASS_DIR
+from arena_simulation_setup.utils.geometry import Orientation
 
 TEMPLATE_FORMAT = "arena-body-template/1"
 
@@ -69,6 +71,7 @@ SEMANTIC_DOFS: tuple[str, ...] = (
     *(f"{s}_{dof}" for s in "lr" for dof in ("y_hip", "p_hip", "r_hip", "knee")),
     *(f"{s}_{dof}" for s in "lr" for dof in ("y_ankle", "ankle")),
     *(f"{s}_{dof}" for s in "lr" for dof in ("r_wrist", "wrist")),
+    *(f"{s}_d_wrist" for s in "lr"),
     *(f"{s}_{dof}" for s in "lr" for dof in (*(f"curl_{digit}" for digit in FINGERS), "spread")),
 )
 
@@ -80,46 +83,16 @@ _CURL_GAIN = (1.0, 1.0, 0.7)
 _SPREAD_SPLIT = {"index": 1.0, "middle": 1.0 / 3.0, "ring": -1.0 / 3.0, "pinky": -1.0}
 _WRIST_OF = {f"{side}_{digit}{k}": f"{side}_wrist" for side in _SIDES.values() for digit in FINGERS for k in (1, 2, 3)}
 DIGIT_JOINTS: tuple[str, ...] = tuple(_WRIST_OF)
-_EPS = 1e-9
-
-
-def axis_rotation(axis: Sequence[float] | np.ndarray, angle: float) -> np.ndarray:
-    """Rotation matrix of `angle` rad about `axis`."""
-    a = np.asarray(axis, dtype=float)
-    a = a / np.linalg.norm(a)
-    k = np.array([[0.0, -a[2], a[1]], [a[2], 0.0, -a[0]], [-a[1], a[0], 0.0]])
-    return np.eye(3) + math.sin(angle) * k + (1.0 - math.cos(angle)) * (k @ k)
 
 
 def quat_to_matrix(q: Sequence[float] | np.ndarray) -> np.ndarray:
     """Rotation matrix of an x y z w quaternion."""
-    x, y, z, w = np.asarray(q, dtype=float) / np.linalg.norm(q)
-    return np.array(
-        [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-        ]
-    )
+    return Orientation.from_xyzw(q).to_matrix()
 
 
 def matrix_to_quat(m: np.ndarray) -> np.ndarray:
     """x y z w quaternion of a rotation matrix, w >= 0."""
-    trace = m[0, 0] + m[1, 1] + m[2, 2]
-    if trace > 0.0:
-        s = 2.0 * math.sqrt(trace + 1.0)
-        q = np.array([(m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s, 0.25 * s])
-    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
-        s = 2.0 * math.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2])
-        q = np.array([0.25 * s, (m[0, 1] + m[1, 0]) / s, (m[0, 2] + m[2, 0]) / s, (m[2, 1] - m[1, 2]) / s])
-    elif m[1, 1] > m[2, 2]:
-        s = 2.0 * math.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2])
-        q = np.array([(m[0, 1] + m[1, 0]) / s, 0.25 * s, (m[1, 2] + m[2, 1]) / s, (m[0, 2] - m[2, 0]) / s])
-    else:
-        s = 2.0 * math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1])
-        q = np.array([(m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s, (m[1, 0] - m[0, 1]) / s])
-    q = q / np.linalg.norm(q)
-    return -q if q[3] < 0.0 else q
+    return Orientation.from_matrix(m).to_xyzw()
 
 
 def from_smplx_rotation(m: np.ndarray) -> np.ndarray:
@@ -199,7 +172,7 @@ def _groups() -> tuple[_Group, ...]:
         groups += [
             _Group(f"{side}_collar", (f"{s}_y_collar", f"{s}_p_collar"), (-m * _Z, m * _X)),
             _Group(f"{side}_elbow", (f"{s}_elbow",), (-_Y,)),
-            _Group(f"{side}_wrist", (f"{s}_r_wrist", f"{s}_wrist"), (-m * _Z, m * _X)),
+            _Group(f"{side}_wrist", (f"{s}_r_wrist", f"{s}_wrist", f"{s}_d_wrist"), (-m * _Z, m * _X, -_Y)),
             _Group(f"{side}_hip", (f"{s}_y_hip", f"{s}_p_hip", f"{s}_r_hip"), (-_Z, m * _X, -_Y)),
             _Group(f"{side}_knee", (f"{s}_knee",), (-_Y,)),
             _Group(f"{side}_ankle", (f"{s}_y_ankle", f"{s}_ankle"), (-_Z, -_Y)),
@@ -382,21 +355,6 @@ def body_to_semantic(rotations: Mapping[str, Sequence[float] | np.ndarray], stan
     return {dof: out[dof] for dof in SEMANTIC_DOFS}
 
 
-def _align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Smallest rotation taking the direction of `a` onto the direction of `b`."""
-    a = a / np.linalg.norm(a)
-    b = b / np.linalg.norm(b)
-    axis = np.cross(a, b)
-    s = float(np.linalg.norm(axis))
-    c = float(a @ b)
-    if s < _EPS:
-        if c > 0.0:
-            return np.eye(3)
-        other = _X if abs(a[0]) < 0.9 else _Y
-        return axis_rotation(np.cross(a, other), math.pi)
-    return axis_rotation(axis / s, math.atan2(s, c))
-
-
 def rest_correction(template: Template, source: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
     """Each joint's `O` of a source skeleton whose rest frames are the identity, its rest offsets in Arena axes."""
     heads, _ = forward(Template(parents={joint: template.parents[joint] for joint in template.parents if joint in source}, offsets=source), {})
@@ -438,11 +396,11 @@ def rest_offsets(template: Template, bones: Mapping[str, Sequence[str]], bind_po
             child = _PRIMARY_CHILD[joint]
         else:
             raise ValueError(f"joint {joint!r} has children {children[joint]} and none of them sets its direction")
-        swing = _align(position[child] - position[joint], template.offsets[child])
+        turn = swing(position[child] - position[joint], template.offsets[child])
         pivot = position[joint]
         for member in subtree(joint):
             for bone in bones[member]:
-                rotation[bone] = swing @ rotation[bone]
+                rotation[bone] = turn @ rotation[bone]
             if member != joint:
-                position[member] = pivot + swing @ (position[member] - pivot)
+                position[member] = pivot + turn @ (position[member] - pivot)
     return {joint: [(bone, matrix_to_quat(rotation[bone])) for bone in bones[joint]] for joint in order}

@@ -8,7 +8,7 @@ from arena_viz import DisplayKind, StyleSpec
 from nav_msgs.msg import Odometry
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
-from rerun_utils.entity_paths import display_path
+from rerun_utils.entity_paths import display_path, in_frame
 from rerun_utils.renderers._registry import RendererCtx, register
 from rerun_utils.renderers.pose import _yaw_to_dir
 
@@ -31,6 +31,7 @@ def render_odom(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
                 vectors=[_yaw_to_dir(q.x, q.y, q.z, q.w)],
                 colors=[color],
             ),
+            *in_frame(msg.header.frame_id),
         )
 
     qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)

@@ -69,7 +69,20 @@ def test_removing_a_door_whose_box_is_already_gone_reports_failure_and_forgets_i
     on_flatsim(body)
 
 
-def test_spawned_elevator_builds_walls_floor_and_a_sliding_cabin_door(on_flatsim):
+def test_spawned_split_door_becomes_two_half_span_leaves(on_flatsim):
+    async def body(sim, world):
+        assert await sim.spawn_doors([_door("split", kind="sliding_split")])
+        assert _ours(world) == {"split_a", "split_b"}
+        assert sim._box_sizes == {"split_a": (1.0, 0.1, 2.0), "split_b": (1.0, 0.1, 2.0)}
+        assert sim._door_primitives == {"split": ["split_a", "split_b"]}
+        assert sim._door_runtime["split"].effective_kind == "sliding_split"
+        assert await sim.remove_doors(["split"])
+        assert _ours(world) == set()
+
+    on_flatsim(body)
+
+
+def test_spawned_elevator_builds_walls_floor_and_a_split_cabin_door(on_flatsim):
     from arena_runtime.sim._mechanism_shim import _elevator_synthesized_door, _elevator_wall_geometries
 
     async def body(sim, world):
@@ -77,15 +90,17 @@ def test_spawned_elevator_builds_walls_floor_and_a_sliding_cabin_door(on_flatsim
         assert await sim.spawn_elevators([elevator])
         walls = {f"lift/{suffix}": size for suffix, size, _ in _elevator_wall_geometries(elevator)}
         assert set(walls) == {"lift/back", "lift/side_pos", "lift/side_neg", "lift/floor"}
-        assert _ours(world) == {*walls, "lift/door"}
+        assert _ours(world) == {*walls, "lift/door_a", "lift/door_b"}
         assert {name: sim._box_sizes[name] for name in walls} == walls
         door = _elevator_synthesized_door(elevator)
-        assert sim._box_sizes["lift/door"] == pytest.approx((math.dist((door.start.x, door.start.y), (door.end.x, door.end.y)), door.width, 2.5))
+        leaf = (math.dist((door.start.x, door.start.y), (door.end.x, door.end.y)) / 2.0, door.width, 2.5)
+        assert sim._box_sizes["lift/door_a"] == sim._box_sizes["lift/door_b"] == pytest.approx(leaf)
         assert sim._elevator_primitives == {"lift": ["lift/back", "lift/side_pos", "lift/side_neg", "lift/floor"]}
         assert sim._elevator_doors == {"lift": "lift/door"}
+        assert sim._door_primitives == {"lift/door": ["lift/door_a", "lift/door_b"]}
         runtime = sim._elevator_runtime["lift"]
         assert (runtime.door_name, runtime.destination_name) == ("lift/door", "other")
-        assert sim._door_runtime["lift/door"].effective_kind == "sliding"
+        assert sim._door_runtime["lift/door"].effective_kind == "sliding_split"
 
     on_flatsim(body)
 
@@ -94,7 +109,7 @@ def test_removed_elevator_takes_its_walls_and_cabin_door_along(on_flatsim):
     async def body(sim, world):
         assert await sim.spawn_elevators([_elevator("lift"), _elevator("stay")])
         assert await sim.remove_elevators(["lift", "never_spawned"])
-        assert _ours(world) == {"stay/back", "stay/side_pos", "stay/side_neg", "stay/floor", "stay/door"}
+        assert _ours(world) == {"stay/back", "stay/side_pos", "stay/side_neg", "stay/floor", "stay/door_a", "stay/door_b"}
         assert set(sim._elevator_runtime) == set(sim._elevator_primitives) == set(sim._elevator_doors) == {"stay"}
         assert set(sim._door_runtime) == {"stay/door"}
 
@@ -116,7 +131,7 @@ def test_removing_an_elevator_whose_walls_are_gone_reports_failure(on_flatsim):
 def test_removing_an_elevator_whose_cabin_door_is_gone_reports_failure(on_flatsim):
     async def body(sim, world):
         assert await sim.spawn_elevators([_elevator("lift")])
-        assert await sim.delete_box("lift/door")
+        assert await sim.delete_box("lift/door_b")
         assert not await sim.remove_elevators(["lift"])
         assert _ours(world) == set()
 

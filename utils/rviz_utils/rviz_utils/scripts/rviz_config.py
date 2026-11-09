@@ -26,7 +26,7 @@ from arena_rclpy_mixins import ArenaMixinNode, ClientWrapper
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.moveit_factory import build_moveit_params
 from arena_robots.Robot import RobotIdentifier
-from arena_viz import DisplayKind
+from arena_viz import DisplayKind, env_namespace
 from rviz_display_control_msgs.msg import DisplaySet, DisplaySpec
 from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 
@@ -132,7 +132,7 @@ class ConfigFileGenerator(ArenaMixinNode):
 
         rviz_parameters: list[dict[str, object]] = [{"use_sim_time": True}]
 
-        env_ns = os.path.dirname(self._TASKGEN_NODE)
+        env_ns = env_namespace(self._TASKGEN_NODE)
         viewer_tf = f"{env_ns}/viewer/tf"
 
         launch_task = await self._launch_manager.launch_description(

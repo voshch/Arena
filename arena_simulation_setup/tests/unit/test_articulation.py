@@ -438,3 +438,56 @@ def test_transformed_scales_a_prismatic_spring_rest_and_keeps_materials():
     spring = moved.joint_map["drawer"].dynamics.spring
     assert (spring.stiffness, spring.rest) == (20.0, pytest.approx(0.3))
     assert moved.materials["drawer"].dynamic_friction == 0.3
+
+
+LATCHED_DOOR = {
+    "links": {"frame": [], "leaf": ["leaf"], "lever": ["lever"]},
+    "joints": [
+        {"name": "hinge", "type": "revolute", "parent": "frame", "child": "leaf", "origin": [0.45, 0.0, 0.0], "axis": [0, 0, 1], "limit": [0.0, 1.6], "role": "door", "latch": {"by": "handle", "release": 0.6}},
+        {"name": "handle", "type": "revolute", "parent": "leaf", "child": "lever", "origin": [-0.35, 0.03, 1.0], "axis": [0, 1, 0], "limit": [0.0, 0.8], "role": "handle"},
+    ],
+    "states": {"closed": {"hinge": 0.0}, "open": {"hinge": 1.5}},
+}
+
+
+def test_a_latch_round_trips_and_survives_the_floor_transform():
+    articulation = Articulation.parse(LATCHED_DOOR)
+    raw = articulation.unstructure()
+    assert raw["joints"][0]["latch"] == {"by": "handle", "release": 0.6}
+    assert "latch" not in raw["joints"][1]
+    assert Articulation.parse(raw).unstructure() == raw
+    assert articulation.transformed(np.diag([0.01, 0.01, 0.01, 1.0])).joint_map["hinge"].latch == articulation.joint_map["hinge"].latch
+
+
+def test_a_latch_holds_until_its_handle_passes_the_release_fraction():
+    articulation = Articulation.parse(LATCHED_DOOR)
+    hinge, handle = articulation.joint_map["hinge"], articulation.joint_map["handle"]
+    assert articulation.latch_holds(hinge, {"hinge": 0.0, "handle": 0.0})
+    assert articulation.latch_holds(hinge, {"hinge": 0.0, "handle": 0.47})
+    assert not articulation.latch_holds(hinge, {"hinge": 0.0, "handle": 0.48})
+    assert not articulation.latch_holds(handle, {"hinge": 0.0, "handle": 0.0})
+
+
+@pytest.mark.parametrize(
+    ("latch", "message"),
+    [
+        ({"by": "knob"}, "hinge latches on 'knob', which is no limited joint"),
+        ({"by": "hinge"}, "hinge cannot latch on itself"),
+        ({"by": "handle", "release": 1.5}, r"latch release takes a number in \[0, 1\]"),
+        ({"by": "handle", "bolt": 0.2}, r"latch has unknown keys \['bolt'\]"),
+    ],
+)
+def test_a_bad_latch_names_the_problem(latch, message):
+    value = {**LATCHED_DOOR, "joints": [{**LATCHED_DOOR["joints"][0], "latch": latch}, LATCHED_DOOR["joints"][1]]}
+    with pytest.raises(ValueError, match=message):
+        Articulation.parse(value)
+
+
+def test_a_fixed_joint_takes_no_latch():
+    with pytest.raises(ValueError, match="fixed joint glue takes no latch"):
+        Joint(name="glue", type="fixed", parent="a", child="b", latch={"by": "handle"})
+
+
+def test_a_continuous_joint_takes_no_latch():
+    with pytest.raises(ValueError, match="continuous joint wheel takes a latch only with a limit"):
+        Joint(name="wheel", type="continuous", parent="a", child="b", latch={"by": "handle"})

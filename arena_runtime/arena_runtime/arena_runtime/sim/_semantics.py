@@ -380,6 +380,11 @@ class StairsSemantics(_StairsSemantics):
     pass
 
 
+@semantic_kind('ramp')
+class RampSemantics(_StairsSemantics):
+    pass
+
+
 @semantic_kind('escalator')
 class EscalatorSemantics(_StairsSemantics):
     DISCRETE = ('running', 'direction')

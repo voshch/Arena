@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from arena_assets.utils.geom import axis_rotation
 import pytest
 
 from arena_runtime.humans.pointing import (
@@ -46,7 +47,7 @@ def test_arm_rot_inverse_round_trips():
 
 
 def test_slerp():
-    a, b = S.rot_axis([0, 0, 1], 0.3), S.rot_axis([1, 0, 0], 1.1)
+    a, b = axis_rotation([0, 0, 1], 0.3), axis_rotation([1, 0, 0], 1.1)
     half = S.slerp_rot(a, b, 0.5)
     ang = lambda m: float(np.arccos(np.clip((np.trace(m) - 1) / 2, -1, 1)))  # noqa: E731
     assert abs(ang(a.T @ half) - ang(half.T @ b)) < 1e-9

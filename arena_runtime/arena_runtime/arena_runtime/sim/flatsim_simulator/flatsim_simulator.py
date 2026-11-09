@@ -17,8 +17,10 @@ import arena_robots.Robot
 import arena_robots.Sensor
 import attrs
 import launch
+import launch.event_handlers
 import launch_ros.actions
 import rclpy.qos
+from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
@@ -33,7 +35,9 @@ from flatsim_msgs.srv import AddFloors, AddOutlines, ControlWorld, DeleteEntitie
 from arena_runtime.humans import PED_RADIUS
 from arena_runtime.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
+from arena_runtime.sim._control import effective_control_yaml, robot_controllers
 from arena_runtime.sim._interface import robot_footprint_radius
+from arena_runtime.sim._urdf import mock_arm_hardware
 
 from .planar import drive_model
 
@@ -153,6 +157,12 @@ def _answer[T](response: T | None) -> T:
     return response
 
 
+def mock_controllers(names: list[str], base: str) -> list[str]:
+    """The controllers flatsim runs on mock hardware: all but the base controller, none when only the joint_state_broadcaster would remain."""
+    rest = [name for name in names if name != base]
+    return rest if any(name != 'joint_state_broadcaster' for name in rest) else []
+
+
 class FlatsimSimulator(BaseSim):
     """Mirrors one env into the world of the flatsim server under the env's name prefix, the server steps it and publishes the robots' topics."""
 
@@ -242,8 +252,17 @@ class FlatsimSimulator(BaseSim):
             if str(sensor.type) in _SENSOR_TYPES
         ]
 
+    def robot_controllers(self, robot: Robot) -> list[str]:
+        """The arm, torso and gripper controllers of a ros2_control robot, none for a robot with only a base controller, which stays with the server."""
+        robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
+        control_spec = robot_config.model_params.control
+        if control_spec is None:
+            return []
+        base = control_spec.cmd_vel_topic.split('/')[0]
+        return mock_controllers(robot_controllers(robot_config, robot.resolved_assembly), base)
+
     async def _launch_robot_stack(self, robot: Robot, description: str) -> LaunchHandle:
-        """Launch robot_state_publisher in the robot namespace."""
+        """Launch robot_state_publisher in the robot namespace, and a mock-hardware controller_manager for a ros2_control robot."""
         ld = launch.LaunchDescription()
         ld.add_action(launch_ros.actions.PushRosNamespace(namespace=str(self.node.service_namespace(robot.name))))
         ld.add_action(
@@ -259,6 +278,35 @@ class FlatsimSimulator(BaseSim):
                 ],
             )
         )
+        robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
+        control_spec = robot_config.model_params.control
+        if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
+            control_prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
+            rendered_yaml = effective_control_yaml(robot.resolved_assembly, control_spec.config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, prefix=control_prefix)
+            cm_node = launch_ros.actions.Node(
+                package='controller_manager',
+                executable='ros2_control_node',
+                name='controller_manager',
+                output='screen',
+                parameters=[{'use_sim_time': True}, rendered_yaml],
+            )
+            ld.add_action(cm_node)
+            ld.add_action(
+                launch.actions.RegisterEventHandler(
+                    launch.event_handlers.OnProcessStart(
+                        target_action=cm_node,
+                        on_start=[
+                            launch_ros.actions.Node(
+                                package='arena_runtime',
+                                executable='urdf_publisher',
+                                name='urdf_publisher',
+                                output='screen',
+                                parameters=[{'robot_description': description}],
+                            )
+                        ],
+                    )
+                )
+            )
         return await self.node.do_launch_tracked(ld)
 
     async def _release(self, sim_path: str) -> bool:
@@ -284,7 +332,7 @@ class FlatsimSimulator(BaseSim):
                 raise NotImplementedError(f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}")
             assert model.path is not None, f'URDF model {model.name} must have a valid file path'
             with open(model.path) as f:
-                description = f.read()
+                description = mock_arm_hardware(f.read())
 
             robot_params = robot_config.model_params
             mobile = robot_params.caps.mobile

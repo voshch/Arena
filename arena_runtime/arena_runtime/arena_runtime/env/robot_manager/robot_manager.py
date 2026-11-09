@@ -48,7 +48,6 @@ if typing.TYPE_CHECKING:
 _NAV2_QUIET_NODES = (
     'behavior_server',
     'bt_navigator',
-    'collision_monitor',
     'controller_server',
     'lifecycle_manager_navigation',
     'nav2_container',
@@ -60,6 +59,8 @@ _NAV2_QUIET_NODES = (
 _NAV2_QUIET_RULES = '+[' + ', '.join(f'**/{n}:error' for n in _NAV2_QUIET_NODES) + ']'
 
 _MOVEIT_QUIET_RULES = '+[**/moveit/**:error]'
+
+_COLLISION_MONITOR_RULES = '+[**/collision_monitor:info]'
 
 _CONTROLLER_POLL = 0.2
 _CM_CALL_TIMEOUT = 10.0
@@ -81,6 +82,7 @@ def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevel
         NodeLogLevelExtension.SetGlobalLogLevelAction(spec),
         NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES, fallback=True),
         NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES, fallback=True),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_COLLISION_MONITOR_RULES, fallback=True),
     ]
 
 
@@ -169,11 +171,11 @@ class RobotManager(NodeInterface):
 
     @property
     def goal(self) -> Pose | None:
-        """Map-frame pose of the active GoToPhase, or None."""
+        """Map-frame pose of the active GoToPhase, None without one or for a judge-only goto."""
         from arena_runtime.env.request import GoToPhase
 
         state = self._runner.active_state
-        if state is None or not isinstance(state.phase, GoToPhase) or state.phase.pose is None:
+        if state is None or not isinstance(state.phase, GoToPhase) or state.phase.pose is None or not state.phase.dispatch:
             return None
         return self._environment_manager.realize(state.phase.pose)
 
@@ -301,7 +303,7 @@ class RobotManager(NodeInterface):
         return kwargs
 
     async def set_up_robot(self):
-        self._robot.pose.position.z += self._config.model_params.z_offset
+        self._robot.pose.position.z += self._config.model_params.z_offset + self._environment_manager.footing(self._robot.pose.position)
         self._robot = (await self._environment_manager.spawn_robot((self._robot,)))[0]
         await self._environment_manager.spawn_robot_lights(self.name, [attrs.evolve(light, name=f'{self.name}_{light.name}', frame=self.frame.tf(light.frame)) for light in self._config.model_params.lights])
 
@@ -441,12 +443,15 @@ class RobotManager(NodeInterface):
         return None if ped is None else standoff_pose((here.position.x, here.position.y), ped)
 
     async def _dispatch(self, state_index: int) -> None:
-        """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state."""
+        """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state, a judge-only goto to none."""
         from arena_runtime.env.adapters.mobile import MobileAdapter
         from arena_runtime.env.request import ElevatorRidePhase, GoToPhase, kind_of
 
         state = self._runner.phases[state_index]
         phase = state.phase
+        if isinstance(phase, GoToPhase) and not phase.dispatch:
+            state.dispatched = True
+            return
         if isinstance(phase, GoToPhase) and phase.pose is None:
             pose = self._dispatch_pose(phase)
             if pose is None:
@@ -514,7 +519,8 @@ class RobotManager(NodeInterface):
                 adapter.on_phase_tick(dispatched, self)
             ride = state.phase if isinstance(state.phase, ElevatorRidePhase) else None
             boarded = state.monitor.held
-            transition = self._runner.step(sample, zones, action_done, (None, None) if ride is not None else self._outcome_for_phase(state.phase), adapter.signal)
+            unjudged = ride is not None or (isinstance(state.phase, GoToPhase) and not state.phase.dispatch)
+            transition = self._runner.step(sample, zones, action_done, (None, None) if unjudged else self._outcome_for_phase(state.phase), adapter.signal)
             if ride is not None and transition.ended is state:
                 self._set_elevator_target(ride, release=True)
                 if state.outcome == "met":
@@ -566,13 +572,15 @@ class RobotManager(NodeInterface):
         return self._runner.done
 
     def active_dispatch_phase(self) -> TaskPhase | None:
-        """The active phase as its adapter received it, goto poses in the map frame."""
+        """The active phase as its adapter received it, goto poses in the map frame, None for a judge-only goto."""
         from arena_runtime.env.request import GoToPhase
 
         state = self._runner.active_state
         if state is None or not state.dispatched:
             return None
         phase = state.phase
+        if isinstance(phase, GoToPhase) and not phase.dispatch:
+            return None
         if isinstance(phase, GoToPhase) and phase.pose is not None:
             return attrs.evolve(phase, pose=self._environment_manager.realize(phase.pose))
         return phase
@@ -783,7 +791,7 @@ class RobotManager(NodeInterface):
             raise self._teleport_never_landed(target, last_error)
 
     async def _apply_pose(self, pose: Pose):
-        pose.position.z += self._config.model_params.z_offset
+        pose.position.z += self._config.model_params.z_offset + self._environment_manager.footing(pose.position)
         self.robot.pose = pose
 
         # TF reports the realized map frame, pose is env-local

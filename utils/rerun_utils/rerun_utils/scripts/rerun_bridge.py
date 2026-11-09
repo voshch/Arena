@@ -18,7 +18,7 @@ import rclpy.qos
 import rclpy.utilities
 import rerun as rr
 from arena_rclpy_mixins import ArenaMixinNode
-from arena_viz import DisplayKind
+from arena_viz import DisplayKind, env_namespace
 from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 
 from rerun_utils.renderers import REGISTRY, RendererCtx
@@ -113,7 +113,7 @@ class RerunBridge(ArenaMixinNode):
         self.get_logger().info(f"rerun web viewer: open {viewer_url}")
 
         self._tf_mirror = TFMirror(self, self._env_id, self._tf_namespace)
-        self._ctx = RendererCtx(env_id=self._env_id, node=self)
+        self._ctx = RendererCtx(env_id=self._env_id, node=self, env_namespace=env_namespace(self._TASKGEN_NODE))
         self._dispatch_manifest()
 
         loop = asyncio.get_running_loop()

@@ -34,6 +34,14 @@ class ToolSpec:
         return inspect.cleandoc(self.fn.__doc__ or "").split("\n", 1)[0]
 
 
+_SPECS: dict[Callable[..., Any], ToolSpec] = {}
+
+
+def tool_spec(fn: Callable[..., Any]) -> ToolSpec:
+    """The registration of a function decorated with Domain.tool, KeyError when it is none."""
+    return _SPECS[fn]
+
+
 @dataclasses.dataclass(frozen=True)
 class ResourceSpec:
     fn: Callable[..., Any]
@@ -99,7 +107,9 @@ class Domain:
                 idempotent_hint=idempotent or read_only,
                 open_world_hint=open_world,
             )
-            self.tools.append(ToolSpec(fn=fn, name=name, title=title, annotations=annotations))
+            spec = ToolSpec(fn=fn, name=name, title=title, annotations=annotations)
+            self.tools.append(spec)
+            _SPECS[fn] = spec
             return fn
 
         return decorator

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from arena_simulation_setup.tree.assets.Animation import ANIM_SUFFIX, add_anim_group
+from arena_simulation_setup.utils.geometry import Orientation
 
 from . import contract as C
 from . import skeleton as S
@@ -49,34 +50,6 @@ def _local_table_path(template: str) -> str:
     if not local.is_dir():
         shutil.copytree(source, local, ignore=shutil.ignore_patterns(".ttl"))
     return str(local / f"{template}{ANIM_SUFFIX}")
-
-
-def _quat(m: np.ndarray) -> np.ndarray:
-    """Unit quaternion (w, x, y, z) of a rotation matrix."""
-    t = float(np.trace(m))
-    if t > 0.0:
-        s = math.sqrt(t + 1.0) * 2.0
-        return np.array([0.25 * s, (m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s])
-    i = int(np.argmax(np.diag(m)))
-    j, k = (i + 1) % 3, (i + 2) % 3
-    s = math.sqrt(max(1e-12, 1.0 + m[i, i] - m[j, j] - m[k, k])) * 2.0
-    q = np.zeros(4)
-    q[0] = (m[k, j] - m[j, k]) / s
-    q[1 + i] = 0.25 * s
-    q[1 + j] = (m[j, i] + m[i, j]) / s
-    q[1 + k] = (m[k, i] + m[i, k]) / s
-    return q
-
-
-def _rot(q: np.ndarray) -> np.ndarray:
-    w, x, y, z = q / np.linalg.norm(q)
-    return np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-        ]
-    )
 
 
 @dataclass(frozen=True)
@@ -151,8 +124,8 @@ class PointTable:
         weights /= weights.sum()
         idx = [(ia, ie) for ia, ie, _ in corners]
         linear = sum(w * self.linear[s, ia, ie] for (ia, ie), w in zip(idx, weights, strict=True))
-        q = sum(w * a for a, w in zip(aligned, weights, strict=True))
-        r_shoulder = _rot(np.asarray(q))
+        q = np.sum([w * a for a, w in zip(aligned, weights, strict=True)], axis=0)
+        r_shoulder = Orientation(*q).to_matrix()
         sw = complex(0.0)
         for (ia, ie), w in zip(idx, weights, strict=True):
             sw += w * complex(math.cos(self.swivel[s, ia, ie]), math.sin(self.swivel[s, ia, ie]))
@@ -202,7 +175,7 @@ def _solve_cell(template: str, height: float, collar_scale: float, side: str, az
     rep = clip.report
     return (
         np.array([ang[n] for n in _linear_dofs(side)], dtype=float),
-        _quat(S.arm_rot(*tri)),
+        np.array(list(Orientation.from_matrix(S.arm_rot(*tri)))),
         float(rep["swivel_rad"]),
         np.asarray(pos[f"{side}_wrist"], dtype=float),
         bool(rep["ok"]),

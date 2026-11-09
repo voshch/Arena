@@ -14,7 +14,7 @@ from arena_runtime_msgs.msg import AdapterDisplay, RecordedTopic
 from arena_runtime._node import NodeInterface
 
 NONE = "none"
-FRONTENDS = ("bus", "srp", "seld")
+FRONTENDS = ("bus", "srp", "seld", "call")
 
 
 def arena_hearing_share(hearing: str) -> str:

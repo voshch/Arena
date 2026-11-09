@@ -19,11 +19,15 @@ def _door(start, end, *, kind="sliding", width=0.1, height=2.0, activation=1.5):
 
 
 def _runtime(shim, door, kind="sliding"):
-    _, closed = shim._door_geometry(door)
+    _, closed = shim._leaf_geometry(door, kind)
     return shim._DoorRuntime(door=door, closed_pose=closed, open_pose=shim._door_open_pose(door, closed, kind), effective_kind=kind)
 
 
-@pytest.mark.parametrize(("kind", "effective"), [("hinged", "hinged"), ("teleport", "teleport"), ("sliding_top", "sliding_top"), ("sliding", "sliding")])
+def _xyz(pose):
+    return (pose.position.x, pose.position.y, pose.position.z)
+
+
+@pytest.mark.parametrize(("kind", "effective"), [("hinged", "hinged"), ("teleport", "teleport"), ("sliding_top", "sliding_top"), ("sliding", "sliding"), ("sliding_split", "sliding_split")])
 def test_effective_kind_keeps_each_door_kind(shim, kind, effective):
     import rclpy.logging
 
@@ -44,6 +48,69 @@ def test_sliding_door_opens_by_its_full_length_along_a_diagonal(shim):
     opened = shim._door_open_pose(door, closed, "sliding")
     assert (opened.position.x, opened.position.y, opened.position.z) == pytest.approx((4.5, 6.0, 1.0))
     assert opened.orientation == closed.orientation
+
+
+def test_split_door_leaves_are_the_span_halves_and_part_by_half_a_span_each(shim):
+    door = _door((0.0, 0.0, 0.0), (4.0, 0.0, 0.0), kind="sliding_split", width=0.2, height=2.4)
+    size, _ = shim._leaf_geometry(door, "sliding_split")
+    assert size == pytest.approx((2.0, 0.2, 2.4))
+    rt = _runtime(shim, door, kind="sliding_split")
+    closed = shim._leaf_poses("d", rt)
+    assert list(closed) == ["d_a", "d_b"]
+    assert _xyz(closed["d_a"]) == pytest.approx((1.0, 0.0, 1.2))
+    assert _xyz(closed["d_b"]) == pytest.approx((3.0, 0.0, 1.2))
+    rt.progress = 1.0
+    opened = shim._leaf_poses("d", rt)
+    assert _xyz(opened["d_a"]) == pytest.approx((-1.0, 0.0, 1.2))
+    assert _xyz(opened["d_b"]) == pytest.approx((5.0, 0.0, 1.2))
+    assert opened["d_a"].orientation == opened["d_b"].orientation == closed["d_a"].orientation
+
+
+def test_split_door_leaves_mirror_each_other_along_a_diagonal(shim):
+    rt = _runtime(shim, _door((0.0, 0.0, 0.0), (3.0, 4.0, 0.0), kind="sliding_split"), kind="sliding_split")
+    rt.progress = 0.5
+    poses = shim._leaf_poses("d", rt)
+    assert _xyz(poses["d_a"]) == pytest.approx((0.0, 0.0, 1.0))
+    assert _xyz(poses["d_b"]) == pytest.approx((3.0, 4.0, 1.0))
+
+
+def test_single_leaf_door_moves_one_box_under_its_own_name(shim):
+    rt = _runtime(shim, _door((0.0, 0.0, 0.0), (2.0, 0.0, 0.0)))
+    assert list(shim._leaf_poses("d", rt)) == ["d"]
+
+
+def test_split_door_close_is_blocked_in_either_leaf_band(shim):
+    rt = _runtime(shim, _door((0.0, 0.0, 0.0), (4.0, 0.0, 0.0), kind="sliding_split"), kind="sliding_split")
+    assert shim._swept_slab_blocked(rt, 0.0, 1.0, [("r", (-1.5, 0.0), 0.1)])
+    assert shim._swept_slab_blocked(rt, 0.0, 1.0, [("r", (5.5, 0.0), 0.1)])
+    assert shim._swept_slab_blocked(rt, 0.0, 1.0, [("r", (2.0, 0.3), 0.3)])
+    assert not shim._swept_slab_blocked(rt, 0.0, 1.0, [("r", (6.5, 0.0), 0.1)])
+
+
+def test_split_door_opening_checks_both_pockets_and_never_the_gap(shim):
+    rt = _runtime(shim, _door((0.0, 0.0, 0.0), (4.0, 0.0, 0.0), kind="sliding_split"), kind="sliding_split")
+    assert shim._sliding_entry_blocked(rt, 0.0, 0.5, [("ped", (-0.8, 0.0), 0.05)])
+    assert shim._sliding_entry_blocked(rt, 0.0, 0.5, [("ped", (4.8, 0.0), 0.05)])
+    assert not shim._sliding_entry_blocked(rt, 0.0, 0.5, [("ped", (2.0, 0.0), 0.3)])
+    assert not shim._sliding_entry_blocked(rt, 0.0, 0.5, [("ped", (5.5, 0.0), 0.1)])
+
+
+def test_split_door_opens_past_an_agent_in_the_gap_and_holds_for_one_in_a_pocket(shim):
+    rt = _runtime(shim, _door((0.0, 0.0, 0.0), (4.0, 0.0, 0.0), kind="sliding_split"), kind="sliding_split")
+    rt.last_trigger_sim_time = 0.0
+    shim._advance_state(rt, 0.25, 0.0, [("ped", (2.0, 0.0), 0.3)])
+    assert rt.progress == pytest.approx(0.25)
+    shim._advance_state(rt, 0.25, 0.0, [("ped", (-0.6, 0.0), 0.1)])
+    assert rt.progress == pytest.approx(0.25)
+
+
+def test_elevator_cabin_door_is_split_unless_the_elevator_names_a_kind(shim):
+    from arena_runtime.shared import Elevator, Position
+
+    elevator = Elevator(name="e", position=Position(4.0, 1.0, 0.0), size=[2.0, 3.0, 2.5], door_side="+x")
+    assert shim._elevator_synthesized_door(elevator).kind == "sliding_split"
+    single = Elevator(name="e", position=Position(4.0, 1.0, 0.0), size=[2.0, 3.0, 2.5], door_side="+x", door_kind="sliding")
+    assert shim._elevator_synthesized_door(single).kind == "sliding"
 
 
 def test_zero_length_sliding_door_stays_at_its_closed_pose(shim):
@@ -98,7 +165,7 @@ def test_elevator_without_a_door_side_opens_on_plus_x(shim):
     elevator = Elevator(name="e", position=Position(4.0, 1.0, 0.0), size=[2.0, 3.0, 2.5], door_side=None)
     start, end = shim._door_slot(elevator)
     assert start.x == end.x == pytest.approx(5.0 - shim.DOOR_INSET)
-    assert sorted((start.y, end.y)) == pytest.approx([-0.5 + shim.DOOR_INSET, 2.5 - shim.DOOR_INSET])
+    assert sorted((start.y, end.y)) == pytest.approx([-0.5 + shim.WALL_THICKNESS / 2.0, 2.5 - shim.WALL_THICKNESS / 2.0])
 
 
 def test_scheduled_arrival_without_riders_only_opens_the_door(shim):

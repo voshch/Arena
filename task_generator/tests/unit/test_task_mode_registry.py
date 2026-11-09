@@ -200,3 +200,24 @@ def test_declare_mode_schemas_declares_what_every_registered_schema_declares() -
     finally:
         reference.destroy_node()
         node.destroy_node()
+
+
+def test_multi_axes_are_exactly_the_axes_whose_validation_takes_several_modes() -> None:
+    pytest.importorskip("arena_runtime")
+    from task_generator.tasks import layer
+
+    for package in ("modules", "obstacles", "robots"):
+        importlib.import_module(f"task_generator.tasks.{package}")
+
+    def accepts_two(axis: str) -> bool:
+        names = list(layer.mode_namespaces()[axis])[:2]
+        try:
+            layer.validate_modes({axis: names})
+        except ValueError:
+            return False
+        return True
+
+    multi = layer.multi_axes()
+
+    assert set(multi) == {axis for axis in layer.mode_namespaces() if accepts_two(axis)}
+    assert "modules" in multi

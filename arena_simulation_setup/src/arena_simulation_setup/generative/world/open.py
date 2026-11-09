@@ -21,11 +21,13 @@ class WorldGeneratorOpen(WithPedestrians):
         max_tries: int = pydantic.Field(50, ge=1)
 
     config: Configuration
+    _layout: Layout | None
 
     def configure(self, configuration: dict):
         self.config = self.Configuration.model_validate(configuration)
         self.warnings = []
         self.diagnostics = None
+        self._layout = None
 
     def _snap(self, value: float) -> float:
         return round(value / self.config.resolution) * self.config.resolution
@@ -42,6 +44,11 @@ class WorldGeneratorOpen(WithPedestrians):
             free = box.difference(shapely.union_all(blocks)) if blocks else box
             if isinstance(free, shapely.Polygon) and not free.is_empty:
                 description = f'open field, {c.obstacles} obstacles, {1 - free.area / box.area:.0%} filled'
-                world, self.diagnostics = compile_layout(Layout(areas=[Area(polygon=free)], regions=[Region(name='open', polygon=box, description=description)]))
+                layout = Layout(areas=[Area(polygon=free)], regions=[Region(name='open', polygon=box, description=description)])
+                world, self.diagnostics = compile_layout(layout)
+                self._layout = layout
                 return world
         raise ValueError(f'{c.obstacles} obstacles of {c.obstacle_size} m left no connected free space in a {c.width} x {c.height} m box in {c.max_tries} tries')
+
+    def layout(self) -> Layout | None:
+        return self._layout

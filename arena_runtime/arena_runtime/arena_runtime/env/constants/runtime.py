@@ -24,6 +24,8 @@ EPISODE_PARAMS: dict[str, str] = {
     'task.episode.goto_pose.timeout.no_progress': 'Fail a goto_pose episode after this many sim seconds without goal progress (-1 = off).',
     'task.episode.goto_pose.hold_time': 'Sim seconds a robot must park at a goto_pose goal before the phase counts as met (0 = arrival suffices).',
     'task.episode.goto_pose.signal': 'Signal the robot must send to end a goto_pose phase, such as arrived (empty = Arena judges arrival).',
+    'task.episode.node_ping.period': 'Wall seconds between pings of the nodes of this env, also the time a node has to answer.',
+    'task.episode.node_ping.misses': 'Pings in a row a node may miss before it counts as hung, 0 turns the check off.',
 }
 
 RUN_EPISODE_BUSY = 'busy'
@@ -134,6 +136,9 @@ def Configuration(server: ROSParamServer) -> type:
 
             GOAL_SIGNAL = server.ROSParam[str]('task.episode.goto_pose.signal', '')
 
+            NODE_PING_PERIOD = server.ROSParam[float]('task.episode.node_ping.period', 10.0)
+            NODE_PING_MISSES = server.ROSParam[int]('task.episode.node_ping.misses', 3)
+
             SPAWN_ROBOT_SAFE_DIST = server.ROSParam[float](
                 'task.episode.spawn.robot_clearance',
                 0.25,
@@ -165,6 +170,16 @@ def Configuration(server: ROSParamServer) -> type:
             ARM_ADAPTER = server.ROSParam[str](
                 'robot.arm_adapter',
                 'moveit',
+            )
+
+            LIFT_ADAPTER = server.ROSParam[str](
+                'robot.lift_adapter',
+                'direct',
+            )
+
+            GRIPPER_ADAPTER = server.ROSParam[str](
+                'robot.gripper_adapter',
+                'direct',
             )
 
             HEARING = server.ROSParam[str](

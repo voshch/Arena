@@ -1,7 +1,7 @@
 # arena_animation_retarget
 
-Retargets SMPL-X body motion onto Arena's 40-DOF human wire, producing clips for
-`arena_simulation_setup/assets/Common/Animation`. Sources include text-to-motion output from Kimodo and AMASS-style SMPL-X parameter files. Conversion has two stages: a rotation retarget, then whole-body IK solved as one batch on the GPU.
+Retargets SMPL-X body motion onto Arena's 42-DOF human wire, producing clips for
+`arena_simulation_setup/assets/Common/Animation`. Sources include text-to-motion output from Kimodo and AMASS-style SMPL-X parameter files. Conversion has two stages: a rotation retarget, then whole-body IK solved as one batch on the GPU. An optional third (`--hold`) re-solves the arms so a hand holds a prop.
 
 ```bash
 # one clip, or a whole tree of them (directories are searched recursively)
@@ -113,6 +113,73 @@ pair: {role: a, partner: intermask_hug_b, partner_offset: [0.28, -0.01, 2.92], s
 
 The report's `contact_mean` / `contact_p95` columns compare each contact vector on the two Arena bodies with the source's, in cm. `contact_mean_noanchor` gives the same measure without anchors. On 11 InterMask samples the error went from 9–45 cm to 1.4–6 cm.
 
+## Holding a prop (`--hold`, `hold.py`)
+
+```bash
+ros2 run arena_simulation_setup animation_retarget iv_walk.npz -o $ANIM --name walk_ivpole \
+    --hold iv --hold-body Hospital/patient_male_caucasian_old
+ros2 run arena_simulation_setup animation_retarget cane.npz -o $ANIM --hold cane:gz=0.88,arc=0.35 --hold-body $BUNDLE
+```
+
+```python
+from arena_simulation_setup.adapters.arena_animation_retarget import hold
+clip, report = hold.apply(clip, hold.Hold.parse("rollator"), body="Common/casual_male_caucasian_old")
+```
+
+Text-to-motion constraints, such as Kimodo's hand pins, put a hand only near a handle. The pins are soft, the retarget
+changes the body's proportions, and the character a simulator draws differs again from Arena's template: a cane leaves
+the fist at the wrong angle, rollator hands hover above the grips. Holding needs millimetres and a few degrees, so this
+stage solves the arm last, per clip frame, on the body that will be drawn:
+
+- Arm DOFs only (collar, shoulder, elbow, forearm twist, wrist flexion and tilt); legs, trunk and head stay as retargeted.
+- Bounded least squares per frame (scipy), warm-started from the previous frame; the first frame from random starts within
+  the limits.
+- Terms: the centre of the fist closed on the handle (`arena_runtime` hands.palm_frame(...).grip, the cylinder the
+  finger curls close on) on the handle; its axis along it; a loose palm direction; optional comfort ranges for the elbow
+  and wrist and an elbow pointing back; staying near the retargeted arm; smoothness to the previous frame.
+- Body: `--hold-body` takes a character bundle directory or a model URI. `shared.actor_pose.ActorPose` poses it from the
+  bundle's own files the way the simulators draw it: the .rig over the skin skeleton, the neutral clip, soles on the
+  floor. It matches Isaac's wire pose provider exactly (`tests/unit/test_actor_pose.py`). Without `--hold-body` the
+  stage solves on Arena's template body.
+
+Tasks (body frame, x forward, y left, z up from the soles, m):
+
+| task | hand | target |
+|---|---|---|
+| `cane` | right (`side=l` mirrors) | fist at (gx, gy, gz); a cane of `length` held `grip_at` below its top, its tip sweeping +-`arc` across the midline in step with the clip's own steps (left at each right heel strike: two-point touch), lifted `tap` between touches |
+| `rolling` | right | the same, the tip always on the floor |
+| `iv` | left (`side=r`) | round a vertical pole at (gx, gy, gz), thumb up; the pole diagonal across the palm (`angle` 42), the elbow at the side |
+| `frame` | both | a pick-up frame's bars `width` apart, following the clip's own two-hand lift and placing, averaged over both hands (rigid frame), held at the bar height `handle` while the frame stands |
+| `rollator` | both | the grips at (gx, +-width/2, gz) |
+
+The defaults are the props the stage was made with (IVStand, WalkerFitted, RollatorFitted, a 1.27 m cane) and their
+characters. Override them as `TASK:key=value,...`; keys and defaults are in `hold.TASKS` (plus `hold.OPTIONAL`), unknown keys are refused.
+
+The stage also solves the finger curls that close this body's hand on the handle (hands.grasp_on: each finger to first
+contact, the thumb by room or, with `wrap`, over the fingers). It writes them into the clip as digit DOFs. A held clip
+carries no `body/` track: that track holds the source's own torso, which the arm was not solved against, so players pose
+the clip from its angles over the character's stance. A clip that cannot be held (a cane clip without two strides) fails
+alone. Each annotation gets a `hold` block, whose `curls` go into an agent type's `pose.hold.<side>.curls`:
+
+```yaml
+hold: {task: iv, body: patient_male_caucasian_old, sides: l, curls: {l: [0.57, 1.15, 1.11, 0.94, 0.31]},
+       grip_mm: [0.16, 0.34], axis_deg: [0.07, 0.15], radius: 0.008, angle: 42.0}
+```
+
+`grip_mm` and `axis_deg` are the mean and p95 residuals over the clip. Five Kimodo assistive walks solved on their characters:
+
+| task | character | grip mm (mean/p95) | axis deg | time |
+|---|---|---|---|---|
+| iv | patient_male_caucasian_old | 0.16 / 0.34 | 0.07 / 0.15 | 73 s |
+| cane | casual_female_caucasian_middleage | 0.01 / 0.03 | 0.01 / 0.03 | 232 s |
+| rolling | casual_male_asian_young | 0.00 / 0.01 | 0.01 / 0.03 | 195 s |
+| frame | patient_female_asian_old | 0.01 / 0.02 | 0.00 / 0.00 | 332 s |
+| rollator | casual_male_caucasian_old | 0.04 / 0.11 | 0.02 / 0.06 | 275 s |
+
+The fidelity report then shows the held arm far from the source's, as intended. A gait profile fitted from a held clip
+(`arena_runtime.humans.fit`, 4 harmonics) keeps the hold within a few mm (IV: 4 mm mean, 0.2 deg), since the
+fit averages the strides.
+
 ## Fidelity report
 
 Every conversion prints a summary (`--check` prints the per-clip table, `--report` writes a CSV). Each clip frame is compared with the nearest source frame on Arena's contract FK, i.e. what RViz draws:
@@ -137,6 +204,7 @@ Coverage:
 - hard limits, lying down and continuity;
 - batch results equal single-clip results;
 - the CLI on a mixed directory;
-- pairs (`test_pair.py`): a synthetic handshake whose hands must meet on Arena's bodies, placements, the pair file layouts and `--pair` on the CLI.
+- pairs (`test_pair.py`): a synthetic handshake whose hands must meet on Arena's bodies, placements, the pair file layouts and `--pair` on the CLI;
+- holds (`test_hold.py`): an IV pole held thumb up, rollator grips level, a cane sweeping with the steps, the body track dropped and misspelled keys refused, on the template body.
 
 `test_real_kimodo_collapse` runs when `$ARENA_RETARGET_SAMPLE` points to a Kimodo `.npz`.

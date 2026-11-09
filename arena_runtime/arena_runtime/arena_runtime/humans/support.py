@@ -17,7 +17,9 @@ import attrs
 import numpy as np
 import yaml
 from arena_simulation_setup.tree.assets.human_rig import SUB_BUNDLE
+from arena_simulation_setup.utils.geometry import Orientation
 
+from arena_assets.impl import Face
 from arena_assets.utils import human
 from arena_assets.utils.human import Legs, PelvisClearance, Proportions
 from arena_runtime.humans.pointing import skeleton as S
@@ -36,7 +38,25 @@ SEATED_ARMS = {"y_shoulder": 0.25, "p_shoulder": 0.3, "elbow": 0.8, "r_wrist": 1
 TORSO_JOINTS = ("r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest")
 SETTLE_S = 0.4  # s, the body moves between where it stands and where it rests
 LIE_S = 1.0  # s, the body moves between standing beside a bed and lying on it
-_FACING = {"+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+y": (0.0, 1.0), "-y": (0.0, -1.0)}
+
+
+def _front(face: Face) -> float:
+    return math.remainder(math.radians(face.angle + 180.0), math.tau)
+
+
+def front_angle(face: object) -> float | None:
+    """Angle in rad of an annotated `face` (an enum value or a legacy numeric angle) in the model frame, None when it names no face."""
+    if isinstance(face, str):
+        try:
+            return _front(Face(face))
+        except ValueError:
+            try:
+                face = float(face)
+            except ValueError:
+                return None
+    if isinstance(face, (int, float)) and not isinstance(face, bool):
+        return next((_front(f) for f in Face if f.angle == float(face)), None)
+    return None
 
 
 @attrs.frozen
@@ -114,9 +134,10 @@ def load_body(model_uri: str) -> BodyMeasurements | None:
             proportions = TYPICAL_PROPORTIONS
     if annotation.get("pelvis_clearance") and annotation.get("legs"):
         return BodyMeasurements(clearance=PelvisClearance(**annotation["pelvis_clearance"]), legs=Legs(**annotation["legs"]), proportions=proportions)
-    forward = _FACING.get(str(annotation.get("face", "+x")))
-    if forward is None or skin is None:
+    angle = front_angle(annotation["face"]) if "face" in annotation else 0.0
+    if angle is None or skin is None:
         return None
+    forward = (math.cos(angle), math.sin(angle))
     return BodyMeasurements(clearance=human.pelvis_clearance(skin, np.array(forward)), legs=human.legs(skin), proportions=proportions)
 
 
@@ -350,14 +371,7 @@ def seat_depth(plan: SeatPlan, angles: Mapping[str, float], legs: Legs) -> float
     return plan.stand + folded * (plan.depth - plan.stand)
 
 
-def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Hamilton product of xyzw quaternions."""
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return np.array([aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz])
-
-
-_SUPINE = np.array([0.0, -math.sin(math.pi / 4), 0.0, math.cos(math.pi / 4)])
+_SUPINE = Orientation(w=math.cos(math.pi / 4), x=0.0, y=-math.sin(math.pi / 4), z=0.0)
 
 
 def supported_pose(support: Support, body: BodyMeasurements, angles: Mapping[str, float], x: float, y: float, yaw: float, depth: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
@@ -367,12 +381,12 @@ def supported_pose(support: Support, body: BodyMeasurements, angles: Mapping[str
     away from yaw and its feet toward it.
     """
     pelvis = planted_pelvis(angles, body.legs)
-    upright = np.array([0.0, 0.0, math.sin(yaw / 2.0), math.cos(yaw / 2.0)])
+    upright = Orientation.from_yaw(yaw)
     if support.kind == "lie":
         position = np.array([x + pelvis * math.cos(yaw), y + pelvis * math.sin(yaw), support.height + body.clearance.lie])
-        return position, _quat_mul(upright, _SUPINE)
+        return position, (upright * _SUPINE).to_xyzw()
     lift = max(0.0, support.height + body.clearance.sit_at(hip_flexion(angles)) - pelvis)
-    return np.array([x + depth * math.cos(yaw), y + depth * math.sin(yaw), lift]), upright
+    return np.array([x + depth * math.cos(yaw), y + depth * math.sin(yaw), lift]), upright.to_xyzw()
 
 
 # m, joint centre to the skin a lying or kneeling body rests on; the pelvis takes the model's measurement
@@ -380,13 +394,6 @@ _FLESH = {"waist": 0.11, "spine": 0.11, "chest": 0.11, "torso": 0.11, "neck": 0.
 _PALM = 0.45  # of the wrist to fingertip reach, to the palm's centre
 _HAND_FLESH = (0.03, 0.01)  # m, under the palm's centre and the fingertips
 _TOE = 0.15  # m, ankle to the ball of the foot, as the skeleton's foot point
-
-
-def _rotate(q: Sequence[float] | np.ndarray, v: np.ndarray) -> np.ndarray:
-    """Vector v (..., 3) turned by the xyzw quaternion q."""
-    u, w = np.asarray(q[:3], dtype=float), float(q[3])
-    t = 2.0 * np.cross(u, v)
-    return v + w * t + np.cross(u, t)
 
 
 def _contacts(angles: Mapping[str, float], body: BodyMeasurements) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -420,9 +427,9 @@ def tilted_pose(body: BodyMeasurements, angles: Mapping[str, float], x: float, y
     an untilted ped's.
     """
     points, flesh, soles, pelvis = _contacts(angles, body)
-    turned = _rotate(tilt, np.concatenate([points, soles]) - pelvis)[:, 2]
+    turned = ((np.concatenate([points, soles]) - pelvis) @ Orientation.from_xyzw(tilt).to_matrix().T)[:, 2]
     height = float(np.max(np.concatenate([flesh, np.zeros(len(soles))]) - turned))
-    orientation = _quat_mul(np.array([0.0, 0.0, math.sin(yaw / 2.0), math.cos(yaw / 2.0)]), np.asarray(tilt, dtype=float))
+    orientation = Orientation.from_yaw(yaw) * Orientation.from_xyzw(tilt)
     lift = float(pelvis[2] - soles[:, 2].min())  # the renderer's pelvis height above the body frame origin
-    origin = np.array([x, y, floor + height]) - _rotate(orientation, np.array([0.0, 0.0, lift]))
-    return origin, orientation
+    origin = np.array([x, y, floor + height]) - orientation.to_matrix() @ np.array([0.0, 0.0, lift])
+    return origin, orientation.to_xyzw()

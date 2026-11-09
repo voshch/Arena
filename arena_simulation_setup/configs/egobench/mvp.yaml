@@ -1,0 +1,15 @@
+# EgoBench MVP: frontal passes and crossings at five offsets, in corridors and in open space, on a fixed and on a reactive pedestrian route.
+# Run with `generate_egobench configs/egobench/mvp.yaml --write`; the planners and seeds are launch arguments, not part of a scenario.
+name: egobench_mvp
+seed: 0
+sampling: grid
+world_variants: 2
+worlds:
+  corridor: {corridor_width: 3.0, branches: 10}
+  open: {width: 20.0, height: 20.0, obstacles: 0}
+encounters: [oncoming, crossing_left, crossing_right]
+pedestrians: [fixed, reactive]
+lateral_offset: {min: 0.6, max: 1.4, step: 0.2}  # m; along the route for a crossing, across it otherwise
+robot_speed: 0.5
+ped_speed: 1.2
+agent_type: adult

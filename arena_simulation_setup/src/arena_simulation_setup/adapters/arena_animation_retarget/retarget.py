@@ -22,13 +22,13 @@ upright root); ``fold_tilt=False`` leaves the body pelvis-relative for a rendere
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
+from arena_assets.utils.geom import axis_rotation, swing
 from arena_simulation_setup.shared.body import BODY_JOINTS, Template, load_template, rest_correction
 
 from .contract import SK, WIRE
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 IDX = {k: i for i, k in enumerate(WIRE)}
 
 # Contract arm-down rest -> SMPL-X T-pose rest, per side (palms in <-> palms down).
-ARM_REST = {"l": SK.rot_axis([1, 0, 0], np.pi / 2), "r": SK.rot_axis([1, 0, 0], -np.pi / 2)}
+ARM_REST = {"l": axis_rotation([1, 0, 0], np.pi / 2), "r": axis_rotation([1, 0, 0], -np.pi / 2)}
 
 # Per limb: (proximal joint, hinge joint, end joint, T-pose map). Collars, spine, head and feet keep the plain rest
 # map: their SMPL-X landmarks are not the contract's (collar joint at the sternum, foot joint at the ball of the foot).
@@ -74,7 +74,7 @@ class Clip:
 
 @dataclass
 class Prepared:
-    """One motion ready for the IK: rotation-retarget start (T, 40) and per-frame targets in the body base frame."""
+    """One motion ready for the IK: rotation-retarget start (T, 42) and per-frame targets in the body base frame."""
 
     init: np.ndarray
     targets: dict[str, np.ndarray]
@@ -95,23 +95,6 @@ class Prepared:
 # ---- small vectorized rotation helpers ---------------------------------------------------------------------------
 
 
-def _align(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Smallest rotation taking direction a onto direction b."""
-    a, b = a / np.linalg.norm(a), b / np.linalg.norm(b)
-    ax = np.cross(a, b)
-    s, c = np.linalg.norm(ax), float(np.dot(a, b))
-    return np.eye(3) if s < 1e-9 else SK.rot_axis(ax / s, float(np.arctan2(s, c)))
-
-
-def _rot(axis: Sequence[float] | np.ndarray, angle: np.ndarray) -> np.ndarray:
-    """Batched SK.rot_axis: (T,) angles about one axis -> (T, 3, 3)."""
-    a = np.asarray(axis, dtype=float)
-    a = a / np.linalg.norm(a)
-    k = np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
-    s, c = np.sin(angle)[:, None, None], np.cos(angle)[:, None, None]
-    return np.eye(3) + s * k + (1 - c) * (k @ k)
-
-
 def _T(m: np.ndarray) -> np.ndarray:
     return np.swapaxes(m, -1, -2)
 
@@ -121,7 +104,7 @@ def _euler(m: np.ndarray, seq: str) -> np.ndarray:
 
 
 def _hinge(m: np.ndarray) -> np.ndarray:
-    """Angle of the contract hinge rot_axis((0,-1,0), a) = Ry(-a) closest to m, batched."""
+    """Angle of the contract hinge axis_rotation((0,-1,0), a) = Ry(-a) closest to m, batched."""
     return -np.arctan2(m[..., 0, 2], m[..., 2, 2])
 
 
@@ -144,7 +127,7 @@ def _arm_inverse(m: np.ndarray) -> np.ndarray:
     y = np.arctan2(d[:, 1], d[:, 0])
     cands = []
     for yy, pp in ((y, p), (y + np.pi, -p)):
-        n = _T(_rot(SK.ARM_AXES[0], yy) @ _rot(SK.ARM_AXES[1], pp)) @ m
+        n = _T(axis_rotation(SK.ARM_AXES[0], yy) @ axis_rotation(SK.ARM_AXES[1], pp)) @ m
         cands.append((yy, pp, np.arctan2(-n[:, 1, 0], n[:, 0, 0])))
     out = np.zeros((T, 3))
     prev = np.zeros(3)
@@ -169,12 +152,12 @@ def _limb_rest(upper: np.ndarray, lower: np.ndarray, m0: np.ndarray) -> tuple[np
     """Rest maps of a limb's two bones from SMPL-X's rest bones (ROS axes). The rest kink splits into a bend in the
     contract hinge plane, kept as the rest hinge angle e0, and a sideways part the hinge cannot make, dropped. The bent
     contract limb is then laid on the rest line."""
-    qb = _align(m0 @ SK.DOWN, upper) @ m0
+    qb = swing(m0 @ SK.DOWN, upper) @ m0
     v = qb.T @ lower
-    e0 = float(np.arctan2(v[0], -v[2]))  # SK.rot_axis(ELBOW_AXIS, e) @ DOWN = (sin e, 0, -cos e)
-    hinge = SK.rot_axis(SK.ELBOW_AXIS, e0)
+    e0 = float(np.arctan2(v[0], -v[2]))  # axis_rotation(ELBOW_AXIS, e) @ DOWN = (sin e, 0, -cos e)
+    hinge = axis_rotation(SK.ELBOW_AXIS, e0)
     line = np.linalg.norm(upper) * SK.DOWN + np.linalg.norm(lower) * (hinge @ SK.DOWN)
-    qa = _align(m0 @ line, upper + lower) @ m0
+    qa = swing(m0 @ line, upper + lower) @ m0
     return qa, qa @ hinge
 
 
@@ -248,7 +231,7 @@ def prepare(motion: Motion, fold_tilt: bool = True, height: float = 1.75) -> Pre
     put = lambda k, v: th.__setitem__((slice(None), IDX[k]), v)  # noqa: E731
 
     yaw = heading(g("pelvis"))
-    root_r = _rot(SK.UP, yaw)
+    root_r = axis_rotation(SK.UP, yaw)
     base = root_r if fold_tilt else g("pelvis")
     BT = _T(base)
     root_xy_yaw = np.stack([P[:, 0, 0], P[:, 0, 1], np.unwrap(yaw)], 1)
@@ -276,18 +259,19 @@ def prepare(motion: Motion, fold_tilt: bool = True, height: float = 1.75) -> Pre
         put(f"{s}_y_collar", cy)
         put(f"{s}_p_collar", cp)
         ay, ap = SK.COLLAR_AXES[s]
-        c_r = chest @ _rot(ay, cy) @ _rot(ap, cp)
+        c_r = chest @ axis_rotation(ay, cy) @ axis_rotation(ap, cp)
         U, Fo = g(f"{s}_shoulder") @ Q[f"{s}_shoulder"], g(f"{s}_elbow") @ Q[f"{s}_elbow"]
         arm = _arm_inverse(_T(c_r) @ U)
         for k, v in zip(("y_shoulder", "p_shoulder", "r_shoulder"), arm.T, strict=True):
             put(f"{s}_{k}", v)
-        S = c_r @ _rot(SK.ARM_AXES[0], arm[:, 0]) @ _rot(SK.ARM_AXES[1], arm[:, 1]) @ _rot(SK.ARM_AXES[2], arm[:, 2])
+        S = c_r @ axis_rotation(SK.ARM_AXES[0], arm[:, 0]) @ axis_rotation(SK.ARM_AXES[1], arm[:, 1]) @ axis_rotation(SK.ARM_AXES[2], arm[:, 2])
         e = _hinge(_T(S) @ Fo)
         put(f"{s}_elbow", e)
-        f_r = S @ _rot(SK.ELBOW_AXIS, e)
-        a1, b1, _ = _euler(_T(f_r @ Q[f"{s}_elbow"].T @ ARM_REST[s]) @ (g(f"{s}_wrist") @ ARM_REST[s]), "ZXY").T
+        f_r = S @ axis_rotation(SK.ELBOW_AXIS, e)
+        a1, b1, c1 = _euler(_T(f_r @ Q[f"{s}_elbow"].T @ ARM_REST[s]) @ (g(f"{s}_wrist") @ ARM_REST[s]), "ZXY").T
         put(f"{s}_r_wrist", -a1 if s == "l" else a1)
         put(f"{s}_wrist", b1 if s == "l" else -b1)
+        put(f"{s}_d_wrist", -c1)  # radial deviation, about -y on both sides
 
         Th, Sh = g(f"{s}_hip") @ Q[f"{s}_hip"], g(f"{s}_knee") @ Q[f"{s}_knee"]
         hy, hp, hr = _euler(BT @ Th, "ZXY").T  # = Rz(-y) Rx(+-p) Ry(-r) of the contract, exactly
@@ -296,7 +280,7 @@ def prepare(motion: Motion, fold_tilt: bool = True, height: float = 1.75) -> Pre
         put(f"{s}_r_hip", -hr)
         k = _hinge(_T(Th) @ Sh)
         put(f"{s}_knee", k)
-        k_r = Th @ _rot(SK.ELBOW_AXIS, k)
+        k_r = Th @ axis_rotation(SK.ELBOW_AXIS, k)
         fy, fb, _ = _euler(_T(k_r @ Q[f"{s}_knee"].T) @ g(f"{s}_ankle"), "ZYX").T  # Rz(-y_ankle) Ry(-ankle)
         put(f"{s}_y_ankle", -fy)
         put(f"{s}_ankle", -fb)

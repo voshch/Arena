@@ -5,12 +5,15 @@ from __future__ import annotations
 import cmath
 import functools
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import attrs
 import yaml
+
+if TYPE_CHECKING:  # hands pulls in numpy and arena_simulation_setup; profiles stay importable without them
+    from .hands import Grip
 
 JOINT_NAMES: tuple[str, ...] = (
     "r_waist",
@@ -53,6 +56,8 @@ JOINT_NAMES: tuple[str, ...] = (
     "l_wrist",
     "r_r_wrist",
     "r_wrist",
+    "l_d_wrist",
+    "r_d_wrist",
 )
 
 LIBRARY_DIR = Path(__file__).resolve().parent / "profiles"
@@ -60,6 +65,7 @@ DEFAULT_WALK = "walk_cmu_12_01"
 DEFAULT_RUN = "run"
 IDLE = "idle"
 GAITS = ("walk", "run", "idle")
+HANDS = ("l", "r")
 OPS = ("set", "scale", "offset")
 
 
@@ -261,11 +267,12 @@ _OP: dict[str, Callable[[Any], Callable[[Signal], Signal]]] = {
 
 @attrs.frozen
 class PoseProfile:
-    """An agent type's locomotion: the walk and run gaits plus the idle gait, None for the hand-written idle sway."""
+    """An agent type's locomotion: the walk and run gaits plus the idle gait, None for the hand-written idle sway, and the grip of each hand that holds a prop."""
 
     walk: GaitProfile
     run: GaitProfile
     idle: GaitProfile | None = None
+    hold: Mapping[str, Grip] = attrs.field(factory=dict)
 
 
 def dump_gait_profile(profile: GaitProfile) -> str:
@@ -359,11 +366,35 @@ def _resolve_gait(gait: str, spec: Mapping[str, Any] | None, library: Mapping[st
     return library[name].with_laws(spec).with_ops(spec.get("joints") or {})
 
 
+def _parse_hold(raw: object) -> dict[str, Grip]:
+    from .hands import Grip
+
+    if not isinstance(raw, Mapping) or not set(raw) <= set(HANDS):
+        raise ValueError(f"pose.hold takes {{l|r: <grip radius m> | {{radius: m, angle: deg, curls: [thumb..pinky], wrap: bool}}}}, got {raw!r}")
+    hold = {}
+    for side, spec in raw.items():
+        grip = dict(spec) if isinstance(spec, Mapping) else {"radius": spec}
+        radius, angle, curls, wrap = grip.pop("radius", None), grip.pop("angle", 0.0), grip.pop("curls", None), grip.pop("wrap", False)
+        if grip:
+            raise ValueError(f"pose.hold.{side} takes radius, angle, curls and wrap, got {sorted(grip)}")
+        if not isinstance(wrap, bool):
+            raise ValueError(f"pose.hold.{side}: wrap must be true or false, got {wrap!r}")
+        if isinstance(radius, bool) or not isinstance(radius, int | float) or not 0.005 <= radius <= 0.05:
+            raise ValueError(f"pose.hold.{side}: grip radius must be a number of m in [0.005, 0.05], got {radius!r}")
+        if isinstance(angle, bool) or not isinstance(angle, int | float) or not -90.0 <= angle <= 90.0:
+            raise ValueError(f"pose.hold.{side}: grip angle must be a number of deg in [-90, 90], got {angle!r}")
+        if curls is not None and (not isinstance(curls, Sequence) or isinstance(curls, str) or len(curls) != 5 or not all(not isinstance(c, bool) and isinstance(c, int | float) and 0.0 <= c <= 1.6 for c in curls)):
+            raise ValueError(f"pose.hold.{side}: curls must be 5 numbers in [0, 1.6] (thumb to pinky), got {curls!r}")
+        hold[side] = Grip(radius=float(radius), angle=float(angle), curls=None if curls is None else tuple(float(c) for c in curls), wrap=wrap)
+    return hold
+
+
 def resolve_pose_profile(pose_section: Mapping[str, Any] | None, library_dir: Path = LIBRARY_DIR) -> PoseProfile:
-    """Build an agent type's PoseProfile from its `pose:` section (walk, run, idle), missing gaits take the library defaults."""
+    """Build an agent type's PoseProfile from its `pose:` section (walk, run, idle, hold), missing gaits take the library defaults."""
     section = dict(pose_section or {})
-    if not set(section) <= set(GAITS):
-        raise ValueError(f"pose takes {GAITS}, got {sorted(section)}")
+    if not set(section) <= {*GAITS, "hold"}:
+        raise ValueError(f"pose takes {(*GAITS, 'hold')}, got {sorted(section)}")
+    hold = _parse_hold(section.pop("hold") or {}) if "hold" in section else {}
     library = load_library(Path(library_dir))
     walk = _resolve_gait("walk", section.get("walk"), library, None)
     run = _resolve_gait("run", section.get("run"), library, walk)
@@ -373,8 +404,8 @@ def resolve_pose_profile(pose_section: Mapping[str, Any] | None, library_dir: Pa
     if idle_spec.get("base", IDLE) == IDLE:
         if set(idle_spec) - {"base"}:
             raise ValueError(f"pose.idle: the builtin {IDLE} takes no overrides, got {sorted(set(idle_spec) - {'base'})}")
-        return PoseProfile(walk=walk, run=run, idle=None)
-    return PoseProfile(walk=walk, run=run, idle=_resolve_gait("idle", idle_spec, library, None))
+        return PoseProfile(walk=walk, run=run, idle=None, hold=hold)
+    return PoseProfile(walk=walk, run=run, idle=_resolve_gait("idle", idle_spec, library, None), hold=hold)
 
 
 @functools.cache

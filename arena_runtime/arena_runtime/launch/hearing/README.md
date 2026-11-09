@@ -14,7 +14,7 @@ undeclared `robot.hearing.*` keys reach it by prefix.
 | Key | Action |
 | --- | --- |
 | `none` | empty group, no nodes |
-| `bus`, `srp`, `seld` | includes [`arena/arena.launch.py`](arena/arena.launch.py) |
+| `bus`, `srp`, `seld`, `call` | includes [`arena/arena.launch.py`](arena/arena.launch.py) |
 
 ## arena backend
 
@@ -40,7 +40,7 @@ adapters. The Nav2 speed-filter overlay comes from
 ## Node side
 
 `arena_runtime/hearing/` holds `HearingRegistry`, keyed
-`none|bus|srp|seld`, yielding a `BaseHearing`: `robot_displays(robot)` (the
+`none|bus|srp|seld|call`, yielding a `BaseHearing`: `robot_displays(robot)` (the
 robot's `_hearing` manifest entry: belief grid, speed mask, wedges) and
 `recorded_topics()`. arena_runtime's `hearing/arena/` is the only
 code importing `arena_hearing`.

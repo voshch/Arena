@@ -121,7 +121,7 @@ from arena_runtime.env.constants.rng import stable_int
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans import PED_RADIUS, BaseHumanSimulator, HumanSimulatorOptions, Segment
 from arena_runtime.humans.itinerary import STIMULUS_TELEPORTED, ItineraryDriver, Stop, semantic_atom
-from arena_runtime.humans.support import Support, seat_stand
+from arena_runtime.humans.support import Support, front_angle, seat_stand
 from arena_runtime.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 
 from .agent import ArenaHumanDynamicObstacle, agent_type_def, agent_type_stimuli, flow_agent_template, path_agent_type_name
@@ -163,6 +163,12 @@ class PedMechanics:
             return None
         stops = [Stop.from_dict({**meta, "x": x, "y": y}) for meta, (x, y) in zip(self.itinerary, points, strict=True)]
         return stops if any(stop.holds for stop in stops) else None
+
+
+def facing_pose(pose: Pose2DMsg, front: float) -> Pose2DMsg:
+    """The pose the engine approaches and queues an object from: it lines people up behind its theta, so theta turns until that side is the front at angle front in the object's frame."""
+    theta = pose.theta + front - math.pi
+    return Pose2DMsg(x=pose.x, y=pose.y, theta=math.atan2(math.sin(theta), math.cos(theta)))
 
 
 def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[AffordanceSlot]) -> int:
@@ -491,6 +497,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._held_seats: dict[str, list[int]] = {}
         self._seat_slots: dict[str, list[AffordanceSlot]] = {}
         self._seats: dict[str, list[Seat]] = {}
+        self._warned_faces: set[str] = set()
         self._seat_holds: dict[int, SeatHold] = {}
         self._supports: dict[int, Support] = {}
         self._seat_violation_reported = False
@@ -624,6 +631,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Latest agent type per engine agent."""
         types = msg.agent_type if len(msg.agent_type) == len(msg.agent_id) else [""] * len(msg.agent_id)
         self._agent_types = dict(zip(msg.agent_id, types, strict=True))
+        self.preload_pose_profiles(self._agent_type_of(agent_id) for agent_id in msg.agent_id)
 
     def _remember_agent_type_path(self, agent_type: str) -> None:
         """File a path-based agent type under the name the engine reports for it."""
@@ -934,6 +942,19 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     def _engine_pose(self, pose: Pose) -> Pose2DMsg:
         x, y = self._to_engine(pose.position.x, pose.position.y)
         return Pose2DMsg(x=x, y=y, theta=pose.orientation.to_yaw())
+
+    def _queue_pose(self, obstacle: Obstacle, pose: Pose2DMsg, annotation: Mapping[str, typing.Any]) -> Pose2DMsg:
+        """The object's pose with theta turned to its annotated front, the pose itself without one."""
+        face = annotation.get("face")
+        if face is None:
+            return pose
+        front = front_angle(face)
+        if front is None:
+            if obstacle.model.name not in self._warned_faces:
+                self._warned_faces.add(obstacle.model.name)
+                self._logger.warning(f"Ignoring the face {face!r} of model '{obstacle.model.name}': not one of +x, -x, +y, -y, xy or a legacy angle")
+            return pose
+        return facing_pose(pose, front)
 
     def _seat_pose(self, object_pose: Pose, seat: Pose) -> Pose2DMsg:
         """An object-local seat pose in the engine frame."""
@@ -1275,11 +1296,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 obstacle_type = ""
                 raw_slots: list = []
                 bounding_box = None
+                annotation: dict = {}
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
-                        annotation: dict = yaml.safe_load(f.read())
+                        annotation = yaml.safe_load(f.read()) or {}
                     raw_slots = list((annotation.get("affordances") or {}).get("sit") or [])
                     bounding_box = annotation["bounding_box"]
                     (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounding_box
@@ -1308,7 +1330,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 info = WorldObjectInfoMsg()
                 info.object_id = obstacle.sim_path
                 info.type = str(humansim.get("type", obstacle_type))
-                info.pose = pose
+                info.pose = self._queue_pose(obstacle, pose, annotation)
                 info.capacity = seat_capacity(humansim, slots)
                 satisfies: dict = humansim.get("satisfies") or {}
                 info.satisfies_keys = list(satisfies.keys())
@@ -1597,7 +1619,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
     async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
-        request = SetTeleportZones.Request(zones=[self._zone_msg(elevator) for elevator in elevators] + [self._stair_zone_msg(stair) for stair in self._known_stairs])
+        request = SetTeleportZones.Request(zones=[self._zone_msg(elevator) for elevator in elevators] + [self._stair_zone_msg(stair) for stair in self._known_stairs if stair.kind != 'ramp'])
         try:
             response = await self._set_teleport_zones_client.call_timeout(request)
         except Exception as e:

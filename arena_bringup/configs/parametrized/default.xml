@@ -1,11 +1,11 @@
 <?xml version="1.0" ?>
 <random>
   <static>
-    <obstacle name="shelf">
+    <obstacle name="barrel">
       <min>2</min>
       <max>7</max>
-      <type>shelf</type>
-      <model>shelf</model>
+      <type>barrel</type>
+      <model>Warehouse/Object/Barrel_Plastic</model>
     </obstacle>
   </static>
   <dynamic>

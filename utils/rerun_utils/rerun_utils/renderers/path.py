@@ -7,7 +7,7 @@ from arena_runtime_msgs.msg import AdapterDisplay, RobotDescriptor
 from arena_viz import DisplayKind, StyleSpec
 from nav_msgs.msg import Path
 
-from rerun_utils.entity_paths import display_path
+from rerun_utils.entity_paths import display_path, in_frame
 from rerun_utils.renderers._registry import RendererCtx, register
 
 
@@ -24,6 +24,6 @@ def render_path(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
         pts = [(p.pose.position.x, p.pose.position.y, p.pose.position.z) for p in msg.poses]
         if not pts:
             return
-        rr.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]))
+        rr.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]), *in_frame(msg.header.frame_id))
 
     ctx.node.create_subscription(Path, d.topic, cb, 10)

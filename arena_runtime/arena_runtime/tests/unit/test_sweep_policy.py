@@ -78,6 +78,20 @@ def test_ready_reset_hold_over_reset_timeout_evicts():
     assert _verdict(_record(ready=True), 30.1, has_reset_hold=True) == "heartbeat_timeout"
 
 
+def test_reset_hold_never_shortens_a_longer_heartbeat_budget():
+    verdict = sweep_verdict(
+        _record(ready=True),
+        elapsed=60.0,
+        age=60.0,
+        has_reset_hold=True,
+        process_alive=True,
+        heartbeat_timeout=120.0,
+        reset_timeout=30.0,
+        bootstrap_timeout=600.0,
+    )
+    assert verdict is None
+
+
 def test_process_alive_none_falls_through_to_phase():
     assert _verdict(_record(ready=True), 5.1, process_alive=None) == "heartbeat_timeout"
     assert _verdict(_record(ready=True), 4.9, process_alive=None) is None

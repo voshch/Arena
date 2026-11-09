@@ -39,7 +39,7 @@ the underlying launch file or tool."""
 
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
-    "Attach": ["human", "robot", "cam", "mcp"],
+    "Attach": ["human", "robot", "cam", "web", "mcp"],
     "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall", "settings", "fork"],
     "Data": ["asset"],
     "Features": ["feature", "registry"],
@@ -55,9 +55,22 @@ def _register(v: Verb) -> None:
     _VERBS[v.name] = v
 
 
-def verb(name: str, *, hidden: bool = False, passthrough: bool = False, help_text: str | None = None, complete: _complete.Spec | None = None) -> Callable[[VerbFn], VerbFn]:
+def registered_verb(name: str) -> Verb:
+    return _VERBS[name]
+
+
+def verb(
+    name: str,
+    *,
+    hidden: bool = False,
+    passthrough: bool = False,
+    help_text: str | None = None,
+    complete: _complete.Spec | None = None,
+    title: str = "",
+    subtitles: dict[str, str] | None = None,
+) -> Callable[[VerbFn], VerbFn]:
     def deco(fn: VerbFn) -> VerbFn:
-        _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text, complete=complete))
+        _register(make_verb(name, fn, hidden=hidden, passthrough=passthrough, help_text=help_text, complete=complete, title=title, subtitles=subtitles))
         return fn
 
     return deco
@@ -206,8 +219,8 @@ def demo(args: list[str]) -> None:
 RUNTIME_HELP = """Start the runtime only (sim + arena_runtime_node, no envs), or stop the background one.
 
 Usage:
-  arena runtime [--bg] [KEY:=VALUE ...]   start the runtime, fails if another /arena node is up
-  arena runtime down                      stop every background launch and viz of this ROS domain
+  arena runtime [--bg] [KEY:=VALUE ...]   Start the sim and the runtime node without envs. Fails if a runtime is already up on this ROS domain.
+  arena runtime down                      Stop the background runtime and every launch and viz of this ROS domain.
 
 `--bg` detaches the runtime, logging to the ROS log dir, and returns. Attach
 envs afterwards with `arena env`. `down` sends SIGINT to each `--bg` process
@@ -216,7 +229,7 @@ while one survives, and refuses when none runs. A foreground runtime stops with
 Ctrl-C in its terminal."""
 
 
-@verb("runtime", passthrough=True, help_text=RUNTIME_HELP, complete=Union(BG_FLAG, Static({"down": "stop the background launches and viz"}), RUNTIME_ARGS))
+@verb("runtime", passthrough=True, title="Start Runtime", subtitles={"down": "Stop Runtime"}, help_text=RUNTIME_HELP, complete=Union(BG_FLAG, Static({"down": "stop the background launches and viz"}), RUNTIME_ARGS))
 def runtime(args: list[str]) -> int | None:
     if args and args[0] == "down":
         if args[1:]:
@@ -438,6 +451,35 @@ def _graph_guard(kind: str, name: str, unreachable: str) -> str:
 def _srv_call(service: str, request: str) -> str:
     """Capture one timeout-bounded service call into `$R`, exiting 1 with a message when it times out."""
     return f'R=$(timeout {_SERVICE_TIMEOUT_S} ros2 service call {service} {request} 2>&1) || [ $? -ne 124 ] || {{ echo "no response from {service} within {_SERVICE_TIMEOUT_S} s"; exit 1; }}'
+
+
+@verb(
+    "web",
+    passthrough=True,
+    complete=Flags(
+        {
+            "--port": "listen port, 8760 by default",
+            "--listen": "bind address, 127.0.0.1 by default",
+            "--prefix": "serve under this path, for a reverse proxy",
+            "--only": "show only forks whose name matches this regex",
+            "--no-open": "do not open the browser",
+        },
+        valued=("--port", "--listen", "--prefix", "--only"),
+    ),
+)
+def web(args: list[str]) -> int:
+    """Serve the web app over this machine's arena containers: runtimes, benchmark runs, env views.
+
+    \b
+    Usage:
+      web [--port N] [--listen ADDR] [--prefix PATH] [--only REGEX] [--no-open]
+
+    Listens on http://127.0.0.1:8760 until Ctrl-C and opens it in the browser when a display is set.
+    Each container's dashboard starts on first use through docker exec and ends with the hub.
+    """
+    from arena_cli import web as _web_mod
+
+    return _web_mod.main(args)
 
 
 @verb("lockstep", complete=_LOCKSTEP_SPEC)

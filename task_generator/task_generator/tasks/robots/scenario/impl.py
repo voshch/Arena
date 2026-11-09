@@ -53,14 +53,19 @@ class TM_Scenario(TM_Robots):
     _idle_robots: set[str]
     _mechanism_map: ROSParamT[bool]
 
+    def robot_goals(self, entries: Sequence[RobotGoal], humans: frozenset[str]) -> list[RobotGoal]:
+        """The scenario's robot entries as this mode runs them."""
+        del humans
+        return list(entries)
+
     async def reset(self) -> ResetPlan:
         plan = await super().reset()
 
         zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self._ctx.conf.RNG.stream("robots", "scenario"))
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(self._config.value).resolve_sync()
         scenario = scenario_view.load(converter=zone_conv)
-        SCENARIO_ROBOTS = scenario.robots
         humans = frozenset(human.name for human in scenario.humans)
+        SCENARIO_ROBOTS = self.robot_goals(scenario.robots, humans)
 
         managed_robots = list(self._ctx.robots.values())
 

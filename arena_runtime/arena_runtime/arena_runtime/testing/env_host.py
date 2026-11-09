@@ -11,6 +11,8 @@ import attrs
 from arena_runtime.env.node import EnvNode
 from arena_runtime.env.task_layer import EpisodeRecord, ResetPlan, TaskContext, TaskModeOverrides, TaskModes, validate_modes
 
+MULTI_AXES = ("modules",)
+
 if typing.TYPE_CHECKING:
     import rclpy.task
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
@@ -117,7 +119,10 @@ class FakeTaskLayer:
         return self.task
 
     def validate_modes(self, modes: TaskModes) -> TaskModes:
-        return validate_modes(modes, {axis: list(names) for axis, names in self.NAMESPACES.items()}, ("modules",))
+        return validate_modes(modes, {axis: list(names) for axis, names in self.NAMESPACES.items()}, MULTI_AXES)
+
+    def multi_axes(self) -> Collection[str]:
+        return MULTI_AXES
 
     def mode_namespaces(self) -> dict[str, dict[str, str]]:
         return self.NAMESPACES

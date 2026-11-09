@@ -38,6 +38,19 @@ CONSOLE = {
     "states": {"closed": {"door": 0.0, "drawer": 0.0}, "open": {"door": 1.5, "drawer": 0.4}},
     "detents": {"dial": {"off": 0.0, "low": 1.0, "high": 2.0}},
 }
+DOOR_LINKS = {
+    "frame": [[-0.5, 0.5], [-0.05, 0.05], [0.0, 2.1]],
+    "leaf": [[-0.45, 0.45], [-0.02, 0.02], [0.0, 2.0]],
+    "lever": [[-0.4, -0.28], [0.02, 0.06], [0.98, 1.02]],
+}
+DOOR = {
+    "links": {"frame": ["frame"], "leaf": ["leaf"], "lever": ["lever"]},
+    "joints": [
+        {"name": "hinge", "type": "revolute", "parent": "frame", "child": "leaf", "origin": [0.45, 0.0, 0.0], "axis": [0, 0, 1], "limit": [0.0, 1.6], "role": "door", "latch": {"by": "handle", "release": 0.6}},
+        {"name": "handle", "type": "revolute", "parent": "leaf", "child": "lever", "origin": [-0.35, 0.04, 1.0], "axis": [0, 1, 0], "limit": [0.0, 0.8], "role": "handle"},
+    ],
+    "states": {"closed": {"hinge": 0.0}, "open": {"hinge": 1.5}},
+}
 
 
 @pytest.fixture
@@ -55,12 +68,17 @@ def assets(tmp_path: Path):
     (console / "links" / "base").mkdir(parents=True)
     (console / "links" / "base" / "annotation.yaml").write_text(yaml.safe_dump({"bounding_box": CABINET_LINKS["body"]}))
     (console / "annotation.yaml").write_text(yaml.safe_dump({"bounding_box": CABINET_LINKS["body"], "articulation": CONSOLE}))
+    door = tmp_path / "Kitchen" / "Object" / f"Door{suffix}"
+    for link, box in DOOR_LINKS.items():
+        (door / "links" / link).mkdir(parents=True)
+        (door / "links" / link / "annotation.yaml").write_text(yaml.safe_dump({"bounding_box": box}))
+    (door / "annotation.yaml").write_text(yaml.safe_dump({"bounding_box": DOOR_LINKS["frame"], "articulation": DOOR}))
     crate = tmp_path / "Kitchen" / "Object" / f"Crate{suffix}"
     crate.mkdir(parents=True)
     (crate / "annotation.yaml").write_text(yaml.safe_dump({"bounding_box": [[-0.2, 0.2], [-0.2, 0.2], [0.0, 0.4]]}))
     previous = DynamicPaths.ARENA.path
     DynamicPaths.ARENA.path = tmp_path
-    yield {"cabinet": f"Kitchen/Cabinet{suffix}", "console": f"Kitchen/Console{suffix}", "crate": f"Kitchen/Crate{suffix}"}
+    yield {"cabinet": f"Kitchen/Cabinet{suffix}", "console": f"Kitchen/Console{suffix}", "door": f"Kitchen/Door{suffix}", "crate": f"Kitchen/Crate{suffix}"}
     DynamicPaths.ARENA.path = previous
 
 
@@ -595,7 +613,7 @@ def on_physics_sim():
                         continue
                     for joint, value in self.ctrl[name].items():
                         joints[joint] = self.held.get((name, joint), value)
-                    for joint in command.place:
+                    for joint in command.place | command.hold:
                         joints[joint] = command.reference[joint]
                     self.ctrl[name] = {joint: command.reference[joint] for joint in command.drive}
                     readings.append(dict(joints))
@@ -783,6 +801,56 @@ def test_a_held_joint_reads_blocked_until_it_is_let_go(assets, on_physics_sim):
         await _settle(sim, runtime)
         assert runtime.current["door"] == 1.5
         assert not runtime.blocked
+
+    on_physics_sim(body)
+
+
+def test_a_latched_door_holds_closed_against_a_push_until_its_handle_is_pressed(assets, on_physics_sim):
+    from arena_runtime.sim import _mechanism_shim as shim
+
+    async def body(sim):
+        await sim.spawn_objects([_obstacle("door", assets["door"])])
+        runtime = sim._articulated["door"]
+        await shim._tick(sim, PHYSICS_DT)
+        sim.push("door", "hinge", 0.03)
+        await shim._tick(sim, PHYSICS_DT)
+        held = sim.calls[-1][1][0]
+        assert ("hinge" in held.drive, "hinge" in held.hold, "hinge" in held.place, held.reference["hinge"]) == (True, True, False, 0.0)
+        assert runtime.current["hinge"] == 0.0
+        sim.push("door", "handle", 0.5)
+        await shim._tick(sim, PHYSICS_DT)
+        await shim._tick(sim, PHYSICS_DT)
+        assert sim.calls[-1][1][0].drive == frozenset()
+        sim.push("door", "hinge", 0.03)
+        await shim._tick(sim, PHYSICS_DT)
+        assert runtime.current["hinge"] == pytest.approx(0.03)
+        sim.push("door", "hinge", 0.7)
+        sim.push("door", "handle", 0.0)
+        for _ in range(3):
+            await shim._tick(sim, PHYSICS_DT)
+        assert runtime.current["hinge"] == pytest.approx(0.7)
+        assert sim.calls[-1][1][0].drive == frozenset()
+        sim.push("door", "hinge", 0.02)
+        await shim._tick(sim, PHYSICS_DT)
+        await shim._tick(sim, PHYSICS_DT)
+        assert runtime.current["hinge"] == pytest.approx(0.02)
+        sim.push("door", "hinge", 0.008)
+        await shim._tick(sim, PHYSICS_DT)
+        await shim._tick(sim, PHYSICS_DT)
+        assert runtime.current["hinge"] == 0.0
+        assert _snapshot(sim, "env_0/door").discrete["state"] == "closed"
+
+    on_physics_sim(body)
+
+
+def test_a_semantic_write_opens_a_latched_door_without_its_handle(assets, on_physics_sim):
+    async def body(sim):
+        await sim.spawn_objects([_obstacle("door", assets["door"])])
+        runtime = sim._articulated["door"]
+        assert sim.set_semantic_value("env_0/door", "target", "open")
+        await _settle(sim, runtime)
+        assert runtime.current["hinge"] == 1.5
+        assert runtime.current["handle"] == 0.0
 
     on_physics_sim(body)
 

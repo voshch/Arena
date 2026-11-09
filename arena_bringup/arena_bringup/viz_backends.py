@@ -69,25 +69,15 @@ def _rviz_commands(ns: str, env_idx: int, args: dict[str, str]) -> list[tuple[st
     return [(f'rviz_{ns}', [*base, f'robot:={robot}'])]
 
 
+def rerun_launch_argv(ns: str, web_port: int, grpc_port: int, extras: list[str] | None = None) -> list[str]:
+    return ['ros2', 'launch', 'rerun_utils', 'rerun_bridge.launch.py', f'ns:={ns}', f'web_port:={web_port}', f'grpc_port:={grpc_port}', *(extras or [])]
+
+
 def _rerun_commands(ns: str, env_idx: int, args: dict[str, str]) -> list[tuple[str, list[str]]]:
     web = int(args.get('web_port', 9090)) + env_idx
     grpc = int(args.get('grpc_port', 9876)) + env_idx
     extras = [f'{k}:={v}' for k, v in args.items() if k not in ('web_port', 'grpc_port')]
-    return [
-        (
-            f'rerun_{ns}',
-            [
-                'ros2',
-                'launch',
-                'rerun_utils',
-                'rerun_bridge.launch.py',
-                f'ns:={ns}',
-                f'web_port:={web}',
-                f'grpc_port:={grpc}',
-                *extras,
-            ],
-        )
-    ]
+    return [(f'rerun_{ns}', rerun_launch_argv(ns, web, grpc, extras))]
 
 
 def _cam_command(ns: str, env_idx: int, request: str) -> tuple[str, list[str]]:

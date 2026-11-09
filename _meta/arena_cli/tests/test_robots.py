@@ -146,6 +146,23 @@ def test_sim_preflight_suite_gives_each_robot_its_own_preflight_stage():
     assert suite["launch"]["env.bootstrap_timeout"] == 90
 
 
+def test_sim_preflight_suite_names_a_request_stage_by_a_path_safe_slug():
+    suite = planners.preflight_suite(["rbkairos[arm_mount=arm/fr3,gripper_mount=gripper/franka_hand]"])
+    assert [(stage["name"], stage["robot"]) for stage in suite["stages"]] == [("preflight-rbkairos-arm_mount-arm-fr3-gripper_mount-gripper-franka_hand", "rbkairos[arm_mount=arm/fr3,gripper_mount=gripper/franka_hand]")]
+
+
+def test_request_needs_its_base_robot_and_each_placed_component(tmp_path):
+    arena = _arena(tmp_path)
+    _check_out(arena, "arena_robots/arena_robots/robots/mpo700/meshes")
+    _check_out(arena, "arena_robots/arena_robots/components/lidar/sick_s300/meshes")
+    ready = robots._ready_robots(arena)
+    assert robots.request_refs(arena, "mpo700[top=arm/ur5e,front=none]") == ("mpo700", ["arm/ur"])
+    assert not robots._spec_ready(arena, "mpo700[top=arm/ur5e]", ready)
+    _check_out(arena, "arena_robots/arena_robots/components/arm/ur/meshes")
+    assert robots._spec_ready(arena, "mpo700[top=arm/ur5e]", ready)
+    assert robots._spec_ready(arena, "mpo700", ready)
+
+
 def test_planner_preflight_suite_keeps_each_contestant_robot():
     assert [(stage["name"], stage["robot"]) for stage in planners.preflight_suite()["stages"]] == [("preflight", "auto")]
 

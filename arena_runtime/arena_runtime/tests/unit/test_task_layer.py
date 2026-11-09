@@ -139,3 +139,15 @@ def test_overrides_merge_replaces_listed_axes_and_keeps_the_rest() -> None:
     assert queued == TaskModeOverrides(modes={"robots": ["b"], "modules": ["m"]}, world="w", seed=3)
     queued.merge(TaskModeOverrides(modes={"modules": []}, world="x", seed=0))
     assert queued == TaskModeOverrides(modes={"robots": ["b"], "modules": []}, world="x", seed=0)
+
+
+def test_the_fake_layer_names_its_multi_axes_and_validates_by_them() -> None:
+    from arena_runtime.testing.env_host import FakeTaskLayer
+
+    layer = FakeTaskLayer()
+    two_modules = list(layer.NAMESPACES["modules"])[:2]
+
+    assert set(layer.multi_axes()) == {"modules"}
+    assert layer.validate_modes({"modules": two_modules}) == {"modules": two_modules}
+    with pytest.raises(ValueError, match="exactly one mode"):
+        layer.validate_modes({"robots": list(layer.NAMESPACES["robots"])[:2]})

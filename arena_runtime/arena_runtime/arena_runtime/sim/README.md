@@ -116,10 +116,13 @@ Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as 
 
 #### Shim behaviour
 
-- Door kinds: `sliding` (slides along start->end), `sliding_top` (lifts), `teleport` (drops away) and
-  `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`). Sliding and hinged slabs are tested
-  against agent discs: an opening step holds when the slab would enter an agent (the swing arc of a hinged
-  door, the wall pocket past the end of a sliding one), so an agent pressed against a half-open sliding slab
+- Door kinds: `sliding` (slides along start->end), `sliding_split` (boxes `<door>_a` and `<door>_b`, the span
+  halves, part from the middle by half the span each, a synthesized cabin door's kind unless its elevator's
+  `door_kind` says otherwise), `sliding_top`
+  (lifts), `teleport` (drops away) and `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`).
+  Sliding and hinged slabs are tested against agent discs: an opening step holds when the slab would enter an
+  agent (the swing arc of a hinged door, the wall pocket past the end of a sliding one, either pocket of a split
+  one), so an agent pressed against a half-open sliding slab
   does not stop it, and a blocked close re-triggers the door and sets `close_blocked` (semantic
   `blocked_close`) until the remaining path is clear.
 - Elevators: the cabins linked through their destinations form a group served by one car, which starts at
@@ -175,13 +178,15 @@ Each tick the shim then:
 - Runs escalator belts: `travel` advances by `Stairs.belt * dt` (towards the seam on a boarding half, mouth-ward on an exit half or one whose partner was dropped) and every spawned tread is re-posed to `treads(travel)`, where the velocity took it, all treads of all halves in one `move_boxes` call. Every tread stays on the stair: one that runs off the far end comes back at the mouth sunk `Stairs.sink` (1 mm on steps) through the landing plate (`STAIRS_PLATE` thick, flush with the floor, over a pit the floor opens for it), slides out just below the floor and rises into place once clear of the plate. On a whole stair the wrap itself happens under the plates at both ends. A stopped escalator keeps `travel` and gets zero tread velocities through `set_box_velocities`, a restarted one its belt velocity again. Gazebo sends that call as one gz `/world/default/set_pose_vector` request run off the event loop and drops a tick's batch while the previous one is still in flight, Isaac and MuJoCo send one fire-and-forget `EditPrims` with every tread, flatsim skips the treads it never spawned. The stairs_demo world (four escalator halves of nine treads) costs one request and 36 poses per tick, which take about 0.2 ms of tick time to compute, instead of 36 `SetEntityPose` calls per tick (1080 per second at 30 Hz).
 - Reports `running` changes of escalator halves to the human simulator in one `stairs_changed` call, starting from running at spawn and including the restart an episode reset causes.
 
-Semantic kinds `stairs` and `escalator` attach to every spawned half on gazebo, isaac, mujoco and flatsim:
+A ramp also goes through `spawn_stairs`, as one `Stairs` of kind `ramp` with no partner. It spawns a static `<name>/base_0` slab with its top on the walking surface, or nothing with `floor` off. It has no seam, so the shim moves nobody on it. `EnvironmentManager` drops ramps on a simulator without `STACKS_LEVELS` (flatsim, dummy), so they are plain floor there, with no semantics. The human simulator's `footing` gives the height a body stands at on every spawned stair half and ramp, with the treads where the shim's `stair_travel` has moved them: `RobotManager` adds it to a robot's spawn and teleport poses through `EnvironmentManager.footing`, and `EnvironmentManager` to the z of every world and episode object it spawns or moves.
+
+Semantic kinds `stairs`, `escalator` and `ramp` attach to every spawned half or ramp on gazebo, isaac, mujoco and flatsim:
 
 | Field | Kind | Type | Meaning |
 | --- | --- | --- | --- |
-| `occupants` | stairs, escalator | continuous | agents inside the half's footprint, robots by sim path and pedestrians by name |
-| members | stairs, escalator | | those agents, robots first |
-| `just_crossed` | stairs, escalator | predicate | true for the one tick after a robot teleport through this half's seam, or after a pedestrian on this half shows up on its partner |
+| `occupants` | stairs, escalator, ramp | continuous | agents inside the half's footprint, robots by sim path and pedestrians by name |
+| members | stairs, escalator, ramp | | those agents, robots first |
+| `just_crossed` | stairs, escalator, ramp | predicate | true for the one tick after a robot teleport through this half's seam, or after a pedestrian on this half shows up on its partner, never on a ramp |
 | `running` | escalator | discrete, writable | `true` (initial) or `false`, a write sets both halves of the pair, a stopped belt freezes its treads |
 | `direction` | escalator | discrete | `up` when the boarding half of the pair is the bottom one, `down` when it is the top one, on both halves, empty without a boarding half |
 
@@ -247,7 +252,13 @@ gets one `JointCommand` per object: a semantic write
 (`ArticulatedObject.command`) marks the joints it moves as driving, each
 driving joint's reference ramps toward its target at the joint's speed but
 at most `LEAD` (0.25 s of motion) ahead of the joint, and a joint within its
-settle gap leaves the drive and is set onto its target (`place`). The
+settle gap leaves the drive and is set onto its target (`place`). A joint
+no semantic write drives whose `latch` holds (`Articulation.latch_holds`)
+and that sits within `LATCH_CATCH` (0.01 rad, 5 mm) of its closed value is driven toward
+closed and held there (`JointCommand.hold`): MuJoCo locks its range at the
+reference within `HOLD_SLACK`, in the model and the spec, until the hold
+lets go, and Gazebo and Isaac, whose messages carry no hold, keep only the
+drive of bounded effort. The
 reading that comes back is the current value, clamped into each joint's
 range, a joint no drive holds takes its target along, and `blocked` holds
 while a driving joint lags its reference by `LAG_BLOCKED` of the lead. A
@@ -459,7 +470,7 @@ process for the whole runtime, started by `sim.launch.py` through
 selecting the sim without it fails with the install hint. The server owns
 `/clock`, steps one world that holds every env at its realizer offset, as
 Gazebo and Isaac do, and publishes each robot's
-`map -> odom`, `odom -> base`, Odometry, zero joint states and sensor
+`map -> odom`, `odom -> base`, Odometry, zero joint states for the base joints and sensor
 messages. Its interface is documented in the flatsim README, the notes here
 are what Arena sends it.
 
@@ -490,9 +501,14 @@ are what Arena sends it.
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
   `pivot` x the body turns about and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
-  sideways only when `is_holonomic`. No controller_manager runs. The adapter
+  sideways only when `is_holonomic`. The base controller does not run. The adapter
   launches `robot_state_publisher`, the server gets the URDF and the tf topic
   of the env.
+- Arm, torso and gripper joints: a ros2_control robot with controllers besides its
+  base controller and `joint_state_broadcaster` gets a `controller_manager` on `mock_components/GenericSystem`
+  (`mock_arm_hardware` in [_urdf.py](_urdf.py)), which keeps only the position-commanded
+  and mimic joints, so those joints track their commands kinematically and the same
+  `control.yaml` controllers load. The server leaves these joints out of its joint states.
 - Odometry: the pose is the exact body pose. The twist is the wheel reading,
   the body twist divided by the gain and taken at the pivot, so it tracks the
   command like a wheel-odometry twist does while the IMU reports the body rate.

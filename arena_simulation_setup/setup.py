@@ -100,6 +100,8 @@ setup(
     entry_points={
         'console_scripts': [
             f'generate_scenario = {package_name}.generative.scenario.cli:main',
+            f'generate_egobench = {package_name}.generative.egobench.cli:main',
+            f'generate_usar = {package_name}.generative.usar.cli:main',
             f'generate_world = {package_name}.generative.world.world_generator:main',
             f'animation_retarget = {package_name}.adapters.arena_animation_retarget.cli:main',
             f'nav_at_r = {package_name}.metrics.nav_at_r:main',
