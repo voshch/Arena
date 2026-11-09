@@ -86,7 +86,7 @@ def _nav2_costmap_fixture() -> tuple[dict, dict]:
 class TestLaunchArgument:
     def test_substitution_returns_launch_configuration(self) -> None:
         import launch.substitutions
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         arg = LaunchArgument("my_arg", default_value="default", description="probe argument")
         sub = arg.substitution
@@ -96,14 +96,14 @@ class TestLaunchArgument:
         assert sub.perform(ctx) == "value"
 
     def test_dict_returns_name_to_substitution(self) -> None:
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         arg = LaunchArgument("foo", default_value="bar", description="probe argument")
         d = arg.dict
         assert "foo" in d
 
     def test_auto_append_off_by_default(self) -> None:
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         LaunchArgument._auto_append = None
         target = []
@@ -111,7 +111,7 @@ class TestLaunchArgument:
         assert target == []
 
     def test_auto_append_on_appends_to_list(self) -> None:
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         target: list = []
         LaunchArgument.auto_append(target)
@@ -120,7 +120,7 @@ class TestLaunchArgument:
         assert arg in target
 
     def test_auto_append_none_stops_appending(self) -> None:
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         target: list = []
         LaunchArgument.auto_append(target)
@@ -130,14 +130,14 @@ class TestLaunchArgument:
 
     def test_param_value_wraps_substitution(self) -> None:
         import launch_ros.parameter_descriptions
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         arg = LaunchArgument("typed_arg", default_value="42", description="probe argument")
         pv = arg.param_value(int)
         assert isinstance(pv, launch_ros.parameter_descriptions.ParameterValue)
 
     def test_param_returns_dict_with_name_key(self) -> None:
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         arg = LaunchArgument("param_arg", default_value="1", description="probe argument")
         p = arg.param(bool)
@@ -145,7 +145,7 @@ class TestLaunchArgument:
 
     def test_str_param_uses_str_type(self) -> None:
         import launch_ros.parameter_descriptions
-        from arena_bringup.substitutions import LaunchArgument
+        from arena_rclpy_mixins.launch_argument import LaunchArgument
 
         arg = LaunchArgument("str_arg", default_value="hello", description="probe argument")
         sp = arg.str_param

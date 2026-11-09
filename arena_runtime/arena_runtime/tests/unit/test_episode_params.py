@@ -30,13 +30,13 @@ def test_episode_params_lists_the_task_episode_parameters() -> None:
     from arena_runtime.env.constants.runtime import EPISODE_PARAMS
 
     assert set(EPISODE_PARAMS) == EXPECTED
-    assert all(description for description in EPISODE_PARAMS.values())
+    assert all(param.description for param in EPISODE_PARAMS.values())
 
 
-def test_groups_declare_every_task_episode_parameter_with_the_listed_text() -> None:
+def test_episode_params_are_the_declared_task_episode_parameters() -> None:
     from arena_runtime.env.constants.runtime import EPISODE_PARAMS
 
-    declared = {name: param.description for group in _groups() for name, param in group.by_name().items() if name.startswith("task.episode.")}
+    declared = {name: param for group in _groups() for name, param in group.by_name().items() if name.startswith("task.episode.")}
     assert declared == EPISODE_PARAMS
 
 

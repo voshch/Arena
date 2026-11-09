@@ -30,7 +30,6 @@
   <exec_depend>diff_drive_controller</exec_depend>
   <exec_depend>mecanum_drive_controller</exec_depend>
   <exec_depend>twist_stamper</exec_depend>
-  <exec_depend>ros2launch</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

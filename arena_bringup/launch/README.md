@@ -4,9 +4,10 @@ Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim 
 
 ## Arguments
 
-All arguments are declared with `LaunchArgument` (a thin wrapper around
-`DeclareLaunchArgument` that also auto-appends to the description list and
+All arguments are declared with `LaunchArgument` from `arena_rclpy_mixins.launch_argument`
+(a `DeclareLaunchArgument` that also auto-appends to the description list and
 exposes `.substitution` / `.dict` / `.param`). `description` is a required keyword.
+An argument that only forwards a node parameter is `LaunchArgument.from_param`.
 
 The table below covers the combined argument surface of `arena launch`. Runtime
 args (`sim`, `headless`, `world`, `use_sim_time`, `log_level`) go to

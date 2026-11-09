@@ -1,4 +1,4 @@
-"""Every first-party node parameter and launch argument is declared through params.py or a described launch argument."""
+"""Every first-party node parameter is declared through params.py and every launch argument is a described LaunchArgument."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ _SKIP_DIRS = frozenset({"deps", "planners", "build", "install", "log", "__pycach
 _MECHANISM = ("arena_rclpy_mixins/params.py", "arena_rclpy_mixins/ROSParamServer.py")
 _EXEMPT_FUNCTIONS = frozenset({"migrate_deprecated_params"})
 _DECLARING_METHODS = frozenset({"declare_parameter", "declare_parameters", "set_descriptor", "declare_safe", "declare_forward"})
-_LAUNCH_ARGUMENTS = frozenset({"LaunchArgument", "DeclareLaunchArgument"})
 
 
 def _sources(root: pathlib.Path) -> Iterator[pathlib.Path]:
@@ -76,8 +75,10 @@ class _Census(ast.NodeVisitor):
             description = node.args[2] if len(node.args) > 2 else _keyword(node, "description")
             if _empty_text(description):
                 self._flag(node, "Param without a description")
-        elif name in _LAUNCH_ARGUMENTS and _empty_text(_keyword(node, "description")):
-            self._flag(node, f"{name} without a description")
+        elif name == "DeclareLaunchArgument":
+            self._flag(node, "DeclareLaunchArgument, declare a LaunchArgument")
+        elif name == "LaunchArgument" and _empty_text(_keyword(node, "description")):
+            self._flag(node, "LaunchArgument without a description")
         self.generic_visit(node)
 
 

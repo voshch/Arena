@@ -2,9 +2,11 @@ import numpy as np
 import rclpy
 import rclpy.node
 from arena_bringup.constants import SimSimulator
-from arena_rclpy_mixins.params import Param, ParamGroup, Range
+from arena_rclpy_mixins.params import Choices, Param, ParamGroup, Range
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
+from arena_simulation_setup import params as world_params
 
+from arena_runtime import hearing
 from arena_runtime.env.task_layer import legacy_mode_params, mode_param
 
 from . import Constants
@@ -55,9 +57,9 @@ class ArenaParams(ParamGroup):
     HUMAN = Param[Constants.HumanSimulator]('human', Constants.HumanSimulator.DUMMY, 'Pedestrian simulator of the env.')
     ACOUSTICS = Param[Constants.AcousticsSimulator]('acoustics', Constants.AcousticsSimulator.NONE, 'Acoustics backend of the env.')
     WORLD = Param[str]('world', None, 'World the env starts in.', type_=rclpy.Parameter.Type.STRING)
-    WORLD_LIGHTING = Param[str]('world.lighting', 'authored', 'Lighting mode of the world.')
-    WORLD_LEVELS = Param[str]('world.levels', 'auto', 'Level layout of the world.')
-    KG_DERIVE = Param[str]('kg.derive', 'auto', 'Which knowledge graph facts are derived from geometry.')
+    WORLD_LIGHTING = world_params.WORLD_LIGHTING
+    WORLD_LEVELS = world_params.WORLD_LEVELS
+    KG_DERIVE = world_params.KG_DERIVE
 
 
 class GeneralParams(ParamGroup):
@@ -89,7 +91,7 @@ class RobotParams(ParamGroup):
     ARM_ADAPTER = Param[str]('robot.arm_adapter', 'moveit', 'Default arm-cap adapter kind of the fleet robots.')
     LIFT_ADAPTER = Param[str]('robot.lift_adapter', 'direct', 'Default lift-cap adapter kind of the fleet robots.')
     GRIPPER_ADAPTER = Param[str]('robot.gripper_adapter', 'direct', 'Default gripper-cap adapter kind of the fleet robots.')
-    HEARING = Param[str]('robot.hearing', 'none', 'Robot hearing front-end of every fleet robot.')
+    HEARING = Param[str]('robot.hearing', hearing.NONE, 'Robot hearing front-end of every fleet robot.', constraint=Choices(hearing.NONE, *hearing.FRONTENDS))
 
 
 class HumanParams(ParamGroup):
@@ -105,7 +107,7 @@ class EpisodeParams(ParamGroup):
 
 _TASK_EPISODE_GROUPS = (GeneralParams, ObstaclesParams, RobotParams, EpisodeParams)
 
-EPISODE_PARAMS: dict[str, str] = {param.name: param.description for group in _TASK_EPISODE_GROUPS for param in group.params() if param.name.startswith('task.episode.')}
+EPISODE_PARAMS: dict[str, Param[object]] = {name: param for group in _TASK_EPISODE_GROUPS for name, param in group.by_name().items() if name.startswith('task.episode.')}
 
 
 class Config:

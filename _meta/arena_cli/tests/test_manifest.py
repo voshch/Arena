@@ -81,4 +81,4 @@ def test_task_layer_with_a_broken_entry_point_is_skipped_beside_a_working_one(tm
 def test_axis_launch_args_are_the_task_keys_of_the_manifest_values():
     args = manifest._task_axis_args({"sim": ["gazebo"], "task_layer": ["task_generator"], "task.robots": ["explore"], "task.fleet": ["convoy"]})
     assert set(args) == {"task.robots", "task.fleet"}
-    assert args["task.fleet"]["desc"] == "fleet mode of the task layer"
+    assert args["task.fleet"]["desc"] == "Task modes of the fleet axis."

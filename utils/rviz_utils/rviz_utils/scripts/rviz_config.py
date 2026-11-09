@@ -23,7 +23,7 @@ import rclpy.utilities
 import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_rclpy_mixins import ArenaMixinNode, ClientWrapper
-from arena_rclpy_mixins.params import Choices, Param, declare
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.moveit_factory import build_moveit_params
 from arena_robots.Robot import RobotIdentifier
@@ -32,6 +32,7 @@ from arena_viz import DisplayKind, env_namespace
 from rviz_display_control_msgs.msg import DisplaySet, DisplaySpec
 
 from rviz_utils.renderers import REGISTRY
+from rviz_utils.params import ROBOT, VIEW
 
 
 class _VisualizationManager(TypedDict):
@@ -63,8 +64,8 @@ class ConfigFileGenerator(ArenaMixinNode):
         super().__init__('rviz_config_generator')
 
         self._TASKGEN_NODE = TASKGEN_NODE
-        self._view = declare(self, Param[str]('view', 'map', 'Camera view of the generated config.', constraint=Choices('map', 'robot', 'robot3p')))
-        self._robot = declare(self, Param[int]('robot', 0, 'Index of the robot in the fleet that the robot views follow (negative counts from the end).'))
+        self._view = declare(self, VIEW)
+        self._robot = declare(self, ROBOT)
 
     async def _await_param(
         self,

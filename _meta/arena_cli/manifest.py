@@ -42,7 +42,7 @@ def _share_file(package: str, file: str) -> str | None:
 
 
 def _launch_args(package: str, file: str) -> dict[str, dict[str, str]]:
-    from arena_bringup.launch_arguments import UnreadableLaunchFile, declared_arguments
+    from arena_rclpy_mixins.launch_argument import UnreadableLaunchFile, declared_arguments
 
     try:
         declared = declared_arguments(package, file)
@@ -120,9 +120,9 @@ def _mcp_tools() -> tuple[dict[str, dict[str, str]], list[str]]:
 
 
 def _task_axis_args(values: dict) -> dict[str, dict[str, str]]:
-    from arena_runtime.env.task_layer import TASK_PARAM_PREFIX
+    from arena_runtime.env.task_layer import TASK_PARAM_PREFIX, mode_param_description
 
-    return {key: {"desc": f"{key.removeprefix(TASK_PARAM_PREFIX)} mode of the task layer", "default": ""} for key in values if key.startswith(TASK_PARAM_PREFIX)}
+    return {key: {"desc": mode_param_description(key.removeprefix(TASK_PARAM_PREFIX)), "default": ""} for key in values if key.startswith(TASK_PARAM_PREFIX)}
 
 
 def _values() -> tuple[dict[str, list[str] | dict[str, str]], list[str]]:

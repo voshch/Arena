@@ -12,7 +12,6 @@ import launch.logging
 import launch.some_substitutions_type
 import launch.substitutions
 import launch.utilities
-import launch_ros.parameter_descriptions
 import yaml
 from arena_rclpy_mixins.yaml_replace import YAMLReplacer
 
@@ -31,48 +30,6 @@ def _yaml_iter(obj: list | dict) -> range | typing.KeysView:
         return range(len(obj))
     else:
         raise RuntimeError()
-
-
-class LaunchArgument(launch.actions.DeclareLaunchArgument):
-    _auto_append: typing.ClassVar[list | None] = None
-
-    @classmethod
-    def auto_append(cls, target: list | None = None):
-        """
-        auto append self to list after creation
-        """
-        cls._auto_append = target
-
-    def __init__(
-        self,
-        name: str,
-        *,
-        default_value: launch.some_substitutions_type.SomeSubstitutionsType | None = None,
-        description: str,
-        choices: list[str] | None = None,
-        **kwargs: object,
-    ) -> None:
-        super().__init__(name, default_value=default_value, description=description, choices=choices, **kwargs)
-        if self._auto_append is not None:
-            self._auto_append.append(self)
-
-    @property
-    def substitution(self) -> launch.substitutions.LaunchConfiguration:
-        return launch.substitutions.LaunchConfiguration(self.name)
-
-    @property
-    def dict(self) -> dict[str, launch.substitutions.LaunchConfiguration]:
-        return {self.name: self.substitution}
-
-    def param_value(self, type_: type) -> launch_ros.parameter_descriptions.ParameterValue:
-        return launch_ros.parameter_descriptions.ParameterValue(self.substitution, value_type=type_)
-
-    def param(self, type_: type) -> dict[str, launch_ros.parameter_descriptions.ParameterValue]:
-        return {self.name: self.param_value(type_)}
-
-    @property
-    def str_param(self) -> dict[str, launch_ros.parameter_descriptions.ParameterValue]:
-        return self.param(str)
 
 
 DEPRECATED_LAUNCH_ARGS: Mapping[str, str] = {

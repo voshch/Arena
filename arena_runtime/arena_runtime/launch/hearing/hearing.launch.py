@@ -1,5 +1,6 @@
 import launch
-from arena_bringup.substitutions import LaunchArgument, SelectAction
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_bringup.substitutions import SelectAction
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from arena_runtime.hearing import FRONTENDS, NONE

@@ -1,20 +1,21 @@
 
 import launch
 import launch_ros.actions
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
     ld = launch.LaunchDescription([
-        launch.actions.DeclareLaunchArgument(
+        LaunchArgument(
             name='global_frame_id',
             default_value='map',
-            description='Frame id of the map frame, parent of the static transform.',
+            description='Map frame id.',
         ),
-        launch.actions.DeclareLaunchArgument(
+        LaunchArgument(
             name='odom_frame_id',
             default_value='odom',
-            description='Frame id of the odometry frame, child of the static transform.',
+            description='Odometry frame id.',
         ),
         launch_ros.actions.Node(
             package='tf2_ros',

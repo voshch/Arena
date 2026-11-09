@@ -15,7 +15,8 @@ Sourced from `__init__.py` plus the submodules it re-exports.
 | --- | --- | --- | --- |
 | `ArenaMixinNode` | class | All mixins composed with `rclpy.node.Node`; override `setup()` / `teardown()` | Base class for every Arena node |
 | `ROSParamServer` | mixin | Callback-on-set parameter server, the live handle behind `declare` | Nodes whose parameters change at runtime |
-| `params` | module | `Param[T]`, `ParamGroup`, `declare`, the constraints, `declare_launch_arguments` | Every node parameter and the launch arguments derived from them |
+| `params` | module | `Param[T]`, `ParamGroup`, `declare`, the constraints | Every node parameter |
+| `launch_argument` | module | `LaunchArgument`, `LaunchArgument.from_param`, `forwarded`, `declared_arguments` | Every launch argument, declared or read |
 | `LifecycleClient` | mixin | Sync `get_lifecycle_state`, `change_lifecycle_state`, `wait_for_lifecycle_state` | Driving a peer lifecycle node from sync code |
 | `AsyncLifecycleClient` | mixin | Async `*_async` variants of the above via `ClientWrapper` | Driving a peer lifecycle node from `async` context |
 | `ServiceNamespace` | mixin | `service_namespace(*parts)`: node-FQN-prefixed `Namespace` | Correct service/topic prefixing (rclpy ignores node namespace for services) |
@@ -109,15 +110,21 @@ the namespace, one instance per node, namespace and role. `PerRole` gives a
 parameter a default per role name. `params()`, `by_name(namespace)` and
 `defaults()` read the declarations without a node, `values()` the live values,
 `configure(config, *groups, **given)` builds an attrs config from either.
-`declare_launch_arguments(group.by_name(), prefix=..., reserved=...)` turns every
-parameter not in `reserved` into an empty-default launch argument with the
-description and, for `Choices`, the choices. `parse_constraint(descriptor)` and
+`LaunchArgument` is a `DeclareLaunchArgument` with a mandatory description.
+`LaunchArgument.from_param(param, prefix=...)` declares the launch argument of a
+parameter with its description and choices, the empty default meaning the node
+default, and `forwarded(context, params, prefix=...)` gives the node the set ones
+as typed values. An argument the launch file reads too takes `keep_default=True`
+for the parameter default. Only an argument with no parameter behind it, or one
+renamed on the way to the node, is declared by hand. `declared_arguments(package,
+file)` reads every argument of a launch file as data. `parse_constraint(descriptor)` and
 `constraint_json(constraint)` give consumers (`episode_task_modes`, the web runtime
 page) the constraint back from any descriptor.
 
 `census.py` walks the Arena tree and fails on any `declare_parameter`, `ROSParam`,
 `rosparam.get(name, default)`, `ParameterDescriptor` or `declare_safe` outside this
-module, and on any `Param` or launch argument without a description. It runs as the
+module, on any bare `DeclareLaunchArgument`, and on any `Param` or `LaunchArgument`
+without a description. It runs as the
 `param-census` pre-commit hook and in this package's tests.
 
 `transforms.ThreadedTransformListener` feeds a `tf2_ros.Buffer` from its own

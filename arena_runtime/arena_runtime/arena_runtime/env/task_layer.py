@@ -248,6 +248,11 @@ def mode_param(axis: str) -> str:
     return f"{TASK_PARAM_PREFIX}{axis}"
 
 
+def mode_param_description(axis: str) -> str:
+    """Description of the parameter that selects the modes of one axis."""
+    return f"Task modes of the {axis} axis."
+
+
 def legacy_mode_params() -> dict[str, str]:
     """tm_<axis> for the axes old recordings named, and the parameter that replaces it."""
     return {f"tm_{axis}": mode_param(axis) for axis in TM_AXES}

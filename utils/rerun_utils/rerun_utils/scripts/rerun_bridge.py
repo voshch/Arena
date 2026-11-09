@@ -18,11 +18,12 @@ import rclpy.qos
 import rclpy.utilities
 import rerun as rr
 from arena_rclpy_mixins import ArenaMixinNode
-from arena_rclpy_mixins.params import Param, Range, declare
+from arena_rclpy_mixins.params import declare
 from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 from arena_viz import DisplayKind, env_namespace
 
 from rerun_utils.renderers import REGISTRY, RendererCtx
+from rerun_utils.params import GRPC_PORT, WEB_PORT
 from rerun_utils.tf_mirror import TFMirror
 
 
@@ -36,8 +37,8 @@ class RerunBridge(ArenaMixinNode):
     def __init__(self, TASKGEN_NODE: str = '/arena_env_node') -> None:
         super().__init__('rerun_bridge')
         self._TASKGEN_NODE = TASKGEN_NODE
-        self._web_port = declare(self, Param[int]('web_port', 9090, 'Port of the rerun web viewer.', constraint=Range(lo=1, hi=65535)))
-        self._grpc_port = declare(self, Param[int]('grpc_port', 9876, 'Port of the rerun gRPC server.', constraint=Range(lo=1, hi=65535)))
+        self._web_port = declare(self, WEB_PORT)
+        self._grpc_port = declare(self, GRPC_PORT)
 
     async def _await_param(
         self,

@@ -28,7 +28,7 @@ def test_every_parameter_and_launch_argument_is_declared_and_described() -> None
         ('Param[int]("x", 1, "   ")', "Param without a description"),
         ('Param[int]("x", 1, description="")', "Param without a description"),
         ('LaunchArgument("x", default_value="1", description="")', "LaunchArgument without a description"),
-        ('DeclareLaunchArgument("x", default_value="1")', "DeclareLaunchArgument without a description"),
+        ('DeclareLaunchArgument("x", default_value="1", description="Count.")', "DeclareLaunchArgument, declare a LaunchArgument"),
         ('node.declare_parameter("x", 1)', "declare_parameter() outside params.py"),
         ('node.rosparam[str].get("x", "")', "rosparam.get(name, default) declares without a description"),
         ("ParameterDescriptor(description='x')", "hand-built ParameterDescriptor, declare a Param"),

@@ -2,7 +2,7 @@ import launch
 import launch.actions
 import launch.launch_description_sources
 import launch.substitutions
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch_ros.actions import PushRosNamespace
 from launch_ros.substitutions import FindPackageShare
 

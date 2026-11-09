@@ -393,7 +393,7 @@ class EnvironmentManager(NodeInterface):
         for fid, level in _world.levels.items():
             if not _match_level_id(fid):
                 continue
-            for light in await world_lights(level.with_lighting(self.node.conf.Arena.WORLD_LIGHTING.value or 'authored')):
+            for light in await world_lights(level.with_lighting(self.node.conf.Arena.WORLD_LIGHTING.value)):
                 realized_l = self._realizer.realize(light, fid)
                 self.node._register_semantic_entity(light.name, realized_l.name)
                 self._world_light_names.add(light.name)

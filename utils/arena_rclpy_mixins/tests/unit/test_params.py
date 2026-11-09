@@ -198,13 +198,23 @@ def test_parse_helpers() -> None:
     assert names(["Wheel", " ", " Fan "]) == ("wheel", "fan")
 
 
-def test_declare_launch_arguments_emits_every_param_with_choices() -> None:
+def test_launch_argument_from_param_carries_description_and_choices() -> None:
     pytest.importorskip("launch")
-    from arena_rclpy_mixins.params import declare_launch_arguments
+    from arena_rclpy_mixins.launch_argument import LaunchArgument
 
-    arguments = declare_launch_arguments(_MotorGroup.by_name(), prefix="motor_", reserved=("motor.gain",))
+    arguments = [LaunchArgument.from_param(param, prefix="motor_") for param in _MotorGroup.by_name().values() if param.name != "motor.gain"]
 
     assert [argument.name for argument in arguments] == ["motor_motor.trim_db", "motor_motor.rate_hz", "motor_motor.kinds", "motor_motor.mode"]
     assert arguments[0].description == "Offset on the motor level. Empty = node default."
     assert arguments[-1].choices == ["", "fast", "slow"]
     assert arguments[0].choices is None
+
+
+def test_forwarded_passes_only_set_arguments_as_ros_values() -> None:
+    launch = pytest.importorskip("launch")
+    from arena_rclpy_mixins.launch_argument import forwarded
+
+    context = launch.LaunchContext()
+    context.launch_configurations.update({"motor_motor.rate_hz": "2", "motor_motor.trim_db": "", "motor_motor.kinds": "[wheel, fan]"})
+
+    assert forwarded(context, _MotorGroup.by_name().values(), prefix="motor_") == {"motor.rate_hz": 2.0, "motor.kinds": ["wheel", "fan"]}

@@ -493,7 +493,7 @@ async def episode_task_modes_active(env_id: EnvId = None) -> dict[str, object]:
 def _episode_params() -> dict[str, str]:
     from arena_runtime.env.constants.runtime import EPISODE_PARAMS
 
-    return EPISODE_PARAMS
+    return {name: param.description for name, param in EPISODE_PARAMS.items()}
 
 
 @domain.tool(read_only=True)

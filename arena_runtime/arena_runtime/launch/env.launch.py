@@ -14,7 +14,8 @@ from ament_index_python.packages import get_package_share_directory
 from arena_bringup.actions import IsolatedGroupAction
 from arena_bringup.defaults import default_human
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction, active_spec
-from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
+from arena_rclpy_mixins.launch_argument import LaunchArgument, forwarded
+from arena_bringup.substitutions import deprecated_launch_args
 from arena_rclpy_mixins import launch_str_to_value
 from launch.actions import (
     ExecuteProcess,
@@ -26,7 +27,9 @@ from launch.event_handlers import OnProcessExit
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-from arena_runtime.env.constants.runtime import EPISODE_PARAMS
+from arena_simulation_setup import params as world_params
+from arena_runtime.env.constants.runtime import ArenaParams, EPISODE_PARAMS, HumanParams, RobotParams
+from arena_runtime.node_params import TASK_LAYER, NodeParams
 from arena_runtime.env.task_layer import TASK_PARAM_PREFIX, mode_param
 from arena_runtime.hearing import nav2_overlay
 from arena_runtime.flags import expand_flag_namespace, truthy
@@ -108,31 +111,31 @@ def generate_launch_description() -> launch.LaunchDescription:
     env_id = LaunchArgument(
         name="env.id",
         default_value=str(_AUTO_ENV_ID),
-        description="Requested env id; 65535 = auto-allocate via /arena/register_env.",
+        description="Requested env id (65535 = allocate one).",
     )
 
     managed = LaunchArgument(
         name="env.managed",
         default_value="false",
-        description="true = arena pre-reserved; skip /arena/register_env and use env.id/env.ns from args. Placement comes via confirm_world either way.",
+        description="true = the runtime reserved the env and env.id and env.ns are taken as given.",
     )
 
     ns = LaunchArgument(
         name="env.ns",
         default_value="",
-        description="Explicit ns path (e.g. for sim2real); empty = auto-generate.",
+        description="Env namespace (empty = allocate one).",
     )
 
     sim = LaunchArgument(
         name="sim",
         default_value="",
-        description="empty = adopt the runtime's sim; explicit [dummy, flatsim, gazebo, isaac, mujoco] must match the runtime",
+        description="Simulator of the env, matching the runtime's (empty = the runtime's).",
     )
     env_tf = LaunchArgument(
         name="env.tf",
         choices=["auto", "env", "global"],
         default_value="auto",
-        description="tf topics: env = <env ns>/tf and <env ns>/tf_static, global = /tf and /tf_static, auto = global for sim isaac or mujoco or robot.train, env otherwise.",
+        description="Where the env's tf topics live.",
     )
     # human/mobile defaults derive from arena's authoritative `sim` (the RegisterEnv
     # response, or the sim arg arena passes for managed envs). Empty here means
@@ -140,33 +143,23 @@ def generate_launch_description() -> launch.LaunchDescription:
     human = LaunchArgument(
         name="human",
         default_value="",
-        description="empty = derive from arena_sim ({dummy: manual, flatsim|gazebo|isaac|mujoco: arena})",
+        description="Pedestrian simulator of the env (empty = derived from the simulator).",
     )
-    human_robots_visible = LaunchArgument(
-        name="human.robots.visible",
-        choices=["true", "false"],
-        default_value="true",
-        description="false = pedestrians of the arena human backend are not told where the robots are and walk as if none were there. Possessed pedestrians stay visible to the crowd.",
-    )
-    acoustics = LaunchArgument(
-        name="acoustics",
-        choices=["none", "arena"],
-        default_value="none",
-        description="Acoustics simulator: none, or arena (arena_auditory: propagation, robot and human sound emission, playback). Backend keys take the auditory. prefix.",
-    )
+    LaunchArgument.from_param(HumanParams.ROBOTS_VISIBLE)
+    acoustics = LaunchArgument.from_param(ArenaParams.ACOUSTICS, keep_default=True)
     auditory_static_sounds = LaunchArgument(
         name="auditory.static_sounds",
         default_value="[]",
-        description="YAML list of world-independent sound entities (radios, alarms), same Sound schema as world.yaml sounds. Non-empty enables the sounds module even with acoustics:=none, where nothing hears them.",
+        description="YAML list of world-independent sounds.",
     )
-    robot = LaunchArgument(name="robot", default_value="auto", description="robot model of the env, auto picks one that fits the planner")
+    robot = LaunchArgument(name="robot", default_value="auto", description="Robot model of the env (auto = one that fits the planner).")
     tm_config = LaunchArgument(
         name=mode_param("config"),
         default_value="",
         description="Task config file, a path or a config name. Overrides task.robots.",
     )
-    for name, description in EPISODE_PARAMS.items():
-        LaunchArgument(name=name, default_value='', description=f'{description} Empty = node default.')
+    for param in EPISODE_PARAMS.values():
+        LaunchArgument.from_param(param)
     scenario_file = LaunchArgument(
         name='task.scenario.file',
         default_value='',
@@ -175,54 +168,30 @@ def generate_launch_description() -> launch.LaunchDescription:
     scenario_linger = LaunchArgument(
         name='task.scenario.linger_after_completion',
         default_value='false',
-        description='Keep a completed scenario robot task alive until timeout/external cancellation.',
+        description='Keep a completed scenario robot task running until its timeout.',
     )
     view_fov = LaunchArgument(
         name="view.fov_deg",
         default_value="60.0",
         description="Horizontal fov in degrees of the pedestrian views.",
     )
-    task_layer = LaunchArgument(
-        name="task_layer",
-        default_value="",
-        description="Task runtime: an entry point name of the arena_runtime.task_layer group. Empty = $ARENA_TASK_LAYER, else task_generator.",
-    )
-    LaunchArgument(name="optim", default_value=os.environ.get("ARENA_OPTIM", ""), description="Optimization profile name handed to the robot loaders (empty = none).")
-    world = LaunchArgument(name="world", default_value="map_empty", description="world the env starts in")
-    world_lighting = LaunchArgument(
-        name="world.lighting",
-        default_value="authored",
-        choices=["authored", "auto"],
-        description="authored: the lights the world declares. auto: also a calibrated ceiling rig in every zone with a ceiling and no lights of its own.",
-    )
-    world_levels = LaunchArgument(
-        name="world.levels",
-        default_value="auto",
-        choices=["auto", "stack", "spread"],
-        description="stack: levels above one another in the simulator, stair and escalator pairs joined at their seams. spread: levels side by side. auto: stack when the world has stairs or escalators and the simulator stacks (gazebo), else spread.",
-    )
-    kg_derive = LaunchArgument(
-        name="kg.derive",
-        default_value="auto",
-        choices=["auto", "all", "off"],
-        description="auto: derive zone membership and door connections from geometry where the world's kg.yaml states none. all: derive them from geometry for everything, ignoring the stated ones. off: only what kg.yaml states.",
-    )
+    LaunchArgument.from_param(TASK_LAYER)
+    LaunchArgument(name=NodeParams.OPTIM.name, default_value=os.environ.get("ARENA_OPTIM", ""), description=NodeParams.OPTIM.description)
+    world = LaunchArgument(name="world", default_value="map_empty", description="World the env starts in.")
+    world_lighting = LaunchArgument.from_param(world_params.WORLD_LIGHTING, keep_default=True)
+    world_levels = LaunchArgument.from_param(world_params.WORLD_LEVELS, keep_default=True)
+    kg_derive = LaunchArgument.from_param(world_params.KG_DERIVE, keep_default=True)
     mobile = LaunchArgument(
         name="robot.mobile",
         default_value="",
-        description="mobile adapter kind; empty = derive from arena_sim ({dummy: none, *: nav2})",
+        description="Mobile adapter kind (empty = derived from the simulator).",
     )
     planner = LaunchArgument(
         name="robot.planner",
         default_value="",
-        description="top-level planner selector; resolves to robot.mobile:=<adapter> robot.mobile.<selector>:=<name> via arena_planners.resolver",
+        description="Planner, resolved to a mobile adapter and its selector.",
     )
-    hearing = LaunchArgument(
-        name="robot.hearing",
-        choices=["none", "bus", "srp", "seld", "call"],
-        default_value="none",
-        description="Robot hearing front-end of every fleet robot (none = off).",
-    )
+    hearing = LaunchArgument.from_param(RobotParams.HEARING, keep_default=True)
     hearing_policy = LaunchArgument(
         name="robot.hearing.policy",
         choices=["belief", "listen", "full"],
@@ -232,22 +201,22 @@ def generate_launch_description() -> launch.LaunchDescription:
     arm = LaunchArgument(
         name="robot.arm",
         default_value="moveit",
-        description="arm adapter kind",
+        description="Arm adapter kind.",
     )
     lift = LaunchArgument(
         name="robot.lift",
         default_value="direct",
-        description="lift adapter kind",
+        description="Lift adapter kind.",
     )
     gripper = LaunchArgument(
         name="robot.gripper",
         default_value="direct",
-        description="gripper adapter kind",
+        description="Gripper adapter kind.",
     )
     record_dir = LaunchArgument(
         name="record.dir",
         default_value="",
-        description="Directory for episode recording; empty disables.",
+        description="Episode recording directory (empty = no recording).",
     )
     record_auto = LaunchArgument(
         name="record.auto",
@@ -257,9 +226,9 @@ def generate_launch_description() -> launch.LaunchDescription:
     LaunchArgument(
         name="debug",
         default_value="",
-        description="comma list of debug tokens (e.g. aiomonitor,map_server); also debug.<token>:=true",
+        description="Comma-separated debug tokens.",
     )
-    train_mode = LaunchArgument(name="robot.train", default_value="false", description="true = a training agent drives the robot.")
+    train_mode = LaunchArgument.from_param(NodeParams.ROBOT_TRAIN, keep_default=True)
     parameter_file = LaunchArgument(
         name="task.params",
         default_value="",
@@ -412,12 +381,8 @@ def generate_launch_description() -> launch.LaunchDescription:
         )
 
         declared = {a.name for a in ld_items}
-        dotted_overrides: dict[str, object] = {}
+        dotted_overrides: dict[str, object] = forwarded(context, (HumanParams.ROBOTS_VISIBLE, TASK_LAYER, *EPISODE_PARAMS.values()))
         for k, v in context.launch_configurations.items():
-            if k in EPISODE_PARAMS:
-                if v:
-                    dotted_overrides[k] = yaml.safe_load(v)
-                continue
             if k in declared:
                 continue
             if k.startswith((TASK_PARAM_PREFIX, "robot.")) and not k.startswith(_HEARING_PREFIX):
@@ -438,10 +403,6 @@ def generate_launch_description() -> launch.LaunchDescription:
             dotted_overrides["task.scenario.file"] = scenario_val
 
         parameter_file_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(parameter_file.substitution)).strip()
-
-        task_layer_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(task_layer.substitution))
-        if task_layer_val:
-            dotted_overrides["task_layer"] = task_layer_val
 
         tm_config_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(tm_config.substitution)).strip()
         if tm_config_val:
@@ -483,7 +444,6 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "use_sim_time": True,
                     "sim": arena_sim,
                     "human": human_val,
-                    "human.robots.visible": human_robots_visible.param_value(bool),
                     "acoustics": acoustics_val,
                     "robot.mobile_adapter": mobile_val,
                     "robot.hearing": hearing_val,

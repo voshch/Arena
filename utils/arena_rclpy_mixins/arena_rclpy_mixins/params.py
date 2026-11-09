@@ -7,7 +7,7 @@ import copy
 import enum
 import math
 import typing
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 import attrs
 import yaml
@@ -15,7 +15,6 @@ import yaml
 if typing.TYPE_CHECKING:
     import rclpy
     import rclpy.node
-    from launch.actions import DeclareLaunchArgument
     from rcl_interfaces.msg import FloatingPointRange, IntegerRange, ParameterDescriptor, SetParametersResult
 
     from .ROSParamServer import ROSParamT
@@ -723,17 +722,3 @@ def configure[C](config: type[C], *groups: ParamGroup | type[ParamGroup], **give
         values.update(group.values() if isinstance(group, ParamGroup) else group.defaults())
     values.update(given)
     return config(**{field.name: values[field.name] for field in attrs.fields(config) if field.init})
-
-
-def declare_launch_arguments(params: Mapping[str, Param[object]], *, prefix: str = "", reserved: Iterable[str] = ()) -> list[DeclareLaunchArgument]:
-    """An empty-default launch argument prefix + name per parameter, names in reserved left out, choices from Choices and enum defaults."""
-    from launch.actions import DeclareLaunchArgument
-
-    skipped = frozenset(reserved)
-    arguments: list[DeclareLaunchArgument] = []
-    for name, param in params.items():
-        if name in skipped:
-            continue
-        choices = ["", *param.constraint.values] if isinstance(param.constraint, Choices) and not param.constraint.many else None
-        arguments.append(DeclareLaunchArgument(prefix + name, default_value="", description=f"{param.description} Empty = node default.", choices=choices))
-    return arguments

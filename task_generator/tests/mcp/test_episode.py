@@ -214,7 +214,7 @@ def test_task_modes_carry_the_declared_constraint_of_each_parameter(run):
 def test_params_read_the_episode_catalog_and_set_coerces_to_declared_types(run, peers):
     params = run(episode.episode_params(env_id=ENV))
     assert sorted(params) == sorted(EPISODE_PARAMS)
-    assert params["task.episode.count"]["description"] == EPISODE_PARAMS["task.episode.count"]
+    assert params["task.episode.count"]["description"] == EPISODE_PARAMS["task.episode.count"].description
     declared = peers.humansim.get_parameter("task.episode.timeout").type_
     written = run(episode.episode_set_params({"task.episode.timeout": 30.0, "task.episode.auto_reset": "false"}, env_id=ENV))
     assert written["task.episode.auto_reset"] is False

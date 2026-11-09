@@ -26,10 +26,11 @@ env node, and navigation stack lives here.
 The `arena_bringup` Python package ([arena_bringup/README.md](README.md))
 provides launch-time helpers used across all launch files in this package:
 
-- **`LaunchArgument`** / **`SelectAction`** / YAML substitutions
+- **`SelectAction`** / YAML substitutions
   ([arena_bringup/substitutions.py](arena_bringup/substitutions.py))
-  (`LaunchArgument(name, default_value=..., description=...)`: `description` is a required keyword)
-- **`declared_arguments(package, file)`** ([arena_bringup/launch_arguments.py](arena_bringup/launch_arguments.py)): the name, description, default and choices of every argument a launch file declares, read from its launch description
+- **`LaunchArgument`**, `LaunchArgument.from_param`, `forwarded`, `declared_arguments`
+  ([arena_rclpy_mixins/launch_argument.py](../utils/arena_rclpy_mixins/arena_rclpy_mixins/launch_argument.py))
+  (`description` is a required keyword)
 - **`IsolatedGroupAction`**
   ([arena_bringup/actions.py](arena_bringup/actions.py))
 - **`PythonExpression`** / **`IfElseSubstitution`**

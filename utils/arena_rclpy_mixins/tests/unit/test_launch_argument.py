@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 
 
 def test_missing_description_is_rejected():

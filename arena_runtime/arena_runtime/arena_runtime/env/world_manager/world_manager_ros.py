@@ -236,7 +236,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         # regeneration reuses the name but rewrites world.yaml; drop the stale render
         self._map_render_memo.pop(world_name, None)
 
-        world = world_view.load(level_filter=level_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
+        world = world_view.load(level_filter=level_filter, derive=self.node.conf.Arena.KG_DERIVE.value)
         level_origins = world_view.level_origins()
         origins = level_origins if level_origins is not None else {fid: (0.0, 0.0) for fid in world.level_ids}
         offsets = self._stack_offsets(world_name, world)
@@ -322,7 +322,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
     def _stack_offsets(self, world_name: str, world: World) -> dict[str, tuple[float, float, float]]:
         """Per level simulator offsets under `world.levels`, empty to spread, every stair and escalator pair marked joined when stacked."""
-        mode = self.node.conf.Arena.WORLD_LEVELS.value or 'auto'
+        mode = self.node.conf.Arena.WORLD_LEVELS.value
         simulator = self._environment_manager.simulator_name
         stacks = self._environment_manager.stacks_levels
         if mode == 'stack' and world.layout != 'stacked':
@@ -517,7 +517,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             if self._world_name:
                 bare_wn, wn_filter = WorldIdentifier.split_filter(self._world_name)
                 world_view = await WorldIdentifier(bare_wn).resolve()
-                loaded = world_view.load(level_filter=wn_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
+                loaded = world_view.load(level_filter=wn_filter, derive=self.node.conf.Arena.KG_DERIVE.value)
                 origins = world_view.level_origins()
                 compacted = loaded.compact_world(origins=origins if origins is not None else {fid: (0.0, 0.0) for fid in loaded.level_ids})
                 await self._push_map_source(world_view, loaded.level_ids, compacted, origins)

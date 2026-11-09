@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import launch.actions
 
-from arena_bringup.launch_arguments import declared_arguments
+from arena_rclpy_mixins.launch_argument import declared_arguments
 
 
 def test_every_argument_of_arena_runtime_launch_has_a_description():
