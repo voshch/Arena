@@ -14,11 +14,10 @@ import dataclasses
 import json
 import traceback
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import rclpy.publisher
 import rclpy.subscription
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_robots.characterization import (
     CONTROL_RATE_HZ,
     DURATION_DEFAULTS,
@@ -35,12 +34,12 @@ from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Pose
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-from rclpy import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
+from task_generator.tasks.robots.characterization import CharacterizationParams
 
 # The robot stack's cmd_vel consumers (twist stamper / velocity smoother)
 # subscribe RELIABLE and reject a BEST_EFFORT publisher ("No messages will be
@@ -66,15 +65,11 @@ class _Run:
 class TM_Characterization(TM_Robots):
     """Open-loop sweep: exact cmd_vel profiles through each robot's envelope."""
 
-    _modes: dict[str, ROSParamT[bool]]
-    _durations: dict[str, ROSParamT[float]]
-    _sweeps: dict[str, ROSParamT[list[float]]]
+    _params: CharacterizationParams
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
-        self._modes = {name: self.node.ROSParam[bool](self.namespace("modes", name), True) for name in MODES}
-        self._durations = {name: self.node.ROSParam[float](self.namespace(name), default) for name, default in DURATION_DEFAULTS.items()}
-        self._sweeps = {name: self.node.ROSParam[list[float]](self.namespace(name), list(default), type_=Parameter.Type.DOUBLE_ARRAY) for name, default in SWEEP_DEFAULTS.items()}
+        self._params = CharacterizationParams(self.node, namespace=self.namespace())
         self._runs: dict[str, _Run] = {}
         self._finished = False
         self._driver: asyncio.Task | None = None
@@ -100,9 +95,10 @@ class TM_Characterization(TM_Robots):
         self._sync_entities()
 
         now = self._sim_now()
-        modes = [name for name, param in self._modes.items() if param.value]
-        durations = {name: param.value for name, param in self._durations.items()}
-        sweeps = {name: [float(v) for v in param.value] for name, param in self._sweeps.items()}
+        values = self._params.values()
+        modes = [name for name in MODES if values[f"mode_{name}"]]
+        durations = {name: typing.cast(float, values[name]) for name in DURATION_DEFAULTS}
+        sweeps = {name: [float(v) for v in typing.cast("Iterable[float]", values[name])] for name in SWEEP_DEFAULTS}
 
         for manager in self._ctx.robots.values():
             envelope = resolve_envelope(manager.model_name)

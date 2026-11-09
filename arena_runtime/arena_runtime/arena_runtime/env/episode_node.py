@@ -23,6 +23,7 @@ import rclpy
 import rclpy.lifecycle
 import rclpy.qos
 import yaml
+from arena_rclpy_mixins.params import Param, declare
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.SetupFile import Config as RobotSetupConfig
 from arena_runtime_msgs.msg import AdapterDisplay
@@ -34,8 +35,8 @@ from arena_simulation_setup.tree.World import point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
-from rcl_interfaces.msg import IntegerRange, ParameterDescriptor, ParameterValue
 from rcl_interfaces.msg import Parameter as RclParameter
+from rcl_interfaces.msg import ParameterValue
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -46,7 +47,7 @@ from std_msgs.msg import Bool, Empty, Int16, String
 from arena_runtime.env.adapters import ResetContext
 from arena_runtime.env.catalogs import LISTERS
 from arena_runtime.env.constants import Constants
-from arena_runtime.env.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN
+from arena_runtime.env.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN, EpisodeParams
 from arena_runtime.env.goal_progress import GoalProgressTracker
 from arena_runtime.env.interactive import MarkerHub
 from arena_runtime.env.interactive.entities import EntityHandles
@@ -73,6 +74,7 @@ from arena_runtime.env.task_layer import (
     task_layer,
     task_layer_name,
 )
+from arena_runtime.node_params import TASK_LAYER
 from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot
 
 if typing.TYPE_CHECKING:
@@ -137,48 +139,18 @@ class EpisodeNode(EnvNode):
     def __init__(self, **kwargs: typing.Any) -> None:
         super().__init__(Constants.ENV_NODE_NAMESPACE, automatically_declare_parameters_from_overrides=True, **kwargs)
 
-        layer_name = task_layer_name(self.rosparam[str].get("task_layer", ""))
-        self.rosparam[str].set("task_layer", layer_name)
+        self._task_layer_param = declare(self, TASK_LAYER)
+        layer_name = task_layer_name(self._task_layer_param.value)
+        self._task_layer_param.value = layer_name
         self._task_layer = task_layer(layer_name)
-        self.ROSParam[bool]("resetting", True)
+        declare(self, Param[bool]("resetting", True, "true while the env runs an episode reset."))
         self.task_params = self._task_layer.declare_task_params(self)
         declare_mode_schemas(self._task_layer, self)
 
-        run_seed = self.rosparam[str].get("run_seed", "")
-        queue_depth = self.rosparam[int].get("episode_queue_depth", 10)
-
-        self._declare_mutable_param(
-            "task.episode.auto_reset",
-            True,
-            ParameterDescriptor(
-                description=("true = standalone: node auto-advances episodes. false = managed: external controller drives resets."),
-            ),
-        )
-        self._declare_mutable_param(
-            "task.episode.fail_on_collision",
-            False,
-            ParameterDescriptor(
-                description=("true = abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian."),
-            ),
-        )
-        self._declare_mutable_param(
-            "run_seed",
-            run_seed,
-            ParameterDescriptor(
-                description=("Hex string seeding per-episode blake2b derivation. Empty = random uuid at startup."),
-            ),
-        )
-        self._declare_mutable_param(
-            "episode_queue_depth",
-            queue_depth,
-            ParameterDescriptor(
-                description="Publisher depth for state/queue topic.",
-                integer_range=[IntegerRange(from_value=1, to_value=100, step=1)],
-            ),
-        )
+        self._episode_params = EpisodeParams(self)
 
         self._episodes = EpisodeRuntime(
-            run_seed=run_seed or uuid.uuid4().hex,
+            run_seed=self._episode_params.RUN_SEED.value or uuid.uuid4().hex,
         )
         self._goal_progress = GoalProgressTracker()
 
@@ -209,7 +181,7 @@ class EpisodeNode(EnvNode):
             1,
         )
 
-        self._cam_setup = self.ROSParam[str]("cam.setup", "")
+        self._cam_setup = declare(self, Param[str]("cam.setup", "", "Camera setup played at every episode start (empty = none)."))
         self._cam_client = self.create_client_wrapper(arena_cam_msgs.srv.Play, f"{self.get_namespace().rstrip('/')}/cam/play", timeout=_CAM_PLAY_TIMEOUT)
         self._cam_absent = False
         self._cam_task: asyncio.Future[tuple[bool, str]] | None = None
@@ -237,7 +209,7 @@ class EpisodeNode(EnvNode):
             arena_runtime_msgs.msg.EpisodeRecord,
             self.service_namespace("state", "queue"),
             rclpy.qos.QoSProfile(
-                depth=queue_depth,
+                depth=self._episode_params.QUEUE_DEPTH.value,
                 durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
             ),
         )
@@ -416,7 +388,7 @@ class EpisodeNode(EnvNode):
         msg.world = record.world
         msg.seed = record.seed
         msg.modes = encode_modes(record.modes)
-        msg.task_layer = self.rosparam[str].get("task_layer", "")
+        msg.task_layer = self._task_layer_param.value
         msg.params = [RclParameter(name=name, value=value) for name, value in params.items()]
         msg.robots = list(record.robots)
         msg.outcome_state = record.outcome_state
@@ -603,7 +575,7 @@ class EpisodeNode(EnvNode):
         pending = self._episodes.pending
         episode_id = self._episodes.current.episode_id + 1
         resolved_world = world or pending.world or self._loaded_world or self._episodes.current.world
-        run_seed = self.rosparam[str].get("run_seed", "") or self._episodes.run_seed
+        run_seed = self._episode_params.RUN_SEED.value or self._episodes.run_seed
         if seed < 0:
             seed = pending.seed if pending.seed >= 0 else _derive_seed(run_seed, resolved_world, episode_id)
         return EpisodeRecord(episode_id=episode_id, world=resolved_world, seed=seed, modes=self.task_params.resolve(pending.modes))
@@ -1132,7 +1104,7 @@ class EpisodeNode(EnvNode):
         request: arena_runtime_msgs.srv.DespawnRobot.Request,
         response: arena_runtime_msgs.srv.DespawnRobot.Response,
     ) -> arena_runtime_msgs.srv.DespawnRobot.Response:
-        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
+        if not self._initialized.value or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
@@ -1151,7 +1123,7 @@ class EpisodeNode(EnvNode):
         request: arena_runtime_msgs.srv.SpawnRobot.Request,
         response: arena_runtime_msgs.srv.SpawnRobot.Response,
     ) -> arena_runtime_msgs.srv.SpawnRobot.Response:
-        if not self.rosparam[bool].get("initialized", False) or self._task is None or self._robots_manager is None:
+        if not self._initialized.value or self._task is None or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
@@ -1176,7 +1148,7 @@ class EpisodeNode(EnvNode):
         request: arena_runtime_msgs.srv.MoveEntity.Request,
         response: arena_runtime_msgs.srv.MoveEntity.Response,
     ) -> arena_runtime_msgs.srv.MoveEntity.Response:
-        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
+        if not self._initialized.value or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
@@ -1206,7 +1178,7 @@ class EpisodeNode(EnvNode):
 
     async def _assign_task(self, robot: str, task_yaml: str) -> tuple["RobotManager", list[int]]:
         """Hand a robot the parsed task, replacing its unfinished phases, an empty one stopping it, and return its manager and the episode-wide indices of the new phases."""
-        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
+        if not self._initialized.value or self._robots_manager is None:
             raise ValueError("task generator not initialized")
         manager = self._robots_manager.managers.get(robot)
         if manager is None:

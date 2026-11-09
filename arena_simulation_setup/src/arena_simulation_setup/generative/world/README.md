@@ -25,7 +25,7 @@ Registration in [`__init__.py`](__init__.py) is lazy, so importing the package d
 - `configure(dict)` and `compute() -> World`, which sets `self.diagnostics` and appends to `self.warnings`,
 - optionally `files()` for extra artifacts written into the world directory by `save_generated`, `params()` for the episode binding, and `normalize(str)` for a canonical form of a textual input.
 
-`Configuration` fields become ROS parameters under `algorithm.<generator>.<field>` through [`schema.py`](schema.py). Only `bool`, `int`, `float`, `str` and 2-tuples of numbers are supported (structured list/tuple fields are skipped for the ROS parameter server), an `int | None` field needs a `ge` bound and is declared as an integer whose value one below it stands for None (the node maps it back with `config_from_params`, so `-1` is the procedural `barn`), `ge`/`le` become the widget's range, and `json_schema_extra={"widget": "sketch"}` asks the panel for the grid editor.
+`Configuration` fields become ROS parameters under `algorithm.<generator>.<field>` through [`schema.py`](schema.py). Only `bool`, `int`, `float`, `str` and 2-tuples of numbers are supported (structured list/tuple fields are skipped for the ROS parameter server), an `int | None` field needs a `ge` bound and is declared as an integer whose value one below it stands for None (the node maps it back with `config_from_params`, so `-1` is the procedural `barn`), `ge`/`le` become the parameter's `Range`, an enum field becomes `Choices`, a field's pydantic `description` is the parameter description, so every field carries one sentence with its unit and sentinels, and `json_schema_extra={"widget": "sketch"}` asks the panel for the grid editor.
 
 ## Layout IR
 
@@ -81,7 +81,7 @@ A character with no entry is painted from a font instead, stretched to the same 
 
 ## ROS surface
 
-`world_generator` declares `generator`, `seed`, `world` and every generator's configuration, then serves:
+`world_generator` declares `generator` (a world generator name), `seed` (negative = nondeterministic), `world` (name of the world it writes) and every generator's configuration, then serves:
 
 - `<node>/generate` (`GenerateWorld`) for preview and save. Both run the same path, so what the panel shows is what a save writes. Resolution 0 fits the map to `PREVIEW_PIXEL_BUDGET`. The response carries the map's world frame and, from `frame()`, the generator's cell grid, so an editor can place a cursor on the returned image.
 - `<node>/generate_world` (`Trigger`), the older save-only entry that reads everything from parameters.

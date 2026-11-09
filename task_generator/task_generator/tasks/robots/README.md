@@ -19,7 +19,7 @@ intent into goals sent at a specific robot through its bound adapter.
 
 Each `TM_Robots` subclass is a package:
 
-- `__init__.py` (eager): declares `_NS` and (optionally) `_declare_schema`, then registers the mode on `ROBOTS_MODES` (a `TaskModeRegistry` from `tasks/registry.py`) with `namespace=_NS` and `schema=_declare_schema`. Imported at node startup.
+- `__init__.py` (eager): declares `_NS` and (optionally) a `ParamGroup` schema, then registers the mode on `ROBOTS_MODES` (a `TaskModeRegistry` from `tasks/registry.py`) with `namespace=_NS` and `schema=<Group>`. Imported at node startup.
 - `impl.py` (lazy): contains the class body. Imported only on first activation.
 
 Parameters live under `task.<mode>.<leaf>`. Mode names are shared across the
@@ -115,7 +115,7 @@ the enum, they are only reachable via `set_tm_robots_composite`.
 ## Adding a TM_Robots mode
 
 1. Create `tasks/robots/<name>/` as a package.
-2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has parameters, and register it on `ROBOTS_MODES`.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define a `ParamGroup` subclass if the mode has parameters (see [tasks/README.md](../README.md#tm-package-structure)), and register it on `ROBOTS_MODES` with `schema=<Group>`.
 3. In `impl.py`: define the class extending `TM_Robots`; override `reset` to return a `ResetPlan`.
 4. Add `<NAME> = "<name>"` to `Modes.TM_Robots` in [`modes.py`](../../modes.py).
 5. `declare_mode_schemas(layer, node)` picks up your schema automatically at node init.

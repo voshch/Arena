@@ -49,21 +49,15 @@ def test_random_mode_returns_starts_and_tasks_and_drives_no_robot() -> None:
     assert plan.forbidden_zones == []
 
 
-class _Param:
-    def __init__(self, values: dict[str, object]) -> None:
-        self.values = values
-
-    def __getitem__(self, kind: object) -> _Param:
-        del kind
-        return self
-
-    def __call__(self, name: object, default: object = None, **kwargs: object) -> SimpleNamespace:
-        del kwargs
-        return SimpleNamespace(value=self.values.get(str(name).rsplit(".", 1)[-1], default))
-
-
 def _node(**values: object) -> SimpleNamespace:
-    return SimpleNamespace(ROSParam=_Param(values), sim_time=SimpleNamespace(sec=5.0))
+    import uuid
+
+    from arena_rclpy_mixins.ROSParamServer import ROSParamServer
+    from rclpy.parameter import Parameter
+
+    node = ROSParamServer(f"robot_plans_{uuid.uuid4().hex[:8]}", start_parameter_services=False, parameter_overrides=[Parameter(f"task.mode.{name}", value=value) for name, value in values.items()])
+    node.sim_time = SimpleNamespace(sec=5.0)
+    return node
 
 
 def _namespace() -> object:

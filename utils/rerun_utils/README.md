@@ -22,6 +22,12 @@ ros2 launch rerun_utils rerun_bridge.launch.py ns:=/env_0 \
     web_port:=9090 grpc_port:=9876
 ```
 
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `ns` | required | Env namespace, e.g. `/env_0`. |
+| `web_port` | `9090` | Port of the rerun web viewer. |
+| `grpc_port` | `9876` | Port of the rerun gRPC server. |
+
 Then open `http://localhost:9090/` in any browser. No X server, no desktop
 environment, works inside a container.
 

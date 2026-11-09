@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import functools
 import itertools
 import typing
 from collections.abc import Callable, Iterable, Iterator
 
-import attrs
 import numpy as np
-import rclpy
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
@@ -18,17 +14,11 @@ from typing_extensions import Self
 from task_generator.tasks import identifier_to_available
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
+from task_generator.tasks.obstacles.random import RandomParams
 
 
-@attrs.define()
-class _Config:
-    N_STATIC_OBSTACLES: ROSParamT[tuple[int, int]]
-    N_INTERACTIVE_OBSTACLES: ROSParamT[tuple[int, int]]
-    N_DYNAMIC_OBSTACLES: ROSParamT[tuple[int, int]]
-
-    MODELS_STATIC_OBSTACLES: ROSParamT[list[str]]
-    MODELS_INTERACTIVE_OBSTACLES: ROSParamT[list[str]]
-    MODELS_DYNAMIC_OBSTACLES: ROSParamT[list[str]]
+def _models(identifier: type[Identifier], models: list[str]) -> list[str]:
+    return models if models else list(identifier_to_available(identifier))
 
 
 class TM_Random(TM_Obstacles):
@@ -41,14 +31,18 @@ class TM_Random(TM_Obstacles):
         _config (Config): Configuration object for obstacle generation.
     """
 
-    _config: _Config
+    _config: RandomParams
 
     async def reset(self, *, seed: int) -> Obstacles:
         rng = self._ctx.conf.RNG.stream("obstacles", "random")
 
-        N_STATIC_OBSTACLES = int(rng.integers(*self._config.N_STATIC_OBSTACLES.value, endpoint=True))
-        N_INTERACTIVE_OBSTACLES = int(rng.integers(*self._config.N_INTERACTIVE_OBSTACLES.value, endpoint=True))
-        N_DYNAMIC_OBSTACLES = int(rng.integers(*self._config.N_DYNAMIC_OBSTACLES.value, endpoint=True))
+        def count(bounds: tuple[float, float]) -> int:
+            lo, hi = bounds
+            return int(rng.integers(int(lo), int(hi), endpoint=True))
+
+        N_STATIC_OBSTACLES = count(self._config.STATIC_N.value)
+        N_INTERACTIVE_OBSTACLES = count(self._config.INTERACTIVE_N.value)
+        N_DYNAMIC_OBSTACLES = count(self._config.DYNAMIC_N.value)
 
         class ModelList(dict[str, float]):
             @classmethod
@@ -72,9 +66,9 @@ class TM_Random(TM_Obstacles):
             def __init__(self, *args: object, **kwargs: object) -> None:
                 super().__init__(*args, **kwargs)
 
-        MODELS_STATIC_OBSTACLES = ModelList.from_models(self._config.MODELS_STATIC_OBSTACLES.value, 1)
-        MODELS_INTERACTIVE_OBSTACLES = ModelList.from_models(self._config.MODELS_INTERACTIVE_OBSTACLES.value, 1)
-        MODELS_DYNAMIC_OBSTACLES = ModelList.from_models(self._config.MODELS_DYNAMIC_OBSTACLES.value, 1)
+        MODELS_STATIC_OBSTACLES = ModelList.from_models(_models(ObjectIdentifier, self._config.STATIC_MODELS.value), 1)
+        MODELS_INTERACTIVE_OBSTACLES = ModelList.from_models(_models(ObjectIdentifier, self._config.INTERACTIVE_MODELS.value), 1)
+        MODELS_DYNAMIC_OBSTACLES = ModelList.from_models(_models(HumanIdentifier, self._config.DYNAMIC_MODELS.value), 1)
 
         def indexer() -> Callable[..., int]:
             indices: dict[str, Iterator[int]] = dict()
@@ -163,26 +157,4 @@ class TM_Random(TM_Obstacles):
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
-        def param_to_tuple(v: list[object]) -> tuple[int, int]:
-            lo = int(v[0])  # type: ignore[arg-type]
-            hi = int(v[1] if len(v) >= 2 else v[0])  # type: ignore[arg-type]
-            lo, hi = min(lo, hi), max(lo, hi)
-            return lo, hi
-
-        def param_to_modellist(identifier: type[Identifier], v: list[str]) -> list[str]:
-            if len(v):
-                return v
-            return list(identifier_to_available(identifier))
-
-        STATIC = 'static'
-        INTERACTIVE = 'interactive'
-        DYNAMIC = 'dynamic'
-
-        self._config = _Config(
-            N_STATIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(STATIC, 'n'), [0, 0], parse=param_to_tuple),
-            N_INTERACTIVE_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(INTERACTIVE, 'n'), [0, 0], parse=param_to_tuple),
-            N_DYNAMIC_OBSTACLES=self.node.ROSParam[tuple[int, int]](self.namespace(DYNAMIC, 'n'), [0, 0], parse=param_to_tuple),
-            MODELS_STATIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(STATIC, 'models'), ['Warehouse/Object/Barrel_Plastic'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
-            MODELS_INTERACTIVE_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(INTERACTIVE, 'models'), ['Warehouse/Object/Barrel_Plastic'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, ObjectIdentifier)),
-            MODELS_DYNAMIC_OBSTACLES=self.node.ROSParam[list[str]](self.namespace(DYNAMIC, 'models'), ['arenian'], type_=rclpy.Parameter.Type.STRING_ARRAY, parse=functools.partial(param_to_modellist, HumanIdentifier)),
-        )
+        self._config = RandomParams(self.node, namespace=self.namespace())

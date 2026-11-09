@@ -23,14 +23,16 @@ import rclpy.utilities
 import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_rclpy_mixins import ArenaMixinNode, ClientWrapper
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.moveit_factory import build_moveit_params
 from arena_robots.Robot import RobotIdentifier
+from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 from arena_viz import DisplayKind, env_namespace
 from rviz_display_control_msgs.msg import DisplaySet, DisplaySpec
-from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 
 from rviz_utils.renderers import REGISTRY
+from rviz_utils.params import ROBOT, VIEW
 
 
 class _VisualizationManager(TypedDict):
@@ -62,8 +64,8 @@ class ConfigFileGenerator(ArenaMixinNode):
         super().__init__('rviz_config_generator')
 
         self._TASKGEN_NODE = TASKGEN_NODE
-        self.declare_parameter('view', 'map')
-        self.declare_parameter('robot', 0)
+        self._view = declare(self, VIEW)
+        self._robot = declare(self, ROBOT)
 
     async def _await_param(
         self,
@@ -123,7 +125,7 @@ class ConfigFileGenerator(ArenaMixinNode):
             self.get_logger().info(f'waiting for {manifest_topic}')
             await asyncio.sleep(1.0)
         self.get_logger().info(f'{manifest_topic} received')
-        if str(self.get_parameter('view').value) in ('robot', 'robot3p'):
+        if self._view.value in ('robot', 'robot3p'):
             while not self._fleet_seen:
                 self.get_logger().info(f'waiting for {fleet_topic}')
                 await asyncio.sleep(1.0)
@@ -299,8 +301,7 @@ class ConfigFileGenerator(ArenaMixinNode):
         if not self._robots:
             self.get_logger().warning('view requested a robot target frame, but fleet is empty, falling back to map view')
             return None
-        idx = self.get_parameter('robot').value
-        assert isinstance(idx, int)
+        idx = self._robot.value
         try:
             robot = self._robots[idx]
         except IndexError:
@@ -311,7 +312,7 @@ class ConfigFileGenerator(ArenaMixinNode):
         return f'{prefix}/{base_frame}' if prefix else base_frame
 
     def _build_view(self) -> dict[str, object]:
-        view = str(self.get_parameter('view').value)
+        view = self._view.value
 
         target = '<Fixed Frame>'
         if view in ('robot', 'robot3p'):
