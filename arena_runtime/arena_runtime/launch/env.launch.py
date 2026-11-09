@@ -102,7 +102,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     log_level = LaunchArgument(
         name='log_level',
         default_value='warn',
-        description='Per-node log level. See launch README.',
+        description='Per-node log level.',
     )
 
     env_id = LaunchArgument(
@@ -163,7 +163,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     tm_config = LaunchArgument(
         name=mode_param("config"),
         default_value="",
-        description="Task config file (task_modes list). Overrides task.robots. Bare names resolve under arena_bringup/configs/tasks.",
+        description="Task config file, a path or a config name. Overrides task.robots.",
     )
     for name, description in EPISODE_PARAMS.items():
         LaunchArgument(name=name, default_value='', description=f'{description} Empty = node default.')
@@ -221,7 +221,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         name="robot.hearing",
         choices=["none", "bus", "srp", "seld", "call"],
         default_value="none",
-        description="Robot-side hearing layer (arena_hearing) of every fleet robot: belief grid, a Nav2 speed-filter mask merged into each robot's nav2 params, RViz displays. Event source: the simulator bus, the untrained onset + GCC-PHAT front-end on any array, the live SELDnet front-end on the array its weights were trained on, or the call front-end. Needs acoustics:=arena.",
+        description="Robot hearing front-end of every fleet robot (none = off).",
     )
     hearing_policy = LaunchArgument(
         name="robot.hearing.policy",
@@ -259,7 +259,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="",
         description="comma list of debug tokens (e.g. aiomonitor,map_server); also debug.<token>:=true",
     )
-    train_mode = LaunchArgument(name="robot.train", default_value="false", description="true = a training agent publishes cmd_vel directly and the mobile adapter skips its own navigation stack.")
+    train_mode = LaunchArgument(name="robot.train", default_value="false", description="true = a training agent drives the robot.")
     parameter_file = LaunchArgument(
         name="task.params",
         default_value="",

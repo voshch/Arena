@@ -26,7 +26,7 @@ class Symbol(pydantic.BaseModel):
     """What a character means beyond the alphabet, including arms no glyph can spell."""
 
     width: float | None = pydantic.Field(default=None, description='Width in meters overriding the weight (unset = from weight, or the room extent without sockets).')
-    weight: Weight | None = pydantic.Field(default=None, description='Named width of the symbol: light, heavy, double or full (unset = light, or full with fill).')
+    weight: Weight | None = pydantic.Field(default=None, description='Named width of the symbol (unset = light, or full with fill).')
     fill: bool = pydantic.Field(False, description='Fill the whole cell with free space.')
     material: str | None = pydantic.Field(default=None, description='Floor material of the symbol zone (unset = default).')
     zone: str | None = pydantic.Field(default=None, description='Zone name, cells sharing it becoming one region (unset = unnamed).')

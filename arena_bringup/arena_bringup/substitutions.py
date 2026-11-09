@@ -52,8 +52,6 @@ class LaunchArgument(launch.actions.DeclareLaunchArgument):
         choices: list[str] | None = None,
         **kwargs: object,
     ) -> None:
-        if not description.strip():
-            raise ValueError(f'launch argument {name!r} needs a non-empty description')
         super().__init__(name, default_value=default_value, description=description, choices=choices, **kwargs)
         if self._auto_append is not None:
             self._auto_append.append(self)

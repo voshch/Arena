@@ -38,7 +38,7 @@ def generate_launch_description():
     log_level = LaunchArgument(
         name='log_level',
         default_value='warn',
-        description='Per-node log level. See launch README.',
+        description='Per-node log level.',
     )
 
     sim = LaunchArgument(
@@ -56,7 +56,7 @@ def generate_launch_description():
     world = LaunchArgument(
         name='world',
         default_value='map_empty',
-        description='World the simulator loads, resolved under arena_simulation_setup/worlds.',
+        description='World for the simulator to load.',
     )
 
     headless = LaunchArgument(

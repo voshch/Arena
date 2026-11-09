@@ -13,7 +13,7 @@ def generate_launch_description():
 
     namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
     frame = LaunchArgument('frame', description='Frame prefix of the robot.')
-    robot = LaunchArgument("robot", description="Robot model name under arena_robots/robots.")
+    robot = LaunchArgument("robot", description="Robot model name.")
 
     control_yaml = YAMLFileSubstitution(
         PathJoinSubstitution([

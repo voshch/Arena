@@ -18,7 +18,7 @@ def generate_launch_description():
 
     arena_env_node = LaunchArgument('arena_env_node', description='Name of the arena env node of this robot.')
     namespace = LaunchArgument("namespace", description="ROS namespace of the robot.")
-    robot = LaunchArgument("robot", description="Robot model name under arena_robots/robots.")
+    robot = LaunchArgument("robot", description="Robot model name.")
     frame = LaunchArgument("frame", description="Frame prefix of the robot.")
 
     # launch robot control

@@ -63,7 +63,7 @@ class ConfigFileGenerator(ArenaMixinNode):
         super().__init__('rviz_config_generator')
 
         self._TASKGEN_NODE = TASKGEN_NODE
-        self._view = declare(self, Param[str]('view', 'map', 'Camera view of the generated config: map, robot or robot3p.', constraint=Choices('map', 'robot', 'robot3p')))
+        self._view = declare(self, Param[str]('view', 'map', 'Camera view of the generated config.', constraint=Choices('map', 'robot', 'robot3p')))
         self._robot = declare(self, Param[int]('robot', 0, 'Index of the robot in the fleet that the robot views follow (negative counts from the end).'))
 
     async def _await_param(

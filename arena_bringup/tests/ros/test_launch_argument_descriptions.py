@@ -1,42 +1,19 @@
 from __future__ import annotations
 
-import re
-import subprocess
-
 import launch.actions
 
-_ARG_LINE = re.compile(r"^\s{4}'(?P<name>[^']+)':\s*$")
-
-
-def _undescribed_text() -> str:
-    return launch.actions.DeclareLaunchArgument("probe").description
-
-
-def _show_args() -> str:
-    result = subprocess.run(
-        ["ros2", "launch", "arena_bringup", "arena_runtime.launch.py", "--show-args"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=True,
-    )
-    return result.stdout
-
-
-def _undescribed(output: str, marker: str) -> list[str]:
-    offenders: list[str] = []
-    current = ""
-    for line in output.splitlines():
-        match = _ARG_LINE.match(line)
-        if match:
-            current = match["name"]
-        elif marker in line and current:
-            offenders.append(current)
-    return offenders
+from arena_bringup.launch_arguments import declared_arguments
 
 
 def test_every_argument_of_arena_runtime_launch_has_a_description():
-    marker = _undescribed_text()
-    output = _show_args()
-    assert "'sim'" in output
-    assert _undescribed(output, marker) == []
+    undescribed = launch.actions.DeclareLaunchArgument("probe").description
+    arguments = declared_arguments("arena_bringup", "arena_runtime.launch.py")
+    assert "sim" in {argument.name for argument in arguments}
+    assert [argument.name for argument in arguments if argument.description == undescribed] == []
+
+
+def test_declared_arguments_carry_defaults_and_choices():
+    arguments = {argument.name: argument for argument in declared_arguments("arena_bringup", "arena_runtime.launch.py")}
+    assert arguments["world.lighting"].default == "authored"
+    assert arguments["world.lighting"].choices == ("authored", "auto")
+    assert "Valid choices" not in arguments["world.lighting"].description

@@ -23,7 +23,7 @@ def generate_launch_description() -> launch.LaunchDescription:
 
     policy = LaunchArgument(
         name='policy',
-        description='Hearing mask layers: belief, listen or full.',
+        description='Hearing mask layers.',
     )
 
     launch_hearing = SelectAction(launch.substitutions.LaunchConfiguration('frontend'))

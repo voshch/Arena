@@ -369,7 +369,7 @@ class WorldGeneratorBarnCanonical(BarnBase):
 
     class Configuration(BaseConfiguration):
         index: int = pydantic.Field(ge=0, le=WORLDS - 1, description='Number of the BARN challenge world, from 0 to 299.')
-        source: str = pydantic.Field('', description='Directory of world_<index>.world files to read the world from (empty = fetch from GitHub into the asset cache).')
+        source: str = pydantic.Field('', description='Directory of the BARN world files (empty = download them).')
 
     config: Configuration
 
@@ -393,7 +393,7 @@ class WorldGeneratorBarnAny(WorldGeneratorImpl):
 
     class Configuration(WorldGeneratorBarn.Configuration):
         index: int | None = pydantic.Field(None, ge=0, le=WORLDS - 1, description='Number of the BARN challenge world from 0 to 299 (unset = procedural passage).')
-        source: str = pydantic.Field('', description='Directory of world_<index>.world files for a canonical world (empty = fetch from GitHub into the asset cache).')
+        source: str = pydantic.Field('', description='Directory of the BARN world files (empty = download them).')
 
     def __new__(cls, configuration: dict, rng: random.Random) -> WorldGeneratorImpl:
         impl = WorldGeneratorBarn if configuration.get('index') is None else WorldGeneratorBarnCanonical

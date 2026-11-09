@@ -373,24 +373,6 @@ record.dir:=/tmp/arena_run  # enable data recording (record.auto:=false keeps th
 task.episode.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
 ```
 
-| Arg | Default | Meaning |
-|---|---|---|
-| `log_level` | `warn` | Per-node log level. |
-| `acoustics` | `none` | Acoustics simulator: `none`, or `arena` (arena_auditory: propagation, robot and human sound emission, playback). Backend keys take the `auditory.` prefix. |
-| `auditory.static_sounds` | `[]` | YAML list of world-independent sound entities (radios, alarms), same Sound schema as world.yaml sounds. Non-empty enables the sounds module even with `acoustics:=none`, where nothing hears them. |
-| `kg.derive` | `auto` | `auto`: derive zone membership and door connections from geometry where the world's kg.yaml states none. `all`: derive them from geometry for everything, ignoring the stated ones. `off`: only what kg.yaml states. |
-| `robot.gripper` | `direct` | Gripper adapter kind. |
-| `robot.hearing` | `none` | `none`, `bus`, `srp` or `seld`. Robot-side hearing layer (arena_hearing) of every fleet robot: belief grid, a Nav2 speed-filter mask merged into each robot's nav2 params, RViz displays. Event source: the simulator bus, the untrained onset + GCC-PHAT front-end on any array, or the live SELDnet front-end on the array its weights were trained on. Needs `acoustics:=arena`. |
-| `robot.hearing.policy` | `full` | `belief`, `listen` or `full`. Hearing mask layers: belief only, plus the corner listen cap, plus yield. |
-| `robot.lift` | `direct` | Lift adapter kind. |
-| `task.scenario.linger_after_completion` | `false` | Keep a completed scenario robot task alive until timeout or external cancellation. |
-| `task_layer` | empty | Task runtime: an entry point name of the `arena_runtime.task_layer` group. Empty = `$ARENA_TASK_LAYER`, else `task_generator`. |
-| `view.fov_deg` | `60.0` | Horizontal fov in degrees of the pedestrian views. |
-| `world.levels` | `auto` | `stack`: levels above one another in the simulator, stair and escalator pairs joined at their seams. `spread`: levels side by side. `auto`: stack when the world has stairs or escalators and the simulator stacks (gazebo), else spread. |
-| `world.lighting` | `authored` | `authored`: the lights the world declares. `auto`: also a calibrated ceiling rig in every zone with a ceiling and no lights of its own. |
-
-Every launch argument carries a non-empty description: `LaunchArgument(name, default_value=..., description=...)` raises `ValueError` without one.
-
 ### sim:=
 
 Default is `arena settings sim [auto|dummy|<simulator>]`, read by every launch when it starts. `auto` (the default setting) takes the first installed simulator in `SIM_ORDER` ([defaults.py](arena_bringup/defaults.py)), or `dummy` when none is installed. A setting naming a simulator that is no longer installed falls back to `auto` with a warning. Valid values:

@@ -52,12 +52,12 @@ def _positive_or_inf(v: object) -> float:
 
 class ArenaParams(ParamGroup):
     SIM = Param[SimSimulator]('sim', SimSimulator.DUMMY, 'Simulator backend the runtime drives.')
-    HUMAN = Param[Constants.HumanSimulator]('human', Constants.HumanSimulator.DUMMY, 'Pedestrian simulator of the env (launch resolves it per simulator).')
+    HUMAN = Param[Constants.HumanSimulator]('human', Constants.HumanSimulator.DUMMY, 'Pedestrian simulator of the env.')
     ACOUSTICS = Param[Constants.AcousticsSimulator]('acoustics', Constants.AcousticsSimulator.NONE, 'Acoustics backend of the env.')
     WORLD = Param[str]('world', None, 'World the env starts in.', type_=rclpy.Parameter.Type.STRING)
-    WORLD_LIGHTING = Param[str]('world.lighting', 'authored', 'authored = the lights the world declares, auto = also a calibrated ceiling rig in every zone with a ceiling and no lights.')
-    WORLD_LEVELS = Param[str]('world.levels', 'auto', 'stack = levels above one another, spread = side by side, auto = stack when the world has stairs or escalators and the simulator stacks.')
-    KG_DERIVE = Param[str]('kg.derive', 'auto', 'auto = derive zone membership and door connections from geometry where kg.yaml states none, all = derive for everything, off = only what kg.yaml states.')
+    WORLD_LIGHTING = Param[str]('world.lighting', 'authored', 'Lighting mode of the world.')
+    WORLD_LEVELS = Param[str]('world.levels', 'auto', 'Level layout of the world.')
+    KG_DERIVE = Param[str]('kg.derive', 'auto', 'Which knowledge graph facts are derived from geometry.')
 
 
 class GeneralParams(ParamGroup):
@@ -89,7 +89,7 @@ class RobotParams(ParamGroup):
     ARM_ADAPTER = Param[str]('robot.arm_adapter', 'moveit', 'Default arm-cap adapter kind of the fleet robots.')
     LIFT_ADAPTER = Param[str]('robot.lift_adapter', 'direct', 'Default lift-cap adapter kind of the fleet robots.')
     GRIPPER_ADAPTER = Param[str]('robot.gripper_adapter', 'direct', 'Default gripper-cap adapter kind of the fleet robots.')
-    HEARING = Param[str]('robot.hearing', 'none', 'Robot hearing front-end of every fleet robot (none, bus, srp, seld or call).')
+    HEARING = Param[str]('robot.hearing', 'none', 'Robot hearing front-end of every fleet robot.')
 
 
 class HumanParams(ParamGroup):
@@ -99,7 +99,7 @@ class HumanParams(ParamGroup):
 class EpisodeParams(ParamGroup):
     AUTO_RESET = Param[bool]('task.episode.auto_reset', True, 'true = standalone: node auto-advances episodes. false = managed: external controller drives resets via lifecycle/reset_episode.')
     FAIL_ON_COLLISION = Param[bool]('task.episode.fail_on_collision', False, 'true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, or pedestrian.')
-    RUN_SEED = Param[str]('run_seed', '', 'Hex string seeding the per-episode blake2b derivation (empty = random uuid at startup).')
+    RUN_SEED = Param[str]('run_seed', '', 'Hex seed of the episode RNG (empty = random at startup).')
     QUEUE_DEPTH = Param[int]('episode_queue_depth', 10, 'Publisher depth of the state/queue topic.', constraint=Range(1, 100))
 
 

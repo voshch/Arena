@@ -36,12 +36,12 @@ def generate_launch_description():
         name='sim.isaac.physics',
         default_value='physx',
         choices=['physx', 'newton'],
-        description='sim isaac only. Physics engine, physx or newton.',
+        description='Physics engine of Isaac Sim.',
     )
 
     world = LaunchArgument(
         name='world',
-        description='World the simulator loads, resolved under arena_simulation_setup/worlds.',
+        description='World for the simulator to load.',
     )
 
     dynamics = LaunchArgument(
@@ -165,7 +165,7 @@ def generate_launch_description():
     sim = LaunchArgument(
         name='sim',
         choices=launch_simulator.keys,
-        description='Simulator to start, one of the registered simulator launch files.',
+        description='Simulator to start.',
     )
 
     ld = launch.LaunchDescription([

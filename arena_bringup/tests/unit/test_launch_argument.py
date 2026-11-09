@@ -10,12 +10,6 @@ def test_missing_description_is_rejected():
         LaunchArgument("x", default_value="1")
 
 
-@pytest.mark.parametrize("description", ["", "   "])
-def test_blank_description_raises_value_error_naming_the_argument(description):
-    with pytest.raises(ValueError, match="'x'"):
-        LaunchArgument("x", default_value="1", description=description)
-
-
 def test_description_is_exposed():
     arg = LaunchArgument("x", default_value="1", description="the x value")
     assert arg.name == "x"

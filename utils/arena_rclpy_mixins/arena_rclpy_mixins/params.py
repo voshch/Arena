@@ -302,8 +302,6 @@ class Param[T]:
     def __init__(self, name: str, default: object, description: str, *, constraint: Constraint | None = None, parse: Callable[[object], T] | None = None, type_: rclpy.Parameter.Type | None = None, read_only: bool = False) -> None:
         if not name:
             raise ValueError("a parameter needs a name")
-        if not description or not description.strip():
-            raise ValueError(f"parameter {name} needs a description")
         sample = default.first if isinstance(default, PerRole) else default
         if isinstance(sample, enum.Enum):
             kind = "str"

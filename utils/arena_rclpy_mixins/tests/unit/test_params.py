@@ -28,13 +28,6 @@ class _MotorConfig:
     kinds: tuple[str, ...]
 
 
-def test_param_needs_a_description() -> None:
-    with pytest.raises(ValueError, match="needs a description"):
-        Param[int]("x", 1, "")
-    with pytest.raises(ValueError, match="needs a description"):
-        Param[int]("x", 1, "   ")
-
-
 def test_kind_follows_the_default() -> None:
     assert Param[bool]("b", True, "d").kind == "bool"
     assert Param[int]("i", 1, "d").kind == "int"

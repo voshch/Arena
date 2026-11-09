@@ -115,10 +115,10 @@ description and, for `Choices`, the choices. `parse_constraint(descriptor)` and
 `constraint_json(constraint)` give consumers (`episode_task_modes`, the web runtime
 page) the constraint back from any descriptor.
 
-`tests/unit/test_param_census.py` walks the Arena tree and fails on any
-`declare_parameter`, `ROSParam`, `rosparam.get(name, default)`, `ParameterDescriptor`
-or `declare_safe` outside this module, and on any `Param` or launch argument without
-a description.
+`census.py` walks the Arena tree and fails on any `declare_parameter`, `ROSParam`,
+`rosparam.get(name, default)`, `ParameterDescriptor` or `declare_safe` outside this
+module, and on any `Param` or launch argument without a description. It runs as the
+`param-census` pre-commit hook and in this package's tests.
 
 `transforms.ThreadedTransformListener` feeds a `tf2_ros.Buffer` from its own
 node and executor thread, so `/tf` traffic never wakes the owning node's

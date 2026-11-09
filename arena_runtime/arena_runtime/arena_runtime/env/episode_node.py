@@ -138,7 +138,7 @@ class EpisodeNode(EnvNode):
     def __init__(self, **kwargs: typing.Any) -> None:
         super().__init__(Constants.ENV_NODE_NAMESPACE, automatically_declare_parameters_from_overrides=True, **kwargs)
 
-        self._task_layer_param = declare(self, Param[str]("task_layer", "", "Task layer entry point name of the env (empty = $ARENA_TASK_LAYER, else task_generator)."))
+        self._task_layer_param = declare(self, Param[str]("task_layer", "", "Task layer of the env (empty = the default layer)."))
         layer_name = task_layer_name(self._task_layer_param.value)
         self._task_layer_param.value = layer_name
         self._task_layer = task_layer(layer_name)

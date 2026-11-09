@@ -6,7 +6,7 @@ Entry point: [`arena_runtime.launch.py`](arena_runtime.launch.py) (runtime: sim 
 
 All arguments are declared with `LaunchArgument` (a thin wrapper around
 `DeclareLaunchArgument` that also auto-appends to the description list and
-exposes `.substitution` / `.dict` / `.param`). `description` is a required keyword, an empty one raises `ValueError`.
+exposes `.substitution` / `.dict` / `.param`). `description` is a required keyword.
 
 The table below covers the combined argument surface of `arena launch`. Runtime
 args (`sim`, `headless`, `world`, `use_sim_time`, `log_level`) go to
