@@ -15,7 +15,7 @@ _SURPRISED = 4
 _CURIOUS = 5
 _THREATENING = 6
 
-_JOINT_COUNT = 40
+_JOINT_COUNT = 42
 
 
 @pytest.fixture()
@@ -94,6 +94,8 @@ _LIMITS: tuple[tuple[float, float], ...] = (
     (-1.4, 1.2),
     (-1.4, 1.4),
     (-1.4, 1.2),
+    (-0.6, 0.35),
+    (-0.6, 0.35),
 )
 
 

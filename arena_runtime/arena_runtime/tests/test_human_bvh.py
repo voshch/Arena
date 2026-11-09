@@ -68,8 +68,8 @@ def test_upright_worlds_keep_the_root_tilt_and_drop_its_heading():
     worlds = bvh.upright_worlds(motion, rotations)
     assert worlds["Hips"][1] == pytest.approx(np.eye(3))
     assert worlds["LeftLeg"][0] == pytest.approx(rotations["LeftUpLeg"][0])
-    tilted = bvh.upright_worlds(motion, {**rotations, "Hips": np.stack([bvh._axis_rotation((1, 0, 0), 0.3)] * 2)})
-    assert tilted["LeftUpLeg"][0] == pytest.approx(bvh._axis_rotation((1, 0, 0), 0.3) @ rotations["LeftUpLeg"][0])
+    tilted = bvh.upright_worlds(motion, {**rotations, "Hips": np.stack([axis_rotation((1, 0, 0), 0.3)] * 2)})
+    assert tilted["LeftUpLeg"][0] == pytest.approx(axis_rotation((1, 0, 0), 0.3) @ rotations["LeftUpLeg"][0])
 
 
 def test_hip_angles_recover_a_composed_rotation():
@@ -149,8 +149,8 @@ def test_bind_frames_map_the_asset_axes_onto_bvh_axes(tmp_path):
 
 
 def test_bind_legs_hang_straight_down_with_the_feet_keeping_their_orientation():
-    tilt = bvh._axis_rotation((0.0, 0.0, 1.0), 0.2)
-    foot = bvh._axis_rotation((1.0, 0.0, 0.0), 0.4)
+    tilt = axis_rotation((0.0, 0.0, 1.0), 0.2)
+    foot = axis_rotation((1.0, 0.0, 0.0), 0.4)
     bind = bvh.BindPose(
         orientations={"LeftUpLeg": tilt, "LeftLeg": tilt, "LeftFoot": foot},
         positions={"LeftUpLeg": np.array([0.1, 1.0, 0.0]), "LeftLeg": np.array([0.2, 0.55, 0.0]), "LeftFoot": np.array([0.15, 0.1, 0.05])},

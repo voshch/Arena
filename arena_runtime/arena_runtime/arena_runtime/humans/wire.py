@@ -1,4 +1,4 @@
-"""The arena_peds wire: a ped's body pose (BODY.md) from its 40 semantic joint angles."""
+"""The arena_peds wire: a ped's body pose (BODY.md) from its semantic joint angles."""
 
 from __future__ import annotations
 

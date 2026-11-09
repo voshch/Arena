@@ -216,6 +216,62 @@ class Orientation(Parseable, Idempotent):
         return geometry_msgs.msg.Quaternion(w=self.w, x=self.x, y=self.y, z=self.z)
 
     @classmethod
+    def from_xyzw(cls, quaternion: Sequence[float] | np.ndarray) -> Self:
+        """Orientation of an x y z w quaternion."""
+        x, y, z, w = quaternion
+        return cls(w=w, x=x, y=y, z=z)
+
+    def to_xyzw(self) -> np.ndarray:
+        return np.array([self.x, self.y, self.z, self.w])
+
+    @classmethod
+    def from_matrix(cls, matrix: np.ndarray) -> Self:
+        """Orientation of a rotation matrix (its top-left 3x3), w >= 0."""
+        m = np.asarray(matrix, dtype=float)
+        trace = m[0, 0] + m[1, 1] + m[2, 2]
+        if trace > 0.0:
+            s = 2.0 * math.sqrt(trace + 1.0)
+            w, x, y, z = 0.25 * s, (m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s
+        elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+            s = 2.0 * math.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2])
+            w, x, y, z = (m[2, 1] - m[1, 2]) / s, 0.25 * s, (m[0, 1] + m[1, 0]) / s, (m[0, 2] + m[2, 0]) / s
+        elif m[1, 1] > m[2, 2]:
+            s = 2.0 * math.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2])
+            w, x, y, z = (m[0, 2] - m[2, 0]) / s, (m[0, 1] + m[1, 0]) / s, 0.25 * s, (m[1, 2] + m[2, 1]) / s
+        else:
+            s = 2.0 * math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1])
+            w, x, y, z = (m[1, 0] - m[0, 1]) / s, (m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s
+        n = math.copysign(math.sqrt(w * w + x * x + y * y + z * z), w)
+        return cls(w=w / n, x=x / n, y=y / n, z=z / n)
+
+    def to_matrix(self) -> np.ndarray:
+        """3x3 rotation matrix of the normalized quaternion."""
+        w, x, y, z = self.normalized()
+        return np.array(
+            [
+                [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+                [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+                [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+            ]
+        )
+
+    def normalized(self) -> Orientation:
+        """Unit quaternion of the same rotation, identity for the zero quaternion."""
+        n = math.sqrt(self.w * self.w + self.x * self.x + self.y * self.y + self.z * self.z)
+        return Orientation.identity() if n == 0.0 else Orientation(w=self.w / n, x=self.x / n, y=self.y / n, z=self.z / n)
+
+    def __pow__(self, exponent: float) -> Orientation:
+        """The rotation turned `exponent` of the way along its shorter arc."""
+        sign = 1.0 if self.w >= 0.0 else -1.0
+        w, x, y, z = sign * self.w, sign * self.x, sign * self.y, sign * self.z
+        s = math.sqrt(x * x + y * y + z * z)
+        if s < 1e-12:
+            return Orientation.identity()
+        half = exponent * math.atan2(s, w)
+        k = math.sin(half) / s
+        return Orientation(w=math.cos(half), x=x * k, y=y * k, z=z * k)
+
+    @classmethod
     def from_euler(cls, angles: tuple[float, float, float], order: EulerOrder = 'xyz') -> Self:
         x, y, z = (angles[index] for index in _EulerIndices[order])
 

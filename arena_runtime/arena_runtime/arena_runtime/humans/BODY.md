@@ -4,7 +4,7 @@ Frozen interface between pedestrian pose producers (gait, gestures, possession, 
 importers) and pedestrian renderers (Isaac, MuJoCo, Gazebo, RViz). The rig follows the
 SMPL-X joint convention: SMPL-X joint names and hierarchy, one local rotation per joint,
 every rest frame aligned with the body. Arena adopts the convention only, no SMPL-X model
-file is part of Arena. The 52 semantic DOFs of [JOINTS.md](JOINTS.md) stay the authoring
+file is part of Arena. The 54 semantic DOFs of [JOINTS.md](JOINTS.md) stay the authoring
 vocabulary and compile to this rig (Section 6).
 
 ## 1. Joints
@@ -191,7 +191,7 @@ A bundle without a neutral clip takes its stance from the skin's bind pose.
 
 ## 6. Semantic DOFs
 
-`semantic_to_body` in `arena_simulation_setup/shared/body.py` compiles the 52 wire DOFs of
+`semantic_to_body` in `arena_simulation_setup/shared/body.py` compiles the 54 wire DOFs of
 JOINTS.md, and `body_to_semantic` extracts them back.
 
 | JOINTS.md DOFs | joint |
@@ -203,7 +203,7 @@ JOINTS.md, and `body_to_semantic` extracts them back.
 | `<s>_y_collar`, `<s>_p_collar` | `<side>_collar` |
 | `<s>_y_shoulder`, `<s>_p_shoulder`, `<s>_r_shoulder` | `<side>_shoulder` |
 | `<s>_elbow` | `<side>_elbow` |
-| `<s>_r_wrist`, `<s>_wrist` | `<side>_wrist` |
+| `<s>_r_wrist`, `<s>_wrist`, `<s>_d_wrist` | `<side>_wrist` |
 | `<s>_y_hip`, `<s>_p_hip`, `<s>_r_hip` | `<side>_hip` |
 | `<s>_knee` | `<side>_knee` |
 | `<s>_y_ankle`, `<s>_ankle` | `<side>_ankle` |
@@ -218,7 +218,7 @@ listed there, the shoulder triple per JOINTS.md Section 1a. That gives each join
 R_local_joint = T_parent^T D_joint T_joint
 ```
 
-All 52 at zero therefore pose the bundle's neutral stance. Without a `.rig` the default stance holds
+All 54 at zero therefore pose the bundle's neutral stance. Without a `.rig` the default stance holds
 identity except `Rx(-pi/2)` (left) and `Rx(pi/2)` (right) on the shoulder, elbow, wrist and the
 15 digit joints of each hand, the arms hung from the T-pose. A stance that lacks a digit joint
 hangs it like its wrist.
@@ -244,7 +244,7 @@ stays 1:
 | `body/rotations` | (T, J, 4) | parent-relative quaternions, x y z w |
 | `body/root_offset` | (T, 3) | m, body frame |
 
-The `clip` group keeps its meaning and carries the clip's 40 DOFs. The player blends those as
+The `clip` group keeps its meaning and carries the clip's 42 DOFs. The player blends those as
 any clip and, after `semantic_to_body`, the body group over the result with the slot's weight, a
 joint when the slot owns its DOFs and `pelvis`, `left_foot`, `right_foot` and `pelvis_offset` when
 it owns the whole body. `pelvis_tilt` clips keep their `root/quat`.

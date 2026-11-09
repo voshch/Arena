@@ -13,11 +13,12 @@ import torch
 import yaml
 from scipy.spatial.transform import Rotation
 
+from arena_assets.utils.geom import axis_rotation
 from arena_simulation_setup.adapters.arena_animation_retarget import fidelity, load, load_clip, retarget, retarget_batch, write_clip
 from arena_simulation_setup.adapters.arena_animation_retarget.contract import SK, WIRE
 from arena_simulation_setup.adapters.arena_animation_retarget.fk_torch import ContractFK
 from arena_simulation_setup.adapters.arena_animation_retarget.ik import HARD_LIMITS
-from arena_simulation_setup.adapters.arena_animation_retarget.retarget import _rot, heading, prepare, resample
+from arena_simulation_setup.adapters.arena_animation_retarget.retarget import heading, prepare, resample
 from arena_simulation_setup.adapters.arena_animation_retarget.smplx import BODY_TO_ROS, REST_OFFSETS, J, Motion, forward_kinematics, rest_offsets_from_model
 
 from arena_simulation_setup.shared.body import BODY_JOINTS, forward, load_template
@@ -247,7 +248,7 @@ def test_the_body_track_keeps_every_bone_on_its_source_direction():
     motion = load_motion(_locals(30, 12), _root(30))
     prep = prepare(motion)
     template = load_template()
-    base = _rot(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
+    base = axis_rotation(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
     children = {"pelvis": "spine1", "spine3": "neck"}
     pairs = [(parent, children.get(parent, joint)) for joint, parent in template.parents.items() if parent is not None and joint in BODY_JOINTS]
     for frame in range(0, 30, 7):
@@ -257,6 +258,28 @@ def test_the_body_track_keeps_every_bone_on_its_source_direction():
             got = positions[child] - positions[joint]
             want = source[BODY_JOINTS.index(child)] - source[BODY_JOINTS.index(joint)]
             assert got / np.linalg.norm(got) == pytest.approx(want / np.linalg.norm(want), abs=1e-6)
+
+
+def test_the_wrist_deviation_keeps_the_hand_on_its_source_direction():
+    """The hand points where the source wrist carries the forearm; dropping or flipping the deviation moves it off."""
+    T = 40
+    motion = load_motion(_locals(T, 7, 0.5), _root(T))
+    prep = prepare(motion)
+    base = axis_rotation(SK.UP, heading(motion.global_rots[:, J["pelvis"]]))
+    body = SK.Body(1.75)
+    err = {1.0: [], 0.0: [], -1.0: []}
+    for t in range(T):
+        angles = dict(zip(WIRE, prep.init[t], strict=True))
+        for s in "lr":
+            forearm = motion.joints[t, J[f"{s}_wrist"]] - motion.joints[t, J[f"{s}_elbow"]]
+            relative = motion.global_rots[t, J[f"{s}_wrist"]] @ motion.global_rots[t, J[f"{s}_elbow"]].T
+            want = (relative @ forearm) @ base[t]
+            for k in err:
+                _, frames = SK.fk(angles | {f"{s}_d_wrist": k * angles[f"{s}_d_wrist"]}, body)
+                hand = frames[f"{s}_hand"] @ SK.DOWN
+                err[k].append(np.degrees(np.arccos(np.clip(hand @ want / np.linalg.norm(want), -1.0, 1.0))))
+    mean = {k: float(np.mean(v)) for k, v in err.items()}
+    assert mean[1.0] < 10.0 and mean[1.0] < 0.5 * mean[0.0] < mean[-1.0]
 
 
 def test_the_body_group_survives_the_clip_file(tmp_path):
@@ -275,8 +298,8 @@ def test_write_and_load(tmp_path):
     clip = retarget(m)
     d = write_clip(clip, tmp_path, "smplx_test", loop=True, tags=["domain::care"], note="synthetic.")
     z = np.load(d / "smplx_test.anim")
-    assert sorted(str(n) for n in z["clip/joint_names"]) == sorted(WIRE) and len(WIRE) == 40
-    assert z["clip/angles"].shape == (len(clip.t), 40) and z["clip/root_xy_yaw"].shape == (len(clip.t), 3)
+    assert sorted(str(n) for n in z["clip/joint_names"]) == sorted(WIRE) and len(WIRE) == 42
+    assert z["clip/angles"].shape == (len(clip.t), len(WIRE)) and z["clip/root_xy_yaw"].shape == (len(clip.t), 3)
     assert z["root/quat"].shape == (len(clip.t), 4)
     ann = yaml.safe_load((d / "annotation.yaml").read_text())
     assert ann["name"] == "smplx_test" and ann["path"] == "Animation/smplx_test" and ann["loop"] is True
