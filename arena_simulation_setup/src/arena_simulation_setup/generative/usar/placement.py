@@ -18,7 +18,7 @@ from arena_simulation_setup.tree.World.membership import derive
 
 from .manifest import Hiding
 
-SPOTS_PER_ROOM = 6
+CANDIDATES_PER_ROOM = 12  # candidates drawn per room; 0-corner spots are rare, and the manifest needs at least 10 to find one on every world
 SPOT_TRIES = 200
 MIN_DISTANCE_M = 3.0  # person to robot start, so no task is found at spawn
 
@@ -67,7 +67,7 @@ def start_of(level: Level) -> tuple[Point, float]:
     return (start.x, start.y), heading
 
 
-def spots(shape: shapely.Polygon, rng: random.Random) -> list[Point]:
+def candidates(shape: shapely.Polygon, rng: random.Random) -> list[Point]:
     """Points a standing person fits at, drawn inside a room."""
     inner = shape.buffer(-(PED_RADIUS + CLEARANCE))
     if inner.is_empty:
@@ -75,7 +75,7 @@ def spots(shape: shapely.Polygon, rng: random.Random) -> list[Point]:
     minx, miny, maxx, maxy = inner.bounds
     out: list[Point] = []
     for _ in range(SPOT_TRIES):
-        if len(out) >= SPOTS_PER_ROOM:
+        if len(out) >= CANDIDATES_PER_ROOM:
             break
         x, y = rng.uniform(minx, maxx), rng.uniform(miny, maxy)
         if inner.contains(shapely.Point(x, y)):
@@ -101,7 +101,7 @@ def hide(world: World, corners: int, hiding: Hiding, rng: random.Random) -> Hide
     matches: list[Hideout] = []
     reasons: list[str] = []
     for zone, shape in sorted(shapes.items()):
-        for spot in spots(shape, rng):
+        for spot in candidates(shape, rng):
             if math.dist(spot, start) < MIN_DISTANCE_M:
                 continue
             route = route_to(found, start, spot, zone)
