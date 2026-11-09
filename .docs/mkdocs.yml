@@ -1,6 +1,6 @@
 site_name: Arena-Rosnav
 site_description: Modular ROS 2 platform for autonomous robot navigation research
-site_url: https://arena-dev.readthedocs.io/
+site_url: https://docs.arena-rosnav.org/en/latest/
 repo_url: https://github.com/voshch/Arena
 repo_name: voshch/Arena
 edit_uri: edit/jazzy/
