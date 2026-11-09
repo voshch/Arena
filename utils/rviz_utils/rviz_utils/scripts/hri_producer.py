@@ -14,7 +14,9 @@ import rclpy
 import rclpy.publisher
 from arena_people_msgs.msg import FaceView, Pedestrian, Pedestrians
 from arena_rclpy_mixins.lazy import LazyPublisher, LazySubscription
+from arena_rclpy_mixins.params import Param, Range, declare
 from arena_rclpy_mixins.spin import create_executor, spin_node
+from arena_runtime.humans.gait import GaitGenerator
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import TransformStamped
 from hri_msgs.msg import EngagementLevel, IdsList
@@ -27,7 +29,6 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import CameraInfo, JointState
 from std_msgs.msg import Bool, Float32, Header, String
-from arena_runtime.humans.gait import GaitGenerator
 from tf2_msgs.msg import TFMessage
 
 from rviz_utils.hri import BodyFrames
@@ -81,17 +82,10 @@ class HriProducer(Node):
         env_tag = self._ns.rsplit("/", 1)[-1] or "env"
         self._body_prefix = f"{env_tag}_agent_"
 
-        self.declare_parameter("max_bodies", 32)
-        max_bodies = self.get_parameter("max_bodies").value
-        assert isinstance(max_bodies, int)
-        self.declare_parameter("view.fov_deg", 60.0)
-        self.declare_parameter("view.clip_near", 0.15)
-        fov_deg = self.get_parameter("view.fov_deg").value
-        assert isinstance(fov_deg, float)
+        max_bodies = declare(self, Param[int]("max_bodies", 32, "Number of body frames published per env.", constraint=Range(lo=1))).value
+        fov_deg = declare(self, Param[float]("view.fov_deg", 60.0, "Horizontal field of view of the face view camera in degrees.", constraint=Range(lo=0.0, hi=180.0, lo_open=True, hi_open=True))).value
         self._view_k = pinhole_k(math.radians(fov_deg), _VIEW_SIZE)
-        clip_near = self.get_parameter("view.clip_near").value
-        assert isinstance(clip_near, float)
-        self._view_clip_near: float = clip_near
+        self._view_clip_near: float = declare(self, Param[float]("view.clip_near", 0.15, "Near clip of the face view camera in meters.", constraint=Range(lo=0.0, lo_open=True))).value
         self._humans_ns = f"{self._ns}/humans"
 
         self._tf_pub: LazyPublisher[TFMessage] = LazyPublisher(self.create_publisher(TFMessage, f"{self._humans_ns}/tf", 100))

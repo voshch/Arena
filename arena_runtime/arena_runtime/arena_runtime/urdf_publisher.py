@@ -10,6 +10,7 @@ successfully consumed the URDF and initialized its ResourceManager.
 """
 
 import rclpy
+from arena_rclpy_mixins.params import Param, declare
 from controller_manager_msgs.srv import ListControllers
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
@@ -19,7 +20,7 @@ from std_msgs.msg import String
 class UrdfPublisher(Node):
     def __init__(self) -> None:
         super().__init__('urdf_publisher')
-        urdf = self.declare_parameter('robot_description', '').value
+        urdf = declare(self, Param[str]('robot_description', '', 'URDF string published latched on robot_description.')).value
         if not urdf:
             raise RuntimeError('robot_description parameter is empty')
         qos = QoSProfile(

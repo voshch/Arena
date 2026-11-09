@@ -8,7 +8,6 @@ import importlib.metadata
 import importlib.util
 import json
 import os
-import re
 import subprocess
 import sys
 from collections.abc import Iterable
@@ -16,9 +15,6 @@ from pathlib import Path
 
 from arena_cli import complete
 from arena_cli.complete import LaunchArgs
-
-_ARG_RE = re.compile(r"^\s+'([^']+)':\*?\s*$")
-_DEFAULT_RE = re.compile(r"^\s+\(default: '(.*)'\)\s*$")
 
 
 def _launch_targets() -> set[tuple[str, str]]:
@@ -45,26 +41,14 @@ def _share_file(package: str, file: str) -> str | None:
     return None
 
 
-def _show_args(package: str, file: str) -> dict[str, dict[str, str]]:
-    proc = subprocess.run(["ros2", "launch", package, file, "--show-args"], capture_output=True, text=True, check=False)
-    if proc.returncode:
+def _launch_args(package: str, file: str) -> dict[str, dict[str, str]]:
+    from arena_rclpy_mixins.launch_argument import UnreadableLaunchFile, declared_arguments
+
+    try:
+        declared = declared_arguments(package, file)
+    except UnreadableLaunchFile:
         return {}
-    args: dict[str, dict[str, str]] = {}
-    name = None
-    for line in proc.stdout.splitlines():
-        m = _ARG_RE.match(line)
-        if m:
-            name = m.group(1)
-            args[name] = {"desc": "", "default": ""}
-            continue
-        if name is None or not line.strip():
-            continue
-        m = _DEFAULT_RE.match(line)
-        if m:
-            args[name]["default"] = m.group(1)
-        elif not args[name]["desc"]:
-            args[name]["desc"] = line.strip()
-    return args
+    return {argument.name: {"desc": argument.description, "default": argument.default or ""} for argument in declared}
 
 
 def _enum_names(keys: Iterable[enum.Enum]) -> list[str]:
@@ -93,7 +77,6 @@ def _asset_names() -> tuple[dict[str, list[str]], list[str]]:
 def _import_sources() -> dict[str, dict[str, str]]:
     """Registered importer names with descriptions per kind, empty when arena_assets is unavailable."""
     import json
-    import subprocess
 
     proc = subprocess.run(["ros2", "run", "arena_assets", "arena_assets", "-s", "import", "--json"], capture_output=True, text=True, check=False)
     if proc.returncode:
@@ -137,9 +120,9 @@ def _mcp_tools() -> tuple[dict[str, dict[str, str]], list[str]]:
 
 
 def _task_axis_args(values: dict) -> dict[str, dict[str, str]]:
-    from arena_runtime.env.task_layer import TASK_PARAM_PREFIX
+    from arena_runtime.env.task_layer import TASK_PARAM_PREFIX, mode_param_description
 
-    return {key: {"desc": f"{key.removeprefix(TASK_PARAM_PREFIX)} mode of the task layer", "default": ""} for key in values if key.startswith(TASK_PARAM_PREFIX)}
+    return {key: {"desc": mode_param_description(key.removeprefix(TASK_PARAM_PREFIX)), "default": ""} for key in values if key.startswith(TASK_PARAM_PREFIX)}
 
 
 def _values() -> tuple[dict[str, list[str] | dict[str, str]], list[str]]:
@@ -190,7 +173,7 @@ def build(ws: str) -> dict:
     axis_args = _task_axis_args(values)
     launch: dict[str, dict[str, dict[str, str]]] = {}
     for package, file in sorted(_launch_targets()):
-        args = _show_args(package, file)
+        args = _launch_args(package, file)
         launch[f"{package}/{file}"] = {**axis_args, **args} if "task_layer" in args else args
         path = _share_file(package, file)
         if path is not None:

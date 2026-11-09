@@ -1,13 +1,10 @@
-import launch_ros
-from arena_bringup.future import PythonExpression
-from arena_bringup.substitutions import LaunchArgument
-from launch_ros.actions import PushRosNamespace
-from launch_ros.substitutions import FindPackageShare
-
 import launch
 import launch.actions
 import launch.launch_description_sources
 import launch.substitutions
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from launch_ros.actions import PushRosNamespace
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -17,12 +14,12 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    use_sim_time = LaunchArgument("use_sim_time")
+    use_sim_time = LaunchArgument("use_sim_time", description="Use the simulation clock.")
 
-    arena_env_node = LaunchArgument('arena_env_node')
-    namespace = LaunchArgument("namespace")
-    robot = LaunchArgument("robot")
-    frame = LaunchArgument("frame")
+    arena_env_node = LaunchArgument('arena_env_node', description='Name of the arena env node of this robot.')
+    namespace = LaunchArgument("namespace", description="ROS namespace of the robot.")
+    robot = LaunchArgument("robot", description="Robot model name.")
+    frame = LaunchArgument("frame", description="Frame prefix of the robot.")
 
     # launch robot control
     state_pub_launch = launch.actions.IncludeLaunchDescription(

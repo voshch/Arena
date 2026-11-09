@@ -23,6 +23,7 @@ import rclpy.timer
 import shapely
 import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.Robot import RobotView
 from arena_simulation_setup.shared.conditions import render_until
@@ -32,6 +33,7 @@ from arena_runtime.env.environment_manager import EnvironmentManager
 from arena_runtime.env.robot_manager.controller_manager_client import ControllerManagerClient
 from arena_runtime.env.robot_manager.controller_transitions import next_transition
 from arena_runtime.env.robot_manager.task_runner import PhaseState, TaskRunner, Transition, standoff_pose
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Orientation, Pose, Position, Robot
 from arena_runtime.sim._interface import SimUnavailable
 
@@ -229,7 +231,7 @@ class RobotManager(NodeInterface):
                 caps_to_kind[cap] = override
                 continue
             param_name = f"robot.{cap}_adapter"
-            default_kind = self.node.rosparam[str].get(param_name, None)
+            default_kind = self.node.rosparam[str].get_unsafe(param_name, None)
             if default_kind is None:
                 self._logger.warning(f"robot {self._robot.name!r} advertises cap {cap!r} but no default adapter is configured (param {param_name!r}); cap will be unbound.")
                 continue
@@ -299,7 +301,7 @@ class RobotManager(NodeInterface):
         for key, param in self.node.get_parameters_by_prefix(f"robot.{cap}").items():
             kwargs[key] = param.value
         if cap == 'mobile':
-            kwargs.setdefault('train_mode', self.node.rosparam[bool].get('robot.train', False))
+            kwargs.setdefault('train_mode', declare(self.node, NodeParams.ROBOT_TRAIN).value)
         return kwargs
 
     async def set_up_robot(self):

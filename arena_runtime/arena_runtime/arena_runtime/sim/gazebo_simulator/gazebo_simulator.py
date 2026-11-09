@@ -26,6 +26,7 @@ from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Ceiling, Light, cct_to_rgb
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
@@ -46,6 +47,7 @@ from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
 from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import (
     DynamicObstacle,
     Entity,
@@ -384,7 +386,7 @@ class GazeboSimulator(BaseSim):
             **robot.extra,
             **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
             'sim_path': robot.sim_path,
-            'optim': self.node.rosparam[str].get('optim', ''),
+            'optim': declare(self.node, NodeParams.OPTIM).value,
         }
         args.pop('resolved_assembly', None)
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()

@@ -3,7 +3,7 @@ import typing
 from collections.abc import Iterator, Sequence
 
 import attrs
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_rclpy_mixins.params import ParamHandle
 from arena_runtime.env.task_api import GoToPhase, LoopPhase, Realizer, TaskPhase, TaskRequest
 from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Pose, Position, PositionRadius
@@ -11,8 +11,8 @@ from arena_simulation_setup.tree.World import WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import RobotGoal
 
 from task_generator.tasks.mode import TaskModeKwargs
-from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
+from task_generator.tasks.robots.scenario import ScenarioRobotParams
 
 
 def to_map_frame(pose: Pose, zone: str, level: str, realizer: Realizer) -> Pose:
@@ -48,10 +48,10 @@ def idle_robots(names: Sequence[str], entries: Sequence[RobotGoal]) -> set[str]:
 
 
 class TM_Scenario(TM_Robots):
-    _config: ROSParamT[str]
-    _linger_after_completion: ROSParamT[bool]
+    _config: ParamHandle[str]
+    _linger_after_completion: ParamHandle[bool]
     _idle_robots: set[str]
-    _mechanism_map: ROSParamT[bool]
+    _mechanism_map: ParamHandle[bool]
 
     def robot_goals(self, entries: Sequence[RobotGoal], humans: frozenset[str]) -> list[RobotGoal]:
         """The scenario's robot entries as this mode runs them."""
@@ -122,12 +122,7 @@ class TM_Scenario(TM_Robots):
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Robots.__init__(self, **kwargs)
 
-        self._config = self.node.ROSParam[str](
-            self.namespace('file'),
-            default_scenario(self._ctx.world_manager.loaded_world),
-        )
-        self._linger_after_completion = self.node.ROSParam[bool](
-            self.namespace('linger_after_completion'),
-            False,
-        )
-        self._mechanism_map = self.node.ROSParam[bool](self.namespace('mechanism_map'), False)
+        params = ScenarioRobotParams(self.node, namespace=self.namespace())
+        self._config = params.FILE
+        self._linger_after_completion = params.LINGER_AFTER_COMPLETION
+        self._mechanism_map = params.MECHANISM_MAP
