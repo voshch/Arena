@@ -449,3 +449,43 @@ def test_a_forgotten_agent_loses_its_body_layers(mgr: AnimationManager) -> None:
     mgr.compute(1, 0, 0.0, 0.05)
     mgr.forget(1)
     assert mgr.body_layers(1) == []
+
+
+def test_a_changed_profile_crossfades_the_gait() -> None:
+    from arena_runtime.humans.profile import resolve_pose_profile
+
+    m = AnimationManager(logger=StubLogger(), fps=FPS, clips=NoClips())
+    walk = resolve_pose_profile({})
+    push = resolve_pose_profile({"walk": {"base": "walk_pushwheelchair"}})
+    for _ in range(5):
+        m.compute(1, 1, 1.0, DT, profile=walk)
+    phi = m.gait_generator.phase(1)
+    first = m.compute(1, 1, 1.0, DT, profile=push)
+    phi = m.gait_generator.phase(1)
+    gen = m.gait_generator.__class__()
+    old = gen.compute(9, 1, 1.0, 0.0, phase=phi, profile=walk)
+    new = gen.compute(9, 1, 1.0, 0.0, phase=phi, profile=push)
+    assert m.profile_fade(1) is not None and 0.0 < m.profile_fade(1)[1] < 0.1
+    assert first["l_elbow"] == pytest.approx(old["l_elbow"], abs=0.1 * abs(new["l_elbow"] - old["l_elbow"]) + 1e-6)
+    out = first
+    for _ in range(round(AnimationManager.PROFILE_CROSSFADE_S / DT) + 1):
+        out = m.compute(1, 1, 1.0, DT, profile=push)
+    phi = m.gait_generator.phase(1)
+    assert m.profile_fade(1) is None
+    assert out == pytest.approx(gen.compute(9, 1, 1.0, 0.0, phase=phi, profile=push))
+
+
+def test_changing_back_mid_fade_reverses_it_without_a_jump() -> None:
+    from arena_runtime.humans.profile import resolve_pose_profile
+
+    m = AnimationManager(logger=StubLogger(), fps=FPS, clips=NoClips())
+    walk = resolve_pose_profile({})
+    push = resolve_pose_profile({"walk": {"base": "walk_pushwheelchair"}})
+    m.compute(1, 1, 1.0, DT, profile=walk)
+    for _ in range(3):
+        m.compute(1, 1, 1.0, DT, profile=push)
+    w = m.profile_fade(1)[1]
+    m.compute(1, 1, 1.0, DT, profile=walk)
+    fade = m.profile_fade(1)
+    assert fade is not None and fade[0] is push
+    assert 1.0 - w <= fade[1] < 1.0, "the walk comes back from where the fade had got to, not from nothing"
