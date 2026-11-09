@@ -1,7 +1,7 @@
-"""Forward kinematics and collision proxies for the 40-DOF human.
+"""Forward kinematics and collision proxies for the 42-DOF human.
 
 Bone lengths as a function of ``height``, joint axes and chain order of the
-40-DOF wire skeleton.  Shoulder triples are interpreted in the **wire (anatomical)**
+42-DOF wire skeleton.  Shoulder triples are interpreted in the **wire (anatomical)**
 convention of JOINTS.md section 1a, i.e. ``Rz(y) R((0,-1,0), p) R((0,0,-1), r)``
 relative to the collar frame -- identical to convert_v2's ``SPEC_ARM``.
 
@@ -12,9 +12,9 @@ directly under the pelvis, so ``z`` is height above ground.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 import numpy as np
+
+from arena_assets.utils.geom import axis_rotation, unit
 
 DOWN = np.array([0.0, 0.0, -1.0])
 UP = np.array([0.0, 0.0, 1.0])
@@ -41,26 +41,10 @@ HIP_AXES = {
 }
 ELBOW_AXIS = np.array([0.0, -1.0, 0.0])
 REFLECT = {"l": 1.0, "r": -1.0}
-WRIST_AXES = {  # (pronation axis, extension axis)
-    "l": (np.array([0.0, 0.0, -1.0]), np.array([1.0, 0.0, 0.0])),
-    "r": (np.array([0.0, 0.0, 1.0]), np.array([-1.0, 0.0, 0.0])),
+WRIST_AXES = {  # (pronation axis, extension axis, radial deviation axis)
+    "l": (np.array([0.0, 0.0, -1.0]), np.array([1.0, 0.0, 0.0]), np.array([0.0, -1.0, 0.0])),
+    "r": (np.array([0.0, 0.0, 1.0]), np.array([-1.0, 0.0, 0.0]), np.array([0.0, -1.0, 0.0])),
 }
-
-
-def rot_axis(axis: np.ndarray | list[float] | tuple[float, ...], angle: float) -> np.ndarray:
-    axis = np.asarray(axis, dtype=float)
-    n = np.linalg.norm(axis)
-    if n < 1e-12:
-        return np.eye(3)
-    axis = axis / n
-    k = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
-    return np.eye(3) + np.sin(angle) * k + (1 - np.cos(angle)) * (k @ k)
-
-
-def unit(v: np.ndarray | Sequence[float]) -> np.ndarray:
-    v = np.asarray(v, dtype=float)
-    n = np.linalg.norm(v)
-    return v / n if n > 1e-12 else np.zeros(3)
 
 
 def perp_component(v: np.ndarray, ref: np.ndarray) -> np.ndarray:
@@ -106,18 +90,18 @@ class Body:
 
 
 def segment_rot(r: float, y: float, p: float) -> np.ndarray:
-    return rot_axis(TORSO_AXIS["r"], r) @ rot_axis(TORSO_AXIS["y"], y) @ rot_axis(TORSO_AXIS["p"], p)
+    return axis_rotation(TORSO_AXIS["r"], r) @ axis_rotation(TORSO_AXIS["y"], y) @ axis_rotation(TORSO_AXIS["p"], p)
 
 
 def collar_rot(side: str, y: float, p: float) -> np.ndarray:
     ay, ap = COLLAR_AXES[side]
-    return rot_axis(ay, y) @ rot_axis(ap, p)
+    return axis_rotation(ay, y) @ axis_rotation(ap, p)
 
 
 def arm_rot(y: float, p: float, r: float) -> np.ndarray:
     """Wire-convention shoulder rotation, relative to the collar frame."""
     a1, a2, a3 = ARM_AXES
-    return rot_axis(a1, y) @ rot_axis(a2, p) @ rot_axis(a3, r)
+    return axis_rotation(a1, y) @ axis_rotation(a2, p) @ axis_rotation(a3, r)
 
 
 def arm_rot_inverse(m: np.ndarray) -> tuple[float, float, float]:
@@ -131,7 +115,7 @@ def arm_rot_inverse(m: np.ndarray) -> tuple[float, float, float]:
         y = float(np.arctan2(-m[1, 2], -m[0, 2]))
     else:  # arm exactly up or down: y and r merge
         y = 0.0
-    n = (rot_axis(ARM_AXES[0], y) @ rot_axis(ARM_AXES[1], p)).T @ m
+    n = (axis_rotation(ARM_AXES[0], y) @ axis_rotation(ARM_AXES[1], p)).T @ m
     r = float(np.arctan2(-n[1, 0], n[0, 0]))
     return y, p, r
 
@@ -152,11 +136,11 @@ def slerp_rot(a: np.ndarray, b: np.ndarray, t: float) -> np.ndarray:
     if n < 1e-9:  # 180 deg: pick any perpendicular axis
         w, v = np.linalg.eigh(rel + np.eye(3))
         axis = v[:, int(np.argmax(w))]
-    return a @ rot_axis(axis, t * angle)
+    return a @ axis_rotation(axis, t * angle)
 
 
 def head_rot(r: float, y: float, p: float) -> np.ndarray:
-    return rot_axis([1.0, 0, 0], r) @ rot_axis([0, 0, 1.0], y) @ rot_axis([0, -1.0, 0], p)
+    return axis_rotation([1.0, 0, 0], r) @ axis_rotation([0, 0, 1.0], y) @ axis_rotation([0, -1.0, 0], p)
 
 
 def fk(angles: dict, body: Body, root_xy_yaw: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> tuple[dict, dict]:
@@ -168,7 +152,7 @@ def fk(angles: dict, body: Body, root_xy_yaw: tuple[float, float, float] = (0.0,
     """
     a = angles
     rx, ry, yaw = root_xy_yaw
-    root_r = rot_axis(UP, yaw)
+    root_r = axis_rotation(UP, yaw)
     pelvis = np.array([rx, ry, body.hip_height])
     pos = {"pelvis": pelvis}
     frames = {"root": root_r}
@@ -201,24 +185,24 @@ def fk(angles: dict, body: Body, root_xy_yaw: tuple[float, float, float] = (0.0,
         frames[f"{side}_upperarm"] = s_r
         el = sh + body.upperarm * (s_r @ DOWN)
         pos[f"{side}_elbow"] = el
-        f_r = s_r @ rot_axis(ELBOW_AXIS, a[f"{side}_elbow"])
+        f_r = s_r @ axis_rotation(ELBOW_AXIS, a[f"{side}_elbow"])
         frames[f"{side}_forearm"] = f_r
         pos[f"{side}_wrist"] = el + body.forearm * (f_r @ DOWN)
         # hand at rest: fingers along -z, palm toward -y*REFLECT
-        pronation, extension = WRIST_AXES[side]
-        frames[f"{side}_hand"] = f_r @ rot_axis(pronation, a.get(f"{side}_r_wrist", 0.0)) @ rot_axis(extension, a.get(f"{side}_wrist", 0.0))
+        pronation, extension, deviation = WRIST_AXES[side]
+        frames[f"{side}_hand"] = f_r @ axis_rotation(pronation, a.get(f"{side}_r_wrist", 0.0)) @ axis_rotation(extension, a.get(f"{side}_wrist", 0.0)) @ axis_rotation(deviation, a.get(f"{side}_d_wrist", 0.0))
 
     for side in ("l", "r"):
         hip = pelvis + root_r @ np.array([0.0, REFLECT[side] * body.waist_length / 2, 0.0])
         pos[f"{side}_hip"] = hip
         x1, x2, x3 = HIP_AXES[side]
-        h = root_r @ rot_axis(x1, a[f"{side}_y_hip"]) @ rot_axis(x2, a[f"{side}_p_hip"]) @ rot_axis(x3, a[f"{side}_r_hip"])
+        h = root_r @ axis_rotation(x1, a[f"{side}_y_hip"]) @ axis_rotation(x2, a[f"{side}_p_hip"]) @ axis_rotation(x3, a[f"{side}_r_hip"])
         knee = hip + body.thigh * (h @ DOWN)
         pos[f"{side}_knee"] = knee
-        k = h @ rot_axis(ELBOW_AXIS, a[f"{side}_knee"])
+        k = h @ axis_rotation(ELBOW_AXIS, a[f"{side}_knee"])
         ankle = knee + body.tibia * (k @ DOWN)
         pos[f"{side}_ankle"] = ankle
-        f = k @ rot_axis([0, 0, -1.0], a[f"{side}_y_ankle"]) @ rot_axis(ELBOW_AXIS, a[f"{side}_ankle"])
+        f = k @ axis_rotation([0, 0, -1.0], a[f"{side}_y_ankle"]) @ axis_rotation(ELBOW_AXIS, a[f"{side}_ankle"])
         frames[f"{side}_foot"] = f
         pos[f"{side}_foot"] = ankle + 0.15 * (f @ FWD)
 

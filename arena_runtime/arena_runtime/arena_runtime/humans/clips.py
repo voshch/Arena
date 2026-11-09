@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 # Masks an annotation can name instead of listing joints
 _TORSO_HEAD = ("r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest", "r_head", "y_head", "p_head")
 _ARM = ("y_collar", "p_collar", "y_shoulder", "p_shoulder", "r_shoulder", "elbow")
-_WRIST = ("r_wrist", "wrist")
+_WRIST = ("r_wrist", "wrist", "d_wrist")
 JOINT_GROUPS: dict[str, tuple[str, ...]] = {
     "upper_body": (*_TORSO_HEAD, *(f"{s}_{j}" for s in "lr" for j in _ARM)),
     "upper_body_wrists": (*_TORSO_HEAD, *(f"{s}_{j}" for s in "lr" for j in (*_ARM, *_WRIST))),

@@ -7,6 +7,8 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
+from arena_assets.utils.geom import axis_rotation
+
 from arena_simulation_setup.adapters.arena_animation_retarget.contract import SK, WIRE
 from arena_simulation_setup.adapters.arena_animation_retarget.retarget import ARM_REST, heading, rest_maps
 from arena_simulation_setup.adapters.arena_animation_retarget.smplx import J, Motion
@@ -17,7 +19,7 @@ def _euler(m: np.ndarray, seq: str) -> np.ndarray:
 
 
 def _hinge(m: np.ndarray) -> float:
-    """Angle of the contract hinge rot_axis((0,-1,0), a) = Ry(-a) closest to m."""
+    """Angle of the contract hinge axis_rotation((0,-1,0), a) = Ry(-a) closest to m."""
     return float(-np.arctan2(m[0, 2], m[2, 2]))
 
 
@@ -32,7 +34,7 @@ def _arm(m: np.ndarray, prev: tuple[float, float, float]) -> tuple[float, float,
     y = float(np.arctan2(d[1], d[0])) if np.sin(p) > 1e-4 else prev[0]  # arm straight down/up: hold the azimuth
     best = None
     for yy, pp in ((y, p), (y + np.pi, -p)):  # spherical double cover
-        n = (SK.rot_axis(SK.ARM_AXES[0], yy) @ SK.rot_axis(SK.ARM_AXES[1], pp)).T @ m
+        n = (axis_rotation(SK.ARM_AXES[0], yy) @ axis_rotation(SK.ARM_AXES[1], pp)).T @ m
         rr = float(np.arctan2(-n[1, 0], n[0, 0]))
         cand = (_wrap_near(yy, prev[0]), pp, _wrap_near(rr, prev[2]))
         cost = sum(abs(c - q) for c, q in zip(cand, prev))
@@ -65,7 +67,7 @@ def retarget_frames(motion: Motion, fold_tilt: bool = True) -> dict:
     for t in range(T):
         g = G[t]
         yaw = heading(g[J["pelvis"]])
-        root_r = SK.rot_axis(SK.UP, yaw)
+        root_r = axis_rotation(SK.UP, yaw)
         root[t] = (P[t, 0, 0], P[t, 0, 1], yaw)
         root_z[t] = P[t, 0, 2] - P[t, :, 2].min()  # pelvis above the lowest joint (the floor)
         root_q[t] = Rotation.from_matrix(root_r.T @ g[J["pelvis"]]).as_quat()
@@ -98,13 +100,13 @@ def retarget_frames(motion: Motion, fold_tilt: bool = True) -> dict:
 
             def arm_frames(x, c_r=c_r):
                 u = c_r @ SK.arm_rot(*x[:3])
-                return u, u @ SK.rot_axis(SK.ELBOW_AXIS, x[3])
+                return u, u @ axis_rotation(SK.ELBOW_AXIS, x[3])
 
             ay, ap, ar, e = _fit_limb(arm_frames, np.array([ay, ap, ar, e]), U, Fo)
             prev_arm[s] = (ay, ap, ar)
             out[f"{s}_y_shoulder"][t], out[f"{s}_p_shoulder"][t], out[f"{s}_r_shoulder"][t] = ay, ap, ar
             out[f"{s}_elbow"][t] = e
-            f_r = c_r @ SK.arm_rot(ay, ap, ar) @ SK.rot_axis(SK.ELBOW_AXIS, e)
+            f_r = c_r @ SK.arm_rot(ay, ap, ar) @ axis_rotation(SK.ELBOW_AXIS, e)
             # wrist: pronation (+-Z) then extension (+-X), relative to the forearm without its alignment offset
             a1, b1, _ = _euler((f_r @ Q[f"{s}_elbow"].T @ ARM_REST[s]).T @ (g[J[f"{s}_wrist"]] @ ARM_REST[s]), "ZXY")
             out[f"{s}_r_wrist"][t], out[f"{s}_wrist"][t] = (-a1, b1) if s == "l" else (a1, -b1)
@@ -115,8 +117,8 @@ def retarget_frames(motion: Motion, fold_tilt: bool = True) -> dict:
             x1, x2, x3 = SK.HIP_AXES[s]
 
             def leg_frames(x, base=base, x1=x1, x2=x2, x3=x3):
-                h = base @ SK.rot_axis(x1, x[0]) @ SK.rot_axis(x2, x[1]) @ SK.rot_axis(x3, x[2])
-                return h, h @ SK.rot_axis(SK.ELBOW_AXIS, x[3])
+                h = base @ axis_rotation(x1, x[0]) @ axis_rotation(x2, x[1]) @ axis_rotation(x3, x[2])
+                return h, h @ axis_rotation(SK.ELBOW_AXIS, x[3])
 
             x0 = np.array([-hy, sign * hp, -hr, 0.0])
             x0[3] = _hinge(leg_frames(x0)[0].T @ Sh)

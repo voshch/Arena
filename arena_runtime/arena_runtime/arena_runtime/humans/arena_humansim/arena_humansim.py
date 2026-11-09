@@ -631,6 +631,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Latest agent type per engine agent."""
         types = msg.agent_type if len(msg.agent_type) == len(msg.agent_id) else [""] * len(msg.agent_id)
         self._agent_types = dict(zip(msg.agent_id, types, strict=True))
+        self.preload_pose_profiles(self._agent_type_of(agent_id) for agent_id in msg.agent_id)
 
     def _remember_agent_type_path(self, agent_type: str) -> None:
         """File a path-based agent type under the name the engine reports for it."""
@@ -1681,12 +1682,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         return ok
 
+    async def _seed_engine(self) -> None:
+        """Hand the engine a seed from this episode's RNG."""
+        seed = int(self.node.conf.General.RNG.stream("humansim", "engine").integers(2**63 - 1))
+        request = SetParametersAtomically.Request(parameters=[Parameter("seed", value=seed).to_parameter_msg()])
+        response = await self._set_params_client.call_timeout(request)
+        if response is None or not response.result.successful:
+            reason = response.result.reason if response is not None else "timeout"
+            self._logger.warning(f"arena_humansim kept its seed, the crowd will not follow the episode seed: {reason}")
+
     async def _remove_pedestrians_impl(self) -> bool:
         """Remove all dynamic agents from arena_humansim."""
         request = RemoveAgents.Request()
         request.agent_ids = []  # empty = remove all
 
         try:
+            await self._seed_engine()
             response = await self._remove_client.call_timeout(request)
             self._next_deferred_id = _DEFERRED_ID_BASE
             self._deferred_spawns.clear()
