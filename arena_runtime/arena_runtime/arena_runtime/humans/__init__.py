@@ -4,6 +4,7 @@ import abc
 import asyncio
 import collections
 import copy
+import functools
 import itertools
 import math
 import typing
@@ -71,6 +72,20 @@ _STREAM_QOS = rclpy.qos.QoSProfile(
     history=rclpy.qos.HistoryPolicy.KEEP_LAST,
     depth=1,
 )
+
+
+@functools.cache
+def _interaction_names() -> Mapping[int, str]:
+    try:
+        from arena_humansim.core.interaction_kinds import InteractionType
+    except ImportError:
+        return {}
+    return {int(kind): kind.name for kind in InteractionType}
+
+
+def interaction_name(ped: Pedestrian) -> str | None:
+    """Name of the ped's active humansim interaction (`Pedestrian.interaction_type`), None outside one."""
+    return _interaction_names().get(ped.interaction_type) if ped.interaction_id >= 0 else None
 
 
 def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
@@ -322,11 +337,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
-            profile = self._pose_profile_for(ped.agent_type)
+            profile = self._pose_profile_for(ped.agent_type).while_in(interaction_name(ped))
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=profile)
             state = self._gait.joint_state(angles, stamp=stamp)
             if state is not None:
                 hands = self._hands(ped.id, now_sec, profile.hold)
+                if (fade := self._gait.profile_fade(ped.id)) is not None and fade[0].hold != profile.hold:
+                    before = self._hands(ped.id, now_sec, fade[0].hold)
+                    hands = {name: before.get(name, 0.0) * (1.0 - fade[1]) + hands.get(name, 0.0) * fade[1] for name in {*before, *hands}}
                 state.name = [*state.name, *hands]
                 state.position = [*state.position, *hands.values()]
             ped.joint_state = state
@@ -534,10 +552,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         except (ValueError, OSError, yaml.YAMLError) as e:
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()
+        return self._solved_grips(agent_type, profile)
+
+    def _solved_grips(self, agent_type: str, profile: PoseProfile, interaction: str | None = None) -> PoseProfile:
+        """The profile with its grips solved now (and its interactions' own), a grip that cannot be solved left unheld."""
+        during = {name: self._solved_grips(agent_type, sub, name) for name, sub in profile.during.items()}
+        if any(during[name] is not sub for name, sub in profile.during.items()):
+            profile = attrs.evolve(profile, during=during)
         try:
             held_pose(profile.hold)
         except Exception as e:  # noqa: BLE001  (a grip that cannot be solved keeps the locomotion profile)
-            self._logger.warning(f"agent type {agent_type!r} grip rejected ({e}), its hands stay unheld")
+            where = f" while in {interaction}" if interaction else ""
+            self._logger.warning(f"agent type {agent_type!r} grip{where} rejected ({e}), its hands stay unheld")
             return attrs.evolve(profile, hold={})
         return profile
 

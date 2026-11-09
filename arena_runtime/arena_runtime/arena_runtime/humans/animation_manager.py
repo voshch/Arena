@@ -154,6 +154,7 @@ class AnimationManager:
     USE_SYNTHESIS = ["walk", "run", "idle"]
 
     BASE_CROSSFADE_S = 0.5
+    PROFILE_CROSSFADE_S = 0.6  # an agent's gait profile changing (another agent type, an interaction's own) blends over this
 
     def __init__(
         self,
@@ -198,6 +199,8 @@ class AnimationManager:
         # Pedestrian.msg IDLE/WALKING/RUNNING/PANIC/SURPRISED/CURIOUS/THREATENING
         self.state_to_animation_map: dict[int, str] = {0: "idle", 1: "walk", 2: "run", 3: "idle", 4: "idle", 5: "idle", 6: "idle"}
         self._transitions: dict[int, _Transition] = {}  # base crossfade in flight per agent
+        self._profiles: dict[int, PoseProfile] = {}  # profile of each agent's last compute()
+        self._profile_fades: dict[int, list] = {}  # [profile faded out, seconds since], per agent changing profile
         self._body_layers: dict[int, list[BodyLayer]] = {}
         self._tilt: dict[int, Quat] = {}  # pelvis tilt the last compute() blended in, per agent with a tilted clip playing
 
@@ -338,9 +341,35 @@ class AnimationManager:
         for name in self._transients.pop(agent_id, set()):
             self.animations.pop(name, None)
         self._transitions.pop(agent_id, None)
+        self._profiles.pop(agent_id, None)
+        self._profile_fades.pop(agent_id, None)
         self._tilt.pop(agent_id, None)
         self._body_layers.pop(agent_id, None)
         self.gait_generator.forget(agent_id)
+
+    def _change_profile(self, agent_id: int, profile: PoseProfile, dt: float) -> None:
+        """Start, advance or finish the agent's profile crossfade. The clock runs whether or not the gait is synthesized
+        this frame (a clip may be playing), and changing back to the profile being faded out reverses the fade."""
+        prev = self._profiles.get(agent_id)
+        self._profiles[agent_id] = profile
+        fade = self._profile_fades.get(agent_id)
+        if prev is not None and prev is not profile:
+            if fade is not None and fade[0] is profile:
+                self._profile_fades[agent_id] = [prev, max(self.PROFILE_CROSSFADE_S - fade[1], 0.0) + dt]
+            else:
+                self._profile_fades[agent_id] = [prev, dt]
+        elif fade is not None:
+            fade[1] += dt
+            if fade[1] >= self.PROFILE_CROSSFADE_S:
+                del self._profile_fades[agent_id]
+
+    def profile_fade(self, agent_id: int) -> tuple[PoseProfile, float] | None:
+        """The profile an agent is blending out of and the weight of its new one, None when it is not changing profile."""
+        fade = self._profile_fades.get(agent_id)
+        if fade is None:
+            return None
+        w = min(fade[1] / self.PROFILE_CROSSFADE_S, 1.0)
+        return fade[0], w * w * (3.0 - 2.0 * w)
 
     def root_tilt(self, agent_id: int) -> Quat | None:
         """Pelvis tilt (xyzw, from the ped's heading) of the pose the last compute() returned, None while no tilted clip shows."""
@@ -559,6 +588,8 @@ class AnimationManager:
         assert animation_state in self.state_to_animation_map, f"Can not map `animation_state` {animation_state} to any animation"
 
         next_anim = self.animations[self.state_to_animation_map[animation_state]]
+        if profile is not None:
+            self._change_profile(agent_id, profile, dt)
         cur_name = self._ped_anim.get(agent_id)
         if cur_name is not None and cur_name != next_anim.name and not (cur_name in self.USE_SYNTHESIS and next_anim.name in self.USE_SYNTHESIS):
             self._transitions[agent_id] = _Transition(anim=self.animations[cur_name], playhead=self._get_playhead(agent_id))
@@ -570,6 +601,10 @@ class AnimationManager:
             nonlocal gait_angles
             if gait_angles is None:
                 gait_angles = self.gait_generator.compute(agent_id, animation_state, speed, dt, phase=phase, profile=profile)
+                fade = self.profile_fade(agent_id)
+                if fade is not None:
+                    old = self.gait_generator.compute(agent_id, animation_state, speed, 0.0, phase=self.gait_generator.phase(agent_id), profile=fade[0])
+                    gait_angles = {name: old[name] * (1.0 - fade[1]) + value * fade[1] for name, value in gait_angles.items()}
             return gait_angles
 
         tilt: Quat | None = None

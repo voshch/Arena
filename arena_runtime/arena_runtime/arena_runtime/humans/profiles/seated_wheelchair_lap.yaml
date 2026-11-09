@@ -1,0 +1,64 @@
+# Pushed in a wheelchair: seated_wheelchair with the hands resting on the thighs (solved on
+# casual_male_asian_middleage_wheelchair, wrists on the thighs), no rim strokes.
+name: seated_wheelchair_lap
+symmetric: false
+phase_warp: {split: 0.5}
+cadence: {base: 0.6, per_speed: 0.4, min: 0.6, max: 1.4}
+gain: {per_speed: 1.2, min: 1.0, max: 1.0, factor: 1.0}
+limits:
+  l_r_hip: [-0.4, 2.0]
+  r_r_hip: [-0.4, 2.0]
+  l_r_shoulder: [-1.6, 3.1]
+  r_r_shoulder: [-3.1, 1.6]
+signals:
+  waist: {mean: -0.2}
+  spine: {mean: -0.1}
+  p_head: {mean: -0.3}
+  l_p_collar: {mean: -0.15}
+  r_p_collar: {mean: -0.15}
+  l_y_shoulder: {mean: 1.012}
+  r_y_shoulder: {mean: -1.183}
+  l_p_shoulder: {mean: -0.008}
+  r_p_shoulder: {mean: 0.278}
+  l_r_shoulder: {mean: 1.345}
+  r_r_shoulder: {mean: -2.081}
+  l_elbow: {mean: 0.741}
+  r_elbow: {mean: 0.686}
+  l_y_hip: {mean: -0.0035}
+  r_y_hip: {mean: 0.0035}
+  l_p_hip: {mean: -0.0316}
+  r_p_hip: {mean: -0.0316}
+  l_r_hip: {mean: 1.572}
+  r_r_hip: {mean: 1.572}
+  l_knee: {mean: -1.3178}
+  r_knee: {mean: -1.3178}
+  l_y_ankle: {mean: -0.4075}
+  r_y_ankle: {mean: 0.4075}
+  l_ankle: {mean: -0.0862}
+  r_ankle: {mean: -0.0862}
+joints:
+  waist: {signal: waist, shift: 0.0}
+  spine: {signal: spine, shift: 0.0}
+  p_head: {signal: p_head, shift: 0.0}
+  l_p_collar: {signal: l_p_collar, shift: 0.0}
+  r_p_collar: {signal: r_p_collar, shift: 0.0}
+  l_y_shoulder: {signal: l_y_shoulder, shift: 0.0}
+  r_y_shoulder: {signal: r_y_shoulder, shift: 0.0}
+  l_p_shoulder: {signal: l_p_shoulder, shift: 0.0}
+  r_p_shoulder: {signal: r_p_shoulder, shift: 0.0}
+  l_r_shoulder: {signal: l_r_shoulder, shift: 0.0}
+  r_r_shoulder: {signal: r_r_shoulder, shift: 0.0}
+  l_elbow: {signal: l_elbow, shift: 0.0}
+  r_elbow: {signal: r_elbow, shift: 0.0}
+  l_y_hip: {signal: l_y_hip, shift: 0.0}
+  r_y_hip: {signal: r_y_hip, shift: 0.0}
+  l_p_hip: {signal: l_p_hip, shift: 0.0}
+  r_p_hip: {signal: r_p_hip, shift: 0.0}
+  l_r_hip: {signal: l_r_hip, shift: 0.0}
+  r_r_hip: {signal: r_r_hip, shift: 0.0}
+  l_knee: {signal: l_knee, shift: 0.0}
+  r_knee: {signal: r_knee, shift: 0.0}
+  l_y_ankle: {signal: l_y_ankle, shift: 0.0}
+  r_y_ankle: {signal: r_y_ankle, shift: 0.0}
+  l_ankle: {signal: l_ankle, shift: 0.0}
+  r_ankle: {signal: r_ankle, shift: 0.0}

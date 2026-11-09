@@ -57,3 +57,30 @@ def test_agent_meta_resolves_the_reported_types_with_their_grips(tmp_path: Path)
     assert adapter._pose_profile_for(str(caner)) is adapter._pose_profiles[str(caner)]
     assert set(held_pose(adapter._pose_profiles[str(caner)].hold)) >= {"r_curl_index", "r_curl_thumb"}
     assert adapter.node.logger.warnings == []
+
+
+def test_an_interaction_grip_is_solved_with_its_type_and_dropped_alone_when_it_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import arena_runtime.humans as humans
+
+    pusher = tmp_path / "pusher.yaml"
+    pusher.write_text("name: pusher\nextends: adult\npose:\n  hold: {r: 0.0125}\n  while:\n    PUSH_WHEELCHAIR:\n      walk: {base: walk_pushwheelchair}\n      hold: {l: 0.014, r: 0.014}\n")
+    solved: list[dict[str, Grip]] = []
+
+    def fussy(hold: dict[str, Grip]) -> dict[str, float]:
+        solved.append(dict(hold))
+        if "l" in hold:
+            raise ValueError("no grip")
+        return held_pose(hold)
+
+    monkeypatch.setattr(humans, "held_pose", fussy)
+    adapter = _adapter()
+    adapter._remember_agent_type_path(str(pusher))
+
+    adapter._agent_meta_callback(AgentMeta(agent_id=[3], agent_type=["pusher"]))
+
+    profile = adapter._pose_profiles[str(pusher)]
+    assert {"l": Grip(0.014), "r": Grip(0.014)} in solved, "the push grip is solved when the type arrives, not in the publish tick"
+    assert profile.hold == {"r": Grip(0.0125)}
+    assert profile.while_in("PUSH_WHEELCHAIR").hold == {}
+    assert profile.while_in("PUSH_WHEELCHAIR").walk == profile.during["PUSH_WHEELCHAIR"].walk != profile.walk, "the push keeps its own walk"
+    assert len(adapter.node.logger.warnings) == 1 and "PUSH_WHEELCHAIR" in adapter.node.logger.warnings[0]

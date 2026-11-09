@@ -267,12 +267,17 @@ _OP: dict[str, Callable[[Any], Callable[[Signal], Signal]]] = {
 
 @attrs.frozen
 class PoseProfile:
-    """An agent type's locomotion: the walk and run gaits plus the idle gait, None for the hand-written idle sway, and the grip of each hand that holds a prop."""
+    """An agent type's locomotion: the walk and run gaits plus the idle gait, None for the hand-written idle sway, the grip of each hand that holds a prop, and the profiles it takes instead while in an interaction, by interaction name."""
 
     walk: GaitProfile
     run: GaitProfile
     idle: GaitProfile | None = None
     hold: Mapping[str, Grip] = attrs.field(factory=dict)
+    during: Mapping[str, PoseProfile] = attrs.field(factory=dict)
+
+    def while_in(self, interaction: str | None) -> PoseProfile:
+        """The profile for an agent in the named interaction, this one outside interactions or in one without its own."""
+        return self.during.get(interaction, self) if interaction else self
 
 
 def dump_gait_profile(profile: GaitProfile) -> str:
@@ -390,10 +395,17 @@ def _parse_hold(raw: object) -> dict[str, Grip]:
 
 
 def resolve_pose_profile(pose_section: Mapping[str, Any] | None, library_dir: Path = LIBRARY_DIR) -> PoseProfile:
-    """Build an agent type's PoseProfile from its `pose:` section (walk, run, idle, hold), missing gaits take the library defaults."""
+    """Build an agent type's PoseProfile from its `pose:` section (walk, run, idle, hold, while), missing gaits take the library defaults.
+
+    `while: {<interaction>: <pose section>}` gives the whole profile the agent takes while in that interaction (humansim's
+    InteractionType name), resolved on its own: nothing of the outer section carries into it."""
     section = dict(pose_section or {})
-    if not set(section) <= {*GAITS, "hold"}:
-        raise ValueError(f"pose takes {(*GAITS, 'hold')}, got {sorted(section)}")
+    if not set(section) <= {*GAITS, "hold", "while"}:
+        raise ValueError(f"pose takes {(*GAITS, 'hold', 'while')}, got {sorted(section)}")
+    during_raw = section.pop("while", None) or {}
+    if not isinstance(during_raw, Mapping) or not all(isinstance(spec, Mapping) and "while" not in spec for spec in during_raw.values()):
+        raise ValueError(f"pose.while takes {{<interaction name>: {{walk, run, idle, hold}}}}, got {during_raw!r}")
+    during = {str(name): resolve_pose_profile(spec, library_dir) for name, spec in during_raw.items()}
     hold = _parse_hold(section.pop("hold") or {}) if "hold" in section else {}
     library = load_library(Path(library_dir))
     walk = _resolve_gait("walk", section.get("walk"), library, None)
@@ -404,8 +416,8 @@ def resolve_pose_profile(pose_section: Mapping[str, Any] | None, library_dir: Pa
     if idle_spec.get("base", IDLE) == IDLE:
         if set(idle_spec) - {"base"}:
             raise ValueError(f"pose.idle: the builtin {IDLE} takes no overrides, got {sorted(set(idle_spec) - {'base'})}")
-        return PoseProfile(walk=walk, run=run, idle=None, hold=hold)
-    return PoseProfile(walk=walk, run=run, idle=_resolve_gait("idle", idle_spec, library, None), hold=hold)
+        return PoseProfile(walk=walk, run=run, idle=None, hold=hold, during=during)
+    return PoseProfile(walk=walk, run=run, idle=_resolve_gait("idle", idle_spec, library, None), hold=hold, during=during)
 
 
 @functools.cache
