@@ -105,7 +105,7 @@ outcome is set is not lost.
 ### Reset semantics
 
 The `resetting` parameter and `state/resetting` belong to the node. Async ROS I/O in
-this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins).
+this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins).
 
 `EpisodeNode._reset_episode(record)` runs in this order:
 

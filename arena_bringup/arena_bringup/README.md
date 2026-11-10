@@ -60,7 +60,7 @@ API.
 
 ## `LaunchArgument`
 
-[`arena_rclpy_mixins.launch_argument`](../../utils/arena_rclpy_mixins/arena_rclpy_mixins/launch_argument.py)
+[`arena_rclpy_mixins.launch_argument`](../../utils/arena_rclpy_mixins/arena_rclpy_mixins/arena_rclpy_mixins/launch_argument.py)
 extends `DeclareLaunchArgument` with a mandatory description and:
 
 | Property / method | Returns | Purpose |

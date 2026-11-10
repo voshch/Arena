@@ -28,7 +28,7 @@ repos:
         always_run: true
       - id: param-census
         name: check parameter and launch argument declarations
-        entry: python utils/arena_rclpy_mixins/arena_rclpy_mixins/census.py
+        entry: python utils/arena_rclpy_mixins/arena_rclpy_mixins/arena_rclpy_mixins/census.py
         language: python
         pass_filenames: false
         always_run: true

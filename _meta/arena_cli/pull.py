@@ -3,6 +3,30 @@
 import os
 import sys
 
+CORE_SUBMODULES = ("arena_assets", "arena_planners", "arena_robots", "humansim", "utils/arena_rclpy_mixins")
+GENERATED_DIRS = ("__pycache__", ".pytest_cache", ".hypothesis", ".ruff_cache", ".mypy_cache")
+
+
+def clear_generated_leftovers(root: str, paths: tuple[str, ...]) -> list[str]:
+    """Remove each path that is no git checkout and holds only generated files, returning the ones that hold anything else."""
+    import shutil
+    from pathlib import Path
+
+    def generated(file: Path, top: Path) -> bool:
+        parts = file.relative_to(top).parts
+        return file.suffix == ".pyc" or any(part in GENERATED_DIRS or part.endswith(".egg-info") for part in parts[:-1])
+
+    kept: list[str] = []
+    for rel in paths:
+        top = Path(root, rel)
+        if top.is_symlink() or not top.is_dir() or (top / ".git").exists():
+            continue
+        if all(generated(file, top) for file in top.rglob("*") if not file.is_dir()):
+            shutil.rmtree(top)
+        else:
+            kept.append(rel)
+    return kept
+
 
 def restore_branches(root: str, env: dict[str, str]) -> bool:
     """Put every pinned submodule back on its .gitmodules branch, printing each one that keeps unpushed commits instead."""
@@ -132,8 +156,10 @@ def pull_main(argv: list[str]) -> int:
             else:
                 print("no upstream for current branch, skipping Arena pull")
 
-            if subprocess.run(["git", "submodule", "update", "--init", "--checkout", "arena_assets", "arena_planners", "arena_robots", "humansim"], env=env, check=False).returncode:
-                print("failed to init/update arena_assets/arena_planners/arena_robots/humansim, ignoring")
+            for rel in clear_generated_leftovers(arena_dir, CORE_SUBMODULES):
+                print(f"{rel} is no checkout and holds files besides caches, move them away so it can be initialized", file=sys.stderr)
+            if subprocess.run(["git", "submodule", "update", "--init", "--checkout", *CORE_SUBMODULES], env=env, check=False).returncode:
+                print(f"failed to init/update {', '.join(CORE_SUBMODULES)}, ignoring")
                 skipped.append("core submodules")
 
             if subprocess.run(["git", "submodule", "update", "--checkout", "--recursive"], env=env, check=False).returncode:
