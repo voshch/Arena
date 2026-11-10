@@ -33,7 +33,7 @@ arena launch world:=<world> task.robots:=search task.obstacles:=scenario task.sc
 
 ## Manifest
 
-[`configs/usar/mvp.yaml`](../../../../configs/usar/mvp.yaml) is the MVP study: 10 worlds, 6 spots each at both call levels (120 scenarios), 2 worlds held out.
+[`configs/usar/mvp.yaml`](../../../../configs/usar/mvp.yaml) is the MVP study: 10 worlds, 6 spots each at both call levels (120 scenarios), 2 worlds held out. [`configs/usar/study.yaml`](../../../../configs/usar/study.yaml) is the held-out test set of the study: 25 worlds in four groups (3 x 3 and 3 x 4 rooms, chains of six rooms, rings of six rooms, a hall of two wide rooms), 5 spots each at both call levels (250 scenarios), all held out, written as the bundle `usar_test` with `--suite usar`.
 
 | Key | Meaning |
 |---|---|

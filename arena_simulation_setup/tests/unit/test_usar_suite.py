@@ -3,16 +3,21 @@
 import math
 import os
 import shutil
+from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import yaml
 from arena_simulation_setup.generative.usar import bundle, cli
-from arena_simulation_setup.generative.usar.manifest import Manifest
-from arena_simulation_setup.tree.World import WorldView
+from arena_simulation_setup.generative.usar.manifest import CallLevel, Hiding, Manifest
+from arena_simulation_setup.generative.usar.sampler import tasks
+from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
+from arena_simulation_setup.tree.World import World, WorldView
 from arena_simulation_setup.tree.World.Scenario import ScenarioView
 
+STUDY = Path(__file__).parents[2] / "configs" / "usar" / "study.yaml"
+TUNING_SEED = 7
 SPLIT: dict[str, object] = {"name": "unit", "seed": 3, "spots_per_world": 2, "worlds": [{"world": {"rows": 3, "cols": 3, "loops": 1}, "world_variants": 2, "corners": [0, 1], "test_worlds": 1}]}
 
 
@@ -217,3 +222,70 @@ def test_without_the_suite_flag_the_worlds_and_one_index_go_to_out(tmp_path: Pat
     assert (out / "unit.index.yaml").is_file()
     assert len([path for path in out.iterdir() if path.is_dir()]) == 2
     assert not imported.exists()
+
+
+@pytest.fixture(scope="module")
+def study() -> tuple[Manifest, cli.Report]:
+    manifest = Manifest.load(STUDY)
+    return manifest, cli.run(manifest)
+
+
+def is_ring(world: World) -> bool:
+    """Every room has exactly two doors and the doors join all rooms into one loop."""
+    links: dict[str, set[str]] = {}
+    for door in next(iter(world.levels.values())).doors:
+        a, b = door.name.removeprefix("door_").split("__")
+        links.setdefault(a, set()).add(b)
+        links.setdefault(b, set()).add(a)
+    if not links or any(len(neighbours) != 2 for neighbours in links.values()):
+        return False
+    seen, frontier = set[str](), [next(iter(links))]
+    while frontier:
+        room = frontier.pop()
+        if room not in seen:
+            seen.add(room)
+            frontier.extend(links[room])
+    return seen == set(links)
+
+
+def shape(world: dict) -> tuple[int, int]:
+    return world["rows"], world["cols"]
+
+
+def test_a_chain_of_rooms_is_no_ring_and_two_by_two_with_a_loop_is():
+    chain = WorldGenerator(WorldGeneratorType.ROOMS, {"rows": 1, "cols": 4}, 0).compute()
+    square = WorldGenerator(WorldGeneratorType.ROOMS, {"rows": 2, "cols": 2, "loops": 1}, 0).compute()
+    assert not is_ring(chain)
+    assert is_ring(square)
+
+
+def test_the_study_places_250_scenarios_on_25_test_worlds(study: tuple[Manifest, cli.Report]):
+    manifest, report = study
+    assert manifest.seed != TUNING_SEED
+    assert (report.placed, len(report.outcomes)) == (250, 250)
+    assert {outcome.split for outcome in report.outcomes} == {"test"}
+    assert len(report.built) == 25
+    assert Counter(outcome.task.world_key for outcome in report.outcomes) == dict.fromkeys(report.built, 10)
+
+
+def test_the_study_covers_every_corner_count_call_level_hiding_and_shape(study: tuple[Manifest, cli.Report]):
+    _, report = study
+    found = [outcome.task for outcome in report.outcomes]
+    assert {task.corners for task in found} == {0, 1, 2}
+    assert {task.call_level for task in found} == set(CallLevel)
+    assert {task.hiding for task in found} == set(Hiding)
+    shapes = Counter(shape(world) for world in {task.world_key: task.world for task in found}.values())
+    assert shapes == {(3, 3): 10, (3, 4): 10, (1, 6): 2, (2, 3): 2, (1, 2): 1}
+
+
+def test_every_ring_world_of_the_study_is_one_closed_loop_of_rooms(study: tuple[Manifest, cli.Report]):
+    _, report = study
+    rings = {outcome.task.world_key for outcome in report.outcomes if shape(outcome.task.world) == (2, 3)}
+    assert len(rings) == 2
+    assert all(is_ring(report.built[key].world) for key in rings)
+
+
+def test_the_study_shares_no_world_with_the_same_manifest_on_the_tuning_seed():
+    manifest = Manifest.load(STUDY)
+    tuning = manifest.model_copy(update={"seed": TUNING_SEED})
+    assert not {task.world_key for task in tasks(manifest)} & {task.world_key for task in tasks(tuning)}
