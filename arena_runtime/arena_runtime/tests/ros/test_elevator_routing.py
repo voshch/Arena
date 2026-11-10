@@ -364,6 +364,9 @@ class _FakeAdapter:
     def on_phase_tick(self, phase, robot):
         pass
 
+    async def cancel_and_wait(self, kinds=None):
+        pass
+
     def client_for(self, kind):
         return SimpleNamespace(status=0, reason=None, is_done=lambda: True)
 

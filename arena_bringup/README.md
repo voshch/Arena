@@ -29,7 +29,7 @@ provides launch-time helpers used across all launch files in this package:
 - **`SelectAction`** / YAML substitutions
   ([arena_bringup/substitutions.py](arena_bringup/substitutions.py))
 - **`LaunchArgument`**, `LaunchArgument.from_param`, `forwarded`, `declared_arguments`
-  ([arena_rclpy_mixins/launch_argument.py](../utils/arena_rclpy_mixins/arena_rclpy_mixins/launch_argument.py))
+  ([arena_rclpy_mixins/launch_argument.py](../utils/arena_rclpy_mixins/arena_rclpy_mixins/arena_rclpy_mixins/launch_argument.py))
   (`description` is a required keyword)
 - **`IsolatedGroupAction`**
   ([arena_bringup/actions.py](arena_bringup/actions.py))

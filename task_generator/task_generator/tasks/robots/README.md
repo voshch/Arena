@@ -185,7 +185,22 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
   robot (the `search` mode uses it).
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
   result. A reach pose's `frame` (the base frame by default) is a robot link,
-  put under the robot's TF prefix unless it already carries it.
+  put under the robot's TF prefix unless it already carries it, an episode
+  object (`chest`) or one of its articulated links (`chest/drawer02_44`),
+  resolved once at dispatch at the object's current joint values. Every reach
+  plans against the episode's objects within the arm's `scene_radius`.
+  `motion: linear` moves the tool along a straight line (Pilz LIN) instead of
+  a free OMPL path, and a linear reach in an object's frame may touch that
+  object with the arm. `speed` in (0, 1] scales velocity and
+  acceleration. `relative: true` adds the target to the current tool pose in
+  `frame`. `stop` takes the `until` grammar and, unlike `until` (judged after
+  the action ends), meets the phase on the tick it holds while the arm still
+  moves and cancels the motion, for example a push that ends once
+  `{field: chest.openness.prismatic_joint_left_02, le: 0.02}` holds. A reach
+  whose arm stalls or reports a non-finite joint state fails as
+  `arm blocked` or `arm state not finite`. Any phase that ends while its
+  action still runs (a `stop`, a loop `until`, an abort) cancels the action
+  before the next phase is dispatched.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 

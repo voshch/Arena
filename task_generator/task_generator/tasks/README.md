@@ -127,7 +127,7 @@ Each TM is a package with two files:
   first activated.
 
 The schema is a `ParamGroup` of
-[`arena_rclpy_mixins.params`](../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/params.py)
+[`arena_rclpy_mixins.params`](../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/arena_rclpy_mixins/params.py)
 `Param`s, one per parameter, named relative to the mode namespace. The node
 instantiates it at startup, the implementation instantiates it again with the
 same namespace to get the same instance and reads `.value`:

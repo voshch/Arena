@@ -44,7 +44,7 @@ arena launch world:=<world> task.robots:=search task.obstacles:=scenario task.sc
 | `spots_per_world` | hiding spots on each world, each written once per call level |
 | `test_worlds` | worlds of the group held out from tuning and training, the first in world key order, at most all of them, default 0 |
 | `corners` | turns on the route from the robot's start to the person, asked of the group's worlds |
-| `call_levels` | `weak`, `loud`, each with its `call_db` volume; every spot calls at every level |
+| `call_levels` | `weak`, `loud`, each with its `call_db` volume, and every spot calls at every level |
 | `hiding` | `random`, or `adversarial`: the spot whose call points furthest from the route's first leg |
 | `call_asset`, `call_period_s`, `call_on_s` | the looped sound the person calls with, on for `call_on_s` every `call_period_s` |
 | `agent_type` | pedestrian profile of the person |

@@ -11,7 +11,6 @@ members = [
     "arena_simulation_setup/src",
     "task_generator",
     "utils/arena_cam",
-    "utils/arena_rclpy_mixins",
     "utils/arena_viz",
     "utils/human_steering",
     "utils/rerun_utils",
@@ -89,7 +88,7 @@ src = [
     "arena_bringup/arena_bringup",
     "arena_robots/arena_robots/arena_robots",
     "arena_simulation_setup/src/arena_simulation_setup",
-    "utils/arena_rclpy_mixins/arena_rclpy_mixins",
+    "utils/arena_rclpy_mixins/arena_rclpy_mixins/arena_rclpy_mixins",
     "utils/rviz_utils/rviz_utils",
     "utils/human_steering/human_steering",
     "utils/arena_cam/arena_cam",
@@ -130,7 +129,6 @@ known-first-party = [
 
 [tool.ruff.lint.per-file-ignores]
 "arena_simulation_setup/**/*.py" = ["UP"]
-"utils/arena_rclpy_mixins/**/*.py" = ["UP046", "UP047"]
 "_meta/arena_cli/__main__.py" = ["UP036"]
 "_meta/typings/**/*.pyi" = ["ANN401"]
 
@@ -170,7 +168,7 @@ extraPaths = [
     "humansim/arena_humansim",
     "task_generator",
     "utils/arena_cam",
-    "utils/arena_rclpy_mixins",
+    "utils/arena_rclpy_mixins/arena_rclpy_mixins",
     "utils/arena_viz",
     "utils/human_steering",
     "utils/rerun_utils",
@@ -214,7 +212,7 @@ executionEnvironments = [
     { root = "humansim/arena_humansim" },
     { root = "task_generator" },
     { root = "utils/arena_cam" },
-    { root = "utils/arena_rclpy_mixins" },
+    { root = "utils/arena_rclpy_mixins/arena_rclpy_mixins" },
     { root = "utils/arena_viz" },
     { root = "utils/human_steering" },
     { root = "utils/rerun_utils" },

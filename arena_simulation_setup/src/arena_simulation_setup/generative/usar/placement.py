@@ -18,7 +18,7 @@ from arena_simulation_setup.tree.World.membership import derive
 
 from .manifest import Hiding
 
-CANDIDATES_PER_ROOM = 12  # candidates drawn per room; 0-corner spots are rare, and the manifest needs at least 10 to find one on every world
+CANDIDATES_PER_ROOM = 12
 SPOT_TRIES = 200
 MIN_DISTANCE_M = 3.0  # person to robot start, so no task is found at spawn
 

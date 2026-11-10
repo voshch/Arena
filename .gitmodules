@@ -60,3 +60,8 @@
 	url = https://github.com/voshch/flatsim.git
 	branch = jazzy
 	update = checkout
+[submodule "utils/arena_rclpy_mixins"]
+	path = utils/arena_rclpy_mixins
+	url = https://github.com/voshch/arena-rclpy-mixins.git
+	branch = jazzy
+	update = checkout

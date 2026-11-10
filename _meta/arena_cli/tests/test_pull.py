@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from arena_cli.pull import apply_patches, attach_branch, restart_command, restore_branches
+from arena_cli.pull import apply_patches, attach_branch, clear_generated_leftovers, restart_command, restore_branches
 
 ENV = {
     **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
@@ -392,3 +392,73 @@ def test_restart_with_nothing_skipped_is_still_a_restart(tmp_path):
 def test_a_fresh_update_is_not_a_restart(tmp_path):
     env = {k: v for k, v in ENV.items() if k != "ARENA_UPDATE_RESTARTED"}
     assert restarted_skips_in_child(env) == ["None None"]
+
+
+def superproject_that_turns_a_package_into_a_submodule(tmp_path: Path) -> tuple[Path, str, str]:
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    git(lib, "init", "-q", "-b", "jazzy")
+    (lib / "pkg").mkdir()
+    (lib / "pkg" / "package.xml").write_text("<package/>\n")
+    git(lib, "add", ".")
+    lib_head = commit(lib, "lib")
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    git(origin, "init", "-q", "-b", "jazzy")
+    (origin / "utils" / "lib").mkdir(parents=True)
+    (origin / "utils" / "lib" / "package.xml").write_text("<package/>\n")
+    git(origin, "add", ".")
+    before = commit(origin, "package in tree")
+    git(origin, "rm", "-q", "-r", "utils/lib")
+    git(origin, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(lib), "utils/lib")
+    commit(origin, "package as submodule")
+    return origin, before, lib_head
+
+
+def clone_at(origin: Path, dest: Path, rev: str) -> Path:
+    subprocess.run(["git", "clone", "-q", "-b", "jazzy", str(origin), str(dest)], env=ENV, check=True)
+    git(dest, "reset", "-q", "--hard", rev)
+    return dest
+
+
+def init_submodule(repo: Path, path: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(repo), "-c", "protocol.file.allow=always", "submodule", "update", "--init", "--checkout", path], env=ENV, capture_output=True, text=True, check=False)
+
+
+def test_update_clears_caches_left_by_the_tracked_package_and_inits_the_submodule(tmp_path):
+    origin, before, lib_head = superproject_that_turns_a_package_into_a_submodule(tmp_path)
+    work = clone_at(origin, tmp_path / "work", before)
+    for leftover in ("__pycache__/node.cpython-312.pyc", "tests/__pycache__/conftest.cpython-312.pyc", ".pytest_cache/v/cache/nodeids", "lib.egg-info/PKG-INFO"):
+        (work / "utils" / "lib" / leftover).parent.mkdir(parents=True, exist_ok=True)
+        (work / "utils" / "lib" / leftover).write_text("x")
+    git(work, "pull", "-q", "--ff-only")
+    assert init_submodule(work, "utils/lib").returncode != 0
+    assert clear_generated_leftovers(str(work), ("utils/lib",)) == []
+    assert init_submodule(work, "utils/lib").returncode == 0
+    assert git(work / "utils" / "lib", "rev-parse", "HEAD") == lib_head
+
+
+def test_fresh_clone_inits_the_submodule_after_clearing_its_empty_directory(tmp_path):
+    origin, _, lib_head = superproject_that_turns_a_package_into_a_submodule(tmp_path)
+    work = tmp_path / "work"
+    subprocess.run(["git", "clone", "-q", "-b", "jazzy", str(origin), str(work)], env=ENV, check=True)
+    assert clear_generated_leftovers(str(work), ("utils/lib",)) == []
+    assert init_submodule(work, "utils/lib").returncode == 0
+    assert git(work / "utils" / "lib", "rev-parse", "HEAD") == lib_head
+
+
+def test_directory_holding_files_besides_caches_is_kept_and_named(tmp_path):
+    (tmp_path / "utils" / "lib" / "__pycache__").mkdir(parents=True)
+    (tmp_path / "utils" / "lib" / "__pycache__" / "a.cpython-312.pyc").write_text("x")
+    (tmp_path / "utils" / "lib" / "notes.txt").write_text("mine")
+    assert clear_generated_leftovers(str(tmp_path), ("utils/lib",)) == ["utils/lib"]
+    assert (tmp_path / "utils" / "lib" / "notes.txt").read_text() == "mine"
+
+
+def test_checkouts_and_missing_paths_are_left_alone(tmp_path):
+    checkout = tmp_path / "sub"
+    (checkout / "__pycache__").mkdir(parents=True)
+    (checkout / ".git").write_text("gitdir: elsewhere\n")
+    assert clear_generated_leftovers(str(tmp_path), ("sub", "absent")) == []
+    assert (checkout / ".git").is_file()
+    assert (checkout / "__pycache__").is_dir()

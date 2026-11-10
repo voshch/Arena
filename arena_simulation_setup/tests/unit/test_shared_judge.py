@@ -43,7 +43,7 @@ from arena_simulation_setup.shared.judge import (
     zone_polygons,
 )
 from arena_simulation_setup.shared.conditions import parse_node, parse_until
-from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, TaskPhase
+from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, ReachPhase, TaskPhase
 from arena_simulation_setup.shared import Door
 from arena_simulation_setup.tree.World import Level, WallPath, Zone
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
@@ -269,6 +269,19 @@ def test_gesture_phase_completes_on_action_result_then_until():
     assert monitor.waiting is True
     assert monitor.step(sample(t=2.0, fields={("door", "open"): "true"}), ZONES, action_done=True) is True
     assert PhaseMonitor(PlayGesturePhase(gesture="wave"), "robot_0").step(sample(), ZONES, action_done=True) is True
+
+
+def test_reach_stop_meets_the_phase_while_the_arm_moves():
+    phase = ReachPhase(target=Pose(Position(0.3, 0.0, 0.5)), motion="linear", stop={"field": "chest.openness", "le": 0.02})
+    monitor = PhaseMonitor(phase, "robot_0")
+    assert monitor.step(sample(t=0.0, fields={("chest", "openness"): 0.4}), ZONES, action_done=False) is False
+    assert monitor.step(sample(t=1.0, fields={("chest", "openness"): 0.01}), ZONES, action_done=False) is True
+
+
+def test_reach_without_stop_waits_for_the_action():
+    monitor = PhaseMonitor(ReachPhase(target=Pose(Position(0.3, 0.0, 0.5))), "robot_0")
+    assert monitor.step(sample(t=0.0, fields={("chest", "openness"): 0.01}), ZONES, action_done=False) is False
+    assert monitor.step(sample(t=1.0), ZONES, action_done=True) is True
 
 
 def test_scoped_conditions_judged_over_the_phase():

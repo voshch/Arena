@@ -68,6 +68,7 @@ def test_render_atom_text(atom, text):
         ({"gesture": "wave", "until": {"any": [{"field": "door.open", "ne": "true"}, {"field": "lift.eta", "lt": 3, "for": 1}]}}, "Perform the wave gesture and wait until door open is not true or lift eta is below 3 for 1 seconds."),
         ({"gesture": "wave", "until": {"all": [{"any": ["robot in kitchen", "robot in hallway"]}, {"field": "lift.eta", "le": 3}]}}, "Perform the wave gesture and wait until (you are in the kitchen or you are in the hallway) and lift eta is at most 3."),
         ({"gesture": "wave", "until": {"not": {"any": ["robot in kitchen", "robot in hallway"]}}}, "Perform the wave gesture and wait until it is not the case that (you are in the kitchen or you are in the hallway)."),
+        ({"reach": [0.3, -0.2, 0.55], "frame": "chest", "motion": "linear", "stop": {"field": "chest.openness.drawer", "le": 0.02}}, "Move your hand in a straight line to the given pose and stop once chest openness drawer is at most 0.02."),
     ],
 )
 def test_render_phase(phase, text):

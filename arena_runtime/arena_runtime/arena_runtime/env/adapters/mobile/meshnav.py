@@ -166,5 +166,5 @@ class MeshNavAdapter(MobileAdapter):
 
     async def on_move(self, pose: Pose, robot: RobotManager) -> None:
         phase = robot.active_dispatch_phase()
-        if phase is not None:
+        if isinstance(phase, GoToPhase):
             await self.dispatch_phase(phase, robot)

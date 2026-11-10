@@ -105,7 +105,7 @@ outcome is set is not lost.
 ### Reset semantics
 
 The `resetting` parameter and `state/resetting` belong to the node. Async ROS I/O in
-this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins).
+this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins).
 
 `EpisodeNode._reset_episode(record)` runs in this order:
 
@@ -285,6 +285,11 @@ episode-wide phase indices. Goto poses are map-frame and shifted into scenario
 coordinates the way an rviz goal handle's are. An empty phase list stops the
 robot: `RobotManager.stop_task` drops its unfinished phases and cancels the
 in-flight adapter goals.
+
+A phase that ends while its action still runs (a reach `stop` holding, a loop `until`
+exit, a failure policy or an episode abort) has that action canceled and the cancel answered
+before the next phase dispatches. A reach the judge met by `stop` reads no status from its
+client while the action runs, so the canceled status that follows does not fail it.
 
 ### Goal progress
 
