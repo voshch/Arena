@@ -442,6 +442,7 @@ class PhaseMonitor:
     phase: TaskPhase
     robot: str = 'robot'
     _until: UntilMonitor | None = attrs.field(init=False)
+    _stop: UntilMonitor | None = attrs.field(init=False)
     _park: ParkTimer = attrs.field(factory=ParkTimer, init=False)
     conditions: list[ConditionMonitor] = attrs.field(init=False)
     arrived_at: float | None = attrs.field(default=None, init=False)
@@ -450,8 +451,12 @@ class PhaseMonitor:
     misfire: str | None = attrs.field(default=None, init=False)
 
     def __attrs_post_init__(self) -> None:
+        from arena_simulation_setup.shared.task import ReachPhase
+
         until = self.phase.until_node
         self._until = UntilMonitor(until, self.robot) if until is not None else None
+        stop = self.phase.stop_node if isinstance(self.phase, ReachPhase) else None
+        self._stop = UntilMonitor(stop, self.robot) if stop is not None else None
         self.conditions = [ConditionMonitor(c, self.robot) for c in self.phase.conditions]
 
     @property
@@ -498,7 +503,7 @@ class PhaseMonitor:
                 self._park.reset()
                 if self.phase.until is None:
                     self.arrived_at = None
-        elif action_done:
+        elif action_done or (self._stop is not None and self._stop.step(sample, zones)):
             if self.arrived_at is None:
                 self.arrived_at = sample.t
             self.held = True
