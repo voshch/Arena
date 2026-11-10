@@ -1,4 +1,4 @@
-"""Tasks of a USAR manifest: every world on the grid with its tasks cycling through the task axes."""
+"""Tasks of a USAR manifest: every world on the grid with its spots cycling through the spot axes, each spot once per call level."""
 
 from __future__ import annotations
 
@@ -30,14 +30,20 @@ class Task:
         return f"usar_rooms_{digest}"
 
     @property
+    def spot_key(self) -> str:
+        """Name shared by the call levels of one hiding spot."""
+        return f"t{self.index:02d}__c{self.corners}__{self.hiding.value}"
+
+    @property
     def scenario_key(self) -> str:
-        return f"t{self.index:02d}__c{self.corners}__{self.call_level.value}__{self.hiding.value}"
+        return f"{self.spot_key}__{self.call_level.value}"
 
     def to_dict(self) -> dict[str, Scalar | dict[str, Scalar]]:
         return {
             "world": dict(self.world),
             "world_seed": self.world_seed,
             "index": self.index,
+            "spot": self.spot_key,
             "corners": self.corners,
             "call_level": self.call_level.value,
             "hiding": self.hiding.value,
@@ -45,18 +51,18 @@ class Task:
 
 
 def tasks(manifest: Manifest) -> list[Task]:
-    """Every task of the manifest, `tasks_per_world` per world, the task axes taken in turn across worlds, corners fastest."""
+    """Every task of the manifest: `spots_per_world` spots per world, the spot axes taken in turn across worlds, corners fastest, each spot once per call level."""
     names = list(manifest.world)
-    combos = [(corners, level, hiding) for hiding, level, corners in itertools.product(manifest.hiding, manifest.call_levels, manifest.corners)]
+    combos = [(corners, hiding) for hiding, corners in itertools.product(manifest.hiding, manifest.corners)]
     turn = itertools.cycle(combos)
     out: list[Task] = []
     for values in itertools.product(*(axis_values(manifest.world[name]) for name in names)):
         world = dict(zip(names, values, strict=True))
         WorldGenerator.config_model(WorldGeneratorType.ROOMS).model_validate(world)
         for variant in range(manifest.world_variants):
-            for index in range(manifest.tasks_per_world):
-                corners, level, hiding = next(turn)
-                out.append(Task(world=world, world_seed=manifest.seed * 1000 + variant, index=index, corners=corners, call_level=level, hiding=hiding))
+            for index in range(manifest.spots_per_world):
+                corners, hiding = next(turn)
+                out.extend(Task(world=world, world_seed=manifest.seed * 1000 + variant, index=index, corners=corners, call_level=level, hiding=hiding) for level in manifest.call_levels)
     return out
 
 
