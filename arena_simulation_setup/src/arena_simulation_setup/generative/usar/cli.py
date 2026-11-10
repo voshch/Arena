@@ -18,11 +18,8 @@ from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
 
 from .manifest import Manifest
 from .placement import Hideout, hide
-from .sampler import Task, held_out, tasks
+from .sampler import TEST, TUNE, Task, held_out, tasks
 from .scenario import build, pack
-
-TEST = "test"
-TUNE = "tune"
 
 
 @attrs.frozen
@@ -57,7 +54,7 @@ def _view(key: str, out: Path | None) -> WorldView:
 def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: bool = False) -> Report:
     """Generate every task, one world per world configuration and seed, writing only with `write`."""
     items = tasks(manifest)
-    test = held_out([item.world_key for item in items], manifest.test_worlds)
+    test = held_out(manifest)
     if limit:
         items = items[: limit * len(manifest.call_levels)]
     groups: dict[str, list[Task]] = {}

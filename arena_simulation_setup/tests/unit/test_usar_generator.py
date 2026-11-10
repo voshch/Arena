@@ -26,6 +26,13 @@ def manifest(**overrides: object) -> Manifest:
     return Manifest.model_validate(data)
 
 
+ROOMS_3X3: dict[str, object] = {"world": {"rows": 3, "cols": 3}, "world_variants": 2, "corners": [0, 1]}
+
+
+def groups(*entries: dict[str, object], **overrides: object) -> Manifest:
+    return Manifest.model_validate({"name": "unit", "spots_per_world": 2, "worlds": list(entries), **overrides})
+
+
 def rooms(seed: int) -> World:
     return WorldGenerator(WorldGeneratorType.ROOMS, {"rows": 3, "cols": 4, "loops": 1}, seed).compute()
 
@@ -110,8 +117,9 @@ def test_the_call_levels_of_a_spot_share_the_person_and_differ_only_in_volume(tm
 
 
 def test_the_test_split_follows_from_the_world_keys_alone():
-    keys = ["usar_rooms_b", "usar_rooms_a", "usar_rooms_c"]
-    assert held_out(keys, 1) == held_out(list(reversed(keys)), 1) == {"usar_rooms_a"}
+    keys = sorted({item.world_key for item in tasks(manifest(world_variants=3))})
+    assert held_out(manifest(world_variants=3, test_worlds=1)) == {keys[0]}
+    assert held_out(manifest(world_variants=3, test_worlds=2)) == set(keys[:2])
 
 
 def test_a_limited_run_keeps_the_full_runs_split():
@@ -135,9 +143,47 @@ def test_a_repeated_call_level_is_refused():
         manifest(call_levels=["weak", "weak"])
 
 
-def test_holding_out_every_world_is_refused():
+def test_holding_out_every_world_is_allowed_and_more_is_refused():
+    assert held_out(manifest(test_worlds=2)) == {item.world_key for item in tasks(manifest(test_worlds=2))}
     with pytest.raises(pydantic.ValidationError, match="test worlds"):
-        manifest(test_worlds=2)
+        manifest(test_worlds=3)
+
+
+def test_the_short_form_is_one_group_with_the_same_tasks():
+    short = manifest(test_worlds=1)
+    long = groups({"world": {"rows": 3, "cols": 3}, "world_variants": 2, "corners": [0, 1, 2], "test_worlds": 1}, spots_per_world=3)
+    assert len(short.worlds) == 1
+    assert [item.to_dict() for item in tasks(short)] == [item.to_dict() for item in tasks(long)]
+    assert held_out(short) == held_out(long)
+
+
+def test_the_short_form_and_a_group_list_together_are_refused():
+    with pytest.raises(pydantic.ValidationError, match="not both"):
+        manifest(worlds=[ROOMS_3X3])
+
+
+@pytest.mark.parametrize("data", [{"name": "unit"}, {"name": "unit", "worlds": []}])
+def test_a_manifest_without_worlds_is_refused(data: dict[str, object]):
+    with pytest.raises(pydantic.ValidationError):
+        Manifest.model_validate(data)
+
+
+def test_a_world_in_two_groups_is_refused():
+    with pytest.raises(pydantic.ValidationError, match="two groups"):
+        groups(ROOMS_3X3, ROOMS_3X3)
+
+
+def test_each_group_holds_out_its_own_worlds_and_cycles_its_own_corners():
+    m = groups({**ROOMS_3X3, "test_worlds": 2}, {"world": {"rows": 1, "cols": 6}, "corners": [0], "test_worlds": 0})
+    corridor = {item.world_key for item in tasks(m) if item.world["rows"] == 1}
+    assert len(corridor) == 1 and not corridor & held_out(m)
+    assert len(held_out(m)) == 2
+    assert {item.corners for item in tasks(m) if item.world["rows"] == 1} == {0}
+
+
+def test_an_unknown_world_axis_in_a_group_is_refused():
+    with pytest.raises(pydantic.ValidationError, match="no configuration field"):
+        groups({"world": {"floors": 2}, "corners": [0]})
 
 
 def test_an_unknown_world_axis_is_refused():

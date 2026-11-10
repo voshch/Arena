@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import itertools
-import json
 
 import attrs
 
-from arena_simulation_setup.generative.egobench.manifest import Scalar, axis_values
+from arena_simulation_setup.generative.egobench.manifest import Scalar
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 
-from .manifest import CallLevel, Hiding, Manifest
+from .manifest import CallLevel, Hiding, Manifest, world_key
+
+TEST = "test"
+TUNE = "tune"
 
 
 @attrs.frozen
@@ -26,8 +27,7 @@ class Task:
     @property
     def world_key(self) -> str:
         """Name shared by every task on the same generated world."""
-        digest = hashlib.sha1(json.dumps([self.world, self.world_seed], sort_keys=True).encode()).hexdigest()[:8]
-        return f"usar_rooms_{digest}"
+        return world_key(self.world, self.world_seed)
 
     @property
     def spot_key(self) -> str:
@@ -51,21 +51,19 @@ class Task:
 
 
 def tasks(manifest: Manifest) -> list[Task]:
-    """Every task of the manifest: `spots_per_world` spots per world, the spot axes taken in turn across worlds, corners fastest, each spot once per call level."""
-    names = list(manifest.world)
-    combos = [(corners, hiding) for hiding, corners in itertools.product(manifest.hiding, manifest.corners)]
-    turn = itertools.cycle(combos)
+    """Every task of the manifest: `spots_per_world` spots per world, each group taking its spot axes in turn across its worlds, corners fastest, each spot once per call level."""
     out: list[Task] = []
-    for values in itertools.product(*(axis_values(manifest.world[name]) for name in names)):
-        world = dict(zip(names, values, strict=True))
-        WorldGenerator.config_model(WorldGeneratorType.ROOMS).model_validate(world)
-        for variant in range(manifest.world_variants):
-            for index in range(manifest.spots_per_world):
-                corners, hiding = next(turn)
-                out.extend(Task(world=world, world_seed=manifest.seed * 1000 + variant, index=index, corners=corners, call_level=level, hiding=hiding) for level in manifest.call_levels)
+    for group in manifest.worlds:
+        turn = itertools.cycle([(corners, hiding) for hiding, corners in itertools.product(manifest.hiding, group.corners)])
+        for world in group.configurations():
+            WorldGenerator.config_model(WorldGeneratorType.ROOMS).model_validate(world)
+            for variant in range(group.world_variants):
+                for index in range(manifest.spots_per_world):
+                    corners, hiding = next(turn)
+                    out.extend(Task(world=world, world_seed=manifest.world_seed(variant), index=index, corners=corners, call_level=level, hiding=hiding) for level in manifest.call_levels)
     return out
 
 
-def held_out(keys: list[str], count: int) -> set[str]:
-    """The world keys held out for testing: the first `count` in key order, so the split follows from the keys alone."""
-    return set(sorted(set(keys))[:count])
+def held_out(manifest: Manifest) -> set[str]:
+    """The world keys held out for testing: of each group its first `test_worlds` in key order, so the split follows from the keys alone."""
+    return {key for group in manifest.worlds for key in sorted(manifest.keys(group))[: group.test_worlds]}
