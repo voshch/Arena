@@ -1,0 +1,99 @@
+# Standing at the push handles: walk_pushwheelchair's mean pose (its harmonics dropped), hands on the handles.
+name: stand_pushwheelchair
+symmetric: false
+phase_warp: {split: 0.5}
+cadence: {base: 0.4, per_speed: 0.4101478924137105, min: 0.4, max: 2.2}
+gain: {per_speed: 1.2, min: 1.0, max: 1.0, factor: 1.0}
+limits:
+  l_y_collar: [-0.5048183809917954, 0.5]
+  l_p_collar: [-0.2, 0.6000676086729128]
+  r_y_collar: [-0.5035611971720907, 0.5]
+  r_p_collar: [-0.2, 0.6003436677244195]
+  l_y_hip: [-0.17981740832328794, 0.6]
+  l_r_wrist: [-1.4, 1.400980810782847]
+signals:
+  l_y_collar: {mean: -0.4669073496822109}
+  r_y_collar: {mean: -0.4688654779891265}
+  l_p_collar: {mean: 0.5734327336784968}
+  r_p_collar: {mean: 0.599803347899349}
+  l_y_shoulder: {mean: -0.9270986039469655}
+  r_y_shoulder: {mean: 0.9962981354702576}
+  l_p_shoulder: {mean: 0.938865882430152}
+  r_p_shoulder: {mean: 1.013939591667697}
+  l_r_shoulder: {mean: -0.8099129099776876}
+  r_r_shoulder: {mean: 0.7810618847116385}
+  l_elbow: {mean: 0.8425529149943146}
+  r_elbow: {mean: 0.8020296379469326}
+  l_y_hip: {mean: -0.04447358232387273}
+  r_y_hip: {mean: 0.14320331961384036}
+  l_p_hip: {mean: -0.04060781410102164}
+  r_p_hip: {mean: 0.014219099797651841}
+  l_r_hip: {mean: 0.2811511682899642}
+  r_r_hip: {mean: 0.3223888121176564}
+  l_knee: {mean: -0.512913286712008}
+  r_knee: {mean: -0.45350272768662164}
+  l_y_ankle: {mean: -0.14726694273384114}
+  r_y_ankle: {mean: 0.0763418465703018}
+  l_ankle: {mean: -0.023067583608941098}
+  r_ankle: {mean: -0.010721803771309485}
+  l_r_wrist: {mean: 1.3987507592179045}
+  r_r_wrist: {mean: 1.3999999999878767}
+  l_wrist: {mean: 0.5054738877087259}
+  r_wrist: {mean: 0.426872519318979}
+  l_d_wrist: {mean: -0.23038446506451082}
+  r_d_wrist: {mean: -0.260750536295032}
+  r_waist: {mean: 0.05558401260653427}
+  y_waist: {mean: 0.0003084698507422089}
+  waist: {mean: 0.027008646906656223}
+  r_spine: {mean: -0.0429449416604525}
+  y_spine: {mean: -0.02468265695597723}
+  spine: {mean: 0.2799643485288548}
+  r_chest: {mean: 0.007431717854142977}
+  y_chest: {mean: -0.03734591684712389}
+  chest: {mean: 0.23181346940960476}
+  r_head: {mean: -0.1425866920716124}
+  y_head: {mean: 0.2146550545750385}
+  p_head: {mean: -0.15112921487288047}
+joints:
+  l_y_collar: {signal: l_y_collar, shift: 0.0}
+  r_y_collar: {signal: r_y_collar, shift: 0.0}
+  l_p_collar: {signal: l_p_collar, shift: 0.0}
+  r_p_collar: {signal: r_p_collar, shift: 0.0}
+  l_y_shoulder: {signal: l_y_shoulder, shift: 0.0}
+  r_y_shoulder: {signal: r_y_shoulder, shift: 0.0}
+  l_p_shoulder: {signal: l_p_shoulder, shift: 0.0}
+  r_p_shoulder: {signal: r_p_shoulder, shift: 0.0}
+  l_r_shoulder: {signal: l_r_shoulder, shift: 0.0}
+  r_r_shoulder: {signal: r_r_shoulder, shift: 0.0}
+  l_elbow: {signal: l_elbow, shift: 0.0}
+  r_elbow: {signal: r_elbow, shift: 0.0}
+  l_y_hip: {signal: l_y_hip, shift: 0.0}
+  r_y_hip: {signal: r_y_hip, shift: 0.0}
+  l_p_hip: {signal: l_p_hip, shift: 0.0}
+  r_p_hip: {signal: r_p_hip, shift: 0.0}
+  l_r_hip: {signal: l_r_hip, shift: 0.0}
+  r_r_hip: {signal: r_r_hip, shift: 0.0}
+  l_knee: {signal: l_knee, shift: 0.0}
+  r_knee: {signal: r_knee, shift: 0.0}
+  l_y_ankle: {signal: l_y_ankle, shift: 0.0}
+  r_y_ankle: {signal: r_y_ankle, shift: 0.0}
+  l_ankle: {signal: l_ankle, shift: 0.0}
+  r_ankle: {signal: r_ankle, shift: 0.0}
+  l_r_wrist: {signal: l_r_wrist, shift: 0.0}
+  r_r_wrist: {signal: r_r_wrist, shift: 0.0}
+  l_wrist: {signal: l_wrist, shift: 0.0}
+  r_wrist: {signal: r_wrist, shift: 0.0}
+  l_d_wrist: {signal: l_d_wrist, shift: 0.0}
+  r_d_wrist: {signal: r_d_wrist, shift: 0.0}
+  r_waist: {signal: r_waist, shift: 0.0}
+  y_waist: {signal: y_waist, shift: 0.0}
+  waist: {signal: waist, shift: 0.0}
+  r_spine: {signal: r_spine, shift: 0.0}
+  y_spine: {signal: y_spine, shift: 0.0}
+  spine: {signal: spine, shift: 0.0}
+  r_chest: {signal: r_chest, shift: 0.0}
+  y_chest: {signal: y_chest, shift: 0.0}
+  chest: {signal: chest, shift: 0.0}
+  r_head: {signal: r_head, shift: 0.0}
+  y_head: {signal: y_head, shift: 0.0}
+  p_head: {signal: p_head, shift: 0.0}

@@ -595,6 +595,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     def _support(self, ped: Pedestrian) -> Support | None:
         return self._supports.get(ped.id)
 
+    def _interaction(self, ped: Pedestrian) -> str | None:
+        return InteractionType(ped.interaction_type).name if ped.interaction_id >= 0 else None
+
     def _apply_held_seats(self, held: dict[str, list[int]]) -> None:
         if held == self._held_seats:
             return

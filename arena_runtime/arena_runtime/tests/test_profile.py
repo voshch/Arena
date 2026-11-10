@@ -511,3 +511,47 @@ def test_pose_hold_names_each_hand_grip_radius_and_inherits_per_hand(tmp_path: P
 def test_pose_hold_rejects_unknown_hands_and_implausible_radii(hold: object) -> None:
     with pytest.raises(ValueError, match="hold"):
         resolve_pose_profile({"hold": hold})
+
+
+def test_pose_while_gives_an_interaction_its_own_profile(tmp_path: Path) -> None:
+    builtin = tmp_path / "builtin"
+    builtin.mkdir()
+    (builtin / "carer.yaml").write_text("name: carer\npose:\n  while:\n    PUSH_WHEELCHAIR:\n      hold: {r: 0.014}\n      walk: {base: walk_pushwheelchair}\n      idle: {base: stand_pushwheelchair}\n")
+    (builtin / "nurse.yaml").write_text("name: nurse\nextends: carer\npose:\n  walk: {gain: {factor: 0.9}}\n")
+    profile = resolve_pose_profile(agent_type_pose_section("nurse", builtin))
+    pushing = profile.while_in("PUSH_WHEELCHAIR")
+    library = load_library()
+
+    assert profile.while_in(None) is profile and profile.while_in("TALK_TO") is profile
+    assert profile.hold == {} and pushing.hold == {"r": Grip(0.014)}
+    assert pushing.walk.joints == library["walk_pushwheelchair"].joints and pushing.idle is not None
+    assert profile.walk.gain.factor == pytest.approx(0.9) and pushing.walk.gain.factor == library["walk_pushwheelchair"].gain.factor
+    assert pushing.during == {}
+
+
+def test_pose_while_merges_an_interaction_section_along_extends(tmp_path: Path) -> None:
+    builtin = tmp_path / "builtin"
+    builtin.mkdir()
+    (builtin / "carer.yaml").write_text("name: carer\npose:\n  while:\n    PUSH_WHEELCHAIR:\n      hold: {l: 0.014, r: 0.014}\n      walk: {base: walk_pushwheelchair}\n      idle: {base: stand_pushwheelchair}\n")
+    (builtin / "slow_carer.yaml").write_text("name: slow_carer\nextends: carer\npose:\n  while:\n    PUSH_WHEELCHAIR:\n      hold: {r: 0.016}\n      walk: {gain: {factor: 0.8}}\n")
+    pushing = resolve_pose_profile(agent_type_pose_section("slow_carer", builtin)).while_in("PUSH_WHEELCHAIR")
+    library = load_library()
+
+    assert pushing.hold == {"l": Grip(0.014), "r": Grip(0.016)}
+    assert pushing.walk.joints == library["walk_pushwheelchair"].joints and pushing.walk.gain.factor == pytest.approx(0.8)
+    assert pushing.idle is not None and pushing.idle.joints == library["stand_pushwheelchair"].joints
+
+
+@pytest.mark.parametrize("during", [["PUSH_WHEELCHAIR"], {"PUSH_WHEELCHAIR": "walk_pushwheelchair"}, {"A": {"while": {"B": {}}}}, {"A": {"crawl": {}}}])
+def test_pose_while_rejects_anything_but_pose_sections_by_interaction(during: object) -> None:
+    with pytest.raises(ValueError, match="pose"):
+        resolve_pose_profile({"while": during})
+
+
+def test_stand_pushwheelchair_is_the_push_walk_held_still() -> None:
+    library = load_library()
+    walk, stand = library["walk_pushwheelchair"], library["stand_pushwheelchair"]
+    gen = GaitGenerator()
+    held = [gen.compute(0, 0, 0.0, 0.0, phase=phi, profile=resolve_pose_profile({"idle": {"base": "stand_pushwheelchair"}})) for phi in (0.0, 2.0)]
+    assert held[0] == held[1]
+    assert set(stand.joints) == set(walk.joints)
