@@ -9,7 +9,9 @@ import pytest
 pytest.importorskip("rclpy")
 pytest.importorskip("arena_humansim_msgs")
 
+from arena_humansim.core.interaction_kinds import InteractionType
 from arena_humansim_msgs.msg import AgentMeta
+from arena_people_msgs.msg import Pedestrian
 
 from arena_runtime.humans.arena_humansim.arena_humansim import ArenaHumanSimulator
 from arena_runtime.humans.hands import Grip, held_pose
@@ -84,3 +86,12 @@ def test_an_interaction_grip_is_solved_with_its_type_and_dropped_alone_when_it_f
     assert profile.while_in("PUSH_WHEELCHAIR").hold == {}
     assert profile.while_in("PUSH_WHEELCHAIR").walk == profile.during["PUSH_WHEELCHAIR"].walk != profile.walk, "the push keeps its own walk"
     assert len(adapter.node.logger.warnings) == 1 and "PUSH_WHEELCHAIR" in adapter.node.logger.warnings[0]
+
+
+def test_a_ped_in_a_humansim_interaction_names_it_for_its_pose_profile() -> None:
+    adapter = _adapter()
+    pushing = Pedestrian(interaction_id=4, interaction_type=int(InteractionType.PUSH_WHEELCHAIR))
+    free = Pedestrian(interaction_id=-1, interaction_type=int(InteractionType.PUSH_WHEELCHAIR))
+
+    assert adapter._interaction(pushing) == "PUSH_WHEELCHAIR"
+    assert adapter._interaction(free) is None

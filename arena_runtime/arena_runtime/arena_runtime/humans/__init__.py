@@ -4,7 +4,6 @@ import abc
 import asyncio
 import collections
 import copy
-import functools
 import itertools
 import math
 import typing
@@ -72,20 +71,6 @@ _STREAM_QOS = rclpy.qos.QoSProfile(
     history=rclpy.qos.HistoryPolicy.KEEP_LAST,
     depth=1,
 )
-
-
-@functools.cache
-def _interaction_names() -> Mapping[int, str]:
-    try:
-        from arena_humansim.core.interaction_kinds import InteractionType
-    except ImportError:
-        return {}
-    return {int(kind): kind.name for kind in InteractionType}
-
-
-def interaction_name(ped: Pedestrian) -> str | None:
-    """Name of the ped's active humansim interaction (`Pedestrian.interaction_type`), None outside one."""
-    return _interaction_names().get(ped.interaction_type) if ped.interaction_id >= 0 else None
 
 
 def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
@@ -337,7 +322,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
-            profile = self._pose_profile_for(ped.agent_type).while_in(interaction_name(ped))
+            profile = self._pose_profile_for(ped.agent_type).while_in(self._interaction(ped))
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=profile)
             state = self._gait.joint_state(angles, stamp=stamp)
             if state is not None:
@@ -422,6 +407,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""
+        return None
+
+    def _interaction(self, ped: Pedestrian) -> str | None:
+        """Name of the interaction the ped is in, the key of its pose profile's `while` section, None outside one."""
         return None
 
     def _seat_clip(self, ped: Pedestrian, seat: Support) -> str:
