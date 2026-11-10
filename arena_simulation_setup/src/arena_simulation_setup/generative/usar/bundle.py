@@ -96,17 +96,18 @@ def _readme(bundle: str, manifest: Manifest, split: str, outcomes: Sequence[Outc
     )
 
 
+def targets(report: Report, root: Path, name: str) -> dict[Path, list[Outcome]]:
+    """The bundle directory of every split with tasks, the test split first, with the tasks it holds."""
+    found = {root / f"{name}_{split}": [outcome for outcome in report.outcomes if outcome.split == split] for split in SPLITS}
+    return {bundle: outcomes for bundle, outcomes in found.items() if outcomes}
+
+
 def write(manifest: Manifest, report: Report, root: Path, name: str) -> list[Path]:
     """Write `root/<name>_<split>` for every split with worlds, the test split first, each replacing the bundle already there."""
     rejected = len(report.outcomes) - report.placed
     if rejected:
         raise ValueError(f"{rejected} of {len(report.outcomes)} tasks rejected, a suite needs every one placed")
-    written: list[Path] = []
-    for split in SPLITS:
-        outcomes = [outcome for outcome in report.outcomes if outcome.split == split]
-        if not outcomes:
-            continue
-        bundle = root / f"{name}_{split}"
+    for bundle, outcomes in targets(report, root, name).items():
         if bundle.exists():
             shutil.rmtree(bundle)
         worlds = _by_world(outcomes)
@@ -115,8 +116,7 @@ def write(manifest: Manifest, report: Report, root: Path, name: str) -> list[Pat
             save_generated(WorldView(bundle / "worlds" / key), built.world, built.files)
         suite = stages(outcomes)
         (bundle / "suite.yaml").write_text(_dump({"stages": suite}))
-        (bundle / "README.md").write_text(_readme(bundle.name, manifest, split, outcomes))
-        index = {"manifest": manifest.name, "seed": manifest.seed, "split": split, "worlds": list(worlds), "stages": len(suite), "checksum": checksum(bundle), "tasks": [outcome.to_dict() for outcome in outcomes]}
+        (bundle / "README.md").write_text(_readme(bundle.name, manifest, outcomes[0].split, outcomes))
+        index = {"manifest": manifest.name, "seed": manifest.seed, "split": outcomes[0].split, "worlds": list(worlds), "stages": len(suite), "checksum": checksum(bundle), "tasks": [outcome.to_dict() for outcome in outcomes]}
         (bundle / _index_name(bundle)).write_text(_dump(index))
-        written.append(bundle)
-    return written
+    return list(targets(report, root, name))

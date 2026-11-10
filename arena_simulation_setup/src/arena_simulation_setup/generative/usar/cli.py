@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,8 +15,10 @@ import yaml
 from arena_simulation_setup.generative.egobench.encounter import Rejected
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 from arena_simulation_setup.generative.world.world_generator import save_generated
+from arena_simulation_setup.tree import imported_root
 from arena_simulation_setup.tree.World import World, WorldIdentifier, WorldView
 
+from . import bundle
 from .manifest import Manifest
 from .placement import Hideout, hide
 from .sampler import TEST, TUNE, Task, held_out, tasks
@@ -106,21 +109,51 @@ def _index_path(report: Report, manifest: Manifest, out: Path | None) -> Path | 
     return first.parent / f"{manifest.name}.index.yaml" if first is not None else None
 
 
+SUITE_NAME = re.compile(r"[a-z0-9_]+")
+SUITES = "suites"
+
+
+def _suite(manifest: Manifest, report: Report, name: str, write: bool) -> int:
+    """Write the bundles of a fully placed report, or name them on a dry run."""
+    if report.placed < len(report.outcomes):
+        print("a suite needs every task placed, nothing written")
+        return 1
+    root = imported_root() / SUITES
+    if write:
+        for path in bundle.write(manifest, report, root, name):
+            print(f"bundle written to {path}")
+        return 0
+    for path, outcomes in bundle.targets(report, root, name).items():
+        print(f"would write {path} ({len({o.task.world_key for o in outcomes})} worlds, {len(outcomes)} stages)")
+    print("dry run, pass --write to save")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="generate_usar", description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--out", type=Path, help="directory to write the worlds and the index into, default the writable world root")
     parser.add_argument("--limit", type=int, default=0, help="generate only the first N spots, each at every call level")
     parser.add_argument("--write", action="store_true", help="write the worlds, a dry run without it")
+    parser.add_argument("--suite", help="write one benchmark suite bundle <SUITE>_<split> per split into the imported suites root instead of bare worlds")
     args = parser.parse_args(argv)
+    if args.suite is not None:
+        if SUITE_NAME.fullmatch(args.suite) is None:
+            parser.error(f"a suite name is lowercase letters, digits and underscores, got {args.suite!r}")
+        if args.out is not None:
+            parser.error("--suite takes no --out, its bundles go to the imported suites root")
+        if args.limit:
+            parser.error("--suite takes no --limit, a bundle holds every task of its split")
 
     manifest = Manifest.load(args.manifest)
-    report = run(manifest, out=args.out, limit=args.limit, write=args.write)
+    report = run(manifest, out=args.out, limit=args.limit, write=args.write and args.suite is None)
     for outcome in report.outcomes:
         if outcome.reason is not None:
             print(f"rejected {outcome.task.world_key}/{outcome.task.scenario_key}: {outcome.reason}")
     placed_worlds = {o.task.world_key for o in report.outcomes if o.reason is None}
     print(f"{report.placed} of {len(report.outcomes)} scenarios placed in {len(placed_worlds)} worlds")
+    if args.suite is not None:
+        return _suite(manifest, report, args.suite, args.write)
     if args.write:
         index = _index_path(report, manifest, args.out)
         if index is not None:
