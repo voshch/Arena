@@ -529,6 +529,19 @@ def test_pose_while_gives_an_interaction_its_own_profile(tmp_path: Path) -> None
     assert pushing.during == {}
 
 
+def test_pose_while_merges_an_interaction_section_along_extends(tmp_path: Path) -> None:
+    builtin = tmp_path / "builtin"
+    builtin.mkdir()
+    (builtin / "carer.yaml").write_text("name: carer\npose:\n  while:\n    PUSH_WHEELCHAIR:\n      hold: {l: 0.014, r: 0.014}\n      walk: {base: walk_pushwheelchair}\n      idle: {base: stand_pushwheelchair}\n")
+    (builtin / "slow_carer.yaml").write_text("name: slow_carer\nextends: carer\npose:\n  while:\n    PUSH_WHEELCHAIR:\n      hold: {r: 0.016}\n      walk: {gain: {factor: 0.8}}\n")
+    pushing = resolve_pose_profile(agent_type_pose_section("slow_carer", builtin)).while_in("PUSH_WHEELCHAIR")
+    library = load_library()
+
+    assert pushing.hold == {"l": Grip(0.014), "r": Grip(0.016)}
+    assert pushing.walk.joints == library["walk_pushwheelchair"].joints and pushing.walk.gain.factor == pytest.approx(0.8)
+    assert pushing.idle is not None and pushing.idle.joints == library["stand_pushwheelchair"].joints
+
+
 @pytest.mark.parametrize("during", [["PUSH_WHEELCHAIR"], {"PUSH_WHEELCHAIR": "walk_pushwheelchair"}, {"A": {"while": {"B": {}}}}, {"A": {"crawl": {}}}])
 def test_pose_while_rejects_anything_but_pose_sections_by_interaction(during: object) -> None:
     with pytest.raises(ValueError, match="pose"):

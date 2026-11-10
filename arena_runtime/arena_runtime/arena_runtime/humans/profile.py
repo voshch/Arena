@@ -429,6 +429,11 @@ def default_profile() -> PoseProfile:
 def _merge_pose_sections(parent: Mapping[str, Any], child: Mapping[str, Any]) -> dict[str, Any]:
     merged: dict[str, Any] = {gait: dict(spec or {}) for gait, spec in parent.items()}
     for gait, spec in child.items():
+        if gait == "while":
+            during = merged.setdefault("while", {})
+            for name, section in (spec or {}).items():
+                during[name] = _merge_pose_sections(during.get(name) or {}, section or {})
+            continue
         target = merged.setdefault(gait, {})
         for key, value in (spec or {}).items():
             if key in ("joints", "limits"):
