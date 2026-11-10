@@ -25,12 +25,12 @@ WEIGHTS = {'light': alphabet.LIGHT, 'heavy': alphabet.HEAVY, 'double': alphabet.
 class Symbol(pydantic.BaseModel):
     """What a character means beyond the alphabet, including arms no glyph can spell."""
 
-    width: float | None = None
-    weight: Weight | None = None
-    fill: bool = False
-    material: str | None = None
-    zone: str | None = None
-    sockets: list[str] | dict[str, Weight] | None = None
+    width: float | None = pydantic.Field(default=None, description='Width in meters overriding the weight (unset = from weight, or the room extent without sockets).')
+    weight: Weight | None = pydantic.Field(default=None, description='Named width of the symbol (unset = light, or full with fill).')
+    fill: bool = pydantic.Field(False, description='Fill the whole cell with free space.')
+    material: str | None = pydantic.Field(default=None, description='Floor material of the symbol zone (unset = default).')
+    zone: str | None = pydantic.Field(default=None, description='Zone name, cells sharing it becoming one region (unset = unnamed).')
+    sockets: list[str] | dict[str, Weight] | None = pydantic.Field(default=None, description='Directions the symbol connects to, as a list at one weight or a mapping of direction to weight (unset = no edges).')
 
     @pydantic.field_validator('sockets')
     @classmethod
@@ -47,11 +47,11 @@ class Symbol(pydantic.BaseModel):
 
 
 class Directives(pydantic.BaseModel):
-    cell: float | None = None
-    light: float | None = None
-    heavy: float | None = None
-    double: float | None = None
-    legend: dict[str, Symbol] = pydantic.Field(default_factory=dict)
+    cell: float | None = pydantic.Field(None, description='Cell size in meters (unset = the configuration value).')
+    light: float | None = pydantic.Field(None, description='Light corridor width in meters (unset = the configuration value).')
+    heavy: float | None = pydantic.Field(None, description='Heavy corridor width in meters (unset = the configuration value).')
+    double: float | None = pydantic.Field(None, description='Double corridor width in meters (unset = the configuration value).')
+    legend: dict[str, Symbol] = pydantic.Field(default_factory=dict, description='Meaning of characters beyond the glyph alphabet.')
 
 
 @attrs.define
@@ -98,11 +98,11 @@ def normalize(text: str) -> str:
 
 class WorldGeneratorSketch(WithPedestrians):
     class Configuration(PedestrianConfiguration):
-        sketch: str = pydantic.Field(DEFAULT_SKETCH, json_schema_extra={"widget": "sketch"})
-        cell: float = 8.0
-        light: float = 1.5
-        heavy: float = 3.0
-        double: float = 6.0
+        sketch: str = pydantic.Field(DEFAULT_SKETCH, json_schema_extra={"widget": "sketch"}, description='Grid of box-drawing glyphs with optional ! directive lines, built as drawn.')
+        cell: float = pydantic.Field(8.0, description='Cell size in meters, also the width of a full block.')
+        light: float = pydantic.Field(1.5, description='Corridor width of a light glyph in meters.')
+        heavy: float = pydantic.Field(3.0, description='Corridor width of a heavy glyph in meters.')
+        double: float = pydantic.Field(6.0, description='Corridor width of a double glyph in meters.')
 
     config: Configuration
     _frame: GridFrame | None

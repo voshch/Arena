@@ -23,6 +23,7 @@ HOLDER_EXIT = (1.0, 1.0)
 @pytest.fixture
 def manager(rclpy_context: object, request: pytest.FixtureRequest) -> Iterator[object]:
     from arena_humansim.core.agent_manager import AgentManager
+    from arena_humansim.params import MODE_SUBSYSTEM
     from rclpy.node import Node
     from rclpy.parameter import Parameter
 
@@ -31,7 +32,7 @@ def manager(rclpy_context: object, request: pytest.FixtureRequest) -> Iterator[o
         Parameter("dt", Parameter.Type.DOUBLE, 0.05),
         Parameter("bt_tick_interval", Parameter.Type.INTEGER, 1),
         Parameter("global_planner", Parameter.Type.STRING, "navmesh"),
-        Parameter("mode", Parameter.Type.STRING, AgentManager.MODE_SUBSYSTEM),
+        Parameter("mode", Parameter.Type.STRING, MODE_SUBSYSTEM),
         Parameter("publish_markers", Parameter.Type.INTEGER, 0),
     ]
     orig_init = Node.__init__

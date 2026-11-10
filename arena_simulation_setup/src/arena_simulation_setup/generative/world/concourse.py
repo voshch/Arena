@@ -105,15 +105,15 @@ class BranchPlacement:
 class SideBranchFeature(BaseModel):
     """Parametric side corridor or room attached at arc-length s along the spine."""
 
-    at_s: float = Field(10.0, ge=1.0)
-    width: float = Field(3.0, ge=0.8)
-    length: float = Field(6.0, ge=1.0)
-    side: BranchSide = Field(default=BranchSide.BOTH)
-    angle_deg: float = Field(90.0, ge=15.0, le=165.0)
-    is_room: bool = Field(False)
-    door_width: float | None = Field(default=None, ge=0.5)
-    jamb_thickness: float = Field(0.25, ge=0.05)
-    door_activation_distance: float = Field(1.2, ge=0.5)
+    at_s: float = Field(10.0, ge=1.0, description="Arc length along the spine in meters where the branch attaches.")
+    width: float = Field(3.0, ge=0.8, description="Branch width in meters.")
+    length: float = Field(6.0, ge=1.0, description="Branch length from the spine in meters.")
+    side: BranchSide = Field(default=BranchSide.BOTH, description="Side of the spine the branch leaves on.")
+    angle_deg: float = Field(90.0, ge=15.0, le=165.0, description="Angle in degrees between the spine and the branch.")
+    is_room: bool = Field(False, description="Make the branch a doorway room instead of an open corridor.")
+    door_width: float | None = Field(default=None, ge=0.5, description="Doorway width in meters for a room branch, at most the branch width (unset = branch width).")
+    jamb_thickness: float = Field(0.25, ge=0.05, description="Door jamb thickness in meters.")
+    door_activation_distance: float = Field(1.2, ge=0.5, description="Distance in meters at which the doorway door activates for an approaching agent.")
 
     @model_validator(mode="after")
     def validate_door_width(self) -> SideBranchFeature:
@@ -126,11 +126,11 @@ class SideBranchFeature(BaseModel):
 class ElevatorBayFeature(BaseModel):
     """Enclosed elevator compartment at spine start or end."""
 
-    at_s: float = Field(0.0, ge=0.0)
-    cabin_width: float = Field(2.5, ge=1.2)
-    cabin_depth: float = Field(2.5, ge=1.2)
-    door_width: float = Field(1.4, ge=0.8)
-    destinations: list[str] = Field(default_factory=list)
+    at_s: float = Field(0.0, ge=0.0, description="Arc length along the spine in meters where the bay sits.")
+    cabin_width: float = Field(2.5, ge=1.2, description="Cabin width in meters.")
+    cabin_depth: float = Field(2.5, ge=1.2, description="Cabin depth in meters.")
+    door_width: float = Field(1.4, ge=0.8, description="Cabin door width in meters, at most the cabin width.")
+    destinations: list[str] = Field(default_factory=list, description="Destination names of the elevator.")
 
     @model_validator(mode="after")
     def validate_door_width(self) -> ElevatorBayFeature:
@@ -143,26 +143,26 @@ class ElevatorBayFeature(BaseModel):
 class PillarFeature(BaseModel):
     """Single structural column obstacle along the spine."""
 
-    at_s: float = Field(default=12.0, ge=0.5)
-    lateral_offset: float = Field(default=0.0)
-    lateral_ratio: float | None = Field(default=None, ge=-0.85, le=0.85)
-    shape: PillarShape = Field(default=PillarShape.CYLINDER)
-    radius: float = Field(default=0.35, ge=0.1)
-    width: float = Field(default=0.6, ge=0.1)
-    depth: float = Field(default=0.6, ge=0.1)
-    wall_margin: float = Field(default=0.15, ge=0.05)
+    at_s: float = Field(default=12.0, ge=0.5, description="Arc length along the spine in meters where the pillar stands.")
+    lateral_offset: float = Field(default=0.0, description="Sideways offset from the spine in meters.")
+    lateral_ratio: float | None = Field(default=None, ge=-0.85, le=0.85, description="Sideways offset as a fraction of the half width, overriding the offset (unset = use the offset).")
+    shape: PillarShape = Field(default=PillarShape.CYLINDER, description="Pillar cross-section shape.")
+    radius: float = Field(default=0.35, ge=0.1, description="Radius in meters of a cylindrical pillar.")
+    width: float = Field(default=0.6, ge=0.1, description="Width in meters of a box pillar.")
+    depth: float = Field(default=0.6, ge=0.1, description="Depth in meters of a box pillar.")
+    wall_margin: float = Field(default=0.15, ge=0.05, description="Minimum clearance in meters between the pillar and the walls.")
 
 
 class ColonnadeFeature(BaseModel):
     """Repeated series of pillars along a spine interval."""
 
-    start_s: float = Field(default=5.0, ge=0.5)
-    end_s: float = Field(default=20.0, ge=1.0)
-    spacing: float = Field(default=4.0, ge=1.0)
-    lateral_offset: float = Field(default=0.0)
-    lateral_ratio: float | None = Field(default=None, ge=-0.85, le=0.85)
-    radius: float = Field(default=0.3, ge=0.1)
-    wall_margin: float = Field(default=0.15, ge=0.05)
+    start_s: float = Field(default=5.0, ge=0.5, description="Arc length along the spine in meters where the colonnade starts.")
+    end_s: float = Field(default=20.0, ge=1.0, description="Arc length along the spine in meters where the colonnade ends, at least the start.")
+    spacing: float = Field(default=4.0, ge=1.0, description="Distance between pillars along the spine in meters.")
+    lateral_offset: float = Field(default=0.0, description="Sideways offset from the spine in meters.")
+    lateral_ratio: float | None = Field(default=None, ge=-0.85, le=0.85, description="Sideways offset as a fraction of the half width, overriding the offset (unset = use the offset).")
+    radius: float = Field(default=0.3, ge=0.1, description="Pillar radius in meters.")
+    wall_margin: float = Field(default=0.15, ge=0.05, description="Minimum clearance in meters between the pillars and the walls.")
 
     @model_validator(mode="after")
     def validate_interval(self) -> ColonnadeFeature:

@@ -8,6 +8,7 @@ import rclpy.qos
 import std_srvs.srv
 import world_generator_msgs.msg
 import world_generator_msgs.srv
+from arena_rclpy_mixins.params import Param, declare
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
 
@@ -22,8 +23,8 @@ from .world_generator import WorldGenerator, WorldGeneratorType, save_generated
 
 class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
     def _get_parameters(self) -> tuple[WorldGeneratorType, dict, int]:
-        name = WorldGeneratorType(self.get_parameter('generator').value)
-        seed = self.get_parameter('seed').get_parameter_value().integer_value
+        name = self._generator.value
+        seed = self._seed.value
         prefix = f'algorithm.{name.value}'
         raw = typing.cast('dict[str, rclpy.parameter.Parameter]', self.get_parameters_by_prefix(prefix))
         config = config_from_params(WorldGenerator.config_model(name), {leaf: param.value for leaf, param in raw.items()})
@@ -37,7 +38,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
     def _cb_generate(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         try:
             self.update_generator(*self._get_parameters())
-            save_generated(WorldIdentifier(self.get_parameter('world').get_parameter_value().string_value).resolve_write_sync(), self.compute(), self.files())
+            save_generated(WorldIdentifier(self._world.value).resolve_write_sync(), self.compute(), self.files())
             response.success = True
             response.message = json.dumps(self.params())  # episode binding for the panel to apply on queue
         except Exception as e:
@@ -70,7 +71,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
             diagnostics = diagnostics_of(level)
 
             if not request.preview_only:
-                save_generated(WorldIdentifier(request.world or self.get_parameter('world').get_parameter_value().string_value).resolve_write_sync(), world, self.files())
+                save_generated(WorldIdentifier(request.world or self._world.value).resolve_write_sync(), world, self.files())
 
             resolution = request.resolution or preview_resolution(max(diagnostics.extent))
             response.png, map_origin = level.render(resolution=resolution)
@@ -104,9 +105,9 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
     def __init__(self):
         ROSParamServer.__init__(self, 'world_generator')
 
-        self.declare_parameter('generator', WorldGeneratorType.HALLWAY.value)
-        self.declare_parameter('seed', -1)
-        self.declare_parameter('world', 'generated')
+        self._generator = declare(self, Param[WorldGeneratorType]('generator', WorldGeneratorType.HALLWAY, 'World generator to run.'))
+        self._seed = declare(self, Param[int]('seed', -1, 'Random seed of the generator (negative = nondeterministic).'))
+        self._world = declare(self, Param[str]('world', 'generated', 'Name of the world the generator writes.'))
 
         for gen_type in WorldGenerator.available():
             model_cls = WorldGenerator.config_model(gen_type)

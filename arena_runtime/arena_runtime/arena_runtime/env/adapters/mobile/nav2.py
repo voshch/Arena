@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 import lifecycle_msgs.msg
+from arena_rclpy_mixins.params import declare
 from arena_robots.bringup.mobile.nav2 import Nav2Bringup
 from arena_robots.clients.goto_pose import GotoPoseClient
 from arena_robots.task_kinds import TaskKind
@@ -18,6 +19,7 @@ from arena_runtime.env.adapters import AdapterDisplayHint, AdapterMeta
 from arena_runtime.env.adapters.mobile import MobileAdapter
 from arena_runtime.env.request import GoToPhase, TaskPhase
 from arena_runtime.env.world_manager.shims import requires_map_server
+from arena_runtime.node_params import NodeParams
 
 if TYPE_CHECKING:
     import geometry_msgs.msg
@@ -132,7 +134,7 @@ class Nav2Adapter(MobileAdapter):
         node_paths: set[str],
     ) -> None:
         # TMP: remove once rosnavrl decoupled from nav
-        if robot.node.rosparam[bool].get("robot.train", False):
+        if declare(robot.node, NodeParams.ROBOT_TRAIN).value:
             await super().wait_until_ready(robot, node_paths)
             return
         bt_node_path = str(robot.namespace("bt_navigator"))

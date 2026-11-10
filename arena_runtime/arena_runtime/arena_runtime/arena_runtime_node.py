@@ -24,13 +24,10 @@ import rclpy.subscription
 import rclpy.timer
 import rosgraph_msgs.msg
 from ament_index_python.packages import get_package_share_directory
-from arena_bringup.constants import SimSimulator
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Time import Time
 from lifecycle_msgs.msg import State as LcState
 from lifecycle_msgs.msg import Transition, TransitionEvent
-from rcl_interfaces.msg import ParameterDescriptor
-from rclpy import Parameter
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.event_handler import QoSSubscriptionMatchedInfo, SubscriptionEventCallbacks
 from std_msgs.msg import Bool, Header
@@ -40,6 +37,7 @@ from arena_runtime.env.task_layer import task_layer_entry_point
 from arena_runtime.holds import HoldRegistry
 from arena_runtime.lockstep import LockstepConfig, LockstepScheduler, _parse_channel_spec, spec_from_msg
 from arena_runtime.registry import EnvRegistry, _extent_eq, sweep_verdict
+from arena_runtime.runtime_params import RuntimeParams
 from arena_runtime.sim import LifecycleRegistry, SimLifecycle, SimUnavailable
 from arena_runtime.sim.dummy_simulator import DummyHost
 
@@ -201,9 +199,10 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         return rclpy.lifecycle.TransitionCallbackReturn.SUCCESS
 
     async def setup(self) -> None:
-        sim_name = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
-        sim_key = SimSimulator(sim_name)
-        physics_dt = self.rosparam[float].get("physics_dt", 0.0333)
+        self._params = RuntimeParams(self)
+        sim_key = self._params.SIM.value
+        sim_name = sim_key.value
+        physics_dt = self._params.PHYSICS_DT.value
 
         raw_lifecycle = await LifecycleRegistry.get(sim_key, node=self, physics_dt=physics_dt)
         self._holds = HoldRegistry()
@@ -215,13 +214,9 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
 
         self._lifecycle = _LifecycleLiveness(self, raw_lifecycle)
 
-        period = self.rosparam[float].get("heartbeat_period_sec", 1.0)
-        self.rosparam[float].get("heartbeat_timeout_sec", 30.0)
-        self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
-        self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
-        slot_buffer = self.rosparam[float].get("slot_buffer", 5.0)
+        period = self._params.HEARTBEAT_PERIOD.value
 
-        self._env_registry = EnvRegistry(slot_buffer=slot_buffer)
+        self._env_registry = EnvRegistry(slot_buffer=self._params.SLOT_BUFFER.value)
         self._pending_cleanup: list[str] = []
 
         self._pub_paused = self.create_publisher(
@@ -347,28 +342,12 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
 
         self.get_logger().info(f"node initialized (sim={sim_name})")
 
-        self.rosparam.declare_safe(
-            "env_args",
-            [],
-            descriptor=ParameterDescriptor(type=Parameter.Type.STRING_ARRAY.value),
-        )
-        self.rosparam.declare_safe(
-            "slot_buffer",
-            slot_buffer,
-            descriptor=ParameterDescriptor(type=Parameter.Type.DOUBLE.value),
-        )
-
-        env_n = self.rosparam[int].get("env_n", 0)
+        env_n = self._params.ENV_N.value
         if env_n > 0:
             asyncio.create_task(self._spawn_initial_envs(env_n))
 
         # bootstrap-only: read once here, runtime control goes through the services
-        self.rosparam.declare_safe(
-            "lockstep.channels",
-            [],
-            descriptor=ParameterDescriptor(type=Parameter.Type.STRING_ARRAY.value),
-        )
-        channels = list(self.get_parameter("lockstep.channels").value or [])
+        channels = list(self._params.LOCKSTEP_CHANNELS.value or [])
         bootstrap_ok = True
         if channels:
             try:
@@ -378,15 +357,15 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
                 bootstrap_ok = False
             else:
                 self._lockstep.register("launch", "", specs)
-        if bootstrap_ok and self.rosparam[bool].get("lockstep.autostart", False):
-            rtf = self.rosparam[float].get("lockstep.target_rtf", 0.0)
+        if bootstrap_ok and self._params.LOCKSTEP_AUTOSTART.value:
+            rtf = self._params.LOCKSTEP_TARGET_RTF.value
             try:
                 config = LockstepConfig(target_rtf=rtf, ungated=False)
             except ValueError as e:
                 self.get_logger().error(f"lockstep autostart config invalid: {e}")
             else:
                 await self._lockstep.start(config)
-                if self.rosparam[bool].get("lockstep.paused", True):
+                if self._params.LOCKSTEP_PAUSED.value:
                     self._lockstep.pause()
                     self.get_logger().warning("lockstep paused")
 
@@ -525,9 +504,9 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         )
 
     async def _check_heartbeats(self) -> None:
-        timeout = self.rosparam[float].get("heartbeat_timeout_sec", 30.0)
-        reset_timeout = self.rosparam[float].get("reset_hold_timeout_sec", 30.0)
-        bootstrap_timeout = self.rosparam[float].get("bootstrap_timeout_sec", 0.0)
+        timeout = self._params.HEARTBEAT_TIMEOUT.value
+        reset_timeout = self._params.RESET_HOLD_TIMEOUT.value
+        bootstrap_timeout = self._params.BOOTSTRAP_TIMEOUT.value
         now = self.wall_time
         for env_id, record in self._env_registry.items():
             elapsed = (now - Time.from_msg(record.last_heartbeat)).to_seconds()
@@ -826,7 +805,7 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         response.success = True
         response.env_id = env_id
         response.ns = namespace
-        response.sim = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
+        response.sim = self._params.SIM.value.value
         response.error_msg = ""
         return response
 
@@ -912,7 +891,7 @@ sys.exit(ls.run())
             return response
 
         requested: dict[str, str] = {}
-        for source in (self.get_parameter("env_args").value or [], request.launch_args):
+        for source in (self._params.ENV_ARGS.value or [], request.launch_args):
             for s in source:
                 if ":=" in s:
                     k, v = s.split(":=", 1)
@@ -926,7 +905,7 @@ sys.exit(ls.run())
             return response
 
         launchfile = os.path.join(get_package_share_directory("arena_runtime"), "launch", "env.launch.py")
-        sim_name = self.rosparam[str].get("sim", SimSimulator.DUMMY.value)
+        sim_name = self._params.SIM.value.value
         requested_ns = request.ns or None
 
         try:

@@ -194,7 +194,7 @@ class Mod_Sounds(TM_Module):
         world_name = self._ctx.world_manager.loaded_world
         world_view = WorldIdentifier(world_name).resolve_sync()
         self._library.use_world(world_view.path)
-        world = world_view.load(derive=self._ctx.conf.KG_DERIVE.value or "auto")
+        world = world_view.load(derive=self._ctx.conf.KG_DERIVE.value)
         scenario = self._active_scenario()
         indexed_entities = _index_static_entities(world, scenario.objects if scenario is not None else ())
 

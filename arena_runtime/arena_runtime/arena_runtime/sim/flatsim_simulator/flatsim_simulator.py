@@ -24,6 +24,7 @@ from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.qos import reliable
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
@@ -33,6 +34,7 @@ from flatsim_msgs.msg import Floor as FloorMsg
 from flatsim_msgs.srv import AddFloors, AddOutlines, ControlWorld, DeleteEntities, DeletePrefix, DeleteRobot, Republish, SetRobotPose, SpawnBoxes, SpawnRobot
 
 from arena_runtime.humans import PED_RADIUS
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import effective_control_yaml, robot_controllers
@@ -223,7 +225,7 @@ class FlatsimSimulator(BaseSim):
         args: dict[str, object] = {
             **robot.extra,
             **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': self.node.rosparam[str].get('optim', ''),
+            'optim': declare(self.node, NodeParams.OPTIM).value,
             'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
         }
         args.pop('resolved_assembly', None)

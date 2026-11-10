@@ -225,7 +225,7 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
             return msg
         tracked.refresh(self.node.tf_buffer)
         msg.name = tracked.robot.name
-        msg.radius = self.node.rosparam[float].get('robot_radius', msg.radius)
+        msg.radius = self.node.rosparam[float].get_unsafe('robot_radius', msg.radius)
         msg.position.position.x = tracked.pose.position.x
         msg.position.position.y = tracked.pose.position.y
         msg.position.orientation = tracked.pose.orientation.to_msg()
