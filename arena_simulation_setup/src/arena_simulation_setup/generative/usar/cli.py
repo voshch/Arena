@@ -14,7 +14,7 @@ import yaml
 from arena_simulation_setup.generative.egobench.encounter import Rejected
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 from arena_simulation_setup.generative.world.world_generator import save_generated
-from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
+from arena_simulation_setup.tree.World import World, WorldIdentifier, WorldView
 
 from .manifest import Manifest
 from .placement import Hideout, hide
@@ -34,9 +34,16 @@ class Outcome:
 
 
 @attrs.frozen
+class Built:
+    world: World
+    files: dict[str, bytes]  # by path relative to the world
+
+
+@attrs.frozen
 class Report:
     outcomes: list[Outcome]
     worlds: dict[str, Path]  # world key -> where it was written, empty on a dry run
+    built: dict[str, Built]  # world key -> every world with a placed task, also on a dry run
 
     @property
     def placed(self) -> int:
@@ -62,6 +69,7 @@ def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: b
         groups.setdefault(item.world_key, []).append(item)
     outcomes: list[Outcome] = []
     worlds: dict[str, Path] = {}
+    built: dict[str, Built] = {}
     for key, members in groups.items():
         split = TEST if key in test else TUNE
         first = members[0]
@@ -84,9 +92,11 @@ def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: b
             files.update(pack(member, build(manifest, member, hideout, split)))
             outcomes.append(Outcome(task=member, split=split, reason=None))
             placed = True
+        if placed:
+            built[key] = Built(world=world, files=files)
         if write and placed:
             worlds[key] = save_generated(_view(key, out), world, files)
-    return Report(outcomes=outcomes, worlds=worlds)
+    return Report(outcomes=outcomes, worlds=worlds, built=built)
 
 
 def _index_path(report: Report, manifest: Manifest, out: Path | None) -> Path | None:
