@@ -1,4 +1,4 @@
-"""USAR manifest: the rooms worlds of a study, the tasks placed on each and how the person calls."""
+"""USAR manifest: the rooms worlds of a study, the hiding spots placed on each and how the person calls."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class Manifest(pydantic.BaseModel):
     seed: int = 0
     world: dict[str, Axis]  # rooms generator configuration axes
     world_variants: int = pydantic.Field(1, ge=1)  # world seeds per world configuration
-    tasks_per_world: int = pydantic.Field(5, ge=1)
+    spots_per_world: int = pydantic.Field(5, ge=1)
     test_worlds: int = pydantic.Field(0, ge=0)  # worlds held out from tuning and training
     corners: list[int] = pydantic.Field(min_length=1)  # turns on the route from the robot to the person
     call_levels: list[CallLevel] = pydantic.Field(default_factory=lambda: [CallLevel.WEAK, CallLevel.LOUD], min_length=1)
@@ -56,6 +56,8 @@ class Manifest(pydantic.BaseModel):
                 raise ValueError(f"world axis {name} needs a step on span [{axis.min}, {axis.max}]")
         if any(count < 0 for count in self.corners):
             raise ValueError(f"corner counts are 0 or more, got {self.corners}")
+        if len(set(self.call_levels)) != len(self.call_levels):
+            raise ValueError(f"call_levels repeats a level, got {', '.join(level.value for level in self.call_levels)}")
         missing = sorted(level.value for level in self.call_levels if level not in self.call_db)
         if missing:
             raise ValueError(f"call_db has no level for {', '.join(missing)}")

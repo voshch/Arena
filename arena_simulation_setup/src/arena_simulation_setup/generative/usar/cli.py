@@ -17,7 +17,7 @@ from arena_simulation_setup.generative.world.world_generator import save_generat
 from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
 
 from .manifest import Manifest
-from .placement import hide
+from .placement import Hideout, hide
 from .sampler import Task, held_out, tasks
 from .scenario import build, pack
 
@@ -59,7 +59,7 @@ def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: b
     items = tasks(manifest)
     test = held_out([item.world_key for item in items], manifest.test_worlds)
     if limit:
-        items = items[:limit]
+        items = items[: limit * len(manifest.call_levels)]
     groups: dict[str, list[Task]] = {}
     for item in items:
         groups.setdefault(item.world_key, []).append(item)
@@ -76,8 +76,11 @@ def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: b
             continue
         files: dict[str, bytes] = dict(generator.files())
         placed = False
+        hideouts: dict[str, Hideout | Rejected] = {}
         for member in members:
-            hideout = hide(world, member.corners, member.hiding, random.Random(f"{key}:{member.scenario_key}"))
+            if member.spot_key not in hideouts:
+                hideouts[member.spot_key] = hide(world, member.corners, member.hiding, random.Random(f"{key}:{member.spot_key}"))
+            hideout = hideouts[member.spot_key]
             if isinstance(hideout, Rejected):
                 outcomes.append(Outcome(task=member, split=split, reason=hideout.reason))
                 continue
@@ -100,7 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="generate_usar", description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--out", type=Path, help="directory to write the worlds and the index into, default the writable world root")
-    parser.add_argument("--limit", type=int, default=0, help="generate only the first N tasks")
+    parser.add_argument("--limit", type=int, default=0, help="generate only the first N spots, each at every call level")
     parser.add_argument("--write", action="store_true", help="write the worlds, a dry run without it")
     args = parser.parse_args(argv)
 
@@ -110,7 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if outcome.reason is not None:
             print(f"rejected {outcome.task.world_key}/{outcome.task.scenario_key}: {outcome.reason}")
     placed_worlds = {o.task.world_key for o in report.outcomes if o.reason is None}
-    print(f"{report.placed} of {len(report.outcomes)} tasks placed in {len(placed_worlds)} worlds")
+    print(f"{report.placed} of {len(report.outcomes)} scenarios placed in {len(placed_worlds)} worlds")
     if args.write:
         index = _index_path(report, manifest, args.out)
         if index is not None:
