@@ -96,6 +96,11 @@ class DrlAdapter(MobileAdapter):
         self._controls_orientation: bool = bool(manifest_dict.get("controls_orientation", True))
         self._signals: frozenset[str] = frozenset(str(s) for s in manifest_dict.get("signals") or ())
         self._global_planner: str = str(bringup_kwargs.get("global_planner", "nav2/navfn"))
+        self._executor: str = str(bringup_kwargs.get("executor", "bridge") or "bridge")
+        if self._executor not in ("bridge", "dwb"):
+            raise ValueError(f"DrlAdapter: robot.mobile.executor {self._executor!r} unknown, expected 'bridge' or 'dwb'")
+        if str(bringup_kwargs.get("people_as", "object") or "object") not in ("object", "human"):
+            raise ValueError("DrlAdapter: robot.mobile.people_as must be 'object' or 'human'")
 
         self._handler_metadata: dict = {}
         if self._needs_global_plan():
@@ -190,6 +195,8 @@ class DrlAdapter(MobileAdapter):
                     use_sim_time=ctx.use_sim_time,
                     frame=ctx.frame,
                     arena_env_node=ctx.arena_env_node,
+                    env_namespace=ctx.env_namespace,
+                    sensors=ctx.sensors,
                     global_planner=self._global_planner if self._depends_global_plan else "none",
                     **kwargs,
                 ),
@@ -262,6 +269,7 @@ class DrlAdapter(MobileAdapter):
             simulation_namespace=robot.node.get_namespace(),
             velocity_limits=_limits,
             deadline_s=self._deadline_s,
+            executor=self._executor,
             parameter_overrides=[rclpy.Parameter("planner_rate_hz", value=float(self._rate))],
             cli_args=["--ros-args", *(arg for src, dst in tf_remaps(robot.node) for arg in ("-r", f"{src}:={dst}"))],
         )
