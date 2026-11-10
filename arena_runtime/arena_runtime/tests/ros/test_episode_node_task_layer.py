@@ -189,7 +189,7 @@ def test_the_node_reports_the_task_layer_it_resolved(rclpy_context: object, fake
     from arena_runtime.env.task_layer import DEFAULT_TASK_LAYER
 
     async def body(env: object) -> None:
-        assert env.rosparam[str].get("task_layer", "") == DEFAULT_TASK_LAYER
+        assert env.rosparam[str].get_unsafe("task_layer", "") == DEFAULT_TASK_LAYER
 
     asyncio.run(_on_running_env(body))
 

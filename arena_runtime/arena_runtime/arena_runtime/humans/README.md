@@ -86,6 +86,12 @@ the outgoing message it checks `ped.joint_state.name`:
 - **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (42 DOF, no body suffix).
   Digit DOFs follow: the hand shape of a playing clip ([`hands.py`](hands.py)) over the grasp of each hand the agent type's `pose.hold: {l|r: <grip radius m> | {radius, angle, curls, wrap}}` names (`angle` turns the cylinder in the palm for a diagonal grip, `curls` gives a character's own curls, e.g. from the retarget's `--hold`, `wrap` closes the thumb over the fingers). `hands.grasp` solves that grasp on the template hand: each finger curls until it touches a cylinder of the radius lying across the palm, the thumb settles where it keeps the most room from the cylinder and the closed index finger. `hands.palm_frame` gives the same cylinder's centre and axis on any posed hand, so a prop can be placed in the fist.
 
+The profile comes from the ped's agent type, or, while the ped is in a humansim interaction (`Pedestrian.interaction_id` >= 0), from the type's
+`pose.while.<INTERACTION>` section when it has one: a whole pose section (walk, run, idle, hold) resolved on its own. A `caregiver` pushing a
+wheelchair (`PUSH_WHEELCHAIR`) walks with `walk_pushwheelchair`, stands with `stand_pushwheelchair` (its mean pose) and grips the handles,
+the `wheelchair_manual` rider she pushes keeps his hands on his thighs (`seated_wheelchair_lap`). A ped whose profile changes blends from the
+old one over `AnimationManager.PROFILE_CROSSFADE_S` (0.6 s), its finger curls with it.
+
 Last, [`wire.py`](wire.py) compiles the 42 into `ped.body` over the model's stance ([BODY.md](BODY.md)), leaving only driven joints in `joint_state`. `ped.body` feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac, MuJoCo and Gazebo pedestrian rigs.
 
 A model whose bundle ships a `.rig` with drivers (wheelchair bundles: `l_wheel`, `r_wheel`) gets those joints

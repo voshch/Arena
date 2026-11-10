@@ -322,11 +322,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
-            profile = self._pose_profile_for(ped.agent_type)
+            profile = self._pose_profile_for(ped.agent_type).while_in(self._interaction(ped))
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=profile)
             state = self._gait.joint_state(angles, stamp=stamp)
             if state is not None:
                 hands = self._hands(ped.id, now_sec, profile.hold)
+                if (fade := self._gait.profile_fade(ped.id)) is not None and fade[0].hold != profile.hold:
+                    before = self._hands(ped.id, now_sec, fade[0].hold)
+                    hands = {name: before.get(name, 0.0) * (1.0 - fade[1]) + hands.get(name, 0.0) * fade[1] for name in {*before, *hands}}
                 state.name = [*state.name, *hands]
                 state.position = [*state.position, *hands.values()]
             ped.joint_state = state
@@ -404,6 +407,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""
+        return None
+
+    def _interaction(self, ped: Pedestrian) -> str | None:
+        """Name of the interaction the ped is in, the key of its pose profile's `while` section, None outside one."""
         return None
 
     def _seat_clip(self, ped: Pedestrian, seat: Support) -> str:
@@ -534,10 +541,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         except (ValueError, OSError, yaml.YAMLError) as e:
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()
+        return self._solved_grips(agent_type, profile)
+
+    def _solved_grips(self, agent_type: str, profile: PoseProfile, interaction: str | None = None) -> PoseProfile:
+        """The profile with its grips solved now (and its interactions' own), a grip that cannot be solved left unheld."""
+        during = {name: self._solved_grips(agent_type, sub, name) for name, sub in profile.during.items()}
+        if any(during[name] is not sub for name, sub in profile.during.items()):
+            profile = attrs.evolve(profile, during=during)
         try:
             held_pose(profile.hold)
         except Exception as e:  # noqa: BLE001  (a grip that cannot be solved keeps the locomotion profile)
-            self._logger.warning(f"agent type {agent_type!r} grip rejected ({e}), its hands stay unheld")
+            where = f" while in {interaction}" if interaction else ""
+            self._logger.warning(f"agent type {agent_type!r} grip{where} rejected ({e}), its hands stay unheld")
             return attrs.evolve(profile, hold={})
         return profile
 

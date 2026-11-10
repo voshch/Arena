@@ -103,14 +103,15 @@ Loaders are zero-argument callables that import and return the concrete class
 `__init__.py`.
 
 `TaskModeMeta` is an `@attrs.frozen` dataclass with fields
-`namespace: Namespace` and `schema: Callable[[ROSParamServer, Namespace], None] | None`.
+`namespace: Namespace` and `schema: type[ParamGroup] | None`.
 Metadata is stored on the registry, keyed by enum value, and is reachable via
 `<axis>_MODES.meta(key)` without invoking the loader.
 
 `declare_mode_schemas(layer, node)` (in `arena_runtime.env.task_layer`) is called
 once at node init. It walks `layer.mode_namespaces()` and calls the layer's
 `declare_mode_schema(node, axis, mode)` for each registered mode, which fires the
-schema stored in `reg.meta(key).schema`, forward-declaring all TM parameters
+`ParamGroup` stored in `reg.meta(key).schema`, instantiated on the node under
+`meta.namespace` and forward-declaring all TM parameters
 regardless of which modes will be activated. It never triggers a loader. The
 robots and obstacles `scenario` modes share the `task.scenario` namespace.
 
@@ -120,39 +121,50 @@ Each TM is a package with two files:
 
 - `__init__.py` (eager): registers the mode on the appropriate
   `TaskModeRegistry` instance, declares `_NS`, and (if the mode has tunable
-  parameters) defines the `_declare_schema(node, ns)` function. Imported at
-  node startup.
+  parameters) defines a `ParamGroup` subclass with relative parameter names.
+  Imported at node startup.
 - `impl.py` (lazy): contains the class body. Imported only when the mode is
   first activated.
 
-The schema function calls one typed helper from
-[`arena_rclpy_mixins.declarations`](../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py) per parameter:
+The schema is a `ParamGroup` of
+[`arena_rclpy_mixins.params`](../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/params.py)
+`Param`s, one per parameter, named relative to the mode namespace. The node
+instantiates it at startup, the implementation instantiates it again with the
+same namespace to get the same instance and reads `.value`:
 
 ```python
 # __init__.py
+from arena_rclpy_mixins.params import Catalog, Pair, Param, ParamGroup, pair
 from task_generator.modes import Modes
-from arena_rclpy_mixins.declarations import declare_catalog, declare_int_pair
 from task_generator.tasks.registry import ROBOTS_MODES, _REGISTRY_NAMESPACE
 
 _NS = _REGISTRY_NAMESPACE("mymode")
 
 
-def _declare_schema(node, ns):
-    declare_int_pair(node, ns("static", "n"), [5, 15],
-                     label="Static count", description="[min, max] count.")
-    declare_catalog(node, ns("file"), "default", catalog="scenarios",
-                    label="Scenario file", description="Scenario file name.")
+class MyModeParams(ParamGroup):
+    STATIC_N = Param[tuple[float, float]]("static.n", [5, 15], "[min, max] count.", constraint=Pair(), parse=pair)
+    FILE = Param[str]("file", "default", "Scenario file name.", constraint=Catalog("scenarios"))
 
 
-@ROBOTS_MODES.register(Modes.TM_Robots.MYMODE, namespace=_NS, schema=_declare_schema)
+@ROBOTS_MODES.register(Modes.TM_Robots.MYMODE, namespace=_NS, schema=MyModeParams)
 def _load_mymode() -> "type[TM_Robots]":
     from .impl import TM_MyMode
     return TM_MyMode
+
+
+# impl.py
+class TM_MyMode(TM_Robots):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._params = MyModeParams(self.node, namespace=self.namespace())
+
+    async def reset(self):
+        lo, hi = self._params.STATIC_N.value
 ```
 
-Each helper builds the `ParameterDescriptor` (type, `additional_constraints`
-mini-DSL, description) internally, schema authors don't touch
-`ParameterDescriptor` directly.
+The schema runs on every mode at node start and on a throwaway node when
+`episode_task_modes` lists the registry, so it does no I/O. A `parse` runs
+lazily when a value is read. The description is mandatory.
 
 ## Parameter namespace
 
@@ -161,26 +173,22 @@ The mode name is shared across families (e.g. `task.scenario.file` is read by
 both `TM_Robots.scenario` and `TM_Obstacles.scenario`, which intentionally
 load the same scenario file and project different sections out of it).
 
-## Available declare helpers
+## Constraints
 
-| Helper | Underlying type | DSL token in `additional_constraints` | GUI widget |
-| --- | --- | --- | --- |
-| `declare_int_pair` | `INTEGER_ARRAY` | `range:int_pair` | min/max paired spinboxes |
-| `declare_float_pair` | `DOUBLE_ARRAY` | `range:float_pair` | min/max paired double spinboxes |
-| `declare_catalog` | `STRING` | `catalog:<name>` | combobox from `query/<name>` |
-| `declare_catalog_array` | `STRING_ARRAY` | `catalog:<name>` | multiselect from `query/<name>` |
-| `declare_enum` | `STRING` | `enum:a,b,c` | combobox of literal choices |
-| `declare_string` | `STRING` | - | line edit (or text edit if "prompt"-flavoured) |
-| `declare_int` | `INTEGER` | - (uses `integer_range` if `lo`/`hi` given) | spinbox |
-| `declare_double` | `DOUBLE` | - (uses `floating_point_range`) | double spinbox |
-| `declare_bool` | `BOOL` | - | checkbox |
+| Constraint | Parameter type | GUI widget |
+| --- | --- | --- |
+| `Pair()` with `parse=pair` | int or float array | min/max paired spinboxes |
+| `Catalog("<name>")` | string or string array | combobox or multiselect from `query/<name>` |
+| `Choices(...)` | string | combobox of literal choices |
+| `Range(lo, hi)` | int or float | spinbox with bounds |
+| `Text()` / `Text(sketch=True)` | string | multiline editor / sketch editor |
+| none | any | line edit, checkbox |
 
 Catalog names map 1:1 to query services on the env node:
 `objects`, `pedestrians`, `scenarios`, `parametrizeds`, `environments`.
 
-All helpers accept `label="Friendly Name"` and `description="..."`. The label
-becomes the row title in the rviz panel; the description is the hover
-tooltip.
+The description is the hover tooltip, consumers humanize the leaf name for the
+row title.
 
 ## The three axes
 

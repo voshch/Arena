@@ -34,7 +34,10 @@ class ArenaHearing(BaseHearing):
         )
 
     def recorded_topics(self) -> tuple[RecordedTopic, ...]:
-        from arena_hearing.constants import recorded_topics
+        from arena_rclpy_mixins.params import declare
 
-        frontend = str(self.node.rosparam[str].get("robot.hearing", ""))
+        from arena_hearing.constants import recorded_topics
+        from arena_runtime.env.constants.runtime import RobotParams
+
+        frontend = declare(self.node, RobotParams.HEARING).value
         return tuple(RecordedTopic(**dict(zip(_RECORDED_TOPIC_FIELDS, row, strict=True))) for row in recorded_topics((frontend,)))

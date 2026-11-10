@@ -33,7 +33,7 @@ def _sounding(on: bool, offset: float, period: float) -> dict[str, object]:
 
 def build(manifest: Manifest, task: Task, hideout: Hideout, split: str) -> Generated:
     """The scenario, agent types and provenance of one placed task."""
-    rng = random.Random(f"{task.world_key}:{task.scenario_key}")
+    rng = random.Random(f"{task.world_key}:{task.spot_key}")
     files = TypeFiles(base_dir=Path())
     ref = files.standing(manifest.agent_type, PERSON)
     person = {

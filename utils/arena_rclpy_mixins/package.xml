@@ -16,6 +16,8 @@
   <depend>python3-attrs</depend>
   <depend>python3-typing-extensions</depend>
   <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <test_depend>example_interfaces</test_depend>
   <test_depend>python3-hypothesis</test_depend>

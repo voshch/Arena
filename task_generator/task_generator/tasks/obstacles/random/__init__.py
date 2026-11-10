@@ -1,8 +1,6 @@
 import typing
 
-from arena_rclpy_mixins.declarations import declare_catalog_array, declare_int_pair
-from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.params import Catalog, Pair, Param, ParamGroup, pair
 
 from task_generator.modes import Modes
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, OBSTACLES_MODES
@@ -13,16 +11,16 @@ if typing.TYPE_CHECKING:
 _NS = _REGISTRY_NAMESPACE("random")
 
 
-def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:
-    declare_int_pair(node, ns("static", "n"), [0, 0], label="Static count", description="[min, max] count of static obstacles.")
-    declare_int_pair(node, ns("interactive", "n"), [0, 0], label="Interactive count", description="[min, max] count of interactive obstacles.")
-    declare_int_pair(node, ns("dynamic", "n"), [0, 0], label="Dynamic count", description="[min, max] count of dynamic obstacles.")
-    declare_catalog_array(node, ns("static", "models"), ["Warehouse/Object/Barrel_Plastic"], catalog="objects", label="Static models", description="Allowed static obstacle models (empty = all).")
-    declare_catalog_array(node, ns("interactive", "models"), ["Warehouse/Object/Barrel_Plastic"], catalog="objects", label="Interactive models", description="Allowed interactive obstacle models (empty = all).")
-    declare_catalog_array(node, ns("dynamic", "models"), ["arenian"], catalog="pedestrians", label="Dynamic models", description="Allowed dynamic obstacle models (empty = all).")
+class RandomParams(ParamGroup):
+    STATIC_N = Param[tuple[float, float]]("static.n", [0, 0], "[min, max] count of static obstacles.", constraint=Pair(), parse=pair)
+    INTERACTIVE_N = Param[tuple[float, float]]("interactive.n", [0, 0], "[min, max] count of interactive obstacles.", constraint=Pair(), parse=pair)
+    DYNAMIC_N = Param[tuple[float, float]]("dynamic.n", [0, 0], "[min, max] count of dynamic obstacles.", constraint=Pair(), parse=pair)
+    STATIC_MODELS = Param[list[str]]("static.models", ["Warehouse/Object/Barrel_Plastic"], "Allowed static obstacle models (empty = all).", constraint=Catalog("objects"))
+    INTERACTIVE_MODELS = Param[list[str]]("interactive.models", ["Warehouse/Object/Barrel_Plastic"], "Allowed interactive obstacle models (empty = all).", constraint=Catalog("objects"))
+    DYNAMIC_MODELS = Param[list[str]]("dynamic.models", ["arenian"], "Allowed dynamic obstacle models (empty = all).", constraint=Catalog("pedestrians"))
 
 
-@OBSTACLES_MODES.register(Modes.TM_Obstacles.RANDOM, namespace=_NS, schema=_declare_schema)
+@OBSTACLES_MODES.register(Modes.TM_Obstacles.RANDOM, namespace=_NS, schema=RandomParams)
 def _load_random() -> type["TM_Obstacles"]:
     from .impl import TM_Random
 

@@ -12,7 +12,8 @@ from arena_rclpy_mixins.Time import Time
 if typing.TYPE_CHECKING:
     import tf2_ros
     from arena_rclpy_mixins import ArenaMixinNode
-    from arena_rclpy_mixins.ROSParamServer import ROSParamServer, ROSParamT
+    from arena_rclpy_mixins.params import ParamHandle
+    from arena_rclpy_mixins.ROSParamServer import ROSParamServer
     from arena_simulation_setup.shared import Light
     from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
     from diagnostic_msgs.msg import KeyValue
@@ -21,6 +22,7 @@ if typing.TYPE_CHECKING:
     from arena_runtime.env.colors import RobotColors
     from arena_runtime.env.constants import Constants
     from arena_runtime.env.constants.rng import EpisodeRng
+    from arena_runtime.env.constants.runtime import Config
     from arena_runtime.env.environment_manager import EnvironmentManager
     from arena_runtime.env.interactive import MarkerHub
     from arena_runtime.env.realizer import Realizer
@@ -86,14 +88,14 @@ class TaskConfiguration:
     """The part of the env Configuration task modes read."""
 
     RNG: EpisodeRng
-    HUMAN: ROSParamT[Constants.HumanSimulator]
-    SAFE_DIST: ROSParamT[float]
-    GOAL_TOLERANCE_RADIUS: ROSParamT[float]
-    TIMEOUT: ROSParamT[float]
-    KG_DERIVE: ROSParamT[str]
+    HUMAN: ParamHandle[Constants.HumanSimulator]
+    SAFE_DIST: ParamHandle[float]
+    GOAL_TOLERANCE_RADIUS: ParamHandle[float]
+    TIMEOUT: ParamHandle[float]
+    KG_DERIVE: ParamHandle[str]
 
     @classmethod
-    def of(cls, conf: type) -> TaskConfiguration:
+    def of(cls, conf: Config) -> TaskConfiguration:
         return cls(
             RNG=conf.General.RNG,
             HUMAN=conf.Arena.HUMAN,
@@ -244,6 +246,11 @@ def registered_modes(layer: TaskLayer) -> TaskModes:
 def mode_param(axis: str) -> str:
     """The parameter that selects the modes of one axis."""
     return f"{TASK_PARAM_PREFIX}{axis}"
+
+
+def mode_param_description(axis: str) -> str:
+    """Description of the parameter that selects the modes of one axis."""
+    return f"Task modes of the {axis} axis."
 
 
 def legacy_mode_params() -> dict[str, str]:

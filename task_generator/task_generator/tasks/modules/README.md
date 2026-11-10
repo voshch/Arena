@@ -31,7 +31,7 @@ registered on `MODULE_MODES` in
 
 Each `TM_Module` subclass is a package:
 
-- `__init__.py` (eager): declares `_NS` and (optionally) `_declare_schema`, then registers the mode on `MODULE_MODES` (a `TaskModeRegistry` from `tasks/registry.py`) with `namespace=_NS` and `schema=_declare_schema`. Imported at node startup.
+- `__init__.py` (eager): declares `_NS` and (optionally) a `ParamGroup` schema, then registers the mode on `MODULE_MODES` (a `TaskModeRegistry` from `tasks/registry.py`) with `namespace=_NS` and `schema=<Group>`. Imported at node startup.
 - `impl.py` (lazy): contains the class body. Imported only on first activation.
 
 Parameters live under `task.<mode>.<leaf>`.
@@ -123,7 +123,7 @@ mtimes. A world resolved from a download cache is saved into that cache.
 ## Adding a module
 
 1. Create `tasks/modules/<name>/` as a package.
-2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the module has tunable parameters (using helpers from [`arena_rclpy_mixins.declarations`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins/declarations.py)), then register the loader with `@MODULE_MODES.register(Modes.TM_Module.<NAME>, namespace=_NS, schema=_declare_schema)`.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define a `ParamGroup` subclass if the module has tunable parameters (see [tasks/README.md](../README.md#tm-package-structure)), then register the loader with `@MODULE_MODES.register(Modes.TM_Module.<NAME>, namespace=_NS, schema=<Group>)`.
 3. In `impl.py`: define the class extending `TM_Module`; override `before_reset` and/or `after_reset`.
 4. Add `<NAME> = "<name>"` to `Modes.TM_Module` in [`modes.py`](../../modes.py).
 5. `declare_mode_schemas(layer, node)` picks up your schema automatically at node init.

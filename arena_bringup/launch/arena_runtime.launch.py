@@ -6,7 +6,9 @@ import launch_ros.actions
 from arena_bringup.actions import IsolatedGroupAction
 from arena_bringup.defaults import SIM_ORDER, default_sim, gz_discovery_env
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
-from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
+from arena_bringup.substitutions import deprecated_launch_args
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_simulation_setup import params as world_params
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
@@ -38,7 +40,7 @@ def generate_launch_description():
     log_level = LaunchArgument(
         name='log_level',
         default_value='warn',
-        description='Per-node log level. See launch README.',
+        description='Per-node log level.',
     )
 
     sim = LaunchArgument(
@@ -50,43 +52,28 @@ def generate_launch_description():
     use_sim_time = LaunchArgument(
         name='use_sim_time',
         default_value='true',
+        description='Use the simulation clock instead of wall time (false only for real robots).',
     )
 
     world = LaunchArgument(
         name='world',
         default_value='map_empty',
+        description='World for the simulator to load.',
     )
 
     headless = LaunchArgument(
         name='headless',
         default_value='False',
+        description='true = hide the simulator GUI.',
     )
 
-    LaunchArgument(
-        name='world.lighting',
-        default_value='authored',
-        choices=['authored', 'auto'],
-        description='authored: the lights the world declares. auto: also a calibrated ceiling rig in every zone with a ceiling and no lights of its own.',
-    )
-
-    LaunchArgument(
-        name='world.levels',
-        default_value='auto',
-        choices=['auto', 'stack', 'spread'],
-        description='stack: levels above one another in the simulator, stair and escalator pairs joined at their seams. spread: levels side by side. auto: stack when the world has stairs or escalators and the simulator stacks (gazebo), else spread.',
-    )
-
-    LaunchArgument(
-        name='kg.derive',
-        default_value='auto',
-        choices=['auto', 'all', 'off'],
-        description='auto: zone membership and door connections derived from geometry where the world semantics state none. all: derived from geometry for everything, the stated ones ignored. off: the stated ones only.',
-    )
+    for param in (world_params.WORLD_LIGHTING, world_params.WORLD_LEVELS, world_params.KG_DERIVE):
+        LaunchArgument.from_param(param, keep_default=True)
 
     LaunchArgument(
         name='record.dir',
         default_value='',
-        description='Directory for episode recording; empty disables.',
+        description='Episode recording directory (empty = no recording).',
     )
 
     LaunchArgument(
@@ -98,37 +85,37 @@ def generate_launch_description():
     LaunchArgument(
         name='lockstep',
         default_value='false',
-        description='Start the lockstep scheduler at bringup (control later via sim_lifecycle/lockstep/start|stop).',
+        description='Start the lockstep scheduler at bringup.',
     )
 
     LaunchArgument(
         name='lockstep.channels',
         default_value='',
-        description="Semicolon-separated 'name|topic|type|period_s|role' entries; {env} expands per env.",
+        description="Extra lockstep channels, name|topic|type|period_s|role entries separated by semicolons, {env} expanded per env.",
     )
 
     LaunchArgument(
         name='lockstep.rtf',
         default_value='',
-        description='Target real-time factor for the lockstep scheduler; empty = flat out.',
+        description='Target real-time factor of the lockstep scheduler (empty = as fast as it can).',
     )
 
     LaunchArgument(
         name='lockstep.paused',
         default_value='true',
-        description='Bring the lockstep scheduler up paused (resume via arena lockstep resume); false = start stepping immediately.',
+        description='true = the lockstep scheduler comes up paused.',
     )
 
     LaunchArgument(
         name='env.bootstrap_timeout',
         default_value='',
-        description='Seconds an env may spend never-ACTIVE before eviction, measured from reservation, empty = node default (never).',
+        description='Seconds an env may take to become ready before eviction. Empty = node default.',
     )
 
     LaunchArgument(
         name='env.heartbeat_timeout',
         default_value='',
-        description='Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (30).',
+        description='Seconds of heartbeat silence before a ready env is evicted. Empty = node default.',
     )
 
     launch_sim = launch.actions.IncludeLaunchDescription(
