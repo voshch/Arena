@@ -42,11 +42,11 @@ def stages(outcomes: Sequence[Outcome]) -> list[dict[str, object]]:
 
 
 def checksum(bundle: Path) -> str:
-    """SHA-256 over every file of a bundle but its index, by relative path."""
+    """SHA-256 over every file of a bundle but its index and the dot files a cache adds, by relative path."""
     digest = hashlib.sha256()
     files = sorted((path.relative_to(bundle).as_posix(), path) for path in bundle.rglob("*") if path.is_file())
     for name, path in files:
-        if name == _index_name(bundle):
+        if name == _index_name(bundle) or path.name.startswith("."):
             continue
         digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
     return digest.hexdigest()
@@ -96,20 +96,38 @@ def _readme(bundle: str, manifest: Manifest, split: str, outcomes: Sequence[Outc
     )
 
 
+def _splits(report: Report, root: Path, name: str) -> dict[Path, list[Outcome]]:
+    return {root / f"{name}_{split}": [outcome for outcome in report.outcomes if outcome.split == split] for split in SPLITS}
+
+
 def targets(report: Report, root: Path, name: str) -> dict[Path, list[Outcome]]:
     """The bundle directory of every split with tasks, the test split first, with the tasks it holds."""
-    found = {root / f"{name}_{split}": [outcome for outcome in report.outcomes if outcome.split == split] for split in SPLITS}
-    return {bundle: outcomes for bundle, outcomes in found.items() if outcomes}
+    return {bundle: outcomes for bundle, outcomes in _splits(report, root, name).items() if outcomes}
+
+
+def _own(bundle: Path, manifest: Manifest) -> bool:
+    """Whether the directory is a bundle written from this manifest on its seed."""
+    index = bundle / _index_name(bundle)
+    if not index.is_file():
+        return False
+    doc = yaml.safe_load(index.read_text())
+    return isinstance(doc, dict) and (doc.get("manifest"), doc.get("seed")) == (manifest.name, manifest.seed)
 
 
 def write(manifest: Manifest, report: Report, root: Path, name: str) -> list[Path]:
-    """Write `root/<name>_<split>` for every split with worlds, the test split first, each replacing the bundle already there."""
+    """Write `root/<name>_<split>` for every split with worlds, the test split first, replacing only bundles of this manifest and seed."""
     rejected = len(report.outcomes) - report.placed
     if rejected:
         raise ValueError(f"{rejected} of {len(report.outcomes)} tasks rejected, a suite needs every one placed")
-    for bundle, outcomes in targets(report, root, name).items():
-        if bundle.exists():
+    splits = _splits(report, root, name)
+    foreign = [bundle for bundle, outcomes in splits.items() if outcomes and bundle.exists() and not _own(bundle, manifest)]
+    if foreign:
+        raise ValueError(f"{foreign[0]} was not written from the manifest {manifest.name} on seed {manifest.seed}, remove it or name the suite differently")
+    for bundle, outcomes in splits.items():
+        if bundle.exists() and _own(bundle, manifest):
             shutil.rmtree(bundle)
+        if not outcomes:
+            continue
         worlds = _by_world(outcomes)
         for key in worlds:
             built = report.built[key]

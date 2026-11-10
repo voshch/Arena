@@ -173,6 +173,11 @@ def test_a_world_in_two_groups_is_refused():
         groups(ROOMS_3X3, ROOMS_3X3)
 
 
+def test_a_world_twice_in_one_group_is_refused():
+    with pytest.raises(pydantic.ValidationError, match="twice in a group"):
+        groups({"world": {"rows": 3, "cols": [3, 3]}, "corners": [0]})
+
+
 def test_each_group_holds_out_its_own_worlds_and_cycles_its_own_corners():
     m = groups({**ROOMS_3X3, "test_worlds": 2}, {"world": {"rows": 1, "cols": 6}, "corners": [0], "test_worlds": 0})
     corridor = {item.world_key for item in tasks(m) if item.world["rows"] == 1}

@@ -130,7 +130,8 @@ def test_a_rejected_spot_writes_nothing(tmp_path: Path):
     assert not any(tmp_path.iterdir())
 
 
-def test_an_existing_bundle_is_replaced_and_its_neighbour_kept(tmp_path: Path):
+def test_a_bundle_of_the_same_manifest_is_replaced_and_its_neighbour_kept(tmp_path: Path):
+    written(tmp_path)
     stale = tmp_path / "unit_test" / "worlds" / "stale" / "x"
     keep = tmp_path / "other" / "keep"
     for path in (stale, keep):
@@ -139,6 +140,41 @@ def test_an_existing_bundle_is_replaced_and_its_neighbour_kept(tmp_path: Path):
     written(tmp_path)
     assert not stale.parent.exists()
     assert keep.read_text() == "old"
+
+
+def test_a_split_that_became_empty_loses_its_old_bundle(tmp_path: Path):
+    written(tmp_path)
+    written(tmp_path, with_group(test_worlds=2))
+    assert [path.name for path in tmp_path.iterdir()] == ["unit_test"]
+
+
+@pytest.mark.parametrize("seed", [None, 4])
+def test_a_directory_not_written_from_this_manifest_and_seed_is_refused_and_kept(tmp_path: Path, seed: int | None):
+    if seed is None:
+        (tmp_path / "unit_test").mkdir()
+        (tmp_path / "unit_test" / "x").write_text("old")
+    else:
+        written(tmp_path, {**SPLIT, "seed": seed})
+    before = tree(tmp_path)
+    with pytest.raises(ValueError, match="not written from"):
+        written(tmp_path)
+    assert tree(tmp_path) == before
+
+
+def test_a_foreign_directory_on_an_empty_split_is_left_alone(tmp_path: Path):
+    keep = tmp_path / "unit_tune" / "keep"
+    keep.parent.mkdir()
+    keep.write_text("old")
+    assert [path.name for path in written(tmp_path, with_group(test_worlds=2))] == ["unit_test"]
+    assert keep.read_text() == "old"
+
+
+def test_the_checksum_ignores_the_cache_marker_of_a_fetched_bundle(tmp_path: Path):
+    path = written(tmp_path)[0]
+    before = bundle.checksum(path)
+    (path / ".ttl").write_text("1")
+    (path / "worlds" / ".ttl").write_text("1")
+    assert bundle.checksum(path) == before
 
 
 def test_the_readme_lists_one_row_per_world_with_its_placed_axes(tmp_path: Path):
@@ -214,6 +250,15 @@ def test_a_rejected_spot_fails_the_suite_and_writes_nothing(tmp_path: Path, impo
     assert cli.main([manifest_file(tmp_path, with_group(corners=[9])), "--suite", "unit", "--write"]) == 1
     assert not imported.exists()
     assert "rejected usar_rooms_" in capsys.readouterr().out
+
+
+def test_a_foreign_directory_fails_the_suite_with_its_reason(tmp_path: Path, imported: Path, capsys: pytest.CaptureFixture[str]):
+    foreign = imported / "suites" / "unit_test" / "x"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_text("old")
+    assert cli.main([manifest_file(tmp_path), "--suite", "unit", "--write"]) == 1
+    assert "not written from" in capsys.readouterr().out
+    assert tree(imported) == {"suites/unit_test/x": b"old"}
 
 
 def test_without_the_suite_flag_the_worlds_and_one_index_go_to_out(tmp_path: Path, imported: Path):

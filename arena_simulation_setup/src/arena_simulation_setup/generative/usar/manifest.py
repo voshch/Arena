@@ -116,7 +116,10 @@ class Manifest(pydantic.BaseModel):
             raise ValueError(f"no pedestrian profile {self.agent_type}, there are {', '.join(PROFILES)}")
         seen: set[str] = set()
         for group in self.worlds:
-            keys = set(self.keys(group))
+            listed = self.keys(group)
+            keys = set(listed)
+            if len(keys) < len(listed):
+                raise ValueError(f"world {sorted(key for key in keys if listed.count(key) > 1)[0]} is twice in a group, an axis repeats a value")
             repeated = sorted(seen & keys)
             if repeated:
                 raise ValueError(f"world {repeated[0]} is in two groups")

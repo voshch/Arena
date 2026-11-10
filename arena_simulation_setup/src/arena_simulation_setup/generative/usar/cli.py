@@ -120,7 +120,12 @@ def _suite(manifest: Manifest, report: Report, name: str, write: bool) -> int:
         return 1
     root = imported_root() / SUITES
     if write:
-        for path in bundle.write(manifest, report, root, name):
+        try:
+            paths = bundle.write(manifest, report, root, name)
+        except ValueError as error:
+            print(f"{error}, nothing written")
+            return 1
+        for path in paths:
             print(f"bundle written to {path}")
         return 0
     for path, outcomes in bundle.targets(report, root, name).items():

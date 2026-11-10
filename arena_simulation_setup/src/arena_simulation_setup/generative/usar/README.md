@@ -71,7 +71,7 @@ Each scenario writes `scenarios/<spot>__<level>/` into its world, `<spot>` being
 
 ## Suite bundles
 
-`--suite NAME` writes each split that has worlds as one directory under `suites/` of the imported asset root (`$ARENA_ASSETS_DIR_IMPORTED`, else `$ARENA_ASSETS_DIR/_imported`), the test split first, replacing a bundle of that name. There `arena evaluation benchmark --suite NAME_test` finds it and `arena asset push suite NAME_test` publishes it.
+`--suite NAME` writes each split that has worlds as one directory under `suites/` of the imported asset root (`$ARENA_ASSETS_DIR_IMPORTED`, else `$ARENA_ASSETS_DIR/_imported`), the test split first. A bundle already there is replaced when its index names the same manifest and seed, and the bundle of a split that has no worlds any more is removed on the same condition. Any other directory of that name is left alone and stops the run with exit 1. There `arena evaluation benchmark --suite NAME_test` finds it and `arena asset push suite NAME_test` publishes it.
 
 ```
 suites/NAME_test/
@@ -83,4 +83,4 @@ suites/NAME_test/
 
 Every stage runs `modes: {robots: search, obstacles: scenario}` on its scenario for 3 episodes of at most 300 s, judged with `search: {radius: 1.0, line_of_sight: true, dwell_s: 0.0}`, on `robot: auto`, the robot of the contestant's planner.
 
-A bundle is written only when every task was placed, otherwise the run prints the rejections and exits 1. The same manifest writes the same bytes wherever it runs, and nothing in a bundle names a path outside it. `checksum` in the index is the SHA-256 over every other file of the bundle by relative path, so a copy can be told from a regenerated one. A flat `suites/NAME_test.yaml` would take precedence over the bundle.
+A bundle is written only when every task was placed, otherwise the run prints the rejections and exits 1. The same manifest writes the same bytes wherever it runs, and nothing in a bundle names a path outside it. `checksum` in the index is the SHA-256 over every other file of the bundle by relative path, without the dot files an asset cache adds, so a copy can be told from a regenerated one. A flat `suites/NAME_test.yaml` would take precedence over the bundle.
