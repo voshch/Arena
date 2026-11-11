@@ -59,7 +59,7 @@ class CamServer(CamNode):
         """Have the env's task generator play `request` now and at every episode start."""
         if not await self._set_setup(request):
             return
-        client = self.create_client_wrapper(Play, f"{self._generator}/cam/play", timeout=SELECT_TIMEOUT)
+        client = self.create_client_wrapper(Play, f"{self._generator}/cam/play", timeout=SELECT_TIMEOUT, probe=Play.Request(root="ghost"))
         if await client.ensure(timeout_sec=SELECT_TIMEOUT):
             response = await client.call_timeout(Play.Request(root=request))
             if response is not None and not response.success:

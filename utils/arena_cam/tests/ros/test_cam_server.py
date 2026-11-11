@@ -40,7 +40,9 @@ class Server:
 
     def __enter__(self) -> Server:
         self._process = subprocess.Popen([sys.executable, "-m", "arena_cam.cli", "serve", "--env", "0", "--sim", "--fps", str(FPS)])
-        assert self.play_client.wait_for_service(timeout_sec=60.0)
+        for client, request in ((self.play_client, Play.Request(root="ghost")), (self.stop_client, Trigger.Request())):
+            assert client.wait_for_service(timeout_sec=60.0)
+            assert any(self._answer(client, request, 2.0) is not None for _ in range(15))
         return self
 
     def __exit__(self, *_exc: object) -> None:
@@ -52,13 +54,21 @@ class Server:
                 self._process.kill()
                 self._process.wait()
 
-    def _call(self, client: object, request: object) -> object:
+    def _answer(self, client: object, request: object, timeout: float) -> object | None:
+        """The response, or None when none came within `timeout`."""
         future = client.call_async(request)
-        deadline = time.monotonic() + 15.0
+        deadline = time.monotonic() + timeout
         while not future.done() and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert future.done()
+        if not future.done():
+            client.remove_pending_request(future)
+            return None
         return future.result()
+
+    def _call(self, client: object, request: object) -> object:
+        response = self._answer(client, request, 15.0)
+        assert response is not None
+        return response
 
     def play(self, root: str, bundle: dict, params: str = "") -> Play.Response:
         return self._call(self.play_client, Play.Request(root=root, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params))
