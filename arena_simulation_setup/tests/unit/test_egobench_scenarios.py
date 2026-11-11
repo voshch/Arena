@@ -194,10 +194,15 @@ def test_every_encounter_films_the_pedestrian_eyes_the_robot_and_overhead_throug
     assert {view["source"] for view in views.values() if "timeline" in view} == {"sim"}
 
 
-def test_the_rig_films_until_a_nominal_robot_reaches_its_goal():
+def test_the_rig_stops_filming_a_tail_after_a_nominal_robot_meets_the_pedestrian():
     result = generated(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING)))
-    episode = result.provenance["design"]["episode_time"]
-    assert result.cameras[cameras.RIG]["params"]["duration"] == math.floor(episode * 10) / 10
+    d = result.provenance["design"]
+    assert d["meet_time"] + cameras.TAIL_S < d["episode_time"]
+    assert result.cameras[cameras.RIG]["params"]["duration"] == math.floor((d["meet_time"] + cameras.TAIL_S) * 10) / 10
+
+
+def test_the_rig_never_films_past_the_episode_end():
+    assert cameras.duration(meet=23.0, episode=24.3) == 24.3
 
 
 def test_an_oncoming_pedestrian_meets_a_nominal_robot_halfway_through_the_episode():

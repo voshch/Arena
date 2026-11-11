@@ -274,5 +274,5 @@ def build(sample: Sample, placement: Placement, notes: Sequence[str] = ()) -> Ge
         "notes": list(notes),
     }
     framed = [robot.start, robot.end, *placement.ped_route()]
-    rig = cameras.rig(PED_NAME, framed, robot.heading, cameras.floor_tenth(episode_time(sample, placement)))
+    rig = cameras.rig(PED_NAME, framed, robot.heading, cameras.duration(meet_time(sample, placement), episode_time(sample, placement)))
     return Generated(scenario=scenario, types={ref[2:]: doc for ref, doc in files.docs.items()}, provenance=provenance, cameras={cameras.RIG: rig})

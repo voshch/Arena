@@ -74,7 +74,7 @@ Each placed sample writes `scenarios/<scenario>/` into its world:
 | `scenario.yaml` | `arena-scenario/2`: the pedestrian, the robot's start and goal and the release, carrying `GENERATED_MARKER` |
 | `types/*.yaml` | the pedestrian's behavior tree |
 | `provenance.yaml` | the sample and the designed geometry: robot start and goal, pedestrian route, encounter point, release arc and its nominal time, and when a nominal robot is level with the encounter (`meet_time`) and at its goal (`episode_time`) |
-| `cameras/three_view.yaml` | a [camera rig](../../../../../utils/arena_cam/arena_cam/README.md#rigs) of three views at the same instants, all at a 1.047 rad fov: `pedestrian` through the pedestrian's eyes, `robot` mounted 0.6 m up on the robot's base, `overhead` holding over the robot's leg and the pedestrian's route, the leg running left to right in a 16:9 frame. It films until a nominal robot reaches its goal, where the episode restarts |
+| `cameras/three_view.yaml` | a [camera rig](../../../../../utils/arena_cam/arena_cam/README.md#rigs) of three views at the same instants, all at a 1.047 rad fov: `pedestrian` through the pedestrian's eyes, `robot` mounted 0.6 m up on the robot's base, `overhead` holding over the robot's leg and the pedestrian's route, the leg running left to right in a 16:9 frame. It films until 4 s after a nominal robot is level with the encounter (`meet_time`), at most until the robot reaches its goal, where the episode restarts |
 
 The world binds its episode to the `scenario` task modes on both axes. To run one scenario:
 

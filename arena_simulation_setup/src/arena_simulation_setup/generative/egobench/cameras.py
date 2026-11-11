@@ -14,10 +14,16 @@ MARGIN_M = 1.5  # free border around the encounter in the overhead view
 MIN_HEIGHT_M = 6.0
 TILT = 0.15  # horizontal eye offset per m of height, a straight-down look has no up direction
 LOOK_HEIGHT_M = 0.5
+TAIL_S = 4.0  # filmed after a nominal robot is level with the encounter
 
 
 def floor_tenth(seconds: float) -> float:
     return math.floor(seconds * 10 + 1e-9) / 10
+
+
+def duration(meet: float, episode: float) -> float:
+    """Seconds the rig films: the encounter plus `TAIL_S`, never past the episode end."""
+    return floor_tenth(min(meet + TAIL_S, episode))
 
 
 def overhead(points: list[Point], heading: float) -> tuple[list[float], list[float]]:
