@@ -4,7 +4,7 @@ import math
 
 import pytest
 import shapely
-from arena_simulation_setup.generative.egobench import scenario_corridor, scenario_open
+from arena_simulation_setup.generative.egobench import cameras, scenario_corridor, scenario_open
 from arena_simulation_setup.generative.egobench.encounter import FIXED_PLANNER, MIN_RELEASE_M, Generated, Rejected
 from arena_simulation_setup.generative.egobench.manifest import Encounter, Pedestrian, Space
 from arena_simulation_setup.generative.egobench.sampler import Sample
@@ -181,3 +181,40 @@ def test_a_generated_corridor_world_places_an_oncoming_pedestrian():
     layout = generator.layout()
     assert layout is not None
     generated(scenario_corridor.generate(layout, sample(Encounter.ONCOMING)))
+
+
+@pytest.mark.parametrize("encounter", list(Encounter))
+def test_every_encounter_films_the_pedestrian_eyes_the_robot_and_overhead_through_the_sim(encounter: Encounter):
+    speed = 0.3 if encounter is Encounter.OVERTAKE else 1.2
+    result = generated(scenario_open.generate(open_field(), sample(encounter, Space.OPEN, ped_speed=speed)))
+    views = result.cameras[cameras.RIG]["cameras"]
+    assert views["pedestrian"]["timeline"][0]["pov"]["face"] == "${face.ped_0}"
+    assert views["robot"]["mount"]["frame"] == "${robot}"
+    assert "look" in views["overhead"]["timeline"][0]
+    assert {view["source"] for view in views.values() if "timeline" in view} == {"sim"}
+
+
+def test_the_rig_films_until_a_nominal_robot_reaches_its_goal():
+    result = generated(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING)))
+    episode = result.provenance["design"]["episode_time"]
+    assert result.cameras[cameras.RIG]["params"]["duration"] == math.floor(episode * 10) / 10
+
+
+def test_an_oncoming_pedestrian_meets_a_nominal_robot_halfway_through_the_episode():
+    d = design(scenario_corridor.generate(corridor(), sample(Encounter.ONCOMING)))
+    assert d["meet_time"] == pytest.approx(d["episode_time"] / 2, abs=0.01)
+
+
+@pytest.mark.parametrize("encounter", [Encounter.ONCOMING, Encounter.CROSSING_LEFT])
+def test_the_overhead_view_frames_the_robot_leg_and_the_pedestrian_route(encounter: Encounter):
+    result = generated(scenario_open.generate(open_field(), sample(encounter, Space.OPEN)))
+    d = result.provenance["design"]
+    look = result.cameras[cameras.RIG]["cameras"]["overhead"]["timeline"][0]["look"]
+    (ex, ey, height), (tx, ty, tz) = look["eye"], look["target"]
+    heading = d["robot_start"][2]
+    ux, uy = math.cos(heading), math.sin(heading)
+    reach = (height - tz) * math.tan(cameras.FOV / 2)
+    for x, y in [d["robot_start"][:2], d["robot_goal"][:2], *d["ped_route"]]:
+        assert abs((x - tx) * ux + (y - ty) * uy) <= reach
+        assert abs(-(x - tx) * uy + (y - ty) * ux) <= reach / cameras.ASPECT
+    assert math.dist((ex, ey), (tx, ty)) == pytest.approx(cameras.TILT * height, abs=0.02)

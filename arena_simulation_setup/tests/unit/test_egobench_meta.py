@@ -84,6 +84,15 @@ def test_a_saved_world_carries_its_marked_scenario_types_and_provenance(tmp_path
     assert provenance["sample"] == item.to_dict()
 
 
+def test_a_saved_scenario_carries_its_marked_camera_rig(tmp_path: Path):
+    item = one(Encounter.ONCOMING, Space.OPEN, obstacles=0)
+    generator = WorldGeneratorEgoBench.of(item)
+    save_generated(WorldView(tmp_path / "w"), generator.compute(), generator.files())
+    rig = tmp_path / "w" / "scenarios" / item.scenario_key / "cameras" / "three_view.yaml"
+    assert is_generated(rig)
+    assert sorted(yaml.safe_load(rig.read_text())["cameras"]) == ["overhead", "pedestrian", "robot"]
+
+
 def test_a_dry_run_writes_nothing(tmp_path: Path):
     report = cli.run(manifest(), out=tmp_path / "out")
     assert report.placed == 4
