@@ -98,12 +98,12 @@ class CamServer(CamNode):
             return None
         if not self._scheduler_active:
             if not self._unsynced_logged:
-                self.get_logger().error("cam: recording needs a lockstep run (lockstep:=true), playing only")
+                self.get_logger().warning("cam: recording needs a lockstep run (lockstep:=true), playing only")
                 self._unsynced_logged = True
             return None
         target = env_take_path(self._record_dir, self._env_id, take)
         if target.exists() or any(target.parent.glob(f"{target.stem}-*.mp4")):
-            self.get_logger().error(f"cam: take {take} exists under {target.parent}, playing only")
+            self.get_logger().info(f"cam: take {take} exists under {target.parent}, playing only")
             return None
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(f"{target.stem}{PARTIAL}.mp4")
