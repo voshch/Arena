@@ -115,24 +115,24 @@ levels:
   - {name: hallway_plant_4, pose: [20.5, 13.3], model: Office/SM_Plant01}
   - {name: hallway_plant_5, pose: [24.0, 10.7], model: Office/SM_Plant01}
   - {name: cafeteria_table_1, pose: [3.0, 3.0], model: Office/SM_TableD}
-  - {name: cafeteria_chair_1_1a, pose: [2.2, 1.9, 0.6], model: Office/SM_Chair}
-  - {name: cafeteria_chair_1_1b, pose: [2.2, 3.5], model: Office/SM_Chair}
-  - {name: cafeteria_chair_1_2a, pose: [3.8, 2.5, 3.14159], model: Office/SM_Chair}
-  - {name: cafeteria_chair_1_2b, pose: [3.8, 3.7, -2.4], model: Office/SM_Chair}
+  - {name: cafeteria_chair_1_1a, pose: [2.2, 1.9, 0.6], model: Office/Chair}
+  - {name: cafeteria_chair_1_1b, pose: [2.2, 3.5], model: Office/Chair}
+  - {name: cafeteria_chair_1_2a, pose: [3.8, 2.5, 3.14159], model: Office/Chair}
+  - {name: cafeteria_chair_1_2b, pose: [3.8, 3.7, -2.4], model: Office/Chair}
   - {name: cafeteria_table_2, pose: [9.0, 3.0], model: Office/SM_TableD}
-  - {name: cafeteria_chair_2_1a, pose: [8.02, 2.5, -0.6], model: Office/SM_Chair}
-  - {name: cafeteria_chair_2_1b, pose: [7.7, 3.5, 0.65], model: Office/SM_Chair}
-  - {name: cafeteria_chair_2_2a, pose: [9.8, 2.5, 2.9], model: Office/SM_Chair}
-  - {name: cafeteria_chair_2_2b, pose: [9.8, 3.5, -2.3], model: Office/SM_Chair}
+  - {name: cafeteria_chair_2_1a, pose: [8.02, 2.5, -0.6], model: Office/Chair}
+  - {name: cafeteria_chair_2_1b, pose: [7.7, 3.5, 0.65], model: Office/Chair}
+  - {name: cafeteria_chair_2_2a, pose: [9.8, 2.5, 2.9], model: Office/Chair}
+  - {name: cafeteria_chair_2_2b, pose: [9.8, 3.5, -2.3], model: Office/Chair}
   - {name: cafeteria_table_3, pose: [3.0, 7.5], model: Office/SM_TableD}
-  - {name: cafeteria_chair_3_1a, pose: [2.5, 7.0], model: Office/SM_Chair}
-  - {name: cafeteria_chair_3_1b, pose: [2.5, 8.0], model: Office/SM_Chair}
-  - {name: cafeteria_chair_3_2a, pose: [3.5, 7.0, 3.14159], model: Office/SM_Chair}
-  - {name: cafeteria_chair_3_2b, pose: [3.5, 8.0, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_chair_3_1a, pose: [2.5, 7.0], model: Office/Chair}
+  - {name: cafeteria_chair_3_1b, pose: [2.5, 8.0], model: Office/Chair}
+  - {name: cafeteria_chair_3_2a, pose: [3.5, 7.0, 3.14159], model: Office/Chair}
+  - {name: cafeteria_chair_3_2b, pose: [3.5, 8.0, 3.14159], model: Office/Chair}
   - {name: cafeteria_table_4, pose: [9.0, 7.5], model: Office/SM_TableD}
-  - {name: cafeteria_chair_4_1b, pose: [8.2, 8.0], model: Office/SM_Chair}
-  - {name: cafeteria_chair_4_2a, pose: [11.4, 7.0, 3.14159], model: Office/SM_Chair}
-  - {name: cafeteria_chair_4_2b, pose: [9.8, 7.0, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_chair_4_1b, pose: [8.2, 8.0], model: Office/Chair}
+  - {name: cafeteria_chair_4_2a, pose: [11.4, 7.0, 3.14159], model: Office/Chair}
+  - {name: cafeteria_chair_4_2b, pose: [9.8, 7.0, 3.14159], model: Office/Chair}
   - {name: cafeteria_drinks_machine, pose: [11.3, 9.9, -1.5708], model: Office/SM_DrinksMachine}
   - {name: cafeteria_water_cooler, pose: [10.5, 9.7, -1.5708], model: Office/SM_WaterCooler}
   - {name: cafeteria_plant_1, pose: [0.5, 9.4], model: Office/SM_Plant02}
