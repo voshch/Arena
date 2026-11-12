@@ -48,6 +48,30 @@ def record_path(out: str) -> Path:
     return path
 
 
+PARTIAL = ".partial"  # marks a take's files until every camera finished
+
+
+def record_root(out: str, base: Path) -> Path:
+    """The directory a camera server records into: a relative `out` lands under `base`/recordings, an absolute one is kept."""
+    path = Path(out).expanduser()
+    return path if path.is_absolute() else base / "recordings" / path
+
+
+def final_path(path: Path) -> Path:
+    """`ep001.partial-a.mp4` -> `ep001-a.mp4`, the name a finished take's file carries."""
+    return path.with_name(path.name.replace(PARTIAL, "", 1))
+
+
+def promote(paths: Iterable[Path]) -> list[Path]:
+    """Give each written partial file its final name, never over an existing file. Returns the renamed paths."""
+    done: list[Path] = []
+    for path in paths:
+        target = final_path(path)
+        if path.is_file() and not target.exists():
+            done.append(path.rename(target))
+    return done
+
+
 def tagged(path: Path, tag: str) -> Path:
     """`tour.mp4` -> `tour-sim.mp4`, one file per recorded camera."""
     return path.with_stem(f"{path.stem}-{tag}")

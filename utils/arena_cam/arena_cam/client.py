@@ -470,12 +470,12 @@ class CamNode(ArenaMixinNode):
     async def play(self, timeline: Camera) -> bool:
         """Run one take on the connected surfaces. True when it ran and every recording finished usable."""
         self._timeline, self._error, self._off_stamp, self._off_most = timeline, None, 0, 0.0
+        if self.ride_only:
+            self._lockstep = self._scheduler_active
         takes = self._make_takes(timeline)
         if takes is None:
             return False
         self._takes, self.shared = takes, len(takes) > 1
-        if self.ride_only:
-            self._lockstep = self._scheduler_active
         if self._record is not None and not await self._open_recorders():
             return False
         names = ", ".join(endpoint.ns for endpoint in self._endpoints)

@@ -7,8 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from arena_cam.record import Recorder, claim, default_name, record_path, tagged, take_paths
+from arena_cam.record import Recorder, claim, default_name, final_path, promote, record_path, record_root, tagged, take_paths
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe not on PATH")
 
@@ -81,3 +80,39 @@ def test_claim_refuses_clobber(tmp_path: Path) -> None:
 
 def test_default_name_is_stem_and_filesystem_safe_timestamp() -> None:
     assert re.fullmatch(r"orbit_\d{8}-\d{6}", default_name("orbit"))
+
+
+def test_a_relative_record_dir_lands_under_recordings(tmp_path: Path) -> None:
+    assert record_root("mvp/run1", tmp_path) == tmp_path / "recordings" / "mvp" / "run1"
+
+
+def test_an_absolute_record_dir_is_kept(tmp_path: Path) -> None:
+    assert record_root(str(tmp_path / "x"), Path("/elsewhere")) == tmp_path / "x"
+
+
+def test_a_partial_view_file_maps_to_its_final_name() -> None:
+    assert final_path(Path("w/s/ep001.partial-pedestrian.mp4")) == Path("w/s/ep001-pedestrian.mp4")
+
+
+def test_a_lone_camera_partial_maps_to_the_bare_take() -> None:
+    assert final_path(Path("w/ep001.partial.mp4")) == Path("w/ep001.mp4")
+
+
+def test_promote_renames_every_view(tmp_path: Path) -> None:
+    files = [tmp_path / f"ep001.partial-{view}.mp4" for view in ("a", "b")]
+    for file in files:
+        file.write_bytes(b"x")
+    assert promote(files) == [tmp_path / "ep001-a.mp4", tmp_path / "ep001-b.mp4"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["ep001-a.mp4", "ep001-b.mp4"]
+
+
+def test_promote_skips_a_view_that_never_got_written(tmp_path: Path) -> None:
+    (tmp_path / "ep001.partial-a.mp4").write_bytes(b"x")
+    assert promote([tmp_path / "ep001.partial-a.mp4", tmp_path / "ep001.partial-b.mp4"]) == [tmp_path / "ep001-a.mp4"]
+
+
+def test_promote_never_overwrites_a_finished_take(tmp_path: Path) -> None:
+    (tmp_path / "ep001-a.mp4").write_bytes(b"old")
+    (tmp_path / "ep001.partial-a.mp4").write_bytes(b"new")
+    assert promote([tmp_path / "ep001.partial-a.mp4"]) == []
+    assert (tmp_path / "ep001-a.mp4").read_bytes() == b"old"

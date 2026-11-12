@@ -536,9 +536,10 @@ tick, so the shot's time is sim time. With no run it takes its own hold and step
 sim by 1/fps per frame. Either way the sim runs no faster than the camera. A `look`
 stays a `set_view` call, and it takes no frame.
 
-### `arena cam serve [--env N] [--sim] [--fps N] [--setup REQUEST]`
+### `arena cam serve [--env N] [--sim] [--fps N] [--setup REQUEST] [--record DIR]`
 
 Run one env's camera server, see [Playing with the episode](#playing-with-the-episode).
+`--record DIR` records every labelled take, see [Recording with the episode](#recording-with-the-episode).
 
 ### `arena cam list`
 
@@ -594,6 +595,24 @@ rides it as hard channel `cam`, registered under the env so it drops at despawn.
 no run it plays on the wall clock, and a server never holds the sim. `cam/stop`
 (`std_srvs/Trigger`) ends the running take. `<node>/cam/play` on the task generator
 takes a request and forwards it, which is what `view_play` calls.
+
+### Recording with the episode
+
+`viz.cam.record:=DIR` (`cam.record:=DIR` on `arena viz`) has each camera server record
+every take it plays, one file per camera, while a lockstep run is active:
+
+```
+arena launch sim:=isaac lockstep:=true task.obstacles:=scenario viz.cam:=three_view viz.cam.record:=egobench
+```
+
+A relative `DIR` lands under `$ARENA_DATA_DIR/recordings`. The task generator labels each
+play `<world>/<scenario>/ep<NNN>` (`<world>/ep<NNN>` with no scenario) in the `take` field
+of `Play`, and the server files the take at `DIR/<label>-<camera>.mp4`. A take records
+under `<label>.partial-<camera>.mp4` and gets its final name once every camera finished,
+so a take a new episode cut short keeps only `.partial` files, which the next take of that
+label records over. A label whose final files exist plays without recording, and with no lockstep run the server logs once and plays
+only. A play with no label, such as `view_play` between episodes, only plays.
+Labels carry no env, so record one env per `DIR`.
 
 ---
 

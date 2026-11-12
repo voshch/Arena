@@ -5,7 +5,7 @@ One command shape for everything:
     arena cam <name> [key=value ...] [--sim] [--viz [ENV_ID]] [--env N]   # name is verb, camera asset, or .yaml
     arena cam <name> ... --lockstep [--fps 30]   # play live, gated frame by frame
     arena cam <name> ... --record [FILE] [--fps 30] [--lockstep] [-f]   # render to a video (ffmpeg) instead
-    arena cam serve [--env N] [--sim] [--fps 30] [--setup REQUEST]   # one env's camera server
+    arena cam serve [--env N] [--sim] [--fps 30] [--setup REQUEST] [--record DIR]   # one env's camera server, records every labelled take under DIR
     arena cam <name> ... --record [FILE] --lockstep --mount FRAME[@X,Y,Z[,PITCH]]   # plus a camera fixed on FRAME
     arena cam drive [--sim] [--viz [ENV_ID]] [--record [FILE] ...]   # fly the camera from the keyboard, R records
     arena cam list                               # catalog of verbs and global camera assets
@@ -217,11 +217,13 @@ def main(argv: list[str] | None = None) -> None:
         _drive(args.sim, args.viz, args.record, args.fps, args.lockstep, args.force)
         return
     if args.name == "serve":
-        if args.params or args.viz is not None or args.record is not None:
-            parser.error("serve takes only --env, --sim, --fps and --setup")
+        if args.params or args.viz is not None:
+            parser.error("serve takes only --env, --sim, --fps, --setup and --record")
+        if args.record == "":
+            parser.error("serve --record needs a DIR")
         from arena_cam.server import serve
 
-        serve(args.env, args.sim, args.fps, args.setup)
+        serve(args.env, args.sim, args.fps, args.setup, args.record or "")
         return
     targets = _resolve_targets(args.sim, args.viz)
     shot_file = is_path(args.name)

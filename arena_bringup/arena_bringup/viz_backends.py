@@ -80,9 +80,9 @@ def _rerun_commands(ns: str, env_idx: int, args: dict[str, str]) -> list[tuple[s
     return [(f'rerun_{ns}', rerun_launch_argv(ns, web, grpc, extras))]
 
 
-def _cam_command(ns: str, env_idx: int, request: str) -> tuple[str, list[str]]:
-    """The env's camera server, which selects `request` on its task generator. Env 0 also drives the sim GUI camera."""
-    cmd = ['ros2', 'run', 'arena_cam', 'cam', 'serve', '--env', str(env_idx), f'--setup={request}']
+def _cam_command(ns: str, env_idx: int, request: str, record: str = '') -> tuple[str, list[str]]:
+    """The env's camera server, which selects `request` on its task generator and records every take under `record`. Env 0 also drives the sim GUI camera."""
+    cmd = ['ros2', 'run', 'arena_cam', 'cam', 'serve', '--env', str(env_idx), f'--setup={request}', *([f'--record={record}'] if record else [])]
     return (f'cam_{ns}', [*cmd, '--sim'] if env_idx == 0 else cmd)
 
 
@@ -108,10 +108,11 @@ def viz_commands(ns: str, env_idx: int, viz_args: dict[str, str]) -> list[tuple[
     `viz_args` is not mutated."""
     args = dict(viz_args)
     cam = args.pop('cam', None)
+    record = args.pop('cam.record', '')
     backends = resolve_backends(args)
     out: list[tuple[str, list[str]]] = []
     for bk in backends:
         out.extend(BACKENDS[bk](ns, env_idx, args))
     if cam:
-        out.append(_cam_command(ns, env_idx, cam))
+        out.append(_cam_command(ns, env_idx, cam, record))
     return out
