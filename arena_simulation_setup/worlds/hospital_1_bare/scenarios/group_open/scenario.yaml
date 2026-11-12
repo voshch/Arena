@@ -32,7 +32,7 @@ dynamic:
   - - 9.53
     - 12.31
 - name: talker_2
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose:
   - 9.53
   - 10.69

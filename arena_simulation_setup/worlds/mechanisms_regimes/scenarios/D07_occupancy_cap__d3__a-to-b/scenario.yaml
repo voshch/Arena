@@ -25,7 +25,7 @@ humans:
   waypoints: [[12.8, 39.0]]
   waypoint_mode: once
 - name: visitor_1
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [2.0, 40.5, 0.0]
   agent: {agent_type: adult}
   waypoints: [[2.0, 40.5], [20.0, 40.5]]

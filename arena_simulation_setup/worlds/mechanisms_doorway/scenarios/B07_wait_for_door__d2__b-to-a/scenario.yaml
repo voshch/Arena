@@ -9,7 +9,7 @@ humans:
   pose: [15.2, 6.8, 3.1416]
   agent: {agent_type: ./door_waiter.yaml}
 - {name: waiter_4, model: male_adult_medical_01, pose: [16.1, 5.2, 3.1416], agent: {agent_type: ./door_waiter.yaml}}
-- {name: waiter_5, model: female_adult_medical_01, pose: [16.1, 6.0, 3.1416], agent: {agent_type: ./door_waiter.yaml}}
+- {name: waiter_5, model: Hospital/nurse_female_caucasian_young, pose: [16.1, 6.0, 3.1416], agent: {agent_type: ./door_waiter.yaml}}
 - {name: waiter_6, model: worker_male_asian_middleage, pose: [16.1, 6.8, 3.1416], agent: {agent_type: ./door_waiter.yaml}}
 robots:
 - start: [23.0, 6.0, 3.1416]

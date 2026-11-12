@@ -16,7 +16,7 @@ humans:
   waypoints: [[11.0, 1.0], [11.0, 11.0]]
   waypoint_mode: reverse
 - name: cart_2
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [11.0, 11.0, -1.5708]
   agent: {agent_type: adult, desired_velocity: 1.3}
   waypoints: [[11.0, 11.0], [11.0, 1.0]]
