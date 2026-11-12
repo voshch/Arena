@@ -26,6 +26,7 @@ class WorldGeneratorType(enum.Enum):
     CONCOURSE = "concourse"
     EGOBENCH = "egobench"
     ROOMS = "rooms"
+    SIDEWALK = "sidewalk"
 
 
 class BaseConfiguration(pydantic.BaseModel):
@@ -232,3 +233,10 @@ def lazy_Rooms() -> type[WorldGeneratorImpl]:
     from .rooms import WorldGeneratorRooms
 
     return WorldGeneratorRooms
+
+
+@WorldGenerator.register(WorldGeneratorType.SIDEWALK)
+def lazy_Sidewalk() -> type[WorldGeneratorImpl]:
+    from .sidewalk import WorldGeneratorSidewalk
+
+    return WorldGeneratorSidewalk
