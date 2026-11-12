@@ -139,12 +139,12 @@ levels:
   - {name: cafeteria_plant_2, pose: [11.5, 0.5], model: Office/SM_Plant03}
   - {name: cafeteria_trash_1, pose: [0.2, 0.2], model: Office/SM_TrashCan}
   - {name: sub_hallway_plant, pose: [14.4, 0.8], model: Office/SM_Plant01}
-  - {name: meet1_table1, pose: [20.8, 7.125, 1.5708], model: Office/SM_TableRound_module}
-  - {name: meet1_table2, pose: [19.55, 7.125, 1.5708], model: Office/SM_TableRound_module}
-  - {name: meet1_table3, pose: [18.3, 7.125, 1.5708], model: Office/SM_TableRound_module}
-  - {name: meet1_table4, pose: [20.8, 5.875, 1.5708], model: Office/SM_TableRound_module}
-  - {name: meet1_table5, pose: [19.55, 5.875, 1.5708], model: Office/SM_TableRound_module}
-  - {name: meet1_table6, pose: [18.3, 5.875, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_table1, pose: [20.8, 7.125, 1.5708], model: Office/Table_Round}
+  - {name: meet1_table2, pose: [19.55, 7.125, 1.5708], model: Office/Table_Round}
+  - {name: meet1_table3, pose: [18.3, 7.125, 1.5708], model: Office/Table_Round}
+  - {name: meet1_table4, pose: [20.8, 5.875, 1.5708], model: Office/Table_Round}
+  - {name: meet1_table5, pose: [19.55, 5.875, 1.5708], model: Office/Table_Round}
+  - {name: meet1_table6, pose: [18.3, 5.875, 1.5708], model: Office/Table_Round}
   - {name: meet1_chair_board, pose: [22.4, 8.0, -2.363185], model: Office/SM_ChairOffice}
   - {name: meet1_chair_1a, pose: [20.7, 8.0, -1.3], model: Office/SM_ChairOffice}
   - {name: meet1_chair_1b, pose: [19.6, 8.0], model: Office/SM_ChairOffice}
@@ -459,14 +459,14 @@ levels:
   - {name: meet_big_corner_2, pose: [4.375, 22.625, 3.14159], model: Office/SM_TableRound_corner}
   - {name: meet_big_corner_3, pose: [5.625, 22.625, 1.5708], model: Office/SM_TableRound_corner}
   - {name: meet_big_corner_4, pose: [4.375, 16.375, -1.5708], model: Office/SM_TableRound_corner}
-  - {name: meet_big_module_1, pose: [4.375, 21.375], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_2, pose: [4.375, 20.125], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_3, pose: [4.375, 18.875], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_4, pose: [4.375, 17.625], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_5, pose: [5.625, 21.375], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_6, pose: [5.625, 20.125], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_7, pose: [5.625, 18.875], model: Office/SM_TableRound_module}
-  - {name: meet_big_module_8, pose: [5.625, 17.625], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_1, pose: [4.375, 21.375], model: Office/Table_Round}
+  - {name: meet_big_module_2, pose: [4.375, 20.125], model: Office/Table_Round}
+  - {name: meet_big_module_3, pose: [4.375, 18.875], model: Office/Table_Round}
+  - {name: meet_big_module_4, pose: [4.375, 17.625], model: Office/Table_Round}
+  - {name: meet_big_module_5, pose: [5.625, 21.375], model: Office/Table_Round}
+  - {name: meet_big_module_6, pose: [5.625, 20.125], model: Office/Table_Round}
+  - {name: meet_big_module_7, pose: [5.625, 18.875], model: Office/Table_Round}
+  - {name: meet_big_module_8, pose: [5.625, 17.625], model: Office/Table_Round}
   - {name: meet_big_chair_board, pose: [6.5, 24.3, -2.363185], model: Office/SM_ChairOffice}
   - {name: meet_big_chair_1a, pose: [5.5, 23.3, -1.3], model: Office/SM_ChairOffice}
   - {name: meet_big_chair_1c, pose: [4.0, 23.3, -1.57079], model: Office/SM_ChairOffice}
