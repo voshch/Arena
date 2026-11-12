@@ -3,7 +3,7 @@ objects:
 - {name: exit, model: Common/Object/painting_1, pose: [10.0, 0.8, -1.5708], humansim: {type: exit}}
 humans:
 - name: evacuee_1
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [3.0, 6.5, 0.0]
   agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
 - name: evacuee_2
@@ -11,7 +11,7 @@ humans:
   pose: [5.5, 8.5, 0.0]
   agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
 - name: evacuee_3
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [3.0, 12.5, 0.0]
   agent: {agent_type: ./agent_types/evacuee.yaml, desired_velocity: 1.3}
 - name: evacuee_4

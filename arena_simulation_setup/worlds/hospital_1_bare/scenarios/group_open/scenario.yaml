@@ -10,7 +10,7 @@ robots:
     - 1.5708
 dynamic:
 - name: talker_0
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose:
   - 10.94
   - 11.5

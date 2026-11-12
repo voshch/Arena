@@ -19,7 +19,7 @@ humans:
   waypoints: [[23.8, 2.0], [3.0, 2.0]]
   waypoint_mode: reverse
 - name: walker_4
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [22.0, 3.6, 0.0]
   agent: {agent_type: adult}
   waypoints: [[22.0, 3.6], [3.0, 3.6]]

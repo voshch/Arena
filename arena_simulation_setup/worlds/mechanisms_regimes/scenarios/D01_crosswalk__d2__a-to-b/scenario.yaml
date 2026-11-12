@@ -8,9 +8,9 @@ humans:
   model: Office/office_female_caucasian_young
   pose: [9.2, 6.8, 0.0]
   agent: {agent_type: ./signal_waiter.yaml}
-- {name: xwaiter_4, model: male_adult_medical_01, pose: [8.4, 5.2, 0.0], agent: {agent_type: ./signal_waiter.yaml}}
+- {name: xwaiter_4, model: Hospital/doctor_male_caucasian_middleage, pose: [8.4, 5.2, 0.0], agent: {agent_type: ./signal_waiter.yaml}}
 - name: cart_1
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [11.0, 1.0, 1.5708]
   agent: {agent_type: adult, desired_velocity: 1.3}
   waypoints: [[11.0, 1.0], [11.0, 11.0]]

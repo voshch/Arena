@@ -19,7 +19,7 @@ humans:
   waypoints: [[10.7, 31.1]]
   waypoint_mode: once
 - name: reader_4
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [12.3, 28.9, 0.0]
   agent: {agent_type: adult}
   waypoints: [[12.3, 28.9]]
