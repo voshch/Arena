@@ -46,8 +46,8 @@ levels:
   - {name: Checkin_chair_03, pose: [5.5, 24.2], model: Office/SM_ChairOffice}
   - {name: Reception_desk_corner_01, pose: [22.5, 12.0, 3.14], model: Office/SM_ReceptionTableCornerOutside}
   - {name: Reception_desk_corner_02, pose: [22.5, 18.0, -1.57], model: Office/SM_ReceptionTableCornerOutside}
-  - {name: Reception_desk_straight_01, pose: [23.5, 14.0, 3.14], model: Office/SM_ReceptionTableStraight}
-  - {name: Reception_desk_straight_02, pose: [23.5, 16.0, 3.14], model: Office/SM_ReceptionTableStraight}
+  - {name: Reception_desk_straight_01, pose: [23.5, 14.0, 3.14], model: Office/Reception_Table_Straight}
+  - {name: Reception_desk_straight_02, pose: [23.5, 16.0, 3.14], model: Office/Reception_Table_Straight}
   - {name: Reception_01, pose: [20.0, 15.0], model: Office/SM_Reception}
   - {name: personel_01, pose: [8.0, 4.2, -1.57], model: Office/SM_Personenleitsystem_A}
   - {name: personel_02, pose: [9.5, 4.2, -1.57], model: Office/SM_Personenleitsystem_A}

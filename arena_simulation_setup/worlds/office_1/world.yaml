@@ -180,8 +180,8 @@ levels:
   - {name: wc2_mirror_2, pose: {x: 20.5, y: 0.025, z: 0.67, yaw: 1.5708}, model: Office/SM_Mirror}
   - {name: wc2_hand_dryer, pose: {x: 22.975, y: 0.7, z: 0.8, yaw: 3.14159}, model: Office/SM_HandDryer}
   - {name: wc2_trash, pose: [15.2, 0.5], model: Office/SM_TrashCan}
-  - {name: reception_desk_straight_a, pose: [35.0, 2.5], model: Office/SM_ReceptionTableStraight}
-  - {name: reception_desk_straight_b, pose: [35.0, 4.5], model: Office/SM_ReceptionTableStraight}
+  - {name: reception_desk_straight_a, pose: [35.0, 2.5], model: Office/Reception_Table_Straight}
+  - {name: reception_desk_straight_b, pose: [35.0, 4.5], model: Office/Reception_Table_Straight}
   - {name: reception_desk_corner_a, pose: [36.0, 0.5, 1.5708], model: Office/SM_ReceptionTableCornerOutside}
   - {name: reception_desk_corner_b, pose: [36.0, 6.5], model: Office/SM_ReceptionTableCornerOutside}
   - {name: reception_desk_stand_1, pose: [35.0, 1.5], model: Office/SM_ReceptionStandB}
