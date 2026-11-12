@@ -23,8 +23,8 @@ levels:
   objects:
   - {name: vending_machine, pose: [7.5, 11.5], model: vending_machine}
   - {name: nurse_station, pose: [15.0, 11.5, -1.57], model: Hospital/Reception_Counter}
-  - {name: chair1, pose: [20.5, 1.0, 1.57], model: Hospital/Chair}
-  - {name: chair2, pose: [21.5, 1.0, 1.57], model: Hospital/Chair}
-  - {name: chair3, pose: [22.5, 1.0, 1.57], model: Hospital/Chair}
-  - {name: chair4, pose: [23.5, 1.0, 1.57], model: Hospital/Chair}
-  - {name: chair5, pose: [24.5, 1.0, 1.57], model: Hospital/Chair}
+  - {name: chair1, pose: [20.5, 1.0, 1.57], model: Hospital/SM_Chair_04a}
+  - {name: chair2, pose: [21.5, 1.0, 1.57], model: Hospital/SM_Chair_04a}
+  - {name: chair3, pose: [22.5, 1.0, 1.57], model: Hospital/SM_Chair_04a}
+  - {name: chair4, pose: [23.5, 1.0, 1.57], model: Hospital/SM_Chair_04a}
+  - {name: chair5, pose: [24.5, 1.0, 1.57], model: Hospital/SM_Chair_04a}
