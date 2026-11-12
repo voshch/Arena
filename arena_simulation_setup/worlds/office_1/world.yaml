@@ -134,7 +134,7 @@ levels:
   - {name: cafeteria_chair_4_2a, pose: [11.4, 7.0, 3.14159], model: Office/Chair}
   - {name: cafeteria_chair_4_2b, pose: [9.8, 7.0, 3.14159], model: Office/Chair}
   - {name: cafeteria_drinks_machine, pose: [11.3, 9.9, -1.5708], model: Office/SM_DrinksMachine}
-  - {name: cafeteria_water_cooler, pose: [10.5, 9.7, -1.5708], model: Office/SM_WaterCooler}
+  - {name: cafeteria_water_cooler, pose: [10.5, 9.7, -1.5708], model: Office/Water_Cooler}
   - {name: cafeteria_plant_1, pose: [0.5, 9.4], model: Office/SM_Plant02}
   - {name: cafeteria_plant_2, pose: [11.5, 0.5], model: Office/SM_Plant03}
   - {name: cafeteria_trash_1, pose: [0.2, 0.2], model: Office/SM_TrashCan}
@@ -450,7 +450,7 @@ levels:
   - {name: office_file_cabinet_19, pose: [18.4, 22.7], model: Office/SM_FileCabinet_03}
   - {name: office_file_cabinet_20, pose: [18.4, 23.1], model: Office/SM_FileCabinet_01}
   - {name: office_file_cabinet_21, pose: [18.4, 23.5], model: Office/SM_FileCabinet_03}
-  - {name: office_water_cooler, pose: [47.7, 24.7, -1.5708], model: Office/SM_WaterCooler}
+  - {name: office_water_cooler, pose: [47.7, 24.7, -1.5708], model: Office/Water_Cooler}
   - {name: office_plant_1, pose: [18.8, 24.5], model: Office/SM_Plant01}
   - {name: office_plant_2, pose: [43.5, 24.5], model: Office/SM_Plant02}
   - {name: office_trash_1, pose: [18.3, 14.2], model: Office/SM_TrashCan}
