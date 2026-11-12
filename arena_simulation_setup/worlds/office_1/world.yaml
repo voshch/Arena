@@ -455,10 +455,10 @@ levels:
   - {name: office_plant_2, pose: [43.5, 24.5], model: Office/SM_Plant02}
   - {name: office_trash_1, pose: [18.3, 14.2], model: Office/SM_TrashCan}
   - {name: office_trash_2, pose: [47.8, 14.2], model: Office/SM_TrashCan}
-  - {name: meet_big_corner_1, pose: [5.625, 16.375], model: Office/SM_TableRound_corner}
-  - {name: meet_big_corner_2, pose: [4.375, 22.625, 3.14159], model: Office/SM_TableRound_corner}
-  - {name: meet_big_corner_3, pose: [5.625, 22.625, 1.5708], model: Office/SM_TableRound_corner}
-  - {name: meet_big_corner_4, pose: [4.375, 16.375, -1.5708], model: Office/SM_TableRound_corner}
+  - {name: meet_big_corner_1, pose: [5.625, 16.375], model: Office/Table_Round_Corner}
+  - {name: meet_big_corner_2, pose: [4.375, 22.625, 3.14159], model: Office/Table_Round_Corner}
+  - {name: meet_big_corner_3, pose: [5.625, 22.625, 1.5708], model: Office/Table_Round_Corner}
+  - {name: meet_big_corner_4, pose: [4.375, 16.375, -1.5708], model: Office/Table_Round_Corner}
   - {name: meet_big_module_1, pose: [4.375, 21.375], model: Office/Table_Round}
   - {name: meet_big_module_2, pose: [4.375, 20.125], model: Office/Table_Round}
   - {name: meet_big_module_3, pose: [4.375, 18.875], model: Office/Table_Round}
