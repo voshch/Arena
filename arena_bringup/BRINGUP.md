@@ -267,7 +267,7 @@ via `/arena/spawn_env`.
 | `viz.view` | `map` | Camera view in rviz: `map` (TopDownOrtho), `robot` (Orbit on robot base), `robot3p` (ThirdPersonFollower on robot base). |
 | `viz.robot` | `0` | Robot index in the fleet for `viz.view:=robot*`. `all` spawns one rviz window per robot. Ignored when `view=map`. |
 | `viz.cam` | off | Camera asset to play at every episode start: a name resolved scenario, then world, then global, else an index into the most specific tier, else its first asset. Starts one `arena cam serve` per env, see [Playing with the episode](../utils/arena_cam/arena_cam/README.md#playing-with-the-episode). |
-| `viz.cam.record` | off | Directory every `viz.cam` take is recorded into, one file per camera at `<world>/<scenario>/ep<NNN>-<camera>.mp4`, relative to `$ARENA_DATA_DIR/recordings`. Needs `lockstep:=true`, see [Recording with the episode](../utils/arena_cam/arena_cam/README.md#recording-with-the-episode). |
+| `viz.cam.record` | off | Directory every `viz.cam` take is recorded into, one file per camera at `env_<N>/<world>/<scenario>/ep<NNN>-<camera>.mp4`, relative to `$ARENA_DATA_DIR/recordings`. Needs `lockstep:=true`, see [Recording with the episode](../utils/arena_cam/arena_cam/README.md#recording-with-the-episode). |
 
 Examples:
 

@@ -607,12 +607,14 @@ arena launch sim:=isaac lockstep:=true task.obstacles:=scenario viz.cam:=three_v
 
 A relative `DIR` lands under `$ARENA_DATA_DIR/recordings`. The task generator labels each
 play `<world>/<scenario>/ep<NNN>` (`<world>/ep<NNN>` with no scenario) in the `take` field
-of `Play`, and the server files the take at `DIR/<label>-<camera>.mp4`. A take records
+of `Play`, and the server files the take at `DIR/env_<N>/<label>-<camera>.mp4`, `<N>` the
+env's index. A take records
 under `<label>.partial-<camera>.mp4` and gets its final name once every camera finished,
 so a take a new episode cut short keeps only `.partial` files, which the next take of that
 label records over. A label whose final files exist plays without recording, and with no lockstep run the server logs once and plays
 only. A play with no label, such as `view_play` between episodes, only plays.
-Labels carry no env, so record one env per `DIR`.
+Every env of a fleet records into its own `env_<N>` directory, so one `DIR` serves a whole
+fleet.
 
 ---
 

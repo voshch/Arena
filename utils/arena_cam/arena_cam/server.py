@@ -16,7 +16,7 @@ from std_srvs.srv import Trigger
 
 from .camera import Camera
 from .client import CamNode
-from .record import PARTIAL, promote, record_root
+from .record import PARTIAL, env_take_path, promote, record_root
 from .surfaces import TargetSelection
 
 SETUP_PARAM = "cam.setup"
@@ -31,6 +31,7 @@ class CamServer(CamNode):
     def __init__(self, env_id: int, sim: bool, fps: float, setup: str, record_dir: Path | None = None) -> None:
         super().__init__(timeline=None, targets=TargetSelection(include_sim=sim, viz_all=False, viz_env=env_id), node_name=f"arena_cam_env_{env_id}", fps=fps, env=env_id)
         self.channel_env = f"/arena/env_{env_id}"
+        self._env_id = env_id
         self._selected = setup
         self._record_dir = record_dir
         self._unsynced_logged = False
@@ -100,9 +101,9 @@ class CamServer(CamNode):
                 self.get_logger().error("cam: recording needs a lockstep run (lockstep:=true), playing only")
                 self._unsynced_logged = True
             return None
-        target = self._record_dir / f"{take}.mp4"
+        target = env_take_path(self._record_dir, self._env_id, take)
         if target.exists() or any(target.parent.glob(f"{target.stem}-*.mp4")):
-            self.get_logger().error(f"cam: take {take} exists under {self._record_dir}, playing only")
+            self.get_logger().error(f"cam: take {take} exists under {target.parent}, playing only")
             return None
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(f"{target.stem}{PARTIAL}.mp4")

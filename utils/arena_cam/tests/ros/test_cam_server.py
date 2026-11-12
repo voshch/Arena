@@ -172,7 +172,8 @@ def test_with_no_run_a_take_plays_on_the_wall_clock_without_a_channel() -> None:
 def test_a_recording_server_files_a_finished_rig_take_under_its_label(tmp_path: Path) -> None:
     with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
         assert server.play("rig", {"rig": SHORT_RIG}, take="w/s/ep001").success
-        assert runtime.wait(lambda: (tmp_path / "w/s/ep001-a.mp4").is_file() and (tmp_path / "w/s/ep001-b.mp4").is_file())
+        takes = tmp_path / "env_0"
+        assert runtime.wait(lambda: (takes / "w/s/ep001-a.mp4").is_file() and (takes / "w/s/ep001-b.mp4").is_file())
         assert not list(tmp_path.rglob(f"*{PARTIAL}*"))
 
 
@@ -181,8 +182,9 @@ def test_a_take_replaced_mid_rig_keeps_only_partial_files(tmp_path: Path) -> Non
         assert server.play("rig", {"rig": LONG_RIG}, take="w/ep001").success
         assert runtime.wait(lambda: len(runtime.captures) > 4)
         assert server.play("rig", {"rig": LONG_RIG}, take="w/ep002").success
-        assert runtime.wait(lambda: (tmp_path / f"w/ep001{PARTIAL}-a.mp4").is_file() and (tmp_path / f"w/ep002{PARTIAL}-a.mp4").is_file())
-    assert not (tmp_path / "w/ep001-a.mp4").exists()
+        takes = tmp_path / "env_0"
+        assert runtime.wait(lambda: (takes / f"w/ep001{PARTIAL}-a.mp4").is_file() and (takes / f"w/ep002{PARTIAL}-a.mp4").is_file())
+    assert not (takes / "w/ep001-a.mp4").exists()
 
 
 def test_without_a_run_the_server_plays_and_records_nothing(tmp_path: Path) -> None:
@@ -194,13 +196,14 @@ def test_without_a_run_the_server_plays_and_records_nothing(tmp_path: Path) -> N
 
 
 def test_a_finished_take_is_never_recorded_over(tmp_path: Path) -> None:
-    (tmp_path / "w").mkdir()
-    (tmp_path / "w/ep001-a.mp4").write_bytes(b"old")
+    takes = tmp_path / "env_0"
+    (takes / "w").mkdir(parents=True)
+    (takes / "w/ep001-a.mp4").write_bytes(b"old")
     with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
         assert server.play("rig", {"rig": SHORT_RIG}, take="w/ep001").success
         assert runtime.wait(lambda: len(runtime.beats) > 0)
         time.sleep(1.0)
-    assert (tmp_path / "w/ep001-a.mp4").read_bytes() == b"old"
+    assert (takes / "w/ep001-a.mp4").read_bytes() == b"old"
     assert not list(tmp_path.rglob(f"*{PARTIAL}*"))
 
 
@@ -213,11 +216,12 @@ def test_a_play_without_a_take_records_nothing(tmp_path: Path) -> None:
 
 
 def test_partial_files_a_cut_take_left_are_recorded_over(tmp_path: Path) -> None:
-    (tmp_path / "w").mkdir()
+    takes = tmp_path / "env_0"
+    (takes / "w").mkdir(parents=True)
     for view in ("a", "b"):
-        (tmp_path / f"w/ep001{PARTIAL}-{view}.mp4").write_bytes(b"stale")
+        (takes / f"w/ep001{PARTIAL}-{view}.mp4").write_bytes(b"stale")
     with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
         assert server.play("rig", {"rig": SHORT_RIG}, take="w/ep001").success
-        assert runtime.wait(lambda: (tmp_path / "w/ep001-a.mp4").is_file() and (tmp_path / "w/ep001-b.mp4").is_file())
-    assert (tmp_path / "w/ep001-a.mp4").read_bytes() != b"stale"
+        assert runtime.wait(lambda: (takes / "w/ep001-a.mp4").is_file() and (takes / "w/ep001-b.mp4").is_file())
+    assert (takes / "w/ep001-a.mp4").read_bytes() != b"stale"
     assert not list(tmp_path.rglob(f"*{PARTIAL}*"))

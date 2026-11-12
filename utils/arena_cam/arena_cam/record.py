@@ -57,6 +57,11 @@ def record_root(out: str, base: Path) -> Path:
     return path if path.is_absolute() else base / "recordings" / path
 
 
+def env_take_path(root: Path, env: int, take: str) -> Path:
+    """`<root>/env_<n>/<take>.mp4`, one directory per env so a fleet's takes never collide."""
+    return root / f"env_{env}" / f"{take}.mp4"
+
+
 def final_path(path: Path) -> Path:
     """`ep001.partial-a.mp4` -> `ep001-a.mp4`, the name a finished take's file carries."""
     return path.with_name(path.name.replace(PARTIAL, "", 1))

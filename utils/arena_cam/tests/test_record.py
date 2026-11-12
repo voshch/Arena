@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from arena_cam.record import Recorder, claim, default_name, final_path, promote, record_path, record_root, tagged, take_paths
+from arena_cam.record import Recorder, claim, default_name, env_take_path, final_path, promote, record_path, record_root, tagged, take_paths
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe not on PATH")
 
@@ -88,6 +88,14 @@ def test_a_relative_record_dir_lands_under_recordings(tmp_path: Path) -> None:
 
 def test_an_absolute_record_dir_is_kept(tmp_path: Path) -> None:
     assert record_root(str(tmp_path / "x"), Path("/elsewhere")) == tmp_path / "x"
+
+
+def test_a_take_lands_in_its_env_directory(tmp_path: Path) -> None:
+    assert env_take_path(tmp_path, 3, "w/s/ep001") == tmp_path / "env_3" / "w" / "s" / "ep001.mp4"
+
+
+def test_two_envs_recording_the_same_label_keep_their_own_files(tmp_path: Path) -> None:
+    assert env_take_path(tmp_path, 0, "w/ep001") != env_take_path(tmp_path, 1, "w/ep001")
 
 
 def test_a_partial_view_file_maps_to_its_final_name() -> None:
