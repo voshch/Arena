@@ -261,8 +261,8 @@ levels:
   - {name: exec2_bookcase, pose: [48.25, 7.625, !!float '-5e-06'], model: Office/SM_BookcaseA}
   - {name: exec2_cupboard, pose: [48.15, 5.8, !!float '-5e-06'], model: Office/SM_Cupboard}
   - {name: exec2_file_cabinet_flipped, pose: [48.4, 3.25, !!float '-5e-06'], model: Office/SM_FileCabinet_03}
-  - {name: exec2_armchair_1_a, pose: [56.5, 5.9, 3.14159], model: Office/SM_Recliner}
-  - {name: exec2_armchair_2_a_, pose: [56.5, 7.1, 3.14159], model: Office/SM_Recliner}
+  - {name: exec2_armchair_1_a, pose: [56.5, 5.9, 3.14159], model: Office/Recliner}
+  - {name: exec2_armchair_2_a_, pose: [56.5, 7.1, 3.14159], model: Office/Recliner}
   - {name: exec2_table_coffee, pose: [55.5, 6.45, 3.14159], model: Office/SM_TableCoffee}
   - {name: exec2_trash, pose: [59.8, 9.75], model: Office/SM_TrashCan}
   - {name: wc1_toilet_1, pose: {x: 49.25, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
