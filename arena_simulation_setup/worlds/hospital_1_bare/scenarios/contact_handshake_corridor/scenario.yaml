@@ -21,7 +21,7 @@ dynamic:
   - - 8.9
     - 23.5
 - name: person_1
-  model: male_adult_construction_01
+  model: worker_male_caucasian_young
   pose:
   - 9.5
   - 23.5

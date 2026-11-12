@@ -1,7 +1,7 @@
 format: arena-scenario/2
 humans:
 - {name: waver_1, model: Office/office_female_caucasian_young, pose: [18.0, 9.1, 1.57], agent: {agent_type: ./waver_1.yaml}}
-- {name: waver_2, model: male_adult_construction_01, pose: [18.0, 13.1, -1.57], agent: {agent_type: ./waver_2.yaml}}
+- {name: waver_2, model: worker_male_caucasian_young, pose: [18.0, 13.1, -1.57], agent: {agent_type: ./waver_2.yaml}}
 robots:
 - start: [2.0, 10.0, 0.0]
   phases:
