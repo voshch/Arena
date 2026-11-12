@@ -202,14 +202,14 @@ levels:
   - {name: reception_monitor_b2, pose: {x: 35.4, y: 1.0, z: 0.74, yaw: 0.1}, model: Office/SM_MonitorPC}
   - {name: reception_keyboard_2, pose: {x: 35.6, y: 1.0, z: 0.74}, model: Office/SM_KeyboardPC}
   - {name: reception_mouse_2, pose: {x: 35.8, y: 0.7, z: 0.741, yaw: -0.1}, model: Office/SM_MousePadPC}
-  - {name: reception_sofa_1, pose: [23.4, 8.0], model: Office/SM_Sofa}
+  - {name: reception_sofa_1, pose: [23.4, 8.0], model: Office/Sofa}
   - {name: reception_table_coffee_1, pose: [24.6, 8.0], model: Office/SM_TableCoffee}
-  - {name: reception_sofa_2, pose: [23.4, 5.8], model: Office/SM_Sofa}
+  - {name: reception_sofa_2, pose: [23.4, 5.8], model: Office/Sofa}
   - {name: reception_table_coffee_2, pose: [31.3, 0.35], model: Office/SM_TableCoffee}
-  - {name: reception_sofa_row1a, pose: [31.3, 0.35], model: Office/SM_Sofa}
-  - {name: reception_sofa_row1b, pose: [31.3, 2.45], model: Office/SM_Sofa}
-  - {name: reception_sofa_row1c, pose: [31.3, 4.55], model: Office/SM_Sofa}
-  - {name: reception_sofa_row1d, pose: [31.3, 6.65], model: Office/SM_Sofa}
+  - {name: reception_sofa_row1a, pose: [31.3, 0.35], model: Office/Sofa}
+  - {name: reception_sofa_row1b, pose: [31.3, 2.45], model: Office/Sofa}
+  - {name: reception_sofa_row1c, pose: [31.3, 4.55], model: Office/Sofa}
+  - {name: reception_sofa_row1d, pose: [31.3, 6.65], model: Office/Sofa}
   - {name: reception_sofa_row1_personeleit_a, pose: [32.5, -1.0], model: Office/SM_Personenleitsystem_A}
   - {name: reception_sofa_row1_personeleit_b, pose: [32.5, 0.5], model: Office/SM_Personenleitsystem_A}
   - {name: reception_sofa_row1_personeleit_c, pose: [32.5, 2.0], model: Office/SM_Personenleitsystem_A}
@@ -217,10 +217,10 @@ levels:
   - {name: reception_sofa_row1_personeleit_e, pose: [32.5, 5.0], model: Office/SM_Personenleitsystem_A}
   - {name: reception_sofa_row1_personeleit_f, pose: [32.5, 6.5], model: Office/SM_Personenleitsystem_A}
   - {name: reception_sofa_row1_personeleit_g, pose: [32.5, 8.0], model: Office/SM_Personenleitsystem_A1}
-  - {name: reception_sofa_row2a, pose: [28.3, 0.35], model: Office/SM_Sofa}
-  - {name: reception_sofa_row2b, pose: [28.3, 2.45], model: Office/SM_Sofa}
-  - {name: reception_sofa_row2c, pose: [28.3, 4.55], model: Office/SM_Sofa}
-  - {name: reception_sofa_row2d, pose: [28.3, 6.65], model: Office/SM_Sofa}
+  - {name: reception_sofa_row2a, pose: [28.3, 0.35], model: Office/Sofa}
+  - {name: reception_sofa_row2b, pose: [28.3, 2.45], model: Office/Sofa}
+  - {name: reception_sofa_row2c, pose: [28.3, 4.55], model: Office/Sofa}
+  - {name: reception_sofa_row2d, pose: [28.3, 6.65], model: Office/Sofa}
   - {name: reception_sofa_row2_personeleit_a, pose: [29.5, -1.0], model: Office/SM_Personenleitsystem_A}
   - {name: reception_sofa_row2_personeleit_b, pose: [29.5, 0.5], model: Office/SM_Personenleitsystem_A}
   - {name: reception_sofa_row2_personeleit_c, pose: [29.5, 2.0], model: Office/SM_Personenleitsystem_A}
