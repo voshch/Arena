@@ -11,9 +11,9 @@ import yaml
 
 pytest.importorskip("arena_cam_msgs.srv")
 
+from arena_runtime.env.episode_node import EpisodeNode, take_label
 from arena_simulation_setup.tree.assets import Camera
 from arena_simulation_setup.tree.World import point_scenario_assets
-from arena_runtime.env.episode_node import EpisodeNode
 
 
 class Client:
@@ -42,6 +42,7 @@ class Generator:
     def __init__(self, client: Client) -> None:
         self._cam_client = client
         self._cam_absent = False
+        self._episodes = types.SimpleNamespace(current=types.SimpleNamespace(world="corridor", episode_id=7))
         self.warnings: list[str] = []
 
     def get_logger(self) -> Generator:
@@ -136,3 +137,18 @@ def test_a_play_between_episodes_resolves_nothing(tmp_path: Path) -> None:
 def test_a_refused_play_comes_back_with_its_message(tmp_path: Path) -> None:
     point_scenario_assets(_scenario(tmp_path / "scenario", wide={"timeline": []}))
     assert _play(Generator(Client(refuse="bad shot")), "wide") == (False, "bad shot")
+
+
+def test_the_play_carries_world_scenario_and_episode_as_its_take(tmp_path: Path) -> None:
+    point_scenario_assets(_scenario(tmp_path / "oncoming", wide={"timeline": []}))
+    generator = Generator(Client())
+    _play(generator, "wide")
+    assert generator._cam_client.sent[0].take == "corridor/oncoming/ep007"
+
+
+def test_a_take_without_a_scenario_skips_its_segment() -> None:
+    assert take_label("corridor", "", 12) == "corridor/ep012"
+
+
+def test_a_take_numbers_past_999_episodes() -> None:
+    assert take_label("w", "s", 1234) == "w/s/ep1234"
