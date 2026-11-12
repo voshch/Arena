@@ -6,7 +6,7 @@ humans:
   agent: {agent_type: ./pointer.yaml}
   waypoints: [[9.0, 17.0]]
 - name: other_person
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose: [11.0, 17.0, 3.14159]
   agent: {agent_type: ./other_person.yaml}
   waypoints: [[11.0, 17.0]]

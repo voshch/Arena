@@ -1,7 +1,7 @@
 format: arena-scenario/2
 humans:
 - name: collapser
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose: [10.0, 17.0, 1.5708]
   agent: {agent_type: ./collapser.yaml}
   waypoints: [[10.0, 17.0]]

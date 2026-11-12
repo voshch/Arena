@@ -9,7 +9,7 @@ robots:
   - -0.088
 dynamic:
 - name: partner_0
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose:
   - 5.537
   - 13.591

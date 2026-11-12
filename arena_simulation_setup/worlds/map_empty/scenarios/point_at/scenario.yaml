@@ -1,7 +1,7 @@
 format: arena-scenario/2
 humans:
 - name: grid_1
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose: [10.0, 8.0, 1.5708]
   agent: {agent_type: ./grid_4x4.yaml, desired_velocity: 1.0}
   waypoints: [[10.0, 8.0]]
@@ -11,7 +11,7 @@ humans:
   agent: {agent_type: ./grid_3x3.yaml, desired_velocity: 1.0}
   waypoints: [[15.0, 8.0]]
 - name: grid_3
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose: [20.0, 8.0, 1.5708]
   agent: {agent_type: ./grid_4x4_mirror.yaml, desired_velocity: 1.0}
   waypoints: [[20.0, 8.0]]

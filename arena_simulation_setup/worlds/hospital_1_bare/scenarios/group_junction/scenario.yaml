@@ -10,7 +10,7 @@ robots:
     - 1.5708
 dynamic:
 - name: person_0
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose:
   - 10.94
   - 26.0
@@ -32,7 +32,7 @@ dynamic:
   - - 9.53
     - 26.814
 - name: person_2
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose:
   - 9.53
   - 25.186
