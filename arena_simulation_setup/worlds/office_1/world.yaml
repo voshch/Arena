@@ -182,8 +182,8 @@ levels:
   - {name: wc2_trash, pose: [15.2, 0.5], model: Office/SM_TrashCan}
   - {name: reception_desk_straight_a, pose: [35.0, 2.5], model: Office/Reception_Table_Straight}
   - {name: reception_desk_straight_b, pose: [35.0, 4.5], model: Office/Reception_Table_Straight}
-  - {name: reception_desk_corner_a, pose: [36.0, 0.5, 1.5708], model: Office/SM_ReceptionTableCornerOutside}
-  - {name: reception_desk_corner_b, pose: [36.0, 6.5], model: Office/SM_ReceptionTableCornerOutside}
+  - {name: reception_desk_corner_a, pose: [36.0, 0.5, 1.5708], model: Office/Reception_Table_Corner}
+  - {name: reception_desk_corner_b, pose: [36.0, 6.5], model: Office/Reception_Table_Corner}
   - {name: reception_desk_stand_1, pose: [35.0, 1.5], model: Office/SM_ReceptionStandB}
   - {name: reception_desk_stand_2, pose: [35.0, 5.5], model: Office/SM_ReceptionStandB}
   - {name: reception_personenleit_1a, pose: [37.75, 7.7, -1.5708], model: Office/SM_Personenleitsystem}
