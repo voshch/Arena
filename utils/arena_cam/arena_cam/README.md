@@ -612,7 +612,8 @@ env's index. A take records
 under `<label>.partial-<camera>.mp4` and gets its final name once every camera finished,
 so a take a new episode cut short keeps only `.partial` files, which the next take of that
 label records over. A label whose final files exist plays without recording, and with no lockstep run the server logs once and plays
-only. A play with no label, such as `view_play` between episodes, only plays.
+only. Only the play at an episode start carries a label, so a `view_play` during the
+episode only plays, and cuts the episode's take short.
 Every env of a fleet records into its own `env_<N>` directory, so one `DIR` serves a whole
 fleet.
 

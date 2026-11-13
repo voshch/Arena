@@ -342,8 +342,8 @@ class EpisodeNode(EnvNode):
             self._episodes.current.integrity.append(reason)
         self._publish_episode_state()
 
-    async def _play_camera(self, request: str, params: str = "") -> tuple[bool, str]:
-        """Pick the camera asset `request` selects in this episode and send it to the env's camera server."""
+    async def _play_camera(self, request: str, params: str = "", *, episode_take: bool = False) -> tuple[bool, str]:
+        """Pick the camera asset `request` selects in this episode and send it to the env's camera server, labeled as the episode's take when `episode_take`."""
         log = self.get_logger()
         try:
             identifier, warning = await pick_camera(request)
@@ -360,7 +360,7 @@ class EpisodeNode(EnvNode):
             spec = (await identifier.resolve()).spec
             bundle = await collect(identifier.name, spec)
             scenario = DynamicPaths.SCENARIO.path
-            take = take_label(self._episodes.current.world, scenario.name if scenario.is_dir() else "", self._episodes.current.episode_id)
+            take = take_label(self._episodes.current.world, scenario.name if scenario.is_dir() else "", self._episodes.current.episode_id) if episode_take else ""
             play = arena_cam_msgs.srv.Play.Request(root=identifier.name, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params, take=take)
             response = await self._cam_client.call_timeout(play)
         except (OSError, ValueError, LookupError, yaml.YAMLError) as e:
@@ -669,7 +669,7 @@ class EpisodeNode(EnvNode):
             record.outcome_state = arena_runtime_msgs.action.RunEpisode.Result.RUNNING
             self._publish_episode_state()
             if self._cam_setup.value:
-                self._cam_task = asyncio.ensure_future(self._play_camera(self._cam_setup.value))
+                self._cam_task = asyncio.ensure_future(self._play_camera(self._cam_setup.value, episode_take=True))
 
             log = self.get_logger()
             log.warn("=============")

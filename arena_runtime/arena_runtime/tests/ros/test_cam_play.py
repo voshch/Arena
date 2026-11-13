@@ -39,6 +39,8 @@ class Client:
 class Generator:
     """What `_play_camera` reads off the node."""
 
+    _play_camera = EpisodeNode._play_camera
+
     def __init__(self, client: Client) -> None:
         self._cam_client = client
         self._cam_absent = False
@@ -59,8 +61,8 @@ def _scenario(directory: Path, **specs: dict) -> Path:
     return directory
 
 
-def _play(generator: Generator, request: str, params: str = "") -> tuple[bool, str]:
-    return asyncio.run(EpisodeNode._play_camera(generator, request, params))
+def _play(generator: Generator, request: str, params: str = "", *, episode_take: bool = False) -> tuple[bool, str]:
+    return asyncio.run(EpisodeNode._play_camera(generator, request, params, episode_take=episode_take))
 
 
 @pytest.fixture(autouse=True)
@@ -139,11 +141,23 @@ def test_a_refused_play_comes_back_with_its_message(tmp_path: Path) -> None:
     assert _play(Generator(Client(refuse="bad shot")), "wide") == (False, "bad shot")
 
 
-def test_the_play_carries_world_scenario_and_episode_as_its_take(tmp_path: Path) -> None:
+def test_the_episode_start_play_carries_world_scenario_and_episode_as_its_take(tmp_path: Path) -> None:
     point_scenario_assets(_scenario(tmp_path / "oncoming", wide={"timeline": []}))
     generator = Generator(Client())
-    _play(generator, "wide")
+    _play(generator, "wide", episode_take=True)
     assert generator._cam_client.sent[0].take == "corridor/oncoming/ep007"
+
+
+def test_a_play_forwarded_during_an_episode_carries_no_take(tmp_path: Path) -> None:
+    from arena_cam_msgs.srv import Play
+    from arena_runtime_msgs.action import RunEpisode
+
+    point_scenario_assets(_scenario(tmp_path / "oncoming", wide={"timeline": []}))
+    generator = Generator(Client())
+    generator._episodes.current.outcome_state = RunEpisode.Result.RUNNING
+    response = asyncio.run(EpisodeNode._cb_cam_play(generator, Play.Request(root="wide"), Play.Response()))
+    assert response.success
+    assert generator._cam_client.sent[0].take == ""
 
 
 def test_a_take_without_a_scenario_skips_its_segment() -> None:
