@@ -105,7 +105,6 @@ class CamServer(CamNode):
         if target.exists() or any(target.parent.glob(f"{target.stem}-*.mp4")):
             self.get_logger().info(f"cam: take {take} exists under {target.parent}, playing only")
             return None
-        target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(f"{target.stem}{PARTIAL}.mp4")
         for stale in partial.parent.glob(f"{partial.stem}*.mp4"):
             stale.unlink()
@@ -127,11 +126,14 @@ class CamServer(CamNode):
                 raise
             finally:
                 self._record = None
+            written = sorted(target.parent.glob(f"{target.stem}*.mp4"))
             if ok:
-                promote(sorted(target.parent.glob(f"{target.stem}*.mp4")))
+                promote(written)
                 self.get_logger().info(f"cam: saved take {take}")
-            else:
+            elif written:
                 self.get_logger().warning(f"cam: take {take} incomplete, partial files kept")
+            else:
+                self.get_logger().warning(f"cam: take {take} recorded nothing")
         except Exception as e:
             self.fail(f"cam: take failed: {e}")
 

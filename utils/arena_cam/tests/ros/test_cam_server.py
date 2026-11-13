@@ -24,6 +24,7 @@ NEXT = {"reference": {"entity": "second_link"}, "timeline": [{"hold": {"duration
 SHORT = {"timeline": [{"hold": {"duration": 0.2}}]}
 SHORT_RIG = {"cameras": {"a": {"timeline": [{"hold": {"duration": 0.3}}]}, "b": {"timeline": [{"hold": {"duration": 0.3}}]}}}
 LONG_RIG = {"cameras": {"a": {"timeline": [{"hold": {"duration": 60.0}}]}, "b": {"timeline": [{"hold": {"duration": 60.0}}]}}}
+VIZ_RIG = {"cameras": {"a": {"source": "viz", "timeline": [{"hold": {"duration": 0.3}}]}, "b": {"source": "viz", "timeline": [{"hold": {"duration": 0.3}}]}}}
 RIG = {"live": "b", "cameras": {"a": {"reference": {"entity": "a_link"}, "timeline": [{"hold": {"duration": 60.0}}]}, "b": {"reference": {"entity": "b_link"}, "timeline": [{"hold": {"duration": 60.0}}]}}}
 
 
@@ -215,6 +216,13 @@ def test_a_finished_take_is_never_recorded_over(tmp_path: Path) -> None:
         time.sleep(1.0)
     assert (takes / "w/ep001-a.mp4").read_bytes() == b"old"
     assert not list(tmp_path.rglob(f"*{PARTIAL}*"))
+
+
+def test_a_take_whose_cameras_select_no_surface_leaves_no_directory(tmp_path: Path) -> None:
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": VIZ_RIG}, take="w/s/ep001").success
+        time.sleep(2.0)
+    assert not (tmp_path / "env_0").exists()
 
 
 def test_a_play_without_a_take_records_nothing(tmp_path: Path) -> None:

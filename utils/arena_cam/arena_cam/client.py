@@ -530,6 +530,7 @@ class CamNode(ArenaMixinNode):
             if not await endpoint.capture.ensure(timeout_sec=10.0):
                 self.get_logger().error(f"no {endpoint.ns}/viewport/capture service, rebuild the plugin for record mode")
                 return False
+        self._record.parent.mkdir(parents=True, exist_ok=True)
         for (take, endpoint), path in zip(pairs, paths, strict=True):
             take.recorders[endpoint.ns] = Recorder(str(path), self.fps)
             self.get_logger().info(f"recording {take.tag(endpoint.ns)} to {path}")

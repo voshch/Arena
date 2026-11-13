@@ -614,8 +614,9 @@ so a take a new episode cut short keeps only `.partial` files, which the next ta
 label records over. A label whose final files exist plays without recording, and with no lockstep run the server logs once and plays
 only. Only the play at an episode start carries a label, so a `view_play` during the
 episode only plays, and cuts the episode's take short.
-Every env of a fleet records into its own `env_<N>` directory, so one `DIR` serves a whole
-fleet.
+Every env of a fleet records into its own `env_<N>` directory. Only env 0's server drives the
+sim camera, so the other envs record their rviz cameras and skip a rig filmed through the sim
+camera, such as `three_view`.
 
 ---
 
