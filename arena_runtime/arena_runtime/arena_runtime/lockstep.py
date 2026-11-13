@@ -98,9 +98,11 @@ def spec_to_msg(spec: ChannelSpec) -> arena_runtime_msgs.msg.LockstepChannel:
 
 def _validate_spec(spec: ChannelSpec) -> None:
     try:
-        get_message(spec.type_name)
+        msg_type = get_message(spec.type_name)
     except (AttributeError, LookupError, ModuleNotFoundError, ValueError) as e:
         raise ValueError(f"lockstep channel {spec.name!r}: cannot resolve type {spec.type_name!r}") from e
+    if msg_type.get_fields_and_field_types().get("header") != "std_msgs/Header":
+        raise ValueError(f"lockstep channel {spec.name!r}: type {spec.type_name!r} has no std_msgs/Header header to gate on")
 
 
 def _parse_channel_spec(entry: str) -> ChannelSpec:

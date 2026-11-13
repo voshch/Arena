@@ -343,7 +343,8 @@ during a reset hold (see the [manager README](../../../../arena_runtime/arena_ru
 
 Components self-register their data channels via
 `sim_lifecycle/lockstep/register` (LockstepRegister: `caller`, `env`,
-`channels[]` of `{name, topic, type, period_s, hard}`. Re-registering under
+`channels[]` of `{name, topic, type, period_s, hard}`, a `type` without a
+`std_msgs/Header header` is refused). Re-registering under
 a `caller` replaces its set, an empty `channels[]` clears it, per-env
 registrations drop when their env despawns, and registrations merge into a
 running lockstep live. The arena_humansim adapter self-registers `engine`
