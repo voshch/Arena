@@ -355,3 +355,73 @@ def test_flow_level_without_a_map_is_refused(tmp_path: pathlib.Path) -> None:
 def test_a_single_robot_is_named_like_arena_names_it() -> None:
     assert robot_names("jackal", 1) == ["jackal"]
     assert robot_names("jackal", 3) == ["jackal_0", "jackal_1", "jackal_2"]
+
+
+def yielding(tmp_path: pathlib.Path, at: Point, people: Peds) -> Episode:
+    """Two robots; robot 0 stands at `at` among `people` with a fresh people map, robot 1 parked out of the way."""
+    e = Episode(tmp_path, 2, profile="queue_yield", info="oracle")
+    e.tick()
+    a, b = e.d.names
+    e.d.set_pose(a, *at, 0.0)
+    e.d.set_pose(b, 3.0, 1.5, 0.0)
+    e.d.rob[b].phase, e.d.rob[b].plan = "done", []
+    e.d.set_time(10.0)
+    e.d.set_peds(people)
+    e.d.update_known()
+    return e
+
+
+def test_step_aside_point_keeps_clear_of_another_robot_and_its_plan(tmp_path: pathlib.Path) -> None:
+    e = yielding(tmp_path, (7.0, 6.0), {"p": (7.0, 6.0, 0.0, 0.0)})
+    d = e.d
+    a, b = d.names
+    first = d.aside_point(a)
+    assert first is not None
+    d.set_pose(b, *first, 0.0)
+    second = d.aside_point(a)
+    assert second is not None and math.dist(second, first) >= 1.2
+    r = d.rob[b]
+    r.phase, r.plan = "approach", [(first[0] + (second[0] - first[0]) * i / 10, first[1] + (second[1] - first[1]) * i / 10) for i in range(11)]
+    third = d.aside_point(a)
+    assert third is None or min(math.dist(third, q) for q in r.plan) >= 1.2
+
+
+def test_two_yielding_robots_do_not_get_the_same_step_aside_point(tmp_path: pathlib.Path) -> None:
+    e = yielding(tmp_path, (7.15, 5.92), {"p": (7.6, 5.9, -0.5, 0.0)})
+    d = e.d
+    a, b = d.names
+    d.set_pose(b, 8.39, 6.39, 0.0)
+    d.rob[b].phase = "approach"
+    d.rob[a].aside = d.aside_point(a)
+    other = d.aside_point(b)
+    assert d.rob[a].aside is not None
+    assert other is None or math.dist(other, d.rob[a].aside) >= 1.2
+
+
+def test_way_to_the_step_aside_point_never_brings_a_person_closer_than_standing_still(tmp_path: pathlib.Path) -> None:
+    crowd = {"between": (7.0, 6.9, 0.0, 0.0), "coming": (8.2, 6.0, -0.5, 0.0)}
+    e = yielding(tmp_path, (7.0, 6.0), crowd)
+    d = e.d
+    p = d.aside_point(d.names[0])
+    assert p is not None and p[1] < 6.0
+    length = math.dist((7.0, 6.0), p)
+    for i in range(1, 21):
+        s = length * i / 20
+        t = s / 0.4
+        q = (7.0 + (p[0] - 7.0) * s / length, 6.0 + (p[1] - 6.0) * s / length)
+        for x, y, vx, vy in crowd.values():
+            there = (x + vx * t, y + vy * t)
+            assert math.dist(q, there) >= min(math.dist((7.0, 6.0), there), 1.0) - 0.06
+
+
+def test_queue_slots_leave_the_side_where_people_were_seen(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, 3, profile="full", info="oracle")
+    d = e.d
+    view = d.view
+    assert view is not None
+    before = d.choose_slots("main_door", -1.0)
+    stream = [view.idx(x / 4, y / 4) for x in range(24, 52) for y in range(int(before[0][1] * 4) - 8, int(before[0][1] * 4) + 8)]
+    d.history.update({c: 30.0 for c in stream if c is not None})
+    after = d.choose_slots("main_door", -1.0)
+    cy = d.doors["main_door"].c[1]
+    assert (after[0][1] - cy) * (before[0][1] - cy) < 0

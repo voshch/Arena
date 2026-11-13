@@ -30,6 +30,7 @@ queue:                   # robots at the same door go one at a time, in order of
   other_queue_m: 1.6     # a door's slots stay this far from the slots another door is using
   clearance_m: 0.6       # from walls
   slot_tol_m: 0.4        # slot reached
+  history_weight: 0.5    # slot_by_people: score per second a slot cell was seen occupied so far, so a lull does not hide the people's stream
 
 yield_people:            # needs human input (all, what robots see, flow). All of it reads the people map.
   margin_m: 0.6          # door entry: no entry while the map shows someone in the door polygon grown by this...
@@ -44,6 +45,9 @@ yield_people:            # needs human input (all, what robots see, flow). All o
   aside_check_s: 8       # compared over this many seconds of forecast
   aside_clearance_m: 0.6
   aside_tol_m: 0.35
+  aside_robot_gap_m: 1.2 # a step-aside point stays this far from other robots, their plans, slots and step-aside points; the way to it 0.9 m from their bodies
+  aside_plan_ahead_s: 5.0  # how much of another robot's plan counts as taken
+  aside_person_gap_m: 1.0 # on the way to a step-aside point no predicted person comes closer than this, unless standing still would bring them closer
 
 reassign_door:           # switch door while moving, if another door is clearly cheaper now
   period_s: 1.0

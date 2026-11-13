@@ -130,6 +130,7 @@ class QueueConfig(typing.TypedDict):
     other_queue_m: float
     clearance_m: float
     slot_tol_m: float
+    history_weight: float
 
 
 class YieldConfig(typing.TypedDict):
@@ -145,6 +146,9 @@ class YieldConfig(typing.TypedDict):
     aside_check_s: float
     aside_clearance_m: float
     aside_tol_m: float
+    aside_robot_gap_m: float
+    aside_plan_ahead_s: float
+    aside_person_gap_m: float
 
 
 class ReassignDoorConfig(typing.TypedDict):

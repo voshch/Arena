@@ -18,6 +18,7 @@ INFOS: tuple[Info, ...] = typing.get_args(Info)
 Pose2 = tuple[float, float, float]
 Terms = dict[str, float]
 
+VERSION = "1.2"
 WAITING = ("approach", "hold", "cross", "to_slot", "queued", "yield")
 _FIELDS: dict[tuple[int, float, float, str], list[float]] = {}
 
@@ -140,6 +141,8 @@ class FleetDispatcher:
         self.queue_of: dict[str, list[str]] = {d: [] for d in self.doors}
         self.slot_set: dict[str, list[Point]] = {}
         self.slot_fields: dict[Point, list[float]] = {}
+        self.history: dict[int, float] = {}
+        self.t_hist = -1e9
         self.rob = {n: RobotState() for n in self.names}
         self.trips_done = dict.fromkeys(self.names, 0)
         self.commands: list[Command] = []
@@ -163,7 +166,7 @@ class FleetDispatcher:
                     closed = [grown(o.polygon, 0.0) for k, o in self.doors.items() if k != d]
                     _FIELDS[key] = self.grid.field(g, closed, (*door.c, pl["funnel_len_m"], pl["funnel_k"]))
                 self.fields[(g, d)] = _FIELDS[key]
-        (out / "dispatch.json").write_text(json.dumps({"profile": name, "rules": self.rules, "info": info, "cost": cost, "rules_params": rules, "goals": self.goals, "seed": seed, "robots": self.names}, indent=1))
+        (out / "dispatch.json").write_text(json.dumps({"profile": name, "rules": self.rules, "info": info, "cost": cost, "rules_params": rules, "goals": self.goals, "seed": seed, "robots": self.names, "version": VERSION}, indent=1))
 
     def close(self) -> None:
         for f in (self.ev, self.st, self.heat_f, self.samp_f):
@@ -259,6 +262,10 @@ class FleetDispatcher:
         self.known = {k: (v[0], v[1], v[4]) for k, v in self.seen.items()}
         if self.view is None or self.off is None:
             return
+        if self.t_hist > -1e9:
+            for c in self.view.layer(0):
+                self.history[c] = self.history.get(c, 0.0) + now - self.t_hist
+        self.t_hist = now
         period = self.cost["flow"]["period_s"] if self.info in ("flow", "mod") else self.cost["people_view"]["period_s"]
         if now - self.t_view < period:
             return
@@ -473,11 +480,13 @@ class FleetDispatcher:
     # queue slots beside the door
 
     def slot_score(self, slots: Sequence[Point]) -> float:
-        """Occupied slot-seconds over the next 10 s."""
+        """Occupied slot-seconds over the next 10 s, plus the seconds the slots were seen occupied so far."""
         if self.view is None:
             return 0.0
         view = self.view
-        return float(sum(view.occupied(t, x, y) for x, y in slots[:3] for t in range(0, 11, 2)))
+        ahead = sum(view.occupied(t, x, y) for x, y in slots[:3] for t in range(0, 11, 2))
+        seen = sum(self.history.get(c, 0.0) for c in (view.idx(x, y) for x, y in slots[:3]) if c is not None)
+        return float(ahead) + self.rcfg["queue"]["history_weight"] * seen
 
     def choose_slots(self, d: str, side: float) -> list[Point]:
         """Zig-zag slot column beside the door axis, clear of walls and other queues; by people when slot_by_people is on."""
@@ -518,7 +527,11 @@ class FleetDispatcher:
         key = (round(p[0], 2), round(p[1], 2))
         if key not in self.slot_fields:
             self.slot_fields[key] = self.grid.field(p, [grown(o.polygon, 0.0) for o in self.doors.values()])
-        return self.grid.descend(self.slot_fields[key], x, y)
+        fld = self.slot_fields[key]
+        if self.rules["plan_around"] and self.view is not None:
+            pl = self.cost["plan"]
+            return self.grid.route(fld, x, y, self.view, self.cost["time"]["v_nom"], pl["occupied_cost_per_m"], None, pl["around_horizon_s"])
+        return self.grid.descend(fld, x, y)
 
     def to_slot(self, n: str, d: str, rank: int, why: str) -> None:
         r, q = self.rob[n], self.rcfg["queue"]
@@ -613,28 +626,76 @@ class FleetDispatcher:
         d = r.door or r.door_used
         return bool(d) and abs(self.pose[n][0] - self.doors[r.route_door].c[0]) <= self.rcfg["yield_people"]["no_return_m"]
 
+    def claims(self, n: str) -> tuple[list[Point], list[Point]]:
+        """Other robots' bodies, and the points they hold or will drive over soon (step-aside point, slot, plan ahead)."""
+        ahead = self.rcfg["yield_people"]["aside_plan_ahead_s"]
+        bodies: list[Point] = []
+        held: list[Point] = []
+        for m, r in self.rob.items():
+            if m == n or m not in self.pose:
+                continue
+            x, y, _ = self.pose[m]
+            bodies.append((x, y))
+            held += [p for p in (r.aside, r.slot_xy) if p is not None]
+            if r.plan and r.phase in ("approach", "cross", "to_goal", "to_slot"):
+                near = min(range(len(r.plan)), key=lambda i: math.dist((x, y), r.plan[i]))
+                held += [(px, py) for px, py, _t, _ds in self.walk(r.plan[near:], ahead)]
+        return bodies, held
+
+    def aside_ok(self, n: str, p: Point, bodies: Sequence[Point], held: Sequence[Point]) -> bool:
+        """Step-aside point clear of walls and robots; on the way there no person comes closer than if the robot stood still."""
+        y = self.rcfg["yield_people"]
+        x, yy, _ = self.pose[n]
+        gap = y["aside_robot_gap_m"]
+        if self.grid.clearance(p) < y["aside_clearance_m"] or any(seg_cross((x, yy), p, u, v) for u, v in self.walls):
+            return False
+        if any(math.dist(p, o) < gap for o in (*bodies, *held)):
+            return False
+        length = math.dist((x, yy), p)
+        steps = max(int(length / 0.2), 1)
+        v, now = self.cost["time"]["v_nom"], self._now
+        clear = y["aside_person_gap_m"]
+        people = [(px, py, vx, vy, now - ts) for px, py, vx, vy, ts in self.seen.values()]
+        for i in range(1, steps + 1):
+            s = length * i / steps
+            t = s / v
+            q = (x + (p[0] - x) * s / length, yy + (p[1] - yy) * s / length)
+            if any(math.dist(q, o) < 0.75 * gap for o in bodies):
+                return False
+            for px, py, vx, vy, age in people:
+                there = (px + vx * (age + t), py + vy * (age + t))
+                if math.dist(q, there) < min(math.dist((x, yy), there), clear) - 0.05:
+                    return False
+            if not people and s > clear and self.view is not None and self.view.occupied(t, *q):
+                return False
+        return True
+
     def aside_point(self, n: str) -> Point | None:
-        """Reachable point the forecast leaves free longest, None to stay."""
+        """Reachable free point the forecast leaves free longest, then farthest from known people; None to stay."""
         if self.view is None:
             return None
         view = self.view
         y = self.rcfg["yield_people"]
         x, yy, _ = self.pose[n]
+        bodies, held = self.claims(n)
+        people = [(v[0], v[1]) for v in self.known.values()]
 
         def score(px: float, py: float) -> int:
             return sum(view.occupied(t, px, py) for t in range(int(y["aside_check_s"]) + 1))
 
-        here, best, best_s = score(x, yy), None, math.inf
+        here = score(x, yy)
+        best: Point | None = None
+        best_key = (math.inf, math.inf)
         for rad in y["aside_radii_m"]:
             for k in range(12):
                 a = k * math.pi / 6
-                px, py = x + rad * math.cos(a), yy + rad * math.sin(a)
-                if self.grid.clearance((px, py)) < y["aside_clearance_m"] or any(seg_cross((x, yy), (px, py), u, v) for u, v in self.walls):
+                p = (round(x + rad * math.cos(a), 2), round(yy + rad * math.sin(a), 2))
+                if not self.aside_ok(n, p, bodies, held):
                     continue
-                s = score(px, py)
-                if s < best_s:
-                    best, best_s = (round(px, 2), round(py, 2)), s
-        return best if best is not None and best_s < here else None
+                key = (float(score(*p)), -min([math.dist(p, q) for q in people] or [5.0]))
+                if key < best_key:
+                    best, best_key = p, key
+        return best if best is not None and best_key[0] < here else None
 
     def start_yield(self, n: str, ttc: float) -> None:
         r = self.rob[n]
@@ -659,6 +720,10 @@ class FleetDispatcher:
         r.diag = {"why": "people_ahead", "waited_s": round(waited, 1)}
         if r.aside and math.dist((x, yy), r.aside) <= y["aside_tol_m"]:
             r.aside = None
+            self.stop(n)
+        elif r.aside and not self.aside_ok(n, r.aside, *self.claims(n)):
+            self.log("aside_dropped", robot=n, aside=list(r.aside))
+            r.aside, r.t_aside = None, now - 1.0
             self.stop(n)
         elif r.aside is None and now - r.t_aside >= 1.0 and self.view is not None and self.view.occupied(0, x, yy):
             r.t_aside = now
