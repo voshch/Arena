@@ -223,7 +223,10 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("serve --record needs a DIR")
         from arena_cam.server import serve
 
-        serve(args.env, args.sim, args.fps, args.setup, args.record or "")
+        try:
+            serve(args.env, args.sim, args.fps, args.setup, args.record or "")
+        except FileNotFoundError as e:
+            raise SystemExit(str(e)) from e
         return
     targets = _resolve_targets(args.sim, args.viz)
     shot_file = is_path(args.name)

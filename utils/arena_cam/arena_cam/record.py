@@ -39,10 +39,15 @@ def screenshots_dir() -> Path:
     return (Path(base) if base else Path.cwd()) / "screenshots"
 
 
-def record_path(out: str) -> Path:
-    """Resolve the output file and create its directory."""
+def require_ffmpeg() -> None:
+    """Raise unless ffmpeg, which every recording pipes through, is on PATH."""
     if shutil.which("ffmpeg") is None:
         raise FileNotFoundError("cam: record needs ffmpeg on PATH")
+
+
+def record_path(out: str) -> Path:
+    """Resolve the output file and create its directory."""
+    require_ffmpeg()
     path = resolve_path(out)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path

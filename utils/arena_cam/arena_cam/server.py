@@ -16,7 +16,7 @@ from std_srvs.srv import Trigger
 
 from .camera import Camera
 from .client import CamNode
-from .record import PARTIAL, env_take_path, promote, record_root
+from .record import PARTIAL, env_take_path, promote, record_root, require_ffmpeg
 from .surfaces import TargetSelection
 
 SETUP_PARAM = "cam.setup"
@@ -151,5 +151,7 @@ class CamServer(CamNode):
 
 def serve(env_id: int, sim: bool, fps: float, setup: str, record: str = "") -> None:
     """Run the camera server of env `env_id` until shutdown, recording under `record` when set."""
+    if record:
+        require_ffmpeg()
     record_dir = record_root(record, Path(os.environ.get("ARENA_DATA_DIR") or Path.cwd())) if record else None
     run_main(CamServer, env_id, sim, fps, setup, record_dir)
