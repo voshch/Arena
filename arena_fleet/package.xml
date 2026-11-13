@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>arena_fleet</name>
+  <version>0.0.1</version>
+  <description>Fleet dispatcher: goal assignment, one plan per robot through shared doors, door rules and pedestrian information levels</description>
+
+  <maintainer email="voshch@arena-rosnav.org">voshch</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>arena_rclpy_mixins</exec_depend>
+  <exec_depend>arena_people_msgs</exec_depend>
+  <exec_depend>arena_runtime_msgs</exec_depend>
+  <exec_depend>flatsim_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

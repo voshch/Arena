@@ -1,0 +1,9 @@
+# Managed doors of mechanisms_doorway (level 0, world metres). The dispatcher routes every robot through one of them.
+world: mechanisms_doorway
+resources:
+  - id: main_door
+    kind: door
+    polygon: [[12.0, 5.4], [14.0, 5.4], [14.0, 6.6], [12.0, 6.6]]
+  - id: side_door
+    kind: door
+    polygon: [[12.0, 10.0], [14.0, 10.0], [14.0, 11.2], [12.0, 11.2]]

@@ -1,0 +1,63 @@
+# Fleet dispatcher: how robots are made to act. A profile switches rules on; the numbers apply when a rule is on.
+# Each rule is a condition the dispatcher checks every 0.25 s on tracked robot state. A robot never sees a rule:
+# "hold" = the dispatcher stops it, "release" = the dispatcher sends its goal and plan again.
+
+default_profile: base
+
+profiles:
+  base:        {capacity: false, queue: false, yield_people: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  capacity:    {capacity: true,  queue: false, yield_people: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  queue:       {capacity: true,  queue: true,  yield_people: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  queue_yield: {capacity: true,  queue: true,  yield_people: true,  plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  full:        {capacity: true,  queue: true,  yield_people: true,  plan_around: true,  slot_by_people: true,  reassign_door: true,  reassign_goal: true}
+  # Baseline HATA (arXiv 2508.19731): Hungarian on bids from path length + map-of-dynamics probability, A* around busy cells,
+  # no door rules. Use with cost:=configs/hata_cost.yaml info:=mod.
+  hata:        {capacity: false, queue: false, yield_people: false, plan_around: true,  slot_by_people: false, reassign_door: false, reassign_goal: false}
+
+capacity:                # at most k robots inside one door
+  k: 1
+  hold_m: 3.0            # along the plan, a robot this close to its door must be allowed in or it is held
+  through_m: 0.9         # a robot is out of the door this far past the door plane
+  occupy_timeout_s: null # null = a robot blocks its door until it is through. A number lets others in after that many seconds (door_timeout)
+
+queue:                   # robots at the same door go one at a time, in order of arrival at join_m. A waiting robot is sent to a slot.
+  join_m: 6.0            # a robot joins the door's queue this close to the door
+  head_m: [2.5, 2.0, 3.0]  # first slot this far from the door plane (slot_by_people tries all; without it the first that fits)
+  lateral_m: 1.6         # slots stand this far beside the door axis, out of the people's stream
+  spacing_m: 1.4         # next slot this much further back
+  stagger_m: 1.4         # every second slot this much further from the axis: a zig-zag, neighbours ~2.0 m apart centre to centre (0 = one straight column)
+  keep_slot: true        # a robot keeps the slot it was given until its turn; false = it moves up a slot whenever the queue moves
+  other_queue_m: 1.6     # a door's slots stay this far from the slots another door is using
+  clearance_m: 0.6       # from walls
+  slot_tol_m: 0.4        # slot reached
+
+yield_people:            # needs human input (all, what robots see, flow). All of it reads the people map.
+  margin_m: 0.6          # door entry: no entry while the map shows someone in the door polygon grown by this...
+  lookahead_s: 3         # ...now or within this many seconds
+  max_wait_s: 20.0       # after this the robot goes anyway, logged forced
+  hold_ttc_s: 4.0        # conflict monitor: a person predicted on the plan within this time -> stop or step aside now
+  clear_s: 1.5           # the plan must stay clear this long before the robot goes on
+  no_return_m: 1.0       # within this distance of the door plane a robot never stops (a robot standing in a door is the worst place)
+  grace_s: 8.0           # after a forced go, no new yield for this long
+  regrace_s: 2.0         # after a normal release
+  aside_radii_m: [1.0, 1.6]  # candidate points to step aside to, around the robot
+  aside_check_s: 8       # compared over this many seconds of forecast
+  aside_clearance_m: 0.6
+  aside_tol_m: 0.35
+
+reassign_door:           # switch door while moving, if another door is clearly cheaper now
+  period_s: 1.0
+  hysteresis_j: 8.0      # the other door must be cheaper by this much of J
+  min_dwell_s: 8.0       # no second switch within this time
+  lock_m: 3.5            # no switch when this close to the current door
+
+reassign_goal:           # two robots swap goals if that lowers their total J
+  period_s: 5.0
+  margin_j: 10.0
+  min_dwell_s: 15.0
+  lock_m: 5.0            # neither robot within this distance of its door
+
+episode:
+  goal_tol_m: 0.6
+  stuck_s: 20.0          # moved < 0.1 m for this long while not held: logged `stuck`
+  tail_s: 5.0            # keep logging this long after the last robot arrives

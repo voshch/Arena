@@ -1,0 +1,40 @@
+# Doorway example: 4 robots parked in the west room without phases, the dispatcher gives their goals.
+# Pedestrians walk from the south-east room to the south-west sink in three waves, so main_door is crowded in bursts.
+format: arena-scenario/2
+robots:
+- {start: [2.6, 4.5, 0.0], phases: []}
+- {start: [2.6, 5.5, 0.0], phases: []}
+- {start: [2.6, 6.5, 0.0], phases: []}
+- {start: [2.6, 7.5, 0.0], phases: []}
+regions:
+  east_source:
+    type: source
+    polygon:
+    - {x: 18.0, y: 1.0}
+    - {x: 25.0, y: 1.0}
+    - {x: 25.0, y: 4.0}
+    - {x: 18.0, y: 4.0}
+    config:
+      rate_profile:   # pedestrians per second: wave, lull, wave, lull, wave
+      - {t: 0.0, rate: 0.5}
+      - {t: 30.0, rate: 0.5}
+      - {t: 35.0, rate: 0.0}
+      - {t: 65.0, rate: 0.0}
+      - {t: 70.0, rate: 0.5}
+      - {t: 100.0, rate: 0.5}
+      - {t: 105.0, rate: 0.0}
+      - {t: 135.0, rate: 0.0}
+      - {t: 140.0, rate: 0.5}
+      - {t: 170.0, rate: 0.5}
+      - {t: 175.0, rate: 0.0}
+      max_concurrent: 12
+      max_total: 60
+      agent: {agent_type: adult, desired_velocity: {min: 0.9, max: 1.3}, sink_affinity: [{sink: west_sink, weight: 1.0}]}
+  west_sink:
+    type: sink
+    polygon:
+    - {x: 0.5, y: 0.5}
+    - {x: 4.0, y: 0.5}
+    - {x: 4.0, y: 3.0}
+    - {x: 0.5, y: 3.0}
+    config: {capacity: -1}
