@@ -18,6 +18,7 @@ HOST_GID=$(id -g)
 export HOST_GID
 
 [ -d "$HOME/.ssh/agent" ] && export HOST_SSH_AGENT_DIR="$HOME/.ssh/agent"
+[ -d "${CLOUDSDK_CONFIG:-$HOME/.config/gcloud}" ] && export HOST_GCLOUD_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud}"
 
 export arena_compose_sudo=""
 source "$ARENA_DIR/_meta/docker/lib"
@@ -285,11 +286,11 @@ do_run(){
             arena_docker_compose exec -T "$arena_service" /entrypoint.sh bash --norc -c "$fork_script" bash "$fork" "$@"
         fi
     elif [ -t 0 ] && [ -t 1 ]; then
-        arena_docker_compose exec ${agent:+-e "SSH_AUTH_SOCK=$agent"} "$arena_service" /entrypoint.sh \
+        arena_docker_compose exec ${agent:+-e "SSH_AUTH_SOCK=$agent"} ${ARENA_ASSETS_TOKEN:+-e ARENA_ASSETS_TOKEN} "$arena_service" /entrypoint.sh \
             bash --rcfile /opt/arena_ws/src/Arena/_meta/docker/features/docker/rcfile -i
     else
         # non-tty
-        arena_docker_compose exec -T ${agent:+-e "SSH_AUTH_SOCK=$agent"} "$arena_service" /entrypoint.sh bash --norc -c '
+        arena_docker_compose exec -T ${agent:+-e "SSH_AUTH_SOCK=$agent"} ${ARENA_ASSETS_TOKEN:+-e ARENA_ASSETS_TOKEN} "$arena_service" /entrypoint.sh bash --norc -c '
             source /opt/arena_ws/source >/dev/null
             if [ "$#" -gt 0 ]; then exec bash "$@"; else exec bash -s; fi
         ' bash "$@"

@@ -22,10 +22,12 @@ def arena(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, "-m", "arena_cli", *args], env=env, capture_output=True, text=True, check=False, timeout=120)
 
 
-def launcher(*args: str, ws: str | None = None) -> subprocess.CompletedProcess[str]:
-    env = {key: value for key, value in os.environ.items() if key not in ("ARENA_WS_DIR", "HOST_ARENA_WS_DIR")}
+def launcher(*args: str, ws: str | None = None, token: str | None = None) -> subprocess.CompletedProcess[str]:
+    env = {key: value for key, value in os.environ.items() if key not in ("ARENA_WS_DIR", "HOST_ARENA_WS_DIR", "ARENA_ASSETS_TOKEN")}
     if ws is not None:
         env["ARENA_WS_DIR"] = ws
+    if token is not None:
+        env["ARENA_ASSETS_TOKEN"] = token
     return subprocess.run(["bash", str(LAUNCHER), *args], env=env, capture_output=True, text=True, check=False, timeout=30)
 
 
@@ -154,6 +156,18 @@ def test_launcher_fork_over_ssh_quotes_the_remote_command() -> None:
     assert 'declare -x ARENA_PROJECT_NAME="arena-arena_ws-mcp"' in lookup[2] and lookup[-2:] == ["arena_containers", "arena"]
     remote = tail(shlex.split(commands["exec"][5]), "arena_docker")
     assert remote[:4] == ["arena_docker", "exec", "-i", "{container}"] and remote[-4:] == ["bash", "ls", "system", "--json"]
+
+
+def test_launcher_forwards_the_asset_token_by_name() -> None:
+    result = launcher("--print-command", ws="/w/arena_ws", token="s3cret")
+    assert "s3cret" not in result.stdout
+    assert tail(printed(result)["exec"], "arena_docker")[:6] == ["arena_docker", "exec", "-i", "-e", "ARENA_ASSETS_TOKEN", "{container}"]
+
+
+def test_launcher_over_ssh_leaves_the_asset_token_on_this_host() -> None:
+    result = launcher("--host", "box", "--print-command", ws="/w/arena_ws", token="s3cret")
+    assert "s3cret" not in result.stdout and "ARENA_ASSETS_TOKEN" not in result.stdout
+    assert tail(shlex.split(printed(result)["exec"][5]), "arena_docker")[:4] == ["arena_docker", "exec", "-i", "{container}"]
 
 
 def test_launcher_with_an_explicit_container_skips_the_lookup() -> None:

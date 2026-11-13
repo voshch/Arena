@@ -81,6 +81,7 @@ arena_docker_compose(){
     [ -d /dev/dri ] && _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.dri.yaml"
     arena_gpu > /dev/null && _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.gpu.yaml"
     [ -n "${HOST_SSH_AGENT_DIR:-}" ] && _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.ssh-agent.yaml"
+    [ -n "${HOST_GCLOUD_CONFIG:-}" ] && _arena_compose_file "$ARENA_DIR/_meta/docker/docker-compose.gcloud.yaml"
     if [ -f "$ARENA_DIR/.installed" ]; then
         while read -r feature; do
             _arena_compose_file "$ARENA_DIR/_meta/docker/features/$feature/docker-compose.yaml"
