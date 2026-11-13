@@ -1,5 +1,4 @@
-"""Removing the world deletes every pedestrian disc: a disc no one deletes stays in the server, seen by the robots'
-sensors, after its pedestrian is gone."""
+"""Removing the world deletes every pedestrian disc."""
 
 from __future__ import annotations
 

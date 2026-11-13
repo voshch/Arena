@@ -458,7 +458,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._bridge_agent_ids: set[int] = set()
         # IDs of flow agents (source/sink) with a live actor in the simulator
         self._flow_agent_ids: set[int] = set()
-        # counts the resets that removed every agent: the update loop drops a pass a reset overtook
         self._removals = 0
         self._flow_meta_wait: dict[int, int] = {}
         self._tagged_models: dict[tuple[str, ...], list[HumanIdentifier]] = {}
@@ -1025,7 +1024,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                                 to_spawn.append((aid, self._make_flow_dynamic_obstacle(states, index_by_id[aid], await self._flow_model(aid))))
                             spawnable = await self._ensure_spawnable([obs for _, obs in to_spawn]) if to_spawn else []
                             if self._removals != removals:
-                                # a reset removed every agent meanwhile: these agents and the roster are the old episode's
                                 continue
                             for aid, obs in to_spawn:
                                 self._flow_agent_ids.add(aid)
@@ -1053,9 +1051,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"Error in pedestrian update loop: {e}\n{traceback.format_exc()}")
 
     def _named(self, peds: Pedestrians) -> Pedestrians:
-        """The roster's pedestrians under the name their simulator body has. An agent the update loop has not taken in
-        yet goes by its bare id in the roster; a body made under that name would never be deleted, it would stay
-        where the agent was first seen, moving on at that velocity, after the agent got its own body."""
+        """The roster's pedestrians that go by the name of their simulator body."""
         out = Pedestrians()
         out.header = peds.header
         out.pedestrians = [ped for ped in peds.pedestrians if self._agent_names.get(ped.id) == ped.name]
@@ -1713,11 +1709,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.warning(f"arena_humansim kept its seed, the crowd will not follow the episode seed: {reason}")
 
     async def _remove_pedestrians_impl(self) -> bool:
-        """Remove all dynamic agents from arena_humansim, and the simulator's bodies of its flow agents.
-
-        The simulator keeps a flow agent's body until it is deleted: one left in place would stand where its agent was at
-        the reset, moving on at its last velocity, seen by the robots' sensors but by no crowd measure, until an agent of a
-        later episode takes over its name."""
+        """Remove all dynamic agents from arena_humansim and the simulator bodies of its flow agents."""
         request = RemoveAgents.Request()
         request.agent_ids = []  # empty = remove all
 
