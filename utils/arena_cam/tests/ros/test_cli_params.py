@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from arena_cam.cli import is_path, main, parse_params
@@ -38,3 +40,9 @@ def test_a_mount_without_the_sim_camera_is_refused() -> None:
 def test_a_malformed_mount_is_refused() -> None:
     with pytest.raises(SystemExit):
         main(["hold", "--record", "take", "--lockstep", "--mount", "env_0/jackal/base_link@0,0"])
+
+
+def test_a_recording_server_without_ffmpeg_exits_before_it_starts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(SystemExit, match="record needs ffmpeg on PATH"):
+        main(["serve", "--record", str(tmp_path / "takes")])

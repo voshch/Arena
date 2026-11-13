@@ -30,6 +30,7 @@ from arena_runtime_msgs.msg import AdapterDisplay
 from arena_simulation_setup.shared.conditions import Node
 from arena_simulation_setup.shared.judge import NodeMonitor, zone_polygons
 from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+from arena_simulation_setup.tree import DynamicPaths
 from arena_simulation_setup.tree.assets.Camera import collect, pick_camera
 from arena_simulation_setup.tree.World import point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
@@ -119,6 +120,11 @@ def _is_map_frame(frame_id: str) -> bool:
 
 def _extension_name(model: str) -> str:
     return f"ext_{model}_{uuid.uuid4().hex[:6]}"
+
+
+def take_label(world: str, scenario: str, episode_id: int) -> str:
+    """`<world>/<scenario>/ep<NNN>`, the label a recording camera server files an episode's take under."""
+    return "/".join([*(part for part in (world, scenario) if part), f"ep{episode_id:03d}"])
 
 
 def _derive_seed(run_seed: str, world: str, episode_id: int) -> int:
@@ -336,8 +342,8 @@ class EpisodeNode(EnvNode):
             self._episodes.current.integrity.append(reason)
         self._publish_episode_state()
 
-    async def _play_camera(self, request: str, params: str = "") -> tuple[bool, str]:
-        """Pick the camera asset `request` selects in this episode and send it to the env's camera server."""
+    async def _play_camera(self, request: str, params: str = "", *, episode_take: bool = False) -> tuple[bool, str]:
+        """Pick the camera asset `request` selects in this episode and send it to the env's camera server, labeled as the episode's take when `episode_take`."""
         log = self.get_logger()
         try:
             identifier, warning = await pick_camera(request)
@@ -353,7 +359,9 @@ class EpisodeNode(EnvNode):
             self._cam_absent = False
             spec = (await identifier.resolve()).spec
             bundle = await collect(identifier.name, spec)
-            play = arena_cam_msgs.srv.Play.Request(root=identifier.name, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params)
+            scenario = DynamicPaths.SCENARIO.path
+            take = take_label(self._episodes.current.world, scenario.name if scenario.is_dir() else "", self._episodes.current.episode_id) if episode_take else ""
+            play = arena_cam_msgs.srv.Play.Request(root=identifier.name, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params, take=take)
             response = await self._cam_client.call_timeout(play)
         except (OSError, ValueError, LookupError, yaml.YAMLError) as e:
             log.warning(f"cam: {request!r} not played: {e}")
@@ -661,7 +669,7 @@ class EpisodeNode(EnvNode):
             record.outcome_state = arena_runtime_msgs.action.RunEpisode.Result.RUNNING
             self._publish_episode_state()
             if self._cam_setup.value:
-                self._cam_task = asyncio.ensure_future(self._play_camera(self._cam_setup.value))
+                self._cam_task = asyncio.ensure_future(self._play_camera(self._cam_setup.value, episode_take=True))
 
             log = self.get_logger()
             log.warn("=============")

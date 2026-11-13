@@ -17,6 +17,7 @@ from arena_simulation_setup.generative.scenario.zone_screen import RUNTIME_SAFE_
 from arena_simulation_setup.shared.pathing import Point
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, parse_scenario
 
+from . import cameras
 from .manifest import Encounter, Pedestrian
 from .sampler import Sample
 
@@ -95,6 +96,7 @@ class Generated:
     scenario: dict[str, object]
     types: dict[str, dict[str, object]]
     provenance: dict[str, object]
+    cameras: dict[str, dict[str, object]] = attrs.Factory(dict)
 
 
 def _along(p: Point, v: Point, distance: float) -> Point:
@@ -208,6 +210,19 @@ def release_time(sample: Sample, placement: Placement) -> float:
     return round(max(placement.release or 0.0, 0.0) / sample.robot_speed, 2)
 
 
+def meet_time(sample: Sample, placement: Placement) -> float:
+    """Seconds into the episode a nominal robot is level with the encounter point."""
+    robot = placement.robot
+    (ux, uy), (sx, sy) = robot.direction, robot.start
+    arc = (placement.meet[0] - sx) * ux + (placement.meet[1] - sy) * uy
+    return round(min(max(arc, 0.0), robot.length) / sample.robot_speed, 2)
+
+
+def episode_time(sample: Sample, placement: Placement) -> float:
+    """Seconds a nominal robot takes to its goal, where the episode ends."""
+    return round(placement.robot.length / sample.robot_speed, 2)
+
+
 def build(sample: Sample, placement: Placement, notes: Sequence[str] = ()) -> Generated:
     """The scenario, its agent types and the provenance of one placed sample."""
     rng = random.Random(f"{sample.world_key}:{sample.scenario_key}")
@@ -253,7 +268,11 @@ def build(sample: Sample, placement: Placement, notes: Sequence[str] = ()) -> Ge
             "meet": [round(placement.meet[0], 3), round(placement.meet[1], 3)],
             "release_arc": None if placement.release is None else round(placement.release, 3),
             "release_time": None if placement.release is None else release_time(sample, placement),
+            "meet_time": meet_time(sample, placement),
+            "episode_time": episode_time(sample, placement),
         },
         "notes": list(notes),
     }
-    return Generated(scenario=scenario, types={ref[2:]: doc for ref, doc in files.docs.items()}, provenance=provenance)
+    framed = [robot.start, robot.end, *placement.ped_route()]
+    rig = cameras.rig(PED_NAME, framed, robot.heading, cameras.duration(meet_time(sample, placement), episode_time(sample, placement)))
+    return Generated(scenario=scenario, types={ref[2:]: doc for ref, doc in files.docs.items()}, provenance=provenance, cameras={cameras.RIG: rig})

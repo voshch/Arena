@@ -41,6 +41,7 @@ def pack(sample: Sample, generated: Generated) -> dict[str, bytes]:
     root = f"scenarios/{sample.scenario_key}"
     files = {f"{root}/scenario.yaml": _yaml(generated.scenario, marked=True), f"{root}/provenance.yaml": _yaml(generated.provenance)}
     files.update({f"{root}/{path}": _yaml(doc, marked=True) for path, doc in generated.types.items()})
+    files.update({f"{root}/cameras/{name}.yaml": _yaml(spec, marked=True) for name, spec in generated.cameras.items()})
     return files
 
 

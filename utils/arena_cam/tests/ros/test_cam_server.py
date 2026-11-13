@@ -6,10 +6,12 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 import rclpy
 import yaml
+from arena_cam.record import PARTIAL
 from arena_cam_msgs.srv import Play
 from standin import Runtime
 from std_srvs.srv import Trigger
@@ -20,6 +22,9 @@ PERIOD_NS = 1_000_000_000 // FPS
 LONG = {"reference": {"entity": "first_link"}, "timeline": [{"hold": {"duration": 60.0}}]}
 NEXT = {"reference": {"entity": "second_link"}, "timeline": [{"hold": {"duration": 60.0}}]}
 SHORT = {"timeline": [{"hold": {"duration": 0.2}}]}
+SHORT_RIG = {"cameras": {"a": {"timeline": [{"hold": {"duration": 0.3}}]}, "b": {"timeline": [{"hold": {"duration": 0.3}}]}}}
+LONG_RIG = {"cameras": {"a": {"timeline": [{"hold": {"duration": 60.0}}]}, "b": {"timeline": [{"hold": {"duration": 60.0}}]}}}
+VIZ_RIG = {"cameras": {"a": {"source": "viz", "timeline": [{"hold": {"duration": 0.3}}]}, "b": {"source": "viz", "timeline": [{"hold": {"duration": 0.3}}]}}}
 RIG = {"live": "b", "cameras": {"a": {"reference": {"entity": "a_link"}, "timeline": [{"hold": {"duration": 60.0}}]}, "b": {"reference": {"entity": "b_link"}, "timeline": [{"hold": {"duration": 60.0}}]}}}
 
 
@@ -33,13 +38,15 @@ def _rclpy():
 class Server:
     """The server process and the service clients a task generator would use."""
 
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(self, runtime: Runtime, record: Path | None = None) -> None:
+        self._record = record
         self._node = runtime.node
         self.play_client = self._node.create_client(Play, "/arena/env_0/cam/play")
         self.stop_client = self._node.create_client(Trigger, "/arena/env_0/cam/stop")
 
     def __enter__(self) -> Server:
-        self._process = subprocess.Popen([sys.executable, "-m", "arena_cam.cli", "serve", "--env", "0", "--sim", "--fps", str(FPS)])
+        record = [] if self._record is None else [f"--record={self._record}"]
+        self._process = subprocess.Popen([sys.executable, "-m", "arena_cam.cli", "serve", "--env", "0", "--sim", "--fps", str(FPS), *record])
         for client, request in ((self.play_client, Play.Request(root="ghost")), (self.stop_client, Trigger.Request())):
             assert client.wait_for_service(timeout_sec=60.0)
             assert any(self._answer(client, request, 2.0) is not None for _ in range(15))
@@ -70,8 +77,8 @@ class Server:
         assert response is not None
         return response
 
-    def play(self, root: str, bundle: dict, params: str = "") -> Play.Response:
-        return self._call(self.play_client, Play.Request(root=root, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params))
+    def play(self, root: str, bundle: dict, params: str = "", take: str = "") -> Play.Response:
+        return self._call(self.play_client, Play.Request(root=root, bundle=yaml.safe_dump(bundle, sort_keys=False), params=params, take=take))
 
     def stop(self) -> Trigger.Response:
         return self._call(self.stop_client, Trigger.Request())
@@ -171,3 +178,68 @@ def test_with_no_run_a_take_plays_on_the_wall_clock_without_a_channel() -> None:
         assert runtime.wait(lambda: len(runtime.keyframes) > 3)
         assert runtime.channels == []
         assert runtime.holds == []
+
+
+def test_a_recording_server_files_a_finished_rig_take_under_its_label(tmp_path: Path) -> None:
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": SHORT_RIG}, take="w/s/ep001").success
+        takes = tmp_path / "env_0"
+        assert runtime.wait(lambda: (takes / "w/s/ep001-a.mp4").is_file() and (takes / "w/s/ep001-b.mp4").is_file())
+        assert not list(tmp_path.rglob(f"*{PARTIAL}*"))
+
+
+def test_a_take_replaced_mid_rig_keeps_only_partial_files(tmp_path: Path) -> None:
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": LONG_RIG}, take="w/ep001").success
+        assert runtime.wait(lambda: len(runtime.captures) > 4)
+        assert server.play("rig", {"rig": LONG_RIG}, take="w/ep002").success
+        takes = tmp_path / "env_0"
+        assert runtime.wait(lambda: (takes / f"w/ep001{PARTIAL}-a.mp4").is_file() and (takes / f"w/ep002{PARTIAL}-a.mp4").is_file())
+    assert not (takes / "w/ep001-a.mp4").exists()
+
+
+def test_without_a_run_the_server_plays_and_records_nothing(tmp_path: Path) -> None:
+    with Runtime() as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": SHORT_RIG}, take="w/ep001").success
+        assert runtime.wait(lambda: len(runtime.keyframes) > 0)
+        time.sleep(1.0)
+    assert not list(tmp_path.rglob("*.mp4"))
+
+
+def test_a_finished_take_is_never_recorded_over(tmp_path: Path) -> None:
+    takes = tmp_path / "env_0"
+    (takes / "w").mkdir(parents=True)
+    (takes / "w/ep001-a.mp4").write_bytes(b"old")
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": SHORT_RIG}, take="w/ep001").success
+        assert runtime.wait(lambda: len(runtime.beats) > 0)
+        time.sleep(1.0)
+    assert (takes / "w/ep001-a.mp4").read_bytes() == b"old"
+    assert not list(tmp_path.rglob(f"*{PARTIAL}*"))
+
+
+def test_a_take_whose_cameras_select_no_surface_leaves_no_directory(tmp_path: Path) -> None:
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": VIZ_RIG}, take="w/s/ep001").success
+        time.sleep(2.0)
+    assert not (tmp_path / "env_0").exists()
+
+
+def test_a_play_without_a_take_records_nothing(tmp_path: Path) -> None:
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": SHORT_RIG}).success
+        assert runtime.wait(lambda: len(runtime.beats) > 0)
+        time.sleep(1.0)
+    assert not list(tmp_path.rglob("*.mp4"))
+
+
+def test_partial_files_a_cut_take_left_are_recorded_over(tmp_path: Path) -> None:
+    takes = tmp_path / "env_0"
+    (takes / "w").mkdir(parents=True)
+    for view in ("a", "b"):
+        (takes / f"w/ep001{PARTIAL}-{view}.mp4").write_bytes(b"stale")
+    with Runtime(run_period_ns=PERIOD_NS) as runtime, Server(runtime, record=tmp_path) as server:
+        assert server.play("rig", {"rig": SHORT_RIG}, take="w/ep001").success
+        assert runtime.wait(lambda: (takes / "w/ep001-a.mp4").is_file() and (takes / "w/ep001-b.mp4").is_file())
+    assert (takes / "w/ep001-a.mp4").read_bytes() != b"stale"
+    assert not list(tmp_path.rglob(f"*{PARTIAL}*"))
