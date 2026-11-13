@@ -132,12 +132,12 @@ EOF
     done <<< "$lines"
 }
 arena_containers(){
-    local status="--filter=status=running"
+    local filter="--filter=status=running"
     if [ "$1" = -a ]; then
-        status=""
+        filter=""
         shift
     fi
-    arena_docker ps -a -q $status \
+    arena_docker ps -a -q $filter \
         --filter "label=com.docker.compose.project=$ARENA_PROJECT_NAME" \
         --filter "label=com.docker.compose.service=$1"
 }
