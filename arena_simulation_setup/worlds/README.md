@@ -300,11 +300,11 @@ A scenario `generate_scenario` wrote carries its `GENERATED_MARKER` header, see
 format: arena-scenario/2
 objects:
   - name: desk_1
-    model: office_desk             # ObjectIdentifier
+    model: Office/Table_Work_Security             # ObjectIdentifier
     pose: [x, y, yaw]
 humans:
   - name: agent_1
-    model: female_adult_medical_01 # PedestrianIdentifier
+    model: Hospital/nurse_female_caucasian_young # PedestrianIdentifier
     agent: {agent_type: adult, desired_velocity: 1.4}
     pose: [4.0, 2.0, 0.0]          # yaw in radians
     waypoints:

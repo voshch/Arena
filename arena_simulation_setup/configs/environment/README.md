@@ -34,12 +34,12 @@ groups:
     entities:
       static:
         - position: [0.0, 0.0, 0.0]   # [x, y, yaw_deg] relative to group origin, required
-          model: office_desk           # ObjectIdentifier name, required
+          model: Office/Table_Work_Security           # ObjectIdentifier name, required
         - position: [1, 0, -90]
-          model: office_chair
+          model: Office/Chair_Office
       dynamic:
         - position: [0.0, 0.0, 0.0]   # [x, y, yaw_deg] relative to group origin, required
-          model: office_worker         # HumanIdentifier name, required
+          model: Office/office_male_caucasian_young         # HumanIdentifier name, required
           waypoints:                   # each entry either a world zone name (str) or an [x, y] coordinate pair
           - office_room
           - [2.0, 1.0]

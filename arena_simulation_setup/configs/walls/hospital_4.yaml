@@ -1,9 +1,9 @@
 main:
-  - material: Mortar_White
+  - material: Mortar
     height: 2
     z: 0
   - tile:
-      - model: wall_shelf
+      - model: Hospital/SM_Shelf_06f
         orientation: 0.0 # rotate 90 degrees
         y: 0.1
         z: 1

@@ -32,7 +32,7 @@ def _rewrite(world: Path, name: str, doc: dict) -> Path:
 
 
 def _human(**extra: object) -> dict:
-    return {"name": "walker_1", "model": "female_adult_medical_01", "pose": "lobby", "agent": {"agent_type": "adult"}, "waypoints": ["lobby", "ward"], **extra}
+    return {"name": "walker_1", "model": "Hospital/nurse_female_caucasian_young", "pose": "lobby", "agent": {"agent_type": "adult"}, "waypoints": ["lobby", "ward"], **extra}
 
 
 def test_format_2_hunav_round_trips_without_nesting(tmp_path: Path) -> None:
@@ -65,7 +65,7 @@ _GOAL = [30.0, 4.0, 0.0]
 
 
 def _walker(name: str, home: str, away: str, agent_type: str = "adult") -> dict:
-    return {"name": name, "model": "male_adult_medical_01", "pose": home, "agent": {"agent_type": agent_type, "desired_velocity": 1.1}, "waypoints": [home, away], "waypoint_mode": "reverse"}
+    return {"name": name, "model": "Hospital/doctor_male_caucasian_middleage", "pose": home, "agent": {"agent_type": agent_type, "desired_velocity": 1.1}, "waypoints": [home, away], "waypoint_mode": "reverse"}
 
 
 def _corridor_world(tmp_path: Path, names: dict[str, str], robot: dict, humans: list[dict]) -> tuple[WorldContext, dict, Path]:

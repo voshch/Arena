@@ -3,7 +3,7 @@ main:
     height: 2
     z: 0
   - tile:
-      - model: Hospital/Xray_Light_Box
+      - model: Hospital/SM_Xraylightbox_01a
         orientation: 1.5708 # rotate 90 degrees
         y: 0.1
         z: 1

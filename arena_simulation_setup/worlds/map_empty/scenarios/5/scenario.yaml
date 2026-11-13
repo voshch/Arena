@@ -1,10 +1,10 @@
 format: arena-scenario/2
 objects:
-- {name: shelf1, model: shelf, pose: [15.3, 19.6, -0.5]}
-- {name: shelf2, model: shelf, pose: [13.8, 16.7, -0.5]}
-- {name: shelf3, model: shelf, pose: [14.9, 17.2, -0.5]}
-- {name: shelf4, model: shelf, pose: [7.0, 8.13, -0.5]}
-- {name: shelf5, model: shelf, pose: [13.7, 15.3, -0.5]}
+- {name: shelf1, model: SquareShelf, pose: [15.3, 19.6, -0.5]}
+- {name: shelf2, model: SquareShelf, pose: [13.8, 16.7, -0.5]}
+- {name: shelf3, model: SquareShelf, pose: [14.9, 17.2, -0.5]}
+- {name: shelf4, model: SquareShelf, pose: [7.0, 8.13, -0.5]}
+- {name: shelf5, model: SquareShelf, pose: [13.7, 15.3, -0.5]}
 humans:
 - {name: '1', model: arenian, waypoints: [[25.5, 19, 0.0], [4.0, 19, 0.0]], pose: [25.5, 19, 0.0], hunav: {type: adult}}
 - {name: '2', model: arenian, waypoints: [[1.5, 14.3, 0], [10.5, 21.7, 0.0]], pose: [1.5, 14.3, 0], hunav: {type: adult}}

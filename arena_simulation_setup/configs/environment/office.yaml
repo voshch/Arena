@@ -6,32 +6,32 @@ groups:
     entities:
       static:
         - position: [-2.0,   2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [-2.25,  2.15,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-1.7,   1.25,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [ 2.0,   2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [ 1.75,  2.15,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.3,   1.25,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [-2.0,  -2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [-2.25, -1.85,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-1.7,  -2.75,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [ 2.0,  -2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [ 1.75, -1.85,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.3,  -2.75,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
   - name: "office_horizontal_long_tables"
     margin: 5
@@ -41,54 +41,54 @@ groups:
       static:
         # ——— Mid Horizontal Table Entities ———
         - position: [ 0.0,   2.0,   90]
-          model: office_long_table
+          model: Office/Long_Rectangle_Table
         # Chairs along the top side (facing down)
         - position: [-4.0,   3.2,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-2.0,   3.2,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 0.0,   3.2,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.0,   3.2,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 4.0,   3.2,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         # Chairs along the bottom side (facing up)
         - position: [-4.0,   0.8, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-2.0,   0.8, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 0.0,   0.8, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.0,   0.8, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 4.0,   0.8, 90]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [ 0.0,  -2.0,   90]
-          model: office_long_table
+          model: Office/Long_Rectangle_Table
         # Chairs along the top side (facing down)
         - position: [-4.0,   -0.8,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-2.0,   -0.8,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 0.0,   -0.8,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.0,   -0.8,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 4.0,   -0.8,   -90]
-          model: office_chair
+          model: Office/Chair_Office
         # Chairs along the bottom side (facing up)
         - position: [-4.0,  -3.2, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-2.0,  -3.2, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 0.0,  -3.2, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.0,  -3.2, 90]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 4.0,  -3.2, 90]
-          model: office_chair
+          model: Office/Chair_Office
 
   - name: "office_quad_short_tables_random"
     margin: 3
@@ -100,32 +100,32 @@ groups:
 
         # Sub-group 1 (formerly Top-Left)
         - position: [-2.0,   2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [-2.25,  2.15,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-1.7,   1.25,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [ 2.0,   2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [ 1.75,  2.15,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.3,   1.25,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [-2.0,  -2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [-2.25, -1.85,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-1.7,  -2.75,  180]
-          model: office_chair
+          model: Office/Chair_Office
 
         - position: [ 2.0,  -2.0,   0]
-          model: office_short_table
+          model: Office/Table_B
         - position: [ 1.75, -1.85,  0]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.3,  -2.75,  180]
-          model: office_chair
+          model: Office/Chair_Office
           
   - name: "office_horizontal_long_tables_random"
     margin: 5
@@ -137,52 +137,52 @@ groups:
 
         # ——— Upper Table Sub-group (shifted left, rotated -10 deg) ———
         - position: [-1.0,  2.5,  80]
-          model: office_long_table
+          model: Office/Long_Rectangle_Table
         # Chairs along the top side
         - position: [-4.7,  4.4, -100]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-2.8,  4.0, -100]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-0.8,  3.7, -100]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 1.2,  3.3, -100]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 3.1,  3.0, -100]
-          model: office_chair
+          model: Office/Chair_Office
         # Chairs along the bottom side
         - position: [-5.1,  2.0,  80]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-3.2,  1.7,  80]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-1.2,  1.3,  80]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 0.8,  1.0,  80]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 2.7,  0.6,  80]
-          model: office_chair
+          model: Office/Chair_Office
 
         # ——— Lower Table Sub-group (shifted right, rotated +15 deg) ———
         - position: [ 1.5, -2.5, 105]
-          model: office_long_table
+          model: Office/Long_Rectangle_Table
         # Chairs along the top side
         - position: [-2.7, -2.4, -75]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-0.7, -1.9, -75]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 1.2, -1.3, -75]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 3.1, -0.8, -75]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 5.1, -0.3, -75]
-          model: office_chair
+          model: Office/Chair_Office
         # Chairs along the bottom side
         - position: [-2.1, -4.7, 105]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [-0.1, -4.2, 105]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 1.8, -3.7, 105]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 3.7, -3.1, 105]
-          model: office_chair
+          model: Office/Chair_Office
         - position: [ 5.7, -2.6, 105]
-          model: office_chair
+          model: Office/Chair_Office

@@ -1,21 +1,21 @@
 main:
-  - material: Mortar_White
+  - material: Mortar
     height: 0.25
     z: 0
-  - material: Brass_Polished_Yellow_Matte_Polish
+  - material: Brass_Polished
     height: 0.025
     z: 0.25
-  - material: Mortar_White
+  - material: Mortar
     height: 1.475
     z: 0.275
-  - material: Brass_Polished_Yellow_Matte_Polish
+  - material: Brass_Polished
     height: 0.025
     z: 1.75
-  - material: Mortar_White
+  - material: Mortar
     height: 0.225
     z: 1.775
   - tile:
-      - model: wall_shelf
+      - model: Hospital/SM_Shelf_06f
         orientation: 0.0 # rotate 90 degrees
         y: 0.1
         z: 0.75

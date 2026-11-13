@@ -60,7 +60,7 @@ def _world(tmp_path: Path) -> Path:
 
 _DOC = {
     "robots": [{"start": [1.0, 1.0, 0.0], "phases": [{"goto": [8.0, 2.0], "tolerance_radius": 0.6}]}],
-    "humans": [{"name": "walker_1", "model": "female_adult_medical_01", "pose": "lobby", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["lobby", "ward"], "waypoint_mode": "reverse"}],
+    "humans": [{"name": "walker_1", "model": "Hospital/nurse_female_caucasian_young", "pose": "lobby", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["lobby", "ward"], "waypoint_mode": "reverse"}],
 }
 
 

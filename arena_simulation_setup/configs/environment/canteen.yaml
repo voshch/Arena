@@ -6,7 +6,7 @@ groups:
     entities:
       static:
         - position: [0.0, 0.0, 0]
-          model: restaurant_tableset
+          model: Office/Table_Round
 
   - name: "canteen_waiting"
     margin: 5
@@ -15,9 +15,9 @@ groups:
     entities:
       static: 
       - position: [0,0,0]
-        model: restaurant_bench1
+        model: Hospital/Waiting_Room_Bench
       - position: [0,0,-90]
-        model: restaurant_bench1
+        model: Hospital/Waiting_Room_Bench
   
   - name: "canteen_bar"
     margin: 5
@@ -26,7 +26,7 @@ groups:
     entities:
       static:
       - position: [0,0,0]
-        model: restaurant_tableset
+        model: Office/Table_Round
   - name: "planter_bench"
     margin: 5
     size: [7.0,7.0]
@@ -34,7 +34,7 @@ groups:
     entities:
       static: 
       - position: [0,0,0]
-        model: PlanterBench
+        model: Hospital/Waiting_Room_Bench
 
   - name: "BarCabinet"
     margin: 5
@@ -43,4 +43,4 @@ groups:
     entities:
       static: 
       - position: [0,0,0]
-        model: BarCabinet
+        model: Residential/Wood_Cabinet_Base

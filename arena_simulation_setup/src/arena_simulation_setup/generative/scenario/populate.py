@@ -64,12 +64,12 @@ PROFILES: dict[str, dict[str, float]] = {
 MAX_VELOCITY_DEFAULT = 1.5
 
 MODELS: tuple[str, ...] = (
-    "female_adult_medical_01",
-    "male_adult_medical_01",
-    "male_adult_construction_01",
-    "female_adult_business_02",
-    "male_adult_construction_02",
-    "female_adult_police_01",
+    "Hospital/nurse_female_caucasian_young",
+    "Hospital/doctor_male_caucasian_middleage",
+    "worker_male_caucasian_young",
+    "Office/office_female_caucasian_young",
+    "worker_male_asian_middleage",
+    "casual_female_caucasian_young",
 )
 
 

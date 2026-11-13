@@ -67,7 +67,7 @@ WORLD_DESCRIPTION = """
     - `mat`: the material of the floor (can be empty).
     - `entities`: contains static objects in the zone. Each static object has:
     -   - `name`: the object's unique name.
-    -   - `model`: the type of object (e.g., `shelf`).
+    -   - `model`: the type of object (e.g., `SquareShelf`).
     -   - `pose`: a list [x, y, yaw] representing the object's position and rotation.
     - `description`: a human-readable name of the zone.
     The velocity of a pedestrian ranges between [0, 3.5], where [0, 0.3] is stationary, (0.3, 1.0] is idling, (1.0, 2.0] is normal walking and (2.0, 3.5] is running.
@@ -77,17 +77,17 @@ WORLD_DESCRIPTION = """
 
 _PEDESTRIAN_MODELS = """
     - `model`: the visual model used for the pedestrian. the model can be one of the following only:
-        - "female_adult_business_02"
-        - "female_adult_medical_01"
-        - "female_adult_police_01"
-        - "female_adult_police_02"
-        - "female_adult_police_03"
-        - "male_adult_construction_01"
-        - "male_adult_construction_02"
-        - "male_adult_construction_03"
-        - "male_adult_construction_05"
-        - "male_adult_medical_01"
-        - "male_adult_police_04"
+        - "Office/office_female_caucasian_young"
+        - "Hospital/nurse_female_caucasian_young"
+        - "casual_female_caucasian_young"
+        - "casual_female_asian_middleage"
+        - "casual_female_african_young"
+        - "worker_male_caucasian_young"
+        - "worker_male_asian_middleage"
+        - "worker_male_african_young"
+        - "worker_male_caucasian_middleage"
+        - "Hospital/doctor_male_caucasian_middleage"
+        - "casual_male_caucasian_middleage"
 """
 
 _DYNAMIC_ENTRY_DESCRIPTION = f"""
@@ -138,7 +138,7 @@ ARENA_FIELD_DESCRIPTION = f"""
 
     The `static` field is a list of static obstacles, each with:
     - `name`: the object's unique name.
-    - `model`: the type of object (e.g., `shelf`).
+    - `model`: the type of object (e.g., `SquareShelf`).
     - `pose`: a list [x, y, yaw] representing the object's position and rotation.
 {_DYNAMIC_ENTRY_DESCRIPTION}
 """
@@ -217,7 +217,7 @@ BEHAVIOR_OUTPUT_FORMAT_EXAMPLE = """
                     "name": "doctor_1",
                     "pos": [9.0, 12.0, 90.0],
                     "agent_type": "chatting_doctor",
-                    "model": "male_adult_medical_01",
+                    "model": "Hospital/doctor_male_caucasian_middleage",
                     "desired_velocity": 1.4,
                     "waypoints": [[9.0, 14.0, 90.0]],
                     "waypoint_mode": "repeat"
@@ -226,7 +226,7 @@ BEHAVIOR_OUTPUT_FORMAT_EXAMPLE = """
                     "name": "doctor_2",
                     "pos": [10.5, 12.0, 90.0],
                     "agent_type": "chatting_doctor",
-                    "model": "female_adult_medical_01",
+                    "model": "Hospital/nurse_female_caucasian_young",
                     "desired_velocity": 1.4,
                     "waypoints": [[10.5, 14.0, 90.0]],
                     "waypoint_mode": "repeat"
@@ -235,7 +235,7 @@ BEHAVIOR_OUTPUT_FORMAT_EXAMPLE = """
                     "name": "patient_1",
                     "pos": [5.0, 2.5, 0.0],
                     "agent_type": "queueing_patient",
-                    "model": "male_adult_construction_01",
+                    "model": "worker_male_caucasian_young",
                     "desired_velocity": 1.0,
                     "waypoints": [[4.0, 2.0, 0.0]],
                     "waypoint_mode": "once"

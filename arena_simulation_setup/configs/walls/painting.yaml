@@ -1,7 +1,7 @@
 main:
   - material: Metal_Cast
     height: 2
-  - model: residential_painting_1
+  - model: painting_1
     at: 50%
     orientation: 1.5708 # rotate 90 degrees
     y: 0.1

@@ -53,7 +53,7 @@ Inside the container, `arena mcp` lists the installed domains, served or unavail
 
 ```
 arena mcp call worlds_preview name=map_empty
-arena mcp call entities_spawn_static model=fixture_cabinet_a01 x=2 y=0
+arena mcp call entities_spawn_static model=Office/SM_FileCabinet_01 x=2 y=0
 arena mcp call system_launch sim=dummy world=map_empty 'args={"task.robots": "explore"}'
 ```
 

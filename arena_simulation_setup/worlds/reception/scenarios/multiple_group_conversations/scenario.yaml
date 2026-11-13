@@ -1,21 +1,21 @@
 format: arena-scenario/2
 objects:
 - name: gathering_area_1
-  model: chair
+  model: Office/Chair
   pose: [25.0, 7.0, 0.0]
   humansim:
     type: gathering_area_1
     capacity: 0
     formation: {type: f_formation, anchor: {kind: object, ref: gathering_area_1}, params: {base_radius: 1.0, radius_per_member: 0.12}}
 - name: gathering_area_2
-  model: chair
+  model: Office/Chair
   pose: [23.0, 20.0, 0.0]
   humansim:
     type: gathering_area_2
     capacity: 0
     formation: {type: f_formation, anchor: {kind: object, ref: gathering_area_2}, params: {base_radius: 0.7, radius_per_member: 0.12}}
 - name: gathering_area_3
-  model: chair
+  model: Office/Chair
   pose: [16.5, 10.0, 0.0]
   humansim:
     type: gathering_area_3

@@ -28,7 +28,7 @@ humans:
   waypoint_mode: once
   level: '1'
 - name: queuer_4
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [3.7, 7.4, 1.5708]
   agent: {agent_type: adult}
   waypoints:

@@ -5,6 +5,6 @@ main:
   - material: Bamboo_Planks
     height: 1
     z: 0
-  - material: Mortar_White
+  - material: Mortar
     height: 0.75
     z: 1

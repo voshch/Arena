@@ -43,9 +43,9 @@ def _world(tmp_path):
     doc = {
         "robots": [ROBOT],
         "humans": [
-            {"name": "normal_1", "model": "female_adult_medical_01", "pose": "reception", "agent": {"agent_type": "elder", "desired_velocity": 0.7}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
-            {"name": "normal_2", "model": "male_adult_medical_01", "pose": "open_work_area", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["open_work_area", "reception"], "waypoint_mode": "reverse"},
-            {"name": "normal_3", "model": "female_adult_police_01", "pose": "reception", "agent": {"agent_type": "hurried", "desired_velocity": 1.6}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
+            {"name": "normal_1", "model": "Hospital/nurse_female_caucasian_young", "pose": "reception", "agent": {"agent_type": "elder", "desired_velocity": 0.7}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
+            {"name": "normal_2", "model": "Hospital/doctor_male_caucasian_middleage", "pose": "open_work_area", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["open_work_area", "reception"], "waypoint_mode": "reverse"},
+            {"name": "normal_3", "model": "casual_female_caucasian_young", "pose": "reception", "agent": {"agent_type": "hurried", "desired_velocity": 1.6}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
         ],
     }
     (base / "scenario.yaml").write_text(yaml.safe_dump({"format": "arena-scenario/2", **doc}, sort_keys=False))
@@ -231,7 +231,7 @@ def _with_talkers(doc: dict, base: Path) -> dict:
     from arena_simulation_setup.generative.scenario.populate import bt_type_source
 
     (base / "talker.yaml").write_text(bt_type_source().read_text())
-    talkers = [{"name": f"talker_{i}", "model": "male_adult_medical_01", "pose": "reception", "agent": {"agent_type": "./talker.yaml", "desired_velocity": 1.1}, "waypoints": ["reception"]} for i in (1, 2)]
+    talkers = [{"name": f"talker_{i}", "model": "Hospital/doctor_male_caucasian_middleage", "pose": "reception", "agent": {"agent_type": "./talker.yaml", "desired_velocity": 1.1}, "waypoints": ["reception"]} for i in (1, 2)]
     return {**doc, "humans": [*doc["humans"], *talkers]}
 
 
@@ -409,7 +409,7 @@ def test_b_tunes_only_unowned_agents(toy) -> None:
 
 
 def _one_stop(name: str, pose: list[float], stop: list[float]) -> dict:
-    return {"name": name, "model": "male_adult_medical_01", "pose": pose, "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": [stop]}
+    return {"name": name, "model": "Hospital/doctor_male_caucasian_middleage", "pose": pose, "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": [stop]}
 
 
 def test_b_intrinsic_tunes_walkers_and_keeps_them_walking(toy) -> None:

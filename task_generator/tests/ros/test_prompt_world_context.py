@@ -77,7 +77,7 @@ def test_llm_agents_become_format_2_humans() -> None:
                     "name": "agent_1",
                     "pos": [1.0, 2.0, 90.0],
                     "agent_type": "elder",
-                    "model": "female_adult_business_02",
+                    "model": "Office/office_female_caucasian_young",
                     "desired_velocity": 0.8,
                     "waypoints": [[3.0, 4.0, 0.0]],
                     "waypoint_mode": "Reverse",
