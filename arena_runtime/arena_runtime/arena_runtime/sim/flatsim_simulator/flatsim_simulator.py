@@ -476,7 +476,13 @@ class FlatsimSimulator(BaseSim):
         return True
 
     async def remove_world(self) -> bool:
+        """Remove the world's walls and floors and every pedestrian disc: a disc no one deletes stays in the server, seen
+        by the robots' sensors, after its pedestrian is gone; the pedestrians of the next world bring their own."""
         names, self._wall_names, self._floor_names = [*self._wall_names, *self._floor_names], [], []
+        discs = list(self._pedestrians)
+        self._pedestrians.clear()
+        if discs:
+            self._discs.publish(Discs(removed=discs))
         await self._remove(names)
         return True
 

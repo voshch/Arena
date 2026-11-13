@@ -458,6 +458,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._bridge_agent_ids: set[int] = set()
         # IDs of flow agents (source/sink) with a live actor in the simulator
         self._flow_agent_ids: set[int] = set()
+        # counts the resets that removed every agent: the update loop drops a pass a reset overtook
+        self._removals = 0
         self._flow_meta_wait: dict[int, int] = {}
         self._tagged_models: dict[tuple[str, ...], list[HumanIdentifier]] = {}
         self._warned_untagged_types: set[str] = set()
@@ -1002,6 +1004,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                         peds = self._arena_pedestrians
                     if not peds.pedestrians:
                         continue
+                    removals = self._removals
 
                     states = self._curr_agent_states
                     if states is not None and not self._spawns_in_flight:
@@ -1012,19 +1015,23 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
                         if new_ids:
                             index_by_id = {aid: i for i, aid in enumerate(states.agent_id)}
-                            to_spawn: list[DynamicObstacle] = []
+                            to_spawn: list[tuple[int, DynamicObstacle]] = []
                             for aid in sorted(new_ids):
                                 waited = self._flow_meta_wait.get(aid, 0)
                                 if aid not in self._agent_types and waited < self.FLOW_META_TICKS:
                                     self._flow_meta_wait[aid] = waited + 1
                                     continue
                                 self._flow_meta_wait.pop(aid, None)
+                                to_spawn.append((aid, self._make_flow_dynamic_obstacle(states, index_by_id[aid], await self._flow_model(aid))))
+                            spawnable = await self._ensure_spawnable([obs for _, obs in to_spawn]) if to_spawn else []
+                            if self._removals != removals:
+                                # a reset removed every agent meanwhile: these agents and the roster are the old episode's
+                                continue
+                            for aid, obs in to_spawn:
                                 self._flow_agent_ids.add(aid)
-                                obs = self._make_flow_dynamic_obstacle(states, index_by_id[aid], await self._flow_model(aid))
                                 self._agent_names[aid] = obs.sim_path
-                                to_spawn.append(obs)
-                            if to_spawn:
-                                await self._simulator.pedestrian_spawn(await self._ensure_spawnable(to_spawn))
+                            if spawnable:
+                                await self._simulator.pedestrian_spawn(spawnable)
 
                         for aid in self._flow_meta_wait.keys() - current_ids:
                             del self._flow_meta_wait[aid]
@@ -1037,11 +1044,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                                 to_delete.append(self._runtime_obstacle(name=f"flow_{aid}", pose=Pose(Position(0.0, 0.0))))
                             await self._simulator.pedestrian_delete(to_delete)
 
-                    await self.relay_pedestrian_update(peds)
+                    if self._removals != removals:
+                        continue
+                    await self.relay_pedestrian_update(self._named(peds))
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self._logger.error(f"Error in pedestrian update loop: {e}\n{traceback.format_exc()}")
+
+    def _named(self, peds: Pedestrians) -> Pedestrians:
+        """The roster's pedestrians under the name their simulator body has. An agent the update loop has not taken in
+        yet goes by its bare id in the roster; a body made under that name would never be deleted, it would stay
+        where the agent was first seen, moving on at that velocity, after the agent got its own body."""
+        out = Pedestrians()
+        out.header = peds.header
+        out.pedestrians = [ped for ped in peds.pedestrians if self._agent_names.get(ped.id) == ped.name]
+        return out
 
     async def _feedback_loop(self):
         """Publish dirty robot and possessed pedestrian poses on world_state topic, step delayed spawns and itineraries."""
@@ -1695,13 +1713,19 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.warning(f"arena_humansim kept its seed, the crowd will not follow the episode seed: {reason}")
 
     async def _remove_pedestrians_impl(self) -> bool:
-        """Remove all dynamic agents from arena_humansim."""
+        """Remove all dynamic agents from arena_humansim, and the simulator's bodies of its flow agents.
+
+        The simulator keeps a flow agent's body until it is deleted: one left in place would stand where its agent was at
+        the reset, moving on at its last velocity, seen by the robots' sensors but by no crowd measure, until an agent of a
+        later episode takes over its name."""
         request = RemoveAgents.Request()
         request.agent_ids = []  # empty = remove all
 
         try:
             await self._seed_engine()
             response = await self._remove_client.call_timeout(request)
+            self._removals += 1
+            flow = [self._runtime_obstacle(name=f"flow_{aid}", pose=Pose(Position(0.0, 0.0))) for aid in sorted(self._flow_agent_ids)]
             self._next_deferred_id = _DEFERRED_ID_BASE
             self._deferred_spawns.clear()
             self._itineraries.clear()
@@ -1721,6 +1745,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._apply_interactions({}, {})
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
+            if flow:
+                await self._simulator.pedestrian_delete(flow)
             await self._publish_interpolated()
             if response is None:
                 self._logger.error("RemoveAgents timed out")
