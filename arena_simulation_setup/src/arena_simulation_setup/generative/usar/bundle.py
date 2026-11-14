@@ -3,90 +3,56 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import shutil
-import tempfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-import yaml
 
 from arena_simulation_setup.generative.core.bodies import CLEARANCE, ROBOT_RADIUS
+from arena_simulation_setup.generative.study import bundle
+from arena_simulation_setup.generative.study.bundle import by_world
+from arena_simulation_setup.generative.study.runner import Outcome, Report
 from arena_simulation_setup.generative.world.rooms import WorldGeneratorRooms
-from arena_simulation_setup.generative.world.world_generator import save_generated
-from arena_simulation_setup.tree.World import WorldView
 
 from .manifest import CallLevel, Hiding, Manifest
-from .sampler import TEST, TUNE
-
-if TYPE_CHECKING:
-    from .cli import Outcome, Report
+from .sampler import TEST, TUNE, Task
 
 SPLITS = (TEST, TUNE)  # the order the bundles are written in
 SEARCH: dict[str, object] = {"radius": 1.0, "line_of_sight": True, "dwell_s": 0.0}
 STAGE: dict[str, object] = {"robot": "auto", "modes": {"robots": "search", "obstacles": "scenario"}, "episodes": 3, "timeout": "300s"}
 
 
-def _dump(doc: object) -> str:
-    return yaml.safe_dump(doc, sort_keys=False)
-
-
-def _index_name(bundle: Path) -> str:
-    return f"{bundle.name}.index.yaml"
-
-
-def stages(outcomes: Sequence[Outcome]) -> list[dict[str, object]]:
+def stages(outcomes: Sequence[Outcome[Task]]) -> list[dict[str, object]]:
     """One suite stage per task, in world then scenario order."""
-    keys = sorted((outcome.task.world_key, outcome.task.scenario_key) for outcome in outcomes)
+    keys = sorted((outcome.item.world_key, outcome.item.scenario_key) for outcome in outcomes)
     return [{"name": f"{world}__{scenario}", "map": world, **copy.deepcopy(STAGE), "config": {"scenario": {"file": scenario}, "search": dict(SEARCH)}} for world, scenario in keys]
 
 
-def checksum(bundle: Path) -> str:
-    """SHA-256 over every file of a bundle but its index and the dot files a cache adds, by relative path."""
-    digest = hashlib.sha256()
-    files = sorted((path.relative_to(bundle).as_posix(), path) for path in bundle.rglob("*") if path.is_file())
-    for name, path in files:
-        if name == _index_name(bundle) or path.name.startswith("."):
-            continue
-        digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
-    return digest.hexdigest()
+def _configuration(outcome: Outcome[Task]) -> WorldGeneratorRooms.Configuration:
+    return WorldGeneratorRooms.Configuration.model_validate(outcome.item.world)
 
 
-def _by_world(outcomes: Sequence[Outcome]) -> dict[str, list[Outcome]]:
-    worlds: dict[str, list[Outcome]] = {}
-    for outcome in outcomes:
-        worlds.setdefault(outcome.task.world_key, []).append(outcome)
-    return dict(sorted(worlds.items()))
-
-
-def _configuration(outcome: Outcome) -> WorldGeneratorRooms.Configuration:
-    return WorldGeneratorRooms.Configuration.model_validate(outcome.task.world)
-
-
-def coverage(outcomes: Sequence[Outcome]) -> str:
+def coverage(outcomes: Sequence[Outcome[Task]]) -> str:
     """The coverage table of a split, one row per world."""
     lines = ["| world | corners | call level | hiding | rooms |", "|---|---|---|---|---|"]
-    for key, members in _by_world(outcomes).items():
-        corners = ", ".join(str(count) for count in sorted({member.task.corners for member in members}))
-        levels = ", ".join(level.value for level in CallLevel if any(member.task.call_level is level for member in members))
-        hiding = ", ".join(kind.value for kind in Hiding if any(member.task.hiding is kind for member in members))
+    for key, members in by_world(outcomes).items():
+        corners = ", ".join(str(count) for count in sorted({member.item.corners for member in members}))
+        levels = ", ".join(level.value for level in CallLevel if any(member.item.call_level is level for member in members))
+        hiding = ", ".join(kind.value for kind in Hiding if any(member.item.hiding is kind for member in members))
         config = _configuration(members[0])
         lines.append(f"| {key} | {corners} | {levels} | {hiding} | {config.rows} x {config.cols} = {config.rows * config.cols} |")
     return "\n".join(lines)
 
 
-def _readme(bundle: str, manifest: Manifest, split: str, outcomes: Sequence[Outcome]) -> str:
-    worlds = _by_world(outcomes)
+def _readme(manifest: Manifest, name: str, split: str, outcomes: Sequence[Outcome[Task]]) -> str:
+    worlds = by_world(outcomes)
     door = min(_configuration(members[0]).door_width for members in worlds.values())
     return "\n".join(
         [
-            f"# {bundle}",
+            f"# {name}",
             "",
             f"The {split} split of the USAR study `{manifest.name}` on seed {manifest.seed}: {len(worlds)} worlds, {len(outcomes)} stages, each hiding one calling person for the `search` robots mode.",
             "",
             "```bash",
-            f"arena evaluation benchmark --suite {bundle} --contest <contest>",
+            f"arena evaluation benchmark --suite {name} --contest <contest>",
             "```",
             "",
             f"The stages name no robot (`robot: auto`). The narrowest door is {door:g} m wide, and the start is placed for a robot of up to {ROBOT_RADIUS:g} m radius with {CLEARANCE:g} m to the walls.",
@@ -97,58 +63,20 @@ def _readme(bundle: str, manifest: Manifest, split: str, outcomes: Sequence[Outc
     )
 
 
-def _splits(report: Report, root: Path, name: str) -> dict[Path, list[Outcome]]:
-    return {root / f"{name}_{split}": [outcome for outcome in report.outcomes if outcome.split == split] for split in SPLITS}
-
-
-def _own(bundle: Path, manifest: Manifest) -> bool:
-    """Whether the directory is a bundle written from this manifest on its seed."""
-    index = bundle / _index_name(bundle)
-    if not index.is_file():
-        return False
-    doc = yaml.safe_load(index.read_text())
-    return isinstance(doc, dict) and (doc.get("manifest"), doc.get("seed")) == (manifest.name, manifest.seed)
-
-
-def plan(manifest: Manifest, report: Report, root: Path, name: str) -> dict[Path, list[Outcome]]:
+def plan(manifest: Manifest, report: Report[Task], root: Path, name: str) -> dict[Path, list[Outcome[Task]]]:
     """The bundle directory of every split with its tasks, the test split first, refused for a rejected task or a directory of another manifest or seed."""
-    rejected = len(report.outcomes) - report.placed
-    if rejected:
-        raise ValueError(f"{rejected} of {len(report.outcomes)} tasks rejected, a suite needs every one placed")
-    splits = _splits(report, root, name)
-    foreign = [bundle for bundle, outcomes in splits.items() if outcomes and bundle.exists() and not _own(bundle, manifest)]
-    if foreign:
-        raise ValueError(f"{foreign[0]} was not written from the manifest {manifest.name} on seed {manifest.seed}, remove it or name the suite differently")
-    return splits
+    return bundle.plan(report, root, name, manifest=manifest.name, seed=manifest.seed, splits=SPLITS)
 
 
-def _fill(bundle: Path, manifest: Manifest, report: Report, outcomes: Sequence[Outcome]) -> None:
-    worlds = _by_world(outcomes)
-    for key in worlds:
-        built = report.built[key]
-        save_generated(WorldView(bundle / "worlds" / key), built.world, built.files)
-    suite = stages(outcomes)
-    (bundle / "suite.yaml").write_text(_dump({"stages": suite}))
-    (bundle / "README.md").write_text(_readme(bundle.name, manifest, outcomes[0].split, outcomes))
-    index = {"manifest": manifest.name, "seed": manifest.seed, "split": outcomes[0].split, "worlds": list(worlds), "stages": len(suite), "checksum": checksum(bundle), "tasks": [outcome.to_dict() for outcome in outcomes]}
-    (bundle / _index_name(bundle)).write_text(_dump(index))
-
-
-def write(manifest: Manifest, report: Report, root: Path, name: str) -> dict[Path, list[Outcome]]:
-    """Build every split's bundle in a staging directory under `root`, then swap each in, replacing or removing only bundles of this manifest and seed."""
-    splits = plan(manifest, report, root, name)
-    root.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{name}.", dir=root))
-    try:
-        for bundle, outcomes in splits.items():
-            if outcomes:
-                _fill(staging / "new" / bundle.name, manifest, report, outcomes)
-        (staging / "old").mkdir()
-        for bundle, outcomes in splits.items():
-            if bundle.exists() and _own(bundle, manifest):
-                bundle.rename(staging / "old" / bundle.name)
-            if outcomes:
-                (staging / "new" / bundle.name).rename(bundle)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    return {bundle: outcomes for bundle, outcomes in splits.items() if outcomes}
+def write(manifest: Manifest, report: Report[Task], root: Path, name: str) -> dict[Path, list[Outcome[Task]]]:
+    """Write the bundle of every split, replacing or removing only bundles of this manifest and seed."""
+    return bundle.write(
+        report,
+        root,
+        name,
+        manifest=manifest.name,
+        seed=manifest.seed,
+        splits=SPLITS,
+        stages=stages,
+        readme=lambda bundle_name, split, outcomes: _readme(manifest, bundle_name, split, outcomes),
+    )

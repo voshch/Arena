@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import itertools
-import json
 import random
 
 import attrs
 
 from arena_simulation_setup.generative.core.axes import Axis, Scalar, axis_draw, axis_values
-from arena_simulation_setup.generative.world import WorldGenerator
+from arena_simulation_setup.generative.study.manifest import digest
+from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 
 from .manifest import Encounter, Manifest, Pedestrian, Space
 
@@ -28,10 +27,13 @@ class Sample:
     agent_type: str
 
     @property
+    def generator(self) -> WorldGeneratorType:
+        return self.space.generator
+
+    @property
     def world_key(self) -> str:
         """Name shared by every sample on the same generated world."""
-        digest = hashlib.sha1(json.dumps([self.space.value, self.world, self.world_seed], sort_keys=True).encode()).hexdigest()[:8]
-        return f"egobench_{self.space.value}_{digest}"
+        return f"egobench_{self.space.value}_{digest(self.space.value, self.world, self.world_seed)}"
 
     @property
     def scenario_key(self) -> str:
@@ -81,15 +83,11 @@ def _world(space: Space, values: dict[str, Scalar]) -> dict[str, Scalar]:
     return values
 
 
-def _world_seed(manifest: Manifest, variant: int) -> int:
-    return manifest.seed * 1000 + variant
-
-
 def _make(manifest: Manifest, space: Space, world: dict[str, Scalar], variant: int, encounter: Encounter, pedestrian: Pedestrian, offset: Scalar, robot: Scalar, ped: Scalar, agent: Scalar) -> Sample:
     return Sample(
         space=space,
         world=_world(space, world),
-        world_seed=_world_seed(manifest, variant),
+        world_seed=manifest.world_seed(variant),
         encounter=encounter,
         pedestrian=pedestrian,
         lateral_offset=float(offset),

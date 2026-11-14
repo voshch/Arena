@@ -25,6 +25,10 @@ class Task:
     hiding: Hiding
 
     @property
+    def generator(self) -> WorldGeneratorType:
+        return WorldGeneratorType.ROOMS
+
+    @property
     def world_key(self) -> str:
         """Name shared by every task on the same generated world."""
         return world_key(self.world, self.world_seed)

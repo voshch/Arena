@@ -12,12 +12,13 @@ import pydantic
 from arena_simulation_setup.generative.core.axes import Scalar
 from arena_simulation_setup.generative.core.generated import Generated, Rejected, binding, pack
 from arena_simulation_setup.generative.core.profiles import PROFILES
+from arena_simulation_setup.generative.study.manifest import check_world_fields
 from arena_simulation_setup.generative.world import BaseConfiguration, WorldGenerator, WorldGeneratorImpl
 from arena_simulation_setup.generative.world.layout import Layout
 from arena_simulation_setup.tree.World import World
 
 from . import scenario_corridor, scenario_open
-from .manifest import Encounter, Pedestrian, Space, check_world_fields
+from .manifest import Encounter, Pedestrian, Space
 from .sampler import Sample
 
 SCENARIO_GENERATORS: dict[Space, Callable[[Layout, Sample], Generated | Rejected]] = {
@@ -78,7 +79,7 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
             raise ValueError(f"world must be a JSON object of {self.config.space} settings, got {self.config.world!r}")
         values: dict[str, Scalar] = world
         space = Space(self.config.space)
-        check_world_fields(space, values)
+        check_world_fields(space.generator, values)
         self.sample = Sample(
             space=space,
             world=values,
