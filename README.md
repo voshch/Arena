@@ -94,6 +94,8 @@ arena fork down <name>                     # delete a fork and its edits
 arena evaluation benchmark ... --lanes 4   # one benchmark run across 4 lanes, each in a pool fork
 ```
 
+Planner venvs live once in `$ARENA_WS_DIR/.uv/venvs`, keyed by a hash of each planner's inputs and hardlinked from the uv cache in `$ARENA_WS_DIR/.uv/cache`. Every build tree, dev, releases and forks, links `build/<planner>/venv` to its entry, so a fork rebuilds a planner only when the planner's content changes. Containers see the store read-only at `/opt/arena_ws/.venvs`, and `arena build` and fork cleanup delete entries no build tree has linked for a day.
+
 `ARENA_FORK_CPUS`, `ARENA_FORK_MEM` and `ARENA_FORK_DOMAIN_BASE` (default 20) in `.env` tune forks. A new fork takes the lowest domain from that base up that no fork holds, no running container sets and no ROS process on the host has bound (any UDP port in the domain's RTPS range).
 
 
