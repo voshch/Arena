@@ -6,7 +6,7 @@ import sys
 from arena_cli import common
 from arena_cli.common import Verb, make_verb
 from arena_cli.complete import LaunchArgs
-from arena_cli.features import lifecycle_verbs, source_verb
+from arena_cli.features import Health, fetched, lifecycle_verbs, source_verb
 
 NAME = "mujoco"
 
@@ -80,6 +80,10 @@ def launch(argv: list[str]) -> None:
     """Launch the MuJoCo server (run_mujoco.launch.py args: headless:=, log_level:=)."""
     common._reg_require(NAME)
     common._exec("ros2", "launch", "arena_mujoco", "run_mujoco.launch.py", *argv)
+
+
+def health() -> Health:
+    return fetched(NAME, "arena_mujoco")
 
 
 COMMANDS: dict[str, Verb] = {

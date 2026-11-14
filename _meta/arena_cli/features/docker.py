@@ -90,6 +90,13 @@ def _gpu() -> tuple[str, str, str]:
     return fields[0], fields[1], fields[2]
 
 
+def _reserves_gpu(host_config: dict) -> bool:
+    """Docker records the nvidia reservation as a device request, podman as /dev/nvidia* devices."""
+    requests = host_config.get("DeviceRequests") or []
+    devices = host_config.get("Devices") or []
+    return any(r["Driver"] == "nvidia" for r in requests) or any(d["PathInContainer"].startswith("/dev/nvidia") for d in devices)
+
+
 def _container_gpu() -> str:
     """Whether the running arena container reserves a gpu: 'yes', 'no', 'down' or 'unknown'."""
     import json
@@ -97,11 +104,10 @@ def _container_gpu() -> str:
     ids = features.containers("arena")
     if not ids:
         return "down"
-    out = features.engine_output(["inspect", "--format", "{{json .HostConfig.DeviceRequests}}", ids[0]])
+    out = features.engine_output(["inspect", "--format", "{{json .HostConfig}}", ids[0]])
     if out is None:
         return "unknown"
-    requests = json.loads(out or "null") or []
-    return "yes" if any(r["Driver"] == "nvidia" for r in requests) else "no"
+    return "yes" if _reserves_gpu(json.loads(out or "{}") or {}) else "no"
 
 
 def _gpu_status(hint: bool) -> None:
@@ -142,6 +148,14 @@ def gpu(argv: list[str]) -> None:
         raise CLIError(f"unknown argument '{action}', expected one of: on, off")
     _env_set("ARENA_GPU", "1" if action == "on" else "0")
     _gpu_status(hint=False)
+
+
+def health() -> features.Health:
+    _, _, state = _gpu()
+    container = _container_gpu()
+    if container in ("yes", "no") and (container == "yes") != (state == "on"):
+        return False, "the container's gpu passthrough does not match ARENA_GPU, run 'source arena' to recreate it"
+    return True, "ok"
 
 
 def update(argv: list[str]) -> None:

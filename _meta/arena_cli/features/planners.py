@@ -11,6 +11,7 @@ from types import ModuleType
 from arena_cli import common, complete
 from arena_cli.common import Verb, make_verb
 from arena_cli.complete import Flags, LaunchArgs, Static, Union
+from arena_cli.features import Health
 
 _NAME = "planners"
 _SDK_SUBDIR = "arena_planners"
@@ -24,7 +25,7 @@ DESCRIPTION = (
     "  check [--all]        verify planner submodules are initialized\n"
     "  update               refresh initialized planner submodules and relink their weights\n"
     "  uninstall            deinit all planner submodules\n"
-    "  test [--preflight] [--lanes N] <name...|--all>  lockstep soak, or a short start-and-drive check, via the benchmark runner, over N lanes with --lanes, each in its own fork (needs the evaluation feature)"
+    "  test [--preflight] [--lanes N] <name...|--all>  lockstep soak, or a short start-and-drive check, via the benchmark runner, over N lanes with --lanes, each in its own fork"
 )
 
 
@@ -409,14 +410,12 @@ def test(argv: list[str]) -> None:
     Soak: one crowded lockstep stage per planner, stall/rtf/beat table, exit 3 on a stall, 4 when the runner hung.
     `--preflight`: two episodes of map_empty's `preflight` scenario, verdict wedged/weak/ok per planner, exit 3 on either.
     `--all`: every initialized planner. `--lanes N`: spread the planners over N lanes, each in its own fork.
-    KEY:=VALUE tokens and everything from the first other `--flag` on forward to the runner. Needs the evaluation feature.
+    KEY:=VALUE tokens and everything from the first other `--flag` on forward to the runner.
     """
     import json
 
-    from arena_cli import fork
-    from arena_cli.features import evaluation
+    from arena_cli import evaluation, fork
 
-    common._reg_require("evaluation")
     lanes, argv = fork.split_lanes(argv)
     head, rest = argv, []
     for i, a in enumerate(argv):
@@ -448,6 +447,15 @@ def uninstall(argv: list[str]) -> None:
         sys.exit(_run_rm(argv))
     _run_uninstall_all([])
     sys.exit(0)
+
+
+def health() -> Health:
+    reg, arena = _registry(), _arena()
+    status = reg.submodule_status(arena)
+    partial = sorted(name for name, paths in reg.submodule_paths(arena).items() if 0 < sum(status.get(p) == "init" for p in paths) < len(paths))
+    if partial:
+        return False, f"partly initialized: {', '.join(partial)}, run 'arena planners add {' '.join(partial)}'"
+    return True, "ok"
 
 
 COMMANDS: dict[str, Verb] = {

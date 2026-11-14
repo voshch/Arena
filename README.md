@@ -68,6 +68,7 @@ The container will start automatically on source and continue running in the bac
 ```sh
 cd ~/arena_ws # replace with your actual workspace path
 source arena
+arena healthcheck                                               # checks the install and every installed feature, then drives a robot in every installed simulator
 arena launch sim:=isaac                                         # Isaac Sim
 arena launch sim:=mujoco                                        # MuJoCo
 arena launch sim:=flatsim                                       # flatsim (2D, no renderer)

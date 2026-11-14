@@ -275,6 +275,16 @@ async def system_test(
     return (await cli.job("test", f"arena test {package}", "test", package, *extra, result=_tail_result(80))).as_dict()
 
 
+@domain.tool()
+async def system_healthcheck(
+    launch: Annotated[bool, Field(description="also run the preflight launch (two map_empty episodes) in every installed simulator, False for the install and feature checks only")] = True,
+    args: Annotated[dict[str, ArgValue] | None, Field(description="launch arguments for the preflights, {'sim': 'gazebo'} launches that simulator alone")] = None,
+) -> dict[str, Any]:
+    """Run `arena healthcheck` (shell, first boot, venv, stale build, every installed feature, then a preflight launch per installed simulator) as a job, exit 0 when everything passes."""
+    tokens = ([] if launch else ["--no-launch"]) + launch_tokens({}, args)
+    return (await cli.job("healthcheck", f"arena healthcheck {' '.join(tokens)}".strip(), "healthcheck", *tokens, result=_tail_result(60))).as_dict()
+
+
 @domain.tool(destructive=True, open_world=True)
 async def system_deps() -> dict[str, Any]:
     """Run `arena deps` (rosdep install of the workspace's system dependencies) as a job."""
