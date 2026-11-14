@@ -9,9 +9,10 @@ import random
 
 import attrs
 
+from arena_simulation_setup.generative.core.axes import Axis, Scalar, axis_draw, axis_values
 from arena_simulation_setup.generative.world import WorldGenerator
 
-from .manifest import Axis, Encounter, Manifest, Pedestrian, Scalar, Space, axis_draw, axis_values
+from .manifest import Encounter, Manifest, Pedestrian, Space
 
 
 @attrs.frozen

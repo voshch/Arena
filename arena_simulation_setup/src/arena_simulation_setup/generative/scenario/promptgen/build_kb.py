@@ -11,12 +11,13 @@ from typing import Any
 import attrs
 import yaml
 
+from arena_simulation_setup.generative.core.profiles import ALIASES, PROFILES, TIERS, tier_value
+
 from ..populate import MAX_VELOCITY_DEFAULT
 from ..route import ROBOT_SPEED_MPS
 from . import prompts as P
 from . import step_d as D
 from .lexicon import load as lex_load
-from .profiles import ALIASES, PROFILES, TIERS, tier_value
 from .spec import C_AFTER, CONFLICT_M, ERRATIC_AROUND, FORMATION_TRIGGER_M, PHRASES, BDecision, CDecision, DDecision
 
 _DIR = Path(__file__).parent

@@ -5,7 +5,8 @@ import math
 import pytest
 import shapely
 from arena_simulation_setup.generative.egobench import cameras, scenario_corridor, scenario_open
-from arena_simulation_setup.generative.egobench.encounter import FIXED_PLANNER, MIN_RELEASE_M, Generated, Rejected
+from arena_simulation_setup.generative.core.generated import Generated, Rejected
+from arena_simulation_setup.generative.egobench.encounter import FIXED_PLANNER, MIN_RELEASE_M
 from arena_simulation_setup.generative.egobench.manifest import Encounter, Pedestrian, Space
 from arena_simulation_setup.generative.egobench.sampler import Sample
 from arena_simulation_setup.generative.egobench.scenario_corridor import runs

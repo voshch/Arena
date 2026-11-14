@@ -8,8 +8,18 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import attrs
+from arena_humansim.core.agents import BUILTIN_AGENTS
 
-from ..populate import KINEMATICS, MODELS
+KINEMATICS: dict[str, tuple[float, float, float, float]] = {name: (speed.mean, speed.std, speed.clip_low, speed.clip_high) for name in ("adult", "elder", "child", "hurried", "distracted") for speed in (BUILTIN_AGENTS[name].desired_velocity,)}
+
+MODELS: tuple[str, ...] = (
+    "Hospital/nurse_female_caucasian_young",
+    "Hospital/doctor_male_caucasian_middleage",
+    "worker_male_caucasian_young",
+    "Office/office_female_caucasian_young",
+    "worker_male_asian_middleage",
+    "casual_female_caucasian_young",
+)
 
 TIER_NAMES = ("low", "mid", "high")
 

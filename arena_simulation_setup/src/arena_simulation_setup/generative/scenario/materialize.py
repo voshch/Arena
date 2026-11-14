@@ -9,10 +9,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from arena_simulation_setup.generative.core.generated import GENERATED_MARKER
+
 from .formats import scenario_text
 from .populate import bt_type_source
-
-GENERATED_MARKER = "# Generated - do not hand-edit; regenerate instead."
 
 
 def is_generated(path: Path) -> bool:

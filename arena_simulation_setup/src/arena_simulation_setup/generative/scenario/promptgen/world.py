@@ -19,11 +19,13 @@ if typing.TYPE_CHECKING:
     import numpy as np
     import shapely
 
+from arena_simulation_setup.generative.core.bodies import RUNTIME_SAFE_DIST
+
 from ..formats import first_level, world_roles
 from ..occupancy import level_grid, load_world, world_statics
 from ..populate import MIN_ROUTE_CLEARANCE, centroid, clearance, polygon, robot_zones, route_points, work_zones, world_kind
 from ..route import MAX_ROUTE_M, MIN_EPISODE_S, ROBOT_SPEED_MPS
-from ..zone_screen import RUNTIME_SAFE_DIST, rasterize, ref_safe_zones, route_clearance, screen_zones
+from ..zone_screen import rasterize, ref_safe_zones, route_clearance, screen_zones
 from ..zones import Role, zones_by_role
 
 #: The default robot radius, the clearance its route keeps from walls and furniture, and the pedestrian body clearance.

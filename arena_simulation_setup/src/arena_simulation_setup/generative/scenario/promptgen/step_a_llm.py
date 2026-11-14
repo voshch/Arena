@@ -7,10 +7,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from arena_simulation_setup.generative.core.profiles import ProfileError, profile
+
 from .ask import ask, system_prompt
 from .lexicon import ONSETS
 from .llm import DEFAULT_MODEL
-from .profiles import ProfileError, profile
 from .spec import A_CASES, ADecision, Record, SchemaError, When, parse_when
 
 A_MODEL = os.environ.get("ARENA_PROMPT_LLM_A", DEFAULT_MODEL)

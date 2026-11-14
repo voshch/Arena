@@ -10,13 +10,13 @@ from pathlib import Path
 import attrs
 import yaml
 
+from arena_simulation_setup.generative.core.generated import Rejected, pack
 from arena_simulation_setup.generative.world import WorldGenerator
 from arena_simulation_setup.generative.world.world_generator import save_generated
 from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
 
-from .encounter import Rejected
 from .manifest import Manifest
-from .meta import SCENARIO_GENERATORS, pack
+from .meta import SCENARIO_GENERATORS
 from .sampler import Sample, sample
 
 
@@ -72,7 +72,7 @@ def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: b
             if isinstance(result, Rejected):
                 outcomes.append(Outcome(sample=member, reason=result.reason))
                 continue
-            files.update(pack(member, result))
+            files.update(pack(member.scenario_key, result))
             outcomes.append(Outcome(sample=member, reason=None))
         if write and any(o.reason is None for o in outcomes if o.sample.world_key == key):
             worlds[key] = save_generated(_view(key, out), world, files)

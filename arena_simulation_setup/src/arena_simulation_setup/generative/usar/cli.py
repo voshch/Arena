@@ -12,7 +12,7 @@ from pathlib import Path
 import attrs
 import yaml
 
-from arena_simulation_setup.generative.egobench.encounter import Rejected
+from arena_simulation_setup.generative.core.generated import Rejected, pack
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 from arena_simulation_setup.generative.world.world_generator import save_generated
 from arena_simulation_setup.tree import imported_root
@@ -22,7 +22,7 @@ from . import bundle
 from .manifest import Manifest
 from .placement import Hideout, hide
 from .sampler import TEST, TUNE, Task, held_out, tasks
-from .scenario import build, pack
+from .scenario import build
 
 
 @attrs.frozen
@@ -92,7 +92,7 @@ def run(manifest: Manifest, *, out: Path | None = None, limit: int = 0, write: b
             if isinstance(hideout, Rejected):
                 outcomes.append(Outcome(task=member, split=split, reason=hideout.reason))
                 continue
-            files.update(pack(member, build(manifest, member, hideout, split)))
+            files.update(pack(member.scenario_key, build(manifest, member, hideout, split)))
             outcomes.append(Outcome(task=member, split=split, reason=None))
             placed = True
         if placed:

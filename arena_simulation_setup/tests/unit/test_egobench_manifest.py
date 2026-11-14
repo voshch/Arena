@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pydantic
 import pytest
-from arena_simulation_setup.generative.egobench.manifest import Encounter, Manifest, Pedestrian, Space, Span
+from arena_simulation_setup.generative.core.axes import Span
+from arena_simulation_setup.generative.egobench.manifest import Encounter, Manifest, Pedestrian, Space
 from arena_simulation_setup.generative.egobench.sampler import Sample, sample
 
 

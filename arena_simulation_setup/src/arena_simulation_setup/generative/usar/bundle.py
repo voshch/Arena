@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from arena_simulation_setup.generative.egobench.encounter import CLEARANCE, ROBOT_RADIUS
+from arena_simulation_setup.generative.core.bodies import CLEARANCE, ROBOT_RADIUS
 from arena_simulation_setup.generative.world.rooms import WorldGeneratorRooms
 from arena_simulation_setup.generative.world.world_generator import save_generated
 from arena_simulation_setup.tree.World import WorldView

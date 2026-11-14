@@ -6,7 +6,7 @@ import itertools
 
 import attrs
 
-from arena_simulation_setup.generative.egobench.manifest import Scalar
+from arena_simulation_setup.generative.core.axes import Scalar
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 
 from .manifest import CallLevel, Hiding, Manifest, world_key

@@ -9,24 +9,21 @@ from typing import Any
 
 import attrs
 
+from arena_simulation_setup.generative.core.agents import STAND_STEP, WALK_PATIENCE_S, TypeFiles, agent_type_of
+from arena_simulation_setup.generative.core.bodies import RUNTIME_SAFE_DIST
+from arena_simulation_setup.generative.core.triggers import GO, ROUTE_TRIGGER_M, TRIGGER_STEP_M, release_point, within
 from arena_simulation_setup.shared.pathing import Point, point_at_arc, route_length
 
-from ..zone_screen import RUNTIME_SAFE_DIST
-from .agents import STAND_STEP, WALK_PATIENCE_S, TypeFiles, agent_type_of
 from .encounter import Encounter, GeometryError, encounter_fractions, solve_encounter
 from .step_a import StepError, is_tree, set_type, walk_as_tree
 from .world import WorldContext, WorldError
 
-GO = "go"
 FORM = "form"
 BREAK = "break"
 INJECT_PREFIX = "edge"
 LEAD_IN_M = 4.0
 STAND_TRIGGER_M = 3.0
-# a `route_fraction` onset fires when the robot comes this close to that point of its route
-ROUTE_TRIGGER_M = 1.5
 MIN_RELEASE_S = 0.5
-TRIGGER_STEP_M = 0.05
 START_MARGIN_M = 0.25
 FOLLOW_STEP_M = 2.0
 ANGLE_SEARCH_DEG = 90.0
@@ -41,19 +38,6 @@ class Realized:
     notes: list[str] = attrs.Factory(list)
     #: Step letter -> the injected pedestrians its intercepts were realized as.
     owned: dict[str, list[str]] = attrs.Factory(dict)
-
-
-def _num(value: float) -> str:
-    return f"{round(float(value), 2):g}"
-
-
-def point_literal(pt: Point, origin: Point = (0.0, 0.0)) -> str:
-    """`x,y` as a condition atom names a point of the map frame: the level-frame `pt` shifted by the level's `origin`."""
-    return f"{_num(pt[0] + origin[0])},{_num(pt[1] + origin[1])}"
-
-
-def within(radius: float, pt: Point, origin: Point = (0.0, 0.0)) -> str:
-    return f"robot within {_num(radius)} of {point_literal(pt, origin)}"
 
 
 def _position(agent: Mapping[str, Any], world: WorldContext) -> Point | None:
@@ -86,19 +70,6 @@ def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | 
         atom = within(float(when[key]), pt, origin)
         return {"when": f"not {atom}" if negate else atom}
     return {"at": float(when.get("at") or 0.0) + hold}
-
-
-def release_point(route: Sequence[Point], at: float, radius: float = ROUTE_TRIGGER_M) -> tuple[Point, float]:
-    """The route point whose `radius` circle the robot enters `at` meters along `route`, and that radius, less near the goal."""
-    total = route_length(route)
-    here = point_at_arc(route, at)[0]
-    s = at
-    while s < total and math.dist(point_at_arc(route, s)[0], here) < radius:
-        s += TRIGGER_STEP_M
-    if s < total:
-        return point_at_arc(route, s)[0], radius
-    end = point_at_arc(route, total)[0]
-    return end, max(math.dist(end, here), TRIGGER_STEP_M)
 
 
 def entered_at(route: Sequence[Point], pt: Point, radius: float) -> float | None:

@@ -12,8 +12,8 @@ from pathlib import Path
 import pydantic
 import yaml
 
-from arena_simulation_setup.generative.egobench.manifest import Axis, Scalar, Span, axis_values
-from arena_simulation_setup.generative.scenario.promptgen.profiles import PROFILES
+from arena_simulation_setup.generative.core.axes import Axis, Scalar, Span, axis_values
+from arena_simulation_setup.generative.core.profiles import PROFILES
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 
 

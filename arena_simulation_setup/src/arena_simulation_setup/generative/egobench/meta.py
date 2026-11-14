@@ -8,17 +8,16 @@ import typing
 from collections.abc import Callable
 
 import pydantic
-import yaml
 
-from arena_simulation_setup.generative.scenario.materialize import GENERATED_MARKER
-from arena_simulation_setup.generative.scenario.promptgen.profiles import PROFILES
+from arena_simulation_setup.generative.core.axes import Scalar
+from arena_simulation_setup.generative.core.generated import Generated, Rejected, binding, pack
+from arena_simulation_setup.generative.core.profiles import PROFILES
 from arena_simulation_setup.generative.world import BaseConfiguration, WorldGenerator, WorldGeneratorImpl
 from arena_simulation_setup.generative.world.layout import Layout
 from arena_simulation_setup.tree.World import World
 
 from . import scenario_corridor, scenario_open
-from .encounter import Generated, Rejected
-from .manifest import Encounter, Pedestrian, Scalar, Space, check_world_fields
+from .manifest import Encounter, Pedestrian, Space, check_world_fields
 from .sampler import Sample
 
 SCENARIO_GENERATORS: dict[Space, Callable[[Layout, Sample], Generated | Rejected]] = {
@@ -29,25 +28,6 @@ SCENARIO_GENERATORS: dict[Space, Callable[[Layout, Sample], Generated | Rejected
 
 class Unplaceable(ValueError):
     """The sample's encounter has no placement in its world."""
-
-
-def _yaml(doc: object, marked: bool = False) -> bytes:
-    text = yaml.safe_dump(doc, sort_keys=False, default_flow_style=None)
-    return ((GENERATED_MARKER + "\n" + text) if marked else text).encode("utf-8")
-
-
-def pack(sample: Sample, generated: Generated) -> dict[str, bytes]:
-    """The scenario directory of one sample, by path relative to its world."""
-    root = f"scenarios/{sample.scenario_key}"
-    files = {f"{root}/scenario.yaml": _yaml(generated.scenario, marked=True), f"{root}/provenance.yaml": _yaml(generated.provenance)}
-    files.update({f"{root}/{path}": _yaml(doc, marked=True) for path, doc in generated.types.items()})
-    files.update({f"{root}/cameras/{name}.yaml": _yaml(spec, marked=True) for name, spec in generated.cameras.items()})
-    return files
-
-
-def binding(sample: Sample) -> dict[str, typing.Any]:
-    """Episode binding running the sample's scenario on both task axes."""
-    return {"modes": {"robots": "scenario", "obstacles": "scenario"}, "params": {"robots": {"file": sample.scenario_key}, "obstacles": {"file": sample.scenario_key}}}
 
 
 class WorldGeneratorEgoBench(WorldGeneratorImpl):
@@ -153,10 +133,10 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
         return self._generated
 
     def files(self) -> dict[str, bytes]:
-        return {**self._world.files(), **pack(self.sample, self.generated())}
+        return {**self._world.files(), **pack(self.sample.scenario_key, self.generated())}
 
     def layout(self) -> Layout | None:
         return self._world.layout()
 
     def params(self) -> dict[str, typing.Any]:
-        return binding(self.sample)
+        return binding(self.sample.scenario_key)

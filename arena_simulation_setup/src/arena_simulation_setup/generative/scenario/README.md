@@ -124,11 +124,13 @@ An interception is solved offline against the planned route ([`promptgen/encount
 | `formats.py` | worlds in the working shape (`levels`, `first_level`), scenarios read (`read_scenario`) and rendered for writing (`scenario_text`) |
 | `zones.py` | zone name to role: the world's `has_purpose` facts, then substring rules |
 | `occupancy.py`, `zone_screen.py` | the level grid, and which zones may be homes (every admissible cell 1.5 m off the route) |
-| `route.py`, `populate.py`, `materialize.py` | the base route, the four bases, the base writer and `GENERATED_MARKER` |
+| `route.py`, `populate.py`, `materialize.py` | the base route, the four bases and the base writer |
 | `agent_types/talker.yaml` | the behavior-tree type copied beside every base with talkers |
 | `suite.py` | scenario directories to a suite of `scenario` stages |
 | `propose/` | the model call path through `arena_simulation_setup.utils.llm`, and model classification of zone names |
 | `promptgen/` | prompt + world + base to a case: steps A, D, B+C decide, `realize.py` turns the design into pedestrians, trees and the timeline |
+
+The pedestrian profiles, the agent type files, the robot triggers and `GENERATED_MARKER` are in [`core`](../README.md#core), shared with the other generators.
 
 `promptgen/system_*.md` are build output: edit the `.tmpl.md` and run `python3 -m arena_simulation_setup.generative.scenario.promptgen.build_kb`, a test fails when the rendering is stale.
 

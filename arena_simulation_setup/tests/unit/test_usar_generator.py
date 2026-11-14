@@ -7,7 +7,7 @@ from pathlib import Path
 import pydantic
 import pytest
 import yaml
-from arena_simulation_setup.generative.egobench.encounter import Rejected
+from arena_simulation_setup.generative.core.generated import Rejected
 from arena_simulation_setup.generative.scenario.materialize import is_generated
 from arena_simulation_setup.generative.usar import cli
 from arena_simulation_setup.generative.usar.manifest import CallLevel, Hiding, Manifest

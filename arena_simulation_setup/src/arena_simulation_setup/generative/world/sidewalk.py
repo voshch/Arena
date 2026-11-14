@@ -12,7 +12,7 @@ import pydantic
 import shapely
 import yaml
 
-from arena_simulation_setup.generative.scenario.promptgen.profiles import PROFILES
+from arena_simulation_setup.generative.core.profiles import PROFILES
 from arena_simulation_setup.tree.World import World
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
 

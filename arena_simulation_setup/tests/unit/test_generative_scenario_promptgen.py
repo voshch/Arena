@@ -15,8 +15,9 @@ from arena_simulation_setup.generative.scenario.formats import read_scenario
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match
 from arena_simulation_setup.generative.scenario.promptgen.pipeline import RobotPlan, generate, write_result
-from arena_simulation_setup.generative.scenario.promptgen.profiles import ProfileError, derive, derived_name, profile, tier_value
-from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, ROUTE_TRIGGER_M, STAND_TRIGGER_M, trigger
+from arena_simulation_setup.generative.core.profiles import ProfileError, derive, derived_name, profile, tier_value
+from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, STAND_TRIGGER_M, trigger
+from arena_simulation_setup.generative.core.triggers import ROUTE_TRIGGER_M
 from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_when
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 from arena_simulation_setup.generative.scenario.route import ROBOT_SPEED_MPS
@@ -890,7 +891,7 @@ def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> N
 
 
 def test_owned_names_follow_the_realized_intercepts_when_d_is_dropped(toy) -> None:
-    from arena_simulation_setup.generative.scenario.promptgen.agents import TypeFiles
+    from arena_simulation_setup.generative.core.agents import TypeFiles
     from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, _realized
     from arena_simulation_setup.generative.scenario.promptgen.spec import Record
     from arena_simulation_setup.generative.scenario.promptgen.step_bc import apply_c
