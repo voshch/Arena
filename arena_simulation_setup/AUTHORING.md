@@ -1049,7 +1049,10 @@ robots:
 An empty scenario (robot start and phases only) is valid, and `robots:` is
 optional: a robot without an entry stays parked, an episode with only parked
 robots runs until `task.episode.timeout`. Phases run in order and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
-`{reach: <named target | random | pose>}`, or a hold phase with neither (the robot
+`{reach: <named target | random | pose>}` (a pose in `frame:`, a robot link and the base link by default, or `map`,
+which the arm adapter re-expresses in the base link through TF when it sends the goal), `{grasp: close|open, object: <entity>, instance: <gripper>}` (closes or
+opens the gripper, met when the gripper action returns and, for a close with an
+`object`, the robot holds it), or a hold phase with neither (the robot
 stays where it is), or `{loop: [<phases>], until: "<...>"}` (the phases repeated
 in order until the `until` holds, which drops the running phase and continues
 after the loop). Every phase takes `until: "<clause>[ or <clause>...]"`, a

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import control_msgs.action
 import pytest
 from action_msgs.msg import GoalStatus
-from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.task_kinds import TaskKind
 from rclpy.task import Future
@@ -52,10 +52,34 @@ class _ActionClient:
         return self.ready
 
 
+class _Simulator:
+    def __init__(self) -> None:
+        self.reachable: set[str] = {"cup_1"}
+        self.hand = "env_0/tiago/arm_tool_link"
+        self.held: dict[str, str] = {}
+        self.goals_when_detached: list[int] = []
+        self.goals_sent = lambda: 0
+
+    async def grasp_attach(self, robot, joint: str, obj: str, hand: str) -> bool:
+        if obj not in self.reachable or hand != self.hand:
+            return False
+        self.held[joint] = obj
+        return True
+
+    async def grasp_detach(self, robot, joint: str) -> None:
+        self.goals_when_detached.append(self.goals_sent())
+        self.held.pop(joint, None)
+
+
 class _Node:
     def __init__(self) -> None:
         self.publishers: dict[str, _Publisher] = {}
         self.action_clients: dict[str, _ActionClient] = {}
+
+    async def await_ros(self, future: Future):
+        while not future.done():
+            await asyncio.sleep(0)
+        return future.result()
 
     def create_publisher(self, msg_type, topic: str, qos) -> _Publisher:
         self.publishers[topic] = _Publisher()
@@ -71,15 +95,32 @@ class _Node:
 
 def _build(kind: str = "direct"):
     node = _Node()
+    simulator = _Simulator()
+    failed: list[str] = []
     manager = SimpleNamespace(
         name="tiago",
+        failed=failed,
+        fail_phase=failed.append,
         node=node,
+        environment_manager=simulator,
         namespace=Namespace("/env_0/tiago"),
         robot_view=RobotIdentifier("tiago").resolve_sync(),
-        robot=SimpleNamespace(resolved_request={}, frames=None),
+        robot=SimpleNamespace(resolved_request={}, frames=None, frame=FrameNamespace("env_0/tiago")),
         tf_buffer=None,
     )
-    return ADAPTERS["gripper"].get(kind)(robot_manager=manager), manager, node
+    adapter = ADAPTERS["gripper"].get(kind)(robot_manager=manager)
+    simulator.goals_sent = lambda: len(node.action_clients[CONTROLLER_ACTION].goals)
+    return adapter, manager, node
+
+
+def _joint(manager) -> str:
+    caps = manager.robot_view.effective_caps(manager.robot.resolved_request, frames=manager.robot.frames)
+    return caps.gripper["gripper"].joint
+
+
+async def _settle() -> None:
+    for _ in range(5):
+        await asyncio.sleep(0)
 
 
 def _finish(handle: _Handle, status: int, **result) -> None:
@@ -183,3 +224,87 @@ def test_grasp_names_the_controller_server_that_is_down():
     with pytest.raises(RuntimeError, match=CONTROLLER_ACTION):
         asyncio.run(adapter.dispatch_phase(GraspPhase(action="close"), manager))
     assert node.action_clients[CONTROLLER_ACTION].goals == []
+
+
+def test_a_close_on_an_object_attaches_it_once_the_goal_succeeds():
+    async def run():
+        adapter, manager, node = _build()
+        await adapter.dispatch_phase(GraspPhase(action="close", object="cup_1"), manager)
+        await _settle()
+        assert manager.environment_manager.held == {}
+        _finish(node.action_clients[CONTROLLER_ACTION].handles[0], GoalStatus.STATUS_SUCCEEDED, reached_goal=True)
+        await _settle()
+        assert manager.environment_manager.held == {_joint(manager): "cup_1"}
+
+    asyncio.run(run())
+
+
+def test_a_close_that_stalls_on_an_object_attaches_it():
+    async def run():
+        adapter, manager, node = _build()
+        await adapter.dispatch_phase(GraspPhase(action="close", object="cup_1"), manager)
+        _finish(node.action_clients[CONTROLLER_ACTION].handles[0], GoalStatus.STATUS_ABORTED, stalled=True)
+        await _settle()
+        assert manager.environment_manager.held == {_joint(manager): "cup_1"}
+
+    asyncio.run(run())
+
+
+def test_an_aborted_close_attaches_nothing():
+    async def run():
+        adapter, manager, node = _build()
+        await adapter.dispatch_phase(GraspPhase(action="close", object="cup_1"), manager)
+        _finish(node.action_clients[CONTROLLER_ACTION].handles[0], GoalStatus.STATUS_ABORTED)
+        await _settle()
+        assert manager.environment_manager.held == {}
+
+    asyncio.run(run())
+
+
+def test_a_close_on_an_object_out_of_reach_holds_nothing():
+    async def run():
+        adapter, manager, node = _build()
+        manager.environment_manager.reachable.clear()
+        await adapter.dispatch_phase(GraspPhase(action="close", object="cup_1"), manager)
+        _finish(node.action_clients[CONTROLLER_ACTION].handles[0], GoalStatus.STATUS_SUCCEEDED, reached_goal=True)
+        await _settle()
+        assert manager.environment_manager.held == {}
+        assert manager.failed == ["gripper joint 'gripper_right_finger_joint' holds no 'cup_1' after closing"]
+
+    asyncio.run(run())
+
+
+def test_a_close_without_an_object_attaches_nothing():
+    async def run():
+        adapter, manager, node = _build()
+        await adapter.dispatch_phase(GraspPhase(action="close"), manager)
+        _finish(node.action_clients[CONTROLLER_ACTION].handles[0], GoalStatus.STATUS_SUCCEEDED, reached_goal=True)
+        await _settle()
+        assert manager.environment_manager.held == {}
+
+    asyncio.run(run())
+
+
+def test_an_open_releases_the_held_object_before_the_goal_goes_out():
+    async def run():
+        adapter, manager, node = _build()
+        manager.environment_manager.held[_joint(manager)] = "cup_1"
+        await adapter.dispatch_phase(GraspPhase(action="open"), manager)
+        assert manager.environment_manager.held == {}
+        assert manager.environment_manager.goals_when_detached == [0]
+        assert len(node.action_clients[CONTROLLER_ACTION].goals) == 1
+
+    asyncio.run(run())
+
+
+def test_a_new_grasp_drops_the_attach_waiting_on_the_previous_close():
+    async def run():
+        adapter, manager, node = _build()
+        await adapter.dispatch_phase(GraspPhase(action="close", object="cup_1"), manager)
+        await adapter.dispatch_phase(GraspPhase(action="open"), manager)
+        first, _ = node.action_clients[CONTROLLER_ACTION].handles
+        _finish(first, GoalStatus.STATUS_SUCCEEDED, reached_goal=True)
+        await _settle()
+        assert manager.environment_manager.held == {}
+
+    asyncio.run(run())

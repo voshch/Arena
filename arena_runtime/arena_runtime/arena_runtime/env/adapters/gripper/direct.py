@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, ClassVar
@@ -14,12 +15,12 @@ from arena_robots.task_kinds import TaskKind
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
 from arena_runtime.env.adapters import Adapter, AdapterMeta
-from arena_runtime.env.adapters.gripper._client import GraspGoal, GripperGraspClient
+from arena_runtime.env.adapters.gripper._client import STATUS_SUCCEEDED, GraspGoal, GripperGraspClient
 from arena_runtime.env.request import GraspPhase
 
 if TYPE_CHECKING:
     from arena_rclpy_mixins.Async import ActionClientWrapper
-    from arena_robots.caps import GripperSpec
+    from arena_robots.caps import ArmSpec, GripperSpec
     from rclpy.publisher import Publisher
 
     from arena_runtime.env.request import TaskPhase
@@ -43,9 +44,11 @@ class DirectGripperAdapter(Adapter):
         namespace = str(robot_manager.namespace)
         node = robot_manager.node
         self._specs: dict[str, GripperSpec] = dict(caps.gripper or {})
+        self._arms: dict[str, ArmSpec] = dict(caps.arm or {})
         self._actions: dict[str, ActionClientWrapper] = {}
         self._applied: dict[str, Publisher] = {}
         self._subscriptions = []
+        self._attach_task: asyncio.Task[None] | None = None
         for name, spec in self._specs.items():
             self._actions[name] = node.create_action_client_wrapper(control_msgs.action.GripperCommand, str(robot_manager.namespace(spec.controller, "gripper_cmd")))
             self._applied[name] = node.create_publisher(control_msgs.msg.GripperCommand, gripper_topic(namespace, name, "applied"), _LATCHED)
@@ -95,5 +98,33 @@ class DirectGripperAdapter(Adapter):
         if not isinstance(phase, GraspPhase):
             raise RuntimeError(f"DirectGripperAdapter accepts only grasp phases; got {type(phase).__name__}")
         name, spec = self._instance(phase.instance, robot)
+        if self._attach_task is not None:
+            self._attach_task.cancel()
+            self._attach_task = None
+        if phase.action == "open":
+            await robot.environment_manager.grasp_detach(robot.robot, spec.joint)
         goal = self._command(name, spec, spec.positions[phase.action], 0.0)
         await self.client_for(TaskKind.GRASP).send_goal(GraspGoal(instance=name, command=goal))
+        if phase.action == "close" and phase.object:
+            self._attach_task = asyncio.create_task(self._attach_when_closed(robot, spec.joint, phase.object, self._hand(spec, robot)))
+
+    def _hand(self, spec: GripperSpec, robot: RobotManager) -> str:
+        """TF frame of the tip of the gripper's arm, the only arm's without a named one, empty without an arm."""
+        arm = self._arms.get(spec.arm) if spec.arm is not None else None
+        if arm is None and len(self._arms) == 1:
+            ((_, arm),) = self._arms.items()
+        return "" if arm is None else robot.robot.frame.tf(arm.tip_link)
+
+    async def _attach_when_closed(self, robot: RobotManager, joint: str, obj: str, hand: str) -> None:
+        client = self.client_for(TaskKind.GRASP)
+        assert isinstance(client, GripperGraspClient)
+        try:
+            await client.await_result()
+            if client.status != STATUS_SUCCEEDED:
+                return
+            if not await robot.environment_manager.grasp_attach(robot.robot, joint, obj, hand):
+                robot.fail_phase(f"gripper joint {joint!r} holds no {obj!r} after closing")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _log.exception("attaching %r to gripper joint %r of robot %r failed", obj, joint, robot.name)

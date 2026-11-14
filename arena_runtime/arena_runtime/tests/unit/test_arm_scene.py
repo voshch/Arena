@@ -11,7 +11,9 @@ try:
     from arena_runtime.env.adapters.arm.scene import (
         Articulated,
         StaticBox,
+        attached_objects,
         collision_objects,
+        detached_objects,
         object_id,
         read_obj,
         read_urdf,
@@ -190,3 +192,44 @@ def test_scene_diff_removes_the_previous_ids_before_adding_the_current_objects(c
     assert operations[:2] == [(CollisionObject.REMOVE, "arena/gone/a"), (CollisionObject.REMOVE, "arena/chest/body")]
     assert all(operation == CollisionObject.ADD for operation, _ in operations[2:])
     assert len(operations) == 2 + len(objects)
+
+
+def _box(name: str, x: float, z: float, extent: tuple[tuple[float, float], ...], yaw: float = 0.0) -> StaticBox:
+    return StaticBox(name=name, pose=Pose(position=Position(x, 0.0, z), orientation=_yaw(yaw)), scale=None, extent=extent)
+
+
+def test_collision_objects_leave_out_a_rack_holding_a_box_and_keep_the_box() -> None:
+    rack = _box("rack", 1.0, 0.0, ((-0.3, 0.3), (-0.6, 0.6), (0.0, 1.8)), yaw=30.0)
+    box = _box("box", 1.0, 0.54, ((-0.2, 0.2), (-0.14, 0.14), (0.0, 0.12)))
+    objects = collision_objects([rack, box], Pose(position=Position(0.0, 0.0, 0.0), orientation=Orientation.identity()), "base_footprint", 3.0)
+    assert {obj.id for obj in objects} == {object_id("box")}
+
+
+def test_collision_objects_keep_a_table_with_a_plate_resting_on_its_top() -> None:
+    table = _box("table", 1.0, 0.0, ((-0.4, 0.4), (-0.4, 0.4), (0.0, 0.75)))
+    plate = _box("plate", 1.0, 0.75, ((-0.1, 0.1), (-0.1, 0.1), (0.0, 0.02)))
+    objects = collision_objects([table, plate], Pose(position=Position(0.0, 0.0, 0.0), orientation=Orientation.identity()), "base_footprint", 3.0)
+    assert {obj.id for obj in objects} == {object_id("table"), object_id("plate")}
+
+
+def test_a_held_box_attaches_to_the_tip_link_at_its_offset_with_the_gripper_links_touchable() -> None:
+    box = StaticBox(name="world_box", pose=Pose(position=Position(9.0, 9.0, 9.0), orientation=Orientation.identity()), scale=None, extent=((-0.3, 0.3), (-0.1, 0.1), (-0.1, 0.1)))
+    offset = Pose(position=Position(0.0, 0.0, 0.36), orientation=Orientation.identity())
+    (attached,) = attached_objects(box, offset, "tiago/arm_tool_link", ["tiago/arm_tool_link", "tiago/gripper_link"])
+    assert attached.link_name == "tiago/arm_tool_link"
+    assert list(attached.touch_links) == ["tiago/arm_tool_link", "tiago/gripper_link"]
+    assert attached.object.id == object_id("world_box")
+    assert attached.object.header.frame_id == "tiago/arm_tool_link"
+    assert attached.object.operation == CollisionObject.ADD
+    assert (attached.object.pose.position.x, attached.object.pose.position.y, attached.object.pose.position.z) == pytest.approx((0.0, 0.0, 0.36))
+    assert list(attached.object.primitives[0].dimensions) == pytest.approx([0.6, 0.2, 0.2])
+
+
+def test_a_scene_diff_carries_attachments_and_detachments_in_the_robot_state() -> None:
+    box = StaticBox(name="world_box", pose=Pose(position=Position(0.0, 0.0, 0.0), orientation=Orientation.identity()), scale=None, extent=((-0.3, 0.3), (-0.1, 0.1), (-0.1, 0.1)))
+    offset = Pose(position=Position(0.0, 0.0, 0.36), orientation=Orientation.identity())
+    attached = attached_objects(box, offset, "tip", ["tip"]) + detached_objects([object_id("crate")], "tip")
+    scene = scene_diff([object_id("old")], [], "base", attached)
+    assert scene.robot_state.is_diff
+    assert [(a.object.id, a.object.operation) for a in scene.robot_state.attached_collision_objects] == [(object_id("world_box"), CollisionObject.ADD), (object_id("crate"), CollisionObject.REMOVE)]
+    assert [(o.id, o.operation) for o in scene.world.collision_objects] == [(object_id("old"), CollisionObject.REMOVE)]

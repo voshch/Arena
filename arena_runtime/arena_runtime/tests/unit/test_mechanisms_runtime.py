@@ -130,6 +130,7 @@ class _Mech:
         self._light_outputs: dict = {}
         self._light_poses: dict = {}
         self._articulated: dict = {}
+        self._carried: dict = {}
         self.robot_teleport_ok = True
         self._semantics = SemanticsManager(self)
         self._semantics.set_sim("gazebo")

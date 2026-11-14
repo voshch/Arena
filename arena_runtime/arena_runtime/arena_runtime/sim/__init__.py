@@ -67,7 +67,10 @@ class BaseSim(NodeInterface[ArenaMixinNode], ObstacleITF, PedestrianITF, RobotIT
 
     async def before_reset_episode(self) -> bool:
         """Episode-boundary hook before the task resets, for sim work that must not ride
-        the mid-episode pause path (physics state reset, contact caches). Default no-op."""
+        the mid-episode pause path (physics state reset, contact caches). Puts carried objects back."""
+        from ._carry import release_all
+
+        await release_all(self)
         return True
 
     async def after_reset_episode(self) -> bool:

@@ -455,12 +455,16 @@ An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
 `<subject> within <r> of <subject>` (planar distance), `<subject> sees <subject>
 [within <r>]` (planar distance at most `r`, default 12, and no wall cell of the
 world's rendered wall grid on the segment between them, doors open), `<ped>
-plays <clip>` (the pedestrian publishes that gesture clip) and `not <atom>`. A
+plays <clip>` (the pedestrian publishes that gesture clip), `<robot> holds
+<object>` (the robot's gripper holds that entity, unresolved while the simulator
+does not measure holding, which is every simulator but MuJoCo) and `not <atom>`. A
 subject is `robot` (the robot being judged), another robot's name or a
 pedestrian's name, and a `within` subject may also be a point `x,y` (no
 spaces).
 Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
-`failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
+`failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom,
+and `holding` (the comma-joined objects its gripper carries) where the simulator
+measures holding.
 A world entity (zone, door, elevator, schedule, sound) is named
 `<name>/<level>`, or `<name>` alone when no other level has one. An object,
 of a level or of the scenario, is named as authored, and a scenario object

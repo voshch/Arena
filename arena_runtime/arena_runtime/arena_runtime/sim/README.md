@@ -42,6 +42,32 @@ Defined in [`_interface.py`](_interface.py):
 
 Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
 
+### Attach on grasp
+
+[`_interface.py`](_interface.py), [`_carry.py`](_carry.py)
+
+`MechanismITF` carries what a closed gripper holds.
+
+| Method | Signature |
+| --- | --- |
+| `grasp_attach` | `(Robot, joint: str, obj: str, hand: str) -> bool` |
+| `grasp_detach` | `(Robot, joint: str) -> None` |
+| `held_objects` | `() -> Mapping[str, frozenset[str]] \| None` |
+
+`grasp_attach` carries the world object `obj` (an authored name) with the gripper joint `joint` of the robot until `grasp_detach`, and answers `False` when no such object is within reach. `hand` is the TF frame of the tip of the gripper's arm (the arm the gripper cap names, else the robot's only arm, empty without one). `held_objects` maps each robot name to the authored names its grippers carry, and `None` means the simulator does not measure holding: the env node then leaves `Sample.holding` unset and the `robot` entity without a `holding` field. The gripper adapter calls them through `EnvironmentManager`.
+
+One carry policy in [`_carry.py`](_carry.py) serves every simulator. Each authored name maps to the obstacle spawned or moved as `world_<name>` or `<name>`. The obstacle is carried when its annotated bounding box is within 0.05 m of `hand` or of a TF frame below it, the fingers and tool center (its origin within 0.3 m without a bounding box), and its pose in the `hand` frame at the attach is the carry's offset. `grasp_detach` sets it down upright at its yaw below where it is, on the highest annotated box top within 3 m under its box center that lies at most 2 cm above its bottom, else on the floor of the robot (the map height of its TF root, 0 without one), and logs where. A robot delete drops its carries, and `before_reset_episode` puts each obstacle carried since the last reset back where it rested before its first attach. A simulator holds the obstacle through five hooks:
+
+| Hook | Default | Gazebo | Isaac | MuJoCo | flatsim |
+| --- | --- | --- | --- | --- | --- |
+| `_carry_weld(carry)` at the attach | `False` | `CarryWeld` plugin | `/isaac/WeldPrim` | `/mujoco/AttachPrim` | default |
+| `_carry_unweld(carry)` at the release and the reset | `None` | `CarryWeld` plugin | `/isaac/WeldPrim` | `/mujoco/DetachPrim` | default |
+| `_carry_lift(obstacles)` at an attach without a weld | no-op | respawns the model from its SDF without collisions | default | default | removes the outline |
+| `_carry_follow(obstacles)` on each tick an unwelded one moved | `obstacle_move` | default | default | default | no-op |
+| `_carry_drop(obstacles)` at the release and the reset | `obstacle_move` | respawns a lifted model at the new pose | default | default | adds the outline at the new pose |
+
+A weld holds the obstacle at its attach pose in the frame of the robot body that carries `hand` on every physics step, its collisions off, until the unweld or the deletion of the robot or the obstacle, and the unweld returns the pose the simulator left it at (the hand frame times the offset when it returns `None`). Without a weld the mechanism tick (30 Hz sim time) places the obstacle at the hand frame times the offset. Gazebo's `CarryWeld` world plugin of `arena_gz_plugins` (`/world/default/carry_weld`) resolves the last segment of `hand` to the link it is attached to, sets the model's world pose and zeroes its velocity each PreUpdate, and gives its collisions bitmask 0. Isaac's server holds the prim to the nearest rigid body at or above the prim named by the last segment of `hand` and switches off its colliders' `collisionEnabled`. MuJoCo's server (see [arena_mujoco](../../../../arena_mujoco/README.md#attach-on-grasp)) carries the obstacle with the body that holds the gripper joint, within 1 m of its geometry, its collision off.
+
 ### `WorldITF`
 
 [`_interface.py`](_interface.py)

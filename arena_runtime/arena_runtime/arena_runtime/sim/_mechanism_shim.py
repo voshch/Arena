@@ -843,6 +843,9 @@ def _report_incident(mech: MechanismITF, reason: str) -> None:
 
 async def _tick(mech: MechanismITF, dt: float) -> None:
     """Single tick: update triggers, advance state machines, dispatch move_box, articulated link moves and teleports."""
+    from ._carry import follow
+
+    await follow(mech)
     robot_discs = list(mech.robot_discs())
     ped_discs: list[Disc] = list(mech._human_simulator.pedestrian_discs()) if mech._human_simulator is not None else []
     discs = robot_discs + ped_discs
