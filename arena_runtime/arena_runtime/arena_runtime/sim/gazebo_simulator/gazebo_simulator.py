@@ -68,6 +68,7 @@ from arena_runtime.sim._articulation import JointCommand as ArticulatedCommand
 from arena_runtime.sim._control import (
     effective_control_yaml,
     robot_controllers,
+    state_publisher_node,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import resolve_obstacle_box
@@ -1220,19 +1221,7 @@ class GazeboSimulator(BaseSim):
                 parameters=[{"use_sim_time": True}],
             )
         )
-        launch_description.add_action(
-            launch_ros.actions.Node(
-                package="robot_state_publisher",
-                executable="robot_state_publisher",
-                name="robot_state_publisher",
-                output="screen",
-                parameters=[
-                    {"use_sim_time": True},
-                    {"robot_description": description},
-                    {"frame_prefix": robot.frame.tf()},
-                ],
-            )
-        )
+        launch_description.add_action(state_publisher_node(description, robot.frame.tf()))
 
         control_spec = robot_config.model_params.control
         is_ros2_control = control_spec is not None and control_spec.is_ros2_control

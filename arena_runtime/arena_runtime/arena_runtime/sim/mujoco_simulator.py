@@ -92,6 +92,7 @@ from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
     robot_controllers,
+    state_publisher_node,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
@@ -391,19 +392,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
         ld = launch.LaunchDescription()
         ld.add_action(launch_ros.actions.PushRosNamespace(namespace=ns))
 
-        ld.add_action(
-            launch_ros.actions.Node(
-                package='robot_state_publisher',
-                executable='robot_state_publisher',
-                name='robot_state_publisher',
-                output='screen',
-                parameters=[
-                    {'use_sim_time': True},
-                    {'robot_description': description},
-                    {'frame_prefix': robot.frame.tf()},
-                ],
-            )
-        )
+        ld.add_action(state_publisher_node(description, robot.frame.tf()))
 
         control_spec = robot_params.control
         if control_spec is not None and control_spec.is_ros2_control:

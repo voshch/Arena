@@ -570,3 +570,5 @@ async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
 ```
 
 4. Add `MY_SIM = "my_sim"` to `SimSimulator` in `arena_bringup/constants.py`.
+
+Build a robot's robot_state_publisher with `_control.state_publisher_node`, whose `publish_frequency` of 1000 Hz puts every joint_states message on /tf instead of rsp's 20 Hz default.
