@@ -9,10 +9,10 @@ from pathlib import Path
 import pydantic
 import shapely
 import shapely.affinity
-import yaml
 from shapely.geometry.base import BaseGeometry
 
 from arena_simulation_setup import ARENA_ASSETS_DIR
+from arena_simulation_setup.generative.core.generated import Generated, binding
 from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import PlaceWallSegmentAsset
@@ -144,7 +144,7 @@ class _BarnConfigured(typing.Protocol):
 class BarnBase(WorldGeneratorImpl):
     """Shared scaffolding for BARN-style generators.
 
-    Owns the build lifecycle, the boundary walls, the scenario file and the scenario
+    Owns the build lifecycle, the boundary walls, the scenario and the scenario
     episode binding. Subclasses implement _build() to populate self._world and self._scenario.
     """
 
@@ -159,12 +159,12 @@ class BarnBase(WorldGeneratorImpl):
         self._build()
         return self._world
 
-    def files(self) -> dict[str, bytes]:
+    def scenarios(self) -> dict[str, Generated]:
         self._build()
-        return {f'scenarios/{self.SCENARIO}/scenario.yaml': yaml.safe_dump(self._scenario, sort_keys=False).encode('utf-8')}
+        return {self.SCENARIO: Generated(scenario=self._scenario, marked=False)}
 
     def params(self) -> dict[str, typing.Any]:
-        return {'modes': {'robots': 'scenario'}, 'params': {'robots': {'file': self.SCENARIO}}}
+        return binding(self.SCENARIO, ('robots',))
 
     def _build(self):
         raise NotImplementedError

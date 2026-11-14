@@ -10,8 +10,8 @@ import typing
 
 import pydantic
 import shapely
-import yaml
 
+from arena_simulation_setup.generative.core.generated import Generated, binding
 from arena_simulation_setup.generative.core.profiles import PROFILES
 from arena_simulation_setup.tree.World import World
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
@@ -299,9 +299,9 @@ class WorldGeneratorSidewalk(WithPedestrians):
         return self._layout
 
     def params(self) -> dict[str, typing.Any]:
-        return {'modes': {'robots': 'scenario', 'obstacles': 'scenario'}, 'params': {'robots': {'file': SCENARIO}, 'obstacles': {'file': SCENARIO}}}
+        return binding(SCENARIO)
 
-    def files(self) -> dict[str, bytes]:
+    def scenarios(self) -> dict[str, Generated]:
         humans = self._humans()
         document: dict[str, typing.Any] = {'format': SCENARIO_FORMAT}
         objects = self._objects([human['pose'] for human in humans])
@@ -311,7 +311,7 @@ class WorldGeneratorSidewalk(WithPedestrians):
             document['humans'] = humans
         start, goal = self._pose(0.0, 0.0), self._pose(self._plan.route.length, 0.0)
         document['robots'] = [{'start': self._list(start), 'phases': [{'goto': self._list(goal)}]}]
-        return {f'scenarios/{SCENARIO}/scenario.yaml': yaml.safe_dump(document, sort_keys=False, default_flow_style=None).encode('utf-8')}
+        return {SCENARIO: Generated(scenario=document, marked=False)}
 
     @staticmethod
     def _list(pose: tuple[float, float, float]) -> list[float]:

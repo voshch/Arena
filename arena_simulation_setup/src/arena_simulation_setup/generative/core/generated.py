@@ -18,9 +18,10 @@ class Rejected:
 @attrs.frozen
 class Generated:
     scenario: dict[str, object]
-    types: dict[str, dict[str, object]]
-    provenance: dict[str, object]
+    types: dict[str, dict[str, object]] = attrs.Factory(dict)
+    provenance: dict[str, object] | None = None
     cameras: dict[str, dict[str, object]] = attrs.Factory(dict)
+    marked: bool = True
 
 
 def summary(reasons: typing.Sequence[str], limit: int = 3) -> str:
@@ -36,9 +37,11 @@ def _yaml(doc: object, marked: bool) -> bytes:
 def pack(name: str, generated: Generated) -> dict[str, bytes]:
     """The directory of scenario `name`, by path relative to its world."""
     root = f"scenarios/{name}"
-    files = {f"{root}/scenario.yaml": _yaml(generated.scenario, True), f"{root}/provenance.yaml": _yaml(generated.provenance, False)}
-    files.update({f"{root}/{path}": _yaml(doc, True) for path, doc in generated.types.items()})
-    files.update({f"{root}/cameras/{camera}.yaml": _yaml(spec, True) for camera, spec in generated.cameras.items()})
+    files = {f"{root}/scenario.yaml": _yaml(generated.scenario, generated.marked)}
+    if generated.provenance is not None:
+        files[f"{root}/provenance.yaml"] = _yaml(generated.provenance, False)
+    files.update({f"{root}/{path}": _yaml(doc, generated.marked) for path, doc in generated.types.items()})
+    files.update({f"{root}/cameras/{camera}.yaml": _yaml(spec, generated.marked) for camera, spec in generated.cameras.items()})
     return files
 
 

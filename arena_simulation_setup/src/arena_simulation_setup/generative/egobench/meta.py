@@ -10,7 +10,7 @@ from collections.abc import Callable
 import pydantic
 
 from arena_simulation_setup.generative.core.axes import Scalar
-from arena_simulation_setup.generative.core.generated import Generated, Rejected, binding, pack
+from arena_simulation_setup.generative.core.generated import Generated, Rejected, binding
 from arena_simulation_setup.generative.core.profiles import PROFILES
 from arena_simulation_setup.generative.study.manifest import check_world_fields
 from arena_simulation_setup.generative.world import BaseConfiguration, WorldGenerator, WorldGeneratorImpl
@@ -134,7 +134,10 @@ class WorldGeneratorEgoBench(WorldGeneratorImpl):
         return self._generated
 
     def files(self) -> dict[str, bytes]:
-        return {**self._world.files(), **pack(self.sample.scenario_key, self.generated())}
+        return {**self._world.files(), **super().files()}
+
+    def scenarios(self) -> dict[str, Generated]:
+        return {self.sample.scenario_key: self.generated()}
 
     def layout(self) -> Layout | None:
         return self._world.layout()

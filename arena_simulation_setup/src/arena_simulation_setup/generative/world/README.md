@@ -24,7 +24,7 @@ Registration in [`__init__.py`](__init__.py) is lazy, so importing the package d
 
 - a nested `Configuration` extending `BaseConfiguration`, or `PedestrianConfiguration` to inherit the pedestrian count,
 - `configure(dict)` and `compute() -> World`, which sets `self.diagnostics` and appends to `self.warnings`,
-- optionally `files()` for extra artifacts written into the world directory by `save_generated`, `params()` for the episode binding, and `normalize(str)` for a canonical form of a textual input.
+- optionally `scenarios()` for the scenarios the world comes with by name, each a [`Generated`](../core/generated.py) that the base `files()` packs under `scenarios/<name>/` for `save_generated`, an override of `files()` merging `super().files()` for other artifacts, `params()` for the episode binding (`binding(name)` runs scenario `name` on the task axes), and `normalize(str)` for a canonical form of a textual input.
 
 `Configuration` fields become ROS parameters under `algorithm.<generator>.<field>` through [`schema.py`](schema.py). Only `bool`, `int`, `float`, `str` and 2-tuples of numbers are supported (structured list/tuple fields are skipped for the ROS parameter server), an `int | None` field needs a `ge` bound and is declared as an integer whose value one below it stands for None (the node maps it back with `config_from_params`, so `-1` is the procedural `barn`), `ge`/`le` become the parameter's `Range`, an enum field becomes `Choices`, a field's pydantic `description` is the parameter description, so every field carries one sentence with its unit and sentinels, and `json_schema_extra={"widget": "sketch"}` asks the panel for the grid editor.
 

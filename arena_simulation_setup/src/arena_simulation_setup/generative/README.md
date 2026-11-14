@@ -20,6 +20,8 @@ Every generator here writes plain format 2 worlds and scenarios, so the stock ta
 | `profiles.py`, `agents.py`, `frames.py` | pedestrian profiles and parameter tiers, the behavior-tree type files beside a scenario, level and map frame shifts |
 | `triggers.py` | the `robot within` atom and the release point along a robot route |
 
+A scenario packed with `marked` carries `GENERATED_MARKER`, so `generate_scenario` may replace or prune it. The scenarios a world generator comes with are packed without it.
+
 ## Study
 
 A study is a manifest of items, each naming a world generator, its configuration and seed, and a scenario on that world. `study.runner.run` generates each world once for all its items, asks the study's placer for each item's scenario or the reason it does not fit, and writes a world only when one of its items was placed. A world's key is the study's prefix plus `digest` of what generates it, its seed `seed * 1000 + variant`, so the same manifest always writes the same worlds.
