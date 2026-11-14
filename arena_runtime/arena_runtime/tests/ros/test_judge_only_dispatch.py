@@ -37,6 +37,9 @@ class _Adapter:
     async def dispatch_phase(self, phase: GoToPhase, robot: RobotManager) -> None:
         self.dispatched.append(phase)
 
+    def cancel_goals(self) -> None:
+        pass
+
     def client_for(self, kind: TaskKind) -> SimpleNamespace:
         return SimpleNamespace(is_done=lambda: True, status=self.status, reason="stale")
 

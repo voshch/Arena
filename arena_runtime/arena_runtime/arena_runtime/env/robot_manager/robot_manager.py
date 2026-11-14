@@ -550,6 +550,8 @@ class RobotManager(NodeInterface):
         if ended is not None:
             await self._cancel_ended(ended)
         state = self._runner.active_state
+        if ended is not None:
+            self._release_adapter(ended, state)
         if state is not None and not state.dispatched:
             await self._dispatch(state.index)
         return transition
@@ -562,6 +564,19 @@ class RobotManager(NodeInterface):
         adapter = self._adapters.get(kind)
         if adapter is not None and (kind is not TaskKind.GOTO_POSE or ended.outcome == "dropped"):
             await adapter.cancel_and_wait((kind,))
+
+    def _release_adapter(self, ended: PhaseState, following: PhaseState | None) -> None:
+        """Stop what the adapter of an ended phase still drives unless the following phase runs on it, so a met goto does not keep turning the robot."""
+        from arena_runtime.env.adapters.mobile import MobileAdapter
+        from arena_runtime.env.request import kind_of
+
+        adapter = self._adapters.get(kind_of(ended.phase))
+        if adapter is None or (following is not None and self._adapters.get(kind_of(following.phase)) is adapter):
+            return
+        adapter.cancel_goals()
+        if isinstance(adapter, MobileAdapter) and self._publish_goal_task is not None:
+            self._publish_goal_task.cancel()
+            self._publish_goal_task = None
 
     async def _clear_on_cabin_open(self) -> None:
         """Run the adapters' `on_cabin_open` once the cabin that delivered the robot reports its door open."""
@@ -670,7 +685,7 @@ class RobotManager(NodeInterface):
             if kind_of(phase) not in self._adapters and kind_of(phase) not in self._unsupported_kinds_logged:
                 self._logger.warning(f"robot {self.name!r} has no adapter for phase kind {phase.kind!r}, the phase will fail as UNSUPPORTED_CAP")
 
-        states = self._runner.submit(phases, request.conditions)
+        states = self._runner.submit(phases, request.conditions, request.task)
         self.node.on_task_submitted(self)
         if states:
             await self._dispatch(states[0].index)

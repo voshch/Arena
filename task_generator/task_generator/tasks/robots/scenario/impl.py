@@ -1,11 +1,11 @@
 import asyncio
 import typing
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 
 import attrs
 from arena_rclpy_mixins.params import ParamHandle
 from arena_runtime.env.task_api import GoToPhase, LoopPhase, Realizer, TaskPhase, TaskRequest
-from arena_runtime.env.task_layer import ResetPlan, RobotReset
+from arena_runtime.env.task_layer import FleetEntry, ResetPlan, RobotReset, TaskContext
 from arena_runtime.shared import Pose, Position, PositionRadius
 from arena_simulation_setup.tree.World import WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import RobotGoal
@@ -42,9 +42,41 @@ def goto_poses(phase: TaskPhase) -> Iterator[Pose]:
         yield phase.pose
 
 
-def idle_robots(names: Sequence[str], entries: Sequence[RobotGoal]) -> set[str]:
-    """Robots with no task: past the scenario's entries or on an entry without phases."""
-    return {name for index, name in enumerate(names) if index >= len(entries) or not entries[index].phases}
+def declared_fleet(entries: Iterable[Mapping[str, object]]) -> list[FleetEntry] | None:
+    """The fleet of a scenario's raw robot entries, None unless there is one and every entry names a model."""
+    items = list(entries)
+    if not items or not all(item.get("model") for item in items):
+        return None
+    return [FleetEntry(model=str(item["model"]), name=str(item.get("name", ""))) for item in items]
+
+
+def pair_robots(robots: Sequence[tuple[str, str]], entries: Sequence[RobotGoal]) -> dict[int, int]:
+    """Robot index to entry index: by name, then unnamed entries by model, then the rest in order."""
+    pairs: dict[int, int] = {}
+    paired: set[int] = set()
+    for entry_index, entry in enumerate(entries):
+        if entry.name:
+            match = next((index for index, (name, _) in enumerate(robots) if name == entry.name and index not in pairs), None)
+            if match is not None:
+                pairs[match] = entry_index
+                paired.add(entry_index)
+    for entry_index, entry in enumerate(entries):
+        if entry.name or not entry.model:
+            continue
+        match = next((index for index, (_, model) in enumerate(robots) if model == entry.model and index not in pairs), None)
+        if match is not None:
+            pairs[match] = entry_index
+            paired.add(entry_index)
+    free_robots = [index for index in range(len(robots)) if index not in pairs]
+    free_entries = [index for index, entry in enumerate(entries) if index not in paired and not entry.name]
+    pairs.update(zip(free_robots, free_entries, strict=False))
+    return pairs
+
+
+def idle_robots(robots: Sequence[tuple[str, str]], entries: Sequence[RobotGoal]) -> set[str]:
+    """Robots with no task: without a paired entry or on an entry without phases."""
+    pairs = pair_robots(robots, entries)
+    return {name for index, (name, _) in enumerate(robots) if index not in pairs or not entries[pairs[index]].phases}
 
 
 class TM_Scenario(TM_Robots):
@@ -58,6 +90,13 @@ class TM_Scenario(TM_Robots):
         del humans
         return list(entries)
 
+    @classmethod
+    async def fleet_for(cls, ctx: TaskContext, scenario_file: str) -> Sequence[FleetEntry] | None:
+        if not scenario_file:
+            return None
+        raw = WorldIdentifier(ctx.world_manager.loaded_world).resolve_sync().scenario(scenario_file).resolve_sync().read()
+        return declared_fleet(raw.get("robots") or [])
+
     async def reset(self) -> ResetPlan:
         plan = await super().reset()
 
@@ -67,25 +106,23 @@ class TM_Scenario(TM_Robots):
         humans = frozenset(human.name for human in scenario.humans)
         SCENARIO_ROBOTS = self.robot_goals(scenario.robots, humans)
 
-        managed_robots = list(self._ctx.robots.values())
+        live_robots = list(self._ctx.robots.values())
+        pairs = pair_robots([(robot.name, robot.model_name) for robot in live_robots], SCENARIO_ROBOTS)
 
-        scenario_robots_length = len(SCENARIO_ROBOTS)
-        setup_robot_length = len(managed_robots)
+        self._idle_robots = idle_robots([(robot.name, robot.model_name) for robot in live_robots], SCENARIO_ROBOTS)
 
-        self._idle_robots = idle_robots([robot.name for robot in managed_robots], SCENARIO_ROBOTS)
+        if len(pairs) < len(live_robots) and SCENARIO_ROBOTS:
+            self._logger.warn("Robot setup contains more robots than the scenario file.", once=True)
 
-        if setup_robot_length > scenario_robots_length:
-            managed_robots = managed_robots[:scenario_robots_length]
-            if SCENARIO_ROBOTS:
-                self._logger.warn("Robot setup contains more robots than the scenario file.", once=True)
-
-        if scenario_robots_length > setup_robot_length:
-            SCENARIO_ROBOTS = SCENARIO_ROBOTS[:setup_robot_length]
+        if len(pairs) < len(SCENARIO_ROBOTS):
             self._logger.warn("Scenario file contains more robots than setup.", once=True)
+
+        managed_robots = [live_robots[index] for index in sorted(pairs)]
+        paired_entries = [SCENARIO_ROBOTS[pairs[index]] for index in sorted(pairs)]
 
         realizer = self._ctx.realizer
 
-        for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
+        for robot, config in zip(managed_robots, paired_entries, strict=True):
             start_pose = to_map_frame(config.start, config.start_zone, config.level, realizer)
             entry = plan.robots[robot.name] = RobotReset(start_pose=start_pose, humans=humans)
 

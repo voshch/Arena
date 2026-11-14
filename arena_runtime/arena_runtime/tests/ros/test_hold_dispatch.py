@@ -12,12 +12,13 @@ try:
     import tf2_ros
     from arena_rclpy_mixins.shared import FrameNamespace
     from arena_simulation_setup.shared.judge import Sample
-    from arena_simulation_setup.shared.task import GoToPhase
+    from arena_simulation_setup.shared.task import GoToPhase, ReachPhase
 
     from arena_runtime.env.realizer import Realizer
     from arena_runtime.env.robot_manager.robot_manager import RobotManager
     from arena_runtime.env.robot_manager.task_runner import TaskRunner
     from arena_runtime.env.request import TaskKind
+    from arena_runtime.shared import Pose, Position
 except ImportError:
     pytestmark = pytest.mark.skip(reason="ROS2 not available")
 
@@ -33,9 +34,14 @@ class _Adapter:
 
     def __init__(self) -> None:
         self.dispatched: list[GoToPhase] = []
+        self.driving = False
 
     async def dispatch_phase(self, phase: GoToPhase, robot: RobotManager) -> None:
         self.dispatched.append(phase)
+        self.driving = True
+
+    def cancel_goals(self) -> None:
+        self.driving = False
 
     def client_for(self, kind: TaskKind) -> SimpleNamespace:
         return SimpleNamespace(is_done=lambda: False, status=None, reason=None)
@@ -106,3 +112,36 @@ def test_hold_stays_with_the_until_open_once_dispatched_on_a_landed_robot() -> N
 
     asyncio.run(episode())
     assert manager._runner.active_state.monitor.held
+
+
+def _handoff(phases: list) -> _Adapter:
+    manager, nav = _manager()
+    arm = _Adapter()
+    manager._adapter_instances.append(arm)
+    manager._adapters[TaskKind.REACH_POSE] = arm
+    _set_tf(manager, *START)
+    at_goal = {FRAME: (5.0, 5.0, 0.0)}
+
+    async def episode() -> None:
+        manager._runner.submit(phases)
+        await manager.reset(SimpleNamespace(start_pose=None))
+        await manager.tick(Sample(t=0.0, robots={FRAME: (2.0, 3.0, 0.0)}), {})
+        assert nav.driving
+        await manager.tick(Sample(t=1.0, robots=at_goal), {})
+        assert manager._runner.phases[0].outcome == "met"
+
+    asyncio.run(episode())
+    return nav
+
+
+def test_a_met_goto_stops_its_planner_before_the_arm_reaches() -> None:
+    goto = GoToPhase(pose=Pose(position=Position(x=5.0, y=5.0)), tolerance_radius=1.0, tolerance_angle=math.pi)
+    nav = _handoff([goto, ReachPhase(named_target="stow")])
+    assert not nav.driving
+
+
+def test_a_met_goto_keeps_its_planner_for_the_next_goto() -> None:
+    goto = GoToPhase(pose=Pose(position=Position(x=5.0, y=5.0)), tolerance_radius=1.0, tolerance_angle=math.pi)
+    nav = _handoff([goto, GoToPhase(pose=Pose(position=Position(x=8.0, y=5.0)), tolerance_radius=1.0, tolerance_angle=math.pi)])
+    assert nav.driving
+    assert len(nav.dispatched) == 2

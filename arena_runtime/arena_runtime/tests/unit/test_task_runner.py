@@ -346,3 +346,22 @@ def test_violation_reason_names_a_structured_condition_in_text():
     runner.submit([goto(12.0, 1.0)], conditions=[EpisodeCondition.parse({"op": "never", "p": {"subject": "robot", "in": "hallway"}, "on_failure": "abort_episode"})])
     transition = runner.step(at(0.0, 11.0, 1.0), ZONES, None, OK)
     assert transition.abort == "condition r0:0 (robot in hallway) violated on robot r"
+
+
+def test_phases_serialize_with_their_requests_task_id():
+    runner = TaskRunner("r")
+    runner.submit([goto(1.0, 1.0), goto(2.0, 2.0)], task="fetch_cup")
+    runner.submit([goto(3.0, 3.0)])
+    runner.submit([patrol()], task="sweep")
+    data = runner.serialize()
+    assert data["tasks"] == ["fetch_cup", "fetch_cup", "", "sweep", "sweep"]
+    assert set(data) == {"phases", "conditions", "goal_inputs", "instructions", "tasks"}
+
+
+def test_loop_iterations_keep_the_task_id():
+    runner = TaskRunner("r")
+    runner.submit([patrol()], task="sweep")
+    runner.step(at(0.0, 1.0, 1.0), ZONES, None, OK)
+    runner.step(at(1.0, 3.0, 3.0), ZONES, None, OK)
+    assert len(runner.phases) == 4
+    assert set(runner.serialize()["tasks"]) == {"sweep"}

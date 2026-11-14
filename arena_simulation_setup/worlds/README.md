@@ -318,6 +318,7 @@ robots:
       - {goto: kitchen}          #   navigate into a zone, door, elevator or to a pedestrian by name
       - {gesture: wave}          #   arm gesture, "random" allowed, optional instance: <mount>
       - {reach: stow}            #   arm reach: named target, "random", or a pose (optional frame:)
+      - {grasp: close, object: cup_1}  #   gripper close or open, optional instance: <name>, a close with object is met once the robot holds it
       - {until: "door_1.open == true"}  # hold where the robot is until the atom holds
       - {loop: [{goto: [x, y, yaw]}, {goto: [x, y, yaw]}], until: "robot sees caller within 12 and caller plays beckon for 0.5"}
     conditions: []               # optional, clauses judged over this robot's whole phase list
@@ -476,7 +477,7 @@ saved back in the form it was read:
 | `{some: <entity>.<family>, <op>: <value>}` | any member of the family compares true |
 | `{each: <entity>.<family>, <op>: <value>}` | every member compares true |
 | `{all: [<node>, ...]}`, `{any: [<node>, ...]}`, `{not: <node>}` | every, any, or not the inner node |
-| `{subject: s, in: zone}`, `{subject: s, near: other, radius: r}`, `{subject: s, sees: other, range: r}`, `{subject: s, plays: clip}` | as the text atoms of the same meaning |
+| `{subject: s, in: zone}`, `{subject: s, near: other, radius: r}`, `{subject: s, sees: other, range: r}`, `{subject: s, plays: clip}`, `{subject: s, holds: object}` | as the text atoms of the same meaning |
 | a text string | as the text grammar, `a and b for 3 or c` included |
 
 Any node takes `for: <seconds>`: it holds once its inner node has held that

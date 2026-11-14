@@ -164,8 +164,8 @@ are exempt, and so is any point more than 1 m from the mesh.
 
 ## Lift and gripper adapters
 
-`lift` and `gripper` adapters accept no task phase (`accepts=()`, no client): they own a ROS command
-surface instead. `robot.lift` / `robot.gripper` (default `direct`) select the kind for every robot
+`lift` and `gripper` adapters own a ROS command surface. `lift` accepts no task phase
+(`accepts=()`, no client). `gripper: direct` accepts `TaskKind.GRASP` (see below), `gripper: none` accepts nothing. `robot.lift` / `robot.gripper` (default `direct`) select the kind for every robot
 advertising the cap, `adapters: {lift: none}` in a robot setup file overrides one robot.
 
 | Cap | Kind | Command topic under `<robot_ns>` | Type | Effect |

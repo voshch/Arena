@@ -1083,7 +1083,7 @@ robots:
 Atoms are the `conditions:` grammar of [worlds/README.md](worlds/README.md):
 `<entity>.<field> == <value>`, `<subject> in <zone>`, `<subject> within <r> of
 <subject>`, `<subject> sees <subject> [within <r>]` (in range, default 12 m, with
-no wall of the rendered wall grid between them), `<ped> plays <clip>` and `not
+no wall of the rendered wall grid between them), `<ped> plays <clip>`, `<robot> holds <object>` and `not
 <atom>`. Either `within` subject may also be a point `x,y` (no spaces), in the
 frame of a scenario pose without `level`, so `robot within 4.2 of 12.1,4.0`.
 A goto to a pedestrian by name is judged by `tolerance_radius` around the

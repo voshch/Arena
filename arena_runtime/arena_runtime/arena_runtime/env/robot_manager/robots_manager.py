@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import os
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import arena_robots.SetupFile as robot_setup
 import arena_runtime_msgs.msg
@@ -15,6 +15,7 @@ from arena_robots.assembly import ResolvedAssembly
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.env.environment_manager import EnvironmentManager
+from arena_runtime.env.task_layer import FleetEntry
 from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Pose, Position, Robot
 
@@ -601,9 +602,36 @@ class RobotsManager(NodeInterface):
 
     def add_pending(self, name: str, robot: Robot) -> None:
         """Queue a robot for full set_up_robot on the next reset_cycle."""
-        if name in self._managers or name in self._diff.to_add:
+        if (name in self._managers and name not in self._diff.to_remove) or name in self._diff.to_add:
             raise ValueError(f"robot {name!r} already exists")
         self._diff.to_add[name] = robot
+
+    def reconcile(self, fleet: Sequence[FleetEntry], build: Callable[[str, str], Robot]) -> None:
+        """Queue the despawns and spawns that make the fleet the given one, matching by name and model and unnamed entries by model."""
+        named = [entry.name for entry in fleet if entry.name]
+        if len(named) != len(set(named)):
+            raise ValueError(f"fleet names a robot twice: {named}")
+        self._diff.to_remove.clear()
+        candidates = {name: manager.model_name for name, manager in self._managers.items()}
+        candidates.update({name: robot.model.name for name, robot in self._diff.to_add.items()})
+        keep = {entry.name for entry in fleet if entry.name and candidates.get(entry.name) == entry.model}
+        wanted: list[FleetEntry] = []
+        for entry in fleet:
+            if entry.name:
+                if entry.name not in keep:
+                    wanted.append(entry)
+                continue
+            match = next((name for name, model in candidates.items() if model == entry.model and name not in keep and name not in named), None)
+            if match is None:
+                wanted.append(entry)
+            else:
+                keep.add(match)
+        for name in candidates:
+            if name not in keep:
+                self.remove_pending(name)
+        for entry in wanted:
+            name = entry.name or self.next_name(entry.model)
+            self.add_pending(name, build(name, entry.model))
 
     def remove_pending(self, name: str) -> None:
         """Toggle a robot's despawn-pending state, the single fleet-removal surface.

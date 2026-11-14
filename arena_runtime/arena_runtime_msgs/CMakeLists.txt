@@ -39,6 +39,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/SemanticSnapshot.msg
   msg/ShutdownRequest.msg
   msg/SimState.msg
+  msg/TaskEvent.msg
   msg/WorldExtent.msg
   srv/CleanupEnv.srv
   srv/ConfirmWorld.srv

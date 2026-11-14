@@ -15,6 +15,7 @@ _MEMBERSHIP_ATOM = re.compile(r'^(\S+) in (\S+)$')
 _WITHIN_ATOM = re.compile(r'^(\S+) within (\S+) of (\S+)$')
 _SEES_ATOM = re.compile(r'^(\S+) sees (\S+?)(?: within (\S+))?$')
 _PLAYS_ATOM = re.compile(r'^(\S+) plays (\S+)$')
+_HOLDS_ATOM = re.compile(r'^(\S+) holds (\S+)$')
 _NUMBER = r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?'
 _POINT = re.compile(rf'^({_NUMBER}),({_NUMBER})$')
 _FOR_SUFFIX = re.compile(r'^(.*\S) for (\S+)$')
@@ -38,7 +39,7 @@ ConditionSource = str | dict[str, typing.Any]
 COMPARE_OPS: tuple[str, ...] = ('eq', 'ne', 'lt', 'le', 'gt', 'ge', 'within')
 _ORDER_OPS: frozenset[str] = frozenset({'lt', 'le', 'gt', 'ge'})
 _COMPARE_SYMBOLS: dict[str, str] = {'eq': '==', 'ne': '!=', 'lt': '<', 'le': '<=', 'gt': '>', 'ge': '>='}
-_SUBJECT_FORMS: tuple[str, ...] = ('in', 'near', 'sees', 'plays')
+_SUBJECT_FORMS: tuple[str, ...] = ('in', 'near', 'sees', 'plays', 'holds')
 _HEADS: tuple[str, ...] = ('field', 'some', 'each', 'all', 'any', 'not', 'subject')
 _HEAD_KEYS: dict[str, frozenset[str]] = {
     'field': frozenset({'field', *COMPARE_OPS}),
@@ -47,7 +48,7 @@ _HEAD_KEYS: dict[str, frozenset[str]] = {
     'all': frozenset({'all'}),
     'any': frozenset({'any'}),
     'not': frozenset({'not'}),
-    'subject': frozenset({'subject', 'in', 'near', 'radius', 'sees', 'range', 'plays'}),
+    'subject': frozenset({'subject', 'in', 'near', 'radius', 'sees', 'range', 'plays', 'holds'}),
 }
 _KNOWN_KEYS: frozenset[str] = frozenset().union(*_HEAD_KEYS.values(), {'for'})
 
@@ -96,14 +97,22 @@ class PlaysAtom:
 
 
 @attrs.frozen
+class HoldsAtom:
+    """Grasp test, `<robot> holds <object>`, the robot's gripper holds the entity."""
+
+    subject: str
+    object: str
+
+
+@attrs.frozen
 class NotAtom:
     """Negation, `not <atom>`."""
 
-    atom: EntityAtom | MembershipAtom | WithinAtom | SeesAtom | PlaysAtom
+    atom: EntityAtom | MembershipAtom | WithinAtom | SeesAtom | PlaysAtom | HoldsAtom
 
 
-Atom = EntityAtom | MembershipAtom | WithinAtom | SeesAtom | PlaysAtom | NotAtom
-ATOM_TYPES: tuple[type, ...] = (EntityAtom, MembershipAtom, WithinAtom, SeesAtom, PlaysAtom, NotAtom)
+Atom = EntityAtom | MembershipAtom | WithinAtom | SeesAtom | PlaysAtom | HoldsAtom | NotAtom
+ATOM_TYPES: tuple[type, ...] = (EntityAtom, MembershipAtom, WithinAtom, SeesAtom, PlaysAtom, HoldsAtom, NotAtom)
 
 
 def _check_compare(op: str, value: object) -> None:
@@ -229,6 +238,14 @@ def _plays_atom(subject: str, clip: str, value: object) -> PlaysAtom:
     return PlaysAtom(subject=subject, clip=clip)
 
 
+def _holds_atom(subject: str, obj: str, value: object) -> HoldsAtom:
+    _reject_env_prefix(subject, 'subject')
+    _reject_env_prefix(obj, 'object')
+    _reject_point(subject, value)
+    _reject_point(obj, value)
+    return HoldsAtom(subject=subject, object=obj)
+
+
 def parse_atom(value: str) -> Atom:
     """Total parser over the atom surface forms, raises ValueError on any other shape."""
     text = value.strip()
@@ -264,6 +281,11 @@ def parse_atom(value: str) -> Atom:
     if match:
         subject, clip = match.groups()
         return _plays_atom(subject, clip, value)
+
+    match = _HOLDS_ATOM.match(text)
+    if match:
+        subject, obj = match.groups()
+        return _holds_atom(subject, obj, value)
 
     raise ValueError(f'atom does not match any surface form: {value!r}')
 
@@ -365,6 +387,8 @@ def _subject_node(data: dict[str, object], value: object) -> Node:
     if form == 'sees':
         range_value = data.get('range')
         return _sees_atom(subject, _name(data['sees'], 'sees'), None if range_value is None else _non_negative_number(range_value, 'range'), value)
+    if form == 'holds':
+        return _holds_atom(subject, _name(data['holds'], 'holds'), value)
     return _plays_atom(subject, _name(data['plays'], 'plays'), value)
 
 
@@ -428,6 +452,8 @@ def render_atom(atom: Atom) -> str:
         return f'{atom.subject} sees {atom.other} within {atom.range:g}'
     if isinstance(atom, PlaysAtom):
         return f'{atom.subject} plays {atom.clip}'
+    if isinstance(atom, HoldsAtom):
+        return f'{atom.subject} holds {atom.object}'
     return f'{atom.subject} within {atom.radius:g} of {atom.other}'
 
 
@@ -516,7 +542,7 @@ def atom_subjects(atom: Atom) -> frozenset[str]:
         return atom_subjects(atom.atom)
     if isinstance(atom, EntityAtom):
         return frozenset()
-    if isinstance(atom, (MembershipAtom, PlaysAtom)):
+    if isinstance(atom, (MembershipAtom, PlaysAtom, HoldsAtom)):
         return frozenset({atom.subject})
     return frozenset(subject for subject in (atom.subject, atom.other) if parse_point(subject) is None)
 
@@ -650,6 +676,7 @@ __all__ = [
     'FamilyTest',
     'FieldTest',
     'HoldNode',
+    'HoldsAtom',
     'MembershipAtom',
     'Node',
     'NotAtom',

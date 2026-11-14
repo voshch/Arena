@@ -76,7 +76,7 @@ def _queue_stub() -> object:
     from arena_runtime.testing.env_host import FakeTaskLayer
 
     layer = FakeTaskLayer()
-    stub = type("Stub", (), {})()
+    stub = type("Stub", (), {"_episode_running": EpisodeNode._episode_running})()
     stub._task_layer = layer
     stub.task_params = layer.params
     stub._episodes = EpisodeRuntime()
