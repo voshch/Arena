@@ -323,7 +323,12 @@ tick first raises gz `real_time_factor` so the limiter does not pace it, and
 the next unpause restores it. A single-tick step leaves the factor alone. A step
 returns once `/clock` carries its target, and the next unpause first waits for
 `/world/default/stats` to report gz paused at or past that target, since gz undoes
-an unpause that lands while a batch is still running. Isaac calls
+an unpause that lands while a batch is still running. An unpause then waits up to
+2 s for `/clock` to move and resends itself up to three times while it stays
+frozen and no pause came after it. A pause does not drop queued `multi_step`
+iterations, and gz pauses itself when they run out, so after an unpause the host
+watches the stats until the clock has run 10 s and unpauses gz again whenever
+two reports show it paused with no pause or step called since. Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
 publishes `/clock` and drains its sensor and control pumps every 20 ms of sim

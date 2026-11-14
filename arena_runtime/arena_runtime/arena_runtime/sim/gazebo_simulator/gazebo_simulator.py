@@ -97,6 +97,10 @@ _CLEANUP_ATTEMPTS = 5
 _WORLD_STATS_TOPIC = '/world/default/stats'
 _BATCH_STALL_S = 5.0
 _BATCH_POLL_S = 0.05
+_UNPAUSE_CONFIRM_S = 2.0
+_UNPAUSE_RESENDS = 3
+_FREE_RUN_GUARD_S = 10.0
+_FREE_RUN_GUARD_WALL_S = 60.0
 
 _LATCHED_QOS = QoSProfile(
     depth=1,
@@ -142,12 +146,20 @@ class GazeboHost(SimLifecycle):
         self._dt = physics_dt
         self._rtf_boosted = False
         self._batch_target: Time | None = None
+        self._control_generation = 0
+        self._unpauses = 0
+        self._stepping = 0
+        self._steps_idle = asyncio.Event()
+        self._steps_idle.set()
         self._stats: world_stats_pb2.WorldStatistics | None = None
+        self._stats_count = 0
+        self._free_run: asyncio.Future[None] | None = None
         self._gz_node = gz.transport13.Node()
         self._gz_node.subscribe(world_stats_pb2.WorldStatistics, _WORLD_STATS_TOPIC, self._on_stats)
 
     def _on_stats(self, msg: world_stats_pb2.WorldStatistics) -> None:
         self._stats = msg
+        self._stats_count += 1
 
     async def ensure_ready(self) -> None:
         await self._node.do_launch(
@@ -175,6 +187,7 @@ class GazeboHost(SimLifecycle):
         )
 
     async def pause(self) -> bool:
+        self._control_generation += 1
         async with self._semaphore:
             self._logger.debug("Attempting to pause simulation")
             request = ControlWorld.Request()
@@ -223,13 +236,61 @@ class GazeboHost(SimLifecycle):
         return False
 
     async def unpause(self) -> bool:
+        """Free-run the world once every running step has stopped, resending the unpause while the clock stays frozen and no pause came after it."""
+        self._control_generation += 1
+        generation = self._control_generation
+        self._unpauses += 1
+        await self._steps_idle.wait()
         # returning to free-run: restore gz's realtime pacing
         if self._rtf_boosted:
             self._rtf_boosted = not await self._set_physics_rtf(1.0)
         if self._batch_target is not None:
             await self._await_batches_done(self._batch_target)
             self._batch_target = None
+        if not await self._send_unpause():
+            return False
+        for attempt in range(1, _UNPAUSE_RESENDS + 1):
+            moved = await self._node.await_sim_time(self._node.sim_time + Time.from_float(self._dt / 2), freeze_timeout=_UNPAUSE_CONFIRM_S)
+            if moved or generation != self._control_generation:
+                break
+            self._logger.warning(f"gz clock frozen {_UNPAUSE_CONFIRM_S:g}s after an unpause, resending it ({attempt}/{_UNPAUSE_RESENDS})")
+            if not await self._send_unpause():
+                return False
+        if generation == self._control_generation:
+            self._free_run = asyncio.ensure_future(self._keep_free_running(generation))
+        return True
+
+    async def _keep_free_running(self, generation: int) -> None:
+        """Unpause gz again when it pauses itself until its clock ran _FREE_RUN_GUARD_S past the unpause: queued multi_step iterations outlive a pause and re-pause gz when they run out."""
+        deadline = time.monotonic() + _FREE_RUN_GUARD_WALL_S
+        seen = self._stats_count
+        start: float | None = None
+        paused_reports = 0
+        while generation == self._control_generation and time.monotonic() < deadline:
+            await asyncio.sleep(_BATCH_POLL_S)
+            stats = self._stats
+            if stats is None or self._stats_count == seen:
+                continue
+            seen = self._stats_count
+            sim = stats.sim_time.sec + stats.sim_time.nsec * 1e-9
+            start = sim if start is None else start
+            if not stats.paused:
+                paused_reports = 0
+                if sim - start >= _FREE_RUN_GUARD_S:
+                    return
+                continue
+            paused_reports += 1
+            if paused_reports < 2:
+                continue
+            self._logger.warning(f"gz paused itself at {sim:.3f}s while free-running, unpausing it again")
+            if not await self._send_unpause(generation):
+                return
+            seen, paused_reports = self._stats_count, 0
+
+    async def _send_unpause(self, generation: int | None = None) -> bool:
         async with self._semaphore:
+            if generation is not None and generation != self._control_generation:
+                return True
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
             request.world_control = WorldControl()
@@ -266,13 +327,29 @@ class GazeboHost(SimLifecycle):
         # gz silently drops multi_step when the request lands while a previous
         # batch is still executing (Paused() is false mid-batch), so watch for
         # motion and resend the remaining ticks whenever the clock freezes
-        while self._node.sim_time < target:
-            start_sim = self._node.sim_time
-            remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
-            chunk = min(max_chunk, remaining)
-            chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
-            await self._send_multi_step(chunk, seconds)
-            await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
+        self._control_generation += 1
+        unpauses = self._unpauses
+        begin = self._node.sim_time
+        sent: Time | None = None
+        self._stepping += 1
+        self._steps_idle.clear()
+        try:
+            while self._node.sim_time < target:
+                if self._unpauses != unpauses:
+                    self._batch_target = sent
+                    self._logger.warning(f"step of {seconds:g}s superseded by an unpause after {(self._node.sim_time - begin).to_seconds():.3f}s")
+                    return (self._node.sim_time - begin).to_seconds()
+                start_sim = self._node.sim_time
+                remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
+                chunk = min(max_chunk, remaining)
+                chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
+                await self._send_multi_step(chunk, seconds)
+                sent = chunk_target
+                await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
+        finally:
+            self._stepping -= 1
+            if not self._stepping:
+                self._steps_idle.set()
         self._batch_target = target
         return n * self._dt
 
