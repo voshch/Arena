@@ -92,9 +92,18 @@ def _recursive_mtime(path: str) -> int:
             mtime = os.stat(entry).st_mtime
         except OSError:
             continue
+        if os.path.isdir(entry) and _pycache_mtime(entry) >= mtime:
+            continue
         if mtime > best:
             best = mtime
     return int(best)
+
+
+def _pycache_mtime(directory: str) -> float:
+    try:
+        return os.stat(os.path.join(directory, "__pycache__")).st_mtime
+    except OSError:
+        return -1.0
 
 
 def _changed_build_type(build_dir: str, build_type: str) -> bool:

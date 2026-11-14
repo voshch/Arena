@@ -46,6 +46,25 @@ def test_stale_flags_a_failed_last_build(tmp_path: Path) -> None:
     assert _stale(f"failed\t{src}\t(ros.ament_python)\n", ws) == [("failed", "ros.ament_python")]
 
 
+def test_stale_ignores_a_pycache_written_into_the_source_after_install(tmp_path: Path) -> None:
+    ws, src = _package(tmp_path, "imported")
+    _touch_tree(src, 1_000)
+    _touch_tree(tmp_path / "install" / "imported", 2_000)
+    (src / "__pycache__").mkdir()
+    (src / "__pycache__" / "mod.cpython-312.pyc").write_text("")
+    assert _stale(f"imported\t{src}\t(ros.ament_python)\n", ws) == []
+
+
+def test_stale_flags_a_source_file_deleted_after_its_pycache(tmp_path: Path) -> None:
+    ws, src = _package(tmp_path, "pruned")
+    (src / "gone.py").write_text("")
+    (src / "__pycache__").mkdir()
+    _touch_tree(src, 1_000)
+    _touch_tree(tmp_path / "install" / "pruned", 2_000)
+    (src / "gone.py").unlink()
+    assert _stale(f"pruned\t{src}\t(ros.ament_python)\n", ws) == [("pruned", "ros.ament_python")]
+
+
 def test_stale_flags_a_never_built_package(tmp_path: Path) -> None:
     ws = Workspace([], [], str(tmp_path / "build"), str(tmp_path / "install"))
     assert _stale(f"new\t{tmp_path}\t(ros.ament_python)\n\n", ws) == [("new", "ros.ament_python")]
