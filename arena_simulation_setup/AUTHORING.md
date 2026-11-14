@@ -1067,7 +1067,12 @@ is judged against the tolerance at that moment), `conditions:` (clauses judged
 over this phase only), `text:` (the instruction handed to language-conditioned
 planners, `instruction:` is accepted as the same key) and `on_failure`. A robot
 entry may also carry `level` (the level it starts on), `goal_level` (the level
-its goto phases aim at) and `conditions:` judged over its whole phase list.
+its goto phases aim at), `conditions:` judged over its whole phase list, and
+`name` and `model`. When every entry has a `model`, the scenario declares the
+fleet: at the reset that switches to it the platform despawns the robots it
+does not list and spawns the missing ones (a robot of the right name with
+another model is replaced). Entries pair with live robots by `name`, then by
+`model`, then in order.
 
 ```yaml
 robots:

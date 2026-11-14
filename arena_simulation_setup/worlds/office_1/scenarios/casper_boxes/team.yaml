@@ -1,0 +1,11 @@
+supervisor: tiago
+supervisor_team: true
+members:
+  tiago:
+    workspace: [storage, reception, meeting_room_big]
+    constraints: {can_transport_objects: true, max_payload_kg: 2}
+    skills:
+      BoxDemo:
+        manipulation: [0.9, 1]
+        transport: [0.8, 2]
+        supervise: [0.7, 3]

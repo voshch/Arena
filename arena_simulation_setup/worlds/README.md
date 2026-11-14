@@ -16,12 +16,19 @@ worlds/<name>/
 |   `-- <scenario>/
 |       |-- scenario.yaml     # Scenario (format: arena-scenario/2)
 |       |-- scenario.json     # alternative; ScenarioView tries .yaml first
-|       `-- <agent_type>.yaml # optional scenario-local arena_humansim agent types
+|       |-- <agent_type>.yaml # optional scenario-local arena_humansim agent types
+|       `-- <task layer files> # optional, read by the active task layer
 `-- assets/
     `-- <domain>/
         `-- <asset_type>/
             `-- <name>/       # world-local asset; overrides network-fetched assets
 ```
+
+A scenario folder may carry the files of a task layer beside `scenario.yaml`, so
+switching the scenario between episodes switches the layer's configuration with
+it. The `casper` layer reads `goal.json`, `team.yaml`, `scene.yaml` and
+`casper.yaml` from the folder of `task.scenario.file`, see
+[arena_casper](../../task_layers/casper/arena_casper/README.md).
 
 A world without `format:` in its `world.yaml`, or with one
 `<level_id>/world.yaml` per level, is format 1 and loads through the legacy
@@ -310,7 +317,9 @@ humans:
     waypoints:
     - [4.0, 2.0, 0.0]
 robots:
-  - start: [x, y, yaw]           # required. [x,y], [x,y,yaw], {x,y,yaw} or a zone name
+  - name: ""                     # optional, robot name, platform naming when empty
+    model: ""                    # optional, robot model, every entry having one declares the fleet
+    start: [x, y, yaw]           # required. [x,y], [x,y,yaw], {x,y,yaw} or a zone name
     level: ""                    # optional, multi-level worlds
     goal_level: ""               # optional, level for goto phases
     phases:                      # ordered. each entry is one of:
@@ -608,6 +617,8 @@ wrapping whichever of the above resolved first. Call `view.load()` to parse
 | Name | Notes |
 |---|---|
 | `airport` | Airport terminal layout |
+| `backyard` | Walled garden with a house behind it for the CASPER barbecue party, prep, grill and drinks tables |
+| `backyard_b` | `backyard` variant with the house on two sides, a south gate, meat and fish grills and prep tables for salad and vegetables |
 | `hospital_1` | Multi-zone hospital with patient rooms, reception, hallways |
 | `hospital_2` | Hospital variant |
 | `map_empty` | Single open zone |
