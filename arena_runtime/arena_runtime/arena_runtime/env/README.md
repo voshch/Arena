@@ -308,8 +308,9 @@ While an episode runs, the node pings every node under its env namespace each
 `task.episode.node_ping.period` wall seconds, driven by `EnvNode`'s 1 s arena
 watchdog tick through `_on_watchdog`. [`node_watch.py`](node_watch.py) pings a node on its
 lifecycle `get_state` service where it has one (it must report active) and on its
-parameter service otherwise. A node that has answered before and then misses
-`task.episode.node_ping.misses` pings in a row, or leaves the graph mid-episode,
+parameter service otherwise. Helper nodes that are never spun go unpinged: rclcpp's
+`*_rclcpp_node` and the `moveit` and `moveit_<n>` nodes inside `move_group`. A node
+that has answered before and then misses `task.episode.node_ping.misses` pings in a row, or leaves the graph mid-episode,
 ends the episode FATAL naming that node, which the benchmark runner counts as a
 systemic step failure and retries. A round most nodes miss counts for nobody, so a
 stalled box or event loop does not fault one node. With `task.episode.auto_reset`

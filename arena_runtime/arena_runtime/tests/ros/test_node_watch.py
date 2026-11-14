@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import typing
 
 
@@ -30,6 +31,14 @@ if sys.argv[3] == "activate":
     node.trigger_configure()
     node.trigger_activate()
 rclpy.spin(node)
+"""
+
+
+_SILENT_CHILD = """
+import rclpy, sys, time
+rclpy.init()
+nodes = [rclpy.create_node(name, namespace=sys.argv[1]) for name in sys.argv[2:]]
+time.sleep(3600)
 """
 
 
@@ -166,6 +175,30 @@ def test_a_lifecycle_node_that_never_went_active_is_not_tracked(rclpy_context: o
         await _until_all_answer(pinger, 4)
         assert [await _ping(pinger) for _ in range(4)] == [None] * 4
         assert f"{NS}/idle" not in pinger._tally._misses
+
+    _with_pinger(scenario)
+
+
+def test_moveit_helper_nodes_cost_a_round_no_timeout(rclpy_context: object) -> None:
+    from arena_runtime.env.node_watch import NodePinger
+
+    root = "/node_watch_moveit"
+    silent = {f"{root}/moveit/get_parameters", f"{root}/moveit_2800241937/get_parameters"}
+
+    async def scenario(pinger: typing.Any, children: dict[str, subprocess.Popen]) -> None:
+        arm = NodePinger(pinger._node, root, 3)
+        children["arm_driver"] = subprocess.Popen([sys.executable, "-c", _CHILD, "arm_driver", root])
+        children["move_group"] = subprocess.Popen([sys.executable, "-c", _SILENT_CHILD, root, "moveit", "moveit_2800241937"])
+        await _until_all_answer(arm, 1)
+        for _ in range(150):
+            if silent <= {name for name, _ in pinger._node.get_service_names_and_types()}:
+                break
+            await asyncio.sleep(0.2)
+        else:
+            raise AssertionError("the moveit nodes never showed up in the graph")
+        start = time.monotonic()
+        assert await _ping(arm) is None
+        assert time.monotonic() - start < TIMEOUT / 2
 
     _with_pinger(scenario)
 
