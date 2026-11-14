@@ -139,6 +139,12 @@ def test_robot_with_every_submodule_checked_out_is_ready(tmp_path, capsys):
     assert "mpo700" in robots._ready_robots(arena)
 
 
+def test_update_refreshes_a_shared_component_without_pulling_the_robots_that_share_it(tmp_path):
+    arena = _arena(tmp_path)
+    _check_out(arena, "arena_robots/arena_robots/components/lidar/sick_s300/meshes")
+    assert robots._checked_out_paths(arena) == ["arena_robots/arena_robots/components/lidar/sick_s300/meshes"]
+
+
 def test_sim_preflight_suite_gives_each_robot_its_own_preflight_stage():
     suite = planners.preflight_suite(["go1", "boxer"])
     assert [(stage["name"], stage["robot"]) for stage in suite["stages"]] == [("preflight-go1", "go1"), ("preflight-boxer", "boxer")]

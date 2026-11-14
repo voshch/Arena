@@ -253,8 +253,8 @@ do_run(){
             (
                 arena_docker logs --follow "$ID" &
                 local LOGS_PID=$!
-                trap 'pkill -P "$LOGS_PID" 2>/dev/null; kill "$LOGS_PID" 2>/dev/null' EXIT
-                trap 'pkill -P "$LOGS_PID" 2>/dev/null; kill "$LOGS_PID" 2>/dev/null; exit 130' INT TERM
+                trap '{ pkill -P "$LOGS_PID"; kill "$LOGS_PID"; } 2>/dev/null || true' EXIT
+                trap '{ pkill -P "$LOGS_PID"; kill "$LOGS_PID"; } 2>/dev/null || true; exit 130' INT TERM
                 arena_container_wait "$arena_service"
             ) || return $?
             ;;

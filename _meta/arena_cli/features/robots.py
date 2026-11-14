@@ -293,16 +293,19 @@ def cmd_rm(arena: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+def _checked_out_paths(arena: Path) -> list[str]:
+    """Robot and component submodule paths that are checked out."""
+    status = submodule_status(arena)
+    return sorted({p for paths in robot_submodules(arena).values() for p in paths if status.get(p) == "init"})
+
+
 def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
     sdk = arena / _SDK_SUBDIR
     if not (sdk / ".gitmodules").is_file():
         return 0
-    subs = robot_submodules(arena)
-    status = submodule_status(arena)
-    installed = {r for r, paths in subs.items() if any(status.get(p) == "init" for p in paths)}
     failed = []
     # --checkout overrides update=none
-    for p in sorted({p for r in installed for p in subs[r]}):
+    for p in _checked_out_paths(arena):
         sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
         if _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk, check=False):
             failed.append(sub_path)
