@@ -25,6 +25,12 @@ source "$ARENA_DIR/_meta/docker/lib"
 
 arena_service="arena"
 
+for old in "$ARENA_WS_DIR/build/.uv-cache" "$ARENA_WS_DIR/.uv-cache"; do
+    if [ -d "$old" ] && [ ! -e "$ARENA_WS_DIR/.uv/cache" ]; then
+        mkdir -p "$ARENA_WS_DIR/.uv" && mv "$old" "$ARENA_WS_DIR/.uv/cache"
+    fi
+done
+
 _uninstall_usage(){
     echo "usage: source arena uninstall [--data] [--cache] [--all] [--dry-run] [-y]" >&2
 }
@@ -73,8 +79,7 @@ do_uninstall(){
         origin="workspace layout"
     fi
 
-    local targets="" data_dir="" tree build_dir
-    build_dir=$(_uninstall_resolve "$mounts" /opt/arena_ws/build "$ARENA_WS_DIR/build")
+    local targets="" data_dir="" tree uv_dir
     for tree in src build install log; do
         targets="${targets}$(_uninstall_resolve "$mounts" "/opt/arena_ws/$tree" "$ARENA_WS_DIR/$tree")"$'\n'
     done
@@ -83,8 +88,10 @@ do_uninstall(){
         targets="${targets}${data_dir}"$'\n'
         targets="${targets}$(_uninstall_resolve "$mounts" /opt/arena_ws/.env "$ARENA_WS_DIR/.env")"$'\n'
     fi
+    uv_dir=$(_uninstall_resolve "$mounts" /opt/arena_ws/.uv "$ARENA_WS_DIR/.uv")
     if [ "$cache" -eq 1 ]; then
         targets="${targets}$(_uninstall_resolve "$mounts" /opt/arena_ws/.uv-python "$ARENA_WS_DIR/.uv-python")"$'\n'
+        targets="${targets}${uv_dir}"$'\n'
     fi
     targets=$(printf '%s' "$targets" | sed '/^$/d')
 
@@ -113,7 +120,7 @@ do_uninstall(){
     _uninstall_list images "$image_rows"
     _uninstall_list volumes "$volumes"
     _uninstall_list paths "$targets"
-    [ "$cache" -eq 1 ] || _uninstall_list kept "$build_dir/.uv-cache"
+    [ "$cache" -eq 1 ] || _uninstall_list kept "$uv_dir"
     _uninstall_list symlinks "$links"
 
     if [ "$dry" -eq 1 ]; then
@@ -166,11 +173,7 @@ do_uninstall(){
     local target
     while IFS= read -r target; do
         [ -n "$target" ] || continue
-        if [ "$cache" -eq 0 ] && [ "$target" = "$build_dir" ]; then
-            find "$target" -mindepth 1 -maxdepth 1 ! -name .uv-cache -exec rm -rf {} +
-        else
-            rm -rf "${target:?}"
-        fi
+        rm -rf "${target:?}"
     done <<< "$targets"
 
     if [ -n "$links" ]; then
@@ -196,10 +199,7 @@ mkdir -p "$ARENA_WS_DIR/build"
 mkdir -p "$ARENA_WS_DIR/install"
 mkdir -p "$ARENA_WS_DIR/log"
 mkdir -p "$ARENA_WS_DIR/.uv-python"
-if [ -d "$ARENA_WS_DIR/.uv-cache" ] && [ ! -e "$ARENA_WS_DIR/build/.uv-cache" ]; then
-    mv "$ARENA_WS_DIR/.uv-cache" "$ARENA_WS_DIR/build/.uv-cache"
-fi
-mkdir -p "$ARENA_WS_DIR/build/.uv-cache"
+mkdir -p "$ARENA_WS_DIR/.uv/cache" "$ARENA_WS_DIR/.uv/venvs"
 mkdir -p "$ARENA_WS_DIR"/.isaac-cache/{kit,ov,computecache}
 
 if [ ! -f "$ARENA_WS_DIR/.env" ] ; then

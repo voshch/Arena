@@ -104,16 +104,13 @@ def _changed_build_type(build_dir: str, build_type: str) -> bool:
     return os.path.isfile(os.path.join(build_dir, "colcon_command_prefix_setup_py.sh"))
 
 
-def _mount_point(path: str) -> str:
-    path = os.path.realpath(path)
-    while not os.path.ismount(path):
-        path = os.path.dirname(path)
-    return path
-
-
 def build_main(argv: list[str]) -> int:
-    """Run colcon build with the workspace package-skip and cmake-args logic. Assumes cwd is ARENA_WS_DIR."""
+    """Run colcon build with the workspace package-skip and cmake-args logic, then collect the venv store. Assumes cwd is ARENA_WS_DIR."""
     import subprocess
+    from pathlib import Path
+
+    from arena_cli import venv_store
+    from arena_cli.common import _env
 
     args = list(argv)
 
@@ -186,12 +183,9 @@ def build_main(argv: list[str]) -> int:
 
     print(f"BUILDING: colcon build {' '.join(display_args)} {' '.join(args)}")
 
-    env = os.environ.copy()
-    uv_cache = os.environ.get("UV_CACHE_DIR")
-    if uv_cache and _mount_point(uv_cache) == _mount_point(ws.build_base):
-        env["UV_LINK_MODE"] = "hardlink"
-
-    result = subprocess.run(["colcon", "build", *exec_args, *args], env=env, check=False)
+    result = subprocess.run(["colcon", "build", *exec_args, *args], check=False)
+    for name in venv_store.gc(Path(_env("ARENA_WS_DIR"))):
+        print(f"venv store: {name[:12]} deleted, no build uses it", flush=True)
     return result.returncode
 
 

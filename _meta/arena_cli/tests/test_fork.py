@@ -13,6 +13,7 @@ import pytest
 from arena_cli import fork
 from arena_cli.common import CLIError
 
+STORE_ENTRY = "0f" * 32
 GIT_ENV = {
     **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
     "GIT_AUTHOR_NAME": "t",
@@ -46,8 +47,9 @@ def ws(tmp_path: pathlib.Path) -> Iterator[pathlib.Path]:
     git(repo, "init", "-q", "-b", "jazzy")
     git(repo, "add", "pkg")
     git(repo, "commit", "-q", "-m", "init")
-    write(root / "build" / "planner" / "venv" / "pyvenv.cfg", "home = /usr\n")
-    write(root / "build" / "planner" / "venv" / "lib" / "torch.so", "torch\n")
+    write(root / ".uv" / "venvs" / STORE_ENTRY / "pyvenv.cfg", "home = /usr\n")
+    (root / "build" / "planner").mkdir(parents=True)
+    (root / "build" / "planner" / "venv").symlink_to(f"/opt/arena_ws/.venvs/{STORE_ENTRY}")
     write(root / "build" / "plain" / "colcon_build.rc", "0\n")
     write(root / "build" / ".uv-cache" / "blob", "cache\n")
     write(root / "install" / "pkg" / "share" / "pkg" / "package.xml", "<package/>\n")
@@ -94,9 +96,9 @@ def test_freeze_hardlinks_files_unchanged_since_previous_release(tmp_path: pathl
     src, prev, dst = tmp_path / "src", tmp_path / "prev", tmp_path / "dst"
     write(src / "same.txt", "same\n")
     write(src / "edited.txt", "new content\n")
-    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), lambda rel: False, True)
+    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), True)
     write(src / "edited.txt", "newer content, longer\n")
-    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), lambda rel: False, True)
+    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), True)
     assert same_inode(dst / "same.txt", prev / "same.txt")
     assert not same_inode(dst / "edited.txt", prev / "edited.txt")
     assert (dst / "edited.txt").read_text() == "newer content, longer\n"
@@ -106,10 +108,10 @@ def test_freeze_hardlinks_files_unchanged_since_previous_release(tmp_path: pathl
 def test_freeze_detects_same_size_edit_by_content(tmp_path: pathlib.Path) -> None:
     src, prev, dst = tmp_path / "src", tmp_path / "prev", tmp_path / "dst"
     write(src / "f.txt", "aaaa\n")
-    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), lambda rel: False, True)
+    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), True)
     write(src / "f.txt", "bbbb\n")
     os.utime(src / "f.txt", ns=(0, 0))
-    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), lambda rel: False, True)
+    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), True)
     assert (dst / "f.txt").read_text() == "bbbb\n"
     assert part.changed == 1
 
@@ -118,9 +120,9 @@ def test_freeze_by_mtime_carries_a_touched_stamp_newer_than_its_sources(tmp_path
     src, prev, dst = tmp_path / "src", tmp_path / "prev", tmp_path / "dst"
     write(src / "venv_build.stamp", "")
     os.utime(src / "venv_build.stamp", ns=(10**18, 10**18))
-    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), lambda rel: False, False)
+    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), False)
     os.utime(src / "venv_build.stamp", ns=(2 * 10**18, 2 * 10**18))
-    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), lambda rel: False, False)
+    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), False)
     assert not same_inode(dst / "venv_build.stamp", prev / "venv_build.stamp")
     assert (dst / "venv_build.stamp").stat().st_mtime_ns == 2 * 10**18
     assert part.changed == 1
@@ -129,20 +131,22 @@ def test_freeze_by_mtime_carries_a_touched_stamp_newer_than_its_sources(tmp_path
 def test_freeze_by_content_links_a_touched_unchanged_file(tmp_path: pathlib.Path) -> None:
     src, prev, dst = tmp_path / "src", tmp_path / "prev", tmp_path / "dst"
     write(src / "weights.yaml", "w\n")
-    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), lambda rel: False, True)
+    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), True)
     os.utime(src / "weights.yaml", ns=(2 * 10**18, 2 * 10**18))
-    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), lambda rel: False, True)
+    part = fork._freeze(str(src), str(dst), str(prev), fork._walk(str(src)), True)
     assert same_inode(dst / "weights.yaml", prev / "weights.yaml")
     assert part.changed == 0
 
 
-def test_freeze_links_source_where_asked_and_recreates_symlinks(tmp_path: pathlib.Path) -> None:
+def test_freeze_recreates_symlinks_without_following_them(tmp_path: pathlib.Path) -> None:
     src, dst = tmp_path / "src", tmp_path / "dst"
-    write(src / "venv" / "lib.so", "lib\n")
+    write(tmp_path / "store" / "entry" / "lib.so", "lib\n")
+    (src / "pkg").mkdir(parents=True)
+    (src / "pkg" / "venv").symlink_to(tmp_path / "store" / "entry")
     write(src / "plain.txt", "plain\n")
     (src / "link").symlink_to("plain.txt")
-    part = fork._freeze(str(src), str(dst), None, fork._walk(str(src)), lambda rel: rel.startswith("venv"), True)
-    assert same_inode(dst / "venv" / "lib.so", src / "venv" / "lib.so")
+    part = fork._freeze(str(src), str(dst), None, fork._walk(str(src)), True)
+    assert os.readlink(dst / "pkg" / "venv") == str(tmp_path / "store" / "entry")
     assert not same_inode(dst / "plain.txt", src / "plain.txt")
     assert os.readlink(dst / "link") == "plain.txt"
     assert (part.files, part.changed, part.bytes) == (3, 3, len("plain\n"))
@@ -151,9 +155,9 @@ def test_freeze_links_source_where_asked_and_recreates_symlinks(tmp_path: pathli
 def test_freeze_without_destination_only_counts(tmp_path: pathlib.Path) -> None:
     src, prev = tmp_path / "src", tmp_path / "prev"
     write(src / "f.txt", "f\n")
-    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), lambda rel: False, True)
+    fork._freeze(str(src), str(prev), None, fork._walk(str(src)), True)
     write(src / "g.txt", "g\n")
-    part = fork._freeze(str(src), None, str(prev), fork._walk(str(src)), lambda rel: False, True)
+    part = fork._freeze(str(src), None, str(prev), fork._walk(str(src)), True)
     assert (part.files, part.changed) == (2, 1)
     assert sorted(os.listdir(tmp_path)) == ["prev", "src"]
 
@@ -163,7 +167,7 @@ def test_freeze_leaves_pycache_and_git_out_of_counts(tmp_path: pathlib.Path) -> 
     write(src / "__pycache__" / "m.pyc", "c\n")
     write(src / ".git" / "HEAD", "ref\n")
     write(src / "m.py", "m\n")
-    part = fork._freeze(str(src), str(tmp_path / "dst"), None, fork._walk(str(src)), lambda rel: False, True)
+    part = fork._freeze(str(src), str(tmp_path / "dst"), None, fork._walk(str(src)), True)
     assert (part.files, part.changed) == (1, 1)
     assert (tmp_path / "dst" / "__pycache__" / "m.pyc").is_file()
 
@@ -203,8 +207,9 @@ def test_release_freezes_every_part_and_reuses_a_matching_release(ws: pathlib.Pa
     assert not (rel / "src" / "Arena" / ".venv" / "ignored").exists()
     assert os.listdir(rel / "src" / "Arena" / ".git" / "objects") == ["info"]
     assert (rel / "src" / "Arena" / ".git" / "objects" / "info" / "alternates").read_text() == f"{fork._DEV_SRC}/Arena/.git/objects\n"
-    assert same_inode(rel / "build" / "planner" / "venv" / "lib" / "torch.so", ws / "build" / "planner" / "venv" / "lib" / "torch.so")
+    assert os.readlink(rel / "build" / "planner" / "venv") == f"/opt/arena_ws/.venvs/{STORE_ENTRY}"
     assert not same_inode(rel / "build" / "plain" / "colcon_build.rc", ws / "build" / "plain" / "colcon_build.rc")
+    assert not (rel / ".uv").exists()
     assert not (rel / "build" / ".uv-cache").exists()
     assert not (rel / "build" / ".forks").exists()
     assert (rel / "src" / "Arena" / ".venv" / "bin" / "python3").read_text() == "py\n"

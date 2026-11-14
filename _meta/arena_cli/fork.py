@@ -18,9 +18,9 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 
-from arena_cli import features
+from arena_cli import features, venv_store
 from arena_cli.common import CLIError, Verb, _env, make_verb
 
 DESCRIPTION = """Isolated containers on snapshots of the dev tree, each on its own ROS domain.
@@ -100,8 +100,8 @@ def _walk(root: str, rel: str = "", skip_top: frozenset[str] = frozenset()) -> I
                 yield r, False
 
 
-def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple[str, bool]], link_source: Callable[[str], bool], by_content: bool) -> _Part:
-    """Copy src into dst, hardlinking files unchanged since prev (same mtime, or same content where by_content) or, where link_source says so, from src. A dst of None only counts."""
+def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple[str, bool]], by_content: bool) -> _Part:
+    """Copy src into dst, hardlinking files unchanged since prev (same mtime, or same content where by_content). A dst of None only counts."""
     part = _Part()
     if dst is not None:
         os.makedirs(dst, exist_ok=True)
@@ -132,10 +132,6 @@ def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple
             part.changed += counted and not (p is not None and ps is not None and stat.S_ISLNK(ps.st_mode) and os.readlink(p) == target)
         elif not stat.S_ISREG(ss.st_mode):
             part.files -= counted
-        elif link_source(rel):
-            if dst is not None:
-                os.link(s, d)
-            part.changed += counted and not (ps is not None and os.path.samestat(ps, ss))
         elif p is not None and ps is not None and stat.S_ISREG(ps.st_mode) and ps.st_size == ss.st_size and (ps.st_mtime_ns == ss.st_mtime_ns or (by_content and filecmp.cmp(p, s, shallow=False))):
             if dst is not None:
                 os.link(p, d)
@@ -194,28 +190,22 @@ def _release() -> str:
     with _releases_lock():
         latest = _latest()
         prev = os.path.join(root, latest) if latest else None
-        venvs = {pkg for pkg in os.listdir(os.path.join(ws, "build")) if os.path.isfile(os.path.join(ws, "build", pkg, "venv", "pyvenv.cfg"))}
-
-        def planner_venv(rel: str) -> bool:
-            head = rel.split(os.sep, 2)
-            return len(head) > 2 and head[1] == "venv" and head[0] in venvs
-
         src = os.path.join(ws, "src")
         stores: list[str] = []
         venv = os.environ.get("ARENA_VENV_DIR", "/opt/venv")
         sources = {
-            "src": ("src", src, lambda: _without_git_stores(src, _walk(src, skip_top=frozenset({"Arena/_assets"})), stores), lambda rel: False, True),
-            "build": ("build", os.path.join(ws, "build"), lambda: _walk(os.path.join(ws, "build"), skip_top=frozenset({".forks", ".uv-cache"})), planner_venv, False),
-            "install": ("install", os.path.join(ws, "install"), lambda: _walk(os.path.join(ws, "install")), lambda rel: False, False),
-            "venv": (os.path.join("src", "Arena", ".venv"), venv, lambda: _walk(venv), lambda rel: False, True),
-            "uv-python": ("uv-python", os.path.join(ws, ".uv-python"), lambda: _walk(os.path.join(ws, ".uv-python")), lambda rel: False, True),
+            "src": ("src", src, lambda: _without_git_stores(src, _walk(src, skip_top=frozenset({"Arena/_assets"})), stores), True),
+            "build": ("build", os.path.join(ws, "build"), lambda: _walk(os.path.join(ws, "build"), skip_top=frozenset({".forks", ".uv-cache"})), False),
+            "install": ("install", os.path.join(ws, "install"), lambda: _walk(os.path.join(ws, "install")), False),
+            "venv": (os.path.join("src", "Arena", ".venv"), venv, lambda: _walk(venv), True),
+            "uv-python": ("uv-python", os.path.join(ws, ".uv-python"), lambda: _walk(os.path.join(ws, ".uv-python")), True),
         }
         t1 = time.monotonic()
         repos = _repos(src)
         if latest is not None and prev is not None and _meta(latest).get("format") == _FORMAT and repos == _meta(latest).get("repos"):
             prev_parts = _meta(latest).get("parts", {})
-            for name, (dest, path, entries, link_source, by_content) in sources.items():
-                p = _freeze(path, None, os.path.join(prev, dest), entries(), link_source, by_content)
+            for name, (dest, path, entries, by_content) in sources.items():
+                p = _freeze(path, None, os.path.join(prev, dest), entries(), by_content)
                 if p.changed or p.files != prev_parts.get(name, {}).get("files"):
                     break
             else:
@@ -231,9 +221,9 @@ def _release() -> str:
         tmp = os.path.join(root, f".tmp-{release}")
         stores.clear()
         parts: dict[str, _Part] = {}
-        for name, (dest, path, entries, link_source, by_content) in sources.items():
+        for name, (dest, path, entries, by_content) in sources.items():
             ts = time.monotonic()
-            parts[name] = _freeze(path, os.path.join(tmp, dest), os.path.join(prev, dest) if prev else None, entries(), link_source, by_content)
+            parts[name] = _freeze(path, os.path.join(tmp, dest), os.path.join(prev, dest) if prev else None, entries(), by_content)
             p = parts[name]
             print(f"release: {name:<9} {p.files:>7} files, {p.changed:>6} changed, {p.bytes / 1e6:>9.1f} MB copied, {time.monotonic() - ts:5.1f}s", flush=True)
         for store in stores:
@@ -262,7 +252,7 @@ def _release() -> str:
 
 
 def _prune() -> None:
-    """Delete releases neither latest, used by a fork, nor frozen in the last ten minutes. Caller holds the releases lock."""
+    """Delete releases neither latest, used by a fork, nor frozen in the last ten minutes, then collect the venv store. Caller holds the releases lock."""
     keep = {_latest()} | {pathlib.Path(_root(), name, "release").read_text().strip() for name in os.listdir(_root()) if os.path.isfile(os.path.join(_root(), name, "release"))}
     fresh = time.time() - _PRUNE_GRACE_S
     for rid in _release_ids():
@@ -270,6 +260,8 @@ def _prune() -> None:
         if rid not in keep and (not os.path.isfile(meta) or os.path.getmtime(meta) < fresh):
             shutil.rmtree(os.path.join(_releases(), rid))
             print(f"release: {rid} pruned, no fork uses it", flush=True)
+    for name in venv_store.gc(pathlib.Path(_ws())):
+        print(f"venv store: {name[:12]} deleted, no build uses it", flush=True)
 
 
 def _require_dev() -> None:
