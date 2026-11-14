@@ -22,6 +22,7 @@ class WeightsConfig(typing.TypedDict):
     encounter: float
     facility: float
     wait: float
+    wait_people: typing.NotRequired[float]  # door_gate: seconds until the door is clear of people for one crossing
 
 
 class PlanConfig(typing.TypedDict):
@@ -77,6 +78,7 @@ class FlowConfig(typing.TypedDict):
     blend_tau_s: float
     sigma0_m: float
     sigma_per_s: float
+    advect_tau_s: typing.NotRequired[float]  # info dmod: a person turns from its own heading onto the map's walking direction with this time constant
 
 
 class HataConfig(typing.TypedDict):
@@ -100,13 +102,14 @@ class CostConfig(typing.TypedDict):
     flow: FlowConfig
 
 
-RULES = ("capacity", "queue", "yield_people", "plan_around", "slot_by_people", "reassign_door", "reassign_goal")
+RULES = ("capacity", "queue", "yield_people", "door_gate", "plan_around", "slot_by_people", "reassign_door", "reassign_goal")
 
 
 class Profile(typing.TypedDict):
     capacity: bool
     queue: bool
     yield_people: bool
+    door_gate: bool
     plan_around: bool
     slot_by_people: bool
     reassign_door: bool
@@ -127,6 +130,7 @@ class QueueConfig(typing.TypedDict):
     spacing_m: float
     stagger_m: float
     keep_slot: bool
+    swap_gain_m: float
     other_queue_m: float
     clearance_m: float
     slot_tol_m: float
@@ -149,6 +153,13 @@ class YieldConfig(typing.TypedDict):
     aside_robot_gap_m: float
     aside_plan_ahead_s: float
     aside_person_gap_m: float
+
+
+class DoorGateConfig(typing.TypedDict):
+    margin_s: float
+    clear_s: float
+    horizon_s: float
+    head_switch: bool
 
 
 class ReassignDoorConfig(typing.TypedDict):
@@ -177,6 +188,7 @@ class RulesConfig(typing.TypedDict):
     capacity: CapacityConfig
     queue: QueueConfig
     yield_people: YieldConfig
+    door_gate: DoorGateConfig
     reassign_door: ReassignDoorConfig
     reassign_goal: ReassignGoalConfig
     episode: EpisodeConfig

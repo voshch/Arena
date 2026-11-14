@@ -9,7 +9,12 @@ class FleetParams(ParamGroup):
     COST = Param[str]("cost", "", "Cost function YAML. Empty = the package's configs/cost.yaml.")
     RULES = Param[str]("rules", "", "Rules and profiles YAML. Empty = the package's configs/rules.yaml.")
     PROFILE = Param[str]("profile", "", "Profile of the rules file that switches rules on. Empty = its default_profile.")
-    INFO = Param[str]("info", "none", "What the dispatcher knows about people: none, oracle (everyone), perceived (what robots see), flow (live state and map of dynamics), mod (map of dynamics only).", constraint=Choices("none", "oracle", "perceived", "flow", "mod"))
+    INFO = Param[str](
+        "info",
+        "none",
+        "What the dispatcher knows about people: none, oracle (everyone), perceived (what robots see), flow (live state and map of dynamics), mod (map of dynamics only), dmod (live state following a directional map of dynamics, which also prices walking against the stream).",
+        constraint=Choices("none", "oracle", "perceived", "flow", "mod", "dmod"),
+    )
     MOD = Param[str]("mod", "", "Map of dynamics .npz (rho, x_edges, y_edges, t_edges) for info flow and mod.")
     LOCAL = Param[str]("local", "drlvo", "Local planner that follows the plan: drlvo (plan topic, global_planner none) or dwb (Nav2 FollowPath).", constraint=Choices("drlvo", "dwb"))
     ROBOT = Param[str]("robot", "jackal", "Robot model name; robots are <robot>_<i>, a single one <robot>.")

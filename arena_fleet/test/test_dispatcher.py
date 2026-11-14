@@ -8,7 +8,7 @@ import pytest
 from arena_fleet import features
 from arena_fleet.config import CostConfig, RulesConfig, load_cost, load_rules
 from arena_fleet.dispatcher import FleetDispatcher, Info, PublishPlan, SendGoal, Stop, robot_names
-from arena_fleet.geometry import Point, hungarian
+from arena_fleet.geometry import Point, hungarian, seg_cross
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics
 
@@ -425,3 +425,147 @@ def test_queue_slots_leave_the_side_where_people_were_seen(tmp_path: pathlib.Pat
     after = d.choose_slots("main_door", -1.0)
     cy = d.doors["main_door"].c[1]
     assert (after[0][1] - cy) * (before[0][1] - cy) < 0
+
+
+def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
+    """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
+    e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})
+    e.run(120)
+    assert any(x.get("why") == "peds_in_door" for x in e.events())
+    assert not e.events("enter") and e.d.rob[e.d.names[0]].phase in ("to_slot", "queued")
+
+
+def test_door_gate_lets_the_robot_in_once_the_person_has_left(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})
+    e.run(40)
+    e.peds = {"p": (13.0, 10.6, 0.0, 0.0)}
+    e.run(200)
+    enter = e.events("enter")
+    assert enter and enter[0]["door"] == "main_door" and not enter[0]["forced"] and e.events("trip_done")
+
+
+def test_door_gate_sends_a_granted_robot_back_to_the_queue_when_people_come(tmp_path: pathlib.Path) -> None:
+    e2 = Episode(tmp_path, 1, profile="v13", info="oracle")
+    while not e2.events("enter") and e2.t < 100:
+        e2.run(e2.t + TICK)
+    n = e2.d.names[0]
+    d = e2.d.rob[n].route_door
+    assert e2.d.rob[n].phase == "cross" and e2.d.pose[n][0] < 12.0
+    e2.peds = {"w": (17.0, e2.d.doors[d].c[1], -1.2, 0.0)}
+    e2.run(e2.t + 1.0)
+    assert e2.events("retreat") and e2.d.rob[n].phase in ("to_slot", "queued") and n not in e2.d.inside[d]
+
+
+def test_door_gate_wait_term_is_large_while_a_person_stands_in_the_door(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"q": (13.0, 6.0, 0.0, 0.0)})
+    e.run(2)
+    n = e.d.names[0]
+    opts, _ = e.d.options(n, e.d.rob[n].target)
+    assert opts["main_door"]["Wp"] > 30 and opts["side_door"]["Wp"] == 0
+
+
+def watch_slots(e: Episode, until: float = 200.0) -> tuple[int, int, int]:
+    """Run, counting ticks where two robots of one queue share a slot, ways to slots cross, or a robot is sent ahead of one ranked before it."""
+    shared = crossed = jumped = 0
+    while e.t < until and not e.d.finished:
+        e.run(until=e.t + TICK)
+        for d, Q in e.d.queue_of.items():
+            on = [m for m in Q if e.d.rob[m].slot_xy is not None and e.d.rob[m].phase in ("to_slot", "queued")]
+            pts = [e.d.rob[m].slot_xy for m in on]
+            shared += len(pts) != len(set(pts))
+            way = [m for m in on if e.d.rob[m].phase == "to_slot"]
+            crossed += any(seg_cross(e.d.pose[a][:2], e.d.rob[a].slot_xy, e.d.pose[b][:2], e.d.rob[b].slot_xy) for i, a in enumerate(way) for b in way[i + 1 :])
+            idx = [e.d.slot_set[d].index(e.d.rob[m].slot_xy) for m in on]
+            jumped += idx != sorted(idx)
+    return shared, crossed, jumped
+
+
+def test_queue_of_four_at_one_door_gets_four_slots_without_crossing_ways(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, n=4, profile="queue")
+    shared, crossed, jumped = watch_slots(e)
+    assert all(r.phase == "done" for r in e.d.rob.values())
+    assert (shared, crossed, jumped) == (0, 0, 0)
+    assert all(len(x["slots"]) == 4 for x in e.events("slots"))  # one slot per robot; with N - 1 the fourth robot shared one
+
+
+def test_a_late_robot_never_takes_the_head_slot_left_free_ahead_of_the_queue(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, n=4, profile="queue")
+    e.d.rcfg["queue"]["swap_gain_m"] = 1e9  # only slot_index decides
+    _, _, jumped = watch_slots(e)
+    assert jumped == 0
+
+
+def test_four_robots_arriving_side_by_side_at_one_door_queue_without_crossing_ways(tmp_path: pathlib.Path) -> None:
+    """The v1.3 smoke run (seed 6, N = 4) at 12.75 s: four robots in a column across the way to side_door, all routed there."""
+    e = Episode(tmp_path, n=4, profile="queue")
+    e.tick()
+    at = {"jackal_0": (6.57, 7.68), "jackal_1": (6.76, 8.95), "jackal_2": (6.40, 9.56), "jackal_3": (6.98, 10.23)}
+    goal = {"jackal_0": (20.59, 5.38), "jackal_1": (18.66, 6.02), "jackal_2": (21.23, 8.29), "jackal_3": (19.08, 11.01)}
+    for n, (x, y) in at.items():
+        e.d.set_pose(n, x, y, 0.0)
+        e.d.set_plan(n, goal[n], "side_door", e.d.path(goal[n], "side_door", x, y))
+        e.plans[n] = e.d.rob[n].plan
+    e.d.rules["reassign_door"] = False
+    shared, crossed, jumped = watch_slots(e, until=60.0)
+    assert e.events("to_slot")
+    assert (shared, crossed, jumped) == (0, 0, 0)
+
+
+def directional_map(path: pathlib.Path, bin_: int, box: tuple[slice, slice] = (slice(0, 52), slice(0, 104)), speed: float = 1.2) -> MapOfDynamics:
+    """A stream of 0.5 ped/m^2 walking towards direction bin_ (of 8, 0 = +x) everywhere in box."""
+    rho_dir = np.zeros((18, 52, 104, 8))
+    rho_dir[:, box[0], box[1], bin_] = 0.5
+    spd = np.where(rho_dir.sum(-1) > 0, speed, np.nan)
+    np.savez(path, rho=rho_dir.sum(-1), rho_dir=rho_dir, spd=spd, x_edges=np.arange(105) * 0.25, y_edges=np.arange(53) * 0.25, t_edges=np.arange(19) * 10.0)
+    return MapOfDynamics.load(path)
+
+
+def test_walking_against_the_stream_meets_more_people_than_walking_with_it(tmp_path: pathlib.Path) -> None:
+    mod = directional_map(tmp_path / "mod.npz", 4)  # stream walks west
+    east, west, north = (mod.meet_rate(0.0, 10.0, 5.0, vx, vy, 2.0) for vx, vy in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0)))
+    assert east > north > west >= 0.0
+    assert east == pytest.approx(0.5 * 2.0 * 2.2) and west == pytest.approx(0.5 * 2.0 * 0.2)
+    assert mod.heading(0.0, 10.0, 5.0) == pytest.approx((-1.0, 0.0), abs=1e-9)
+    assert mod.heading(0.0, 30.0, 5.0) is None
+
+
+def test_dmod_forecast_turns_a_person_onto_the_stream_of_the_map(tmp_path: pathlib.Path) -> None:
+    mod = directional_map(tmp_path / "mod.npz", 2)  # stream walks north (+y)
+    e = Episode(tmp_path / "run", 1, profile="full", info="dmod", mod=mod)
+    v = e.d.view
+    assert v is not None
+    tr = v.track(6.0, 3.0, 1.0, 0.0, 0.0, 0.0)  # the person walks east now
+    x4, y4 = tr[4]
+    assert y4 - 3.0 > x4 - 6.0 > 0.0  # it went north more than east
+    assert math.dist((6.0, 3.0), tr[1]) == pytest.approx(1.0, abs=0.05)  # at its own speed
+
+
+def test_dmod_prices_a_plan_against_the_stream_above_one_with_it(tmp_path: pathlib.Path) -> None:
+    mod = directional_map(tmp_path / "mod.npz", 4)
+    e = Episode(tmp_path / "run", 1, profile="full", info="dmod", mod=mod)
+    against = [(4.0 + 0.25 * i, 6.0) for i in range(30)]
+    along = list(reversed(against))
+    v = e.d.cost["time"]["v_nom"]
+    ratio = e.d.flow_encounters(against) / e.d.flow_encounters(along)
+    assert ratio == pytest.approx((1.2 + v) / abs(1.2 - v), rel=1e-6)  # relative speeds; people walking along still overtake a slow robot
+
+
+def test_dmod_needs_a_directional_map_and_brings_robots_to_their_goals(tmp_path: pathlib.Path) -> None:
+    flat = map_of_dynamics(tmp_path / "flat.npz", (slice(20, 24), slice(40, 44)))
+    with pytest.raises(ValueError, match="directional"):
+        Episode(tmp_path / "a", 1, profile="full", info="dmod", mod=flat)
+    e = Episode(tmp_path / "b", 2, profile="full", info="dmod", mod=directional_map(tmp_path / "mod.npz", 4, (slice(20, 28), slice(40, 60))))
+    e.run(200)
+    assert all(r.phase == "done" for r in e.d.rob.values())
+
+
+def test_dmod_layers_keep_the_map_for_the_door_gate_and_h_counts_known_people_only(tmp_path: pathlib.Path) -> None:
+    mod = directional_map(tmp_path / "mod.npz", 4, (slice(20, 24), slice(40, 44)))
+    e = Episode(tmp_path / "run", 1, profile="v13", info="dmod", mod=mod)
+    d = e.d
+    d.set_peds({})
+    d.update_known()
+    v = d.view
+    assert v is not None and v.live_layers is not None
+    assert v.occupied(40, 10.5, 5.5, inflate=False)  # the map's stream, seen by gate, queue and slots
+    assert not v.occupied(40, 10.5, 5.5, inflate=False, live=True)  # but not by H: nobody known

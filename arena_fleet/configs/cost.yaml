@@ -13,6 +13,7 @@ weights:                  # all terms below are in seconds except `encounter` (p
   encounter: 6.0          # seconds of J per person the robot's plan is predicted to meet
   facility: 1.0           # using the door
   wait: 1.0               # time wasted gathered in front of the door
+  wait_people: 1.0        # door_gate: time until people leave the door free for one crossing
 
 plan:                     # shape of the plan sent to the robot (not a cost of J)
   funnel_len_m: 3.5       # the plan lines up with the door axis from this far before the door
@@ -54,3 +55,4 @@ flow:                     # info flow: all people's live state -> heatmap of pro
   blend_tau_s: 10.0       # live weight = exp(-tau / this); the rest is the map of dynamics (parameter mod)
   sigma0_m: 0.4           # spread of a person's Gaussian now
   sigma_per_s: 0.05       # and how it grows per second ahead
+  advect_tau_s: 2.0       # info dmod: a known person turns onto the map's walking direction with this time constant (s)

@@ -5,14 +5,16 @@
 default_profile: base
 
 profiles:
-  base:        {capacity: false, queue: false, yield_people: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  capacity:    {capacity: true,  queue: false, yield_people: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  queue:       {capacity: true,  queue: true,  yield_people: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  queue_yield: {capacity: true,  queue: true,  yield_people: true,  plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  full:        {capacity: true,  queue: true,  yield_people: true,  plan_around: true,  slot_by_people: true,  reassign_door: true,  reassign_goal: true}
+  base:        {capacity: false, queue: false, yield_people: false, door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  capacity:    {capacity: true,  queue: false, yield_people: false, door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  queue:       {capacity: true,  queue: true,  yield_people: false, door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  queue_yield: {capacity: true,  queue: true,  yield_people: true,  door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
+  full:        {capacity: true,  queue: true,  yield_people: true,  door_gate: false, plan_around: true,  slot_by_people: true,  reassign_door: true,  reassign_goal: true}
+  # v1.3: people close the door instead of a timer (door_gate); no plan_around, no slot_by_people
+  v13:         {capacity: true,  queue: true,  yield_people: true,  door_gate: true,  plan_around: false, slot_by_people: false, reassign_door: true,  reassign_goal: true}
   # Baseline HATA (arXiv 2508.19731): Hungarian on bids from path length + map-of-dynamics probability, A* around busy cells,
   # no door rules. Use with cost:=configs/hata_cost.yaml info:=mod.
-  hata:        {capacity: false, queue: false, yield_people: false, plan_around: true,  slot_by_people: false, reassign_door: false, reassign_goal: false}
+  hata:        {capacity: false, queue: false, yield_people: false, door_gate: false, plan_around: true,  slot_by_people: false, reassign_door: false, reassign_goal: false}
 
 capacity:                # at most k robots inside one door
   k: 1
@@ -27,6 +29,7 @@ queue:                   # robots at the same door go one at a time, in order of
   spacing_m: 1.4         # next slot this much further back
   stagger_m: 1.4         # every second slot this much further from the axis: a zig-zag, neighbours ~2.0 m apart centre to centre (0 = one straight column)
   keep_slot: true        # a robot keeps the slot it was given until its turn; false = it moves up a slot whenever the queue moves
+  swap_gain_m: 0.5       # robots on their way to slots swap places when the ways cross, or when that shortens their total way this much
   other_queue_m: 1.6     # a door's slots stay this far from the slots another door is using
   clearance_m: 0.6       # from walls
   slot_tol_m: 0.4        # slot reached
@@ -48,6 +51,15 @@ yield_people:            # needs human input (all, what robots see, flow). All o
   aside_robot_gap_m: 1.2 # a step-aside point stays this far from other robots, their plans, slots and step-aside points; the way to it 0.9 m from their bodies
   aside_plan_ahead_s: 5.0  # how much of another robot's plan counts as taken
   aside_person_gap_m: 1.0 # on the way to a step-aside point no predicted person comes closer than this, unless standing still would bring them closer
+
+door_gate:               # v1.3, needs yield_people. A door is closed to robots while people are predicted in it (door polygon + margin_m)
+                         # during the robot's crossing window: now until it is through_m past the door at v_nom, plus margin_s.
+                         # A robot never enters by timeout (max_wait_s is not used). A granted robot that is not yet in the
+                         # no-return zone gives the door back and goes to the head of the queue when people are predicted in it.
+  margin_s: 1.0
+  clear_s: 1.5           # the window must stay clear this long before a robot is let in
+  horizon_s: 60.0        # J term wait_people: first time within this horizon the door is clear for one crossing
+  head_switch: true      # reassign_door may also move the head of the queue (waiting at its slot) to another door
 
 reassign_door:           # switch door while moving, if another door is clearly cheaper now
   period_s: 1.0
