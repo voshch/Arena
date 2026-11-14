@@ -59,7 +59,6 @@ ln -rsf "$ARENA_WS_DIR/src/Arena/_meta/tools/Arena.code-workspace" ./ws-arena.co
 echo 'Building Arena...'
 cd $ARENA_WS_DIR
 printf '%s\n' \
-    'arena feature robots install' \
     'arena feature robots add jackal turtlebot mpo700 arm/ur' \
     'exit' \
 | source arena

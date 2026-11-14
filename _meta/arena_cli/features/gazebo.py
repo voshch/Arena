@@ -174,6 +174,10 @@ def launch(argv: list[str]) -> None:
     common._exec("ros2", "launch", "arena_bringup", "gazebo.launch.py", *argv)
 
 
+def health() -> features.Health:
+    return features.fetched(NAME)
+
+
 COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [

@@ -65,7 +65,7 @@ arena mcp call system_launch sim=dummy world=map_empty 'args={"task.robots": "ex
 
 ## system
 
-The `system` domain runs the stack lifecycle through the arena CLI: `system_launch` (`arena launch`, envs and runtime), `system_runtime` (`arena runtime`), builds, rebuilds, tests, `arena deps` and `arena preload`, each as a process job that outlives the server.
+The `system` domain runs the stack lifecycle through the arena CLI: `system_launch` (`arena launch`, envs and runtime), `system_runtime` (`arena runtime`), builds, rebuilds, tests, `arena healthcheck`, `arena deps` and `arena preload`, each as a process job that outlives the server.
 
 - A launch passes its parameters and `args` as the KEY:=VALUE tokens `arena launch` takes, with the CLI's defaults: rviz starts unless `headless` (or `viz:=false` in `args`). `args` may not repeat a key the tool has a parameter for. Like `arena launch`, it adds its envs to a runtime that is already up, and like it, an unknown sim fails in the runtime, ending the job.
 - `system_stop` sends SIGINT to the launch job's process group and waits for its whole process tree, recorded before the signal, by default for the supervisor's whole graceful stop (the `arena_bringup.reaper` windows). Survivors come back with their command lines, and each further call escalates: the `arena launch` supervisor turns a repeated SIGINT into SIGTERM and then SIGKILL for its children, and processes it left behind get SIGTERM, then SIGKILL. `jobs_cancel` on a launch job runs these steps to the end.

@@ -68,6 +68,7 @@ The container will start automatically on source and continue running in the bac
 ```sh
 cd ~/arena_ws # replace with your actual workspace path
 source arena
+arena healthcheck                                               # checks the install and every installed feature, then drives a robot in every installed simulator
 arena launch sim:=isaac                                         # Isaac Sim
 arena launch sim:=mujoco                                        # MuJoCo
 arena launch sim:=flatsim                                       # flatsim (2D, no renderer)
@@ -160,6 +161,15 @@ The container is this or last week's `ghcr.io/voshch/arena-ci:jazzy-<ISO week>` 
 [`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the changed lines under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. It builds and tests the packages that own the `GATED` paths, found by [`.github/ci/owning-packages.sh`](.github/ci/owning-packages.sh) from the nearest `package.xml`. Changes outside `GATED` end the job after the diff.
 
 ## Troubleshooting
+
+When `source arena`, a build, an update or a launch misbehaves, go down the chart from the top and follow the first question that matches.
+
+<img src="_meta/docs/troubleshooting.svg" width="820" alt="Arena troubleshooting checklist: each symptom and the arena command that fixes it">
+
+- [Open a GitHub issue](https://github.com/voshch/Arena/issues/new) with the output of `arena healthcheck` and the failing command
+- [Ask on Discord](https://discord.gg/GNTTf9DKyp)
+- [Podman API socket](https://docs.podman.io/en/latest/markdown/podman-system-service.1.html)
+- [nvidia-container-toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Unknown runtime specified 'nvidia'
 

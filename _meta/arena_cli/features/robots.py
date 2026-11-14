@@ -12,6 +12,7 @@ from pathlib import Path
 from arena_cli import common, complete
 from arena_cli.common import Verb, make_verb
 from arena_cli.complete import Flags, LaunchArgs, Static, Union
+from arena_cli.features import Health
 
 _NAME = "robots"
 
@@ -22,7 +23,7 @@ DESCRIPTION = (
     "  rm <name...|--all>   deinit robot/component submodules (alias: uninstall <name...>)\n"
     "  ls                   list robots and components, [x] ready, [ ] pending\n"
     "  check [--all]        verify all package://arena_robots/... URIs resolve\n"
-    "  check --sim [--lanes N] <name...|--all>  short start-and-drive preflight per robot via the benchmark runner, over N lanes with --lanes, each in its own fork (needs the evaluation feature)\n"
+    "  check --sim [--lanes N] <name...|--all>  short start-and-drive preflight per robot via the benchmark runner, over N lanes with --lanes, each in its own fork\n"
     "  update               refresh initialized robot submodules\n"
     "  uninstall            deinit all robot submodules"
 )
@@ -292,16 +293,19 @@ def cmd_rm(arena: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+def _checked_out_paths(arena: Path) -> list[str]:
+    """Robot and component submodule paths that are checked out."""
+    status = submodule_status(arena)
+    return sorted({p for paths in robot_submodules(arena).values() for p in paths if status.get(p) == "init"})
+
+
 def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
     sdk = arena / _SDK_SUBDIR
     if not (sdk / ".gitmodules").is_file():
         return 0
-    subs = robot_submodules(arena)
-    status = submodule_status(arena)
-    installed = {r for r, paths in subs.items() if any(status.get(p) == "init" for p in paths)}
     failed = []
     # --checkout overrides update=none
-    for p in sorted({p for r in installed for p in subs[r]}):
+    for p in _checked_out_paths(arena):
         sub_path = Path(p).relative_to(_SDK_SUBDIR).as_posix()
         if _git(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive", "--checkout", sub_path], sdk, check=False):
             failed.append(sub_path)
@@ -488,10 +492,9 @@ def ls(argv: list[str]) -> None:
 
 def _check_sim(argv: list[str]) -> None:
     """Preflight robots in the simulator through the benchmark runner."""
-    from arena_cli import fork
-    from arena_cli.features import evaluation, planners
+    from arena_cli import evaluation, fork
+    from arena_cli.features import planners
 
-    common._reg_require("evaluation")
     lanes, argv = fork.split_lanes(argv)
     head, rest = argv, []
     for i, a in enumerate(argv):
@@ -522,7 +525,7 @@ def check(argv: list[str]) -> None:
 
     `arena feature robots check [--all] [-q]`: static URI check, `--all` includes robots whose mesh submodules are not checked out.
     `arena feature robots check --sim [--lanes N] <name...|--all> [sim:=...] [KEY:=VALUE ...]`: per robot two episodes of
-    map_empty's `preflight` scenario under its default planner, verdict wedged/weak/ok, exit 3 on either (needs the evaluation feature).
+    map_empty's `preflight` scenario under its default planner, verdict wedged/weak/ok, exit 3 on either.
     A name may carry a morphology request, `rbkairos[arm_mount=arm/fr3]`, which needs the base robot and each placed component fetched.
     """
     if "--sim" in argv:
@@ -549,6 +552,12 @@ def uninstall(argv: list[str]) -> None:
     cmd_uninstall(Path(common._env("ARENA_DIR")), args)
     complete.invalidate(common._env("ARENA_WS_DIR"))
     sys.exit(0)
+
+
+def health() -> Health:
+    if cmd_check(Path(common._env("ARENA_DIR")), argparse.Namespace(all=False, quiet=True)):
+        return False, "robot definitions do not resolve, see 'arena feature robots check'"
+    return True, "ok"
 
 
 COMMANDS: dict[str, Verb] = {

@@ -580,8 +580,7 @@ completes straight to `key:=`, and `:` after a group name picks the group's own 
 
 ## Benchmark mode
 
-Benchmark runs are driven by the `arena evaluation benchmark` CLI verb. Requires
-`arena feature evaluation install` first.
+Benchmark runs are driven by the `arena evaluation benchmark` CLI verb.
 
 ```bash
 arena evaluation benchmark sim:=gazebo headless:=true suite:=basic contest:=basic

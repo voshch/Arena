@@ -3,7 +3,7 @@
 import os
 import sys
 
-CORE_SUBMODULES = ("arena_assets", "arena_planners", "arena_robots", "humansim", "utils/arena_rclpy_mixins")
+CORE_SUBMODULES = ("arena_assets", "arena_evaluation", "arena_planners", "arena_robots", "humansim", "utils/arena_rclpy_mixins")
 GENERATED_DIRS = ("__pycache__", ".pytest_cache", ".hypothesis", ".ruff_cache", ".mypy_cache")
 
 

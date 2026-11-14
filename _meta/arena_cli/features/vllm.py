@@ -73,6 +73,13 @@ def _shell_source() -> str:
     return "\n".join(lines)
 
 
+def health() -> features.Health:
+    down = [service for service in _SERVICES if not features.containers(service)]
+    if down:
+        return False, f"{', '.join(down)} not running, run 'arena feature vllm update'"
+    return True, "ok"
+
+
 COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
