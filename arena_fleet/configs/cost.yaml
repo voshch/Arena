@@ -1,0 +1,58 @@
+# Fleet dispatcher: what a decision costs. J = sum over the terms below of weight * term.
+# The same J is used by D1 (which robot takes which goal), D3 (which door) and by re-assignment while robots move.
+# Every term of every decision is written to dispatch/events.jsonl, so each choice can be recomputed by hand.
+
+task:                     # D1: goals are not tied to robots
+  goal_zone: {x: [16.0, 25.0], y: [5.0, 11.5]}   # world metres, the room behind the doors; drawn at random from the seed
+  min_separation_m: 1.5   # between two goals
+  clearance_m: 0.8        # from any wall
+  assign: hungarian       # hungarian (min total J) | fixed (robot i -> goal i)
+
+weights:                  # all terms below are in seconds except `encounter` (people); weights turn them into one J
+  time: 1.0               # estimated time to complete
+  encounter: 6.0          # seconds of J per person the robot's plan is predicted to meet
+  facility: 1.0           # using the door
+  wait: 1.0               # time wasted gathered in front of the door
+  wait_people: 1.0        # door_gate: time until people leave the door free for one crossing
+
+plan:                     # shape of the plan sent to the robot (not a cost of J)
+  funnel_len_m: 3.5       # the plan lines up with the door axis from this far before the door
+  funnel_k: 4.0           # how strongly (per metre squared off the axis)
+  occupied_cost_per_m: 6.0  # plan_around: extra cost of a metre of plan through cells the people map says are occupied
+  around_horizon_s: 30.0  # plan_around looks at the map this far along the plan
+
+time:
+  v_nom: 0.4              # m/s used to turn plan length into seconds
+
+encounter:                # "will this plan meet people?" H = plan length through occupied cells of the people map / one person's diameter
+  horizon_s: 60.0         # look this far ahead along the plan
+
+facility:                 # "what does using this door cost?"
+  open_door_s: 1.0        # the door is closed when decided (assumed opening time; 0.7-19 s observed in sim)
+  robot_same_door_s: 2.0  # per other robot routed through the same door and not through yet
+  person_at_door_s: 6.0   # per person expected at the door when the robot arrives
+  crowd_r_m: 3.0          # "at the door" = within this distance of its centre
+
+wait:                     # "how long will it stand gathered at the door?"
+  cross_m: 3.2            # length of a door crossing; one robot occupies the door for cross_m / v_nom seconds
+
+perception:               # what "what robots see" means: per robot, then pooled
+  range_m: 4.0
+  fov_deg: 180            # the half circle in front of the robot
+  memory_s: 2.0           # a person stays known this long after it was last seen
+
+people_view:              # the map of people every decision reads; one map for all information levels
+  period_s: 0.5           # rebuilt this often
+  dt_s: 1.0               # one layer per second ahead, up to encounter.horizon_s
+  person_r_m: 0.65        # a known person occupies this disk
+  robot_r_m: 0.35         # a robot's body, added when testing a point of a plan
+  grid: {cell_m: 0.25, x_max_m: 26.0, y_max_m: 13.0}
+
+flow:                     # info flow: all people's live state -> heatmap of probability -> occupied cells
+  period_s: 1.0
+  threshold: 0.25         # probability above which a cell counts as "a person is here"
+  footprint_r_m: 0.6      # probability = someone within this radius
+  blend_tau_s: 10.0       # live weight = exp(-tau / this); the rest is the map of dynamics (parameter mod)
+  sigma0_m: 0.4           # spread of a person's Gaussian now
+  sigma_per_s: 0.05       # and how it grows per second ahead
+  advect_tau_s: 2.0       # info dmod: a known person turns onto the map's walking direction with this time constant (s)

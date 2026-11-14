@@ -6,6 +6,7 @@ default-groups = ["dev", "arena_humansim", "arena_text_crowd", "arena_hunav_sim_
 members = [
     "_meta/arena_cli",
     "arena_bringup",
+    "arena_fleet",
     "arena_mcp",
     "arena_runtime/arena_runtime",
     "arena_simulation_setup/src",
@@ -82,6 +83,7 @@ tf_transformations = [
 target-version = "py312"
 line-length = 320
 src = [
+    "arena_fleet",
     "arena_mcp",
     "arena_runtime/arena_runtime/arena_runtime",
     "task_generator/task_generator",
@@ -154,6 +156,7 @@ extraPaths = [
     "arena_auditory/arena_auditory",
     "arena_bringup",
     "arena_evaluation/arena_evaluation",
+    "arena_fleet",
     "arena_hearing/arena_hearing",
     "arena_isaac/arena_isaac",
     "arena_mcp",
@@ -199,6 +202,7 @@ executionEnvironments = [
     { root = "arena_auditory/arena_auditory" },
     { root = "arena_bringup" },
     { root = "arena_evaluation/arena_evaluation" },
+    { root = "arena_fleet" },
     { root = "arena_hearing/arena_hearing" },
     { root = "arena_mcp" },
     { root = "arena_mujoco/arena_mujoco" },
