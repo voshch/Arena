@@ -462,7 +462,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             if control_spec.odom_topic != "odom":
                 ld.add_action(odom_relay_node(control_spec.odom_topic))
 
-        await self.node.do_launch(ld)
+        await self._track_robot_stack(robot.sim_path, ld)
 
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         level = obstacles_optim_level(self.node)
@@ -610,6 +610,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             self._forget_agent_robot(robot.sim_path)
             self._map_offsets.pop(robot.sim_path, None)
             names.append(self._robot_prims.pop(robot.sim_path, self._NS_ROBOT(robot.name)))
+        await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(name) for name in names))
 
     async def remove_world(self) -> bool:

@@ -110,6 +110,12 @@ _ISAAC_PHYSICS_HZ = 60.0
 _ISAAC_EXPOSURE_GAIN = 5.0
 _TILT_EPS = 1e-9
 _MAP_OFFSET_TIMEOUT_S = 10.0
+_WORLD_ROOTS = ('Walls', 'Floors', 'Ceilings')
+
+
+def world_roots(env_id: int | str) -> list[str]:
+    """Prim names of the world geometry roots one env owns."""
+    return [Namespace(f"env_{env_id}")(root) for root in _WORLD_ROOTS]
 
 
 class IsaacHost(SimLifecycle):
@@ -430,7 +436,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             if control_spec.odom_topic != "odom":
                 ld.add_action(odom_relay_node(control_spec.odom_topic))
 
-        await self.node.do_launch(ld)
+        await self._track_robot_stack(robot.sim_path, ld)
 
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
 
@@ -566,11 +572,13 @@ class IsaacSimulator(BaseSim, NodeInterface):
             self._robot_prims.pop(robot.sim_path, None)
             self._map_offsets.pop(robot.sim_path, None)
             self._map_offset_calls.pop(robot.sim_path, None)
+        await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(self._NS_ROBOT(r.name)) for r in robots))
 
     async def remove_world(self) -> bool:
         res = await self._clients.ResetWorld.call_timeout(ResetWorld.Request())
-        return bool(res) and res.ret
+        deleted = await self._clients.DeletePrims.call_timeout(DeletePrims.Request(names=world_roots(self._env_id)))
+        return bool(res) and res.ret and deleted is not None and all(deleted.ret)
 
     async def spawn_walls(self, walls: Sequence[WallDefinition], clear_existing: bool = True) -> bool:
         if clear_existing:

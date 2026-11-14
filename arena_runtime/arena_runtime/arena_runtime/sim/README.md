@@ -308,6 +308,8 @@ Overridable hooks (concrete default no-ops):
 | `after_reset_episode()` | episode-boundary hook after every reset; default no-op |
 | `step(n=1)` | advance simulation by `n` ticks; default no-op returns `True` |
 
+Gazebo, Isaac and MuJoCo launch each robot's stack (robot_state_publisher, controller_manager, urdf_publisher, twist_stamper, odom_relay) through `BaseSim._track_robot_stack`, which stops the stack of the robot's previous spawn first, and `robot_delete` stops it through `BaseSim._stop_robot_stacks`. Isaac's `remove_world` calls `ResetWorld` for the legacy `/World/Walls`, `Doors`, `Floors` and `Elevators` roots and `DeletePrims` for the env's own `env_<id>/Walls`, `Floors` and `Ceilings` roots.
+
 ## Lockstep
 
 `SimLifecycle.step_seconds(seconds) -> float` advances a held sim by an exact

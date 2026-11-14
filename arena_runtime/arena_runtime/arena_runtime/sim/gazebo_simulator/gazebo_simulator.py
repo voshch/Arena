@@ -562,6 +562,7 @@ class GazeboSimulator(BaseSim):
     async def robot_delete(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:
             self._forget_agent_robot(robot.sim_path)
+        await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(robot.sim_path) for robot in robots))
 
     async def pedestrian_update(self, pedestrians: Pedestrians) -> Sequence[bool]:
@@ -1196,7 +1197,7 @@ class GazeboSimulator(BaseSim):
         #         remappings=[('/joint_states', '/joint_states')]
         #     )
         # )
-        await self.node.do_launch(launch_description)
+        await self._track_robot_stack(robot.sim_path, launch_description)
 
     def _robot_initialpose(self, robot: Robot):
         pose = PoseWithCovarianceStamped()
