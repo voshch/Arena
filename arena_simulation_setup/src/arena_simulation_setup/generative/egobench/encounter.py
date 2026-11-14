@@ -10,10 +10,11 @@ from pathlib import Path
 import attrs
 import shapely
 
-from arena_simulation_setup.generative.scenario.promptgen.agents import STAND_STEP, WALK_PATIENCE_S, TypeFiles, mesh_for
-from arena_simulation_setup.generative.scenario.promptgen.profiles import profile
-from arena_simulation_setup.generative.scenario.promptgen.realize import GO, release_point, within
-from arena_simulation_setup.generative.scenario.zone_screen import RUNTIME_SAFE_DIST
+from arena_simulation_setup.generative.core.agents import STAND_STEP, WALK_PATIENCE_S, TypeFiles, mesh_for
+from arena_simulation_setup.generative.core.bodies import CLEARANCE, PED_RADIUS, ROBOT_RADIUS
+from arena_simulation_setup.generative.core.generated import Generated, Rejected
+from arena_simulation_setup.generative.core.profiles import profile
+from arena_simulation_setup.generative.core.triggers import GO, release_point, within
 from arena_simulation_setup.shared.pathing import Point
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, parse_scenario
 
@@ -21,9 +22,6 @@ from . import cameras
 from .manifest import Encounter, Pedestrian
 from .sampler import Sample
 
-ROBOT_RADIUS = 0.35
-PED_RADIUS = RUNTIME_SAFE_DIST
-CLEARANCE = 0.1  # free space kept between a body and a wall
 LEAD_IN_M = 5.0  # walk before the encounter point
 LEAD_OUT_M = 4.0  # walk after a crossing
 GAP_M = 3.0  # head start of a followed or leading pedestrian
@@ -74,11 +72,6 @@ class Leg:
 
 
 @attrs.frozen
-class Rejected:
-    reason: str
-
-
-@attrs.frozen
 class Placement:
     robot: Leg
     spawn: Point
@@ -89,14 +82,6 @@ class Placement:
 
     def ped_route(self) -> list[Point]:
         return [self.spawn, *self.path]
-
-
-@attrs.frozen
-class Generated:
-    scenario: dict[str, object]
-    types: dict[str, dict[str, object]]
-    provenance: dict[str, object]
-    cameras: dict[str, dict[str, object]] = attrs.Factory(dict)
 
 
 def _along(p: Point, v: Point, distance: float) -> Point:
@@ -190,11 +175,6 @@ def fits(placement: Placement, free: shapely.geometry.base.BaseGeometry) -> str 
     if not free.contains(ped):
         return "the pedestrian's route leaves the free space"
     return None
-
-
-def summary(reasons: Sequence[str], limit: int = 3) -> str:
-    """The first distinct rejection reasons, joined."""
-    return "; ".join(list(dict.fromkeys(reasons))[:limit])
 
 
 def _go_to(pt: Point, theta: float) -> dict[str, object]:

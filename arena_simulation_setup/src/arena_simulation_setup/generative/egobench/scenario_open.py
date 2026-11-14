@@ -6,9 +6,11 @@ import math
 
 import shapely
 
+from arena_simulation_setup.generative.core.bodies import CLEARANCE, ROBOT_RADIUS
+from arena_simulation_setup.generative.core.generated import Generated, Rejected, summary
 from arena_simulation_setup.generative.world.layout import Layout
 
-from .encounter import CLEARANCE, CROSSING, ENCOUNTER_AT, LEAD_OUT_M, ROBOT_RADIUS, Generated, Leg, Rejected, build, crossed, crossing_direction, fits, parallel, summary
+from .encounter import CROSSING, ENCOUNTER_AT, LEAD_OUT_M, Leg, build, crossed, crossing_direction, fits, parallel
 from .sampler import Sample
 
 HEADINGS = (0.0, 90.0, 45.0, 135.0, 180.0, 270.0, 225.0, 315.0)  # degrees tried for the robot's leg

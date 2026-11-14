@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from arena_simulation_setup.generative.scenario.cli import main
-from arena_simulation_setup.generative.scenario.materialize import GENERATED_MARKER
+from arena_simulation_setup.generative.core.generated import GENERATED_MARKER
 from arena_simulation_setup.generative.scenario.suite import build, scenarios
 
 

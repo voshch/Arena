@@ -7,7 +7,7 @@ from pathlib import Path
 import pydantic
 import pytest
 import yaml
-from arena_simulation_setup.generative.egobench.encounter import Rejected
+from arena_simulation_setup.generative.core.generated import Rejected
 from arena_simulation_setup.generative.scenario.materialize import is_generated
 from arena_simulation_setup.generative.usar import cli
 from arena_simulation_setup.generative.usar.manifest import CallLevel, Hiding, Manifest
@@ -101,10 +101,10 @@ def test_the_call_levels_of_a_spot_share_the_person_and_differ_only_in_volume(tm
     for outcome in report.outcomes:
         if outcome.reason is not None:
             continue
-        root = report.worlds[outcome.task.world_key] / "scenarios" / outcome.task.scenario_key
+        root = report.worlds[outcome.item.world_key] / "scenarios" / outcome.item.scenario_key
         docs: dict = {name: yaml.safe_load((root / f"{name}.yaml").read_text()) for name in ("scenario", "provenance")}
         docs["types"] = {str(path.relative_to(root)): path.read_bytes() for path in (root / "types").rglob("*") if path.is_file()}
-        pairs.setdefault((outcome.task.world_key, outcome.task.spot_key), {})[outcome.task.call_level] = docs
+        pairs.setdefault((outcome.item.world_key, outcome.item.spot_key), {})[outcome.item.call_level] = docs
     assert pairs
     for levels in pairs.values():
         weak, loud = levels[CallLevel.WEAK], levels[CallLevel.LOUD]
@@ -123,17 +123,17 @@ def test_the_test_split_follows_from_the_world_keys_alone():
 
 
 def test_a_limited_run_keeps_the_full_runs_split():
-    full = {o.task.world_key: o.split for o in cli.run(manifest(world_variants=3, test_worlds=1)).outcomes}
+    full = {o.item.world_key: o.split for o in cli.run(manifest(world_variants=3, test_worlds=1)).outcomes}
     for limit in range(1, len(tasks(manifest(world_variants=3, test_worlds=1))) + 1):
         report = cli.run(manifest(world_variants=3, test_worlds=1), limit=limit)
-        assert {o.task.world_key: o.split for o in report.outcomes}.items() <= full.items()
+        assert {o.item.world_key: o.split for o in report.outcomes}.items() <= full.items()
 
 
 @pytest.mark.parametrize("limit", [1, 2, 5])
 def test_a_limit_counts_spots_and_keeps_every_call_level_of_each(limit: int):
     levels: dict[tuple[str, str], list[CallLevel]] = {}
     for outcome in cli.run(manifest(), limit=limit).outcomes:
-        levels.setdefault((outcome.task.world_key, outcome.task.spot_key), []).append(outcome.task.call_level)
+        levels.setdefault((outcome.item.world_key, outcome.item.spot_key), []).append(outcome.item.call_level)
     assert len(levels) == limit
     assert all(found == [CallLevel.WEAK, CallLevel.LOUD] for found in levels.values())
 
@@ -196,6 +196,12 @@ def test_an_unknown_world_axis_is_refused():
         manifest(world={"floors": 2})
 
 
+@pytest.mark.parametrize("overrides", [{"seed": -1}, {"world_variants": 1001}])
+def test_seeds_that_would_leave_the_world_seed_range_are_refused(overrides: dict[str, object]):
+    with pytest.raises(pydantic.ValidationError):
+        manifest(**overrides)
+
+
 def test_a_dry_run_writes_nothing(tmp_path: Path):
     report = cli.run(manifest(), out=tmp_path)
     assert report.placed and not report.worlds and not any(tmp_path.iterdir())
@@ -204,7 +210,7 @@ def test_a_dry_run_writes_nothing(tmp_path: Path):
 def test_a_written_task_runs_the_search_mode_on_a_marked_scenario(tmp_path: Path):
     report = cli.run(manifest(spots_per_world=1), out=tmp_path, write=True)
     outcome = next(o for o in report.outcomes if o.reason is None)
-    scenario_dir = report.worlds[outcome.task.world_key] / "scenarios" / outcome.task.scenario_key
+    scenario_dir = report.worlds[outcome.item.world_key] / "scenarios" / outcome.item.scenario_key
     assert is_generated(scenario_dir / "scenario.yaml")
     scenario = ScenarioView(scenario_dir).load()
     assert [robot.phases for robot in scenario.robots] == [[]]
@@ -212,7 +218,7 @@ def test_a_written_task_runs_the_search_mode_on_a_marked_scenario(tmp_path: Path
     assert [sound.name for sound in scenario.sounds] == ["call"]
     provenance = yaml.safe_load((scenario_dir / "provenance.yaml").read_text())
     assert provenance["run"]["task.robots"] == "search"
-    assert provenance["design"]["corners"] == outcome.task.corners
+    assert provenance["design"]["corners"] == outcome.item.corners
 
 
 def test_the_index_puts_each_world_in_exactly_one_split(tmp_path: Path):
@@ -225,7 +231,7 @@ def test_the_index_puts_each_world_in_exactly_one_split(tmp_path: Path):
 def test_a_rejected_spot_is_rejected_at_every_call_level():
     by_spot: dict[tuple[str, str], set[bool]] = {}
     for outcome in cli.run(manifest(spots_per_world=6)).outcomes:
-        by_spot.setdefault((outcome.task.world_key, outcome.task.spot_key), set()).add(outcome.reason is None)
+        by_spot.setdefault((outcome.item.world_key, outcome.item.spot_key), set()).add(outcome.reason is None)
     assert all(len(placed) == 1 for placed in by_spot.values())
 
 

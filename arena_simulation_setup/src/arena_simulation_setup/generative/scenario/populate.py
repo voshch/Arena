@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from arena_humansim.core.agents import BUILTIN_AGENTS
+from arena_simulation_setup.generative.core.profiles import KINEMATICS, MODELS
 
 from .zones import Role, zones_by_role
 
@@ -28,7 +28,6 @@ ROUTE_STOPS: tuple[tuple[int, float], ...] = ((1, 0.34), (2, 0.30), (3, 0.22), (
 MIN_PED_ROUTE_M = 15.0
 
 #: (mean, std, low, high) desired speed of each builtin type the mix draws, as HumanSim samples it.
-KINEMATICS: dict[str, tuple[float, float, float, float]] = {name: (speed.mean, speed.std, speed.clip_low, speed.clip_high) for name in ("adult", "elder", "child", "hurried", "distracted") for speed in (BUILTIN_AGENTS[name].desired_velocity,)}
 
 MIX: dict[str, dict[str, int]] = {
     "normal": {"adult": 55, "hurried": 15, "distracted": 15, "elder": 10, "child": 5},
@@ -62,15 +61,6 @@ PROFILES: dict[str, dict[str, float]] = {
 }
 
 MAX_VELOCITY_DEFAULT = 1.5
-
-MODELS: tuple[str, ...] = (
-    "Hospital/nurse_female_caucasian_young",
-    "Hospital/doctor_male_caucasian_middleage",
-    "worker_male_caucasian_young",
-    "Office/office_female_caucasian_young",
-    "worker_male_asian_middleage",
-    "casual_female_caucasian_young",
-)
 
 
 def polygon(zone: Mapping[str, Any]) -> list[tuple[float, float]]:

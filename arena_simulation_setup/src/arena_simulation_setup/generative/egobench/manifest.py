@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import enum
-import math
-import random
 import typing
-from pathlib import Path
 
 import pydantic
-import yaml
 
-from arena_simulation_setup.generative.scenario.promptgen.profiles import PROFILES
-from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
-
-Scalar = bool | int | float | str
+from arena_simulation_setup.generative.core.axes import Axis, Span, axis_values
+from arena_simulation_setup.generative.core.profiles import PROFILES
+from arena_simulation_setup.generative.study.manifest import VARIANTS, StudyManifest, check_world_fields
+from arena_simulation_setup.generative.world import WorldGeneratorType
 
 
 class Space(enum.Enum):
@@ -48,72 +44,12 @@ class Pedestrian(enum.Enum):
     REACTIVE = "reactive"  # avoids the robot under the social force model and starts as the robot nears
 
 
-class Span(pydantic.BaseModel):
-    """A numeric range, gridded by `step` or drawn uniformly without one."""
-
-    model_config = pydantic.ConfigDict(extra="forbid")
-
-    min: float
-    max: float
-    step: float | None = pydantic.Field(None, gt=0)
-
-    @pydantic.model_validator(mode="after")
-    def _ordered(self) -> Span:
-        if self.max < self.min:
-            raise ValueError(f"span max {self.max} is below its min {self.min}")
-        return self
-
-    def values(self) -> list[float]:
-        if self.step is None:
-            raise ValueError(f"span [{self.min}, {self.max}] has no step, so it cannot be gridded")
-        count = math.floor((self.max - self.min) / self.step + 1e-9) + 1
-        return [round(self.min + i * self.step, 9) for i in range(count)]
-
-    def draw(self, rng: random.Random) -> float:
-        if self.step is None:
-            return rng.uniform(self.min, self.max)
-        return rng.choice(self.values())
-
-
-Axis = Span | list[Scalar] | Scalar
-
-
-def axis_values(axis: Axis) -> list[Scalar]:
-    """Every value of an axis on a grid."""
-    if isinstance(axis, Span):
-        return list(axis.values())
-    if isinstance(axis, list):
-        return list(axis)
-    return [axis]
-
-
-def axis_draw(axis: Axis, rng: random.Random) -> Scalar:
-    """One value of an axis drawn at random."""
-    if isinstance(axis, Span):
-        return axis.draw(rng)
-    if isinstance(axis, list):
-        return rng.choice(axis)
-    return axis
-
-
-def check_world_fields(space: Space, keys: typing.Iterable[str]) -> None:
-    """Raise on a key that is no configuration field of the space's world generator."""
-    fields = WorldGenerator.config_model(space.generator).model_fields
-    unknown = sorted(set(keys) - set(fields))
-    if unknown:
-        raise ValueError(f"{space.value} has no configuration field {', '.join(unknown)}, it has {', '.join(sorted(fields))}")
-
-
-class Manifest(pydantic.BaseModel):
+class Manifest(StudyManifest):
     """The dimensions of one dataset; every axis is a value, a list of values or a span."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
-
-    name: str
-    seed: int = pydantic.Field(0, ge=0)
     sampling: typing.Literal["grid", "random"] = "grid"
     samples: int = pydantic.Field(0, ge=0)  # 0 = the whole grid, required above 0 for random
-    world_variants: int = pydantic.Field(1, ge=1, le=1000)  # world seeds per world configuration
+    world_variants: int = pydantic.Field(1, ge=1, le=VARIANTS)  # world seeds per world configuration
     worlds: dict[Space, dict[str, Axis]]
     encounters: list[Encounter] = pydantic.Field(min_length=1)
     pedestrians: list[Pedestrian] = pydantic.Field(default_factory=lambda: [Pedestrian.FIXED], min_length=1)
@@ -129,7 +65,7 @@ class Manifest(pydantic.BaseModel):
         if self.sampling == "random" and self.samples == 0:
             raise ValueError("random sampling needs a sample count above 0")
         for space, axes in self.worlds.items():
-            check_world_fields(space, axes)
+            check_world_fields(space.generator, axes)
         for label, axis in (("robot_speed", self.robot_speed), ("ped_speed", self.ped_speed)):
             lowest = axis.min if isinstance(axis, Span) else min(float(v) for v in axis_values(axis))
             if lowest <= 0:
@@ -147,7 +83,3 @@ class Manifest(pydantic.BaseModel):
 
     def _axes(self) -> list[Axis]:
         return [*(axis for axes in self.worlds.values() for axis in axes.values()), self.lateral_offset, self.robot_speed, self.ped_speed, self.agent_type]
-
-    @classmethod
-    def load(cls, path: Path) -> Manifest:
-        return cls.model_validate(yaml.safe_load(path.read_text()))

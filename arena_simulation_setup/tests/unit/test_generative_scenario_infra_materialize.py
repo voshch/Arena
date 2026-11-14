@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 from arena_simulation_setup.generative.scenario.cli import main
-from arena_simulation_setup.generative.scenario.materialize import GENERATED_MARKER, WouldOverwrite, is_generated, prune_generated, write_base
+from arena_simulation_setup.generative.core.generated import GENERATED_MARKER
+from arena_simulation_setup.generative.scenario.materialize import WouldOverwrite, is_generated, prune_generated, write_base
 
 SHIPPED = Path(__file__).resolve().parents[2] / "worlds"
 HAND = "format: arena-scenario/2\nhumans: []\n"

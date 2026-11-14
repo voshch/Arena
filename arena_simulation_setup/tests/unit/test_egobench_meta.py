@@ -47,7 +47,7 @@ def test_an_unknown_pedestrian_kind_is_rejected_by_the_configuration():
 
 
 def test_a_world_field_of_another_space_is_rejected_by_the_configuration():
-    with pytest.raises(ValueError, match="open has no configuration field corridor_width"):
+    with pytest.raises(ValueError, match="the open generator has no configuration field corridor_width"):
         WorldGeneratorEgoBench({"space": "open", "world": '{"corridor_width": 3.0}'}, random.Random(0))
 
 
@@ -102,7 +102,7 @@ def test_a_dry_run_writes_nothing(tmp_path: Path):
 def test_samples_on_one_world_are_written_into_it(tmp_path: Path):
     report = cli.run(manifest(), out=tmp_path, write=True)
     (world,) = report.worlds.values()
-    assert sorted(p.name for p in (world / "scenarios").iterdir()) == sorted(o.sample.scenario_key for o in report.outcomes)
+    assert sorted(p.name for p in (world / "scenarios").iterdir()) == sorted(o.item.scenario_key for o in report.outcomes)
 
 
 def test_the_cli_and_the_generator_write_the_same_scenario(tmp_path: Path):

@@ -9,15 +9,14 @@ from typing import Any
 
 import attrs
 
+from arena_simulation_setup.generative.core.bodies import RUNTIME_SAFE_DIST
+
 if typing.TYPE_CHECKING:
     import numpy as np
 
     from arena_simulation_setup.tree.World.model import World
 
 from .occupancy import level_grid
-
-# mirrors the runtime `task.episode.spawn.obstacle_clearance`
-RUNTIME_SAFE_DIST = 0.35
 
 
 @attrs.frozen(kw_only=True)

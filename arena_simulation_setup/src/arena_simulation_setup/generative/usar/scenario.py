@@ -6,12 +6,9 @@ import math
 import random
 from pathlib import Path
 
-import yaml
-
-from arena_simulation_setup.generative.egobench.encounter import Generated
-from arena_simulation_setup.generative.scenario.materialize import GENERATED_MARKER
-from arena_simulation_setup.generative.scenario.promptgen.agents import TypeFiles, mesh_for
-from arena_simulation_setup.generative.scenario.promptgen.profiles import profile
+from arena_simulation_setup.generative.core.agents import TypeFiles, mesh_for
+from arena_simulation_setup.generative.core.generated import Generated
+from arena_simulation_setup.generative.core.profiles import profile
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, parse_scenario
 
 from .manifest import Manifest
@@ -78,16 +75,3 @@ def build(manifest: Manifest, task: Task, hideout: Hideout, split: str) -> Gener
         "run": {"task.robots": "search", "task.obstacles": "scenario", "task.scenario.file": task.scenario_key},
     }
     return Generated(scenario=scenario, types={path[2:]: doc for path, doc in files.docs.items()}, provenance=provenance)
-
-
-def _yaml(doc: object, marked: bool) -> bytes:
-    text = yaml.safe_dump(doc, sort_keys=False, default_flow_style=None)
-    return ((GENERATED_MARKER + "\n" + text) if marked else text).encode("utf-8")
-
-
-def pack(task: Task, generated: Generated) -> dict[str, bytes]:
-    """The scenario directory of one task, by path relative to its world."""
-    root = f"scenarios/{task.scenario_key}"
-    files = {f"{root}/scenario.yaml": _yaml(generated.scenario, marked=True), f"{root}/provenance.yaml": _yaml(generated.provenance, marked=False)}
-    files.update({f"{root}/{path}": _yaml(doc, marked=True) for path, doc in generated.types.items()})
-    return files

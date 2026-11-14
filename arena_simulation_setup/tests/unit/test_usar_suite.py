@@ -10,9 +10,11 @@ from pathlib import Path
 import attrs
 import pytest
 import yaml
+from arena_simulation_setup.generative.study import bundle as study_bundle
+from arena_simulation_setup.generative.study.runner import Report
 from arena_simulation_setup.generative.usar import bundle, cli
 from arena_simulation_setup.generative.usar.manifest import CallLevel, Hiding, Manifest
-from arena_simulation_setup.generative.usar.sampler import tasks
+from arena_simulation_setup.generative.usar.sampler import Task, tasks
 from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 from arena_simulation_setup.tree.World import World, WorldView
 from arena_simulation_setup.tree.World.Scenario import ScenarioView
@@ -51,7 +53,7 @@ def test_two_runs_into_different_roots_write_the_same_bytes(tmp_path: Path):
 def test_the_index_records_the_checksum_of_its_bundle(tmp_path: Path):
     for path in written(tmp_path):
         index = yaml.safe_load((path / f"{path.name}.index.yaml").read_text())
-        assert index["checksum"] == bundle.checksum(path)
+        assert index["checksum"] == study_bundle.checksum(path)
         assert len(index["checksum"]) == 64
         assert (index["manifest"], index["seed"], index["split"]) == ("unit", 3, path.name.removeprefix("unit_"))
         assert index["worlds"] == sorted(d.name for d in (path / "worlds").iterdir())
@@ -60,11 +62,11 @@ def test_the_index_records_the_checksum_of_its_bundle(tmp_path: Path):
 
 def test_the_checksum_changes_with_any_file_but_the_index(tmp_path: Path):
     path = written(tmp_path)[0]
-    before = bundle.checksum(path)
+    before = study_bundle.checksum(path)
     (path / f"{path.name}.index.yaml").write_text("x")
-    assert bundle.checksum(path) == before
+    assert study_bundle.checksum(path) == before
     (path / "README.md").write_text("x")
-    assert bundle.checksum(path) != before
+    assert study_bundle.checksum(path) != before
 
 
 def test_every_stage_carries_the_fixed_search_settings_and_names_a_bundled_scenario(tmp_path: Path):
@@ -183,10 +185,10 @@ def test_a_foreign_directory_on_an_empty_split_is_left_alone(tmp_path: Path):
 
 def test_the_checksum_ignores_the_cache_marker_of_a_fetched_bundle(tmp_path: Path):
     path = written(tmp_path)[0]
-    before = bundle.checksum(path)
+    before = study_bundle.checksum(path)
     (path / ".ttl").write_text("1")
     (path / "worlds" / ".ttl").write_text("1")
-    assert bundle.checksum(path) == before
+    assert study_bundle.checksum(path) == before
 
 
 def test_the_readme_lists_one_row_per_world_with_its_placed_axes(tmp_path: Path):
@@ -200,7 +202,7 @@ def test_the_readme_lists_one_row_per_world_with_its_placed_axes(tmp_path: Path)
 
 def test_a_dry_run_report_carries_the_built_worlds_and_writes_nothing(tmp_path: Path):
     report = cli.run(Manifest.model_validate(SPLIT), out=tmp_path)
-    assert set(report.built) == {outcome.task.world_key for outcome in report.outcomes if outcome.reason is None}
+    assert set(report.built) == {outcome.item.world_key for outcome in report.outcomes if outcome.reason is None}
     assert all(any(name.endswith("scenario.yaml") for name in built.files) for built in report.built.values())
     assert not any(tmp_path.iterdir())
 
@@ -291,7 +293,7 @@ def test_without_the_suite_flag_the_worlds_and_one_index_go_to_out(tmp_path: Pat
 
 
 @pytest.fixture(scope="module")
-def study() -> tuple[Manifest, cli.Report]:
+def study() -> tuple[Manifest, Report[Task]]:
     manifest = Manifest.load(STUDY)
     return manifest, cli.run(manifest)
 
@@ -325,18 +327,18 @@ def test_a_chain_of_rooms_is_no_ring_and_two_by_two_with_a_loop_is():
     assert is_ring(square)
 
 
-def test_the_study_places_250_scenarios_on_25_test_worlds(study: tuple[Manifest, cli.Report]):
+def test_the_study_places_250_scenarios_on_25_test_worlds(study: tuple[Manifest, Report[Task]]):
     manifest, report = study
     assert manifest.seed != TUNING_SEED
     assert (report.placed, len(report.outcomes)) == (250, 250)
     assert {outcome.split for outcome in report.outcomes} == {"test"}
     assert len(report.built) == 25
-    assert Counter(outcome.task.world_key for outcome in report.outcomes) == dict.fromkeys(report.built, 10)
+    assert Counter(outcome.item.world_key for outcome in report.outcomes) == dict.fromkeys(report.built, 10)
 
 
-def test_the_study_covers_every_corner_count_call_level_hiding_and_shape(study: tuple[Manifest, cli.Report]):
+def test_the_study_covers_every_corner_count_call_level_hiding_and_shape(study: tuple[Manifest, Report[Task]]):
     _, report = study
-    found = [outcome.task for outcome in report.outcomes]
+    found = [outcome.item for outcome in report.outcomes]
     assert {task.corners for task in found} == {0, 1, 2}
     assert {task.call_level for task in found} == set(CallLevel)
     assert {task.hiding for task in found} == set(Hiding)
@@ -344,9 +346,9 @@ def test_the_study_covers_every_corner_count_call_level_hiding_and_shape(study: 
     assert shapes == {(3, 3): 10, (3, 4): 10, (1, 6): 2, (2, 3): 2, (1, 2): 1}
 
 
-def test_every_ring_world_of_the_study_is_one_closed_loop_of_rooms(study: tuple[Manifest, cli.Report]):
+def test_every_ring_world_of_the_study_is_one_closed_loop_of_rooms(study: tuple[Manifest, Report[Task]]):
     _, report = study
-    rings = {outcome.task.world_key for outcome in report.outcomes if shape(outcome.task.world) == (2, 3)}
+    rings = {outcome.item.world_key for outcome in report.outcomes if shape(outcome.item.world) == (2, 3)}
     assert len(rings) == 2
     assert all(is_ring(report.built[key].world) for key in rings)
 

@@ -5,6 +5,7 @@ import typing
 
 import pydantic
 
+from arena_simulation_setup.generative.core.generated import Generated, pack
 from arena_simulation_setup.tree.World import World
 
 from .layout import Diagnostics, GridFrame, Layout, Note
@@ -68,7 +69,14 @@ class WorldGeneratorImpl(abc.ABC):
     def compute(self) -> World: ...
 
     def files(self) -> dict[str, bytes]:
-        """Auxiliary artifacts packed into the world tar by relative path, none by default."""
+        """Every file written into the world directory by relative path: each of `scenarios()` under `scenarios/<name>/`."""
+        files: dict[str, bytes] = {}
+        for name, generated in self.scenarios().items():
+            files.update(pack(name, generated))
+        return files
+
+    def scenarios(self) -> dict[str, Generated]:
+        """Scenarios of the last compute by name, none by default."""
         return {}
 
     def frame(self) -> 'GridFrame | None':

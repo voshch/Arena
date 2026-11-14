@@ -9,7 +9,8 @@ from collections.abc import Sequence
 import attrs
 import shapely
 
-from arena_simulation_setup.generative.egobench.encounter import CLEARANCE, PED_RADIUS, ROBOT_RADIUS, Rejected, summary
+from arena_simulation_setup.generative.core.bodies import CLEARANCE, PED_RADIUS, ROBOT_RADIUS
+from arena_simulation_setup.generative.core.generated import Rejected, summary
 from arena_simulation_setup.generative.world.rooms import ENTRANCE
 from arena_simulation_setup.shared.pathing import Point
 from arena_simulation_setup.shared.route import TURN_RAD, Portal, crossings, portals

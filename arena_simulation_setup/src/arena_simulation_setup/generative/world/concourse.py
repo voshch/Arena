@@ -12,11 +12,11 @@ import numpy as np
 import shapely
 import shapely.affinity
 import shapely.ops
-import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from typing_extensions import override
 
+from arena_simulation_setup.generative.core.generated import Generated, binding
 from arena_simulation_setup.shared import Door, Elevator, Position
 from arena_simulation_setup.tree.World import World
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
@@ -329,24 +329,16 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         return self._compile_world()
 
     @override
-    def files(self) -> dict[str, bytes]:
-        """Serialize default crowd flow scenario into the world archive."""
+    def scenarios(self) -> dict[str, Generated]:
+        """The default crowd flow scenario."""
         if not self._dock_metadata:
             _ = self._compile_world()
-        scenario_dict = self._compile_scenario_dict()
-        yaml_bytes = yaml.safe_dump(scenario_dict, sort_keys=False).encode("utf-8")
-        return {f"scenarios/{SCENARIO}/scenario.yaml": yaml_bytes}
+        return {SCENARIO: Generated(scenario=self._compile_scenario_dict(), marked=False)}
 
     @override
     def params(self) -> dict[str, object]:
         """Bind the generated world to scenario mode on episode reset."""
-        return {
-            "modes": {"robots": "scenario", "obstacles": "scenario"},
-            "params": {
-                "robots": {"file": SCENARIO},
-                "obstacles": {"file": SCENARIO},
-            },
-        }
+        return binding(SCENARIO)
 
     def _build_spine(self) -> LineString:
         """Build the 1D centerline spine from the configured shape archetype."""
