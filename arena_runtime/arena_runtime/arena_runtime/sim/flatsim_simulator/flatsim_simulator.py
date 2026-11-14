@@ -352,7 +352,7 @@ class FlatsimSimulator(BaseSim):
                 yaw=robot.pose.orientation.to_yaw(),
                 footprint=Ring(x=[float(point[0]) for point in footprint], y=[float(point[1]) for point in footprint]),
                 radius=robot_footprint_radius(robot_params),
-                drive=drive_model(mobile.planar, holonomic=mobile.is_holonomic),
+                drive=drive_model(mobile.planar, holonomic=mobile.is_holonomic, min_turning_radius=mobile.min_turning_radius),
                 urdf=description,
                 sensors=self._sensors(robot, robot_config),
             )

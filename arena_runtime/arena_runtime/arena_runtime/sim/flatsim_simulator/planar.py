@@ -17,10 +17,10 @@ def _axis(low: float = -math.inf, high: float = math.inf, accel: float = math.in
     return Axis(low=low, high=high, accel=accel)
 
 
-def drive_model(spec: PlanarSpec | None, *, holonomic: bool) -> DriveModel:
-    """Drive model of a planar spec, or an unbounded one that moves sideways only when `holonomic`."""
+def drive_model(spec: PlanarSpec | None, *, holonomic: bool, min_turning_radius: float = 0.0) -> DriveModel:
+    """Drive model of a planar spec, or an unbounded one that moves sideways only when `holonomic`, turning no tighter than `min_turning_radius`."""
     if spec is None:
-        return DriveModel(linear=_axis(), lateral=_axis() if holonomic else _axis(0.0, 0.0), angular=_axis(), gain=[1.0, 1.0, 1.0], traction=math.inf, timeout=DEFAULT_TIMEOUT)
+        return DriveModel(linear=_axis(), lateral=_axis() if holonomic else _axis(0.0, 0.0), angular=_axis(), gain=[1.0, 1.0, 1.0], traction=math.inf, timeout=DEFAULT_TIMEOUT, min_turning_radius=min_turning_radius)
 
     def axis(name: str) -> Axis:
         bounds = spec.velocity.get(name)
@@ -36,4 +36,5 @@ def drive_model(spec: PlanarSpec | None, *, holonomic: bool) -> DriveModel:
         traction=spec.traction if spec.traction is not None else math.inf,
         pivot=spec.pivot,
         timeout=spec.timeout if spec.timeout is not None else DEFAULT_TIMEOUT,
+        min_turning_radius=min_turning_radius,
     )

@@ -501,7 +501,8 @@ are what Arena sends it.
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
   `pivot` x the body turns about and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
-  sideways only when `is_holonomic`. The base controller does not run. The adapter
+  sideways only when `is_holonomic`. The cap's `min_turning_radius` bounds the
+  turn rate of a car-like base at its forward speed over that radius. The base controller does not run. The adapter
   launches `robot_state_publisher`, the server gets the URDF and the tf topic
   of the env.
 - Arm, torso and gripper joints: a ros2_control robot with controllers besides its
