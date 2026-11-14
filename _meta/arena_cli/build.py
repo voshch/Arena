@@ -149,6 +149,11 @@ def stale_packages(ws: Workspace) -> list[tuple[str, str]]:
     return _stale(listing.stdout, ws)
 
 
+def _selects_packages(args: list[str]) -> bool:
+    """Whether a colcon argv picks its own packages instead of the stale ones, skip and ignore filters pick none."""
+    return any(a.startswith("--packages-") and not a.startswith(("--packages-skip", "--packages-ignore")) for a in args)
+
+
 def build_main(argv: list[str]) -> int:
     """Run colcon build with the workspace package-skip and cmake-args logic, then collect the venv store. Assumes cwd is ARENA_WS_DIR."""
     import subprocess
@@ -163,7 +168,7 @@ def build_main(argv: list[str]) -> int:
     if skip_old_env:
         skip_old = skip_old_env
     else:
-        skip_old = "" if any("--packages-" in a for a in args) else "1"
+        skip_old = "" if _selects_packages(args) else "1"
 
     ws = workspace()
 

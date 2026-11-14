@@ -16,8 +16,18 @@ _FORMATS_SOURCE = 'case "$ARENA_MODELS_FORMATS" in *sdf*) ;; *) export ARENA_MOD
 _HOST_SOURCE = 'export USD_PATH="$ARENA_WS_DIR/tools/OpenUSD/install"\nexport PATH="$USD_PATH/bin:$PATH"\nexport LD_LIBRARY_PATH="$USD_PATH/lib:$LD_LIBRARY_PATH"\nexport CMAKE_PREFIX_PATH="$USD_PATH:$CMAKE_PREFIX_PATH"\n' + _FORMATS_SOURCE
 
 
+def _ogre_next_pkgconfig() -> str:
+    """OGRE-Next's pkg-config directory."""
+    return os.path.join("/opt/ros", common._env("ARENA_ROS_DISTRO"), "opt", "gz_ogre_next_vendor", "lib", "pkgconfig")
+
+
+def _container_source() -> str:
+    ogre_next = _ogre_next_pkgconfig()
+    return _FORMATS_SOURCE + f'\ncase ":$PKG_CONFIG_PATH:" in *:{ogre_next}:*) ;; *) export PKG_CONFIG_PATH="{ogre_next}${{PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}}" ;; esac'
+
+
 def _shell_source() -> str:
-    return _FORMATS_SOURCE if features.in_container() else _HOST_SOURCE
+    return _container_source() if features.in_container() else _HOST_SOURCE
 
 
 def _source_env() -> dict[str, str]:
@@ -45,8 +55,7 @@ def _build_gz_rendering() -> int:
     if not os.path.isdir(os.path.join(common._env("ARENA_WS_DIR"), _GZ_RENDERING_SOURCE)):
         print(f"gz-rendering source missing at {_GZ_RENDERING_SOURCE}, `arena feature gazebo install` pulls it", file=sys.stderr)
         return 1
-    ogre_next = os.path.join("/opt/ros", common._env("ARENA_ROS_DISTRO"), "opt", "gz_ogre_next_vendor", "lib", "pkgconfig")
-    pkg_config_path = ":".join(p for p in (ogre_next, os.environ.get("PKG_CONFIG_PATH", "")) if p)
+    pkg_config_path = ":".join(p for p in (_ogre_next_pkgconfig(), os.environ.get("PKG_CONFIG_PATH", "")) if p)
     return common._cli("build", "--cmake-args", "-DBUILD_TESTING=OFF", env={**os.environ, "BASE_PATHS": _GZ_RENDERING_SOURCE, "PKG_CONFIG_PATH": pkg_config_path})
 
 

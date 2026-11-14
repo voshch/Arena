@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from arena_cli.build import Workspace, _changed_build_type, _stale
+from arena_cli.build import Workspace, _changed_build_type, _selects_packages, _stale
 from arena_cli.cli import _select_args
 
 
@@ -77,6 +77,12 @@ def test_select_args_cleans_named_packages_and_builds_dependents() -> None:
 
 def test_select_args_keeps_explicit_flags() -> None:
     assert _select_args(["--packages-select-regex", "arena_.*"], above=True) == ["--packages-select-regex", "arena_.*"]
+
+
+def test_skip_and_ignore_filters_keep_the_stale_package_selection() -> None:
+    assert not _selects_packages(["--packages-skip-regex", "arena_planners_.*", "--packages-ignore", "foo", "--cmake-force-configure"])
+    assert _selects_packages(["--packages-skip", "foo", "--packages-select", "bar"])
+    assert _selects_packages(["--packages-up-to", "bar"])
 
 
 def test_changed_build_type_flags_cmake_leftovers_of_a_python_package(tmp_path: Path) -> None:
