@@ -336,7 +336,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                             name=fq_name,
                             urdf_path=str(model.path),
                             robot_model=robot.model.name,
-                            localization=True,
+                            localization=robot_config.mobile is not None,
                             tf_prefix=robot.frame.tf(),
                             base_frame=robot_params.base_frame,
                             odom_frame=robot_params.odom_frame,

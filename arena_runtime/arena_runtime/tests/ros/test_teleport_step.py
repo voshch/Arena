@@ -215,3 +215,33 @@ def test_unheld_teleport_falls_back_to_the_unpause_window() -> None:
         assert body.pose == TARGET
 
     asyncio.run(asyncio.wait_for(_run(scenario, follows=True), timeout=90.0))
+
+
+def _resettable(robot: typing.Any, caps: dict[str, str]) -> typing.Any:
+    from arena_runtime.env.robot_manager.task_runner import TaskRunner
+
+    robot._cap_adapters = caps
+    robot._runner = TaskRunner("probe")
+    robot._watchers = []
+    return robot
+
+
+def test_a_robot_without_a_mobile_adapter_lands_on_its_start_pose_at_reset() -> None:
+    async def scenario(arena: typing.Any, body: typing.Any, bench: typing.Any, robot: typing.Any) -> None:
+        await bench.hold("reset")
+        assert await _resettable(robot, {"arm": "moveit"}).reset(types.SimpleNamespace(start_pose=_target())) == {}
+        assert body.pose == TARGET
+        await bench.release("reset")
+
+    asyncio.run(asyncio.wait_for(_run(scenario, follows=True), timeout=90.0))
+
+
+def test_a_robot_with_a_mobile_adapter_leaves_its_placement_to_the_adapter() -> None:
+    async def scenario(arena: typing.Any, body: typing.Any, bench: typing.Any, robot: typing.Any) -> None:
+        await bench.hold("reset")
+        await _resettable(robot, {"mobile": "nav2"}).reset(types.SimpleNamespace(start_pose=_target()))
+        await bench.step_tick()
+        assert body.pose == START
+        await bench.release("reset")
+
+    asyncio.run(asyncio.wait_for(_run(scenario, follows=True), timeout=90.0))

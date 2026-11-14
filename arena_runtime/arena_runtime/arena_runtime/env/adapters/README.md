@@ -33,7 +33,8 @@ judge tick while a phase is active, with the phase as `dispatch_phase` received 
 uses it to redispatch a finished action while the judge has not seen the robot arrive,
 never while `robot.waiting`). Mobile adapters inherit
 [`MobileAdapter`](mobile/__init__.py), whose `on_reset` teleports the robot
-to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
+to `ctx.start_pose`. `RobotManager.reset` teleports a robot without a mobile adapter (a
+stationary base) there itself before the adapter hooks run. Subclass overrides chain `super().on_reset(...)` before
 any post-teleport work. The episode's first phase is dispatched before `on_reset`
 runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
 again after the teleport (rosnav_rl, external) or redispatches it on a later tick (Nav2).

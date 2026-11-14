@@ -43,9 +43,9 @@ def test_a_model_without_radius_or_footprint_fails(tmp_path):
         footprint_radius(view)
 
 
-def test_a_model_without_mobile_cap_fails(tmp_path):
+def test_a_model_without_mobile_cap_gets_the_default_agent_radius(tmp_path):
     from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+    from arena_runtime.sim._interface import DEFAULT_AGENT_RADIUS
 
     view = _write_model(tmp_path, None)
-    with pytest.raises(ValueError, match="no mobile cap"):
-        footprint_radius(view)
+    assert footprint_radius(view) == DEFAULT_AGENT_RADIUS

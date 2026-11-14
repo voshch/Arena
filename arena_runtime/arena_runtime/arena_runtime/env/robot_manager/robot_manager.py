@@ -35,7 +35,7 @@ from arena_runtime.env.robot_manager.controller_transitions import next_transiti
 from arena_runtime.env.robot_manager.task_runner import PhaseState, TaskRunner, Transition, standoff_pose
 from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Orientation, Pose, Position, PositionRadius, Robot
-from arena_runtime.sim._interface import SimUnavailable
+from arena_runtime.sim._interface import DEFAULT_AGENT_RADIUS, SimUnavailable
 
 if typing.TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -90,10 +90,10 @@ def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevel
 
 
 def footprint_radius(config: RobotView) -> float:
-    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint."""
+    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint, DEFAULT_AGENT_RADIUS without a mobile cap."""
     mobile = config.mobile
     if mobile is None:
-        raise ValueError(f"robot model {config.name!r} has no mobile cap, so no footprint radius")
+        return DEFAULT_AGENT_RADIUS
     if mobile.radius is not None:
         return mobile.radius
     if mobile.footprint:
@@ -123,6 +123,7 @@ class RobotManager(NodeInterface):
     _abort_episode: Callable[[str], None] | None
     _on_collision: Callable[[], None] | None
     _phase_failure: tuple[int, str] | None
+    _adapterless_holds: set[int]
     _launch_handle: LaunchHandle | None
 
     @property
@@ -227,6 +228,8 @@ class RobotManager(NodeInterface):
         caps_available = self._config.effective_caps(self._robot.resolved_request, frames=self._robot.frames).available
         caps_to_kind: dict[str, str] = {}
         for cap in caps_available:
+            if cap == 'mobile' and self._config.mobile is not None and not self._config.mobile.drive:
+                continue
             override = self._robot.adapters.get(cap)
             if override is not None:
                 caps_to_kind[cap] = override
@@ -279,6 +282,7 @@ class RobotManager(NodeInterface):
         self._on_collision = None
         self._phase_failure = None
         self._cabin_to_clear = ""
+        self._adapterless_holds = set()
 
     def bind_abort(self, fn: Callable[[str], None]) -> None:
         self._abort_episode = fn
@@ -414,6 +418,7 @@ class RobotManager(NodeInterface):
         self._placed = False
         self._phase_failure = None
         self._cabin_to_clear = ""
+        self._adapterless_holds = set()
 
     @property
     def placed(self) -> bool:
@@ -455,6 +460,8 @@ class RobotManager(NodeInterface):
         if isinstance(phase, GoToPhase) and not phase.dispatch:
             state.dispatched = True
             return
+        if isinstance(phase, GoToPhase) and phase.hold and kind_of(phase) not in self._adapters:
+            self._adapterless_holds.add(state_index)
         if isinstance(phase, GoToPhase) and phase.pose is None:
             pose = self._dispatch_pose(phase)
             if pose is None:
@@ -469,6 +476,8 @@ class RobotManager(NodeInterface):
         kind = kind_of(phase)
         adapter = self._adapters.get(kind)
         if adapter is None:
+            if state_index in self._adapterless_holds:
+                return
             if kind not in self._unsupported_kinds_logged:
                 self._unsupported_kinds_logged.add(kind)
                 self._logger.warning(f"robot {self.name!r} has no adapter for phase kind {kind.name!r}; synthesizing UNSUPPORTED_CAP failure on next tick")
@@ -513,6 +522,8 @@ class RobotManager(NodeInterface):
         failure, self._phase_failure = self._phase_failure, None
         if failure is not None and failure[0] == state.index:
             transition = self._runner.fail_active(failure[1])
+        elif adapter is None and state.index in self._adapterless_holds:
+            transition = self._runner.step(sample, zones, None, (None, None))
         elif adapter is None:
             transition = self._runner.fail_active(self._outcome_for_phase(state.phase)[1] or "")
         else:
@@ -675,14 +686,16 @@ class RobotManager(NodeInterface):
         for phase in leaf_phases(phases):
             if isinstance(phase, GoToPhase) and phase.signal:
                 adapter = self._adapters.get(kind_of(phase))
-                signals = frozenset() if adapter is None else adapter.signals
+                if adapter is None:
+                    raise ValueError(f"robot {self.name!r}: goto phase expects signal {phase.signal!r}, but the robot has no {phase.kind} adapter to send it")
+                signals = adapter.signals
                 if phase.signal not in signals:
                     raise ValueError(f"robot {self.name!r}: goto phase expects signal {phase.signal!r}, its {phase.kind} adapter can send {sorted(signals)}")
             if isinstance(phase, GoToPhase) and phase.target is not None:
                 known = set(world_manager.world_compacted().zone_ref_names()) | set(self.node.ped_names()) | set(pedestrians)
                 if phase.target not in known:
                     raise ValueError(f"robot {self.name!r}: goto target {phase.target!r} is neither a zone, door, elevator nor a pedestrian")
-            if kind_of(phase) not in self._adapters and kind_of(phase) not in self._unsupported_kinds_logged:
+            if kind_of(phase) not in self._adapters and kind_of(phase) not in self._unsupported_kinds_logged and not (isinstance(phase, GoToPhase) and phase.hold):
                 self._logger.warning(f"robot {self.name!r} has no adapter for phase kind {phase.kind!r}, the phase will fail as UNSUPPORTED_CAP")
 
         states = self._runner.submit(phases, request.conditions, request.task)
@@ -714,7 +727,9 @@ class RobotManager(NodeInterface):
         )
 
     async def reset(self, ctx: ResetContext) -> dict[str, BaseException | None]:
-        """Fan out adapter on_reset hooks concurrently, return per-kind outcomes."""
+        """Place a robot no mobile adapter places, fan out adapter on_reset hooks concurrently, return per-kind outcomes."""
+        if ctx.start_pose is not None and "mobile" not in self._cap_adapters:
+            await self.move(ctx.start_pose)
         results = await asyncio.gather(
             *(a.on_reset(self, ctx) for a in self._adapter_instances),
             return_exceptions=True,
