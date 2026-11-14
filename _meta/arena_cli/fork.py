@@ -23,7 +23,7 @@ from collections.abc import Iterable, Iterator
 from arena_cli import features, venv_store
 from arena_cli.common import CLIError, Verb, _env, make_verb
 
-DESCRIPTION = """Isolated containers on snapshots of the dev tree, each on its own ROS domain.
+DESCRIPTION = """Isolated containers on snapshots of the dev tree or of another fork, each on its own ROS domain.
 
 `source arena --fork [<fork>]` enters one, forking it first if it does not exist."""
 
@@ -51,7 +51,7 @@ def _ws() -> str:
 
 
 def _root() -> str:
-    return os.path.join(_ws(), "build", ".forks")
+    return os.environ.get("ARENA_FORKS_DIR") or os.path.join(_ws(), "build", ".forks")
 
 
 def _releases() -> str:
@@ -154,8 +154,8 @@ def _repos(src: str) -> dict[str, dict[str, object]]:
     return out
 
 
-def _without_git_stores(src: str, entries: Iterable[tuple[str, bool]], stores: list[str]) -> Iterator[tuple[str, bool]]:
-    """Drop git object stores (keeping the empty dir, appended to stores) and worktree dirs from a walk of src."""
+def _without_git_stores(src: str, entries: Iterable[tuple[str, bool]], stores: list[str], keep_objects: bool = False) -> Iterator[tuple[str, bool]]:
+    """Drop worktree dirs and git object stores (keeping the empty dir, appended to stores) from a walk of src, object stores stay whole with keep_objects."""
     pruned = None
     for rel, is_dir in entries:
         if pruned is not None and rel.startswith(pruned):
@@ -163,6 +163,9 @@ def _without_git_stores(src: str, entries: Iterable[tuple[str, bool]], stores: l
         pruned = None
         name, parent = os.path.basename(rel), os.path.dirname(rel)
         if is_dir and name in ("objects", "worktrees") and ".git" in rel.split(os.sep) and os.path.isfile(os.path.join(src, parent, "HEAD")):
+            if name == "objects" and keep_objects:
+                yield rel, is_dir
+                continue
             pruned = rel + os.sep
             if name == "worktrees":
                 continue
@@ -178,23 +181,31 @@ def _walk_repos(src: str) -> Iterator[tuple[str, bool]]:
 
 
 def _release() -> str:
-    """Build stale packages, then freeze the dev tree into a release unless the latest one matches it, returning its id."""
+    """Build stale packages, then freeze this tree into a release unless its base matches it, returning its id.
+
+    The base is the latest release in the dev container and the fork's own
+    release inside a fork. A fork's release keeps its git object stores, which
+    hold only the objects the fork added, and never becomes the latest.
+    """
+    source = os.environ.get("ARENA_FORK")
     ws = _ws()
+    root = _releases()
+    if source and not os.path.isdir(root):
+        raise CLIError(f"fork {source} does not see {root}, it was started by an Arena without fork-from-fork, fork from the dev container instead")
     t0 = time.monotonic()
     print("release: arena build (stale packages only)", flush=True)
     if subprocess.run([sys.executable, "-m", "arena_cli", "build"], cwd=ws, check=False).returncode:
-        raise CLIError("arena build failed, a fork needs a dev tree that builds")
+        raise CLIError(f"arena build failed, a fork needs {f'fork {source}' if source else 'a dev tree'} to build")
     t_build = time.monotonic() - t0
 
-    root = _releases()
     with _releases_lock():
-        latest = _latest()
-        prev = os.path.join(root, latest) if latest else None
+        base = _env("ARENA_RELEASE") if source else _latest()
+        prev = os.path.join(root, base) if base else None
         src = os.path.join(ws, "src")
         stores: list[str] = []
         venv = os.environ.get("ARENA_VENV_DIR", "/opt/venv")
         sources = {
-            "src": ("src", src, lambda: _without_git_stores(src, _walk(src, skip_top=frozenset({"Arena/_assets"})), stores), True),
+            "src": ("src", src, lambda: _without_git_stores(src, _walk(src, skip_top=frozenset({"Arena/_assets"})), stores, keep_objects=bool(source)), True),
             "build": ("build", os.path.join(ws, "build"), lambda: _walk(os.path.join(ws, "build"), skip_top=frozenset({".forks", ".uv-cache"})), False),
             "install": ("install", os.path.join(ws, "install"), lambda: _walk(os.path.join(ws, "install")), False),
             "venv": (os.path.join("src", "Arena", ".venv"), venv, lambda: _walk(venv), True),
@@ -202,15 +213,15 @@ def _release() -> str:
         }
         t1 = time.monotonic()
         repos = _repos(src)
-        if latest is not None and prev is not None and _meta(latest).get("format") == _FORMAT and repos == _meta(latest).get("repos"):
-            prev_parts = _meta(latest).get("parts", {})
+        if base is not None and prev is not None and _meta(base).get("format") == _FORMAT and repos == _meta(base).get("repos"):
+            prev_parts = _meta(base).get("parts", {})
             for name, (dest, path, entries, by_content) in sources.items():
                 p = _freeze(path, None, os.path.join(prev, dest), entries(), by_content)
                 if p.changed or p.files != prev_parts.get(name, {}).get("files"):
                     break
             else:
-                print(f"release: {latest} matches the dev tree (build {t_build:.0f}s, compare {time.monotonic() - t1:.0f}s)", flush=True)
-                return latest
+                print(f"release: {base} matches {f'fork {source}' if source else 'the dev tree'} (build {t_build:.0f}s, compare {time.monotonic() - t1:.0f}s)", flush=True)
+                return base
         for name in os.listdir(root):
             if name.startswith(".tmp-"):
                 shutil.rmtree(os.path.join(root, name))
@@ -234,20 +245,22 @@ def _release() -> str:
         meta = {
             "id": release,
             "format": _FORMAT,
-            "parent": latest,
+            "parent": base,
             "created": datetime.datetime.now().isoformat(timespec="seconds"),
             "parts": {n: dataclasses.asdict(p) for n, p in parts.items()},
             "repos": repos,
+            **({"from": source} if source else {}),
         }
         with open(os.path.join(tmp, "release.json"), "w") as f:
             json.dump(meta, f, indent=1)
         os.rename(tmp, os.path.join(root, release))
-        link = os.path.join(root, ".latest")
-        os.symlink(release, link)
-        os.replace(link, os.path.join(root, "latest"))
-        _prune()
+        if not source:
+            link = os.path.join(root, ".latest")
+            os.symlink(release, link)
+            os.replace(link, os.path.join(root, "latest"))
+            _prune()
     copied = sum(p.bytes for p in parts.values())
-    print(f"release: {release}, {copied / 1e9:.2f} GB new, parent {latest or 'none'} (build {t_build:.0f}s, freeze {time.monotonic() - t1:.0f}s)", flush=True)
+    print(f"release: {release}, {copied / 1e9:.2f} GB new, parent {base or 'none'} (build {t_build:.0f}s, freeze {time.monotonic() - t1:.0f}s)", flush=True)
     return release
 
 
@@ -423,26 +436,57 @@ def _pool(n: int) -> list[str]:
     return pool
 
 
-def new(argv: list[str]) -> None:
-    """Create a fork of the dev tree, or start a stopped one.
+def _split_from(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Take `--from <fork>` or `--from=<fork>` out of argv, returning (the fork or None, the rest)."""
+    source = _flag(argv, "--from")
+    if source is None:
+        return None, list(argv)
+    rest = [a for a in argv if not a.startswith("--from=")]
+    if "--from" in rest:
+        i = rest.index("--from")
+        rest = rest[:i] + rest[i + 2 :]
+    return source, rest
 
-    `arena fork new [<fork>]`, the lowest free pN when no name is given. A
-    fork is the dev image over an overlay of a hardlinked snapshot of the built
-    dev tree, so its edits, builds and commits land in build/.forks/<fork>
-    without touching the dev tree. It has its own hostname, gz partition and
-    the lowest ROS domain from ARENA_FORK_DOMAIN_BASE (default 20) up that no
-    fork holds and no running container or ROS process uses, and
-    ARENA_FORK_CPUS and ARENA_FORK_MEM in .env cap it. It stays until
-    `arena fork down <fork>` names it.
+
+def new(argv: list[str]) -> None:
+    """Create a fork of this tree or of another fork, or start a stopped one.
+
+    `arena fork new [<fork>] [--from <source>]`, the lowest free pN when no
+    name is given. The source is the tree the verb runs in: the dev tree in
+    the dev container, the fork itself inside a fork. `--from <source>` in the
+    dev container forks that fork, inside a fork it may name only the fork
+    itself, and it only creates. A fork is the dev image over an overlay of a
+    hardlinked snapshot of the built source tree, so it starts with the
+    source's robots, features, builds, commits and uncommitted edits, and its
+    own edits, builds and commits land in build/.forks/<fork> without touching
+    the source. It has its own hostname, gz partition and the lowest ROS domain
+    from ARENA_FORK_DOMAIN_BASE (default 20) up that no fork holds and no
+    running container or ROS process uses, and ARENA_FORK_CPUS and
+    ARENA_FORK_MEM in .env cap it. It stays until `arena fork down <fork>`
+    names it.
     """
-    _require_dev()
-    if len(argv) > 1:
-        raise CLIError("usage: arena fork new [<fork>]")
-    name = argv[0] if argv else None
+    usage = "usage: arena fork new [<fork>] [--from <source>]"
+    source, rest = _split_from(argv)
+    bad = [a for a in rest if a.startswith("--")]
+    if bad or len(rest) > 1:
+        raise CLIError(f"unexpected argument {(bad or rest[1:])[0]}, {usage}")
+    name = rest[0] if rest else None
     if name is not None and (not _FORK_RE.fullmatch(name) or name == "releases"):
         raise CLIError(f"fork name '{name}' must be 1-63 lowercase letters, digits, '-' or '_', starting with a letter or digit, and not 'releases'")
+    here = os.environ.get("ARENA_FORK")
+    if source is not None and here is not None and source != here:
+        raise CLIError(f"this is fork {here}, it forks only itself, run '{' '.join(['arena fork new', *([name] if name else []), '--from', source])}' in the dev container")
     forks = _forks()
+    if source is not None and source != here:
+        if source not in forks:
+            raise CLIError(f"no fork '{source}' to fork from, forks: {', '.join(forks) or 'none'}")
+        if name is not None and name in forks:
+            raise CLIError(f"fork {name} exists, --from only creates, 'arena fork down {name}' first")
+        exec_([source, "arena", "fork", "new", *([name] if name else [])])
+        return
     fork = name if name is not None else next(f"p{i}" for i in range(1, len(forks) + 2) if f"p{i}" not in forks)
+    if fork in forks and source is not None:
+        raise CLIError(f"fork {fork} exists, --from only creates, 'arena fork down {fork}' first")
     if fork in forks:
         if forks[fork]["state"] == "running":
             print(f"{fork}: up on release {forks[fork]['release']}, domain {forks[fork]['domain']}", flush=True)

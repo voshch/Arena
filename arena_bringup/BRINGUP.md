@@ -555,7 +555,7 @@ common entry points. Verbs relevant to bringup:
 | `arena robot <model>\|rm\|ls` | `runtime/spawn_robot`, `runtime/despawn_robot`, `state/robots` | Spawn, despawn, or list robots in a running fleet; see [arena robot](#arena-robot). |
 | `arena cleanup <env_id>` | `/arena/cleanup_namespace` service | Force-clean an env's namespace by id (calls the service for both the `env_<id>_` and `env_<id>/` prefixes, covering gazebo and isaac layouts). |
 | `arena train [args]` | `arena_training` feature launcher | RL training entry, see section 7 above. |
-| `arena fork new\|ls\|exec\|down` | fork containers in `build/.forks` | Isolated containers on snapshots of the dev tree, see [Forks](../README.md#forks). |
+| `arena fork new\|ls\|exec\|down` | fork containers in `build/.forks` | Isolated containers on snapshots of the dev tree or of another fork, see [Forks](../README.md#forks). |
 
 None of these verbs killall anything. `arena launch` checks for an existing
 runtime via `/arena/register_env`: if present, it attaches additively

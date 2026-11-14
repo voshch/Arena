@@ -130,6 +130,8 @@ def test_feature_and_setting_arguments_are_validated() -> None:
         asyncio.run(workspace.workspace_robots("add"))
     with pytest.raises(ToolError, match="not a fork name"):
         asyncio.run(workspace.workspace_fork_down("--all"))
+    with pytest.raises(ToolError, match="not a fork name"):
+        asyncio.run(workspace.workspace_fork_new("p9", from_fork="--all"))
 
 
 @needs_cli
@@ -167,6 +169,28 @@ def test_fork_verbs_surface_the_cli_refusal_inside_a_fork(tmp_path: Path) -> Non
                 os.environ[key] = value
     assert state == "failed"
     assert "this is fork mcp_test_fork, manage forks from the dev container" in log
+
+
+@needs_cli
+def test_fork_new_inside_a_fork_forks_only_that_fork(tmp_path: Path) -> None:
+    saved = {key: os.environ.get(key) for key in ("ARENA_FORK", "ARENA_DATA_DIR")}
+    os.environ.update(ARENA_FORK="mcp_test_fork", ARENA_DATA_DIR=str(tmp_path))
+    try:
+
+        async def new() -> tuple[str, str]:
+            job = await workspace.workspace_fork_new("p9", from_fork="other")
+            done = await JOBS.wait(job["id"], 60)
+            return done.state, JOBS.tail(done.id)
+
+        state, log = asyncio.run(new())
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    assert state == "failed"
+    assert "this is fork mcp_test_fork, it forks only itself" in log
 
 
 @needs_cli

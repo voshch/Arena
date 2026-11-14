@@ -13,6 +13,7 @@ services:
       - "$HOST_ARENA_WS_DIR/.uv:/opt/arena_ws/.uv"
       - "$HOST_ARENA_WS_DIR/.uv/venvs:/opt/arena_ws/.venvs:ro"
       - "$HOST_ARENA_WS_DIR/src:/opt/arena_ws/.dev-src:ro"
+      - "$HOST_ARENA_WS_DIR/build/.forks:/opt/arena_ws/.forks"
       - "$HOST_ARENA_WS_DIR/src/Arena/_assets:/opt/arena_ws/src/Arena/_assets"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
@@ -24,6 +25,7 @@ services:
       - ARENA_LANE=${ARENA_FORK}
       - ARENA_RELEASE
       - ARENA_FORK_DOMAIN_ID=${ROS_DOMAIN_ID}
+      - ARENA_FORKS_DIR=/opt/arena_ws/.forks
     cpus: ${ARENA_FORK_CPUS:-0}
     mem_limit: ${ARENA_FORK_MEM:-0}
 volumes:

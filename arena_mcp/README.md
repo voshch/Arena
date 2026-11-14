@@ -74,7 +74,7 @@ The `system` domain runs the stack lifecycle through the arena CLI: `system_laun
 
 ## workspace
 
-The `workspace` domain covers the CLI verbs that change the workspace or its containers: `workspace_status` (git state of the metarepo and every initialized submodule, installed features, net and gpu settings with their sources), `arena update`, `arena feature <name> install|update|stop|uninstall`, `arena settings net`, `arena feature docker gpu`, `arena fork ls|new|down|exec` and `arena feature robots ls|add|rm|update`. Feature and action names come from the CLI's feature modules. Every mutating tool is marked destructive, settings changes apply once `source arena` recreates the container, and the fork verbs refuse inside a fork with the CLI's own message.
+The `workspace` domain covers the CLI verbs that change the workspace or its containers: `workspace_status` (git state of the metarepo and every initialized submodule, installed features, net and gpu settings with their sources), `arena update`, `arena feature <name> install|update|stop|uninstall`, `arena settings net`, `arena feature docker gpu`, `arena fork ls|new|down|exec` and `arena feature robots ls|add|rm|update`. Feature and action names come from the CLI's feature modules. Every mutating tool is marked destructive, settings changes apply once `source arena` recreates the container, `workspace_fork_new` takes `from_fork` to snapshot another fork instead of the dev tree, and inside a fork it forks that fork, while the other fork verbs refuse there with the CLI's own message.
 
 ## ros
 
