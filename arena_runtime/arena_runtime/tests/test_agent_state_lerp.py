@@ -139,6 +139,25 @@ def test_lerp_stamps_the_lerped_pose_time() -> None:
     assert (clamped.header.stamp.sec, clamped.header.stamp.nanosec) == (5, 50_000_000)
 
 
+def test_render_time_trails_now_by_one_engine_frame_so_every_sample_advances() -> None:
+    columns = {"agent_id": [1], "y": [0.0], "theta": [0.0], "vx": [1.0], "vy": [0.0]}
+    prev = _frame(10, 0, x=[0.0], **columns)
+    curr = _frame(10, 50_000_000, x=[0.05], **columns)
+    adapter = _adapter(prev, curr, engine_stamp_ns=10 * 10**9 + 50_000_000)
+
+    xs = []
+    for now_ns in range(10 * 10**9 + 50_000_000, 10 * 10**9 + 100_000_000, 10_000_000):
+        lerped = adapter._interpolate_agent_states(adapter._render_ns(now_ns))
+        xs.append(lerped.x[0])
+
+    assert xs == pytest.approx([0.0, 0.01, 0.02, 0.03, 0.04])
+
+
+def test_render_time_without_two_frames_is_now() -> None:
+    curr = _frame(1, agent_id=[1], x=[1.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    assert _adapter(None, curr)._render_ns(123) == 123
+
+
 def test_lerp_without_prev_returns_curr() -> None:
     curr = _frame(1, agent_id=[1], x=[1.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
     assert _adapter(None, curr)._interpolate_agent_states(0) is curr

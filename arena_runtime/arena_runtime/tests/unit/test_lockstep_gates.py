@@ -191,6 +191,24 @@ def test_well_behaved_producer_never_waits() -> None:
     assert ledger.now == pytest.approx(4.9)
 
 
+@pytest.mark.parametrize(("period_frames", "passes"), [(2, True), (1, False)])
+def test_a_roster_rendered_one_engine_frame_behind_needs_a_two_frame_period(period_frames: int, passes: bool) -> None:
+    engine_dt = 0.05
+    ledger = GateLedger(dt=DT, base=0.0)
+    ledger.refresh(_desired(_spec("engine", engine_dt), _spec("peds", period_frames * engine_dt)))
+    engine, peds = ledger.channels["/engine"], ledger.channels["/peds"]
+    for _ in range(40):
+        hard_due = _tick(ledger)
+        ledger.observe(engine, ledger.now)
+        ledger.observe(peds, ledger.now - engine_dt)
+        if ledger.waiting(hard_due):
+            assert not passes
+            return
+        ledger.complete(hard_due)
+    assert passes
+    assert ledger.now == pytest.approx(40 * engine_dt)
+
+
 def test_coverage_predicate_is_clock_relative() -> None:
     """A stamp covers the tick the ledger stands on when it is less than one period old.
     The window grid picks step sizes only and must not enter the predicate."""
