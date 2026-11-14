@@ -162,6 +162,15 @@ The container is this or last week's `ghcr.io/voshch/arena-ci:jazzy-<ISO week>` 
 
 ## Troubleshooting
 
+When `source arena`, a build, an update or a launch misbehaves, go down the chart from the top and follow the first question that matches.
+
+<img src="_meta/docs/troubleshooting.svg" width="820" alt="Arena troubleshooting checklist: each symptom and the arena command that fixes it">
+
+- [Open a GitHub issue](https://github.com/voshch/Arena/issues/new) with the output of `arena healthcheck` and the failing command
+- [Ask on Discord](https://discord.gg/GNTTf9DKyp)
+- [Podman API socket](https://docs.podman.io/en/latest/markdown/podman-system-service.1.html)
+- [nvidia-container-toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
 ### Unknown runtime specified 'nvidia'
 
 ```sh
