@@ -20,6 +20,7 @@ def _sim(seconds: float):
 
 def _stub(sim_seconds: float, start_seconds: float | None):
     from arena_runtime.env.episode_node import EpisodeNode, EpisodeRuntime
+    from arena_runtime.env.task_board import TaskBoard
 
     stub = object.__new__(type("Stub", (EpisodeNode,), {"sim_time": _sim(0.0)}))
     stub.sim_time = _sim(sim_seconds)
@@ -32,6 +33,7 @@ def _stub(sim_seconds: float, start_seconds: float | None):
     stub._pub_state_episode = _Collector()
     stub._task_layer = SimpleNamespace(mode_namespaces=dict)
     stub._task_layer_param = SimpleNamespace(value="casper")
+    stub._task_board = TaskBoard()
     stub._robots_manager = None
     stub.rosparam = {str: SimpleNamespace(get=lambda name, default: default)}
     return stub
@@ -86,3 +88,19 @@ def test_a_queued_record_carries_no_tasks() -> None:
     stub.task_event(TaskEvent(task="fetch", kind="met"))
     assert json.loads(stub._record_to_msg(EpisodeRecord(episode_id=2), {}).tasks) == []
     assert len(json.loads(stub._record_to_msg(stub._episodes.current, {}).tasks)) == 1
+
+
+def _activity(phase: object, held: bool = False) -> str:
+    from arena_runtime.env.episode_node import EpisodeNode
+
+    state = SimpleNamespace(phase=phase, monitor=SimpleNamespace(held=held))
+    return EpisodeNode._phase_activity(SimpleNamespace(runner=SimpleNamespace(active_state=state)))
+
+
+def test_an_in_place_hold_reads_as_holding_before_it_is_held() -> None:
+    from arena_simulation_setup.shared.task import GoToPhase
+    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
+
+    assert _activity(GoToPhase(hold_time=5.0)) == "holding"
+    assert _activity(GoToPhase(pose=Pose(Position(1.0, 2.0, 0.0), Orientation.identity()))) == "navigating"
+    assert _activity(GoToPhase(target="kitchen"), held=True) == "holding"

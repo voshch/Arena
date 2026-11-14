@@ -900,6 +900,18 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
 
         env_displays.append(
             AdapterDisplay(
+                name="Tasks",
+                topic=f"{env_ns}/task_markers",
+                topic_type="visualization_msgs/MarkerArray",
+                kind=DisplayKind.MARKER_ARRAY,
+                style_json=StyleSpec().to_json(),
+                topic_must_exist=False,
+                group="Tasks",
+            )
+        )
+
+        env_displays.append(
+            AdapterDisplay(
                 name="Affordances",
                 topic=f"{env_ns}/affordance_markers",
                 topic_type="visualization_msgs/MarkerArray",

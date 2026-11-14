@@ -206,7 +206,18 @@ seconds since the current episode's `start_time` (0 before the episode starts),
 appends it to the episode's list, publishes it as `arena_runtime_msgs/TaskEvent` on
 `task_events` of the env namespace (detail as JSON). `EpisodeRecord.tasks` is that
 list as JSON in report order, carried by every later publication of the record and
-empty for a new episode, and the `episode` MCP domain parses it as `tasks`. A request's `task`
+empty for a new episode, and the `episode` MCP domain parses it as `tasks`. `EpisodeNode` folds the same events in a `TaskBoard`
+([`task_board.py`](task_board.py)), reset at every episode start, and from it publishes
+the latched `state/agents` (`arena_runtime_msgs/AgentStates`, one `AgentState` per robot and
+pedestrian with its task, state `idle|assigned|working|met|failed|dropped`, zones and the
+sim time of its last change) and the `task_markers` MarkerArray
+([`task_markers.py`](task_markers.py)) behind the "Tasks" display: a label per agent colored by
+state, and for working agents a line to the first zone of their task plus the outline of its zones.
+Each label is frame-locked in its agent's TF frame (a robot's base frame, a pedestrian's
+`<name>/base_link`), so it moves with the agent on every render. Markers republish every 0.5 sim
+seconds and on every board change.
+
+A request's `task`
 travels through `RobotManager.submit_task` into `TaskRunner.submit`, so each
 robot's entry of the `phases` JSON lists the id of every phase's request under
 `tasks`, parallel to `phases` (empty without one).

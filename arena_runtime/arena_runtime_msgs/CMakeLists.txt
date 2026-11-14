@@ -17,6 +17,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/AdapterEntry.msg
   msg/AdapterPlugin.msg
   msg/AdapterVizManifest.msg
+  msg/AgentState.msg
+  msg/AgentStates.msg
   msg/EnvRecord.msg
   msg/EnvRegistry.msg
   msg/EpisodeRecord.msg
