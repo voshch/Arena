@@ -730,13 +730,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         return response
 
     async def relay_pedestrian_update(self, msg: Pedestrians) -> Sequence[bool]:
-        """Sim-side funnel: expire and substitute possessed peds, then forward to the physics sim."""
+        """Sim-side funnel: expire and substitute possessed peds, compile their joint angles into body poses, then forward to the physics sim."""
         now = self._now_s()
         for name, last_state in self._possession.expire(now):
             self._on_ped_released(name, last_state)
         out = Pedestrians()
         out.header = msg.header
         out.pedestrians = self._possession.substitute(msg.pedestrians, now)
+        possessed = self._possession.possessed(now)
+        for ped in out.pedestrians:
+            if ped.name in possessed:
+                ped.model_uri = self._ped_model_uris.get(ped.name, "")
+                fill_body(ped, self._stance_for(ped.model_uri))
         return await self._simulator.pedestrian_update(out)
 
     def possessed_peds(self) -> dict[str, Pedestrian]:

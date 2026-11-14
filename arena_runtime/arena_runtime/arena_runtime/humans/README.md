@@ -371,10 +371,13 @@ is ignored.
 Enforcement is substitution at the two outbound funnels: `publish_arena_peds`
 (the bus) and `relay_pedestrian_update` (the sim). Substitution is
 copy-on-write: possessed entries swap to deep copies of the stored state,
-everything else passes through untouched, and the caller's message is never
+advanced along their stored twist since receipt for at most
+`POSSESSION_EXTRAPOLATION_S` (0.2 s), everything else passes through untouched, and the caller's message is never
 mutated (hunav hands a persistent container to both funnels). Substituted
 entries get `gait_phase` re-stamped from the base's own `GaitGenerator`
-phase table, engines never see the publisher's zero.
+phase table, engines never see the publisher's zero. Both funnels compile
+the substituted joint angles into the body pose (`wire.fill_body`), so a
+possessed walker animates in every simulator.
 
 `human/move` (`srv/MovePedestrians`, env-level) is a teleport served by the
 base, only `name` and `pose` are read. Known peds are moved in place (no
