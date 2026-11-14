@@ -888,7 +888,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             self._clients.SetMapOffset.client.call_async(request).add_done_callback(lambda done: self._map_offset_done(sim_path, done))
 
     def _map_offset_done(self, sim_path: str, call: rclpy.task.Future) -> None:
-        if call.cancelled() or call.exception() is not None or (result := call.result()) is None or not result.success:
+        if call.cancelled() or call.exception() is not None or (result := call.result()) is None or not result.ok:
             self._map_offsets.pop(sim_path, None)
             self._logger.warning(f"SetMapOffset failed for {sim_path!r}, its map -> odom is stale")
 
