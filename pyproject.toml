@@ -194,6 +194,7 @@ executionEnvironments = [
     { root = "arena_isaac/arena_isaac", reportMissingImports = "none" },
     { root = "arena_assets/src/arena_assets/utils/ModelConverter", reportMissingImports = "none" },
     { root = "arena_assets/blender/arena_assets_blender", reportMissingImports = "none" },
+    { root = "arena_training/deps/rosnav_rl/tools", reportMissingImports = "none" },
     { root = "_meta" },
     { root = "arena_assets/src" },
     { root = "arena_auditory/arena_auditory" },
