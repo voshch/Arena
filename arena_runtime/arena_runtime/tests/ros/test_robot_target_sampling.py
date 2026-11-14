@@ -25,7 +25,7 @@ ROOM = [Position(1.0, 1.0), Position(3.0, 1.0), Position(3.0, 3.0), Position(1.0
 SAFE = 0.3
 
 
-def _manager(blocked: tuple[float, float, float, float] | None, seed: int = 0) -> SimpleNamespace:
+def _manager(blocked: tuple[float, float, float, float] | None, seed: int = 0, others: tuple[tuple[str, float, float, float], ...] = ()) -> SimpleNamespace:
     grid = np.full((100, 100), WorldOccupancy.EMPTY, dtype=np.uint8)
     world_manager = WorldManager.__new__(WorldManager)
     world_manager._map = WorldMap(occupancy=WorldLayers(walls=WorldOccupancy(grid)), origin=Position(0.0, 0.0), resolution=RES, time=Time())
@@ -38,7 +38,8 @@ def _manager(blocked: tuple[float, float, float, float] | None, seed: int = 0) -
     world_manager._world = World(levels={"0": Level(id="0", zones=[Zone(name="room", polygon=ROOM)])})
     rng = EpisodeRng()
     rng.reseed(seed)
-    node = SimpleNamespace(_world_manager=world_manager, conf=SimpleNamespace(General=SimpleNamespace(RNG=rng)))
+    robots_manager = SimpleNamespace(managers={name: SimpleNamespace(pose=Pose(position=Position(x, y), orientation=Orientation.identity()), radius=radius) for name, x, y, radius in others})
+    node = SimpleNamespace(_world_manager=world_manager, _robots_manager=robots_manager, conf=SimpleNamespace(General=SimpleNamespace(RNG=rng)))
     world_manager._NodeInterface__node = node
     return SimpleNamespace(node=node, name="jackal_0", safe_distance=SAFE)
 
@@ -57,9 +58,31 @@ def test_zone_target_lands_on_a_free_cell_with_clearance() -> None:
         assert _blocked_distance(phase.pose.position, blocked) >= SAFE - RES
 
 
+def test_zone_target_keeps_off_the_zone_edge_when_the_zone_has_room() -> None:
+    edge = shapely.Polygon([(corner.x, corner.y) for corner in ROOM]).exterior
+    for seed in range(20):
+        phase = RobotManager._resolve_target(_manager(None, seed), GoToPhase(target="room"))
+        assert edge.distance(shapely.Point(phase.pose.position.x, phase.pose.position.y)) >= 0.3 - RES
+
+
 def test_zone_target_without_a_free_cell_names_the_zone() -> None:
     with pytest.raises(ValueError, match="goto target 'room' has no free cell with 0.30 m clearance"):
         RobotManager._resolve_target(_manager((0.5, 0.5, 3.5, 3.5)), GoToPhase(target="room"))
+
+
+def test_zone_target_avoids_the_cells_other_robots_occupy() -> None:
+    others = (("jackal_1", 2.0, 2.0, 0.5),)
+    for seed in range(20):
+        phase = RobotManager._resolve_target(_manager(None, seed, others), GoToPhase(target="room"))
+        assert math.hypot(phase.pose.position.x - 2.0, phase.pose.position.y - 2.0) >= 0.5 - RES
+
+
+def test_zone_target_reserves_nothing_in_the_task_obstacle_layer() -> None:
+    manager = _manager(None)
+    before = manager.node._world_manager._map.occupancy.grid.copy()
+    for _ in range(5):
+        RobotManager._resolve_target(manager, GoToPhase(target="room"))
+    assert np.array_equal(manager.node._world_manager._map.occupancy.grid, before)
 
 
 def test_unknown_target_is_left_for_the_ped_follower() -> None:
