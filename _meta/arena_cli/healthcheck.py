@@ -1,13 +1,19 @@
 """arena healthcheck: whether this install, every installed feature and a launch in every installed simulator work."""
 
 import contextlib
+import functools
 import io
+import itertools
 import json
 import os
+import re
 import subprocess
 import sys
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TextIO
 
 from arena_cli import common, evaluation, features, settings
 from arena_cli.build import stale_packages, workspace
@@ -18,8 +24,82 @@ BUILT = Path("/.built")
 SHOWN_STALE = 8
 LOG_TAIL = 15
 WEAK_OR_WEDGED = 3
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+FRAME_S = 0.1
+LABEL_WIDTH = 15
+GREEN = "\033[32m"
+RED = "\033[31m"
+YELLOW = "\033[33m"
+RESET = "\033[0m"
 
 Step = features.Health
+
+
+def row(label: str, tag: str, text: str = "", color: str = "") -> str:
+    shown = f"{color}{tag}{RESET}" if color else tag
+    return " ".join(part for part in (f"{label:<{LABEL_WIDTH}}", f"[{shown}]", text) if part)
+
+
+class Phase:
+    """The phase of a running preflight, read incrementally from its benchmark log."""
+
+    TOTAL = re.compile(rb"Starting step .* \(env=\d+, (\d+) episodes\)")
+    EPISODE = re.compile(rb"episode record: id=(\d+) outcome=1 \(RUNNING\)")
+    SHUTDOWN = b"benchmark: shutting down arena runtime"
+
+    def __init__(self, log: Path, clock: Callable[[], float] = time.monotonic) -> None:
+        self.log = log
+        self.clock = clock
+        self.start = clock()
+        self.offset = 0
+        self.total = 0
+        self.label = "starting"
+
+    def __call__(self) -> str:
+        with contextlib.suppress(OSError), self.log.open("rb") as f:
+            f.seek(self.offset)
+            chunk = f.read()
+            complete = chunk.rfind(b"\n") + 1
+            self.offset += complete
+            for line in chunk[:complete].splitlines():
+                self._feed(line)
+        return f"{self.label} ({int(self.clock() - self.start)}s)"
+
+    def _feed(self, line: bytes) -> None:
+        if total := self.TOTAL.search(line):
+            self.total = int(total.group(1))
+        elif episode := self.EPISODE.search(line):
+            self.label = f"episode {int(episode.group(1))}/{self.total}"
+        elif self.SHUTDOWN in line:
+            self.label = "shutting down"
+
+
+def step(label: str, work: Callable[[], Step], text: str | Callable[[], str] = "", stream: TextIO | None = None) -> bool:
+    """Run `work` under a spinner row on a terminal and leave `[OK]` or `[FAIL] reason` in its place."""
+    out = stream or sys.stdout
+    live = out.isatty() and os.environ.get("TERM") != "dumb"
+    color = live and not os.environ.get("NO_COLOR")
+    done = threading.Event()
+
+    def spin() -> None:
+        for frame in itertools.cycle(SPINNER):
+            out.write("\r\033[K" + row(label, frame, text() if callable(text) else text, YELLOW if color else ""))
+            out.flush()
+            if done.wait(FRAME_S):
+                return
+
+    spinner = threading.Thread(target=spin, daemon=True)
+    if live:
+        spinner.start()
+    try:
+        ok, detail = work()
+    finally:
+        done.set()
+        if live:
+            spinner.join()
+            out.write("\r\033[K")
+    print(row(label, "OK", "", GREEN if color else "") if ok else row(label, "FAIL", detail, RED if color else ""), file=out, flush=True)
+    return ok
 
 
 def shell(env: dict[str, str]) -> Step:
@@ -80,14 +160,23 @@ def _launch(sim: str, tokens: list[str]) -> int:
 
     log = Path(common._env("ARENA_WS_DIR")) / "log" / "healthcheck" / f"{sim}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    common._row("launch", f"{sim}, two preflight episodes on map_empty, log {log}")
     argv = evaluation.benchmark_argv(["--suite", json.dumps(planners.preflight_suite()), "--contest", json.dumps([{"name": "default"}]), *planners.PREFLIGHT_VERDICT, f"sim:={sim}", *tokens])
-    with log.open("w") as out:
-        rc = subprocess.run(argv, stdout=out, stderr=subprocess.STDOUT, check=False).returncode
-    common._row("launch", f"{sim} {verdict(rc)}")
-    if rc:
+    rc = 0
+
+    def preflight() -> Step:
+        nonlocal rc
+        with log.open("w") as out:
+            rc = subprocess.run(argv, stdout=out, stderr=subprocess.STDOUT, check=False).returncode
+        return rc == 0, f"{verdict(rc)}, log {log}"
+
+    if not step(f"launch {sim}", preflight, Phase(log)):
         print("\n".join(log.read_text(errors="replace").splitlines()[-LOG_TAIL:]))
     return rc
+
+
+def _quiet(health: Callable[[], Step]) -> Step:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return health()
 
 
 def run(argv: list[str]) -> None:
@@ -110,9 +199,7 @@ def run(argv: list[str]) -> None:
         ("build", lambda: build([package for package, _ in stale_packages(workspace())])),
     ]
     for label, check in checks:
-        ok, detail = check()
-        common._row(label, detail)
-        if not ok:
+        if not step(label, check):
             sys.exit(1)
     installed = common._reg_list()
     healthy = True
@@ -120,17 +207,12 @@ def run(argv: list[str]) -> None:
         module = features.load(name)
         if module is None:
             continue
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            ok, detail = module.health()
-        common._row(name, detail)
-        healthy = healthy and ok
+        healthy = step(name, functools.partial(_quiet, module.health)) and healthy
     codes = [0 if healthy else 1]
     targets, tokens = sims(installed, tokens)
-    if not launch:
-        common._row("launch", "skipped (--no-launch)")
-    elif not targets:
-        common._row("launch", "no simulator installed, install one with 'arena feature gazebo install'")
-    else:
+    if launch and not targets:
+        codes.append(int(not step("launch", lambda: (False, "no simulator installed, install one with 'arena feature gazebo install'"))))
+    elif launch:
         codes += [_launch(sim, tokens) for sim in targets]
     sys.exit(WEAK_OR_WEDGED if WEAK_OR_WEDGED in codes else max(codes))
 
