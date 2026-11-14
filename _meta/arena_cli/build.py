@@ -104,6 +104,42 @@ def _changed_build_type(build_dir: str, build_type: str) -> bool:
     return os.path.isfile(os.path.join(build_dir, "colcon_command_prefix_setup_py.sh"))
 
 
+def _stale(listing: str, ws: Workspace) -> list[tuple[str, str]]:
+    """The (package, build type) rows of a `colcon list` output whose last build failed or whose install tree is older than their source."""
+    stale: list[tuple[str, str]] = []
+    for line in listing.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        package = fields[0] if fields else ""
+        src_path = fields[1] if len(fields) > 1 else ""
+
+        rc_file = os.path.join(ws.build_base, package, "colcon_build.rc")
+        package_xml = os.path.join(ws.install_base, package, "share", package, "package.xml")
+
+        up_to_date = False
+        if package and os.path.isfile(rc_file) and os.path.isfile(package_xml):
+            try:
+                with open(rc_file) as f:
+                    rc_value = f.read().strip()
+            except OSError:
+                rc_value = ""
+            if rc_value == "0":
+                up_to_date = _recursive_mtime(os.path.join(ws.install_base, package)) >= _recursive_mtime(src_path)
+
+        if not up_to_date:
+            stale.append((package, fields[2].strip("()") if len(fields) > 2 else ""))
+    return stale
+
+
+def stale_packages(ws: Workspace) -> list[tuple[str, str]]:
+    """Packages of the workspace that `arena build` would rebuild, with their build type."""
+    import subprocess
+
+    listing = subprocess.run(["colcon", "list", "--base-paths", *ws.paths], capture_output=True, text=True, check=False)
+    return _stale(listing.stdout, ws)
+
+
 def build_main(argv: list[str]) -> int:
     """Run colcon build with the workspace package-skip and cmake-args logic, then collect the venv store. Assumes cwd is ARENA_WS_DIR."""
     import subprocess
@@ -146,34 +182,12 @@ def build_main(argv: list[str]) -> int:
 
     if skip_old == "1":
         print(f"INDEXING: colcon list --base-paths {' '.join(ws.paths)}")
-        listing = subprocess.run(["colcon", "list", "--base-paths", *ws.paths], capture_output=True, text=True, check=False)
-        for line in listing.stdout.splitlines():
-            if not line.strip():
-                continue
-            fields = line.split("\t")
-            package = fields[0] if fields else ""
-            src_path = fields[1] if len(fields) > 1 else ""
-
-            rc_file = os.path.join(ws.build_base, package, "colcon_build.rc")
-            package_xml = os.path.join(ws.install_base, package, "share", package, "package.xml")
-
-            up_to_date = False
-            if package and os.path.isfile(rc_file) and os.path.isfile(package_xml):
-                try:
-                    with open(rc_file) as f:
-                        rc_value = f.read().strip()
-                except OSError:
-                    rc_value = ""
-                if rc_value == "0":
-                    up_to_date = _recursive_mtime(os.path.join(ws.install_base, package)) >= _recursive_mtime(src_path)
-
-            if not up_to_date:
-                build_packages.append(package)
-                build_type = fields[2].strip("()") if len(fields) > 2 else ""
-                if package and _changed_build_type(os.path.join(ws.build_base, package), build_type):
-                    for tree in (os.path.join(ws.build_base, package), os.path.join(ws.install_base, package)):
-                        print(f"CLEANING: {package} changed its build type to {build_type}, rm -rf {tree}", flush=True)
-                        shutil.rmtree(tree, ignore_errors=True)
+        for package, build_type in stale_packages(ws):
+            build_packages.append(package)
+            if package and _changed_build_type(os.path.join(ws.build_base, package), build_type):
+                for tree in (os.path.join(ws.build_base, package), os.path.join(ws.install_base, package)):
+                    print(f"CLEANING: {package} changed its build type to {build_type}, rm -rf {tree}", flush=True)
+                    shutil.rmtree(tree, ignore_errors=True)
 
         if not build_packages:
             print("BUILDING: nothing stale, every package is up to date")
