@@ -6,6 +6,7 @@ GazeboSimulator is per-env on arena_env_node and adapts env-namespace state (spa
 import asyncio
 import itertools
 import math
+import re
 import time
 import traceback
 import typing
@@ -891,7 +892,10 @@ class GazeboSimulator(BaseSim):
                     self._logger.warning(f"Failed to resolve model for entity {entity.name}: unknown model type {model}")
                     return False
 
-                ok = await self._spawn_model(entity.sim_path, model, self._placed(entity.pose))
+                if isinstance(entity, Robot):
+                    ok = await self._spawn_sdf(entity.sim_path, _free_position_joints(model.description), self._placed(entity.pose))
+                else:
+                    ok = await self._spawn_model(entity.sim_path, model, self._placed(entity.pose))
                 if ok and (model.path is None or model.type is ModelType.URDF):
                     self.entities[entity.name] = entity
                 if ok and model.path and model.type is not ModelType.URDF:
@@ -1687,6 +1691,21 @@ def _articulated_sdf(name: str, runtime: ArticulatedObject, links: Sequence[tupl
         drives.append(f'<joint name="{joint.name}" stiffness="{dynamics.stiffness}" damping="{dynamics.drive_damping}" effort="{dynamics.effort}" wraps="{wraps}" initial="{runtime.current[joint.name]}"/>')
     plugin = f'<plugin filename="ArticulatedDrive" name="arena_gz_plugins::ArticulatedDrive">{"".join(drives)}</plugin>'
     return f'<?xml version="1.0"?><sdf version="1.9"><model name="{name}">{"".join(body)}{plugin}</model></sdf>'
+
+
+def _free_position_joints(urdf: str) -> str:
+    """The URDF with zero `<dynamics damping>` on the joints ros2_control commands by position, which resists their servo."""
+    root = xml.etree.ElementTree.fromstring(urdf)
+    position = {joint.get('name') for rc in root.iter('ros2_control') for joint in rc.findall('joint') if any(ci.get('name') == 'position' for ci in joint.findall('command_interface'))}
+    damped = [name for joint in root.findall('joint') if (name := joint.get('name', '')) in position and (dynamics := joint.find('dynamics')) is not None and 'damping' in dynamics.attrib]
+    for name in damped:
+        urdf = re.sub(
+            rf"<joint\b[^>]*\bname=([\"']){re.escape(name)}\1.*?</joint>",
+            lambda block: re.sub(r"(<dynamics\b[^>]*?\sdamping=)([\"'])[^\"']*\2", r'\1"0"', block.group(0)),
+            urdf,
+            flags=re.S,
+        )
+    return urdf
 
 
 def _sdf_file(path: Path) -> Path:

@@ -40,6 +40,8 @@ Defined in [`_interface.py`](_interface.py):
 | `robot_move` | `(Sequence[Robot]) -> Sequence[bool]` |
 | `robot_delete` | `(Sequence[Robot]) -> Sequence[bool]` |
 
+Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
+
 ### `WorldITF`
 
 [`_interface.py`](_interface.py)
