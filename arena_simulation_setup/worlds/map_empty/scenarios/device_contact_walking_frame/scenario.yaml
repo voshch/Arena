@@ -1,0 +1,10 @@
+# Robot contact with a held assistive device: the robot drives straight across the room at a frail walking-frame user walking toward it,
+# who does not react to robots, so the robot touches the device first (humansim robot_contacts, part walking_frame).
+# Drive and record: python3 -m arena_runtime.humans.arena_humansim.device_contacts record (robot.mobile:=none).
+format: arena-scenario/2
+humans:
+- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ./patient_walking_frame_unaware.yaml}}
+robots:
+- start: [9.0, 11.5, 0.0]
+  phases:
+  - {goto: [21.0, 11.5, 0.0]}

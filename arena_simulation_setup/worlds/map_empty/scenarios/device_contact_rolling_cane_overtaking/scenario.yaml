@@ -1,0 +1,10 @@
+# Robot contact from behind: the robot catches up with a blind long-cane user (constant contact, rolling tip) walking slowly (0.25 m/s) away from it. The person does not react
+# to robots, and the robot touches their body, not the cane held ahead of them (humansim robot_contacts, part body).
+# Record with the default --drive 0.4: the robot gains on the person from 2 m behind.
+format: arena-scenario/2
+humans:
+- {name: rolling_cane, model: Common/casual_male_asian_young_rollingcane, pose: [20.5, 11.35, 3.1416], waypoints: [[9.5, 11.35, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_rolling_cane_slow_unaware.yaml}}
+robots:
+- start: [22.5, 11.35, 3.1416]
+  phases:
+  - {goto: [9.0, 11.35, 3.1416]}

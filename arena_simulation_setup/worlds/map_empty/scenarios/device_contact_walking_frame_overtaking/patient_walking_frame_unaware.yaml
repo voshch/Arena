@@ -1,0 +1,5 @@
+# patient_walking_frame that does not react to robots, so the robot catching up from behind reaches it (device_contact_walking_frame_overtaking).
+name: patient_walking_frame_unaware
+extends: patient_walking_frame
+perception:
+  robot_awareness: 0.0

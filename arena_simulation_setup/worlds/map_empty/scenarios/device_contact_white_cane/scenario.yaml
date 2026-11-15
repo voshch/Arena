@@ -1,0 +1,10 @@
+# Robot contact with a held assistive device: the robot drives straight across the room at a blind long-cane user (two-point touch) walking toward it,
+# who does not react to robots, so the robot touches the device first (humansim robot_contacts, part white_cane).
+# Drive and record: python3 -m arena_runtime.humans.arena_humansim.device_contacts record (robot.mobile:=none).
+format: arena-scenario/2
+humans:
+- {name: white_cane, model: Common/casual_female_caucasian_middleage_whitecane, pose: [20.5, 11.65, 3.1416], waypoints: [[9.5, 11.65, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_white_cane_unaware.yaml}}
+robots:
+- start: [9.0, 11.5, 0.0]
+  phases:
+  - {goto: [21.0, 11.5, 0.0]}

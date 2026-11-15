@@ -1,0 +1,10 @@
+# Robot contact with a held assistive device: the robot drives straight across the room at an elderly rollator user walking toward it,
+# who does not react to robots, so the robot touches the device first (humansim robot_contacts, part rollator).
+# Drive and record: python3 -m arena_runtime.humans.arena_humansim.device_contacts record (robot.mobile:=none).
+format: arena-scenario/2
+humans:
+- {name: rollator, model: Common/casual_male_caucasian_old_rollator, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ./elder_rollator_unaware.yaml}}
+robots:
+- start: [9.0, 11.5, 0.0]
+  phases:
+  - {goto: [21.0, 11.5, 0.0]}

@@ -1,0 +1,5 @@
+# blind_white_cane that does not react to robots, so the robot crossing its path reaches the held device (device_contact_white_cane_crossing).
+name: blind_white_cane_unaware
+extends: blind_white_cane
+perception:
+  robot_awareness: 0.0

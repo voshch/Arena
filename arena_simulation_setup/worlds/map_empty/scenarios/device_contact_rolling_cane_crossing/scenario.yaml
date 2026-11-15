@@ -1,0 +1,10 @@
+# Robot contact with a held assistive device, crossing: the robot drives across the path of a blind long-cane user (constant contact, rolling tip) at 90 degrees, from the
+# person's left. The person does not react to robots, and the sweeping cane touches the robot first (humansim robot_contacts).
+# Record with --start-within 4.35: the robot starts when the person is 4.35 m away, timed so it meets the device.
+format: arena-scenario/2
+humans:
+- {name: rolling_cane, model: Common/casual_male_asian_young_rollingcane, pose: [20.5, 11.35, 3.1416], waypoints: [[9.5, 11.35, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_rolling_cane_unaware.yaml}}
+robots:
+- start: [15.0, 9.75, 1.5708]
+  phases:
+  - {goto: [15.0, 14.35, 1.5708]}

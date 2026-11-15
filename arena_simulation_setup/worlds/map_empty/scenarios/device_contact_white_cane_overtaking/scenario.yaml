@@ -1,0 +1,10 @@
+# Robot contact from behind: the robot catches up with a blind long-cane user (two-point touch) walking slowly (0.25 m/s) away from it. The person does not react
+# to robots, and the robot touches their body, not the cane held ahead of them (humansim robot_contacts, part body).
+# Record with the default --drive 0.4: the robot gains on the person from 2 m behind.
+format: arena-scenario/2
+humans:
+- {name: white_cane, model: Common/casual_female_caucasian_middleage_whitecane, pose: [20.5, 11.65, 3.1416], waypoints: [[9.5, 11.65, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_white_cane_slow_unaware.yaml}}
+robots:
+- start: [22.5, 11.65, 3.1416]
+  phases:
+  - {goto: [9.0, 11.65, 3.1416]}
