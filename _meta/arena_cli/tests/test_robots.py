@@ -176,7 +176,8 @@ def test_planner_preflight_suite_keeps_each_contestant_robot():
 _RUNTIME_MANIFEST = {"launch": {"arena_bringup/arena_runtime.launch.py": {"sim": {"desc": "simulator", "default": "gazebo"}}}, "values": {"sim": ["gazebo", "isaac", "mujoco", "flatsim"]}}
 
 
-def test_preflight_verbs_complete_the_simulator() -> None:
+def test_preflight_verbs_complete_the_simulator(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ARENA_DIR", str(_arena(tmp_path)))
     for spec in (robots.COMMANDS["check"].complete, planners.COMMANDS["test"].complete):
         assert "sim:=" in {value for value, _desc, _group in _expand(spec, [], "", Context("", _RUNTIME_MANIFEST)).items}
         assert {"gazebo", "isaac", "mujoco", "flatsim"} <= {value for value, _desc, _group in _expand(spec, [], "sim:=", Context("", _RUNTIME_MANIFEST)).items}

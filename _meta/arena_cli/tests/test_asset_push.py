@@ -17,6 +17,7 @@ def _clip(root: Path, name: str) -> Path:
 def _push(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
+        "ARENA_WS_DIR": str(root),
         "ARENA_ASSETS_DIR": str(root / "cache"),
         "ARENA_ASSETS_DIR_LOCAL": str(root),
         "PYTHONPATH": os.pathsep.join([str(Path(__file__).parents[2]), os.environ.get("PYTHONPATH", "")]),

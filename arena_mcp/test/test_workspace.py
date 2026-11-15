@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -96,11 +97,21 @@ def test_fork_and_robot_tables_parse() -> None:
     assert workspace.robot_rows("[x] jackal\n[ ] go1\n[x] arms/ur5\n") == {"ready": ["jackal", "arms/ur5"], "pending": ["go1"]}
 
 
-needs_arena = pytest.mark.skipif(not os.environ.get("ARENA_DIR"), reason="needs a sourced Arena environment")
-needs_cli = pytest.mark.skipif(not cli.sourced(), reason="needs a shell that sourced arena")
+@pytest.fixture
+def arena_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ARENA_DIR, ARENA_WS_DIR, INSTALLED and exported _arena_cli of a shell that sourced this checkout, unless the process inherited them."""
+    if cli.sourced():
+        return
+    arena = cli.arena_dir()
+    shim = re.search(rf"^{cli.SHIM}\(\)\{{\n(.*?)\n\}}", (arena / "_meta" / "tools" / "source").read_text(), re.M | re.S)
+    assert shim, f"no {cli.SHIM} function in _meta/tools/source"
+    monkeypatch.setenv("ARENA_DIR", str(arena))
+    monkeypatch.setenv("ARENA_WS_DIR", str(tmp_path))
+    monkeypatch.setenv("INSTALLED", str(arena / ".installed"))
+    monkeypatch.setenv(f"BASH_FUNC_{cli.SHIM}%%", f"() {{ {shim.group(1)}\n}}")
 
 
-@needs_arena
+@pytest.mark.usefixtures("arena_shell")
 def test_features_come_from_the_cli_registry() -> None:
     from arena_cli import features
 
@@ -110,7 +121,7 @@ def test_features_come_from_the_cli_registry() -> None:
     assert all(entry["summary"] for entry in listed.values())
 
 
-@needs_arena
+@pytest.mark.usefixtures("arena_shell")
 def test_feature_and_setting_arguments_are_validated() -> None:
     with pytest.raises(ToolError, match="no feature") as missing:
         asyncio.run(workspace.workspace_feature("no_such_feature", "install"))
@@ -134,20 +145,20 @@ def test_feature_and_setting_arguments_are_validated() -> None:
         asyncio.run(workspace.workspace_fork_new("p9", from_fork="--all"))
 
 
-@needs_cli
+@pytest.mark.usefixtures("arena_shell")
 def test_net_setting_reads_through_the_real_verb() -> None:
     read = workspace.workspace_settings_net()
     assert read["net"] in ("local", "lan") and read["values"] == ["local", "lan"]
     assert "applies" not in read
 
 
-@needs_cli
+@pytest.mark.usefixtures("arena_shell")
 def test_robots_ls_reads_submodule_state() -> None:
     listed = asyncio.run(workspace.workspace_robots("ls"))
     assert listed["ready"] or listed["pending"]
 
 
-@needs_cli
+@pytest.mark.usefixtures("arena_shell")
 def test_fork_verbs_surface_the_cli_refusal_inside_a_fork(tmp_path: Path) -> None:
     saved = {key: os.environ.get(key) for key in ("ARENA_FORK", "ARENA_DATA_DIR")}
     os.environ.update(ARENA_FORK="mcp_test_fork", ARENA_DATA_DIR=str(tmp_path))
@@ -171,7 +182,7 @@ def test_fork_verbs_surface_the_cli_refusal_inside_a_fork(tmp_path: Path) -> Non
     assert "this is fork mcp_test_fork, manage forks from the dev container" in log
 
 
-@needs_cli
+@pytest.mark.usefixtures("arena_shell")
 def test_fork_new_inside_a_fork_forks_only_that_fork(tmp_path: Path) -> None:
     saved = {key: os.environ.get(key) for key in ("ARENA_FORK", "ARENA_DATA_DIR")}
     os.environ.update(ARENA_FORK="mcp_test_fork", ARENA_DATA_DIR=str(tmp_path))
@@ -193,7 +204,7 @@ def test_fork_new_inside_a_fork_forks_only_that_fork(tmp_path: Path) -> None:
     assert "this is fork mcp_test_fork, it forks only itself" in log
 
 
-@needs_cli
+@pytest.mark.usefixtures("arena_shell")
 def test_status_of_the_live_workspace() -> None:
     root = Path(os.environ["ARENA_DIR"])
     if subprocess.run(["git", "-C", str(root), "rev-parse"], capture_output=True, check=False).returncode:

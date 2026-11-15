@@ -37,7 +37,7 @@ def write(path: pathlib.Path, text: str) -> pathlib.Path:
 
 @pytest.fixture
 def ws(tmp_path: pathlib.Path) -> Iterator[pathlib.Path]:
-    """A workspace with a committed repo in src, a planner venv in build, an install and a venv, set as ARENA_WS_DIR."""
+    """A workspace with a committed repo in src, a planner venv in build, an install and a venv, set as ARENA_WS_DIR with the repo as ARENA_DIR."""
     root = tmp_path / "ws"
     repo = root / "src" / "Arena"
     write(repo / "pkg" / "a.py", "a = 1\n")
@@ -55,9 +55,9 @@ def ws(tmp_path: pathlib.Path) -> Iterator[pathlib.Path]:
     write(root / "install" / "pkg" / "share" / "pkg" / "package.xml", "<package/>\n")
     write(root / "venv" / "bin" / "python3", "py\n")
     (root / ".uv-python").mkdir()
-    keys = ("ARENA_WS_DIR", "ARENA_VENV_DIR", "ARENA_FORK", "ARENA_FORK_DOMAIN_BASE", "ARENA_IMAGE_TAG", "ARENA_RELEASE", "ARENA_FORKS_DIR")
+    keys = ("ARENA_WS_DIR", "ARENA_DIR", "ARENA_VENV_DIR", "ARENA_FORK", "ARENA_FORK_DOMAIN_BASE", "ARENA_IMAGE_TAG", "ARENA_RELEASE", "ARENA_FORKS_DIR")
     saved = {k: os.environ.get(k) for k in keys}
-    os.environ.update({"ARENA_WS_DIR": str(root), "ARENA_VENV_DIR": str(root / "venv")})
+    os.environ.update({"ARENA_WS_DIR": str(root), "ARENA_DIR": str(repo), "ARENA_VENV_DIR": str(root / "venv")})
     for key in ("ARENA_FORK", "ARENA_FORK_DOMAIN_BASE", "ARENA_RELEASE", "ARENA_FORKS_DIR"):
         os.environ.pop(key, None)
     os.environ["ARENA_IMAGE_TAG"] = saved["ARENA_IMAGE_TAG"] or "arena-test"

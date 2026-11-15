@@ -208,7 +208,7 @@ class Hub:
     def refresh(self) -> None:
         try:
             found = discover()
-        except (HubError, subprocess.TimeoutExpired, ValueError) as exc:
+        except (HubError, OSError, subprocess.TimeoutExpired, ValueError) as exc:
             with self.lock:
                 self.errors["docker"] = str(exc)
             return
