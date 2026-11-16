@@ -59,8 +59,6 @@ class PerceptionConfig(typing.TypedDict):
 
 class GridConfig(typing.TypedDict):
     cell_m: float
-    x_max_m: float
-    y_max_m: float
 
 
 class PeopleViewConfig(typing.TypedDict):

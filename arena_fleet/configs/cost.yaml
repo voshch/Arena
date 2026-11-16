@@ -46,7 +46,7 @@ people_view:              # the map of people every decision reads; one map for 
   dt_s: 1.0               # one layer per second ahead, up to encounter.horizon_s
   person_r_m: 0.65        # a known person occupies this disk
   robot_r_m: 0.35         # a robot's body, added when testing a point of a plan
-  grid: {cell_m: 0.25, x_max_m: 26.0, y_max_m: 13.0}
+  grid: {cell_m: 0.25}     # over the walls' bounding box
 
 flow:                     # info flow: all people's live state -> heatmap of probability -> occupied cells
   period_s: 1.0

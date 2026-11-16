@@ -91,11 +91,13 @@ class PeopleView:
     def __init__(self, cost: CostConfig, walls: Sequence[Wall], mod: MapOfDynamics | None = None) -> None:
         v = cost["people_view"]
         self.cell, self.dt = v["grid"]["cell_m"], v["dt_s"]
-        self.nx, self.ny = int(round(v["grid"]["x_max_m"] / self.cell)), int(round(v["grid"]["y_max_m"] / self.cell))
+        xs, ys = [p[0] for w in walls for p in w], [p[1] for w in walls for p in w]
+        self.x0, self.y0 = min(xs), min(ys)
+        self.nx, self.ny = math.ceil(round((max(xs) - self.x0) / self.cell, 6)), math.ceil(round((max(ys) - self.y0) / self.cell, 6))
         if mod is not None:
             _, my, mx = mod.rho.shape
-            if not (math.isclose(mod.cell, self.cell) and abs(mod.x0) < 1e-6 and abs(mod.y0) < 1e-6 and mx >= self.nx and my >= self.ny):
-                raise ValueError(f"map of dynamics (origin {mod.x0}, {mod.y0}, cell {mod.cell}, {mx} x {my}) does not cover the people view grid (origin 0, 0, cell {self.cell}, {self.nx} x {self.ny})")
+            if not (math.isclose(mod.cell, self.cell) and math.isclose(mod.x0, self.x0, abs_tol=1e-6) and math.isclose(mod.y0, self.y0, abs_tol=1e-6) and mx >= self.nx and my >= self.ny):
+                raise ValueError(f"map of dynamics (origin {mod.x0}, {mod.y0}, cell {mod.cell}, {mx} x {my}) does not cover the people view grid (origin {self.x0}, {self.y0}, cell {self.cell}, {self.nx} x {self.ny})")
         self.n = int(cost["encounter"]["horizon_s"] / self.dt) + 1
         self.walls, self.mod = list(walls), mod
         self.flow: FlowConfig = cost["flow"]
@@ -106,8 +108,11 @@ class PeopleView:
         self.probs: list[npt.NDArray[np.float32]] | None = None
         self.live_layers: list[set[int]] | None = None  # info dmod: occupancy of the people known now only (H); layers also hold the map (gate, queue, slots)
 
+    def ij(self, x: float, y: float) -> tuple[int, int]:
+        return int((x - self.x0) // self.cell), int((y - self.y0) // self.cell)
+
     def idx(self, x: float, y: float) -> int | None:
-        i, j = int(x // self.cell), int(y // self.cell)
+        i, j = self.ij(x, y)
         return j * self.nx + i if 0 <= i < self.nx and 0 <= j < self.ny else None
 
     def _k(self, tau: float) -> int:
@@ -123,7 +128,7 @@ class PeopleView:
         lay = self.layer(tau, live)
         if not inflate:
             return self.idx(x, y) in lay
-        i0, j0 = int(x // self.cell), int(y // self.cell)
+        i0, j0 = self.ij(x, y)
         return any((j0 + j) * self.nx + i0 + i in lay for i, j in self.robot if 0 <= i0 + i < self.nx and 0 <= j0 + j < self.ny)
 
     def count(self, tau: float, cx: float, cy: float, r: float) -> float:
@@ -166,7 +171,7 @@ class PeopleView:
             tw = self.t_wall(x, y, vx, vy)
             for k in range(self.n):
                 t = min(k * self.dt + age, max(tw - 0.05, 0.0))
-                i0, j0 = int((x + vx * t) // self.cell), int((y + vy * t) // self.cell)
+                i0, j0 = self.ij(x + vx * t, y + vy * t)
                 lay = self.layers[k]
                 for i, j in self.person:
                     if 0 <= i0 + i < self.nx and 0 <= j0 + j < self.ny:
@@ -229,12 +234,12 @@ class PeopleView:
                     else:
                         t = min(tau + age, max(self.t_wall(x, y, vx, vy) - 0.05, 0.0))
                         px, py = x + vx * t, y + vy * t
-                    i0, j0 = int(px // c), int(py // c)
+                    i0, j0 = self.ij(px, py)
                     a0, a1, b0, b1 = max(i0 - rad, 0), min(i0 + rad + 1, self.nx), max(j0 - rad, 0), min(j0 + rad + 1, self.ny)
                     if a0 >= a1 or b0 >= b1:
                         continue
-                    xs = (np.arange(a0, a1) + 0.5) * c - px
-                    ys = (np.arange(b0, b1) + 0.5) * c - py
+                    xs = self.x0 + (np.arange(a0, a1) + 0.5) * c - px
+                    ys = self.y0 + (np.arange(b0, b1) + 0.5) * c - py
                     g = np.exp(-(xs**2)[None, :] / (2 * sig * sig) - (ys**2)[:, None] / (2 * sig * sig)) / (2 * math.pi * sig * sig)
                     rho[b0:b1, a0:a1] += w * g
                     if advect:

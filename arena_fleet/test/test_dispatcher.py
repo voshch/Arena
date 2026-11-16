@@ -11,7 +11,7 @@ from arena_fleet.config import CostConfig, RulesConfig, load_cost, load_rules
 from arena_fleet.dispatcher import FleetDispatcher, Info, PublishPlan, SendGoal, Stop, robot_names
 from arena_fleet.geometry import Point, hungarian, seg_cross
 from arena_fleet.site import Site
-from arena_fleet.view import MapOfDynamics
+from arena_fleet.view import MapOfDynamics, PeopleView
 
 PKG = pathlib.Path(__file__).resolve().parents[1]
 WORLD = PKG.parent / "arena_simulation_setup" / "worlds" / "mechanisms_doorway" / "world.yaml"
@@ -109,11 +109,22 @@ def walker(e: Episode, ahead: float = 6.0, speed: float = 1.0) -> Peds:
     return {"w": (p[i][0], p[i][1], (x0 - p[i][0]) / length * speed, (y0 - p[i][1]) / length * speed)}
 
 
-def map_of_dynamics(path: pathlib.Path, box: tuple[slice, slice], t0: int = 0) -> MapOfDynamics:
-    rho = np.zeros((18, 52, 104))
-    rho[t0:, box[0], box[1]] = 3.0
-    np.savez(path, rho=rho, x_edges=np.arange(105) * 0.25, y_edges=np.arange(53) * 0.25, t_edges=np.arange(19) * 10.0)
+def view_grid() -> PeopleView:
+    return PeopleView(cost(), site().walls)
+
+
+def save_map(path: pathlib.Path, rho: np.ndarray, **arrays: np.ndarray) -> MapOfDynamics:
+    """A map of dynamics on the people view grid, 10 s windows."""
+    g = view_grid()
+    np.savez(path, rho=rho, x_edges=g.x0 + np.arange(g.nx + 1) * g.cell, y_edges=g.y0 + np.arange(g.ny + 1) * g.cell, t_edges=np.arange(rho.shape[0] + 1) * 10.0, **arrays)
     return MapOfDynamics.load(path)
+
+
+def map_of_dynamics(path: pathlib.Path, box: tuple[slice, slice], t0: int = 0) -> MapOfDynamics:
+    g = view_grid()
+    rho = np.zeros((18, g.ny, g.nx))
+    rho[t0:, box[0], box[1]] = 3.0
+    return save_map(path, rho)
 
 
 def test_hungarian_finds_the_optimum_of_a_known_matrix() -> None:
@@ -441,7 +452,7 @@ def test_queue_slots_leave_the_side_where_people_were_seen(tmp_path: pathlib.Pat
     view = d.view
     assert view is not None
     before = d.choose_slots("main_door", -1.0)
-    stream = [view.idx(x / 4, y / 4) for x in range(24, 52) for y in range(int(before[0][1] * 4) - 8, int(before[0][1] * 4) + 8)]
+    stream = [view.idx(x * view.cell, y * view.cell) for x in range(24, 52) for y in range(int(before[0][1] / view.cell) - 8, int(before[0][1] / view.cell) + 8)]
     d.history.update({c: 30.0 for c in stream if c is not None})
     after = d.choose_slots("main_door", -1.0)
     cy = d.doors["main_door"].c[1]
@@ -495,10 +506,11 @@ def test_a_queue_without_room_for_slots_holds_robots_where_they_join(tmp_path: p
     assert all(r.phase == "done" for r in e.d.rob.values())
 
 
-@pytest.mark.parametrize(("shape", "x0", "cell"), [((18, 52, 104), -1.0, 0.25), ((18, 52, 104), 0.0, 0.5), ((18, 40, 80), 0.0, 0.25)])
-def test_a_map_of_dynamics_off_the_people_view_grid_is_refused(tmp_path: pathlib.Path, shape: tuple[int, int, int], x0: float, cell: float) -> None:
-    _, ny, nx = shape
-    np.savez(tmp_path / "mod.npz", rho=np.zeros(shape), x_edges=x0 + np.arange(nx + 1) * cell, y_edges=np.arange(ny + 1) * cell, t_edges=np.arange(19) * 10.0)
+@pytest.mark.parametrize(("shift", "scale", "short"), [(1, 1, 0), (0, 2, 0), (0, 1, 1)])
+def test_a_map_of_dynamics_off_the_people_view_grid_is_refused(tmp_path: pathlib.Path, shift: int, scale: int, short: int) -> None:
+    g = view_grid()
+    c, ny = g.cell * scale, g.ny - short
+    np.savez(tmp_path / "mod.npz", rho=np.zeros((18, ny, g.nx)), x_edges=g.x0 - shift * g.cell + np.arange(g.nx + 1) * c, y_edges=g.y0 + np.arange(ny + 1) * c, t_edges=np.arange(19) * 10.0)
     with pytest.raises(ValueError, match="people view grid"):
         Episode(tmp_path / "run", 1, profile="full", info="flow", mod=MapOfDynamics.load(tmp_path / "mod.npz"))
 
@@ -617,13 +629,13 @@ def test_four_robots_arriving_side_by_side_at_one_door_queue_without_crossing_wa
     assert (shared, crossed, jumped) == (0, 0, 0)
 
 
-def directional_map(path: pathlib.Path, bin_: int, box: tuple[slice, slice] = (slice(0, 52), slice(0, 104)), speed: float = 1.2) -> MapOfDynamics:
+def directional_map(path: pathlib.Path, bin_: int, box: tuple[slice, slice] = (slice(None), slice(None)), speed: float = 1.2) -> MapOfDynamics:
     """A stream of 0.5 ped/m^2 walking towards direction bin_ (of 8, 0 = +x) everywhere in box."""
-    rho_dir = np.zeros((18, 52, 104, 8))
+    g = view_grid()
+    rho_dir = np.zeros((18, g.ny, g.nx, 8))
     rho_dir[:, box[0], box[1], bin_] = 0.5
     spd = np.where(rho_dir.sum(-1) > 0, speed, np.nan)
-    np.savez(path, rho=rho_dir.sum(-1), rho_dir=rho_dir, spd=spd, x_edges=np.arange(105) * 0.25, y_edges=np.arange(53) * 0.25, t_edges=np.arange(19) * 10.0)
-    return MapOfDynamics.load(path)
+    return save_map(path, rho_dir.sum(-1), rho_dir=rho_dir, spd=spd)
 
 
 def test_walking_against_the_stream_meets_more_people_than_walking_with_it(tmp_path: pathlib.Path) -> None:
