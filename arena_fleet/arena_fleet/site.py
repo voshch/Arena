@@ -1,6 +1,7 @@
 import math
 import pathlib
 import typing
+from collections.abc import Sequence
 
 import attrs
 import yaml
@@ -10,7 +11,7 @@ from arena_fleet.geometry import Point, Wall
 
 @attrs.frozen
 class Door:
-    """A managed door of the resource table: its polygon in the level frame and centre."""
+    """A managed door: the smallest world zone holding the door's span, and its centre."""
 
     id: str
     polygon: tuple[Point, ...]
@@ -52,11 +53,36 @@ class Site:
         for d in lv.get("doors", []):
             a, b = _point(d["span"][0]), _point(d["span"][1])
             leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), math.dist(a, b)))
-        doors = {str(r["id"]): Door(str(r["id"]), tuple(_point(p) for p in r["polygon"])) for r in _mapping(resources)["resources"] if r["kind"] == "door"}
+        zones = [tuple(_point(p) for p in z["polygon"]) for z in lv.get("zones", [])]
+        doors: dict[str, Door] = {}
+        for r in _mapping(resources)["resources"]:
+            if r["kind"] != "door":
+                continue
+            name = str(r["id"])
+            leaf = next((x for x in leaves if x.name == name), None)
+            if leaf is None:
+                raise ValueError(f"{resources}: {world} level {level} has no door {name}")
+            holding = [z for z in zones if _inside(leaf.c, z)]
+            if not holding:
+                raise ValueError(f"{world}: no zone of level {level} holds door {name}")
+            doors[name] = Door(name, min(holding, key=_area))
         if not doors:
             raise ValueError(f"{resources}: no resource of kind door")
         starts = tuple(_point(r["start"]) for r in _mapping(scenario)["robots"])
         return cls(walls=tuple(walls), leaves=tuple(leaves), doors=doors, starts=starts)
+
+
+def _inside(p: Point, polygon: Sequence[Point]) -> bool:
+    x, y = p
+    hit = False
+    for (ax, ay), (bx, by) in zip(polygon, (*polygon[1:], polygon[0]), strict=True):
+        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+            hit = not hit
+    return hit
+
+
+def _area(polygon: Sequence[Point]) -> float:
+    return abs(sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(polygon, (*polygon[1:], polygon[0]), strict=True))) / 2
 
 
 def _mapping(path: pathlib.Path) -> dict[str, typing.Any]:

@@ -4,6 +4,7 @@ import pathlib
 
 import numpy as np
 import pytest
+import yaml
 
 from arena_fleet import features
 from arena_fleet.config import CostConfig, RulesConfig, load_cost, load_rules
@@ -327,6 +328,17 @@ def test_hata_bids_avoid_the_door_the_map_shows_busy_and_apply_no_door_rules(tmp
         assert all(abs(o["J"] - (1.15 * o["len_m"] + 0.95 * o["sum_p"])) < 0.2 for o in options.values())
     assert not any(e.events(k) for k in ("to_slot", "hold", "yield", "join"))
     assert any(x["mode"] == "hungarian" for x in e.events("d1_assign"))
+
+
+def test_a_managed_door_takes_the_smallest_world_zone_holding_its_span(tmp_path: pathlib.Path) -> None:
+    level = yaml.safe_load(WORLD.read_text())["levels"][0]
+    zone = {z["name"]: tuple(tuple(p) for p in z["polygon"]) for z in level["zones"]}
+    doors = site().doors
+    assert doors["main_door"].polygon == zone["dw_main"] and doors["side_door"].polygon == zone["dw_side"]
+    unknown = tmp_path / "resources.yaml"
+    unknown.write_text(yaml.safe_dump({"world": "mechanisms_doorway", "resources": [{"id": "back_door", "kind": "door"}]}))
+    with pytest.raises(ValueError, match="no door back_door"):
+        Site.load(WORLD, unknown, EXAMPLE / "scenario" / "scenario.yaml")
 
 
 def test_hata_cost_takes_every_key_it_does_not_set_from_cost() -> None:
