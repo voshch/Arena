@@ -195,7 +195,7 @@ class FleetDispatcher:
         self.ev.write(json.dumps({"t": round(self.t_rel(), 2), "ev": ev, **kw}) + "\n")
 
     def draw_goals(self, seed: int, n: int) -> list[Point]:
-        """Eight goals from the seed in the goal zone, the first n used, so fleets of 2, 4 and 8 share goals."""
+        """The first n goals the seed places in the goal zone, so a smaller fleet takes the first goals of a larger one."""
         t = self.cost["task"]
         (x0, x1), (y0, y1) = t["goal_zone"]["x"], t["goal_zone"]["y"]
         rng = random.Random(f"fleetbench-goals-{seed}")
@@ -204,11 +204,9 @@ class FleetDispatcher:
             p = (round(rng.uniform(x0, x1), 2), round(rng.uniform(y0, y1), 2))
             if self.grid.clearance(p) >= t["clearance_m"] and all(math.dist(p, q) >= t["min_separation_m"] for q in out):
                 out.append(p)
-                if len(out) == 8:
-                    break
-        if len(out) < n:
-            raise ValueError("cannot place the goals")
-        return out[:n]
+                if len(out) == n:
+                    return out
+        raise ValueError(f"cannot place {n} goals {t['clearance_m']} m from walls and {t['min_separation_m']} m apart in the goal zone")
 
     # inputs
 

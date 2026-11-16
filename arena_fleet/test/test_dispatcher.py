@@ -120,10 +120,10 @@ def test_hungarian_finds_the_optimum_of_a_known_matrix() -> None:
 
 
 def test_goals_follow_the_seed_and_smaller_fleets_take_the_first_goals(tmp_path: pathlib.Path) -> None:
-    two, eight = Episode(tmp_path / "2", 2), Episode(tmp_path / "8", 8)
-    assert two.d.goals == eight.d.goals[:2]
+    two, ten = Episode(tmp_path / "2", 2), Episode(tmp_path / "10", 10)
+    assert two.d.goals == ten.d.goals[:2]
     assert Episode(tmp_path / "7", 2, seed=7).d.goals != two.d.goals
-    goals = eight.d.goals
+    goals = ten.d.goals
     assert all(g[0] > 15 for g in goals) and min(math.dist(a, b) for i, a in enumerate(goals) for b in goals[i + 1 :]) >= 1.5
 
 
@@ -480,6 +480,17 @@ def test_a_map_of_dynamics_off_the_people_view_grid_is_refused(tmp_path: pathlib
     np.savez(tmp_path / "mod.npz", rho=np.zeros(shape), x_edges=x0 + np.arange(nx + 1) * cell, y_edges=np.arange(ny + 1) * cell, t_edges=np.arange(19) * 10.0)
     with pytest.raises(ValueError, match="people view grid"):
         Episode(tmp_path / "run", 1, profile="full", info="flow", mod=MapOfDynamics.load(tmp_path / "mod.npz"))
+
+
+def room_for_one_goal() -> CostConfig:
+    c = cost()
+    c["task"]["min_separation_m"] = 100.0
+    return c
+
+
+def test_a_goal_zone_without_room_for_the_fleet_is_refused(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(ValueError, match="cannot place 2 goals"):
+        FleetDispatcher(site(), room_for_one_goal(), rules(), names=robot_names("jackal", 2), info="none", out=tmp_path)
 
 
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
