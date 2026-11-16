@@ -9,7 +9,7 @@ import attrs
 
 from arena_fleet import features
 from arena_fleet.config import RULES, CostConfig, Profile, RulesConfig
-from arena_fleet.geometry import Funnel, Grid, Point, grown, hungarian, plan_len, seg_cross
+from arena_fleet.geometry import Box, Funnel, Grid, Point, grown, hungarian, plan_len, seg_cross
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics, PeopleView
 
@@ -21,7 +21,7 @@ Terms = dict[str, float]
 VERSION = "1.3"
 WAITING = ("approach", "hold", "cross", "to_slot", "queued", "yield")
 NO_ROUTE = 1e9
-_FIELDS: dict[tuple[int, float, float, str], list[float]] = {}
+_FIELDS: dict[tuple[int, float, float, Point, tuple[Box, ...], tuple[float, float]], list[float]] = {}
 
 
 @attrs.frozen
@@ -166,12 +166,13 @@ class FleetDispatcher:
         self.fields: dict[tuple[Point, str], list[float]] = {}
         key0 = hash(self.walls)
         pl = cost["plan"]
+        funnel = (pl["funnel_len_m"], pl["funnel_k"])
         for g in self.goals:
             for d, door in self.doors.items():
-                key = (key0, round(g[0], 2), round(g[1], 2), d)
+                closed = tuple(grown(o.polygon, 0.0) for k, o in self.doors.items() if k != d)
+                key = (key0, round(g[0], 2), round(g[1], 2), door.c, closed, funnel)
                 if key not in _FIELDS:
-                    closed = [grown(o.polygon, 0.0) for k, o in self.doors.items() if k != d]
-                    _FIELDS[key] = self.grid.field(g, closed, (*door.c, pl["funnel_len_m"], pl["funnel_k"]))
+                    _FIELDS[key] = self.grid.field(g, closed, (*door.c, *funnel))
                 self.fields[(g, d)] = _FIELDS[key]
         out.mkdir(parents=True, exist_ok=True)
         self.ev = (out / "events.jsonl").open("w", buffering=1)

@@ -503,6 +503,15 @@ def test_a_rerun_into_the_same_directory_starts_its_logs_afresh_and_a_refused_on
     assert not (tmp_path / "refused").exists()
 
 
+def test_dispatchers_with_another_funnel_plan_on_their_own_fields(tmp_path: pathlib.Path) -> None:
+    a = Episode(tmp_path / "a", 1).d
+    c = cost()
+    c["plan"]["funnel_k"] = 0.0
+    b = FleetDispatcher(site(), c, rules(), names=["jackal"], info="none", seed=6, out=tmp_path / "b")
+    g = a.goals[0]
+    assert b.goals[0] == g and a.fields[(g, "main_door")] != b.fields[(g, "main_door")]
+
+
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
     """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
     e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})
