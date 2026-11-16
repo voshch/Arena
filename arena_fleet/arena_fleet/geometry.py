@@ -77,8 +77,8 @@ class Grid:
 
     NB: typing.ClassVar[list[tuple[int, int, float]]] = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0), (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414)]
 
-    def __init__(self, walls: Sequence[Wall], robot_r: float) -> None:
-        self.robot_r = robot_r
+    def __init__(self, walls: Sequence[Wall], robot_r: float, snap_m: float, expansions: int) -> None:
+        self.robot_r, self.snap_rings, self.expansions = robot_r, round(snap_m / RES), expansions
         xs = [p[0] for w in walls for p in w]
         ys = [p[1] for w in walls for p in w]
         self.x0, self.y0 = min(xs) - 0.5, min(ys) - 0.5
@@ -152,7 +152,7 @@ class Grid:
         c = self.cell(x, y)
         if not math.isfinite(field[c]):
             seen, ring, best = {c}, [c], None
-            for _ in range(30):
+            for _ in range(self.snap_rings):
                 nxt: list[int] = []
                 for k in ring:
                     for nc, _w in self.neigh(k):
@@ -168,7 +168,7 @@ class Grid:
                 return []
             c = best
         out = [c]
-        for _ in range(4000):
+        for _ in range(len(field)):
             if field[c] <= 0.0:
                 break
             nc = min((k for k, _w in self.neigh(c)), key=lambda k: field[k])
@@ -181,7 +181,7 @@ class Grid:
     def thin(self, cells: Sequence[int]) -> list[Point]:
         return [self.xy(k) for k in cells[::2]] + ([self.xy(cells[-1])] if len(cells) % 2 == 0 else [])
 
-    def route(self, field: Sequence[float], x: float, y: float, view: Occupancy, v_nom: float, occ_cost: float, funnel: Funnel | None = None, horizon: float = 30.0) -> list[Point]:
+    def route(self, field: Sequence[float], x: float, y: float, view: Occupancy, v_nom: float, occ_cost: float, funnel: Funnel | None, horizon: float) -> list[Point]:
         """A* to the goal with the static field as heuristic; cells the people map marks occupied on arrival cost occ_cost per m."""
         start = self.descend(field, x, y)
         if not start:
@@ -191,7 +191,7 @@ class Grid:
         parent: dict[int, int] = {}
         pq = [(field[s0], 0.0, 0.0, s0)]
         expanded = 0
-        while pq and expanded < 8000:
+        while pq and expanded < self.expansions:
             _f, g, length, c = heapq.heappop(pq)
             expanded += 1
             if field[c] <= 0.0:

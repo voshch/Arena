@@ -99,6 +99,7 @@ class PeopleView:
             if not (math.isclose(mod.cell, self.cell) and math.isclose(mod.x0, self.x0, abs_tol=1e-6) and math.isclose(mod.y0, self.y0, abs_tol=1e-6) and mx >= self.nx and my >= self.ny):
                 raise ValueError(f"map of dynamics (origin {mod.x0}, {mod.y0}, cell {mod.cell}, {mx} x {my}) does not cover the people view grid (origin {self.x0}, {self.y0}, cell {self.cell}, {self.nx} x {self.ny})")
         self.n = int(cost["encounter"]["horizon_s"] / self.dt) + 1
+        self.heat_k = [self._k(s) for s in v["heat_s"]]
         self.walls, self.mod = list(walls), mod
         self.flow: FlowConfig = cost["flow"]
         self.person_r = v["person_r_m"]
@@ -176,7 +177,7 @@ class PeopleView:
                 for i, j in self.person:
                     if 0 <= i0 + i < self.nx and 0 <= j0 + j < self.ny:
                         lay.add((j0 + j) * self.nx + i0 + i)
-        self.heat = {k: [[c, 100] for c in sorted(self.layers[k])] for k in (0, 5) if k < self.n}
+        self.heat = {k: [[c, 100] for c in sorted(self.layers[k])] for k in self.heat_k}
 
     def track(self, x: float, y: float, vx: float, vy: float, t_rel: float, age: float) -> list[tuple[float, float]]:
         """Where a person is k * dt s ahead: own heading at first, turning onto the map's walking direction with
@@ -249,7 +250,7 @@ class PeopleView:
             p = (1.0 - np.exp(-rho * area)).ravel()
             probs.append(p.astype(np.float32))
             layers.append({int(i) for i in np.flatnonzero(p >= f["threshold"])})
-            if k in (0, 5):
+            if k in self.heat_k:
                 heat[k] = [[int(i), int(p[i] * 100)] for i in np.flatnonzero(p >= 0.05)]
         self.layers, self.heat, self.probs = layers, heat, probs
         self.live_layers = live_layers if advect else None

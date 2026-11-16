@@ -34,6 +34,9 @@ queue:                   # robots at the same door go one at a time, in order of
   clearance_m: 0.6       # from walls
   slot_tol_m: 0.4        # slot reached
   history_weight: 0.5    # slot_by_people: score per second a slot cell was seen occupied so far, so a lull does not hide the people's stream
+  score_slots: 3         # slot_by_people scores the first this many slots of a set
+  score_horizon_s: 10    # over the forecast this far ahead
+  score_step_s: 2        # in steps of this many seconds
 
 yield_people:            # needs human input (all, what robots see, flow). All of it reads the people map.
   margin_m: 0.6          # door entry: no entry while the map shows someone in the door polygon grown by this...
@@ -50,6 +53,7 @@ yield_people:            # needs human input (all, what robots see, flow). All o
   aside_tol_m: 0.35
   aside_robot_gap_m: 1.2 # a step-aside point stays this far from other robots, their plans, slots and step-aside points; the way to it 0.9 m from their bodies
   aside_plan_ahead_s: 5.0  # how much of another robot's plan counts as taken
+  aside_retry_s: 1.0     # a yielding robot without a step-aside point looks for one again this often
   aside_person_gap_m: 1.0 # on the way to a step-aside point no predicted person comes closer than this, unless standing still would bring them closer
 
 door_gate:               # v1.3, needs yield_people. A door is closed to robots while people are predicted in it (door polygon + margin_m)
@@ -77,3 +81,6 @@ episode:
   goal_tol_m: 0.6
   stuck_s: 20.0          # moved < 0.1 m for this long while not held: logged `stuck`
   tail_s: 5.0            # keep logging this long after the last robot arrives
+  setup_tol_m: 0.3       # setup waits until the parked robots' offsets from their scenario starts agree within this
+  replan_period_s: 1.0   # a moving robot is re-planned this often
+  sample_period_s: 0.5   # samples.jsonl gets a row per robot this often

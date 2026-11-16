@@ -362,6 +362,16 @@ def test_one_robot_radius_sizes_the_wall_margin_and_the_body_tested_against_peop
     assert wide.view is not None and narrow.view is not None and len(wide.view.robot) > len(narrow.view.robot)
 
 
+def test_samples_are_written_at_the_sample_period_of_the_rules(tmp_path: pathlib.Path) -> None:
+    rows: dict[float, int] = {}
+    for period in (0.5, 1.0):
+        e = Episode(tmp_path / str(period), 1, profile="queue")
+        e.d.rcfg["episode"]["sample_period_s"] = period
+        e.run(20)
+        rows[period] = len((tmp_path / str(period) / "samples.jsonl").read_text().splitlines())
+    assert rows[0.5] > rows[1.0] > 0
+
+
 def test_hata_cost_takes_every_key_it_does_not_set_from_cost() -> None:
     base, hata = cost(), cost("hata_cost.yaml")
     assert hata.get("mode") == "hata" and "hata" in hata

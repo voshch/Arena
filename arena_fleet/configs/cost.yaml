@@ -20,6 +20,8 @@ plan:                     # shape of the plan sent to the robot (not a cost of J
   funnel_k: 4.0           # how strongly (per metre squared off the axis)
   occupied_cost_per_m: 6.0  # plan_around: extra cost of a metre of plan through cells the people map says are occupied
   around_horizon_s: 30.0  # plan_around looks at the map this far along the plan
+  snap_m: 3.0             # a robot off the passable cells plans from the nearest one within this distance
+  route_expansions: 8000  # plan_around gives up after this many A* expansions and keeps the plan down the field
 
 robot:
   radius_m: 0.35          # a robot's body: plans keep it clear of walls, and it is added when testing a point of a plan
@@ -48,6 +50,7 @@ people_view:              # the map of people every decision reads; one map for 
   period_s: 0.5           # rebuilt this often
   dt_s: 1.0               # one layer per second ahead, up to encounter.horizon_s
   person_r_m: 0.65        # a known person occupies this disk
+  heat_s: [0, 5]          # heat.jsonl holds the people map these many seconds ahead
   grid: {cell_m: 0.25}     # over the walls' bounding box
 
 flow:                     # info flow: all people's live state -> heatmap of probability -> occupied cells

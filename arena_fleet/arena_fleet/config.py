@@ -30,6 +30,8 @@ class PlanConfig(typing.TypedDict):
     funnel_k: float
     occupied_cost_per_m: float
     around_horizon_s: float
+    snap_m: float
+    route_expansions: int
 
 
 class RobotConfig(typing.TypedDict):
@@ -69,6 +71,7 @@ class PeopleViewConfig(typing.TypedDict):
     period_s: float
     dt_s: float
     person_r_m: float
+    heat_s: list[float]
     grid: GridConfig
 
 
@@ -136,6 +139,9 @@ class QueueConfig(typing.TypedDict):
     clearance_m: float
     slot_tol_m: float
     history_weight: float
+    score_slots: int
+    score_horizon_s: int
+    score_step_s: int
 
 
 class YieldConfig(typing.TypedDict):
@@ -154,6 +160,7 @@ class YieldConfig(typing.TypedDict):
     aside_robot_gap_m: float
     aside_plan_ahead_s: float
     aside_person_gap_m: float
+    aside_retry_s: float
 
 
 class DoorGateConfig(typing.TypedDict):
@@ -181,6 +188,9 @@ class EpisodeConfig(typing.TypedDict):
     goal_tol_m: float
     stuck_s: float
     tail_s: float
+    setup_tol_m: float
+    replan_period_s: float
+    sample_period_s: float
 
 
 class RulesConfig(typing.TypedDict):

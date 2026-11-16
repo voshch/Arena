@@ -130,7 +130,7 @@ class FleetDispatcher:
         self.starts = site.starts[: len(names)]
         self.walls = site.walls
         self.doors = site.doors
-        self.grid = Grid(self.walls, cost["robot"]["radius_m"])
+        self.grid = Grid(self.walls, cost["robot"]["radius_m"], cost["plan"]["snap_m"], cost["plan"]["route_expansions"])
         self.door_open = {leaf.name: LeafState(leaf.c, leaf.span) for leaf in site.leaves}
         self.hata = cost.get("mode") == "hata"
         self.view = None if info == "none" else PeopleView(cost, self.walls, mod)
@@ -242,7 +242,7 @@ class FleetDispatcher:
         offs = [(raw[n][0] - s[0], raw[n][1] - s[1]) for n, s in zip(self.names, self.starts, strict=True)]
         mx, my = sum(o[0] for o in offs) / len(offs), sum(o[1] for o in offs) / len(offs)
         spread = max(math.hypot(o[0] - mx, o[1] - my) for o in offs)
-        if spread > 0.3:
+        if spread > self.rcfg["episode"]["setup_tol_m"]:
             return False
         self.off, self.t_start = (mx, my), self._now
         self.log("setup", offset=[round(mx, 3), round(my, 3)], spread=round(spread, 3), sim_t0=round(self.t_start, 3), profile=self.profile, info=self.info)
@@ -564,13 +564,15 @@ class FleetDispatcher:
     # queue slots beside the door
 
     def slot_score(self, slots: Sequence[Point]) -> float:
-        """Occupied slot-seconds over the next 10 s, plus the seconds the slots were seen occupied so far."""
+        """Occupied slot-seconds over the next score_horizon_s, plus the seconds the slots were seen occupied so far."""
         if self.view is None:
             return 0.0
         view = self.view
-        ahead = sum(view.occupied(t, x, y) for x, y in slots[:3] for t in range(0, 11, 2))
-        seen = sum(self.history.get(c, 0.0) for c in (view.idx(x, y) for x, y in slots[:3]) if c is not None)
-        return float(ahead) + self.rcfg["queue"]["history_weight"] * seen
+        q = self.rcfg["queue"]
+        head = slots[: q["score_slots"]]
+        ahead = sum(view.occupied(t, x, y) for x, y in head for t in range(0, q["score_horizon_s"] + 1, q["score_step_s"]))
+        seen = sum(self.history.get(c, 0.0) for c in (view.idx(x, y) for x, y in head) if c is not None)
+        return float(ahead) + q["history_weight"] * seen
 
     def choose_slots(self, d: str, side: float) -> list[Point]:
         """Zig-zag slot column beside the door axis, clear of walls and other queues; by people when slot_by_people is on."""
@@ -885,9 +887,9 @@ class FleetDispatcher:
             self.stop(n)
         elif r.aside and not self.aside_ok(n, r.aside, *self.claims(n)):
             self.log("aside_dropped", robot=n, aside=list(r.aside))
-            r.aside, r.t_aside = None, now - 1.0
+            r.aside, r.t_aside = None, now - y["aside_retry_s"]
             self.stop(n)
-        elif r.aside is None and now - r.t_aside >= 1.0 and self.view is not None and self.view.occupied(0, x, yy):
+        elif r.aside is None and now - r.t_aside >= y["aside_retry_s"] and self.view is not None and self.view.occupied(0, x, yy):
             r.t_aside = now
             p = self.aside_point(n)
             if p:
@@ -1053,7 +1055,7 @@ class FleetDispatcher:
         if self.rules["reassign_goal"]:
             self.reassign_goal()
         self.write_state()
-        if self.samp_f is not None and now - self.t_samp >= 0.5:
+        if self.samp_f is not None and now - self.t_samp >= ep["sample_period_s"]:
             self.t_samp = now
             self.write_samples()
         if all(self.rob[n].phase == "done" for n in self.names):
@@ -1092,7 +1094,7 @@ class FleetDispatcher:
     def refresh_plan(self, n: str, x: float, y: float) -> None:
         """Re-plan a moving robot once a second."""
         r, now = self.rob[n], self._now
-        if now - r.t_pub >= 1.0 and r.phase in ("approach", "cross", "to_goal"):
+        if now - r.t_pub >= self.rcfg["episode"]["replan_period_s"] and r.phase in ("approach", "cross", "to_goal"):
             r.t_pub = now
             r.plan = self.path(r.target, r.route_door, x, y) or r.plan
             self.publish_plan(n, r.plan)
