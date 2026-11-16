@@ -427,6 +427,28 @@ def test_queue_slots_leave_the_side_where_people_were_seen(tmp_path: pathlib.Pat
     assert (after[0][1] - cy) * (before[0][1] - cy) < 0
 
 
+def no_route(e: Episode, goal: Point, *doors: str) -> None:
+    for d in doors:
+        e.d.fields[(goal, d)] = [math.inf] * len(e.d.fields[(goal, d)])
+
+
+def test_a_robot_whose_door_has_no_route_switches_door_and_keeps_its_plan_without_any(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, 1, profile="queue")
+    e.tick()
+    n = e.d.names[0]
+    r = e.d.rob[n]
+    d = r.route_door
+    other = next(k for k in e.d.doors if k != d)
+    no_route(e, r.target, d)
+    e.d.reassign_door(n)
+    assert r.door == other and e.events("reroute")
+    plan = list(r.plan)
+    no_route(e, r.target, *e.d.doors)
+    e.d.set_time(100.0)
+    e.d.reassign_door(n)
+    assert r.door == other and r.plan == plan
+
+
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
     """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
     e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})

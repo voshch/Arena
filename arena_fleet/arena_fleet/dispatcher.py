@@ -922,8 +922,11 @@ class FleetDispatcher:
         if self._now - r.t_switch < rc["min_dwell_s"] or (self.dist_door(n, d) <= rc["lock_m"] and not behind):
             return
         opts, paths = self.options(n, r.target)
+        if not opts:
+            return
         best = min(opts, key=lambda k: opts[k]["J"])
-        if best != d and opts[d]["J"] - opts[best]["J"] >= rc["hysteresis_j"]:
+        cur = opts[d]["J"] if d in opts else math.inf
+        if best != d and cur - opts[best]["J"] >= rc["hysteresis_j"]:
             self.log("reroute", robot=n, old=d, new=best, options=opts)
             was_slot = r.phase in ("to_slot", "queued")
             if n in self.queue_of[d]:
