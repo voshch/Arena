@@ -13,10 +13,12 @@ from arena_simulation_setup.shared.body import (
     FINGERS,
     JOINT_DOFS,
     PARENTS,
+    POSED_JOINTS,
     SEMANTIC_DOFS,
     Template,
     axis_rotation,
     body_to_semantic,
+    compile_stance,
     forward,
     from_smplx_rotation,
     from_smplx_vector,
@@ -25,6 +27,7 @@ from arena_simulation_setup.shared.body import (
     matrix_to_quat,
     quat_to_matrix,
     rest_offsets,
+    semantic_to_bodies,
     semantic_to_body,
 )
 from arena_assets.rig import write_rig
@@ -372,3 +375,28 @@ def test_digit_dofs_round_trip_through_the_body_pose_over_a_stance() -> None:
 def test_a_missing_digit_dof_is_straight() -> None:
     assert body_to_semantic(semantic_to_body({}))["l_curl_index"] == pytest.approx(0.0)
     assert semantic_to_body({"r_spread": 0.2})["left_index1"] == pytest.approx(semantic_to_body({})["left_index1"])
+
+
+def test_a_knee_flexion_over_any_stance_matches_its_rotation_composed_by_hand() -> None:
+    rng = np.random.default_rng(13)
+    for _ in range(200):
+        stance = {joint: _random_rotation(rng) for joint in BODY_JOINTS}
+        angle = float(rng.uniform(-math.pi, math.pi))
+        expected = matrix_to_quat(stance["left_hip"].T @ axis_rotation((0.0, -1.0, 0.0), angle) @ stance["left_knee"])
+        assert semantic_to_body({"l_knee": angle}, stance)["left_knee"] == pytest.approx(expected, abs=1e-12)
+
+
+def test_a_batch_poses_each_body_over_its_own_stance() -> None:
+    rng = np.random.default_rng(14)
+    stances = [DEFAULT_STANCE, _stance(6), _stance(7)]
+    angles = rng.uniform(-1.0, 1.0, size=(9, len(SEMANTIC_DOFS)))
+    picked = [stances[i % len(stances)] for i in range(len(angles))]
+    batch = semantic_to_bodies(angles, [compile_stance(stance) for stance in picked])
+    assert batch.shape == (len(angles), len(POSED_JOINTS), 4)
+    for row, stance, quats in zip(angles, picked, batch, strict=True):
+        single = semantic_to_body(dict(zip(SEMANTIC_DOFS, row.tolist(), strict=True)), stance)
+        assert quats == pytest.approx(np.array([single[joint] for joint in POSED_JOINTS]), abs=1e-12)
+
+
+def test_an_empty_batch_poses_no_body() -> None:
+    assert semantic_to_bodies(np.empty((0, len(SEMANTIC_DOFS))), []).shape == (0, len(POSED_JOINTS), 4)

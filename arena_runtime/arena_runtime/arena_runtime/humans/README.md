@@ -92,7 +92,7 @@ wheelchair (`PUSH_WHEELCHAIR`) walks with `walk_pushwheelchair`, stands with `st
 the `wheelchair_manual` rider she pushes keeps his hands on his thighs (`seated_wheelchair_lap`). A ped whose profile changes blends from the
 old one over `AnimationManager.PROFILE_CROSSFADE_S` (0.6 s), its finger curls with it.
 
-Last, [`wire.py`](wire.py) compiles the 42 into `ped.body` over the model's stance ([BODY.md](BODY.md)), leaving only driven joints in `joint_state`. `ped.body` feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac, MuJoCo and Gazebo pedestrian rigs.
+Last, [`wire.py`](wire.py) compiles the 42 into `ped.body` over the model's stance ([BODY.md](BODY.md)), leaving only driven joints in `joint_state`. `fill_bodies` poses the whole roster in one `semantic_to_bodies` batch per publish, each ped over its model's `CompiledStance`, compiled once per model. `ped.body` feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac, MuJoCo and Gazebo pedestrian rigs.
 
 A model whose bundle ships a `.rig` with drivers (wheelchair bundles: `l_wheel`, `r_wheel`) gets those joints
 set on top, whoever filled the field: [`drivers.py`](drivers.py) rolls each wheel over the distance its contact

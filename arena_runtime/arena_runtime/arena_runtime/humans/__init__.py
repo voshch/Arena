@@ -26,7 +26,7 @@ from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared import Placement, Stairs, stair_height
-from arena_simulation_setup.shared.body import DEFAULT_STANCE, load_stance
+from arena_simulation_setup.shared.body import DEFAULT_COMPILED_STANCE, CompiledStance, compile_stance, load_stance
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
 from geometry_msgs.msg import Point as PointMsg
@@ -51,7 +51,7 @@ from arena_runtime.humans.utils import (
     KnownObstacles,
     ObstacleLayer,
 )
-from arena_runtime.humans.wire import fill_body
+from arena_runtime.humans.wire import fill_bodies, fill_body
 from arena_runtime.lockstep import register_channels
 from arena_runtime.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from arena_runtime.sim import BaseSim
@@ -224,7 +224,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._driven = DrivenJoints()
-        self._stances: dict[str, Mapping[str, np.ndarray]] = {}
+        self._stances: dict[str, CompiledStance] = {}
         self._drivers: dict[str, Drivers] = {}
         self._bodies: dict[str, BodyMeasurements] = {}
         self._seat_plans: dict[int, SeatPlan] = {}
@@ -362,8 +362,11 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._tilt_body(ped, tilts[ped.id])
             self._place_resting(ped, now_sec)
 
-        for ped in out.pedestrians:
-            fill_body(ped, self._stance_for(ped.model_uri), self._gait.body_layers(ped.id) if ped.id in generated else ())
+        fill_bodies(
+            out.pedestrians,
+            [self._stance_for(ped.model_uri) for ped in out.pedestrians],
+            [self._gait.body_layers(ped.id) if ped.id in generated else () for ped in out.pedestrians],
+        )
 
         self._arena_peds_publisher.publish(out)
         self._sim_peds_publisher.publish(placed_peds(out, self._realizer.placement()))
@@ -493,15 +496,15 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._bodies[model_uri] = body
         return body
 
-    def _stance_for(self, model_uri: str) -> Mapping[str, np.ndarray]:
+    def _stance_for(self, model_uri: str) -> CompiledStance:
         """Stance of a ped model, read once per model, the default one when its rig file is rejected."""
         stance = self._stances.get(model_uri)
         if stance is None:
             try:
-                stance = load_stance(model_uri)
+                stance = compile_stance(load_stance(model_uri))
             except (OSError, ValueError) as e:
                 self._logger.warning(f"rig stance of {model_uri!r} rejected ({e}), it uses the default stance")
-                stance = DEFAULT_STANCE
+                stance = DEFAULT_COMPILED_STANCE
             self._stances[model_uri] = stance
         return stance
 
