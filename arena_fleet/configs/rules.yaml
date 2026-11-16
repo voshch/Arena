@@ -1,5 +1,5 @@
 # Fleet dispatcher: how robots are made to act. A profile switches rules on; the numbers apply when a rule is on.
-# Each rule is a condition the dispatcher checks every 0.25 s on tracked robot state. A robot never sees a rule:
+# Each rule is a condition the dispatcher checks every tick (node parameter tick_s) on tracked robot state. A robot never sees a rule:
 # "hold" = the dispatcher stops it, "release" = the dispatcher sends its goal and plan again.
 
 default_profile: base

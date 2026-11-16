@@ -12,7 +12,7 @@ are parked by a scenario (`task.robots:=scenario`, robots without phases), and d
 
 1. **Goals**: `n` goals are drawn from the seed in the goal zone and assigned to the robots by minimum total cost `J`
    (Hungarian). A smaller fleet with the same seed takes the first goals of a larger one.
-2. **Door and plan**: each robot gets one plan to its goal through the door with the lowest `J`, re-planned once a second.
+2. **Door and plan**: each robot gets one plan to its goal through the door with the lowest `J`, re-planned every `episode.replan_period_s`.
 3. **Rules**, switched on per profile in [configs/rules.yaml](configs/rules.yaml):
 
 | Rule | What it does |
@@ -83,9 +83,9 @@ Every run writes these files afresh.
 | File | Content |
 | --- | --- |
 | `events.jsonl` | every decision: goal assignment with the cost matrix, door options with all terms, holds, queue, yields, re-assignments, trips, end with makespan |
-| `state.jsonl` | 4 Hz snapshot: phase, door, goal, queue slot, wait reason per robot, doors, known people |
-| `samples.jsonl` | every 0.5 s per robot: input features ([arena_fleet/features.py](arena_fleet/features.py)) and the decision |
-| `heat.jsonl` | the people map now and 5 s ahead |
+| `state.jsonl` | a snapshot per tick (`tick_s`): phase, door, goal, queue slot, wait reason per robot, doors, known people |
+| `samples.jsonl` | every `episode.sample_period_s` per robot: input features ([arena_fleet/features.py](arena_fleet/features.py)) and the decision |
+| `heat.jsonl` | the people map `people_view.heat_s` seconds ahead |
 | `dispatch.json` | profile, rules, cost, goals and seed of the run |
 
 ## Tests
