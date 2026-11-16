@@ -4,6 +4,7 @@ import typing
 
 import attrs
 import yaml
+from arena_simulation_setup.tree.World.model import World
 
 from arena_fleet.geometry import Point, Wall, area, inside
 
@@ -48,46 +49,49 @@ class DoorLeaf:
 
 @attrs.frozen
 class Site:
-    """World walls, doors and zones, the managed doors and the parked robot starts of one level."""
+    """The world level that holds the managed doors: its walls, doors and zones, the managed doors and the goal zones."""
 
+    world: str
+    level: str
     walls: tuple[Wall, ...]
     leaves: tuple[DoorLeaf, ...]
     doors: dict[str, Door]
     zones: dict[str, tuple[Point, ...]]
-    starts: tuple[Point, ...]
-    level: str
+    goal_zones: tuple[str, ...]
 
     @classmethod
-    def load(cls, world: pathlib.Path, resources: pathlib.Path, scenario: pathlib.Path, level: str = "0") -> "Site":
-        lv = next((x for x in _mapping(world)["levels"] if str(x["id"]) == level), None)
-        if lv is None:
-            raise ValueError(f"{world}: no level {level}")
-        walls: list[Wall] = []
-        for w in lv["walls"]:
-            path = [_point(p) for p in w["path"]]
-            walls += [(path[i], path[i + 1]) for i in range(len(path) - 1)]
+    def load(cls, world: World, name: str, resources: pathlib.Path) -> "Site":
+        """The site of the parsed world `name` as resources.yaml manages it: its managed doors fix the level."""
+        data = _mapping(resources)
+        if data["world"] != name:
+            raise ValueError(f"{resources} is written for world {data['world']}, not {name}")
+        managed = [str(r["id"]) for r in data["resources"] if r["kind"] == "door"]
+        if not managed:
+            raise ValueError(f"{resources}: no resource of kind door")
+        levels = [lid for lid, lv in world.levels.items() if set(managed) <= {d.name for d in lv.doors}]
+        if len(levels) != 1:
+            raise ValueError(f"{resources}: the managed doors {managed} must all lie on one level of world {name}, they lie on {levels}")
+        level = levels[0]
+        lv = world.levels[level]
+        walls = tuple(((w.start.x, w.start.y), (w.end.x, w.end.y)) for w in lv.all_walls)
         leaves: list[DoorLeaf] = []
-        for d in lv.get("doors", []):
-            a, b = _point(d["span"][0]), _point(d["span"][1])
+        for d in lv.doors:
+            a, b = (d.start.x, d.start.y), (d.end.x, d.end.y)
             length = math.dist(a, b)
-            leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), ((b[1] - a[1]) / length, (a[0] - b[0]) / length)))
-        zones = {str(z["name"]): tuple(_point(p) for p in z["polygon"]) for z in lv.get("zones", [])}
+            leaves.append(DoorLeaf(d.name, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), ((b[1] - a[1]) / length, (a[0] - b[0]) / length)))
+        zones = {z.name: tuple((p.x, p.y) for p in z.polygon) for z in lv.zones}
         doors: dict[str, Door] = {}
-        for r in _mapping(resources)["resources"]:
-            if r["kind"] != "door":
-                continue
-            name = str(r["id"])
-            leaf = next((x for x in leaves if x.name == name), None)
-            if leaf is None:
-                raise ValueError(f"{resources}: {world} level {level} has no door {name}")
+        for door in managed:
+            leaf = next(x for x in leaves if x.name == door)
             holding = [z for z in zones.values() if inside(leaf.c, z)]
             if not holding:
-                raise ValueError(f"{world}: no zone of level {level} holds door {name}")
-            doors[name] = Door(name, min(holding, key=area), leaf.normal)
-        if not doors:
-            raise ValueError(f"{resources}: no resource of kind door")
-        starts = tuple(_point(r["start"]) for r in _mapping(scenario)["robots"])
-        return cls(walls=tuple(walls), leaves=tuple(leaves), doors=doors, zones=zones, starts=starts, level=level)
+                raise ValueError(f"no zone of level {level} of world {name} holds door {door}")
+            doors[door] = Door(door, min(holding, key=area), leaf.normal)
+        goal_zones = tuple(str(z) for z in data["goal_zones"])
+        unknown = sorted(set(goal_zones) - set(zones))
+        if unknown:
+            raise ValueError(f"{resources}: goal zones {unknown} are not zones of level {level}, which has {sorted(zones)}")
+        return cls(world=name, level=level, walls=walls, leaves=tuple(leaves), doors=doors, zones=zones, goal_zones=goal_zones)
 
 
 def _mapping(path: pathlib.Path) -> dict[str, typing.Any]:
@@ -95,10 +99,3 @@ def _mapping(path: pathlib.Path) -> dict[str, typing.Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{path}: expected a mapping")
     return typing.cast(dict[str, typing.Any], data)
-
-
-def _point(value: object) -> Point:
-    if not isinstance(value, list | tuple) or len(value) < 2:
-        raise ValueError(f"expected [x, y, ...], got {value!r}")
-    seq = typing.cast(list[float], value)
-    return float(seq[0]), float(seq[1])

@@ -16,6 +16,7 @@ from arena_rclpy_mixins import ArenaMixinNode
 from arena_robots.Robot import RobotIdentifier
 from arena_runtime_msgs.action import RunTask
 from arena_runtime_msgs.msg import EnvRegistry, RobotFleet, SemanticSnapshot
+from arena_simulation_setup.tree.World.view import WorldIdentifier
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import FollowPath
 from nav_msgs.msg import Odometry, Path
@@ -23,12 +24,14 @@ from std_msgs.msg import Header
 
 from arena_fleet.config import load_cost, load_rules
 from arena_fleet.dispatcher import INFOS, Command, DoorState, FleetDispatcher, Info, Pose2, PublishPlan, SendGoal, Stop
+from arena_fleet.geometry import Point
 from arena_fleet.params import FleetParams
+from arena_fleet.robot import RobotFacts
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics
 
-FOLLOW_STEP_M = 0.05
 ENVS_TOPIC = "/arena/state/envs"
+FOLLOW_STEP_M = 0.05
 LATCHED = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
 
 
@@ -42,11 +45,11 @@ def _required(value: str, name: str) -> pathlib.Path:
     return pathlib.Path(value)
 
 
-def _radius(model: str) -> float:
+def _robot(model: str) -> RobotFacts:
     mobile = RobotIdentifier(model).resolve_sync().mobile
-    if mobile is None or mobile.radius is None:
-        raise ValueError(f"robot model {model} has no mobile radius")
-    return float(mobile.radius)
+    if mobile is None:
+        raise ValueError(f"robot model {model} has no mobile cap")
+    return RobotFacts.from_mobile(mobile.raw)
 
 
 def _yaw(msg: Odometry) -> float:
@@ -55,7 +58,7 @@ def _yaw(msg: Odometry) -> float:
 
 
 class FleetNode(ArenaMixinNode):
-    """Runs the fleet dispatcher next to an Arena env whose robots are parked by a scenario."""
+    """Runs the fleet dispatcher on the robots, world and door states of one Arena env."""
 
     def __init__(self) -> None:
         super().__init__("arena_fleet", parameter_overrides=[rclpy.Parameter("use_sim_time", value=True)])
@@ -64,7 +67,11 @@ class FleetNode(ArenaMixinNode):
         if info not in INFOS:
             raise ValueError(f"info {info!r} not in {INFOS}")
         self.people_info: Info = typing.cast(Info, info)
-        self.site = Site.load(_required(p.WORLD.value, "world"), _required(p.RESOURCES.value, "resources"), _required(p.SCENARIO.value, "scenario"))
+        self.resources = _required(p.RESOURCES.value, "resources")
+        self.site: Site | None = None
+        self.reference: Point | None = None
+        self.level_origin: Point = (0.0, 0.0)
+        self.fleet: RobotFleet | None = None
         self.mod = MapOfDynamics.load(pathlib.Path(p.MOD.value)) if p.MOD.value else None
         self.cost, self.rules = load_cost(_config(p.COST.value, "cost.yaml")), load_rules(_config(p.RULES.value, "rules.yaml"))
         self.out = _required(p.OUT.value, "out")
@@ -100,6 +107,7 @@ class FleetNode(ArenaMixinNode):
         if record is None:
             return
         self.env_fqn = fqn = str(record.fqn)
+        self.reference = (float(record.reference[0]), float(record.reference[1]))
         self.create_subscription(RobotFleet, f"{fqn}/state/robots", self.on_fleet, LATCHED)
         self.create_subscription(SemanticSnapshot, f"{fqn}/state/semantics", self.on_semantics, LATCHED)
         self.create_subscription(Pedestrians, f"{fqn.rsplit('/', 1)[0]}/arena_peds", self.on_peds, 10)
@@ -108,13 +116,20 @@ class FleetNode(ArenaMixinNode):
 
     def on_fleet(self, msg: RobotFleet) -> None:
         """The dispatcher drives the env's fleet as it stands when the fleet is first published."""
-        robots = [(str(s.descriptor.name), str(s.descriptor.ns).rstrip("/")) for s in msg.robots if str(s.descriptor.name).strip()]
-        if self.core is not None or not robots:
+        if self.fleet is None and any(str(s.descriptor.name).strip() for s in msg.robots):
+            self.fleet = msg
+            self.build()
+
+    def build(self) -> None:
+        """The dispatcher, once both the env's fleet and its world are known."""
+        msg, site = self.fleet, self.site
+        if self.core is not None or msg is None or site is None:
             return
+        robots = [(str(s.descriptor.name), str(s.descriptor.ns).rstrip("/")) for s in msg.robots if str(s.descriptor.name).strip()]
         names = [name for name, _ in robots]
         self.prefix = next(str(s.descriptor.frame) for s in msg.robots if str(s.descriptor.name).strip()).rsplit("/", 1)[0]
-        robot_r = max(_radius(str(s.descriptor.model)) for s in msg.robots if str(s.descriptor.name).strip())
-        self.core = FleetDispatcher(self.site, self.cost, self.rules, names=names, robot_r=robot_r, info=self.people_info, profile=self.p.PROFILE.value, seed=self.p.SEED.value, out=self.out, duration=self.p.DURATION_S.value, mod=self.mod, samples=self.p.SAMPLES.value)
+        robot = RobotFacts.fleet([_robot(str(s.descriptor.model)) for s in msg.robots if str(s.descriptor.name).strip()])
+        self.core = FleetDispatcher(site, self.cost, self.rules, names=names, robot=robot, info=self.people_info, profile=self.p.PROFILE.value, seed=self.p.SEED.value, out=self.out, duration=self.p.DURATION_S.value, mod=self.mod, samples=self.p.SAMPLES.value)
         for name, ns in robots:
             self.plan_pub[name] = self.create_publisher(Path, f"{ns}/plan", 10)
             if self.dwb:
@@ -137,22 +152,36 @@ class FleetNode(ArenaMixinNode):
             self.core.set_peds({str(p.id): (p.pose.position.x, p.pose.position.y, p.twist.linear.x, p.twist.linear.y) for p in msg.pedestrians})
 
     def on_semantics(self, msg: SemanticSnapshot) -> None:
+        if self.site is None:
+            self.load_site(str(msg.world))
         for e in msg.entities:
             if e.kind == "door":
                 states = dict(zip(e.discrete_names, e.discrete_values, strict=True))
                 values = dict(zip(e.continuous_names, e.continuous_values, strict=True))
                 self.door_entities[str(e.entity)] = DoorState(str(states["state"]), float(values["progress"]))
 
-    def doors(self) -> dict[str, DoorState]:
+    def load_site(self, world: str) -> None:
+        """The env's world, managed as the resources file says; the resources must be written for that world."""
+        view = WorldIdentifier(world).resolve_sync()
+        site = Site.load(view.load(), world, self.resources)
+        origins = view.level_origins() or {}
+        self.level_origin = origins.get(site.level, (0.0, 0.0))
+        self.site = site
+        self.get_logger().info(f"world {world}, level {site.level}, doors {sorted(site.doors)}")
+        self.build()
+
+    def doors(self, site: Site) -> dict[str, DoorState]:
         """World doors of the site's level by name, from the env's semantic entities <env prefix>/<door>/<level>."""
-        found = ((leaf.name, self.door_entities.get(f"{self.prefix}/{leaf.name}/{self.site.level}")) for leaf in self.site.leaves)
+        found = ((leaf.name, self.door_entities.get(f"{self.prefix}/{leaf.name}/{site.level}")) for leaf in site.leaves)
         return {name: state for name, state in found if state is not None}
 
     def try_setup(self, core: FleetDispatcher) -> bool:
-        if self.client is None or not self.client.server_is_ready():
+        """Start once run_task is up and every robot has reported odometry; the level sits at the env reference plus its origin."""
+        if self.client is None or not self.client.server_is_ready() or self.reference is None or any(n not in self.raw for n in core.names):
             return False
-        if not core.try_setup(self.raw):
-            return False
+        core.setup((self.reference[0] + self.level_origin[0], self.reference[1] + self.level_origin[1]))
+        for n in core.names:
+            core.set_pose(n, *self.raw[n])
         self.get_logger().info(f"offset {core.off}, profile {core.profile}, info {core.info}")
         return True
 
@@ -163,7 +192,7 @@ class FleetNode(ArenaMixinNode):
         core.set_time(self.now_s())
         if core.off is None and not self.try_setup(core):
             return
-        core.set_doors(self.doors())
+        core.set_doors(self.doors(core.site))
         core.tick()
         for cmd in core.drain():
             self.execute(cmd)

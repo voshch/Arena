@@ -3,7 +3,6 @@
 # Every term of every decision is written to dispatch/events.jsonl, so each choice can be recomputed by hand.
 
 task:                     # D1: goals are not tied to robots
-  goal_zones: [east_mid, east_queue, east_north]   # world zones of the room behind the doors; goals are drawn in them at random from the seed
   min_separation_m: 1.5   # between two goals
   clearance_m: 0.8        # from any wall
   assign: hungarian       # hungarian (min total J) | fixed (robot i -> goal i)
@@ -27,7 +26,7 @@ robot:
   margin_m: 0.08          # added to the largest footprint radius of the fleet's robot models: plans keep that body clear of walls, and it is tested against people
 
 time:
-  v_nom: 0.4              # m/s used to turn plan length into seconds
+  speed_fraction: 0.2     # v_nom, the speed that turns plan length into seconds, as this fraction of the slowest robot's top speed
 
 encounter:                # "will this plan meet people?" H = plan length through occupied cells of the people map / one person's diameter
   horizon_s: 60.0         # look this far ahead along the plan
@@ -41,9 +40,7 @@ facility:                 # "what does using this door cost?"
 wait:                     # "how long will it stand gathered at the door?"
   cross_m: 3.2            # length of a door crossing; one robot occupies the door for cross_m / v_nom seconds
 
-perception:               # what "what robots see" means: per robot, then pooled
-  range_m: 4.0
-  fov_deg: 180            # the half circle in front of the robot
+perception:               # what "what robots see" means: within the range and field of view of each robot's laser, then pooled
   memory_s: 2.0           # a person stays known this long after it was last seen
 
 people_view:              # the map of people every decision reads; one map for all information levels

@@ -47,8 +47,8 @@ class MapOfDynamics:
             return None
         return min(max(int(t // self.dt), 0), self.rho.shape[0] - 1), j, i
 
-    def _bins(self, t: float, x: float, y: float) -> tuple[npt.NDArray[np.float64], float] | None:
-        """Density per direction bin and walking speed at (x, y), episode time t; None off the map or without direction."""
+    def _bins(self, t: float, x: float, y: float) -> tuple[npt.NDArray[np.float64], float | None] | None:
+        """Density per direction bin and walking speed (None where the map has none) at (x, y), episode time t; None off the map or without direction."""
         if self.rho_dir is None:
             return None
         at = self._at(t, x, y)
@@ -56,7 +56,7 @@ class MapOfDynamics:
             return None
         w, j, i = at
         s = float(self.spd[w, j, i]) if self.spd is not None else math.nan
-        return self.rho_dir[w, j, i], (s if math.isfinite(s) and s > 0 else 1.2)
+        return self.rho_dir[w, j, i], (s if math.isfinite(s) and s > 0 else None)
 
     def heading(self, t: float, x: float, y: float) -> tuple[float, float] | None:
         """Unit vector of the main walking direction at (x, y), None where nobody walks."""
@@ -74,7 +74,7 @@ class MapOfDynamics:
         b = self._bins(t, x, y)
         if b is None:
             return 0.0
-        rho, s = b
+        rho, s = b[0], WALK_SPEED if b[1] is None else b[1]
         ang = np.arange(len(rho)) * 2 * math.pi / len(rho)
         rel = np.hypot(vx - s * np.cos(ang), vy - s * np.sin(ang))
         return float((rho * rel).sum() * width)
@@ -83,6 +83,14 @@ class MapOfDynamics:
 def disk(r: float, cell: float) -> list[tuple[int, int]]:
     k = int(math.ceil(r / cell))
     return [(i, j) for i in range(-k, k + 1) for j in range(-k, k + 1) if math.hypot(i, j) * cell <= r]
+
+
+WALK_SPEED = 1.2
+WALL_GAP = 0.05
+TRACK_STEP = 0.25
+LIVE_WEIGHT_MIN = 0.01
+KERNEL_SIGMAS = 3.0
+HEAT_FLOOR = 0.05
 
 
 class PeopleView:
@@ -171,7 +179,7 @@ class PeopleView:
         for x, y, vx, vy, age in people:
             tw = self.t_wall(x, y, vx, vy)
             for k in range(self.n):
-                t = min(k * self.dt + age, max(tw - 0.05, 0.0))
+                t = min(k * self.dt + age, max(tw - WALL_GAP, 0.0))
                 i0, j0 = self.ij(x + vx * t, y + vy * t)
                 lay = self.layers[k]
                 for i, j in self.person:
@@ -185,7 +193,7 @@ class PeopleView:
         mod, tau_a = self.mod, self.flow.get("advect_tau_s", 0.0)
         sp = math.hypot(vx, vy)
         out: list[tuple[float, float]] = []
-        px, py, t, step = x, y, 0.0, 0.25
+        px, py, t, step = x, y, 0.0, TRACK_STEP
         for k in range(self.n):
             t_end = k * self.dt + age
             while t < t_end - 1e-9:
@@ -226,14 +234,14 @@ class PeopleView:
             win = min(max(int((t_rel + tau) // mod.dt), 0), mod.rho.shape[0] - 1)
             rho = (1.0 - w) * np.asarray(mod.rho[win][: self.ny, : self.nx], dtype=np.float64)
             rho_live = np.zeros_like(rho)
-            if advect or w >= 0.01:
+            if advect or w >= LIVE_WEIGHT_MIN:
                 sig = f["sigma0_m"] + f["sigma_per_s"] * tau
-                rad = int(math.ceil(3 * sig / c))
+                rad = int(math.ceil(KERNEL_SIGMAS * sig / c))
                 for q, (x, y, vx, vy, age) in enumerate(people):
                     if advect:
                         px, py = tracks[q][k]
                     else:
-                        t = min(tau + age, max(self.t_wall(x, y, vx, vy) - 0.05, 0.0))
+                        t = min(tau + age, max(self.t_wall(x, y, vx, vy) - WALL_GAP, 0.0))
                         px, py = x + vx * t, y + vy * t
                     i0, j0 = self.ij(px, py)
                     a0, a1, b0, b1 = max(i0 - rad, 0), min(i0 + rad + 1, self.nx), max(j0 - rad, 0), min(j0 + rad + 1, self.ny)
@@ -251,6 +259,6 @@ class PeopleView:
             probs.append(p.astype(np.float32))
             layers.append({int(i) for i in np.flatnonzero(p >= f["threshold"])})
             if k in self.heat_k:
-                heat[k] = [[int(i), int(p[i] * 100)] for i in np.flatnonzero(p >= 0.05)]
+                heat[k] = [[int(i), int(p[i] * 100)] for i in np.flatnonzero(p >= HEAT_FLOOR)]
         self.layers, self.heat, self.probs = layers, heat, probs
         self.live_layers = live_layers if advect else None

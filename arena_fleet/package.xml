@@ -16,6 +16,7 @@
   <exec_depend>arena_people_msgs</exec_depend>
   <exec_depend>arena_robots</exec_depend>
   <exec_depend>arena_runtime_msgs</exec_depend>
+  <exec_depend>arena_simulation_setup</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>nav2_msgs</exec_depend>

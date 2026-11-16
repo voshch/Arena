@@ -1,8 +1,9 @@
-# Managed doors of mechanisms_doorway (level 0), by world door name. Each door's polygon is the smallest world zone
-# holding its span. The dispatcher routes every robot through one of them.
+# What the dispatcher manages in mechanisms_doorway: world doors by name (their level is the fleet's level, each door's
+# polygon is the smallest world zone holding its span), and the world zones goals are drawn in.
 world: mechanisms_doorway
 resources:
   - id: main_door
     kind: door
   - id: side_door
     kind: door
+goal_zones: [east_mid, east_queue, east_north]

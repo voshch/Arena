@@ -2,9 +2,7 @@ from arena_rclpy_mixins.params import Choices, Param, ParamGroup, Range
 
 
 class FleetParams(ParamGroup):
-    WORLD = Param[str]("world", "", "world.yaml of the Arena world the fleet runs in.")
-    RESOURCES = Param[str]("resources", "", "Resource table with the managed doors (kind: door) of that world.")
-    SCENARIO = Param[str]("scenario", "", "scenario.yaml whose robot starts park the fleet; the map offset is read from them.")
+    RESOURCES = Param[str]("resources", "", "What the dispatcher manages in the env's world: its doors (kind: door) and goal zones.")
     OUT = Param[str]("out", "", "Directory for events.jsonl, state.jsonl, samples.jsonl, heat.jsonl and dispatch.json.")
     COST = Param[str]("cost", "", "Cost function YAML. Empty = the package's configs/cost.yaml.")
     RULES = Param[str]("rules", "", "Rules and profiles YAML. Empty = the package's configs/rules.yaml.")

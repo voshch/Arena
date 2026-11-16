@@ -3,20 +3,23 @@
 Fleet dispatcher for robots that share doors with pedestrians. It runs as its own node next to an Arena env whose robots
 are parked by a scenario (`task.robots:=scenario`, robots without phases), and drives them only through existing interfaces:
 
-- finds the env `env_id` in the runtime's registry (`/arena/state/envs`) and drives every robot its fleet
-  (`<env node>/state/robots`) lists;
+- finds the env `env_id` in the runtime's registry (`/arena/state/envs`), takes the env's map offset from its
+  `reference` there and drives every robot its fleet (`<env node>/state/robots`) lists;
+- loads the world the env runs (`world` of its semantics) and manages what the `resources` file names for it: the world
+  doors (their level is the level that holds them all, each door's area the smallest world zone holding its span) and
+  the `goal_zones`;
 - reads each robot's odometry (`<robot ns>/odom`), the env's pedestrians (`<env ns>/arena_peds`) and the state of the
-  world doors from the env's semantics (`<env node>/state/semantics`), in any simulator that runs door semantics;
+  world doors from the env's semantics (`<env node>/state/semantics`); a door the env never reports counts as open;
 - assigns goals and stops robots through the env's `<env node>/runtime/run_task` action;
 - publishes one global plan per robot on `<robot ns>/plan` (local planner drlvo, started with
   `robot.mobile.global_planner:=none`), or sends it as a Nav2 `<robot ns>/follow_path` goal (`local:=dwb`).
 
 ## What it decides
 
-1. **Goals**: `n` goals are drawn from the seed in the world zones `task.goal_zones` names and assigned to the robots by minimum total cost `J`
+1. **Goals**: `n` goals are drawn from the seed in the world zones the `goal_zones` of the resources file name, and assigned to the robots by minimum total cost `J`
    (Hungarian). A smaller fleet with the same seed takes the first goals of a larger one.
 2. **Door and plan**: each robot gets one plan to its goal through the door with the lowest `J`, re-planned every `episode.replan_period_s`.
-3. **Rules**, switched on per profile in [configs/rules.yaml](configs/rules.yaml):
+3. **Rules**, each profile in [configs/rules.yaml](configs/rules.yaml) lists the ones it switches on:
 
 | Rule | What it does |
 | --- | --- |
@@ -34,7 +37,7 @@ HATA baseline (arXiv 2508.19731).
 ## Cost
 
 `J = w_time * T + w_encounter * H + w_facility * F + w_wait * W`, weights and terms in [configs/cost.yaml](configs/cost.yaml):
-`T` plan time at `v_nom`, `H` people the plan is predicted to meet, `F` door use (closed door, other robots routed there,
+`T` plan time at `v_nom` (`time.speed_fraction` of the slowest fleet robot's top speed), `H` people the plan is predicted to meet, `F` door use (closed door, other robots routed there,
 people at the door on arrival), `W` time standing at the door behind other robots. Every decision is logged with all terms.
 [configs/hata_cost.yaml](configs/hata_cost.yaml) names `cost.yaml` as its `base` and sets only the HATA bid and its
 planning and flow values.
@@ -45,15 +48,22 @@ planning and flow values.
 | --- | --- |
 | `none` | nothing, people cost nothing |
 | `oracle` | every pedestrian, constant-velocity forecast stopped at walls |
-| `perceived` | only pedestrians a robot sees (range, field of view, line of sight), kept for `memory_s` |
+| `perceived` | only pedestrians within a robot's laser range and field of view and in its line of sight, kept for `memory_s` |
 | `flow` | live state of everyone blended into a map of dynamics (`mod`), thresholded |
 | `mod` | the map of dynamics alone (HATA baseline) |
+| `dmod` | known people forecast onto the walking directions of a directional map of dynamics (`rho_dir`, turning with `flow.advect_tau_s`), plus the people that map expects on the plan |
 
 Every rule reads only this map, so the levels differ only in how it is made. The map of dynamics (`mod`) is an `.npz`
 with `rho[t, y, x]` (pedestrians per m^2 per time window and cell, from robot-free runs) and `x_edges`, `y_edges`,
-`t_edges`. The people map spans the bounding box of the world's walls in cells of `people_view.grid.cell_m`. The map
-of dynamics must start at the same corner, have the same cell size and cover that box, otherwise the dispatcher
-refuses it.
+`t_edges`, and for `dmod` also `rho_dir[t, y, x, bin]`, the density split by walking direction. The people map spans the
+bounding box of the world's walls in cells of `people_view.grid.cell_m`. The map of dynamics must start at the same
+corner, have the same cell size and cover that box, otherwise the dispatcher refuses it.
+
+## Robot
+
+The dispatcher takes the robot from the fleet's models (`arena_robots`, `caps/mobile.yaml`): the body is the largest
+`radius` plus `robot.margin_m`, `v_nom` is `time.speed_fraction` of the slowest top speed (`velocity_limits.linear`),
+and perception is the shortest and narrowest `laser` range and field of view.
 
 ## Run the doorway example
 
@@ -70,14 +80,13 @@ Terminal 2, the dispatcher:
 
 ```bash
 EX=$(ros2 pkg prefix arena_fleet)/share/arena_fleet/examples/doorway
-ros2 run arena_fleet dispatcher --ros-args \
-  -p world:=$ARENA_DIR/arena_simulation_setup/worlds/mechanisms_doorway/world.yaml \
-  -p resources:=$EX/resources.yaml -p scenario:=$EX/scenario/scenario.yaml \
+ros2 run arena_fleet dispatcher --ros-args -p resources:=$EX/resources.yaml \
   -p profile:=full -p info:=oracle -p seed:=6 -p out:=/tmp/arena_fleet_run
 ```
 
 The node ends the episode `tail_s` after the last robot arrives, or after `duration_s`. With Nav2 DWB instead of drlvo,
-launch with `robot.mobile.local_planner:=dwb` and pass `-p local:=dwb`.
+launch with `robot.mobile:=nav2 robot.mobile.local_planner:=dwb` in place of the three `robot.mobile` arguments and
+pass `-p local:=dwb`.
 
 ## Output (`out`)
 
@@ -97,4 +106,5 @@ Every run writes these files afresh.
 python3 -m pytest arena_fleet/test
 ```
 
-They drive the dispatcher on the `mechanisms_doorway` world with the example files; robots walk their plan at `time.v_nom` of the cost file.
+They drive the dispatcher on the `mechanisms_doorway` world with the example files, robots parked at the example
+scenario's starts; robots walk their plan at `v_nom`.

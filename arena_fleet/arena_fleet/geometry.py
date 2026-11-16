@@ -9,8 +9,11 @@ Box = tuple[float, float, float, float]
 Funnel = tuple[float, float, float, float, float, float]
 
 RES = 0.1
+PAD = 0.5
 C0 = 1.0
 CLEAR_K = 6.0
+CLEAR_MAX = 2.5
+PLAN_STRIDE = 2
 
 
 class Occupancy(typing.Protocol):
@@ -88,14 +91,14 @@ def hungarian(c: Sequence[Sequence[float]]) -> list[int]:
 class Grid:
     """Wall occupancy with per-cell clearance; plans are descents of a cost field from the goal."""
 
-    NB: typing.ClassVar[list[tuple[int, int, float]]] = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0), (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414)]
+    NB: typing.ClassVar[list[tuple[int, int, float]]] = [(dx, dy, math.hypot(dx, dy)) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy]
 
     def __init__(self, walls: Sequence[Wall], robot_r: float, snap_m: float, expansions: int) -> None:
         self.robot_r, self.snap_rings, self.expansions = robot_r, round(snap_m / RES), expansions
         xs = [p[0] for w in walls for p in w]
         ys = [p[1] for w in walls for p in w]
-        self.x0, self.y0 = min(xs) - 0.5, min(ys) - 0.5
-        self.nx, self.ny = int((max(xs) + 0.5 - self.x0) / RES) + 1, int((max(ys) + 0.5 - self.y0) / RES) + 1
+        self.x0, self.y0 = min(xs) - PAD, min(ys) - PAD
+        self.nx, self.ny = int((max(xs) + PAD - self.x0) / RES) + 1, int((max(ys) + PAD - self.y0) / RES) + 1
         self.clear = [math.inf] * (self.nx * self.ny)
         pq: list[tuple[float, int]] = []
         for a, b in walls:
@@ -107,7 +110,7 @@ class Grid:
                     heapq.heappush(pq, (0.0, c))
         while pq:
             d, c = heapq.heappop(pq)
-            if d > self.clear[c] or d > 2.5:
+            if d > self.clear[c] or d > CLEAR_MAX:
                 continue
             for nc, w in self.neigh(c):
                 nd = d + w * RES
@@ -194,7 +197,7 @@ class Grid:
         return self.thin(out)
 
     def thin(self, cells: Sequence[int]) -> list[Point]:
-        return [self.xy(k) for k in cells[::2]] + ([self.xy(cells[-1])] if len(cells) % 2 == 0 else [])
+        return [self.xy(k) for k in cells[::PLAN_STRIDE]] + ([self.xy(cells[-1])] if (len(cells) - 1) % PLAN_STRIDE else [])
 
     def route(self, field: Sequence[float], x: float, y: float, view: Occupancy, v_nom: float, occ_cost: float, funnel: Funnel | None, horizon: float) -> list[Point]:
         """A* to the goal with the static field as heuristic; cells the people map marks occupied on arrival cost occ_cost per m."""

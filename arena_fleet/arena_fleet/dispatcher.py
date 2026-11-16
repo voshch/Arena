@@ -1,3 +1,4 @@
+import collections
 import json
 import math
 import pathlib
@@ -10,6 +11,7 @@ import attrs
 from arena_fleet import features
 from arena_fleet.config import RULES, CostConfig, Profile, RulesConfig
 from arena_fleet.geometry import Box, Funnel, Grid, Point, grown, hungarian, inside, plan_len, seg_cross
+from arena_fleet.robot import RobotFacts
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics, PeopleView
 
@@ -19,9 +21,16 @@ Pose2 = tuple[float, float, float]
 Terms = dict[str, float]
 
 VERSION = "1.3"
+DRAW_ATTEMPTS = 20000
+FIELD_CACHE = 256
+ASIDE_DIRECTIONS = 12
+ASIDE_STEP = 0.2
+ASIDE_WAY_RATIO = 0.75
+ASIDE_PERSON_TOL = 0.05
+STUCK_MOVE = 0.1
 WAITING = ("approach", "hold", "cross", "to_slot", "queued", "yield")
 NO_ROUTE = 1e9
-_FIELDS: dict[tuple[int, float, float, float, Point, Point, tuple[Box, ...], tuple[float, float]], list[float]] = {}
+_FIELDS: collections.OrderedDict[tuple[int, float, float, float, Point, Point, tuple[Box, ...], tuple[float, float]], list[float]] = collections.OrderedDict()
 
 
 @attrs.frozen
@@ -108,27 +117,26 @@ class RobotState:
 class FleetDispatcher:
     """Assigns goals, one plan per robot through a door, and applies the profile's rules every tick; ROS-free."""
 
-    def __init__(self, site: Site, cost: CostConfig, rules: RulesConfig, *, names: Sequence[str], robot_r: float, info: Info, profile: str = "", seed: int = 0, out: pathlib.Path, duration: float = 180.0, mod: MapOfDynamics | None = None, samples: bool = True) -> None:
+    def __init__(self, site: Site, cost: CostConfig, rules: RulesConfig, *, names: Sequence[str], robot: RobotFacts, info: Info, profile: str = "", seed: int = 0, out: pathlib.Path, duration: float = 180.0, mod: MapOfDynamics | None = None, samples: bool = True) -> None:
         name = profile or rules["default_profile"]
         if name not in rules["profiles"]:
             raise ValueError(f"profile {name!r} not in {sorted(rules['profiles'])}")
         if info == "dmod" and (mod is None or not mod.directional):
-            raise ValueError("info dmod needs a directional map of dynamics (rho_dir, analysis/build_mod.py)")
+            raise ValueError("info dmod needs a directional map of dynamics (rho_dir)")
         if info in ("flow", "mod") and mod is None:
             raise ValueError(f"information level {info} needs a map of dynamics")
-        if len(site.starts) < len(names):
-            raise ValueError(f"{len(names)} robots but the scenario parks {len(site.starts)}")
         self.site, self.cost, self.rcfg, self.info, self.duration = site, cost, rules, info, duration
-        self.profile, self.rules = name, rules["profiles"][name]
-        check_profile(self.rules)
+        on = rules["profiles"][name]
+        self.profile, self.rules = name, typing.cast(Profile, {r: r in on for r in RULES})
         self.w = cost["weights"]
         self.names = list(names)
-        self.starts = site.starts[: len(names)]
         self.walls = site.walls
         self.doors = site.doors
-        self.body_r = robot_r + cost["robot"]["margin_m"]
+        self.robot = robot
+        self.body_r = robot.radius_m + cost["robot"]["margin_m"]
+        self.v_nom = robot.max_speed_mps * cost["time"]["speed_fraction"]
         self.grid = Grid(self.walls, self.body_r, cost["plan"]["snap_m"], cost["plan"]["route_expansions"])
-        self.door_state: dict[str, DoorState] = {leaf.name: DoorState() for leaf in site.leaves}
+        self.door_state: dict[str, DoorState] = {}
         self.hata = cost.get("mode") == "hata"
         self.view = None if info == "none" else PeopleView(cost, self.walls, self.body_r, mod)
         self.pose: dict[str, Pose2] = {}
@@ -170,13 +178,16 @@ class FleetDispatcher:
                 key = (key0, self.body_r, round(g[0], 2), round(g[1], 2), door.c, door.normal, closed, funnel)
                 if key not in _FIELDS:
                     _FIELDS[key] = self.grid.field(g, closed, (*door.c, *door.normal, *funnel))
+                    while len(_FIELDS) > FIELD_CACHE:
+                        _FIELDS.popitem(last=False)
+                _FIELDS.move_to_end(key)
                 self.fields[(g, d)] = _FIELDS[key]
         out.mkdir(parents=True, exist_ok=True)
         self.ev = (out / "events.jsonl").open("w", buffering=1)
         self.st = (out / "state.jsonl").open("w", buffering=1)
         self.heat_f = (out / "heat.jsonl").open("w", buffering=1) if self.view else None
         self.samp_f = (out / "samples.jsonl").open("w", buffering=1) if samples else None
-        (out / "dispatch.json").write_text(json.dumps({"profile": name, "rules": self.rules, "info": info, "cost": cost, "rules_params": rules, "goals": self.goals, "seed": seed, "robots": self.names, "version": VERSION}, indent=1))
+        (out / "dispatch.json").write_text(json.dumps({"profile": name, "rules": self.rules, "info": info, "cost": cost, "rules_params": rules, "goals": self.goals, "seed": seed, "robots": self.names, "robot": attrs.asdict(robot), "version": VERSION}, indent=1))
 
     def close(self) -> None:
         for f in (self.ev, self.st, self.heat_f, self.samp_f):
@@ -195,20 +206,17 @@ class FleetDispatcher:
     def draw_goals(self, seed: int, n: int) -> list[Point]:
         """The first n goals the seed places in the goal zones, so a smaller fleet takes the first goals of a larger one."""
         t = self.cost["task"]
-        unknown = sorted(set(t["goal_zones"]) - set(self.site.zones))
-        if unknown:
-            raise ValueError(f"goal zones {unknown} are not zones of the world, which has {sorted(self.site.zones)}")
-        zones = [self.site.zones[z] for z in t["goal_zones"]]
+        zones = [self.site.zones[z] for z in self.site.goal_zones]
         xs, ys = [p[0] for z in zones for p in z], [p[1] for z in zones for p in z]
         rng = random.Random(f"fleetbench-goals-{seed}")
         out: list[Point] = []
-        for _ in range(20000):
+        for _ in range(DRAW_ATTEMPTS):
             p = (round(rng.uniform(min(xs), max(xs)), 2), round(rng.uniform(min(ys), max(ys)), 2))
             if any(inside(p, z) for z in zones) and self.grid.clearance(p) >= t["clearance_m"] and all(math.dist(p, q) >= t["min_separation_m"] for q in out):
                 out.append(p)
                 if len(out) == n:
                     return out
-        raise ValueError(f"cannot place {n} goals {t['clearance_m']} m from walls and {t['min_separation_m']} m apart in the goal zones {t['goal_zones']}")
+        raise ValueError(f"cannot place {n} goals {t['clearance_m']} m from walls and {t['min_separation_m']} m apart in the goal zones {list(self.site.goal_zones)}")
 
     # inputs
 
@@ -226,23 +234,13 @@ class FleetDispatcher:
             self.peds = {k: (x - self.off[0], y - self.off[1], vx, vy) for k, (x, y, vx, vy) in peds.items()}
 
     def set_doors(self, doors: dict[str, DoorState]) -> None:
-        """State of the world doors by name, as the env's door semantics report it."""
-        self.door_state.update({d: s for d, s in doors.items() if d in self.door_state})
+        """State of the world doors by name, as the env's door semantics report it; a door never reported counts as open."""
+        self.door_state.update({d: s for d, s in doors.items() if any(leaf.name == d for leaf in self.site.leaves)})
 
-    def try_setup(self, raw: dict[str, Pose2]) -> bool:
-        """Map offset from the parked robots at their scenario starts; False until all stand there."""
-        if any(n not in raw for n in self.names):
-            return False
-        offs = [(raw[n][0] - s[0], raw[n][1] - s[1]) for n, s in zip(self.names, self.starts, strict=True)]
-        mx, my = sum(o[0] for o in offs) / len(offs), sum(o[1] for o in offs) / len(offs)
-        spread = max(math.hypot(o[0] - mx, o[1] - my) for o in offs)
-        if spread > self.rcfg["episode"]["setup_tol_m"]:
-            return False
-        self.off, self.t_start = (mx, my), self._now
-        self.log("setup", offset=[round(mx, 3), round(my, 3)], spread=round(spread, 3), sim_t0=round(self.t_start, 3), profile=self.profile, info=self.info)
-        for n in self.names:
-            self.set_pose(n, *raw[n])
-        return True
+    def setup(self, off: Point) -> None:
+        """Start the episode at the current time, the site's level at off in the map frame."""
+        self.off, self.t_start = off, self._now
+        self.log("setup", offset=[round(off[0], 3), round(off[1], 3)], sim_t0=round(self.t_start, 3), profile=self.profile, info=self.info)
 
     # what the dispatcher knows about people
 
@@ -258,7 +256,7 @@ class FleetDispatcher:
                         continue
                     rx, ry, th = self.pose[n]
                     off = (math.atan2(y - ry, x - rx) - th + math.pi) % (2 * math.pi) - math.pi
-                    if math.hypot(x - rx, y - ry) <= pc["range_m"] and abs(math.degrees(off)) <= pc["fov_deg"] / 2 and not any(seg_cross((rx, ry), (x, y), a, b) for a, b in self.walls):
+                    if math.hypot(x - rx, y - ry) <= self.robot.sensor_range_m and abs(math.degrees(off)) <= self.robot.sensor_fov_deg / 2 and not any(seg_cross((rx, ry), (x, y), a, b) for a, b in self.walls):
                         self.seen[k] = (x, y, vx, vy, now)
                         break
             self.seen = {k: v for k, v in self.seen.items() if now - v[4] <= pc["memory_s"]}
@@ -294,7 +292,7 @@ class FleetDispatcher:
 
     def walk(self, path: Sequence[Point], horizon: float) -> list[tuple[float, float, float, float]]:
         """(x, y, seconds ahead, step length) along a plan at v_nom up to horizon."""
-        v, out, t = self.cost["time"]["v_nom"], [], 0.0
+        v, out, t = self.v_nom, [], 0.0
         for i, p in enumerate(path):
             ds = math.dist(path[i - 1], p) if i else 0.0
             t += ds / v
@@ -320,7 +318,7 @@ class FleetDispatcher:
         """
         if self.info != "dmod" or self.view is None or self.view.mod is None:
             return 0.0
-        mod, v = self.view.mod, self.cost["time"]["v_nom"]
+        mod, v = self.view.mod, self.v_nom
         pv, tau_b = self.cost["people_view"], self.cost["flow"]["blend_tau_s"]
         width = 2 * (pv["person_r_m"] + self.body_r)
         t0, prev, out = self.t_rel(), None, 0.0
@@ -346,7 +344,7 @@ class FleetDispatcher:
         """Seconds from now until robot n is through_m past door d at v_nom, plus margin_s."""
         g, cp = self.rcfg["door_gate"], self.rcfg["capacity"]
         p, door = self.pose[n][:2], self.doors[d]
-        return (abs(door.u(p)) + cp["through_m"] + abs(door.v(p))) / self.cost["time"]["v_nom"] + g["margin_s"]
+        return (abs(door.u(p)) + cp["through_m"] + abs(door.v(p))) / self.v_nom + g["margin_s"]
 
     def gate_clear(self, d: str, t0: float, t1: float) -> bool:
         """No person predicted in door d (polygon + margin_m) between t0 and t1 seconds ahead."""
@@ -378,7 +376,7 @@ class FleetDispatcher:
         fld = self.fields[(goal, d)]
         if around and self.rules["plan_around"] and self.view is not None:
             pl = self.cost["plan"]
-            return self.grid.route(fld, x, y, self.view, self.cost["time"]["v_nom"], pl["occupied_cost_per_m"], self.funnel(d), pl["around_horizon_s"])
+            return self.grid.route(fld, x, y, self.view, self.v_nom, pl["occupied_cost_per_m"], self.funnel(d), pl["around_horizon_s"])
         return self.grid.descend(fld, x, y)
 
     def arrival(self, path: Sequence[Point], d: str) -> float:
@@ -390,11 +388,11 @@ class FleetDispatcher:
             dd = math.dist(p, c)
             if dd < bd:
                 bd, best = dd, s
-        return best / self.cost["time"]["v_nom"]
+        return best / self.v_nom
 
     def queue_wait(self, n: str, d: str, t_arrive: float) -> float:
         """W: seconds robot n would stand at door d behind the other robots routed through it."""
-        cross = self.cost["wait"]["cross_m"] / self.cost["time"]["v_nom"]
+        cross = self.cost["wait"]["cross_m"] / self.v_nom
         others = [self.arrival(r.plan, d) if r.phase == "approach" else 0.0 for m, r in self.rob.items() if m != n and r.door == d and r.phase in WAITING and r.plan]
         free = 0.0
         for t in sorted(others):
@@ -414,7 +412,7 @@ class FleetDispatcher:
         ta = self.arrival(plan, d)
         if self.hata:
             return self.hata_terms(plan, ta), plan
-        T = length / c["time"]["v_nom"]
+        T = length / self.v_nom
         H = self.encounters(plan) + self.flow_encounters(plan)
         f = c["facility"]
         rs = 0 if ignore_robots else sum(1 for m, r in self.rob.items() if m != n and r.door == d and r.phase in WAITING)
@@ -422,7 +420,7 @@ class FleetDispatcher:
         op = f["open_door_s"] if not self.door_is_open(d) else 0.0
         F = op + f["robot_same_door_s"] * rs + f["person_at_door_s"] * pd
         W = 0.0 if ignore_robots else self.queue_wait(n, d, ta)
-        Wp = self.gate_wait(d, ta, (c["wait"]["cross_m"]) / c["time"]["v_nom"]) if self.gate() else 0.0
+        Wp = self.gate_wait(d, ta, (c["wait"]["cross_m"]) / self.v_nom) if self.gate() else 0.0
         J = w["time"] * T + w["encounter"] * H + w["facility"] * F + w["wait"] * W + w.get("wait_people", 0.0) * Wp
         terms = {"J": round(J, 2), "T": round(T, 1), "H": round(H, 2), "F": round(F, 1), "W": round(W, 1), "Wp": round(Wp, 1), "len_m": round(length, 1), "t_door": round(ta, 1), "robots_same_door": rs, "people_at_door": round(pd, 1), "door_closed_s": op}
         return terms, plan
@@ -438,7 +436,7 @@ class FleetDispatcher:
             if self.view is not None and ds > 0:
                 prob += self.view.prob(t, x, y) * ds / self.view.cell
         J = h["w0"] * length + h["w1"] * prob
-        return {"J": round(J, 2), "T": round(length / self.cost["time"]["v_nom"], 1), "H": round(prob, 2), "F": 0.0, "W": 0.0, "len_m": round(length, 1), "t_door": round(ta, 1), "sum_p": round(prob, 2), "robots_same_door": 0, "people_at_door": 0.0, "door_closed_s": 0.0}
+        return {"J": round(J, 2), "T": round(length / self.v_nom, 1), "H": round(prob, 2), "F": 0.0, "W": 0.0, "len_m": round(length, 1), "t_door": round(ta, 1), "sum_p": round(prob, 2), "robots_same_door": 0, "people_at_door": 0.0, "door_closed_s": 0.0}
 
     def options(self, n: str, goal: Point, ignore_robots: bool = False, around: bool = True) -> tuple[dict[str, Terms], dict[str, list[Point]]]:
         out: dict[str, Terms] = {}
@@ -660,7 +658,7 @@ class FleetDispatcher:
         fld = self.slot_fields[key]
         if self.rules["plan_around"] and self.view is not None:
             pl = self.cost["plan"]
-            return self.grid.route(fld, x, y, self.view, self.cost["time"]["v_nom"], pl["occupied_cost_per_m"], None, pl["around_horizon_s"])
+            return self.grid.route(fld, x, y, self.view, self.v_nom, pl["occupied_cost_per_m"], None, pl["around_horizon_s"])
         return self.grid.descend(fld, x, y)
 
     def to_slot(self, n: str, d: str, rank: int, why: str) -> None:
@@ -809,19 +807,19 @@ class FleetDispatcher:
         if any(math.dist(p, o) < gap for o in (*bodies, *held)):
             return False
         length = math.dist((x, yy), p)
-        steps = max(int(length / 0.2), 1)
-        v, now = self.cost["time"]["v_nom"], self._now
+        steps = max(int(length / ASIDE_STEP), 1)
+        v, now = self.v_nom, self._now
         clear = y["aside_person_gap_m"]
         people = [(px, py, vx, vy, now - ts) for px, py, vx, vy, ts in self.seen.values()]
         for i in range(1, steps + 1):
             s = length * i / steps
             t = s / v
             q = (x + (p[0] - x) * s / length, yy + (p[1] - yy) * s / length)
-            if any(math.dist(q, o) < 0.75 * gap for o in bodies):
+            if any(math.dist(q, o) < ASIDE_WAY_RATIO * gap for o in bodies):
                 return False
             for px, py, vx, vy, age in people:
                 there = (px + vx * (age + t), py + vy * (age + t))
-                if math.dist(q, there) < min(math.dist((x, yy), there), clear) - 0.05:
+                if math.dist(q, there) < min(math.dist((x, yy), there), clear) - ASIDE_PERSON_TOL:
                     return False
             if not people and s > clear and self.view is not None and self.view.occupied(t, *q):
                 return False
@@ -844,8 +842,8 @@ class FleetDispatcher:
         best: Point | None = None
         best_key = (math.inf, math.inf)
         for rad in y["aside_radii_m"]:
-            for k in range(12):
-                a = k * math.pi / 6
+            for k in range(ASIDE_DIRECTIONS):
+                a = k * 2 * math.pi / ASIDE_DIRECTIONS
                 p = (round(x + rad * math.cos(a), 2), round(yy + rad * math.sin(a), 2))
                 if not self.aside_ok(n, p, bodies, held):
                     continue
@@ -1002,7 +1000,7 @@ class FleetDispatcher:
                 self.log("trip_done", robot=n, t_trip=round(now - (r.t0 if r.t0 is not None else now), 1), door_used=r.door_used)
                 continue
             mk = r.mark
-            if mk is None or math.dist(mk[1:], (x, y)) >= 0.1:
+            if mk is None or math.dist(mk[1:], (x, y)) >= STUCK_MOVE:
                 r.mark = (now, x, y)
             elif now - mk[0] >= ep["stuck_s"] and r.phase not in ("hold", "queued", "yield") and not r.stuck:
                 r.stuck = True
@@ -1129,9 +1127,3 @@ class FleetDispatcher:
             }
         doors = {d: {"prog": round(g.progress, 2), "state": g.state} for d, g in self.door_state.items()}
         self.st.write(json.dumps({"t": round(self.t_rel(), 2), "robots": robots, "inside": {d: list(m) for d, m in self.inside.items()}, "queue": self.queue_of, "doors": doors, "known": sorted(self.known), "n_peds": len(self.peds), "trips": dict(self.trips_done)}) + "\n")
-
-
-def check_profile(profile: Profile) -> None:
-    bad = set(profile) ^ set(RULES)
-    if bad:
-        raise ValueError(f"profile rule keys differ from {RULES}: {sorted(bad)}")

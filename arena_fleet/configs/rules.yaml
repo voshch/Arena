@@ -4,17 +4,17 @@
 
 default_profile: base
 
-profiles:
-  base:        {capacity: false, queue: false, yield_people: false, door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  capacity:    {capacity: true,  queue: false, yield_people: false, door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  queue:       {capacity: true,  queue: true,  yield_people: false, door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  queue_yield: {capacity: true,  queue: true,  yield_people: true,  door_gate: false, plan_around: false, slot_by_people: false, reassign_door: false, reassign_goal: false}
-  full:        {capacity: true,  queue: true,  yield_people: true,  door_gate: false, plan_around: true,  slot_by_people: true,  reassign_door: true,  reassign_goal: true}
+profiles:                # the rules each profile switches on; every other rule is off
+  base:        []
+  capacity:    [capacity]
+  queue:       [capacity, queue]
+  queue_yield: [capacity, queue, yield_people]
+  full:        [capacity, queue, yield_people, plan_around, slot_by_people, reassign_door, reassign_goal]
   # v1.3: people close the door instead of a timer (door_gate); no plan_around, no slot_by_people
-  v13:         {capacity: true,  queue: true,  yield_people: true,  door_gate: true,  plan_around: false, slot_by_people: false, reassign_door: true,  reassign_goal: true}
+  v13:         [capacity, queue, yield_people, door_gate, reassign_door, reassign_goal]
   # Baseline HATA (arXiv 2508.19731): Hungarian on bids from path length + map-of-dynamics probability, A* around busy cells,
   # no door rules. Use with cost:=configs/hata_cost.yaml info:=mod.
-  hata:        {capacity: false, queue: false, yield_people: false, door_gate: false, plan_around: true,  slot_by_people: false, reassign_door: false, reassign_goal: false}
+  hata:        [plan_around]
 
 capacity:                # at most k robots inside one door
   k: 1
@@ -51,7 +51,7 @@ yield_people:            # needs human input (all, what robots see, flow). All o
   aside_check_s: 8       # compared over this many seconds of forecast
   aside_clearance_m: 0.6
   aside_tol_m: 0.35
-  aside_robot_gap_m: 1.2 # a step-aside point stays this far from other robots, their plans, slots and step-aside points; the way to it 0.9 m from their bodies
+  aside_robot_gap_m: 1.2 # a step-aside point stays this far from other robots, their plans, slots and step-aside points
   aside_plan_ahead_s: 5.0  # how much of another robot's plan counts as taken
   aside_retry_s: 1.0     # a yielding robot without a step-aside point looks for one again this often
   aside_person_gap_m: 1.0 # on the way to a step-aside point no predicted person comes closer than this, unless standing still would bring them closer
@@ -79,8 +79,7 @@ reassign_goal:           # two robots swap goals if that lowers their total J
 
 episode:
   goal_tol_m: 0.6
-  stuck_s: 20.0          # moved < 0.1 m for this long while not held: logged `stuck`
+  stuck_s: 20.0          # barely moved for this long while not held: logged `stuck`
   tail_s: 5.0            # keep logging this long after the last robot arrives
-  setup_tol_m: 0.3       # setup waits until the parked robots' offsets from their scenario starts agree within this
   replan_period_s: 1.0   # a moving robot is re-planned this often
   sample_period_s: 0.5   # samples.jsonl gets a row per robot this often

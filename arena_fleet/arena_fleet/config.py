@@ -6,7 +6,6 @@ import yaml
 
 
 class TaskConfig(typing.TypedDict):
-    goal_zones: list[str]
     min_separation_m: float
     clearance_m: float
     assign: typing.Literal["hungarian", "fixed"]
@@ -34,7 +33,7 @@ class RobotConfig(typing.TypedDict):
 
 
 class TimeConfig(typing.TypedDict):
-    v_nom: float
+    speed_fraction: float
 
 
 class EncounterConfig(typing.TypedDict):
@@ -53,8 +52,6 @@ class WaitConfig(typing.TypedDict):
 
 
 class PerceptionConfig(typing.TypedDict):
-    range_m: float
-    fov_deg: float
     memory_s: float
 
 
@@ -101,18 +98,9 @@ class CostConfig(typing.TypedDict):
     flow: FlowConfig
 
 
-RULES = ("capacity", "queue", "yield_people", "door_gate", "plan_around", "slot_by_people", "reassign_door", "reassign_goal")
-
-
-class Profile(typing.TypedDict):
-    capacity: bool
-    queue: bool
-    yield_people: bool
-    door_gate: bool
-    plan_around: bool
-    slot_by_people: bool
-    reassign_door: bool
-    reassign_goal: bool
+Rule = typing.Literal["capacity", "queue", "yield_people", "door_gate", "plan_around", "slot_by_people", "reassign_door", "reassign_goal"]
+RULES: tuple[Rule, ...] = typing.get_args(Rule)
+Profile = dict[Rule, bool]
 
 
 class CapacityConfig(typing.TypedDict):
@@ -183,14 +171,13 @@ class EpisodeConfig(typing.TypedDict):
     goal_tol_m: float
     stuck_s: float
     tail_s: float
-    setup_tol_m: float
     replan_period_s: float
     sample_period_s: float
 
 
 class RulesConfig(typing.TypedDict):
     default_profile: str
-    profiles: dict[str, Profile]
+    profiles: dict[str, list[Rule]]
     capacity: CapacityConfig
     queue: QueueConfig
     yield_people: YieldConfig
