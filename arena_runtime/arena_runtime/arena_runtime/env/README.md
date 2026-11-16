@@ -105,7 +105,7 @@ outcome is set is not lost.
 ### Reset semantics
 
 The `resetting` parameter and `state/resetting` belong to the node. Async ROS I/O in
-this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins).
+this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_mixins/arena_rclpy_mixins).
 
 `EpisodeNode._reset_episode(record)` runs in this order:
 
@@ -286,6 +286,11 @@ coordinates the way an rviz goal handle's are. An empty phase list stops the
 robot: `RobotManager.stop_task` drops its unfinished phases and cancels the
 in-flight adapter goals.
 
+A phase that ends while its action still runs (a reach `stop` holding, a loop `until`
+exit, a failure policy or an episode abort) has that action canceled and the cancel answered
+before the next phase dispatches. A reach the judge met by `stop` reads no status from its
+client while the action runs, so the canceled status that follows does not fail it.
+
 ### Goal progress
 
 [`goal_progress.py`](goal_progress.py) is `EpisodeNode`'s ROS-independent per-robot goal
@@ -303,8 +308,9 @@ While an episode runs, the node pings every node under its env namespace each
 `task.episode.node_ping.period` wall seconds, driven by `EnvNode`'s 1 s arena
 watchdog tick through `_on_watchdog`. [`node_watch.py`](node_watch.py) pings a node on its
 lifecycle `get_state` service where it has one (it must report active) and on its
-parameter service otherwise. A node that has answered before and then misses
-`task.episode.node_ping.misses` pings in a row, or leaves the graph mid-episode,
+parameter service otherwise. Helper nodes that are never spun go unpinged: rclcpp's
+`*_rclcpp_node` and the `moveit` and `moveit_<n>` nodes inside `move_group`. A node
+that has answered before and then misses `task.episode.node_ping.misses` pings in a row, or leaves the graph mid-episode,
 ends the episode FATAL naming that node, which the benchmark runner counts as a
 systemic step failure and retries. A round most nodes miss counts for nobody, so a
 stalled box or event loop does not fault one node. With `task.episode.auto_reset`

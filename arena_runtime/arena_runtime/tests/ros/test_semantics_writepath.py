@@ -423,8 +423,8 @@ def _node_stub() -> object:
 
     from arena_runtime.env.episode_node import EpisodeNode
 
-    rosparam = {str: SimpleNamespace(get=lambda name, default: {"task_layer": "fake_layer"}.get(name, default))}
-    stub = object.__new__(type("Stub", (EpisodeNode,), {"sim_time": None, "rosparam": rosparam}))
+    stub = object.__new__(type("Stub", (EpisodeNode,), {"sim_time": None}))
+    stub._task_layer_param = SimpleNamespace(value="fake_layer")
     stub._robots_manager = None
     return stub
 

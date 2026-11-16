@@ -6,10 +6,12 @@ import math
 
 import attrs
 
+from arena_simulation_setup.generative.core.bodies import CLEARANCE, PED_RADIUS, ROBOT_RADIUS
+from arena_simulation_setup.generative.core.generated import Generated, Rejected, summary
 from arena_simulation_setup.generative.world.layout import Layout, Segment
 from arena_simulation_setup.shared.pathing import Point
 
-from .encounter import CLEARANCE, CROSSING, LEAD_IN_M, LEAD_OUT_M, PED_RADIUS, ROBOT_RADIUS, Generated, Leg, Placement, Rejected, build, crossed, crossing_direction, fits, parallel, summary
+from .encounter import CROSSING, LEAD_IN_M, LEAD_OUT_M, Leg, Placement, build, crossed, crossing_direction, fits, parallel
 from .sampler import Sample
 
 _EPS = 1e-6

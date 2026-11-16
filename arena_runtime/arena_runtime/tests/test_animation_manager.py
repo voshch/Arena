@@ -459,7 +459,6 @@ def test_a_changed_profile_crossfades_the_gait() -> None:
     push = resolve_pose_profile({"walk": {"base": "walk_pushwheelchair"}})
     for _ in range(5):
         m.compute(1, 1, 1.0, DT, profile=walk)
-    phi = m.gait_generator.phase(1)
     first = m.compute(1, 1, 1.0, DT, profile=push)
     phi = m.gait_generator.phase(1)
     gen = m.gait_generator.__class__()

@@ -8,10 +8,11 @@ from typing import TypedDict
 import rclpy
 import rclpy.qos
 import yaml
+from arena_rclpy_mixins.lazy import LazyPublisher
+from arena_rclpy_mixins.params import Param, declare
 from arena_runtime_msgs.msg import RobotFleet
 from geometry_msgs.msg import Point, Vector3
 from nav_msgs.msg import Odometry
-from arena_rclpy_mixins.lazy import LazyPublisher
 from rclpy.node import Node
 from std_msgs.msg import ColorRGBA
 from std_srvs.srv import Empty
@@ -33,9 +34,7 @@ class VisualizeRobotModel(Node):
     def __init__(self):
         super().__init__('visualize_robot_model')
 
-        self.declare_parameter('arena_env_node', '/arena_env_node')
-        tg_node = self.get_parameter('arena_env_node').value
-        assert isinstance(tg_node, str)
+        tg_node = declare(self, Param[str]('arena_env_node', '/arena_env_node', 'Name of the arena env node whose fleet is visualized.')).value
 
         self.srv_start_setup = self.create_service(Empty, "start_model_visualization", self.start_model_visualization_callback)
 
@@ -160,8 +159,7 @@ class VisualizeRobotModel(Node):
         return marker
 
     def get_complexity_odom_topic(self) -> str:
-        self.declare_parameter('complexity', 1)
-        complexity = self.get_parameter('complexity').value
+        complexity = declare(self, Param[int]('complexity', 1, 'Odometry source: 1 = odom, 2 = odom_amcl, anything else = odom.')).value
 
         if complexity == 1:
             return "odom"

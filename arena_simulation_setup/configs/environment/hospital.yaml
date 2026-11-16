@@ -6,11 +6,11 @@ groups:
   #   entities:
   #     static:
   #     - position: [0,0,0]
-  #       model: patient_bed
+  #       model: Hospital/SM_HospitalBed_01b
   #     - position: [-0.75,1,0]
-  #       model: bedside_tables
+  #       model: Hospital/SM_BedSideTable_01b
   #     - position: [0,-0.5,90]
-  #       model: curtain_closed
+  #       model: Hospital/Privacy_Curtain_Rail
         
   # - name: "hospital_office"
   #   margin: 4
@@ -19,9 +19,9 @@ groups:
   #   entities:
   #     static:
   #       - position: [0.0, 0.0, 0.0]
-  #         model: office_desk
+  #         model: Office/Table_Work_Security
   #       - position: [1, 0, -90]
-  #         model: office_chair
+  #         model: Office/Chair_Office
   #       - position: [1,2,90]
   #         model: retail_shelfA
   #       - position: [0,2,90]
@@ -38,7 +38,7 @@ groups:
     entities:
       static:
       - position: [10,2.0,90]
-        model: nurse_station
+        model: Hospital/Reception_Counter
       - position: [-7,12,-90]
         model: vending_machine
       - position: [-6,12,-90]

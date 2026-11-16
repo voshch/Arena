@@ -48,21 +48,25 @@ def _git(args: list[str], cwd: Path) -> str:
     return subprocess.check_output(["git", *args], cwd=cwd, text=True).strip()
 
 
-def _subrepos() -> list[tuple[Path, str, str]]:
-    """(path, https url, checked-out sha) per submodule, deepest paths first."""
+def _submodules(base: Path):
+    if not (REPO_ROOT / base / ".gitmodules").is_file():
+        return
     listing = _git(
         ["config", "-f", ".gitmodules", "--get-regexp", r"submodule\..*\.path"],
-        REPO_ROOT,
+        REPO_ROOT / base,
     )
-    repos = []
     for line in listing.splitlines():
         key, _, path = line.partition(" ")
         name = key.removeprefix("submodule.").removesuffix(".path")
-        url = _git(["config", "-f", ".gitmodules", f"submodule.{name}.url"], REPO_ROOT).removesuffix(".git")
-        sha = _git(["rev-parse", "HEAD"], REPO_ROOT / path)
-        repos.append((Path(path), url, sha))
-    repos.sort(key=lambda entry: len(entry[0].parts), reverse=True)
-    return repos
+        url = _git(["config", "-f", ".gitmodules", f"submodule.{name}.url"], REPO_ROOT / base).removesuffix(".git")
+        rel = base / path
+        yield rel, url, _git(["rev-parse", "HEAD"], REPO_ROOT / rel)
+        yield from _submodules(rel)
+
+
+def _subrepos() -> list[tuple[Path, str, str]]:
+    """(path, https url, checked-out sha) per submodule at any depth, deepest paths first."""
+    return sorted(_submodules(Path(".")), key=lambda entry: len(entry[0].parts), reverse=True)
 
 
 SUBREPOS = _subrepos()

@@ -54,6 +54,7 @@ def _peer_class(modes: TaskModes) -> type:
     from arena_humansim_msgs.msg import AgentMeta
     from arena_people_msgs.msg import Pedestrian, Pedestrians
     from arena_people_msgs.srv import MovePedestrians
+    from arena_rclpy_mixins.params import Param, declare
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
     from arena_runtime_msgs import srv
     from arena_runtime_msgs.action import RunEpisode
@@ -73,10 +74,10 @@ def _peer_class(modes: TaskModes) -> type:
             super().__init__(Constants.ENV_NODE_NAMESPACE, namespace=f"/arena/env_{env_id}", parameter_overrides=[rclpy.Parameter("world", value="map_empty"), rclpy.Parameter("human", value=human)])
             self.conf = Configuration(self)
             for name, default in ((mode_param("robots"), "random"), (mode_param("obstacles"), "random"), (mode_param("config"), ""), (mode_param("modules"), "")):
-                self.declare_parameter(name, default)
-            self.declare_parameter("task_layer", "")
-            self.declare_parameter("task.episode.auto_reset", False)
-            self.declare_parameter("task.episode.fail_on_collision", False)
+                declare(self, Param[str](name, default, "Task mode selection of the peer."))
+            declare(self, Param[str]("task_layer", "", "Task layer of the peer."))
+            declare(self, Param[bool]("task.episode.auto_reset", False, "true = the peer advances episodes by itself."))
+            declare(self, Param[bool]("task.episode.fail_on_collision", False, "true = a collision fails the episode."))
             modes.declare(self)
             self.fqn = fqn(env_id)
             self.env = f"/arena/env_{env_id}"

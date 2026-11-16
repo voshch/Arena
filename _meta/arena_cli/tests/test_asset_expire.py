@@ -16,6 +16,7 @@ def _entry(bucket: Path, relpath: str, stamp: str = "1700000000") -> Path:
 def _expire(assets: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
+        "ARENA_WS_DIR": str(assets),
         "ARENA_ASSETS_DIR": str(assets),
         "ASSET_BUCKETS": "assets",
         "WORLD_BUCKETS": "worlds",

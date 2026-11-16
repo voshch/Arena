@@ -8,7 +8,6 @@ import typing
 import xml.etree.ElementTree as ET
 from enum import Enum
 
-import attrs
 import numpy as np
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -21,7 +20,6 @@ from task_generator.tasks.mode import TaskModeKwargs
 # Avoids errors related to cv2 + pyglet + X11 with arena_text_crowd
 os.environ["PYGLET_HEADLESS"] = "true"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_runtime.env.task_api import HunavDynamicObstacle
 from arena_runtime.shared import WORLD_ENTITY_PREFIX
 from arena_simulation_setup.kg import Scene
@@ -47,6 +45,7 @@ from task_generator.tasks.obstacles import (
     Obstacle,
     TM_Obstacles,
 )
+from task_generator.tasks.obstacles.prompt import PromptParams
 from task_generator.tasks.obstacles.prompt.velocity_field_marker import (
     VelocityFieldVisualizer,
 )
@@ -79,13 +78,6 @@ class GenerationMode(Enum):
         return value in cls._value2member_map_
 
 
-@attrs.define()
-class PromptConfig:
-    user_prompt: ROSParamT[str]
-    top_p: ROSParamT[float]
-    generation_mode: ROSParamT[str]
-
-
 class TM_Prompt(TM_Obstacles):
     """
     Prompt task generator for obstacles.
@@ -96,7 +88,7 @@ class TM_Prompt(TM_Obstacles):
         _config (Config): Configuration object for obstacle generation.
     """
 
-    _config: PromptConfig
+    _config: PromptParams
 
     def preprocess_world_description(self, level: Level, semantics: Scene) -> str:
         """The compacted level as JSON for the LLM: zones with corners, bordering walls, description and contained entities, then the entities outside every zone."""
@@ -545,9 +537,9 @@ class TM_Prompt(TM_Obstacles):
 
     async def reset(self, *, seed: int) -> tuple[list[Obstacle], list[DynamicObstacle]]:
         scenario = await self._parse_prompt(
-            self._config.user_prompt.value,
-            self._config.top_p.value,
-            self._config.generation_mode.value,
+            self._config.USER_PROMPT.value,
+            self._config.TOP_P.value,
+            self._config.GENERATION_MODE.value,
         )
 
         return scenario.objects, scenario.humans
@@ -583,20 +575,7 @@ class TM_Prompt(TM_Obstacles):
 
         # default_hunav_config = _load_config() # Is not used yet
 
-        self._config = PromptConfig(
-            user_prompt=self.node.ROSParam[str](
-                self.namespace("user_prompt"),
-                value="An empty space with no pedestrian.",
-            ),
-            top_p=self.node.ROSParam[float](
-                self.namespace("top_p"),
-                value=0.3,
-            ),
-            generation_mode=self.node.ROSParam[str](
-                self.namespace("generation_mode"),
-                value=GenerationMode.ARENA.value,
-            ),
-        )
+        self._config = PromptParams(self.node, namespace=self.namespace())
 
         self.inference_client = genai.Client()
 

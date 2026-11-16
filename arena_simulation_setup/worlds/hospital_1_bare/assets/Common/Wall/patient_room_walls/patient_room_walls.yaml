@@ -5,10 +5,3 @@ main:
   - material: ["Paint_Gloss", {"tint": "rgba(244, 255, 0, 0.2)"}]
     height: 1.25
     z: 0.75
-  - tile:
-      - model: Hospital/Towel_Dispenser
-        orientation: 1.5708
-        y: 0.1
-        z: 1
-    every: 5
-    width: 3

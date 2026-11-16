@@ -1,9 +1,8 @@
-from .membership import DERIVE_MODES, connections, contents, derive, describe, zones_of
+from .membership import connections, contents, derive, describe, zones_of
 from .model import (
     FORMAT,
     LEGACY_FORMAT,
     MICROPHONE_PLACEMENT_TOLERANCE_M,
-    WORLD_LIGHTING_MODES,
     Level,
     WallPath,
     World,
@@ -20,7 +19,6 @@ from .write import write_world
 
 __all__ = [
     "point_scenario_assets",
-    'DERIVE_MODES',
     'connections',
     'contents',
     'derive',
@@ -30,7 +28,6 @@ __all__ = [
     'LEGACY_FORMAT',
     'Level',
     'MICROPHONE_PLACEMENT_TOLERANCE_M',
-    'WORLD_LIGHTING_MODES',
     'WallPath',
     'World',
     'WorldFormatError',

@@ -2,7 +2,7 @@ import asyncio
 import typing
 
 import attrs
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_rclpy_mixins.params import ParamHandle
 from arena_runtime.env.task_api import Stop
 from arena_runtime.shared import WORLD_ENTITY_PREFIX, DynamicObstacle, Position, Region
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
@@ -13,16 +13,17 @@ from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.obstacles._itinerary import attach_itinerary
 from task_generator.tasks.obstacles._validation import make_is_valid
-from task_generator.tasks.registry import default_scenario
+from task_generator.tasks.obstacles.scenario import ScenarioParams
 
 
 class TM_Scenario(TM_Obstacles):
-    _config: ROSParamT[str]
+    _params: ScenarioParams
+    _config: ParamHandle[str]
 
     async def reset(self, *, seed: int) -> Obstacles:
         scenario_name = self._config.value
-        await self._ctx.environment_manager.configure_contact(self._contact_mode.value, self._standing_distance.value)
-        await self._ctx.environment_manager.configure_gestures(self._gesture_mode.value)
+        await self._ctx.environment_manager.configure_contact(self._params.CONTACT_MODE.value, self._params.STANDING_DISTANCE.value)
+        await self._ctx.environment_manager.configure_gestures(self._params.GESTURE_MODE.value)
         world_description = self._ctx.world_manager.world_compacted()
 
         is_valid = make_is_valid(self._ctx.world_manager.map, self._ctx.conf.SAFE_DIST.value)
@@ -111,10 +112,5 @@ class TM_Scenario(TM_Obstacles):
         self.scenario: Scenario | None = None
         self._articulations_checked: set[tuple[str, str]] = set()
 
-        self._config = self.node.ROSParam[str](
-            self.namespace("file"),
-            default_scenario(self._ctx.world_manager.loaded_world),
-        )
-        self._contact_mode = self.node.ROSParam[str](self.namespace("contact_mode"), "enabled")
-        self._standing_distance = self.node.ROSParam[float](self.namespace("standing_distance"), 1.2)
-        self._gesture_mode = self.node.ROSParam[str](self.namespace("gesture_mode"), "enabled")
+        self._params = ScenarioParams(self.node, namespace=self.namespace())
+        self._config = self._params.FILE

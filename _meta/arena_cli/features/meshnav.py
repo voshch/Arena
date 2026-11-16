@@ -4,7 +4,7 @@ import os
 
 from arena_cli import common
 from arena_cli.common import Verb
-from arena_cli.features import lifecycle_verbs
+from arena_cli.features import Health, fetched, lifecycle_verbs
 
 NAME = "meshnav"
 
@@ -28,6 +28,10 @@ def _update() -> int:
     if rc:
         return rc
     return common._resourced("arena build")
+
+
+def health() -> Health:
+    return fetched(NAME)
 
 
 COMMANDS: dict[str, Verb] = {v.name: v for v in lifecycle_verbs(NAME, _update)}

@@ -23,6 +23,7 @@ import rclpy.timer
 import shapely
 import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.Robot import RobotView
 from arena_simulation_setup.shared.conditions import render_until
@@ -32,7 +33,8 @@ from arena_runtime.env.environment_manager import EnvironmentManager
 from arena_runtime.env.robot_manager.controller_manager_client import ControllerManagerClient
 from arena_runtime.env.robot_manager.controller_transitions import next_transition
 from arena_runtime.env.robot_manager.task_runner import PhaseState, TaskRunner, Transition, standoff_pose
-from arena_runtime.shared import Orientation, Pose, Position, Robot
+from arena_runtime.node_params import NodeParams
+from arena_runtime.shared import Orientation, Pose, Position, PositionRadius, Robot
 from arena_runtime.sim._interface import SimUnavailable
 
 if typing.TYPE_CHECKING:
@@ -67,6 +69,7 @@ _CM_CALL_TIMEOUT = 10.0
 _CM_REFUSAL_GRACE_S = 20.0
 _CM_SWITCH_TIMEOUT = 60.0
 _CM_SWITCH_TIMED_OUT = "timed out"
+_ZONE_TARGET_MARGINS = (0.3, 0.15, 0.0)
 
 _TELEPORT_TOLERANCE = 0.3
 _TELEPORT_SETTLE_TIMEOUT = 2.0
@@ -229,7 +232,7 @@ class RobotManager(NodeInterface):
                 caps_to_kind[cap] = override
                 continue
             param_name = f"robot.{cap}_adapter"
-            default_kind = self.node.rosparam[str].get(param_name, None)
+            default_kind = self.node.rosparam[str].get_unsafe(param_name, None)
             if default_kind is None:
                 self._logger.warning(f"robot {self._robot.name!r} advertises cap {cap!r} but no default adapter is configured (param {param_name!r}); cap will be unbound.")
                 continue
@@ -299,7 +302,7 @@ class RobotManager(NodeInterface):
         for key, param in self.node.get_parameters_by_prefix(f"robot.{cap}").items():
             kwargs[key] = param.value
         if cap == 'mobile':
-            kwargs.setdefault('train_mode', self.node.rosparam[bool].get('robot.train', False))
+            kwargs.setdefault('train_mode', declare(self.node, NodeParams.ROBOT_TRAIN).value)
         return kwargs
 
     async def set_up_robot(self):
@@ -540,13 +543,25 @@ class RobotManager(NodeInterface):
             self._logger.info(f"robot {self.name!r} condition {scoped.id} violated: {render_until(scoped.condition.p_node)}")
         if transition.stop:
             self._stop_current_task()
+            await asyncio.gather(*(adapter.cancel_and_wait() for adapter in self._adapter_instances))
             if transition.abort is not None and self._abort_episode is not None:
                 self._abort_episode(transition.abort)
             return transition
+        if ended is not None:
+            await self._cancel_ended(ended)
         state = self._runner.active_state
         if state is not None and not state.dispatched:
             await self._dispatch(state.index)
         return transition
+
+    async def _cancel_ended(self, ended: PhaseState) -> None:
+        """Cancel the action of a phase that ended before its server finished, a goto that arrived keeps its planner goal."""
+        from arena_runtime.env.request import TaskKind, kind_of
+
+        kind = kind_of(ended.phase)
+        adapter = self._adapters.get(kind)
+        if adapter is not None and (kind is not TaskKind.GOTO_POSE or ended.outcome == "dropped"):
+            await adapter.cancel_and_wait((kind,))
 
     async def _clear_on_cabin_open(self) -> None:
         """Run the adapters' `on_cabin_open` once the cabin that delivered the robot reports its door open."""
@@ -592,10 +607,20 @@ class RobotManager(NodeInterface):
         if corners is None:
             return phase
         if any(zone.name == phase.target for zone in world.zones):
-            try:
-                position = self.node._world_manager.get_position_on_map(self.safe_distance, forbid=False, polygon=shapely.Polygon([(corner.x, corner.y) for corner in corners]))
-            except RuntimeError as e:
-                raise ValueError(f"robot {self.name!r}: goto target {phase.target!r} has no free cell with {self.safe_distance:.2f} m clearance") from e
+            others = [PositionRadius(pose.position.x, pose.position.y, radius=manager.radius) for name, manager in self.node._robots_manager.managers.items() if name != self.name and (pose := manager.pose) is not None]
+            zone = shapely.Polygon([(corner.x, corner.y) for corner in corners])
+            position = None
+            for margin in _ZONE_TARGET_MARGINS:
+                inner = zone.buffer(-margin) if margin else zone
+                if inner.is_empty:
+                    continue
+                try:
+                    position = self.node._world_manager.get_position_on_map(self.safe_distance, others, forbid=False, polygon=inner)
+                except RuntimeError:
+                    continue
+                break
+            if position is None:
+                raise ValueError(f"robot {self.name!r}: goto target {phase.target!r} has no free cell with {self.safe_distance:.2f} m clearance")
         else:
             position = world.point_resolver(self.node.conf.General.RNG.stream("robots", "target", self.name)).resolve(phase.target)
         return attrs.evolve(phase, pose=Pose(position=position, orientation=Orientation.identity()))

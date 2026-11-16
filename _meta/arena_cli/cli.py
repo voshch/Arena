@@ -8,8 +8,10 @@ from types import ModuleType
 from arena_cli import asset as _asset_mod
 from arena_cli import bg as _bg
 from arena_cli import complete as _complete
+from arena_cli import evaluation as _evaluation_mod
 from arena_cli import features as _features
 from arena_cli import fork as _fork_mod
+from arena_cli import healthcheck as _healthcheck_mod
 from arena_cli import human as _human_mod
 from arena_cli import mcp as _mcp_mod
 from arena_cli import robot as _robot_mod
@@ -40,8 +42,8 @@ the underlying launch file or tool."""
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
     "Attach": ["human", "robot", "cam", "web", "mcp"],
-    "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall", "settings", "fork"],
-    "Data": ["asset"],
+    "Workspace": ["healthcheck", "build", "rebuild", "test", "deps", "update", "preload", "uninstall", "settings", "fork"],
+    "Data": ["asset", "evaluation"],
     "Features": ["feature", "registry"],
     "Shell": ["deactivate", "resource", "repair"],
 }
@@ -326,7 +328,17 @@ _register(
         complete=Sub(_mcp_mod.COMMANDS),
     )
 )
+_register(
+    make_verb(
+        "evaluation",
+        lambda args: _group_cmd("arena evaluation", _evaluation_mod.DESCRIPTION, _evaluation_mod.COMMANDS, args),
+        passthrough=True,
+        help_text=f"{_evaluation_mod.DESCRIPTION}\n\nCommands:\n{_listing([(v.name, v.short) for v in _evaluation_mod.COMMANDS.values()])}",
+        complete=Sub(_evaluation_mod.COMMANDS),
+    )
+)
 _register(_viz_mod.VERB)
+_register(_healthcheck_mod.VERB)
 _register(_human_mod.VERB)
 _register(_robot_mod.VERB)
 
@@ -777,12 +789,6 @@ def train(args: list[str]) -> None:
     `arena train train_config:=<yaml> [launch args]`.
     """
     sys.exit(_feature_cmd(["training", "launch", *args]))
-
-
-@verb("evaluation", hidden=True, passthrough=True, complete=Sub(lambda: _feature_commands("evaluation")))
-def evaluation(args: list[str]) -> None:
-    """Alias for feature evaluation."""
-    sys.exit(_feature_cmd(["evaluation", *args]))
 
 
 @verb("planners", hidden=True, passthrough=True, complete=Sub(lambda: _feature_commands("planners")))

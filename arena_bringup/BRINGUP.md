@@ -267,6 +267,7 @@ via `/arena/spawn_env`.
 | `viz.view` | `map` | Camera view in rviz: `map` (TopDownOrtho), `robot` (Orbit on robot base), `robot3p` (ThirdPersonFollower on robot base). |
 | `viz.robot` | `0` | Robot index in the fleet for `viz.view:=robot*`. `all` spawns one rviz window per robot. Ignored when `view=map`. |
 | `viz.cam` | off | Camera asset to play at every episode start: a name resolved scenario, then world, then global, else an index into the most specific tier, else its first asset. Starts one `arena cam serve` per env, see [Playing with the episode](../utils/arena_cam/arena_cam/README.md#playing-with-the-episode). |
+| `viz.cam.record` | off | Directory every `viz.cam` take is recorded into, one file per camera at `env_<N>/<world>/<scenario>/ep<NNN>-<camera>.mp4`, relative to `$ARENA_DATA_DIR/recordings`. Needs `lockstep:=true`, cameras filmed through the sim camera record on env 0 only, see [Recording with the episode](../utils/arena_cam/arena_cam/README.md#recording-with-the-episode). |
 
 Examples:
 
@@ -554,7 +555,7 @@ common entry points. Verbs relevant to bringup:
 | `arena robot <model>\|rm\|ls` | `runtime/spawn_robot`, `runtime/despawn_robot`, `state/robots` | Spawn, despawn, or list robots in a running fleet; see [arena robot](#arena-robot). |
 | `arena cleanup <env_id>` | `/arena/cleanup_namespace` service | Force-clean an env's namespace by id (calls the service for both the `env_<id>_` and `env_<id>/` prefixes, covering gazebo and isaac layouts). |
 | `arena train [args]` | `arena_training` feature launcher | RL training entry, see section 7 above. |
-| `arena fork new\|ls\|exec\|down` | fork containers in `build/.forks` | Isolated containers on snapshots of the dev tree, see [Forks](../README.md#forks). |
+| `arena fork new\|ls\|exec\|down` | fork containers in `build/.forks` | Isolated containers on snapshots of the dev tree or of another fork, see [Forks](../README.md#forks). |
 
 None of these verbs killall anything. `arena launch` checks for an existing
 runtime via `/arena/register_env`: if present, it attaches additively
@@ -579,8 +580,7 @@ completes straight to `key:=`, and `:` after a group name picks the group's own 
 
 ## Benchmark mode
 
-Benchmark runs are driven by the `arena evaluation benchmark` CLI verb. Requires
-`arena feature evaluation install` first.
+Benchmark runs are driven by the `arena evaluation benchmark` CLI verb.
 
 ```bash
 arena evaluation benchmark sim:=gazebo headless:=true suite:=basic contest:=basic

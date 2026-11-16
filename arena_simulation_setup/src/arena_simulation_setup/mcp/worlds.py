@@ -50,7 +50,7 @@ def path_component(value: str, what: str = "world name") -> str:
 
 def _load(view: WorldView, levels: set[str] | None, derive: str = "auto") -> tuple[World, dict[str, object]]:
     """The world as the runtime loads it with its strict verdict."""
-    from arena_simulation_setup.tree.World import DERIVE_MODES
+    from arena_simulation_setup.params import DERIVE_MODES
 
     if derive not in DERIVE_MODES:
         raise ToolError(f"kg.derive {derive!r} is not one of {', '.join(DERIVE_MODES)}", hint="derive is auto, all or off")

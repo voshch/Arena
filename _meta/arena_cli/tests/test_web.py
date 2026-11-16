@@ -416,6 +416,18 @@ def test_arena_web_is_a_listed_verb_with_its_flags() -> None:
     assert {"--port", "--listen", "--prefix", "--only", "--no-open"} <= set(verb.complete.flags)
 
 
+def test_hub_without_a_docker_cli_records_the_error_and_lists_nothing(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    hub = web.Hub(web.SERVE_COMMAND, None)
+    try:
+        hub.refresh()
+    finally:
+        hub.close()
+    assert hub.targets == {}
+    assert "docker" in hub.errors["docker"]
+
+
 def test_main_refuses_a_taken_port_and_leaves_no_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     with socket.socket() as taken:

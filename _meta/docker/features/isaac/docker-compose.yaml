@@ -14,6 +14,8 @@ services:
       - "$HOST_ARENA_WS_DIR/build:/opt/arena_ws/build"
       - "$HOST_ARENA_WS_DIR/install:/opt/arena_ws/install"
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
+      - "$HOST_ARENA_WS_DIR/.uv:/opt/arena_ws/.uv"
+      - "$HOST_ARENA_WS_DIR/.uv/venvs:/opt/arena_ws/.venvs:ro"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
       - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"
@@ -28,6 +30,9 @@ services:
       - GLIBC_TUNABLES=glibc.rtld.dynamic_sort=1
       - QT_X11_NO_MITSHM=1
       - UV_LINK_MODE=copy
+      - UV_CACHE_DIR=/opt/arena_ws/.uv/cache
+      - AMENT_CMAKE_VENV_UV_STORE=/opt/arena_ws/.uv/venvs
+      - AMENT_CMAKE_VENV_UV_STORE_VIEW=/opt/arena_ws/.venvs
       - AMENT_CMAKE_VENV_UV_OVERRIDES=/opt/arena_ws/src/Arena/_meta/docker/uv-overrides.txt
       - ARENA_IMAGE
       - ARENA_IMAGE_TAG

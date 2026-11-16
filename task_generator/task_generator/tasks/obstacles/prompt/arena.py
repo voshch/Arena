@@ -9,9 +9,7 @@ import time
 import typing
 from enum import Enum
 
-import attrs
 import yaml
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_runtime.shared import WORLD_ENTITY_PREFIX
 from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.entities import WAYPOINT_MODES
@@ -25,6 +23,7 @@ from task_generator.tasks.obstacles import (
     Obstacle,
     TM_Obstacles,
 )
+from task_generator.tasks.obstacles.prompt import PromptParams
 
 from .prompt_utils import (
     ARENA_FORMAT,
@@ -47,13 +46,6 @@ class GenerationMode(Enum):
         return value in cls._value2member_map_
 
 
-@attrs.define()
-class PromptConfig:
-    user_prompt: ROSParamT[str]
-    top_p: ROSParamT[float]
-    generation_mode: ROSParamT[str]
-
-
 class TM_Prompt(TM_Obstacles):
     """
     Prompt task generator for obstacles, backed by arena_humansim.
@@ -69,7 +61,7 @@ class TM_Prompt(TM_Obstacles):
       referenced per-agent.
     """
 
-    _config: PromptConfig
+    _config: PromptParams
 
     def preprocess_world_description(self, level: Level, semantics: Scene) -> str:
         """The compacted level as JSON for the LLM: zones with corners, bordering walls, description and contained entities, then the entities outside every zone."""
@@ -311,9 +303,9 @@ class TM_Prompt(TM_Obstacles):
 
     async def reset(self, *, seed: int) -> tuple[list[Obstacle], list[DynamicObstacle]]:
         scenario = await self._parse_prompt(
-            self._config.user_prompt.value,
-            self._config.top_p.value,
-            self._config.generation_mode.value,
+            self._config.USER_PROMPT.value,
+            self._config.TOP_P.value,
+            self._config.GENERATION_MODE.value,
         )
 
         return scenario.objects, scenario.humans
@@ -321,20 +313,7 @@ class TM_Prompt(TM_Obstacles):
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
-        self._config = PromptConfig(
-            user_prompt=self.node.ROSParam[str](
-                self.namespace("user_prompt"),
-                value="An empty space with no pedestrian.",
-            ),
-            top_p=self.node.ROSParam[float](
-                self.namespace("top_p"),
-                value=0.3,
-            ),
-            generation_mode=self.node.ROSParam[str](
-                self.namespace("generation_mode"),
-                value=GenerationMode.ARENA.value,
-            ),
-        )
+        self._config = PromptParams(self.node, namespace=self.namespace())
 
         self.inference_client = genai.Client()
 

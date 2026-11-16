@@ -1,36 +1,21 @@
-"""Spawn the rerun web-viewer bridge for one arena env.
+"""Rerun web-viewer bridge of one arena env."""
 
-Args:
-  ns          env namespace (e.g. /env_0); passed as positional argv to the node.
-  web_port    port for the rerun web viewer (default: 9090).
-  grpc_port   port for the rerun gRPC stream (default: 9876).
-"""
-
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument, forwarded
+from launch import LaunchContext, LaunchDescription, LaunchDescriptionEntity
+from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
+
+from rerun_utils.params import BRIDGE_PARAMS
+
+
+def _bridge(context: LaunchContext) -> list[LaunchDescriptionEntity]:
+    return [Node(package='rerun_utils', executable='rerun_bridge', name='rerun_bridge', arguments=[LaunchConfiguration('ns')], parameters=[forwarded(context, BRIDGE_PARAMS)], output='screen')]
 
 
 def generate_launch_description() -> LaunchDescription:
-    ns = LaunchConfiguration('ns')
-    web_port = LaunchConfiguration('web_port')
-    grpc_port = LaunchConfiguration('grpc_port')
-
     return LaunchDescription([
-        DeclareLaunchArgument('ns', description='env namespace, e.g. /env_0'),
-        DeclareLaunchArgument('web_port', default_value='9090'),
-        DeclareLaunchArgument('grpc_port', default_value='9876'),
-        Node(
-            package='rerun_utils',
-            executable='rerun_bridge',
-            name='rerun_bridge',
-            arguments=[ns],
-            parameters=[{
-                'web_port': ParameterValue(web_port, value_type=int),
-                'grpc_port': ParameterValue(grpc_port, value_type=int),
-            }],
-            output='screen',
-        ),
+        LaunchArgument('ns', description='Env namespace.'),
+        *(LaunchArgument.from_param(param) for param in BRIDGE_PARAMS),
+        OpaqueFunction(function=_bridge),
     ])

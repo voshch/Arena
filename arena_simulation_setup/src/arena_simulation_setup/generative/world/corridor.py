@@ -18,14 +18,14 @@ class WorldGeneratorCorridor(WithPedestrians):
     """A tree of corridors grown from the center, each branch joined to the nearest node (L1)."""
 
     class Configuration(PedestrianConfiguration):
-        width: float = pydantic.Field(30.0, gt=0)
-        height: float = pydantic.Field(30.0, gt=0)
-        corridor_width: float = pydantic.Field(2.0, gt=0)
-        width_spread: float = pydantic.Field(0.0, ge=0, lt=1)
-        branches: int = pydantic.Field(10, ge=1)
-        bends: int = pydantic.Field(0, ge=0, le=8)
-        wiggle: float = pydantic.Field(0.0, ge=0, le=0.5)
-        diagonal: bool = True
+        width: float = pydantic.Field(30.0, gt=0, description='Extent along x in meters.')
+        height: float = pydantic.Field(30.0, gt=0, description='Extent along y in meters.')
+        corridor_width: float = pydantic.Field(2.0, gt=0, description='Mean corridor width in meters.')
+        width_spread: float = pydantic.Field(0.0, ge=0, lt=1, description='Fraction of the corridor width each branch varies by, drawn uniformly (0 = all equal).')
+        branches: int = pydantic.Field(10, ge=1, description='Number of branches grown from the center.')
+        bends: int = pydantic.Field(0, ge=0, le=8, description='Maximum kinks per branch, which makes it wind at 45 and 90 degrees (0 = right-angle elbows only).')
+        wiggle: float = pydantic.Field(0.0, ge=0, le=0.5, description='Fraction of a branch length each kink is pushed sideways by, at most.')
+        diagonal: bool = pydantic.Field(True, description='Allow 45 degree legs in winding branches (false = right angles only).')
 
     config: Configuration
     _layout: Layout | None

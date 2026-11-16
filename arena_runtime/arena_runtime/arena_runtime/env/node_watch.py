@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING
 
 import attrs
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 
 _PARAM_SERVICE = "/get_parameters"
 _STATE_SERVICE = "/get_state"
-_HELPER_SUFFIX = "_rclcpp_node"
+_HELPER = re.compile(r"(_rclcpp_node|/moveit(_\d+)?)$")
 
 
 @attrs.define
@@ -55,7 +56,7 @@ class NodePinger:
         """Each node under the root and the service to ping it on."""
         services = {name for name, _ in self._node.get_service_names_and_types() if name.startswith(f"{self._root}/")}
         nodes = {name.removesuffix(_PARAM_SERVICE) for name in services if name.endswith(_PARAM_SERVICE)} - {self._node.get_fully_qualified_name()}
-        nodes = {name for name in nodes if not name.endswith(_HELPER_SUFFIX)}
+        nodes = {name for name in nodes if not _HELPER.search(name)}
         return {name: name + _STATE_SERVICE if name + _STATE_SERVICE in services else name + _PARAM_SERVICE for name in nodes}
 
     async def _alive(self, service: str, timeout: float) -> bool:

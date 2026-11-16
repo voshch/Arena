@@ -25,15 +25,15 @@ class WorldGeneratorRooms(WorldGeneratorImpl):
     """A building of rows x cols rooms, every room reachable from the entrance through doors."""
 
     class Configuration(BaseConfiguration):
-        rows: int = pydantic.Field(3, ge=1)
-        cols: int = pydantic.Field(4, ge=1)
-        room_min: float = pydantic.Field(4.0, gt=0)  # m, side of a room drawn per row and per column
-        room_max: float = pydantic.Field(7.0, gt=0)
-        wall: float = pydantic.Field(0.2, gt=0)  # m between neighbouring rooms
-        door_width: float = pydantic.Field(1.0, gt=0)
-        max_depth: int = pydantic.Field(0, ge=0)  # doors from the entrance to any room, 0 = unbounded
-        deep: float = pydantic.Field(0.5, ge=0.0, le=1.0)  # chance to grow from the newest room, high = long chains
-        loops: int = pydantic.Field(0, ge=0)  # doors beyond the tree, each closing a cycle
+        rows: int = pydantic.Field(3, ge=1, description='Number of room rows, row 0 holding the entrance.')
+        cols: int = pydantic.Field(4, ge=1, description='Number of room columns.')
+        room_min: float = pydantic.Field(4.0, gt=0, description='Lower bound in meters of the room side drawn per row and per column.')
+        room_max: float = pydantic.Field(7.0, gt=0, description='Upper bound in meters of the room side drawn per row and per column.')
+        wall: float = pydantic.Field(0.2, gt=0, description='Wall thickness between neighboring rooms in meters.')
+        door_width: float = pydantic.Field(1.0, gt=0, description='Width of each door between two rooms in meters.')
+        max_depth: int = pydantic.Field(0, ge=0, description='Maximum number of doors from the entrance to any room (0 = unbounded).')
+        deep: float = pydantic.Field(0.5, ge=0.0, le=1.0, description='Probability of growing the tree from the newest room, where high values give long chains.')
+        loops: int = pydantic.Field(0, ge=0, description='Number of extra doors beyond the spanning tree, each closing a cycle.')
 
         @pydantic.model_validator(mode="after")
         def _sized(self) -> WorldGeneratorRooms.Configuration:

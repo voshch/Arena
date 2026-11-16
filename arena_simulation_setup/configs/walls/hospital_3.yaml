@@ -5,11 +5,11 @@ main:
   - material: Bamboo_Planks
     height: 1
     z: 0
-  - material: Polyester_Crepe_de_Chine_Dark_Green
+  - material: Polyester_Crepe_de_Chine
     height: 0.5
     z: 1
   - tile:
-      - model: clock_1
+      - model: Office/SM_Clock_B
         orientation: 1.507 # rotate 90 degrees
         y: 0.1
         z: 0.75

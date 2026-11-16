@@ -1,9 +1,8 @@
 import typing
 
-from arena_rclpy_mixins.declarations import declare_bool, declare_double, declare_double_array
-from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-from arena_rclpy_mixins.shared import Namespace
-from arena_robots.characterization import DURATION_DEFAULTS, MODES, SWEEP_DEFAULTS
+from arena_rclpy_mixins.params import Param, ParamGroup
+from arena_robots.characterization import DURATION_DEFAULTS, SWEEP_DEFAULTS
+from rclpy import Parameter
 
 from task_generator.modes import Modes
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, ROBOTS_MODES
@@ -41,18 +40,28 @@ _SWEEP_DESCRIPTIONS = {
 }
 
 
-def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:
-    for name in MODES:
-        declare_bool(node, ns("modes", name), True, label=f"Sweep {name}", description=_MODE_DESCRIPTIONS[name])
-    for name, default in DURATION_DEFAULTS.items():
-        label = name.removesuffix("_s").replace("_", " ").capitalize()
-        declare_double(node, ns(name), default, label=f"{label} (s)", description=_DURATION_DESCRIPTIONS[name])
-    for name, default in SWEEP_DEFAULTS.items():
-        label = name.removesuffix("_s").replace("_", " ").capitalize()
-        declare_double_array(node, ns(name), default, label=label, description=_SWEEP_DESCRIPTIONS[name])
+class CharacterizationParams(ParamGroup):
+    MODE_IDLE = Param[bool]("modes.idle", True, _MODE_DESCRIPTIONS["idle"])
+    MODE_LINEAR = Param[bool]("modes.linear", True, _MODE_DESCRIPTIONS["linear"])
+    MODE_LATERAL = Param[bool]("modes.lateral", True, _MODE_DESCRIPTIONS["lateral"])
+    MODE_ARC = Param[bool]("modes.arc", True, _MODE_DESCRIPTIONS["arc"])
+    MODE_RAMPS = Param[bool]("modes.ramps", True, _MODE_DESCRIPTIONS["ramps"])
+    MODE_BRAKE = Param[bool]("modes.brake", True, _MODE_DESCRIPTIONS["brake"])
+    MODE_ANGULAR = Param[bool]("modes.angular", True, _MODE_DESCRIPTIONS["angular"])
+    IDLE_S = Param[float]("idle_s", DURATION_DEFAULTS["idle_s"], _DURATION_DESCRIPTIONS["idle_s"])
+    LINEAR_DWELL_S = Param[float]("linear_dwell_s", DURATION_DEFAULTS["linear_dwell_s"], _DURATION_DESCRIPTIONS["linear_dwell_s"])
+    LINEAR_SETTLE_S = Param[float]("linear_settle_s", DURATION_DEFAULTS["linear_settle_s"], _DURATION_DESCRIPTIONS["linear_settle_s"])
+    LATERAL_DWELL_S = Param[float]("lateral_dwell_s", DURATION_DEFAULTS["lateral_dwell_s"], _DURATION_DESCRIPTIONS["lateral_dwell_s"])
+    ANGULAR_DWELL_S = Param[float]("angular_dwell_s", DURATION_DEFAULTS["angular_dwell_s"], _DURATION_DESCRIPTIONS["angular_dwell_s"])
+    RAMP_SETTLE_S = Param[float]("ramp_settle_s", DURATION_DEFAULTS["ramp_settle_s"], _DURATION_DESCRIPTIONS["ramp_settle_s"])
+    BRAKE_APPROACH_S = Param[float]("brake_approach_s", DURATION_DEFAULTS["brake_approach_s"], _DURATION_DESCRIPTIONS["brake_approach_s"])
+    BRAKE_DWELL_S = Param[float]("brake_dwell_s", DURATION_DEFAULTS["brake_dwell_s"], _DURATION_DESCRIPTIONS["brake_dwell_s"])
+    ARC_SPEED_FACTORS = Param[list[float]]("arc_speed_factors", list(SWEEP_DEFAULTS["arc_speed_factors"]), _SWEEP_DESCRIPTIONS["arc_speed_factors"], type_=Parameter.Type.DOUBLE_ARRAY)
+    ARC_RADIUS_FACTORS = Param[list[float]]("arc_radius_factors", list(SWEEP_DEFAULTS["arc_radius_factors"]), _SWEEP_DESCRIPTIONS["arc_radius_factors"], type_=Parameter.Type.DOUBLE_ARRAY)
+    RAMP_HORIZONS_S = Param[list[float]]("ramp_horizons_s", list(SWEEP_DEFAULTS["ramp_horizons_s"]), _SWEEP_DESCRIPTIONS["ramp_horizons_s"], type_=Parameter.Type.DOUBLE_ARRAY)
 
 
-@ROBOTS_MODES.register(Modes.TM_Robots.CHARACTERIZATION, namespace=_NS, schema=_declare_schema)
+@ROBOTS_MODES.register(Modes.TM_Robots.CHARACTERIZATION, namespace=_NS, schema=CharacterizationParams)
 def _load_characterization() -> type["TM_Robots"]:
     from .impl import TM_Characterization
 

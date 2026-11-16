@@ -15,8 +15,9 @@ from arena_simulation_setup.generative.scenario.formats import read_scenario
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match
 from arena_simulation_setup.generative.scenario.promptgen.pipeline import RobotPlan, generate, write_result
-from arena_simulation_setup.generative.scenario.promptgen.profiles import ProfileError, derive, derived_name, profile, tier_value
-from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, ROUTE_TRIGGER_M, STAND_TRIGGER_M, trigger
+from arena_simulation_setup.generative.core.profiles import ProfileError, derive, derived_name, profile, tier_value
+from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, STAND_TRIGGER_M, trigger
+from arena_simulation_setup.generative.core.triggers import ROUTE_TRIGGER_M
 from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_when
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 from arena_simulation_setup.generative.scenario.route import ROBOT_SPEED_MPS
@@ -43,9 +44,9 @@ def _world(tmp_path):
     doc = {
         "robots": [ROBOT],
         "humans": [
-            {"name": "normal_1", "model": "female_adult_medical_01", "pose": "reception", "agent": {"agent_type": "elder", "desired_velocity": 0.7}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
-            {"name": "normal_2", "model": "male_adult_medical_01", "pose": "open_work_area", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["open_work_area", "reception"], "waypoint_mode": "reverse"},
-            {"name": "normal_3", "model": "female_adult_police_01", "pose": "reception", "agent": {"agent_type": "hurried", "desired_velocity": 1.6}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
+            {"name": "normal_1", "model": "Hospital/nurse_female_caucasian_young", "pose": "reception", "agent": {"agent_type": "elder", "desired_velocity": 0.7}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
+            {"name": "normal_2", "model": "Hospital/doctor_male_caucasian_middleage", "pose": "open_work_area", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["open_work_area", "reception"], "waypoint_mode": "reverse"},
+            {"name": "normal_3", "model": "casual_female_caucasian_young", "pose": "reception", "agent": {"agent_type": "hurried", "desired_velocity": 1.6}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"},
         ],
     }
     (base / "scenario.yaml").write_text(yaml.safe_dump({"format": "arena-scenario/2", **doc}, sort_keys=False))
@@ -231,7 +232,7 @@ def _with_talkers(doc: dict, base: Path) -> dict:
     from arena_simulation_setup.generative.scenario.populate import bt_type_source
 
     (base / "talker.yaml").write_text(bt_type_source().read_text())
-    talkers = [{"name": f"talker_{i}", "model": "male_adult_medical_01", "pose": "reception", "agent": {"agent_type": "./talker.yaml", "desired_velocity": 1.1}, "waypoints": ["reception"]} for i in (1, 2)]
+    talkers = [{"name": f"talker_{i}", "model": "Hospital/doctor_male_caucasian_middleage", "pose": "reception", "agent": {"agent_type": "./talker.yaml", "desired_velocity": 1.1}, "waypoints": ["reception"]} for i in (1, 2)]
     return {**doc, "humans": [*doc["humans"], *talkers]}
 
 
@@ -409,7 +410,7 @@ def test_b_tunes_only_unowned_agents(toy) -> None:
 
 
 def _one_stop(name: str, pose: list[float], stop: list[float]) -> dict:
-    return {"name": name, "model": "male_adult_medical_01", "pose": pose, "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": [stop]}
+    return {"name": name, "model": "Hospital/doctor_male_caucasian_middleage", "pose": pose, "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": [stop]}
 
 
 def test_b_intrinsic_tunes_walkers_and_keeps_them_walking(toy) -> None:
@@ -890,7 +891,7 @@ def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> N
 
 
 def test_owned_names_follow_the_realized_intercepts_when_d_is_dropped(toy) -> None:
-    from arena_simulation_setup.generative.scenario.promptgen.agents import TypeFiles
+    from arena_simulation_setup.generative.core.agents import TypeFiles
     from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, _realized
     from arena_simulation_setup.generative.scenario.promptgen.spec import Record
     from arena_simulation_setup.generative.scenario.promptgen.step_bc import apply_c

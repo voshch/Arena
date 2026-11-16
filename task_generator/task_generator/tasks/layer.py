@@ -6,6 +6,7 @@ import enum
 import typing
 from collections.abc import Collection
 
+from arena_rclpy_mixins.params import Choices, Param, declare
 from arena_runtime.env.task_layer import EpisodeRecord, TaskContext, TaskModeOverrides, TaskModes, mode_param
 from arena_runtime.env.task_layer import validate_modes as _validate_modes
 
@@ -71,13 +72,11 @@ class TaskModeParams:
             "obstacles": Modes.TM_Obstacles.default().value,
             "modules": ",".join(module.value for module in Modes.TM_Module.default()),
         }
-        for axis, default in defaults.items():
-            server.rosparam[str].declare_safe(mode_param(axis), default)
-            _parse_axis(axis, server.rosparam[str].get_unsafe(mode_param(axis)))
-        self.TM_ROBOTS = server.ROSParam[Modes.TM_Robots](mode_param("robots"), defaults["robots"], parse=_parse_robots)
-        self.TM_OBSTACLES = server.ROSParam[Modes.TM_Obstacles](mode_param("obstacles"), defaults["obstacles"], parse=_parse_obstacles)
-        self.TM_CONFIG = server.ROSParam[str](mode_param("config"), "")
-        self.TM_MODULES = server.ROSParam[set[Modes.TM_Module]](mode_param("modules"), defaults["modules"], parse=_parse_modules)
+        self.TM_ROBOTS = declare(server, Param[Modes.TM_Robots](mode_param("robots"), defaults["robots"], "Robots task mode.", constraint=Choices(*_VOCABULARY["robots"], many=True, ignore_case=True), parse=_parse_robots))
+        self.TM_OBSTACLES = declare(server, Param[Modes.TM_Obstacles](mode_param("obstacles"), defaults["obstacles"], "Obstacles task mode.", constraint=Choices(*_VOCABULARY["obstacles"], many=True, ignore_case=True), parse=_parse_obstacles))
+        self.TM_CONFIG = declare(server, Param[str](mode_param("config"), "", "Task config file name."))
+        self.TM_MODULES = declare(server, Param[set[Modes.TM_Module]](mode_param("modules"), defaults["modules"], "Comma-separated task modules.", constraint=Choices(*_VOCABULARY["modules"], many=True, ignore_case=True), parse=_parse_modules))
+        self.resolve({})
 
     def _with_implied(self, selected: set[Modes.TM_Module]) -> list[Modes.TM_Module]:
         """The modules plus those every env runs and sounds when the env has acoustics or static sounds."""
@@ -126,7 +125,7 @@ def declare_mode_schema(node: ROSParamServer, axis: str, mode: str) -> None:
     _, registry = _REGISTRIES[axis]
     meta = registry.meta(next(key for key in registry.keys() if key.value == mode))
     if meta.schema is not None:
-        meta.schema(node, meta.namespace)
+        meta.schema(node, namespace=meta.namespace)
 
 
 def _namespaces[K: enum.Enum, V](registry: TaskModeRegistry[K, V]) -> dict[str, str]:

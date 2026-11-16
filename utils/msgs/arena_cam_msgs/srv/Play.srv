@@ -2,6 +2,7 @@
 string root    # name of the asset to play
 string bundle  # YAML mapping of name to spec for every asset root reaches
 string params  # YAML mapping of parameters
+string take    # label a recording server files this take under, empty plays only
 ---
 bool success
 string message

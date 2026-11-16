@@ -17,7 +17,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 from arena_bringup.future import IfElseSubstitution, PythonExpression  # noqa
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 
 # Appended to gz's default gui.config so the ViewportCamera GUI plugin loads
 # alongside the stock GUI (see _render_gui_config).
@@ -70,17 +70,18 @@ def generate_launch_description():
     use_sim_time = LaunchArgument(
         "use_sim_time",
         default_value='True',
-        description="Use simulation (Gazebo) clock if true",
+        description="Use the sim clock.",
     )
 
     world = LaunchArgument(
         "world",
         default_value='',
-        description="World name",
+        description="World name.",
     )
 
     headless = LaunchArgument(
         'headless',
+        description='true = run the gz-sim server without the GUI.',
     )
 
     # Injects PedSkeletonPlugin into the world SDF so gpu_lidar perceives

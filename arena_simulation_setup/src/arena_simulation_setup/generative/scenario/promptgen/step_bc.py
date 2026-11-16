@@ -11,12 +11,13 @@ from typing import Any
 
 import attrs
 
-from ..populate import MODELS, for_people, speed_for
-from .agents import TypeFiles, agent_type_of, mesh_for, profile_of_agent
+from arena_simulation_setup.generative.core.agents import TypeFiles, agent_type_of, mesh_for, profile_of_agent
+from arena_simulation_setup.generative.core.profiles import BT_ONLY, MODELS, TUNABLE, ProfileError, is_behavior_tree, profile, scaled_speed, tier_value
+
+from ..populate import for_people, speed_for
 from .ask import ask, system_prompt
 from .lexicon import when_in
 from .llm import Oracle
-from .profiles import BT_ONLY, TUNABLE, ProfileError, is_behavior_tree, profile, scaled_speed, tier_value
 from .spec import A_CASES, BDecision, CDecision, ConflictError, Record, Selection, conflict_m, conflicts, parse_b, parse_c
 from .step_a import StepError, bake, set_type, tune_trees, walk_as_tree, walks
 from .step_d import population_summary

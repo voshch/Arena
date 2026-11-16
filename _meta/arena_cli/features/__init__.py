@@ -11,7 +11,6 @@ from arena_cli.common import CLIError, Verb, _env, _reg_add, _reg_has, _reg_pull
 
 HOST_FEATURES = (
     "auditory",
-    "evaluation",
     "flatsim",
     "gazebo",
     "hearing",
@@ -23,6 +22,25 @@ HOST_FEATURES = (
     "training",
 )
 CONTAINER_FEATURES = (*HOST_FEATURES, "docker", "vllm")
+
+
+Health = tuple[bool, str]
+
+
+def fetched(name: str, *submodules: str) -> Health:
+    """Whether the feature's submodules under ARENA_DIR are checked out and the repos of its _meta/repos/<name>.repos are pulled into src."""
+    import yaml
+
+    arena, src = _env("ARENA_DIR"), os.path.join(_env("ARENA_WS_DIR"), "src")
+    missing = [path for path in submodules if not os.path.exists(os.path.join(arena, path, ".git"))]
+    repos = os.path.join(arena, "_meta", "repos", f"{name}.repos")
+    if os.path.isfile(repos):
+        with open(repos) as f:
+            listed = (yaml.safe_load(f) or {}).get("repositories") or {}
+        missing += [path for path in listed if not os.path.isdir(os.path.join(src, path))]
+    if missing:
+        return False, f"missing {', '.join(missing)}, run 'arena feature {name} update'"
+    return True, "ok"
 
 
 def in_container() -> bool:

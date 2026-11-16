@@ -2,17 +2,15 @@ import typing
 from collections.abc import Callable, Iterable
 
 import attrs
+from arena_rclpy_mixins.params import ParamGroup
 from arena_rclpy_mixins.registry import ClassRegistry
 from arena_rclpy_mixins.shared import Namespace
 from arena_simulation_setup.tree import Identifier
-from arena_simulation_setup.tree.World import WorldIdentifier
 
 from task_generator.modes import Modes
 from task_generator.tasks.mode import Namespaced
 
 if typing.TYPE_CHECKING:
-    from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-
     from task_generator.tasks.modules import TM_Module
     from task_generator.tasks.obstacles import TM_Obstacles
     from task_generator.tasks.robots import TM_Robots
@@ -29,21 +27,10 @@ async def identifier_to_available_async(identifier: type[Identifier], **kwargs: 
     return [identifier.shortname for identifier in await identifier.listall_async(**kwargs)]
 
 
-def default_scenario(world: str) -> str:
-    """'default' when the world ships it, else its first scenario."""
-    scenarios = list(identifier_to_available(WorldIdentifier(world).resolve_sync().scenario))
-    if not scenarios:
-        raise ValueError(f"No scenarios found in world {world}")
-    return 'default' if 'default' in scenarios else scenarios[0]
-
-
-_SchemaFn = Callable[["ROSParamServer", Namespace], None]
-
-
 @attrs.frozen
 class TaskModeMeta:
     namespace: Namespace
-    schema: _SchemaFn | None = None
+    schema: type[ParamGroup] | None = None
 
 
 class TaskModeRegistry[K, V]:
@@ -53,7 +40,7 @@ class TaskModeRegistry[K, V]:
         self._classes: ClassRegistry[K, V] = ClassRegistry()
         self._meta: dict[K, TaskModeMeta] = {}
 
-    def register(self, key: K, *, namespace: Namespace, schema: _SchemaFn | None = None) -> Callable[[Callable[[], V]], Callable[[], V]]:
+    def register(self, key: K, *, namespace: Namespace, schema: type[ParamGroup] | None = None) -> Callable[[Callable[[], V]], Callable[[], V]]:
         if namespace == _RESERVED_NAMESPACE:
             raise ValueError(f"{namespace} holds the task.episode.* parameters, pick another mode name for {key}")
         meta = TaskModeMeta(namespace=namespace, schema=schema)

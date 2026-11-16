@@ -19,13 +19,13 @@ humans:
   waypoints: [[11.6, 43.0]]
   waypoint_mode: once
 - name: sitter_4
-  model: male_adult_medical_01
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [12.8, 39.0, 0.0]
   agent: {agent_type: adult}
   waypoints: [[12.8, 39.0]]
   waypoint_mode: once
 - name: visitor_1
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   pose: [2.0, 40.5, 0.0]
   agent: {agent_type: adult}
   waypoints: [[2.0, 40.5], [20.0, 40.5]]

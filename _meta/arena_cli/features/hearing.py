@@ -5,7 +5,7 @@ import sys
 
 from arena_cli import common
 from arena_cli.common import Verb
-from arena_cli.features import lifecycle_verbs
+from arena_cli.features import Health, fetched, lifecycle_verbs
 
 NAME = "hearing"
 
@@ -48,6 +48,10 @@ def _update() -> int:
         return rc
 
     return common._resourced("arena build")
+
+
+def health() -> Health:
+    return fetched(NAME, "arena_hearing")
 
 
 COMMANDS: dict[str, Verb] = {v.name: v for v in lifecycle_verbs(NAME, _update, deinit="arena_hearing")}

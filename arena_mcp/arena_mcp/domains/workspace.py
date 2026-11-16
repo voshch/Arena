@@ -222,9 +222,13 @@ def workspace_forks() -> dict[str, Any]:
 
 
 @domain.tool(destructive=True)
-async def workspace_fork_new(name: Annotated[str | None, Field(description="fork name, the lowest free pN when None, an existing stopped fork is started")] = None) -> dict[str, Any]:
-    """Run `arena fork new [<name>]` as a job."""
-    return (await cli.job("fork", f"arena fork new {name or ''}".strip(), "fork", "new", *([name] if name else []))).as_dict()
+async def workspace_fork_new(
+    name: Annotated[str | None, Field(description="fork name, the lowest free pN when None, an existing stopped fork is started")] = None,
+    from_fork: Annotated[str | None, Field(description="fork to snapshot instead of the dev tree, with its robots, features, builds, commits and uncommitted edits; only creates")] = None,
+) -> dict[str, Any]:
+    """Run `arena fork new [<name>] [--from <from_fork>]` as a job."""
+    args = [*([name] if name else []), *(["--from", _fork_name(from_fork)] if from_fork else [])]
+    return (await cli.job("fork", " ".join(["arena fork new", *args]), "fork", "new", *args)).as_dict()
 
 
 def _fork_name(name: str) -> str:

@@ -77,8 +77,9 @@ def _node(initialized: bool = True) -> tuple[object, _Manager]:
     from arena_runtime.env.realizer import Realizer
 
     manager = _Manager()
-    cls = type("Stub", (EpisodeNode,), {"rosparam": {bool: SimpleNamespace(get=lambda name, default: initialized)}, "event_loop": property(lambda self: asyncio.get_running_loop())})
+    cls = type("Stub", (EpisodeNode,), {"event_loop": property(lambda self: asyncio.get_running_loop())})
     node = object.__new__(cls)
+    node._initialized = SimpleNamespace(value=initialized)
     node._robots_manager = SimpleNamespace(managers={"r": manager})
     node._reset_lock = asyncio.Lock()
     node._realizer = Realizer()
@@ -415,7 +416,7 @@ async def _rig() -> AsyncIterator[_Rig]:
         _ezilear_phases = EpisodeNode._ezilear_phases
 
     host = Host("run_task_host")
-    host.rosparam = {bool: SimpleNamespace(get=lambda name, default: True)}
+    host._initialized = SimpleNamespace(value=True)
     host._robots_manager = SimpleNamespace(managers={"r": manager})
     host._reset_lock = asyncio.Lock()
     host._realizer = Realizer()

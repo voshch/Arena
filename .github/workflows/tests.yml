@@ -78,7 +78,7 @@ jobs:
           uv venv --system-site-packages /opt/venv
           export VIRTUAL_ENV=/opt/venv
           members=$(python3 -c 'import re, tomllib, pathlib; norm = lambda n: re.sub(r"[-_.]+", "-", n).lower(); ws = pathlib.Path(".uv-workspace"); tested = {norm(n) for n in pathlib.Path("tested.txt").read_text().split()}; [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if norm(n) in tested]')
-          .github/ci/sync-python.sh $(printf -- '--package %s ' arena-rosnav $members)
+          .github/ci/sync-python.sh $(printf -- '--package %s ' arena-rosnav arena_cli $members)
       - uses: actions/cache@v4
         with:
           path: /github/home/.cache/ccache
@@ -103,6 +103,12 @@ jobs:
           awk '{print NR, $1}' tested.txt | xargs -P "$(nproc)" -L 1 bash -c 'ROS_DOMAIN_ID=$((10 + $0)) colcon --log-base "log/suites/$1" test --packages-select "$1" --event-handlers console_cohesion+ --return-code-on-test-failure > "log/suites/$1.txt" 2>&1 && echo "passed $1" || { echo "failed $1"; exit 1; }' || status=$?
           cat log/suites/*.txt
           exit $status
+      - name: run the arena CLI tests
+        if: always() && steps.build.outcome == 'success' && github.event_name != 'schedule'
+        run: |
+          source install/setup.bash
+          export PATH=/opt/venv/bin:$PATH
+          python -m pytest _meta/arena_cli/tests
       - name: list the test results
         if: always()
         run: /opt/venv/bin/colcon test-result --verbose

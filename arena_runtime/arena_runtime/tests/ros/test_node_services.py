@@ -285,26 +285,18 @@ def test_queue_episode_unknown_action_rejected() -> None:
 
 
 # ---------------------------------------------------------------------------
-# declare_safe forces descriptor.type when value is type-ambiguous (e.g. []).
+# declare forces the STRING_ARRAY type for an empty list default.
 # ---------------------------------------------------------------------------
 
 
-def test_declare_safe_forces_string_array_for_empty_list() -> None:
+def test_declare_forces_string_array_for_empty_list() -> None:
     import rclpy
+    from arena_rclpy_mixins.params import Catalog, Param, declare
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-    from rcl_interfaces.msg import ParameterDescriptor
 
-    node = ROSParamServer("declare_safe_test_node")
+    node = ROSParamServer("declare_test_node")
     try:
-        node.rosparam.declare_safe(
-            "models",
-            [],
-            descriptor=ParameterDescriptor(
-                type=rclpy.Parameter.Type.STRING_ARRAY.value,
-                additional_constraints="catalog:objects",
-                description="",
-            ),
-        )
+        declare(node, Param[list[str]]("models", [], "Object models of the test.", type_=rclpy.Parameter.Type.STRING_ARRAY, constraint=Catalog("objects")))
         param = node.get_parameter("models")
         assert param.type_ == rclpy.Parameter.Type.STRING_ARRAY
         assert list(param.value) == []

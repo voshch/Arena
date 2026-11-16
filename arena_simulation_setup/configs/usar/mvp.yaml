@@ -1,4 +1,4 @@
-# USAR MVP: 10 rooms worlds (3 x 3 and 3 x 4, five seeds each), 5 hidden-caller tasks per world at 0, 1 or 2 corners, weak and loud calls, two worlds held out for testing.
+# USAR MVP: 10 rooms worlds (3 x 3 and 3 x 4, five seeds each), 6 hiding spots per world (0, 1 or 2 corners, random and adversarial), each spot calling weak and loud, two worlds held out for testing.
 # Run with `generate_usar configs/usar/mvp.yaml --write`; tasks run with task.robots:=search task.obstacles:=scenario.
 name: usar_mvp
 seed: 1
@@ -9,7 +9,7 @@ world:
   deep: 0.6
   loops: 1
 world_variants: 5
-tasks_per_world: 5
+spots_per_world: 6
 test_worlds: 2
 corners: [0, 1, 2]
 call_levels: [weak, loud]

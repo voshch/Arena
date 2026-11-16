@@ -29,7 +29,7 @@ def _two_levels(tmp_path: Path) -> tuple[Path, dict, Path]:
     levels = [{"id": "0", "zones": _zones(_ROOMS, _DX, _DY)}, {"id": "1", "zones": _zones({"attic": (0, 0, 6, 6)}, 0.0, 0.0)}]
     (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": levels}))
     origin = WorldView(root.resolve()).level_origins()["0"]
-    walker = {"name": "walker", "model": "male_adult_medical_01", "pose": [4.0 + _DX + origin[0], 6.0 + _DY + origin[1], 0.0], "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"}
+    walker = {"name": "walker", "model": "Hospital/doctor_male_caucasian_middleage", "pose": [4.0 + _DX + origin[0], 6.0 + _DY + origin[1], 0.0], "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"}
     doc = {"robots": [{"start": [2.0 + _DX, 4.0 + _DY, 0.0], "level": "0", "phases": [{"goto": [30.0 + _DX, 4.0 + _DY, 0.0]}]}], "humans": [walker]}
     base = root / "scenarios" / "normal"
     base.mkdir(parents=True)

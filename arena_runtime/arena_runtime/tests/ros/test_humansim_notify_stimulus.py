@@ -20,6 +20,7 @@ def _ros_gate():
 def _with_engine(scenario: Callable[..., Awaitable[None]], engine_up: bool = True) -> None:
     import tf2_ros
     from arena_humansim.core.agent_manager import AgentManager
+    from arena_humansim.params import MODE_SUBSYSTEM
     from arena_rclpy_mixins.Async import AsyncNode
     from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
     from arena_rclpy_mixins.shared import Namespace
@@ -51,7 +52,7 @@ def _with_engine(scenario: Callable[..., Awaitable[None]], engine_up: bool = Tru
             if engine_up:
                 engine = AgentManager(
                     namespace=node.get_fully_qualified_name(),
-                    parameter_overrides=[Parameter("mode", value=AgentManager.MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
+                    parameter_overrides=[Parameter("mode", value=MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
                 )
                 executor.add_node(engine)
 

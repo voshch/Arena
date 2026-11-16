@@ -7,7 +7,7 @@ import pytest
 from arena_simulation_setup.generative.scenario.populate import build, MIN_ROUTE_CLEARANCE, robot_zones, route_points, ROUTE_STOPS, TALKERS
 from arena_simulation_setup.generative.scenario.zone_screen import ref_safe_zones, screen_zones
 from arena_simulation_setup.generative.scenario.populate import MIN_PED_ROUTE_M
-from arena_simulation_setup.generative.scenario.zone_screen import RUNTIME_SAFE_DIST
+from arena_simulation_setup.generative.core.bodies import RUNTIME_SAFE_DIST
 
 
 def zone(name, x0, y0, x1, y1):

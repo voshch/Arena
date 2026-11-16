@@ -19,7 +19,7 @@ intent into goals sent at a specific robot through its bound adapter.
 
 Each `TM_Robots` subclass is a package:
 
-- `__init__.py` (eager): declares `_NS` and (optionally) `_declare_schema`, then registers the mode on `ROBOTS_MODES` (a `TaskModeRegistry` from `tasks/registry.py`) with `namespace=_NS` and `schema=_declare_schema`. Imported at node startup.
+- `__init__.py` (eager): declares `_NS` and (optionally) a `ParamGroup` schema, then registers the mode on `ROBOTS_MODES` (a `TaskModeRegistry` from `tasks/registry.py`) with `namespace=_NS` and `schema=<Group>`. Imported at node startup.
 - `impl.py` (lazy): contains the class body. Imported only on first activation.
 
 Parameters live under `task.<mode>.<leaf>`. Mode names are shared across the
@@ -115,7 +115,7 @@ the enum, they are only reachable via `set_tm_robots_composite`.
 ## Adding a TM_Robots mode
 
 1. Create `tasks/robots/<name>/` as a package.
-2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define `_declare_schema(node, ns)` if the mode has parameters, and register it on `ROBOTS_MODES`.
+2. In `__init__.py`: declare `_NS = _REGISTRY_NAMESPACE("<name>")`, define a `ParamGroup` subclass if the mode has parameters (see [tasks/README.md](../README.md#tm-package-structure)), and register it on `ROBOTS_MODES` with `schema=<Group>`.
 3. In `impl.py`: define the class extending `TM_Robots`; override `reset` to return a `ResetPlan`.
 4. Add `<NAME> = "<name>"` to `Modes.TM_Robots` in [`modes.py`](../../modes.py).
 5. `declare_mode_schemas(layer, node)` picks up your schema automatically at node init.
@@ -185,7 +185,22 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
   robot (the `search` mode uses it).
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
   result. A reach pose's `frame` (the base frame by default) is a robot link,
-  put under the robot's TF prefix unless it already carries it.
+  put under the robot's TF prefix unless it already carries it, an episode
+  object (`chest`) or one of its articulated links (`chest/drawer02_44`),
+  resolved once at dispatch at the object's current joint values. Every reach
+  plans against the episode's objects within the arm's `scene_radius`.
+  `motion: linear` moves the tool along a straight line (Pilz LIN) instead of
+  a free OMPL path, and a linear reach in an object's frame may touch that
+  object with the arm. `speed` in (0, 1] scales velocity and
+  acceleration. `relative: true` adds the target to the current tool pose in
+  `frame`. `stop` takes the `until` grammar and, unlike `until` (judged after
+  the action ends), meets the phase on the tick it holds while the arm still
+  moves and cancels the motion, for example a push that ends once
+  `{field: chest.openness.prismatic_joint_left_02, le: 0.02}` holds. A reach
+  whose arm stalls or reports a non-finite joint state fails as
+  `arm blocked` or `arm state not finite`. Any phase that ends while its
+  action still runs (a `stop`, a loop `until`, an abort) cancels the action
+  before the next phase is dispatched.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 

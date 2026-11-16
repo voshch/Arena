@@ -39,13 +39,47 @@ def screenshots_dir() -> Path:
     return (Path(base) if base else Path.cwd()) / "screenshots"
 
 
-def record_path(out: str) -> Path:
-    """Resolve the output file and create its directory."""
+def require_ffmpeg() -> None:
+    """Raise unless ffmpeg, which every recording pipes through, is on PATH."""
     if shutil.which("ffmpeg") is None:
         raise FileNotFoundError("cam: record needs ffmpeg on PATH")
+
+
+def record_path(out: str) -> Path:
+    """Resolve the output file and create its directory."""
+    require_ffmpeg()
     path = resolve_path(out)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+PARTIAL = ".partial"
+
+
+def record_root(out: str, base: Path) -> Path:
+    """The directory a camera server records into: a relative `out` lands under `base`/recordings, an absolute one is kept."""
+    path = Path(out).expanduser()
+    return path if path.is_absolute() else base / "recordings" / path
+
+
+def env_take_path(root: Path, env: int, take: str) -> Path:
+    """`<root>/env_<n>/<take>.mp4`, one directory per env so a fleet's takes never collide."""
+    return root / f"env_{env}" / f"{take}.mp4"
+
+
+def final_path(path: Path) -> Path:
+    """`ep001.partial-a.mp4` -> `ep001-a.mp4`, the name a finished take's file carries."""
+    return path.with_name(path.name.replace(PARTIAL, "", 1))
+
+
+def promote(paths: Iterable[Path]) -> list[Path]:
+    """Give each written partial file its final name, never over an existing file. Returns the renamed paths."""
+    done: list[Path] = []
+    for path in paths:
+        target = final_path(path)
+        if path.is_file() and not target.exists():
+            done.append(path.rename(target))
+    return done
 
 
 def tagged(path: Path, tag: str) -> Path:

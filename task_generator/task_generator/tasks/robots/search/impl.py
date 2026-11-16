@@ -2,14 +2,15 @@ import typing
 from collections.abc import Sequence
 
 import attrs
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_runtime.env.task_api import GoToPhase
 from arena_simulation_setup.tree.World.Scenario import RobotGoal
 
 from task_generator.tasks.mode import TaskModeKwargs
-from task_generator.tasks.registry import _REGISTRY_NAMESPACE, default_scenario
+from task_generator.tasks.obstacles.scenario import ScenarioParams
+from task_generator.tasks.registry import _REGISTRY_NAMESPACE
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.scenario.impl import TM_Scenario
+from task_generator.tasks.robots.search import SearchParams
 
 SCENARIO_NS = _REGISTRY_NAMESPACE("scenario")
 
@@ -44,22 +45,16 @@ def search_goal(entry: RobotGoal, target: str, radius: float, *, line_of_sight: 
 class TM_Search(TM_Scenario):
     """Scenario robots that look for a hidden human whose pose never reaches the planner."""
 
-    _target: ROSParamT[str]
-    _radius: ROSParamT[float]
-    _line_of_sight: ROSParamT[bool]
-    _dwell_s: ROSParamT[float]
+    _params: SearchParams
 
     def robot_goals(self, entries: Sequence[RobotGoal], humans: frozenset[str]) -> list[RobotGoal]:
-        target = search_target(sorted(humans), self._target.value)
-        return [search_goal(entry, target, self._radius.value, line_of_sight=self._line_of_sight.value, dwell_s=self._dwell_s.value) for entry in entries]
+        target = search_target(sorted(humans), self._params.TARGET.value)
+        return [search_goal(entry, target, self._params.RADIUS.value, line_of_sight=self._params.LINE_OF_SIGHT.value, dwell_s=self._params.DWELL_S.value) for entry in entries]
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Robots.__init__(self, **kwargs)
 
-        self._config = self.node.ROSParam[str](SCENARIO_NS("file"), default_scenario(self._ctx.world_manager.loaded_world))
-        self._linger_after_completion = self.node.ROSParam[bool](self.namespace("linger_after_completion"), False)
-        self._mechanism_map = self.node.ROSParam[bool](self.namespace("mechanism_map"), False)
-        self._target = self.node.ROSParam[str](self.namespace("target"), "")
-        self._radius = self.node.ROSParam[float](self.namespace("radius"), 1.5)
-        self._line_of_sight = self.node.ROSParam[bool](self.namespace("line_of_sight"), False)
-        self._dwell_s = self.node.ROSParam[float](self.namespace("dwell_s"), 0.0)
+        self._params = SearchParams(self.node, namespace=self.namespace())
+        self._config = ScenarioParams(self.node, namespace=SCENARIO_NS).FILE
+        self._linger_after_completion = self._params.LINGER_AFTER_COMPLETION
+        self._mechanism_map = self._params.MECHANISM_MAP

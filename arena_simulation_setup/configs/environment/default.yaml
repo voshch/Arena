@@ -6,9 +6,9 @@ groups:
     entities:
       static:
         - position: [0.0, 0.0, 0.0]
-          model: office_desk
+          model: Office/Table_Work_Security
         - position: [1, 0, -90]
-          model: office_chair
+          model: Office/Chair_Office
 
   # - name: "study"
   #   rotations: [0, 90, 180, 270]
@@ -41,21 +41,21 @@ groups:
     entities:
       static:
         - position: [0, -1, 0]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [0.707, -0.707, 45]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [1, 0, 90]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [0.707, 0.707, 135]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [0, 1, 180]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [-0.707, 0.707, 225]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [-1, 0, 270]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [-0.707, -0.707, 315]
-          model: chair
+          model: Residential/Wood_Chair
 
   - name: "cafeteria"
     margin: 1.5
@@ -64,15 +64,15 @@ groups:
     entities:
       static:
         - position: [0,0,0]
-          model: table
+          model: Residential/Side_Table
         - position: [0.5,0,90]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [0,0.5,180]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [0,-0.5,0]
-          model: chair
+          model: Residential/Wood_Chair
         - position: [-0.5,0,-90]
-          model: chair
+          model: Residential/Wood_Chair
 
   - name: "residential"
     margin: 5
@@ -81,21 +81,19 @@ groups:
     entities:
       static:
       - position: [0,0,90]
-        model: residential_bed
-      - position: [2,0,0]
-        model: residential_carpet
+        model: Residential/Bed_A
       # - position: [3,1,90]
       #   model: residential_chairA
       # - position: [3,-1,90]
       #   model: residential_chairD    
       - position: [2,0,0]
-        model: residential_coffee_table
+        model: Residential/Coffee_Table_A
       - position: [2,2,0]
-        model: residential_fridge
+        model: Residential/Refrigerators
       - position: [2.5,-0.5,180]
-        model: residential_sofa_1
+        model: Residential/Sofa_A
       - position: [-1,0,0]
-        model: residential_curtain
+        model: Hospital/Privacy_Curtain_Rail
 
   - name: "hospital"
     margin: 3
@@ -104,11 +102,11 @@ groups:
     entities:
       static:
       - position: [0,0,0]
-        model: patient_bed
+        model: Hospital/SM_HospitalBed_01b
       - position: [-0.75,1,0]
-        model: bedside_tables
+        model: Hospital/SM_BedSideTable_01b
       - position: [0,-0.5,90]
-        model: curtain_closed
+        model: Hospital/Privacy_Curtain_Rail
 
   - name: "outdoor"
     margin: 10
@@ -117,7 +115,4 @@ groups:
     entities:
       static:
       - position: [0,0,90]
-        model: tree
-      - position: [3,8,0]
-        model: house_1
-
+        model: Office/SM_Plant03

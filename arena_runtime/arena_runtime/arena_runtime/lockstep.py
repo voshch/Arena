@@ -10,10 +10,12 @@ import arena_runtime_msgs.srv
 import rclpy.qos
 import rclpy.subscription
 import rosgraph_msgs.msg
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.Time import Time
 from rosidl_runtime_py.utilities import get_message
 
 from arena_runtime.lockstep_gates import Channel, ChannelRegistry, ChannelSpec, GateLedger, parse_channel_entry, step_slice
+from arena_runtime.runtime_params import RuntimeParams
 
 if typing.TYPE_CHECKING:
     import std_msgs.msg
@@ -96,9 +98,11 @@ def spec_to_msg(spec: ChannelSpec) -> arena_runtime_msgs.msg.LockstepChannel:
 
 def _validate_spec(spec: ChannelSpec) -> None:
     try:
-        get_message(spec.type_name)
+        msg_type = get_message(spec.type_name)
     except (AttributeError, LookupError, ModuleNotFoundError, ValueError) as e:
         raise ValueError(f"lockstep channel {spec.name!r}: cannot resolve type {spec.type_name!r}") from e
+    if msg_type.get_fields_and_field_types().get("header") != "std_msgs/Header":
+        raise ValueError(f"lockstep channel {spec.name!r}: type {spec.type_name!r} has no std_msgs/Header header to gate on")
 
 
 def _parse_channel_spec(entry: str) -> ChannelSpec:
@@ -267,7 +271,7 @@ class LockstepScheduler:
             await asyncio.sleep(0.05)
 
     async def _run(self, config: LockstepConfig) -> None:
-        dt = self._node.rosparam[float].get('physics_dt', 0.0333)
+        dt = declare(self._node, RuntimeParams.PHYSICS_DT).value
         await self._await_quiet_clock()
         ledger = GateLedger(dt=dt, base=self._node.sim_time.to_seconds())
         self._ledger = ledger

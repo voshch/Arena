@@ -188,10 +188,10 @@ GLYPHS: dict[str, str] = {
 
 class WorldGeneratorLetter(WithPedestrians):
     class Configuration(PedestrianConfiguration):
-        text: str = pydantic.Field('A', json_schema_extra={'widget': 'text'})
-        cell: float = 20.0
-        ratio: float = 0.62
-        stroke: float = 3.0
+        text: str = pydantic.Field('A', json_schema_extra={'widget': 'text'}, description='Text to build, one character cell per glyph, with newlines starting a new row.')
+        cell: float = pydantic.Field(20.0, description='Character cell height in meters.')
+        ratio: float = pydantic.Field(0.62, description='Character cell width as a fraction of its height.')
+        stroke: float = pydantic.Field(3.0, description='Corridor width of a glyph stroke in meters.')
 
     config: Configuration
 

@@ -300,11 +300,11 @@ A scenario `generate_scenario` wrote carries its `GENERATED_MARKER` header, see
 format: arena-scenario/2
 objects:
   - name: desk_1
-    model: office_desk             # ObjectIdentifier
+    model: Office/Table_Work_Security             # ObjectIdentifier
     pose: [x, y, yaw]
 humans:
   - name: agent_1
-    model: female_adult_medical_01 # PedestrianIdentifier
+    model: Hospital/nurse_female_caucasian_young # PedestrianIdentifier
     agent: {agent_type: adult, desired_velocity: 1.4}
     pose: [4.0, 2.0, 0.0]          # yaw in radians
     waypoints:
@@ -580,6 +580,19 @@ the furniture imported through the `ai2thor` object source and placed as static
 entities. An openable door becomes a `hinged` door, as it swings in AI2-THOR, a
 doorframe without a door leaf stays an opening, and a door that does not open
 stays wall.
+
+`arena asset import world sidewalkbench <scene>` (such as `ucla_crosswalk`) writes
+one SidewalkBench scanned sidewalk scene as `sidewalkbench_<scene>` into the same
+imported worlds root. Its zones are `sidewalk` and `crosswalk` (a layer with
+several pieces gets `<zone>_<i>`), cut from the 0.1 m semantic grid with the
+crosswalk keeping the cells both layers label. Walls are outlines of the collision
+mesh between 0.3 m and 1.5 m above the local ground, so the sidewalk edge is no
+wall and driving off it is a judged failure. The world holds one object at the
+scene center, a world-local splat bundle whose Gaussians Isaac renders and
+whose collider is the mesh. Heights are shifted so the ground under the first
+route start is z = 0. Each route becomes a scenario `straight_<i>`, `curve_<i>`,
+`crosswalk_<i>` or `long_<i>` with the robot start, a `goto` to the goal, the
+cones within 3 m of the route and its pedestrians.
 
 `WorldIdentifier('hospital_1').resolve()` returns a `WorldView`
 wrapping whichever of the above resolved first. Call `view.load()` to parse

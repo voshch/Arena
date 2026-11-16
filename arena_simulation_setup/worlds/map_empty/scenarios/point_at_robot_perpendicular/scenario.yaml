@@ -1,7 +1,7 @@
 format: arena-scenario/2
 humans:
 - name: perpendicular_pointer
-  model: male_adult_construction_01
+  model: worker_male_caucasian_young
   pose: [12.0, 12.0, -1.5708]
   agent: {agent_type: ./pointer.yaml}
   waypoints: [[12.0, 12.0]]

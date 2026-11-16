@@ -4,6 +4,7 @@ import random
 
 import rclpy
 import yaml
+from arena_rclpy_mixins.params import Param, declare
 from PIL import Image, ImageDraw
 
 
@@ -240,8 +241,7 @@ def main(args: list[str] | None = None) -> None:
     # Declare ROS2 parameters.
     arena_ws_dir = os.environ["ARENA_WS_DIR"]
     default_map_name = "map_" + str(random.randint(0, 1000))
-    node.declare_parameter('map_name', default_map_name)
-    map_name = node.get_parameter('map_name').value
+    map_name = declare(node, Param[str]('map_name', default_map_name, 'Name of the generated map.')).value
     if not isinstance(map_name, str):
         raise TypeError(f"map_name must be a string, got {map_name!r}")
 

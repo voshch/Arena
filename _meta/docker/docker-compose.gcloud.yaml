@@ -1,0 +1,7 @@
+services:
+  arena:
+    volumes:
+      - "${HOST_GCLOUD_CONFIG}:/run/gcloud:ro"
+    environment:
+      - HOST_GCLOUD_CONFIG
+      - CLOUDSDK_CONFIG=/run/gcloud

@@ -1,8 +1,6 @@
 import typing
 
-from arena_rclpy_mixins.declarations import declare_catalog, declare_double, declare_enum
-from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.params import Catalog, Choices, Param, ParamGroup, Range
 
 from task_generator.modes import Modes
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, OBSTACLES_MODES
@@ -16,29 +14,16 @@ CONTACT_MODES = ("enabled", "locomotion_only")
 GESTURE_MODES = ("enabled", "disabled")
 
 
-def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
-    """Shared schema for the `scenario` task mode, used by both TM_Obstacles and TM_Robots."""
-    declare_catalog(node, ns("file"), "default", catalog="scenarios", label="Scenario file", description="Scenario file name.")
-    declare_enum(
-        node,
-        ns("contact_mode"),
-        CONTACT_MODES[0],
-        choices=CONTACT_MODES,
-        label="Contact mode",
-        description="locomotion_only = motion-matched control: contact interactions (hug, handshake) approach and hold at standing_distance, no contact clip.",
-    )
-    declare_double(node, ns("standing_distance"), 1.2, label="Standing distance", description="Pair separation in m for contact interactions under contact_mode=locomotion_only.", lo=0.3, hi=5.0)
-    declare_enum(
-        node,
-        ns("gesture_mode"),
-        GESTURE_MODES[0],
-        choices=GESTURE_MODES,
-        label="Gesture mode",
-        description="disabled = the gesture-off control: agents behave identically but publish no gesture, so nothing renders and no consumer can read one.",
-    )
+class ScenarioParams(ParamGroup):
+    """Shared by the `scenario` task mode of TM_Obstacles and TM_Robots."""
+
+    FILE = Param[str]("file", "default", "Scenario file name.", constraint=Catalog("scenarios"))
+    CONTACT_MODE = Param[str]("contact_mode", CONTACT_MODES[0], "locomotion_only = motion-matched control: contact interactions (hug, handshake) approach and hold at standing_distance, no contact clip.", constraint=Choices(*CONTACT_MODES))
+    STANDING_DISTANCE = Param[float]("standing_distance", 1.2, "Pair separation in m for contact interactions under contact_mode=locomotion_only.", constraint=Range(0.3, 5.0))
+    GESTURE_MODE = Param[str]("gesture_mode", GESTURE_MODES[0], "disabled = the gesture-off control: agents behave identically but publish no gesture, so nothing renders and no consumer can read one.", constraint=Choices(*GESTURE_MODES))
 
 
-@OBSTACLES_MODES.register(Modes.TM_Obstacles.SCENARIO, namespace=_NS, schema=declare_schema)
+@OBSTACLES_MODES.register(Modes.TM_Obstacles.SCENARIO, namespace=_NS, schema=ScenarioParams)
 def _load_scenario() -> type["TM_Obstacles"]:
     from .impl import TM_Scenario
 

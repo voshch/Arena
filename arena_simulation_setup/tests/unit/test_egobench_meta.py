@@ -47,7 +47,7 @@ def test_an_unknown_pedestrian_kind_is_rejected_by_the_configuration():
 
 
 def test_a_world_field_of_another_space_is_rejected_by_the_configuration():
-    with pytest.raises(ValueError, match="open has no configuration field corridor_width"):
+    with pytest.raises(ValueError, match="the open generator has no configuration field corridor_width"):
         WorldGeneratorEgoBench({"space": "open", "world": '{"corridor_width": 3.0}'}, random.Random(0))
 
 
@@ -84,6 +84,15 @@ def test_a_saved_world_carries_its_marked_scenario_types_and_provenance(tmp_path
     assert provenance["sample"] == item.to_dict()
 
 
+def test_a_saved_scenario_carries_its_marked_camera_rig(tmp_path: Path):
+    item = one(Encounter.ONCOMING, Space.OPEN, obstacles=0)
+    generator = WorldGeneratorEgoBench.of(item)
+    save_generated(WorldView(tmp_path / "w"), generator.compute(), generator.files())
+    rig = tmp_path / "w" / "scenarios" / item.scenario_key / "cameras" / "three_view.yaml"
+    assert is_generated(rig)
+    assert sorted(yaml.safe_load(rig.read_text())["cameras"]) == ["overhead", "pedestrian", "robot"]
+
+
 def test_a_dry_run_writes_nothing(tmp_path: Path):
     report = cli.run(manifest(), out=tmp_path / "out")
     assert report.placed == 4
@@ -93,7 +102,7 @@ def test_a_dry_run_writes_nothing(tmp_path: Path):
 def test_samples_on_one_world_are_written_into_it(tmp_path: Path):
     report = cli.run(manifest(), out=tmp_path, write=True)
     (world,) = report.worlds.values()
-    assert sorted(p.name for p in (world / "scenarios").iterdir()) == sorted(o.sample.scenario_key for o in report.outcomes)
+    assert sorted(p.name for p in (world / "scenarios").iterdir()) == sorted(o.item.scenario_key for o in report.outcomes)
 
 
 def test_the_cli_and_the_generator_write_the_same_scenario(tmp_path: Path):

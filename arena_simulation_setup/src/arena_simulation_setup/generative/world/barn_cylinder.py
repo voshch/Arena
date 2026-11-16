@@ -3,6 +3,7 @@ import math
 from collections import deque
 
 import numpy as np
+import pydantic
 
 from .barn import BarnBase, BarnConfiguration, cylinder_walls
 
@@ -21,15 +22,15 @@ class WorldGeneratorBarnCylinder(BarnBase):
     SCENARIO = 'barn_cylinder'
 
     class Configuration(BarnConfiguration):
-        margin: float = 0.5  # clear border inside the boundary walls
-        cell_size: float = 0.3  # CA grid cell and cylinder spacing (m)
-        fill_probability: float = 0.45  # initial random wall fraction
-        ca_iterations: int = 4  # cellular-automata smoothing passes
-        birth_limit: int = 5  # empty cell becomes wall if >= this many of 8 neighbors are walls
-        death_limit: int = 4  # wall cell survives only if >= this many of 8 neighbors are walls
-        cylinder_radius: float = 0.075  # rendered obstacle radius (m)
-        robot_clearance: float = 0.28  # C-space radius for connectivity, Jackal radius plus cylinder (m)
-        max_tries: int = 50  # reject-sampling cap before raising
+        margin: float = pydantic.Field(0.5, description='Clear border inside the boundary walls in meters.')
+        cell_size: float = pydantic.Field(0.3, description='Cellular-automata grid cell and cylinder spacing in meters.')
+        fill_probability: float = pydantic.Field(0.45, description='Initial probability that a grid cell is a wall.')
+        ca_iterations: int = pydantic.Field(4, description='Number of cellular-automata smoothing passes.')
+        birth_limit: int = pydantic.Field(5, description='An empty cell becomes a wall when at least this many of its 8 neighbors are walls.')
+        death_limit: int = pydantic.Field(4, description='A wall cell survives only when at least this many of its 8 neighbors are walls.')
+        cylinder_radius: float = pydantic.Field(0.075, description='Radius of each rendered cylinder obstacle in meters.')
+        robot_clearance: float = pydantic.Field(0.28, description='Robot radius plus cylinder radius in meters, used to check start-to-goal connectivity in configuration space.')
+        max_tries: int = pydantic.Field(50, description='Redraws allowed before failing when no connected map is found.')
 
     config: Configuration
 

@@ -62,5 +62,5 @@ class Mod_ZoneEdit(TM_Module):
         manager = self._ctx.world_manager
         root = manager.loaded_world_path
         polygons = {zone.name: [(c.x, c.y) for c in zone.polygon] for level in manager.world.all_levels for zone in level.zones}
-        changed = await asyncio.to_thread(write_zone_polygons, root, polygons, self._ctx.conf.KG_DERIVE.value or "auto")
+        changed = await asyncio.to_thread(write_zone_polygons, root, polygons, self._ctx.conf.KG_DERIVE.value)
         self._logger.info(f"saved {changed} polygon coordinates to {root}")

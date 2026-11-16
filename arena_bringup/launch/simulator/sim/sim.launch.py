@@ -4,7 +4,8 @@ import launch.substitutions
 import launch
 import launch_ros.actions
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
-from arena_bringup.substitutions import LaunchArgument, SelectAction
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_bringup.substitutions import SelectAction
 
 from arena_bringup.constants import SimSimulator
 
@@ -23,35 +24,39 @@ def generate_launch_description():
 
     use_sim_time = LaunchArgument(
         name='use_sim_time',
+        description='Use the simulation clock instead of wall time.',
     )
 
     headless = LaunchArgument(
         name='headless',
         default_value='False',
+        description='true = hide the simulator GUI.',
     )
 
     physics = LaunchArgument(
         name='sim.isaac.physics',
         default_value='physx',
         choices=['physx', 'newton'],
+        description='Physics engine of Isaac Sim.',
     )
 
     world = LaunchArgument(
-        name='world'
+        name='world',
+        description='World for the simulator to load.',
     )
 
     dynamics = LaunchArgument(
         name='sim.flatsim.dynamics',
         default_value='rigid',
         choices=['rigid', 'kinematic'],
-        description='sim flatsim only. rigid = walls and obstacles stop or push the robot and pedestrians touch it without pushing, kinematic = the robot passes through and only the collision tracker reports.',
+        description='How walls and obstacles act on a robot in flatsim.',
     )
 
     flatsim_physics = LaunchArgument(
         name='sim.flatsim.physics',
         default_value='auto',
         choices=['auto', 'box2d', 'warp'],
-        description='sim flatsim only. Physics engine, auto = warp when GPU passthrough is on (a CUDA device is visible), else box2d.',
+        description='Physics engine of flatsim.',
     )
 
     viewport = {
@@ -161,6 +166,7 @@ def generate_launch_description():
     sim = LaunchArgument(
         name='sim',
         choices=launch_simulator.keys,
+        description='Simulator to start.',
     )
 
     ld = launch.LaunchDescription([

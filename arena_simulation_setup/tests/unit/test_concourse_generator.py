@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pydantic
@@ -403,20 +403,6 @@ def test_concourse_scenario_output_determinism() -> None:
     ]
 
 
-@dataclass
-class _Recorder:
-    calls: list[tuple[str, object, object]] = field(default_factory=list)
-
-    def declare_forward(self, name: str, value: object, *, descriptor: object = None) -> None:
-        """Record parameter declarations forwarded by declare_config_params."""
-        self.calls.append((name, value, descriptor))
-
-
-@dataclass
-class _StubNode:
-    rosparam: _Recorder = field(default_factory=_Recorder)
-
-
 def test_concourse_empty_robot_target_branch_normalizes_to_none() -> None:
     """Verify that an empty string for robot_target_branch normalizes to None directly in model."""
     config = ConcourseConfiguration.model_validate({"robot_target_branch": ""})
@@ -648,32 +634,27 @@ def test_schema_bridge_roundtrip_optional_str_and_ros_panel_config() -> None:
     assert mapped["robot_target_branch"] is None
 
 
-def test_schema_bridge_enum_default_list_skip_and_optional_str() -> None:
+def test_schema_bridge_enum_default_list_skip_and_optional_str(rclpy_context: ModuleType) -> None:
     """Verify declare_config_params handles enums, skips lists, and handles optional strings."""
-    pytest.importorskip("rclpy")
-    pytest.importorskip("arena_rclpy_mixins")
+    import rclpy.node
     from arena_simulation_setup.generative.world.schema import config_from_params, declare_config_params
 
     assert config_from_params(ConcourseConfiguration, {"robot_target_branch": ""})["robot_target_branch"] is None
 
-    node = _StubNode()
-    declare_config_params(node, "test_prefix", ConcourseConfiguration)
-    declared_names = [c[0] for c in node.rosparam.calls]
+    node = rclpy.node.Node("schema_bridge")
+    try:
+        declare_config_params(node, "test_prefix", ConcourseConfiguration)
 
-    # Verify enum fields are declared as string with value
-    assert "test_prefix.shape" in declared_names
-    shape_call = next(c for c in node.rosparam.calls if c[0] == "test_prefix.shape")
-    assert shape_call[1] == "straight"
+        assert node.get_parameter("test_prefix.shape").value == "straight"
+        assert "straight" in node.describe_parameter("test_prefix.shape").additional_constraints
 
-    # Verify structured list fields are skipped
-    assert "test_prefix.branches" not in declared_names
-    assert "test_prefix.elevators" not in declared_names
-    assert "test_prefix.pillars" not in declared_names
-    assert "test_prefix.colonnades" not in declared_names
-    assert "test_prefix.flows" not in declared_names
+        for skipped in ("branches", "elevators", "pillars", "colonnades", "flows"):
+            assert not node.has_parameter(f"test_prefix.{skipped}")
 
-    # Verify optional string field is declared
-    assert "test_prefix.robot_target_branch" in declared_names
+        assert node.has_parameter("test_prefix.robot_target_branch")
+        assert node.get_parameter("test_prefix.robot_target_branch").value == ""
+    finally:
+        node.destroy_node()
 
 
 def test_concourse_dock_zones_rotate_with_angled_paths_and_branches() -> None:

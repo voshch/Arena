@@ -117,6 +117,8 @@ shown(){
 }
 
 lookup=(arena_containers arena)
+token_env=()
+[ -z "$host" ] && [ -n "${ARENA_ASSETS_TOKEN:-}" ] && token_env=(-e ARENA_ASSETS_TOKEN)
 script='source /opt/arena_ws/source >/dev/null 2>&1; exec python3 -m arena_mcp "$@"'
 
 if [ "$print" = 1 ]; then
@@ -126,7 +128,7 @@ if [ "$print" = 1 ]; then
         container='{container}'
     fi
     printf 'probe: %s\n' "$(shown arena_docker exec "$container" test -f /.built)"
-    printf 'exec: %s\n' "$(shown arena_docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
+    printf 'exec: %s\n' "$(shown arena_docker exec -i "${token_env[@]}" "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
     exit 0
 fi
 
@@ -158,4 +160,4 @@ if [ -n "$host" ]; then
     mapfile -d '' argv < <(over_ssh arena_docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")
     exec "${argv[@]}"
 fi
-arena_docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@"
+arena_docker exec -i "${token_env[@]}" "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@"

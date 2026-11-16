@@ -225,6 +225,10 @@ def uninstall_container(argv: list[str]) -> None:
     common._reg_remove(NAME)
 
 
+def health() -> features.Health:
+    return features.fetched(NAME, "arena_isaac")
+
+
 if features.in_container():
     COMMANDS: dict[str, Verb] = {
         v.name: v

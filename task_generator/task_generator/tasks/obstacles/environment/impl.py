@@ -6,13 +6,14 @@ import attrs
 import numpy as np
 import shapely
 import shapely.ops
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_rclpy_mixins.params import ParamHandle
 from arena_runtime.env.task_api import GridFrame, WorldOccupancy
 from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
 from shapely.geometry import LineString, Point
 
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
+from task_generator.tasks.obstacles.environment import EnvironmentParams
 
 
 @attrs.define()
@@ -22,7 +23,9 @@ class _ParsedConfig:
 
 
 class TM_Environment(TM_Obstacles):
-    _config: ROSParamT[_ParsedConfig]
+    _params: EnvironmentParams
+    _config: ParamHandle[str]
+    _parsed: tuple[str, _ParsedConfig] | None = None
 
     def merge_walls(self, door_threshold: float = 2.0) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]:
         world = self._ctx.world_manager.world_compacted()
@@ -239,13 +242,17 @@ class TM_Environment(TM_Obstacles):
         return _ParsedConfig(static=static_obstacles, dynamic=dynamic_obstacles)
 
     async def reset(self, *, seed: int) -> Obstacles:
-        return self._config.value.static, self._config.value.dynamic
+        config = self._environment()
+        return config.static, config.dynamic
+
+    def _environment(self) -> _ParsedConfig:
+        file = self._config.value
+        if self._parsed is None or self._parsed[0] != file:
+            self._parsed = (file, self._parse_environment(file))
+        return self._parsed[1]
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
-        self._config = self.node.ROSParam[_ParsedConfig](
-            self.namespace('file'),
-            'default',
-            parse=self._parse_environment,
-        )
+        self._params = EnvironmentParams(self.node, namespace=self.namespace())
+        self._config = self._params.FILE

@@ -9,10 +9,10 @@ from pathlib import Path
 import pydantic
 import shapely
 import shapely.affinity
-import yaml
 from shapely.geometry.base import BaseGeometry
 
 from arena_simulation_setup import ARENA_ASSETS_DIR
+from arena_simulation_setup.generative.core.generated import Generated, binding
 from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import PlaceWallSegmentAsset
@@ -132,8 +132,8 @@ def cylinder_walls(x: float, y: float, radius: float = CYLINDER_RADIUS_M, thickn
 
 
 class BarnConfiguration(BaseConfiguration):
-    width: float = 10.0
-    height: float = 10.0
+    width: float = pydantic.Field(10.0, description='Arena extent along x in meters.')
+    height: float = pydantic.Field(10.0, description='Arena extent along y in meters.')
 
 
 class _BarnConfigured(typing.Protocol):
@@ -144,7 +144,7 @@ class _BarnConfigured(typing.Protocol):
 class BarnBase(WorldGeneratorImpl):
     """Shared scaffolding for BARN-style generators.
 
-    Owns the build lifecycle, the boundary walls, the scenario file and the scenario
+    Owns the build lifecycle, the boundary walls, the scenario and the scenario
     episode binding. Subclasses implement _build() to populate self._world and self._scenario.
     """
 
@@ -159,12 +159,12 @@ class BarnBase(WorldGeneratorImpl):
         self._build()
         return self._world
 
-    def files(self) -> dict[str, bytes]:
+    def scenarios(self) -> dict[str, Generated]:
         self._build()
-        return {f'scenarios/{self.SCENARIO}/scenario.yaml': yaml.safe_dump(self._scenario, sort_keys=False).encode('utf-8')}
+        return {self.SCENARIO: Generated(scenario=self._scenario, marked=False)}
 
     def params(self) -> dict[str, typing.Any]:
-        return {'modes': {'robots': 'scenario'}, 'params': {'robots': {'file': self.SCENARIO}}}
+        return binding(self.SCENARIO, ('robots',))
 
     def _build(self):
         raise NotImplementedError
@@ -193,13 +193,13 @@ class WorldGeneratorBarn(BarnBase):
     SCENARIO = 'barn'
 
     class Configuration(BarnConfiguration):
-        box_size: float = 0.4  # cardboard box footprint (m)
-        box_gap: float = 0.0  # spacing between boxes in a wall (m)
-        passage_width: float = 1.0  # free lane width (m)
-        straightness: float = 0.5  # 0..1, lower = windier / sharper turns
-        dead_ends: int = 3  # misleading spurs off the main lane
-        dead_end_length: int = 2  # spur length in nav-grid steps
-        margin: float = 0.5  # clear border inside the boundary walls
+        box_size: float = pydantic.Field(0.4, description='Side length of a cardboard box footprint in meters.')
+        box_gap: float = pydantic.Field(0.0, description='Spacing between neighboring boxes in a wall in meters.')
+        passage_width: float = pydantic.Field(1.0, description='Width of the free lane in meters.')
+        straightness: float = pydantic.Field(0.5, description='Preference for continuing straight along the lane, from 0 to 1 (lower = windier with sharper turns).')
+        dead_ends: int = pydantic.Field(3, description='Number of misleading spurs branching off the main lane.')
+        dead_end_length: int = pydantic.Field(2, description='Length of each spur in navigation grid steps.')
+        margin: float = pydantic.Field(0.5, description='Clear border inside the boundary walls in meters.')
 
         @property
         def pitch(self) -> float:
@@ -368,8 +368,8 @@ class WorldGeneratorBarnCanonical(BarnBase):
     SCENARIO = 'barn'
 
     class Configuration(BaseConfiguration):
-        index: int = pydantic.Field(ge=0, le=WORLDS - 1)
-        source: str = ''
+        index: int = pydantic.Field(ge=0, le=WORLDS - 1, description='Number of the BARN challenge world, from 0 to 299.')
+        source: str = pydantic.Field('', description='Directory of the BARN world files (empty = download them).')
 
     config: Configuration
 
@@ -392,8 +392,8 @@ class WorldGeneratorBarnAny(WorldGeneratorImpl):
     """The canonical world when `index` is given, the procedural passage otherwise."""
 
     class Configuration(WorldGeneratorBarn.Configuration):
-        index: int | None = pydantic.Field(None, ge=0, le=WORLDS - 1)  # None = procedural
-        source: str = ''
+        index: int | None = pydantic.Field(None, ge=0, le=WORLDS - 1, description='Number of the BARN challenge world from 0 to 299 (unset = procedural passage).')
+        source: str = pydantic.Field('', description='Directory of the BARN world files (empty = download them).')
 
     def __new__(cls, configuration: dict, rng: random.Random) -> WorldGeneratorImpl:
         impl = WorldGeneratorBarn if configuration.get('index') is None else WorldGeneratorBarnCanonical

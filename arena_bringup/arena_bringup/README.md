@@ -25,29 +25,6 @@ IsolatedGroupAction([launch_simulator])
 
 [`substitutions.py`](substitutions.py)
 
-### `LaunchArgument`
-
-Extends `DeclareLaunchArgument` with:
-
-| Property / method | Returns | Purpose |
-|---|---|---|
-| `.substitution` | `LaunchConfiguration(name)` | Inline substitution reference |
-| `.dict` | `{name: substitution}` | Splat into `launch_arguments=` dicts |
-| `.param(type_)` | `{name: ParameterValue(..., value_type=type_)}` | Typed ROS parameter |
-| `.str_param` | `{name: ParameterValue(..., str)}` | Shorthand string param |
-
-`LaunchArgument.auto_append(ld_items)` - call once at the top of a launch
-file; subsequent `LaunchArgument(...)` calls append themselves automatically
-to `ld_items`, so every argument declaration appears in the description.
-
-Typical use:
-
-```python
-LaunchArgument.auto_append(ld_items)
-sim = LaunchArgument(name='sim', default_value='gazebo')
-# sim is both declared and appended to ld_items
-```
-
 ### `SelectAction`
 
 A `launch.Action` that holds a `str -> list[Action]` registry and executes
@@ -80,6 +57,35 @@ mechanism. The `choices` of the corresponding `LaunchArgument` are set from
 Internal recursive `${key}`, `${*list}`, `${**dict}`, and `${key:-default}`
 substitution engine used by `YAMLReplaceSubstitution`. Not part of the public
 API.
+
+## `LaunchArgument`
+
+[`arena_rclpy_mixins.launch_argument`](../../utils/arena_rclpy_mixins/arena_rclpy_mixins/arena_rclpy_mixins/launch_argument.py)
+extends `DeclareLaunchArgument` with a mandatory description and:
+
+| Property / method | Returns | Purpose |
+|---|---|---|
+| `.substitution` | `LaunchConfiguration(name)` | Inline substitution reference |
+| `.dict` | `{name: substitution}` | Splat into `launch_arguments=` dicts |
+| `.param(type_)` | `{name: ParameterValue(..., value_type=type_)}` | Typed ROS parameter |
+| `.str_param` | `{name: ParameterValue(..., str)}` | Shorthand string param |
+| `LaunchArgument.from_param(param, prefix=..., keep_default=...)` | `LaunchArgument` | The argument of a parameter: empty default (the node default) when the launch file only forwards it, the parameter default with `keep_default` when the launch file reads it too |
+
+`forwarded(context, params)` gives a node the set arguments of params as typed values.
+`declared_arguments(package, file)` loads a launch file and returns the name,
+description, default and choices of every argument it declares.
+
+`LaunchArgument.auto_append(ld_items)` - call once at the top of a launch
+file; subsequent `LaunchArgument(...)` calls append themselves automatically
+to `ld_items`, so every argument declaration appears in the description.
+
+Typical use:
+
+```python
+LaunchArgument.auto_append(ld_items)
+sim = LaunchArgument(name='sim', default_value='gazebo')
+# sim is both declared and appended to ld_items
+```
 
 ## future.py
 

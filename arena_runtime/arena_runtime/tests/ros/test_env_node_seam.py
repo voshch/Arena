@@ -44,14 +44,14 @@ def _env_class(record: Record) -> type:
     class Env(EnvNode):
         async def _set_up_task(self) -> None:
             record.order.append("set_up_task")
-            record.at_task = {"robots": self._robots_manager is not None, "world": self._world_manager.loaded_world, "initialized": self.rosparam[bool].get("initialized", False)}
+            record.at_task = {"robots": self._robots_manager is not None, "world": self._world_manager.loaded_world, "initialized": self._initialized.value}
 
         def _on_watchdog(self) -> None:
             record.watchdog_ticks += 1
 
         def _after_setup(self) -> None:
             record.order.append("after_setup")
-            record.at_after_setup = {"initialized": self.rosparam[bool].get("initialized", False)}
+            record.at_after_setup = {"initialized": self._initialized.value}
 
         async def _on_tick(self, ended: dict) -> None:
             record.ticks += 1

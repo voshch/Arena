@@ -4,6 +4,7 @@ Service of the camera server behind `viz.cam`, see the
 [arena_cam README](../../arena_cam/arena_cam/README.md#playing-with-the-episode).
 
 `srv/Play.srv`: `root` names the camera asset to play, `bundle` holds a YAML mapping of
-name to spec for every asset it reaches, `params` a YAML mapping of parameters.
+name to spec for every asset it reaches, `params` a YAML mapping of parameters, `take`
+the label a recording server files the take under (`<world>/<scenario>/ep<NNN>`, empty plays only).
 `/arena/env_<n>/cam/play` takes all three. `<task generator>/cam/play` reads `root` as a
-request and `params`, and builds the bundle itself.
+request and `params`, and builds the bundle and the take label itself.

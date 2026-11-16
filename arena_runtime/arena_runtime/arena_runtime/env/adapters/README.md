@@ -38,7 +38,50 @@ any post-teleport work. The episode's first phase is dispatched before `on_reset
 runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
 again after the teleport (rosnav_rl, external) or redispatches it on a later tick (Nav2).
 `cancel_goals()` cancels every client's in-flight goal, `RobotManager.stop_task` calls it on
-each bound adapter.
+each bound adapter. `await cancel_and_wait(kinds)` cancels the in-flight goals of the clients
+of those task kinds (all by default) and waits for the servers to answer, at most 5 s.
+`RobotManager` awaits it for a phase that ends before its action does (a reach `stop`, a loop
+`until` exit) before it dispatches the next phase, and for every adapter when a failure policy
+or an episode abort stops the task. A goto that ended by arriving keeps its planner goal.
+`Client.cancel()` returns the cancel future of the goal, None without one.
+
+## MoveIt arm scene
+
+Before every `ReachPhase` dispatch the `moveit` arm adapter rebuilds the arena-owned collision
+objects of the arm's MoveIt scene through `<arm ns>/apply_planning_scene`: one diff that removes
+the ids of the previous dispatch (tracked per mount) and adds the current ones, so reset needs no
+sync and a base that moved between reaches is followed. Ids are `arena/<entity>` for a static
+object and `arena/<entity>/<link>` for each link of an articulated one, `<entity>` the obstacle
+name as the scenario authors it. Only the env's static and articulated obstacles enter, no walls,
+pedestrians or robots, and objects whose bounds lie farther than the arm cap's `scene_radius` from
+the base are left out.
+
+Objects are expressed in the robot's MoveIt root frame, the root link of its
+`robot_description`, posed from the base TF in the map frame because the SRDFs carry no virtual
+joint and the planning frame moves with the base. Geometry lives in
+[`arm/scene.py`](arm/scene.py):
+
+- An articulated object takes the collision meshes and origins of its built bundle URDF
+  (`<model>.urdf`, meshes under `links/<link>/`), each link posed by URDF forward kinematics at
+  the joint values the simulator holds for the entity now (the state behind its `q.<joint>`
+  fields). The obstacle scale multiplies the link translations and the vertices.
+- A rigid object takes the annotated `bounding_box` as one box.
+- OBJ files are read by a standard-library reader (`v` and `f` lines, `i`, `i/j` and `i/j/k`
+  corners, negative indices, fan triangulation).
+
+### Object frames
+
+A `ReachPhase.frame` naming an episode entity (`chest`) or one of its links (`chest/<link>`)
+is resolved at dispatch into a `PoseStamped` in the robot base frame: robot pose and entity pose
+in the map frame, the URDF link frame at the current joint values, then the authored target in
+that frame. With `relative: true` the offset is rotated into the base frame instead of composed.
+Any other frame keeps `reach_frame`. A linear reach in an entity's frame sets the goal's
+`contact` to the object ids of all its links, so the arm may touch that object and nothing else.
+The frame is a snapshot at dispatch: a link frame moves with its joint afterwards, so a target
+meant to stay put is given in the entity frame.
+A reach dispatched before the entity its frame names is registered (an episode's first phase
+dispatches before the episode objects spawn) is sent from a background task once the entity
+appears, at most 10 s of wall time later. A cancel or the next dispatch drops that task.
 
 ## Existing kinds
 

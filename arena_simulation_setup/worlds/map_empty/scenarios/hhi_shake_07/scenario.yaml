@@ -9,7 +9,7 @@ robots:
   - 3.124
 dynamic:
 - name: partner_0
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose:
   - 21.271
   - 13.218
@@ -18,7 +18,7 @@ dynamic:
     agent_type: ./partner_0.yaml
     desired_velocity: 1.2
 - name: partner_1
-  model: male_adult_construction_01
+  model: worker_male_caucasian_young
   pose:
   - 4.533
   - 8.816

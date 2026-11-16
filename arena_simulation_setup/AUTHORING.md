@@ -84,7 +84,7 @@ levels:
   escalators:
   - {name: up_0, kind: belt_escalator, mouth: [16, 6], size: [14.0, 1.0], to: '1', exit: [16, 6]}
   objects:
-  - {name: desk_1, model: Common/Desk, pose: [2.0, 1.0, 1.5708]}
+  - {name: desk_1, model: Office/Table_Work_Security, pose: [2.0, 1.0, 1.5708]}
   humans: []
   lights:
   - {name: exit_strip, fixture: tube, lumens: 300, pose: {x: 10, y: 34, z: 2.2}}
@@ -1106,7 +1106,7 @@ HuNav backend's own keys:
 ```yaml
 humans:
 - name: agent_1
-  model: female_adult_medical_01
+  model: Hospital/nurse_female_caucasian_young
   agent: {agent_type: adult, desired_velocity: 1.2}
   pose: [2.0, 5.0, 0.0]   # yaw in radians
   waypoints:

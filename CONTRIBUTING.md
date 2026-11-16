@@ -41,7 +41,8 @@ arena test
 - Must pass `pre-commit run --all-files` (lint, format and annotation checks). Annotate all types. Avoid `Any` and `object` except for generic containers.
     - Add `# noqa` only with a specific reason.
 - Access attributes directly. Instead of `hasattr` or `getattr(obj, "name", default)`, fix the type annotation. `getattr` is only for attribute names computed at runtime.
-- For rclpy and asyncio glue (namespaces, lifecycle, parameters, time), use/extend [arena_rclpy_mixins](utils/arena_rclpy_mixins/README.md) rather than writing your own.
+- For rclpy and asyncio glue (namespaces, lifecycle, parameters, time), use/extend [arena_rclpy_mixins](utils/arena_rclpy_mixins/arena_rclpy_mixins/README.md) rather than writing your own.
+- Declare every node parameter as a `Param` (`declare` or a `ParamGroup`) and every launch argument as a `LaunchArgument`, generated with `LaunchArgument.from_param(param)` when a node parameter backs it. Each takes a description. The `param-census` hook rejects anything else.
 - Declare every pip package your package imports in its own `pyproject.toml`. The commit hook updates the lock files.
 - Namespace launch arguments and CLI keys with periods: `lockstep.rtf:=5`, `viz.view:=robot3p`.
 - Packages must not depend on each other in a cycle at runtime (except via `exec_depend`).

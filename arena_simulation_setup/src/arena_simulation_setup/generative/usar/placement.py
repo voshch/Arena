@@ -9,7 +9,8 @@ from collections.abc import Sequence
 import attrs
 import shapely
 
-from arena_simulation_setup.generative.egobench.encounter import CLEARANCE, PED_RADIUS, ROBOT_RADIUS, Rejected, summary
+from arena_simulation_setup.generative.core.bodies import CLEARANCE, PED_RADIUS, ROBOT_RADIUS
+from arena_simulation_setup.generative.core.generated import Rejected, summary
 from arena_simulation_setup.generative.world.rooms import ENTRANCE
 from arena_simulation_setup.shared.pathing import Point
 from arena_simulation_setup.shared.route import TURN_RAD, Portal, crossings, portals
@@ -18,7 +19,7 @@ from arena_simulation_setup.tree.World.membership import derive
 
 from .manifest import Hiding
 
-SPOTS_PER_ROOM = 6
+CANDIDATES_PER_ROOM = 12
 SPOT_TRIES = 200
 MIN_DISTANCE_M = 3.0  # person to robot start, so no task is found at spawn
 
@@ -67,7 +68,7 @@ def start_of(level: Level) -> tuple[Point, float]:
     return (start.x, start.y), heading
 
 
-def spots(shape: shapely.Polygon, rng: random.Random) -> list[Point]:
+def candidates(shape: shapely.Polygon, rng: random.Random) -> list[Point]:
     """Points a standing person fits at, drawn inside a room."""
     inner = shape.buffer(-(PED_RADIUS + CLEARANCE))
     if inner.is_empty:
@@ -75,7 +76,7 @@ def spots(shape: shapely.Polygon, rng: random.Random) -> list[Point]:
     minx, miny, maxx, maxy = inner.bounds
     out: list[Point] = []
     for _ in range(SPOT_TRIES):
-        if len(out) >= SPOTS_PER_ROOM:
+        if len(out) >= CANDIDATES_PER_ROOM:
             break
         x, y = rng.uniform(minx, maxx), rng.uniform(miny, maxy)
         if inner.contains(shapely.Point(x, y)):
@@ -101,7 +102,7 @@ def hide(world: World, corners: int, hiding: Hiding, rng: random.Random) -> Hide
     matches: list[Hideout] = []
     reasons: list[str] = []
     for zone, shape in sorted(shapes.items()):
-        for spot in spots(shape, rng):
+        for spot in candidates(shape, rng):
             if math.dist(spot, start) < MIN_DISTANCE_M:
                 continue
             route = route_to(found, start, spot, zone)

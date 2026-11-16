@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
@@ -24,6 +25,10 @@ if TYPE_CHECKING:
     from arena_runtime.env.request import TaskPhase
     from arena_runtime.env.robot_manager.robot_manager import RobotManager
     from arena_runtime.shared import Pose
+
+_log = logging.getLogger(__name__)
+
+CANCEL_TIMEOUT = 5.0
 
 
 @attrs.frozen
@@ -264,6 +269,18 @@ class Adapter(ABC):
         for client in self._clients.values():
             if client.is_done() is False:
                 client.cancel()
+
+    async def cancel_and_wait(self, kinds: Iterable[TaskKind] | None = None) -> None:
+        """Cancel the in-flight goal of the clients of `kinds` (all by default) and wait until their servers answer."""
+        clients = self._clients.values() if kinds is None else (client for kind, client in self._clients.items() if kind in kinds)
+        pending = [future for client in clients if client.is_done() is False and (future := client.cancel()) is not None]
+        if not pending:
+            return
+        try:
+            async with asyncio.timeout(CANCEL_TIMEOUT):
+                await asyncio.gather(*(self.rm.node.await_ros(future) for future in pending))
+        except TimeoutError:
+            _log.warning("adapter %r: goal cancel unanswered after %.0f s", self.kind, CANCEL_TIMEOUT)
 
     def on_phase_tick(
         self,

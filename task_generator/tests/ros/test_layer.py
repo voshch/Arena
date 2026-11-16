@@ -86,23 +86,23 @@ def test_validate_modes_requires_exactly_one_name_on_a_single_mode_axis(axis: st
     assert str(error.value) == f"task axis {axis!r} takes exactly one mode, got {names!r}, allowed: {allowed}"
 
 
-def test_a_bad_launch_value_fails_with_the_validators_message(rclpy_context: object) -> None:
+def test_a_bad_launch_value_fails_at_startup(rclpy_context: object) -> None:
     from rclpy.parameter import Parameter
 
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 
     cases = [
-        ("task.robots", "nope", f"unknown robots mode 'nope', allowed: {ROBOT_NAMES}"),
-        ("task.robots", "", f"task axis 'robots' takes exactly one mode, got [], allowed: {ROBOT_NAMES}"),
-        ("task.obstacles", "random,scenario", f"task axis 'obstacles' takes exactly one mode, got ['random', 'scenario'], allowed: {OBSTACLE_NAMES}"),
-        ("task.modules", "sounds,nope", f"unknown modules mode 'nope', allowed: {MODULE_NAMES}"),
+        ("task.robots", "nope", RuntimeError, "parameter task.robots: ['nope'] not in"),
+        ("task.robots", "", ValueError, f"task axis 'robots' takes exactly one mode, got [], allowed: {ROBOT_NAMES}"),
+        ("task.obstacles", "random,scenario", ValueError, f"task axis 'obstacles' takes exactly one mode, got ['random', 'scenario'], allowed: {OBSTACLE_NAMES}"),
+        ("task.modules", "sounds,nope", RuntimeError, "parameter task.modules: ['nope'] not in"),
     ]
-    for name, value, message in cases:
+    for name, value, error_type, message in cases:
         node = ROSParamServer(f"layer_{uuid.uuid4().hex[:8]}", start_parameter_services=False, parameter_overrides=[Parameter(name, value=value)])
         try:
-            with pytest.raises(ValueError) as error:
+            with pytest.raises(error_type) as error:
                 layer.declare_task_params(node)
-            assert str(error.value) == message
+            assert str(error.value).startswith(message)
         finally:
             node.destroy_node()
 

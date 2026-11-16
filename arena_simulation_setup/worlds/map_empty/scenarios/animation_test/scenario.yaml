@@ -1,7 +1,7 @@
 format: arena-scenario/2
 objects:
 - name: chair_1
-  model: SM_Chair_01a
+  model: Hospital/SM_Chair_01a
   pose: [12.0, 5.0, 0.0]
   humansim: {type: SM_Chair_01a, capacity: 1, interaction_radius: 0.8, seats: [{x: 0.0, y: -0.03, yaw: -1.5708}]}
 humans:

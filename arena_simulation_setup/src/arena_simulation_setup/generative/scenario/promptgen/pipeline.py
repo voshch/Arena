@@ -13,11 +13,13 @@ from typing import Any
 import attrs
 import yaml
 
+from arena_simulation_setup.generative.core.agents import TYPES_DIR, TypeFiles, agent_type_of
+from arena_simulation_setup.generative.core.frames import shift_humans
+from arena_simulation_setup.generative.core.generated import GENERATED_MARKER
+
 from ..formats import PROVENANCE, scenario_text
-from ..materialize import GENERATED_MARKER, WouldOverwrite, is_generated
+from ..materialize import WouldOverwrite, is_generated
 from ..route import ROBOT_SPEED_MPS
-from .agents import TYPES_DIR, TypeFiles, agent_type_of
-from .frames import shift_humans
 from .lexicon import match as lexicon_match
 from .llm import Oracle, Unavailable
 from .prompts import Prompt

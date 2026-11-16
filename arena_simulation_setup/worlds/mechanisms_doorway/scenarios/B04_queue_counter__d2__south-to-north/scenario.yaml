@@ -15,8 +15,8 @@ humans:
   model: Office/office_female_caucasian_young
   pose: [22.8, 6.0, 0.0]
   agent: {agent_type: ./customer.yaml}
-- {name: customer_4, model: male_adult_medical_01, pose: [22.0, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
-- {name: customer_5, model: female_adult_medical_01, pose: [21.2, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_4, model: Hospital/doctor_male_caucasian_middleage, pose: [22.0, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_5, model: Hospital/nurse_female_caucasian_young, pose: [21.2, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
 - {name: customer_6, model: worker_male_asian_middleage, pose: [20.4, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
 - {name: customer_7, model: casual_female_caucasian_young, pose: [19.6, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
 - {name: customer_8, model: worker_male_caucasian_young, pose: [18.8, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}

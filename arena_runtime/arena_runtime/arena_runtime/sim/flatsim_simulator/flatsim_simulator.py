@@ -24,6 +24,7 @@ from arena_bringup.constants import SimSimulator
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.qos import reliable
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
@@ -33,9 +34,10 @@ from flatsim_msgs.msg import Floor as FloorMsg
 from flatsim_msgs.srv import AddFloors, AddOutlines, ControlWorld, DeleteEntities, DeletePrefix, DeleteRobot, Republish, SetRobotPose, SpawnBoxes, SpawnRobot
 
 from arena_runtime.humans import PED_RADIUS
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
-from arena_runtime.sim._control import effective_control_yaml, robot_controllers
+from arena_runtime.sim._control import effective_control_yaml, robot_controllers, state_publisher_node
 from arena_runtime.sim._interface import robot_footprint_radius
 from arena_runtime.sim._urdf import mock_arm_hardware
 
@@ -223,7 +225,7 @@ class FlatsimSimulator(BaseSim):
         args: dict[str, object] = {
             **robot.extra,
             **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': self.node.rosparam[str].get('optim', ''),
+            'optim': declare(self.node, NodeParams.OPTIM).value,
             'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
         }
         args.pop('resolved_assembly', None)
@@ -265,19 +267,7 @@ class FlatsimSimulator(BaseSim):
         """Launch robot_state_publisher in the robot namespace, and a mock-hardware controller_manager for a ros2_control robot."""
         ld = launch.LaunchDescription()
         ld.add_action(launch_ros.actions.PushRosNamespace(namespace=str(self.node.service_namespace(robot.name))))
-        ld.add_action(
-            launch_ros.actions.Node(
-                package='robot_state_publisher',
-                executable='robot_state_publisher',
-                name='robot_state_publisher',
-                output='screen',
-                parameters=[
-                    {'use_sim_time': True},
-                    {'robot_description': description},
-                    {'frame_prefix': robot.frame.tf()},
-                ],
-            )
-        )
+        ld.add_action(state_publisher_node(description, robot.frame.tf()))
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
         control_spec = robot_config.model_params.control
         if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
@@ -474,7 +464,12 @@ class FlatsimSimulator(BaseSim):
         return True
 
     async def remove_world(self) -> bool:
+        """Remove the walls, floors and every pedestrian disc."""
         names, self._wall_names, self._floor_names = [*self._wall_names, *self._floor_names], [], []
+        discs = list(self._pedestrians)
+        self._pedestrians.clear()
+        if discs:
+            self._discs.publish(Discs(removed=discs))
         await self._remove(names)
         return True
 

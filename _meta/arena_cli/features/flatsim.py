@@ -6,7 +6,7 @@ import sys
 from arena_cli import common
 from arena_cli.common import Verb, make_verb
 from arena_cli.complete import LaunchArgs
-from arena_cli.features import lifecycle_verbs
+from arena_cli.features import Health, fetched, lifecycle_verbs
 
 NAME = "flatsim"
 
@@ -55,6 +55,10 @@ def launch(argv: list[str]) -> None:
     """Launch the flatsim server."""
     common._reg_require(NAME)
     common._exec("ros2", "launch", "flatsim", "flatsim.launch.py", *argv)
+
+
+def health() -> Health:
+    return fetched(NAME, "flatsim")
 
 
 COMMANDS: dict[str, Verb] = {

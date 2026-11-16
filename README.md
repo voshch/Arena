@@ -68,6 +68,7 @@ The container will start automatically on source and continue running in the bac
 ```sh
 cd ~/arena_ws # replace with your actual workspace path
 source arena
+arena healthcheck                                               # checks the install and every installed feature, then drives a robot in every installed simulator
 arena launch sim:=isaac                                         # Isaac Sim
 arena launch sim:=mujoco                                        # MuJoCo
 arena launch sim:=flatsim                                       # flatsim (2D, no renderer)
@@ -88,11 +89,16 @@ A fork is an isolated container on a snapshot of your dev tree, with its own ROS
 ```sh
 source arena --fork [<name>]               # enter a fork, forking the dev tree into it if new (default: lowest free pN)
 arena fork new [<name>]                    # the same without entering it
+arena fork new <name> --from <fork>        # fork another fork, with its robots, features, builds and edits
 source arena --fork <name> --code          # open it in VS Code instead
 arena fork ls                              # list forks
 arena fork down <name>                     # delete a fork and its edits
 arena evaluation benchmark ... --lanes 4   # one benchmark run across 4 lanes, each in a pool fork
 ```
+
+Planner venvs live once in `$ARENA_WS_DIR/.uv/venvs`, keyed by a hash of each planner's inputs and hardlinked from the uv cache in `$ARENA_WS_DIR/.uv/cache`. Every build tree, dev, releases and forks, links `build/<planner>/venv` to its entry, so a fork rebuilds a planner only when the planner's content changes. Containers see the store read-only at `/opt/arena_ws/.venvs`, and `arena build` and fork cleanup delete entries no build tree has linked for a day.
+
+`arena fork new` inside a fork forks that fork. Every fork sees `build/.forks` at `/opt/arena_ws/.forks`, and a release cut from a fork keeps the git objects the fork added, so its commits resolve in the new fork. Such a release never becomes the latest one the dev container forks from.
 
 `ARENA_FORK_CPUS`, `ARENA_FORK_MEM` and `ARENA_FORK_DOMAIN_BASE` (default 20) in `.env` tune forks. A new fork takes the lowest domain from that base up that no fork holds, no running container sets and no ROS process on the host has bound (any UDP port in the domain's RTPS range).
 
@@ -151,13 +157,22 @@ The lint, tests and coverage workflows run on every push to `jazzy` and every pu
 
 Bump the Ruff version with `pre-commit autoupdate`.
 
-[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs every test suite of the Arena-owned packages in a `ros:jazzy` container. It installs what they need the way `arena update` does (`rosdep` from each `package.xml`, `colcon --packages-up-to`, `uv_workspace.py compose` with `uv sync`, the default robot's submodules), so a missing `package.xml` or `pyproject.toml` dependency fails it, and runs them with `colcon test`, the runner behind `arena test`, one package per worker on its own `ROS_DOMAIN_ID`. The one difference from `arena update` is torch: the runners have no GPU and the CUDA stack fills their disk, so [`.github/ci/sync-python.sh`](.github/ci/sync-python.sh) skips it and installs the CPU wheel of the locked torch version from the PyTorch index.
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs every test suite of the Arena-owned packages in a `ros:jazzy` container. It installs what they need the way `arena update` does (`rosdep` from each `package.xml`, `colcon --packages-up-to`, `uv_workspace.py compose` with `uv sync`, the default robot's submodules), so a missing `package.xml` or `pyproject.toml` dependency fails it, and runs them with `colcon test`, the runner behind `arena test`, one package per worker on its own `ROS_DOMAIN_ID`. The `arena` CLI is no colcon package: the workflow installs it into the venv with the rest and runs `_meta/arena_cli/tests` with pytest after the suites. The one difference from `arena update` is torch: the runners have no GPU and the CUDA stack fills their disk, so [`.github/ci/sync-python.sh`](.github/ci/sync-python.sh) skips it and installs the CPU wheel of the locked torch version from the PyTorch index.
 
 The container is this or last week's `ghcr.io/voshch/arena-ci:jazzy-<ISO week>` when one exists, else plain `ros:jazzy`. A push to `jazzy` without this week's image dispatches [`.github/workflows/ci-image.yml`](.github/workflows/ci-image.yml), which runs [`.github/ci/provision.sh`](.github/ci/provision.sh) on a clean `ros:jazzy` and publishes the result. The image records the rosdep keys it was provisioned for, and [`.github/ci/system-deps.sh --purge-dropped`](.github/ci/system-deps.sh) purges what only a since-dropped key installed before installing the current ones, so a run in the image installs the same set as a run in plain `ros:jazzy`. Build objects go through ccache and downloads through the uv cache, both content-addressed. The package must be public for runs to pull it.
 
 [`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the changed lines under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. It builds and tests the packages that own the `GATED` paths, found by [`.github/ci/owning-packages.sh`](.github/ci/owning-packages.sh) from the nearest `package.xml`. Changes outside `GATED` end the job after the diff.
 
 ## Troubleshooting
+
+When `source arena`, a build, an update or a launch misbehaves, go down the chart from the top and follow the first question that matches.
+
+<img src="_meta/docs/troubleshooting.svg" width="820" alt="Arena troubleshooting checklist: each symptom and the arena command that fixes it">
+
+- [Open a GitHub issue](https://github.com/voshch/Arena/issues/new) with the output of `arena healthcheck` and the failing command
+- [Ask on Discord](https://discord.gg/GNTTf9DKyp)
+- [Podman API socket](https://docs.podman.io/en/latest/markdown/podman-system-service.1.html)
+- [nvidia-container-toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Unknown runtime specified 'nvidia'
 

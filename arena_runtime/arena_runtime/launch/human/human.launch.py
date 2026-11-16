@@ -1,5 +1,6 @@
 import launch
-from arena_bringup.substitutions import LaunchArgument, SelectAction
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_bringup.substitutions import SelectAction
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from arena_runtime.env.constants import Constants
@@ -13,6 +14,7 @@ def generate_launch_description() -> launch.LaunchDescription:
 
     namespace = LaunchArgument(
         name='namespace',
+        description='Namespace of the human simulator nodes.',
     )
 
     launch_human_simulator = SelectAction(launch.substitutions.LaunchConfiguration('simulator'))
@@ -58,6 +60,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     simulator = LaunchArgument(
         name='simulator',
         choices=launch_human_simulator.keys,
+        description='Human simulator backend to launch.',
     )
 
     ld = launch.LaunchDescription(

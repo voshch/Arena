@@ -151,7 +151,7 @@ async def main():
             latched = rclpy.qos.QoSProfile(depth=50, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
             rig.probe.create_subscription(EpisodeRecord, f"{env.get_fully_qualified_name()}/state/episode", episodes.append, latched)
             rig.probe.create_subscription(EpisodeRecord, f"{env.get_fully_qualified_name()}/state/queue", queue.append, latched)
-            out["task_layer_param"] = env.rosparam[str].get("task_layer", "")
+            out["task_layer_param"] = env.rosparam[str].get_unsafe("task_layer", "")
             queried = await env._cb_query_task_modes(arena_runtime_msgs.srv.QueryTaskModes.Request(), arena_runtime_msgs.srv.QueryTaskModes.Response())
             out["queried"] = decode_modes(queried.modes)
             out["namespaces"] = decode_namespaces(queried.namespaces)

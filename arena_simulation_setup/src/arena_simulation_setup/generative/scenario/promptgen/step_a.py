@@ -7,9 +7,10 @@ import random
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from arena_simulation_setup.generative.core.agents import TypeFiles, agent_type_of, profile_of_agent
+from arena_simulation_setup.generative.core.profiles import TIERS, ProfileError, is_behavior_tree, tune_block
+
 from ..populate import BUSY_MIX, extra_agents
-from .agents import TypeFiles, agent_type_of, profile_of_agent
-from .profiles import TIERS, ProfileError, is_behavior_tree, tune_block
 from .spec import ADecision, FailureKind
 from .world import WorldContext
 

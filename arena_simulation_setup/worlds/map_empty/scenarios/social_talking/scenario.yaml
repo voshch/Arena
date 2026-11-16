@@ -1,7 +1,7 @@
 format: arena-scenario/2
 humans:
-- {name: talker_1, model: female_adult_business_02, pose: [12.0, 10.0, 0.0], agent: {agent_type: ./talker_1.yaml}}
-- {name: talker_2, model: male_adult_construction_01, pose: [14.0, 10.0, 3.14159], agent: {agent_type: ./talker_2.yaml}}
+- {name: talker_1, model: Office/office_female_caucasian_young, pose: [12.0, 10.0, 0.0], agent: {agent_type: ./talker_1.yaml}}
+- {name: talker_2, model: worker_male_caucasian_young, pose: [14.0, 10.0, 3.14159], agent: {agent_type: ./talker_2.yaml}}
 robots:
 - start: [2.0, 10.0, 0.0]
   phases:

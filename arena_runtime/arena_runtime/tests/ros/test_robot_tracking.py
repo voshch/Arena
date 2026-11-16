@@ -276,6 +276,7 @@ def test_engine_binds_the_index_alias_to_the_robot(rclpy_context):
     async def scenario(human, tf_buffer) -> None:
         del tf_buffer
         from arena_humansim.core.agent_manager import AgentManager
+        from arena_humansim.params import MODE_SUBSYSTEM
         from arena_humansim.core.pool import KIND_ROBOT
         from rclpy.executors import SingleThreadedExecutor
         from rclpy.parameter import Parameter
@@ -283,7 +284,7 @@ def test_engine_binds_the_index_alias_to_the_robot(rclpy_context):
 
         engine = AgentManager(
             namespace=human.node.get_fully_qualified_name(),
-            parameter_overrides=[Parameter("mode", value=AgentManager.MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
+            parameter_overrides=[Parameter("mode", value=MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
         )
         executor = SingleThreadedExecutor()
         executor.add_node(human.node)
@@ -324,6 +325,7 @@ def test_pedestrian_spawned_after_the_robot_gets_its_own_engine_agent(rclpy_cont
     async def scenario(human, tf_buffer) -> None:
         del tf_buffer
         from arena_humansim.core.agent_manager import AgentManager
+        from arena_humansim.params import MODE_SUBSYSTEM
         from arena_humansim.core.pool import KIND_ROBOT
         from rclpy.executors import SingleThreadedExecutor
         from rclpy.parameter import Parameter
@@ -332,7 +334,7 @@ def test_pedestrian_spawned_after_the_robot_gets_its_own_engine_agent(rclpy_cont
 
         engine = AgentManager(
             namespace=human.node.get_fully_qualified_name(),
-            parameter_overrides=[Parameter("mode", value=AgentManager.MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
+            parameter_overrides=[Parameter("mode", value=MODE_SUBSYSTEM), Parameter("publish_markers", value=0)],
         )
         executor = SingleThreadedExecutor()
         executor.add_node(human.node)

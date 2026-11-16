@@ -1,51 +1,30 @@
-import enum
 import math
 import typing
 
-from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_int
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_runtime.env.task_api import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
 from arena_runtime.env.task_layer import ResetPlan, RobotReset
 from arena_runtime.shared import Orientation, Pose, Position, PositionRadius
 
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
-
-_RANDOM_ALIASES = frozenset({"", "random", "<random>"})
-
-
-def _parse_gesture(value: str) -> str:
-    from arena_simulation_setup import ASS_DIR
-
-    if value in _RANDOM_ALIASES:
-        return "<random>"
-    available = {p.stem for p in (ASS_DIR / "configs" / "gestures").glob("*.yaml")}
-    if value not in available:
-        raise ValueError(f"unknown gesture {value!r}; available: {sorted(available | {'<random>'})}")
-    return value
+from task_generator.tasks.robots.demo import DemoOrientation, DemoParams
 
 
-class _Orientation(enum.Enum):
-    TANGENT = "tangent"
-    RADIAL_IN = "radial_in"
-    RADIAL_OUT = "radial_out"
-
-
-def _vertices(center: Position, n: int, radius: float, orientation: _Orientation) -> list[Pose]:
+def _vertices(center: Position, n: int, radius: float, orientation: DemoOrientation) -> list[Pose]:
     if n < 3:
         raise ValueError(f"TM_Demo.VERTICES must be >= 3; got {n}")
     if radius <= 0:
         raise ValueError(f"TM_Demo.RADIUS must be > 0; got {radius}")
-    if not isinstance(orientation, _Orientation):
-        raise ValueError(f"TM_Demo.ORIENTATION must be one of {[o.value for o in _Orientation]}; got {orientation!r}")
+    if not isinstance(orientation, DemoOrientation):
+        raise ValueError(f"TM_Demo.ORIENTATION must be one of {[o.value for o in DemoOrientation]}; got {orientation!r}")
     phase = -math.pi / 2 + math.pi / n
     pts = [(center.x + radius * math.cos(phase + 2 * math.pi * i / n), center.y + radius * math.sin(phase + 2 * math.pi * i / n)) for i in range(n)]
     out: list[Pose] = []
     for i, (x, y) in enumerate(pts):
         nx, ny = pts[(i + 1) % n]
-        if orientation is _Orientation.TANGENT:
+        if orientation is DemoOrientation.TANGENT:
             yaw = math.atan2(ny - y, nx - x)
-        elif orientation is _Orientation.RADIAL_IN:
+        elif orientation is DemoOrientation.RADIAL_IN:
             yaw = math.atan2(center.y - y, center.x - x)
         else:
             yaw = math.atan2(y - center.y, x - center.x)
@@ -57,51 +36,21 @@ def _pick_gesture(value: str) -> str | None:
     return None if value == "<random>" else value
 
 
-def _available_gestures() -> list[str]:
-    from arena_simulation_setup import ASS_DIR
-
-    return sorted({p.stem for p in (ASS_DIR / "configs" / "gestures").glob("*.yaml")})
-
-
 class TM_Demo(TM_Robots):
     """Drive a regular N-vertex polygon; gesture at every vertex."""
 
-    _vertices_p: ROSParamT[int]
-    _radius_p: ROSParamT[float]
-    _gesture_p: ROSParamT[str]
-    _orientation_p: ROSParamT[_Orientation]
+    _params: DemoParams
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
-        declare_int(self.node, str(self.namespace("vertices")), 4, label="Vertices", description="Corners of the regular polygon each robot drives, at least 3.", lo=3, hi=20)
-        declare_double(self.node, str(self.namespace("radius")), 1.5, label="Radius (m)", description="Distance in m from the polygon center to each corner.", lo=0.5, hi=10.0)
-        declare_enum(
-            self.node,
-            str(self.namespace("gesture")),
-            "<random>",
-            choices=["<random>", *_available_gestures()],
-            label="Gesture",
-            description="Gesture played at every corner, <random> draws one per corner.",
-        )
-        declare_enum(
-            self.node,
-            str(self.namespace("orientation")),
-            _Orientation.RADIAL_IN.value,
-            choices=[o.value for o in _Orientation],
-            label="Orientation",
-            description="Heading at each corner: tangent faces the next corner, radial_in the center, radial_out away from it.",
-        )
-        self._vertices_p = self.node.ROSParam[int](self.namespace("vertices"))
-        self._radius_p = self.node.ROSParam[float](self.namespace("radius"))
-        self._gesture_p = self.node.ROSParam[str](self.namespace("gesture"), parse=_parse_gesture)
-        self._orientation_p = self.node.ROSParam[_Orientation](self.namespace("orientation"), parse=_Orientation)
+        self._params = DemoParams(self.node, namespace=self.namespace())
 
     async def reset(self) -> ResetPlan:
         plan = await super().reset()
-        gesture_name = self._gesture_p.value
-        radius = self._radius_p.value
-        orientation = self._orientation_p.value
-        n = self._vertices_p.value
+        gesture_name = self._params.GESTURE.value
+        radius = self._params.RADIUS.value
+        orientation = self._params.ORIENTATION.value
+        n = self._params.VERTICES.value
         robots = list(self._ctx.robots.values())
         biggest_robot = max((r.safe_distance for r in robots), default=0)
         centers = self._ctx.world_manager.get_positions_on_map(

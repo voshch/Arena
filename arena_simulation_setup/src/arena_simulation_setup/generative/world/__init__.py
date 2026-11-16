@@ -5,6 +5,7 @@ import typing
 
 import pydantic
 
+from arena_simulation_setup.generative.core.generated import Generated, pack
 from arena_simulation_setup.tree.World import World
 
 from .layout import Diagnostics, GridFrame, Layout, Note
@@ -26,17 +27,18 @@ class WorldGeneratorType(enum.Enum):
     CONCOURSE = "concourse"
     EGOBENCH = "egobench"
     ROOMS = "rooms"
+    SIDEWALK = "sidewalk"
 
 
 class BaseConfiguration(pydantic.BaseModel):
     """Common to every generator. Extent is not here: a sketch or a text sizes itself from what is drawn."""
 
-    resolution: float = 0.05  # m / px
-    wall_gap: float = 0.05  # gap between adjacent walls
+    resolution: float = pydantic.Field(0.05, description='Map resolution in meters per pixel.')
+    wall_gap: float = pydantic.Field(0.05, description='Gap between adjacent walls in meters.')
 
 
 class PedestrianConfiguration(BaseConfiguration):
-    pedestrians: int = pydantic.Field(-1, ge=-1)  # -1 leaves the episode's obstacle mode alone
+    pedestrians: int = pydantic.Field(-1, ge=-1, description="Number of pedestrians the queued episode spawns (-1 = leave the episode's obstacle mode alone).")
 
 
 class WorldGeneratorImpl(abc.ABC):
@@ -67,7 +69,14 @@ class WorldGeneratorImpl(abc.ABC):
     def compute(self) -> World: ...
 
     def files(self) -> dict[str, bytes]:
-        """Auxiliary artifacts packed into the world tar by relative path, none by default."""
+        """Every file written into the world directory by relative path: each of `scenarios()` under `scenarios/<name>/`."""
+        files: dict[str, bytes] = {}
+        for name, generated in self.scenarios().items():
+            files.update(pack(name, generated))
+        return files
+
+    def scenarios(self) -> dict[str, Generated]:
+        """Scenarios of the last compute by name, none by default."""
         return {}
 
     def frame(self) -> 'GridFrame | None':
@@ -232,3 +241,10 @@ def lazy_Rooms() -> type[WorldGeneratorImpl]:
     from .rooms import WorldGeneratorRooms
 
     return WorldGeneratorRooms
+
+
+@WorldGenerator.register(WorldGeneratorType.SIDEWALK)
+def lazy_Sidewalk() -> type[WorldGeneratorImpl]:
+    from .sidewalk import WorldGeneratorSidewalk
+
+    return WorldGeneratorSidewalk

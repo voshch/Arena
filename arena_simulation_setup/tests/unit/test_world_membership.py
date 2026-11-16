@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 from arena_simulation_setup.kg import DERIVED, GENERATED, Scene
-from arena_simulation_setup.tree.World import DERIVE_MODES, WorldView, connections, contents, derive, describe, parse_world, zones_of
+from arena_simulation_setup.params import DERIVE_MODES
+from arena_simulation_setup.tree.World import WorldView, connections, contents, derive, describe, parse_world, zones_of
 from arena_simulation_setup.tree.World.model import World
 
 WORLD = """\

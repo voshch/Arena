@@ -18,7 +18,7 @@ def _world(tmp_path: Path) -> Path:
     root.mkdir(parents=True)
     zones = [{"name": n, "polygon": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "floor": False} for n, (x0, y0, x1, y1) in _ROOMS.items()]
     (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones}]}))
-    walker = {"name": "normal_1", "model": "male_adult_medical_01", "pose": "reception", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"}
+    walker = {"name": "normal_1", "model": "Hospital/doctor_male_caucasian_middleage", "pose": "reception", "agent": {"agent_type": "adult", "desired_velocity": 1.1}, "waypoints": ["reception", "open_work_area"], "waypoint_mode": "reverse"}
     base = root / "scenarios" / "normal"
     base.mkdir(parents=True)
     (base / "scenario.yaml").write_text(yaml.safe_dump({"format": "arena-scenario/2", "robots": [{"start": [2.0, 4.0, 0.0], "phases": [{"goto": [30.0, 4.0, 0.0]}]}], "humans": [walker]}, sort_keys=False))

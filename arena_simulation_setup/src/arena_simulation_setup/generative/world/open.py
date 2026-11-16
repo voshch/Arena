@@ -13,12 +13,12 @@ class WorldGeneratorOpen(WithPedestrians):
     """A walled box with square obstacles at random positions, merged where they overlap, redrawn until the free space is one piece."""
 
     class Configuration(PedestrianConfiguration):
-        width: float = pydantic.Field(20.0, gt=0)
-        height: float = pydantic.Field(20.0, gt=0)
-        obstacles: int = pydantic.Field(15, ge=0)
-        obstacle_size: float = pydantic.Field(1.0, gt=0)
-        size_spread: float = pydantic.Field(0.0, ge=0, lt=1)
-        max_tries: int = pydantic.Field(50, ge=1)
+        width: float = pydantic.Field(20.0, gt=0, description='Box extent along x in meters.')
+        height: float = pydantic.Field(20.0, gt=0, description='Box extent along y in meters.')
+        obstacles: int = pydantic.Field(15, ge=0, description='Number of square obstacles placed at random positions.')
+        obstacle_size: float = pydantic.Field(1.0, gt=0, description='Mean side length of an obstacle in meters.')
+        size_spread: float = pydantic.Field(0.0, ge=0, lt=1, description='Fraction of the obstacle size each side varies by, drawn uniformly (0 = all equal).')
+        max_tries: int = pydantic.Field(50, ge=1, description='Redraws allowed before failing when the free space is not one connected piece.')
 
     config: Configuration
     _layout: Layout | None

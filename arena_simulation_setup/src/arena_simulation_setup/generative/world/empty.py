@@ -1,3 +1,4 @@
+import pydantic
 import shapely
 
 from arena_simulation_setup.tree.World import Level, World, Zone
@@ -11,8 +12,8 @@ from .utils import to_corners, to_walls, world_of
 
 class WorldGeneratorEmpty(WorldGeneratorImpl):
     class Configuration(BaseConfiguration):
-        width: float = 15.0  # m
-        height: float = 15.0  # m
+        width: float = pydantic.Field(15.0, description='Room extent along x in meters.')
+        height: float = pydantic.Field(15.0, description='Room extent along y in meters.')
 
     config: Configuration
 

@@ -9,6 +9,8 @@ services:
       - "fork_build:/opt/arena_ws/build"
       - "fork_install:/opt/arena_ws/install"
       - "$HOST_ARENA_WS_DIR/src/Arena/_assets:/opt/arena_ws/src/Arena/_assets"
+      - "$HOST_ARENA_WS_DIR/.uv:/opt/arena_ws/.uv"
+      - "$HOST_ARENA_WS_DIR/.uv/venvs:/opt/arena_ws/.venvs:ro"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "$HOST_ARENA_DATA_DIR:/opt/arena_ws/data"
       - "$HOST_ARENA_SCREENSHOTS_DIR:/opt/arena_ws/screenshots"

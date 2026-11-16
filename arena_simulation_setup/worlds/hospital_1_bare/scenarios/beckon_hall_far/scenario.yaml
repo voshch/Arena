@@ -21,7 +21,7 @@ robots:
     hold_time: 0.0
 dynamic:
 - name: caller
-  model: female_adult_business_02
+  model: Office/office_female_caucasian_young
   pose:
   - 9.0
   - 16.0

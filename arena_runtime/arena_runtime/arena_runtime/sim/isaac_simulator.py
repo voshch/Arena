@@ -32,6 +32,7 @@ from arena_people_msgs.srv import (
 )
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import AsyncUtil, ClientWrapper
+from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Light as LightDefinition
@@ -72,6 +73,7 @@ from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.flags import ObstaclesOptim, obstacles_optim_level
+from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Ceiling as CeilingDefinition
 from arena_runtime.shared import (
     DynamicObstacle,
@@ -91,6 +93,7 @@ from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
     robot_controllers,
+    state_publisher_node,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
@@ -108,6 +111,12 @@ _ISAAC_PHYSICS_HZ = 60.0
 _ISAAC_EXPOSURE_GAIN = 5.0
 _TILT_EPS = 1e-9
 _MAP_OFFSET_TIMEOUT_S = 10.0
+_WORLD_ROOTS = ('Walls', 'Floors', 'Ceilings')
+
+
+def world_roots(env_id: int | str) -> list[str]:
+    """Prim names of the world geometry roots one env owns."""
+    return [Namespace(f"env_{env_id}")(root) for root in _WORLD_ROOTS]
 
 
 class IsaacHost(SimLifecycle):
@@ -249,7 +258,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         args: dict[str, object] = {
             **robot.extra,
             **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': self.node.rosparam[str].get('optim', ''),
+            'optim': declare(self.node, NodeParams.OPTIM).value,
             # no world-scoped topic namespace in Isaac, empty prefix keeps the
             # injected sensor topics namespace-relative
             'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
@@ -357,19 +366,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         ld = launch.LaunchDescription()
         ld.add_action(launch_ros.actions.PushRosNamespace(namespace=ns))
 
-        ld.add_action(
-            launch_ros.actions.Node(
-                package='robot_state_publisher',
-                executable='robot_state_publisher',
-                name='robot_state_publisher',
-                output='screen',
-                parameters=[
-                    {'use_sim_time': True},
-                    {'robot_description': description},
-                    {'frame_prefix': robot.frame.tf()},
-                ],
-            )
-        )
+        ld.add_action(state_publisher_node(description, robot.frame.tf()))
 
         control_spec = robot_params.control
         if control_spec is not None and control_spec.is_ros2_control:
@@ -428,7 +425,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             if control_spec.odom_topic != "odom":
                 ld.add_action(odom_relay_node(control_spec.odom_topic))
 
-        await self.node.do_launch(ld)
+        await self._track_robot_stack(robot.sim_path, ld)
 
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
 
@@ -564,11 +561,13 @@ class IsaacSimulator(BaseSim, NodeInterface):
             self._robot_prims.pop(robot.sim_path, None)
             self._map_offsets.pop(robot.sim_path, None)
             self._map_offset_calls.pop(robot.sim_path, None)
+        await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(self._NS_ROBOT(r.name)) for r in robots))
 
     async def remove_world(self) -> bool:
         res = await self._clients.ResetWorld.call_timeout(ResetWorld.Request())
-        return bool(res) and res.ret
+        deleted = await self._clients.DeletePrims.call_timeout(DeletePrims.Request(names=world_roots(self._env_id)))
+        return bool(res) and res.ret and deleted is not None and all(deleted.ret)
 
     async def spawn_walls(self, walls: Sequence[WallDefinition], clear_existing: bool = True) -> bool:
         if clear_existing:

@@ -1,5 +1,6 @@
 import logging
 
+import pydantic
 import shapely
 
 from arena_simulation_setup.shared import Door, Position
@@ -13,25 +14,15 @@ logger = logging.getLogger(__name__)
 
 class WorldGeneratorHallway(WorldGeneratorImpl):
     class Configuration(BaseConfiguration):
-        width: float = 80.0
-        height: float = 50.0
-
-        # Hallway parameters (a horizontal band)
-        hallway_height: float = 5.0
-
-        # Room parameters (for each side)
-        rooms_per_side: int = 7
-
-        # For "big" rooms (first and last); (min, max)
-        big_width: tuple[float, float] = (18.0, 28.0)
-        big_height: tuple[float, float] = (12.0, 20.0)
-
-        # For "small" rooms (intermediate ones); (min, max)
-        small_width: tuple[float, float] = (6.0, 12.0)
-        small_height: tuple[float, float] = (7.0, 14.0)
-
-        # door width
-        door_width: float = 2.5
+        width: float = pydantic.Field(80.0, description='Hallway length along x in meters, which the room widths are scaled to fill.')
+        height: float = pydantic.Field(50.0, description='Extent along y in meters, which centers the hallway band.')
+        hallway_height: float = pydantic.Field(5.0, description='Width of the horizontal hallway band in meters.')
+        rooms_per_side: int = pydantic.Field(7, description='Number of rooms on each side of the hallway.')
+        big_width: tuple[float, float] = pydantic.Field((18.0, 28.0), description='Range (min, max) in meters the width of the first and last room of each side is drawn from.')
+        big_height: tuple[float, float] = pydantic.Field((12.0, 20.0), description='Range (min, max) in meters the depth of the first and last room of each side is drawn from.')
+        small_width: tuple[float, float] = pydantic.Field((6.0, 12.0), description='Range (min, max) in meters the width of the intermediate rooms is drawn from.')
+        small_height: tuple[float, float] = pydantic.Field((7.0, 14.0), description='Range (min, max) in meters the depth of the intermediate rooms is drawn from.')
+        door_width: float = pydantic.Field(2.5, description='Width of each room door onto the hallway in meters.')
 
         @property
         def hallway_top(self) -> float:

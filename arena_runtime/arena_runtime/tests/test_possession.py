@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from arena_runtime.humans.possession import (
+    POSSESSION_EXTRAPOLATION_S,
     PossessionTable,
     bare_joint_names_valid,
     snapshot_roster,
@@ -20,6 +21,8 @@ def _ped(
     model_uri: str = "",
     ped_id: int = 0,
     gait_phase: float = 0.0,
+    position: tuple[float, float] = (0.0, 0.0),
+    velocity: tuple[float, float] = (0.0, 0.0),
 ) -> SimpleNamespace:
     return SimpleNamespace(
         name=name,
@@ -27,6 +30,8 @@ def _ped(
         gait_phase=gait_phase,
         joint_state=SimpleNamespace(name=list(joint_names), position=list(joint_positions)),
         model_uri=model_uri,
+        pose=SimpleNamespace(position=SimpleNamespace(x=position[0], y=position[1])),
+        twist=SimpleNamespace(linear=SimpleNamespace(x=velocity[0], y=velocity[1])),
     )
 
 
@@ -184,6 +189,24 @@ def test_substitute_restamps_gait_phase() -> None:
     table.merge([_ped("alice")], known_names={"alice"}, gate_open=True, now=0.0)
     out = table.substitute([_ped("alice", ped_id=3)], 0.1)
     assert out[0].gait_phase == pytest.approx(2.5)
+
+
+def test_substitute_advances_a_possessed_pose_along_its_twist_since_receipt() -> None:
+    table = PossessionTable()
+    table.merge([_ped("alice", position=(1.0, 2.0), velocity=(1.0, -0.5))], known_names={"alice"}, gate_open=True, now=10.0)
+    positions = []
+    for now in (10.0, 10.0 + 1 / 30, 10.0 + 2 / 30):
+        ped = table.substitute([_ped("alice")], now)[0]
+        positions += [ped.pose.position.x, ped.pose.position.y]
+    assert positions == pytest.approx([1.0, 2.0, 1.0 + 1 / 30, 2.0 - 0.5 / 30, 1.0 + 2 / 30, 2.0 - 1 / 30])
+    assert table.states(10.1)["alice"].pose.position.x == pytest.approx(1.0)
+
+
+def test_substitute_caps_the_extrapolation() -> None:
+    table = PossessionTable()
+    table.merge([_ped("alice", velocity=(1.0, 0.0))], known_names={"alice"}, gate_open=True, now=0.0)
+    ped = table.substitute([_ped("alice")], 0.9)[0]
+    assert ped.pose.position.x == pytest.approx(POSSESSION_EXTRAPOLATION_S)
 
 
 def test_substitute_ignores_expired() -> None:

@@ -6,13 +6,13 @@ import typing
 from collections.abc import Mapping
 
 from arena_simulation_setup.kg.scene import DERIVED, Scene, Value
+from arena_simulation_setup.params import DERIVE_MODES
 
 from .model import Level, World, anchor_light
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.utils.geometry import Position
 
-DERIVE_MODES = ('auto', 'all', 'off')
 _DOOR_MARGIN_M = 0.3
 
 

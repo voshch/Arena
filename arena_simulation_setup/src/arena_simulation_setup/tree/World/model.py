@@ -14,6 +14,7 @@ import attrs
 import numpy as np
 from typing_extensions import Self
 
+from arena_simulation_setup.params import WORLD_LIGHTING_MODES
 from arena_simulation_setup.shared import (
     LIGHT_FIXTURES,
     Ceiling,
@@ -50,7 +51,6 @@ if typing.TYPE_CHECKING:
 FORMAT = 'arena-world/2'
 LEGACY_FORMAT = 'arena-world/1'
 MICROPHONE_PLACEMENT_TOLERANCE_M = 0.05
-WORLD_LIGHTING_MODES = ('authored', 'auto')
 AUTO_CEILING_LIGHTS = CeilingLights(fixture='panel', spacing=2.4, lumens=7200.0, cct_K=6500.0)
 
 _ON_LINE_M = 0.01

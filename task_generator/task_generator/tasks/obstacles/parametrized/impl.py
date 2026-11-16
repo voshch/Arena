@@ -3,22 +3,17 @@ import typing
 
 import numpy as np
 import shapely
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_rclpy_mixins.params import ParamHandle
 from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
-from arena_simulation_setup.tree.configs.parametrized import (
-    ParametrizedConfig,
-    ParametrizedIdentifier,
-)
+from arena_simulation_setup.tree.configs.parametrized import ParametrizedConfig
 
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import TM_Obstacles
+from task_generator.tasks.obstacles.parametrized import ParametrizedParams
 
 
 class TM_Parametrized(TM_Obstacles):
-    _config: ROSParamT[ParametrizedConfig]
-
-    def _parse(self, config_name: str) -> ParametrizedConfig:
-        return ParametrizedIdentifier(config_name).resolve_sync()
+    _config: ParamHandle[ParametrizedConfig]
 
     def _zone_polygon(self, zone: str) -> shapely.Polygon | None:
         if not zone:
@@ -88,4 +83,4 @@ class TM_Parametrized(TM_Obstacles):
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
-        self._config = self.node.ROSParam[ParametrizedConfig](self.namespace('file'), '', parse=self._parse)
+        self._config = ParametrizedParams(self.node, namespace=self.namespace()).FILE

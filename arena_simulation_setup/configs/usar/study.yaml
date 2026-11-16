@@ -1,0 +1,26 @@
+# USAR study: 25 held-out test worlds, 5 hiding spots per world, each spot calling weak and loud (250 scenarios).
+# 10 worlds of 3 x 3 and 10 of 3 x 4 rooms at 0, 1 or 2 corners, two chains of six rooms as long corridors, two rings of six rooms and one hall of two wide rooms.
+# Write the suite bundle usar_test with `generate_usar configs/usar/study.yaml --suite usar --write`.
+# The seed is the smallest on which every spot is placed and both rings close over all their rooms; the tuning suite uses seed 7.
+name: usar
+seed: 50
+spots_per_world: 5
+call_levels: [weak, loud]
+hiding: [random, adversarial]
+worlds:
+  - world: {rows: 3, cols: [3, 4], max_depth: 6, deep: 0.6, loops: 1}
+    world_variants: 10
+    corners: [0, 1, 2]
+    test_worlds: 20
+  - world: {rows: 1, cols: 6}
+    world_variants: 2
+    corners: [0]
+    test_worlds: 2
+  - world: {rows: 2, cols: 3, deep: 1.0, loops: 1}
+    world_variants: 2
+    corners: [0, 1, 2]
+    test_worlds: 2
+  - world: {rows: 1, cols: 2, room_min: 12.0, room_max: 15.0}
+    world_variants: 1
+    corners: [0]
+    test_worlds: 1

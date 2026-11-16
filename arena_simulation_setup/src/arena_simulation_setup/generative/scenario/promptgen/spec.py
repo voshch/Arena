@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import attrs
 
-from .profiles import PROFILES, TIER_NAMES, TIERS, ProfileError, profile
+from arena_simulation_setup.generative.core.profiles import PROFILES, TIER_NAMES, TIERS, ProfileError, profile
 
 A_CASES = ("blackout", "evacuation", "stampede", "busy")
 B_CASES = ("erratic_route", "erratic_behavior", "intrinsic")

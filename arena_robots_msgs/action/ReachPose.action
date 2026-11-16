@@ -4,6 +4,10 @@ float32 position_tolerance        # m, 0.0 = adapter default
 float32 orientation_tolerance     # rad, 0.0 = adapter default
 float32 planning_time             # s, 0.0 = default
 string instance                   # arm cap instance (mount name), empty = sole arm
+string motion                     # "free" or "" = OMPL, "linear" = straight
+float32 speed                     # velocity and acceleration scale, 0.0 = 1.0
+bool relative                     # target is an offset from the tool pose
+string[] contact                  # object ids the arm may touch
 ---
 uint8 STATUS_SUCCEEDED = 0
 uint8 STATUS_CANCELED = 1

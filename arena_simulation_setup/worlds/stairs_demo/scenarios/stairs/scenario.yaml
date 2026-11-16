@@ -19,7 +19,7 @@ humans:
   waypoint_mode: once
   level: '0'
 - name: climber_2
-  model: female_adult_business_
+  model: Office/office_female_caucasian_young
   pose: [1.0, 2.4, 0.0]
   agent: {agent_type: adult}
   waypoints:
@@ -28,7 +28,7 @@ humans:
   waypoint_mode: once
   level: '0'
 - name: rider_2
-  model: male_adult_medical_
+  model: Hospital/doctor_male_caucasian_middleage
   pose: [1.0, 4.6, 0.0]
   agent: {agent_type: adult}
   waypoints:

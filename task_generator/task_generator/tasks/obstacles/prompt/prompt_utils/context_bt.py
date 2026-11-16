@@ -61,17 +61,17 @@ BEHAVIOR_TREE_FIELD_DESCRIPTION = """
       - `pos`: a list [x, y, yaw] representing the object's position and rotation. You should pay attention to where the agent should be spawned and faced, place the agent within the correct zone and adjust the yaw reasonably.
       - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
       - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only:
-        - "female_adult_business_02"
-        - "female_adult_medical_01"
-        - "female_adult_police_01"
-        - "female_adult_police_02"
-        - "female_adult_police_03"
-        - "male_adult_construction_01"
-        - "male_adult_construction_02"
-        - "male_adult_construction_03"
-        - "male_adult_construction_05"
-        - "male_adult_medical_01"
-        - "male_adult_police_04"
+        - "Office/office_female_caucasian_young"
+        - "Hospital/nurse_female_caucasian_young"
+        - "casual_female_caucasian_young"
+        - "casual_female_asian_middleage"
+        - "casual_female_african_young"
+        - "worker_male_caucasian_young"
+        - "worker_male_asian_middleage"
+        - "worker_male_african_young"
+        - "worker_male_caucasian_middleage"
+        - "Hospital/doctor_male_caucasian_middleage"
+        - "casual_male_caucasian_middleage"
 
     - "single_agent_nodes": Contains a list of behavior tree nodes that one and only one agent involved in, each has:
       - `name`: name of the node, only use provided node name, do not modify!
