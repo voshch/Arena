@@ -94,4 +94,4 @@ Every run writes these files afresh.
 python3 -m pytest arena_fleet/test
 ```
 
-They drive the dispatcher on the `mechanisms_doorway` world with the example files; robots walk their plan at 0.4 m/s.
+They drive the dispatcher on the `mechanisms_doorway` world with the example files; robots walk their plan at `time.v_nom` of the cost file.

@@ -34,7 +34,7 @@ def rules() -> RulesConfig:
 
 
 class Episode:
-    """The dispatcher on the doorway world; robots walk their latest plan at 0.4 m/s and stand when stopped."""
+    """The dispatcher on the doorway world; robots walk their latest plan at time.v_nom and stand when stopped."""
 
     def __init__(self, out: pathlib.Path, n: int = 4, profile: str = "base", info: Info = "none", peds: Peds | None = None, seed: int = 6, mod: MapOfDynamics | None = None, cost_file: str = "cost.yaml") -> None:
         s = site()
@@ -64,14 +64,14 @@ class Episode:
             elif isinstance(cmd, Stop):
                 self.stopped.add(cmd.robot)
 
-    def run(self, until: float = 200.0, v: float = 0.4) -> None:
+    def run(self, until: float = 200.0) -> None:
         while self.t < until and not self.d.finished:
             self.tick()
             self.peds = {k: (x + vx * TICK, y + vy * TICK, vx, vy) for k, (x, y, vx, vy) in self.peds.items()}
             for door in self.d.doors:
                 self.cross_max = max(self.cross_max, sum(1 for r in self.d.rob.values() if r.door == door and r.phase == "cross"))
             for n in self.d.names:
-                self.walk(n, v)
+                self.walk(n, self.d.cost["time"]["v_nom"])
             self.t += TICK
 
     def walk(self, n: str, v: float) -> None:
@@ -449,7 +449,7 @@ def test_way_to_the_step_aside_point_never_brings_a_person_closer_than_standing_
     length = math.dist((7.0, 6.0), p)
     for i in range(1, 21):
         s = length * i / 20
-        t = s / 0.4
+        t = s / d.cost["time"]["v_nom"]
         q = (7.0 + (p[0] - 7.0) * s / length, 6.0 + (p[1] - 6.0) * s / length)
         for x, y, vx, vy in crowd.values():
             there = (x + vx * t, y + vy * t)
