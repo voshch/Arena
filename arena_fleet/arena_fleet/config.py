@@ -249,8 +249,28 @@ def _load(path: pathlib.Path) -> object:
     return yaml.safe_load(path.read_text())
 
 
-def load_cost(path: pathlib.Path) -> CostConfig:
+def _merge(base: dict[str, typing.Any], over: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    out = dict(base)
+    for key, value in over.items():
+        below = out.get(key)
+        out[key] = _merge(typing.cast(dict[str, typing.Any], below), typing.cast(dict[str, typing.Any], value)) if isinstance(value, dict) and isinstance(below, dict) else value
+    return out
+
+
+def _layered(path: pathlib.Path) -> object:
+    """The file's mapping over the file its `base` key names, relative to it."""
     data = _load(path)
+    if not isinstance(data, dict) or "base" not in data:
+        return data
+    over = dict(typing.cast(dict[str, typing.Any], data))
+    below = _layered(path.parent / str(over.pop("base")))
+    if not isinstance(below, dict):
+        raise ValueError(f"{path}: base is not a mapping")
+    return _merge(typing.cast(dict[str, typing.Any], below), over)
+
+
+def load_cost(path: pathlib.Path) -> CostConfig:
+    data = _layered(path)
     _check(data, CostConfig, str(path))
     return typing.cast(CostConfig, data)
 

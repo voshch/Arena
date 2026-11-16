@@ -33,6 +33,8 @@ HATA baseline (arXiv 2508.19731).
 `J = w_time * T + w_encounter * H + w_facility * F + w_wait * W`, weights and terms in [configs/cost.yaml](configs/cost.yaml):
 `T` plan time at `v_nom`, `H` people the plan is predicted to meet, `F` door use (closed door, other robots routed there,
 people at the door on arrival), `W` time standing at the door behind other robots. Every decision is logged with all terms.
+[configs/hata_cost.yaml](configs/hata_cost.yaml) names `cost.yaml` as its `base` and sets only the HATA bid and its
+planning and flow values.
 
 ## What the dispatcher knows about people (`info`)
 

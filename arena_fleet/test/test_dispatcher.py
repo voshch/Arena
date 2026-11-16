@@ -329,6 +329,15 @@ def test_hata_bids_avoid_the_door_the_map_shows_busy_and_apply_no_door_rules(tmp
     assert any(x["mode"] == "hungarian" for x in e.events("d1_assign"))
 
 
+def test_hata_cost_takes_every_key_it_does_not_set_from_cost() -> None:
+    base, hata = cost(), cost("hata_cost.yaml")
+    assert hata.get("mode") == "hata" and "hata" in hata
+    assert hata["plan"]["occupied_cost_per_m"] != base["plan"]["occupied_cost_per_m"] and hata["flow"]["threshold"] != base["flow"]["threshold"]
+    assert {**hata["plan"], "occupied_cost_per_m": 0} == {**base["plan"], "occupied_cost_per_m": 0}
+    assert {**hata["flow"], "threshold": 0} == {**base["flow"], "threshold": 0}
+    assert all(hata[k] == base[k] for k in base if k not in ("plan", "flow"))
+
+
 def test_samples_pair_a_fixed_length_input_with_the_decision(tmp_path: pathlib.Path) -> None:
     e = Episode(tmp_path, profile="queue")
     e.run()
