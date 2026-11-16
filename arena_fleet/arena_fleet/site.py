@@ -39,11 +39,10 @@ class Door:
 
 @attrs.frozen
 class DoorLeaf:
-    """A world door whose leaf position tells how far open it is."""
+    """A world door: its name, the centre of its span and the unit normal of the span."""
 
     name: str
     c: Point
-    span: float
     normal: Point
 
 
@@ -56,6 +55,7 @@ class Site:
     doors: dict[str, Door]
     zones: dict[str, tuple[Point, ...]]
     starts: tuple[Point, ...]
+    level: str
 
     @classmethod
     def load(cls, world: pathlib.Path, resources: pathlib.Path, scenario: pathlib.Path, level: str = "0") -> "Site":
@@ -70,7 +70,7 @@ class Site:
         for d in lv.get("doors", []):
             a, b = _point(d["span"][0]), _point(d["span"][1])
             length = math.dist(a, b)
-            leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), length, ((b[1] - a[1]) / length, (a[0] - b[0]) / length)))
+            leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), ((b[1] - a[1]) / length, (a[0] - b[0]) / length)))
         zones = {str(z["name"]): tuple(_point(p) for p in z["polygon"]) for z in lv.get("zones", [])}
         doors: dict[str, Door] = {}
         for r in _mapping(resources)["resources"]:
@@ -87,7 +87,7 @@ class Site:
         if not doors:
             raise ValueError(f"{resources}: no resource of kind door")
         starts = tuple(_point(r["start"]) for r in _mapping(scenario)["robots"])
-        return cls(walls=tuple(walls), leaves=tuple(leaves), doors=doors, zones=zones, starts=starts)
+        return cls(walls=tuple(walls), leaves=tuple(leaves), doors=doors, zones=zones, starts=starts, level=level)
 
 
 def _mapping(path: pathlib.Path) -> dict[str, typing.Any]:

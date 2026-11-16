@@ -15,7 +15,6 @@
   <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_people_msgs</exec_depend>
   <exec_depend>arena_runtime_msgs</exec_depend>
-  <exec_depend>flatsim_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>nav2_msgs</exec_depend>

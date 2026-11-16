@@ -43,8 +43,8 @@ def features(D: "FleetDispatcher", n: str, speed: float) -> list[float]:
         t = terms or {"T": 0.0, "t_door": 0.0, "H": 0.0, "people_at_door": 0.0}
         heading = sum(1 for m, o in D.rob.items() if m != n and o.door == d and o.phase not in ("done", "to_goal"))
         near = sum(1 for m in D.names if m != n and m in D.pose and D.rob[m].phase not in ("done", "to_goal") and math.dist(D.pose[m][:2], (cx, cy)) <= 6.0)
-        leaf = D.door_open.get(d)
-        f += [math.dist((x, y), (cx, cy)), t["T"], t["t_door"], t["H"], t["people_at_door"], 1.0 if D.people_in_door(d) else 0.0, ttc_plan(D, path), float(heading), float(len(D.inside.get(d, {}))), float(near), leaf.prog if leaf else 1.0]
+        door = D.door_state.get(d)
+        f += [math.dist((x, y), (cx, cy)), t["T"], t["t_door"], t["H"], t["people_at_door"], 1.0 if D.people_in_door(d) else 0.0, ttc_plan(D, path), float(heading), float(len(D.inside.get(d, {}))), float(near), door.progress if door else 1.0]
         f += [D.view.count(tau, cx, cy, cr) if D.view else 0.0 for tau in TAUS]
     return [round(v, 3) for v in f]
 

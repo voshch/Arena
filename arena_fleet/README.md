@@ -3,10 +3,13 @@
 Fleet dispatcher for robots that share doors with pedestrians. It runs as its own node next to an Arena env whose robots
 are parked by a scenario (`task.robots:=scenario`, robots without phases), and drives them only through existing interfaces:
 
-- reads robot odometry (`<ns>/arena_env_node/<robot>/odom`), pedestrians (`<ns>/arena_peds`) and door leaves (`/flatsim/poses`);
-- assigns goals and stops robots through the env's `runtime/run_task` action;
-- publishes one global plan per robot on `<ns>/arena_env_node/<robot>/plan` (local planner drlvo, started with
-  `robot.mobile.global_planner:=none`), or sends it as a Nav2 `follow_path` goal (`local:=dwb`).
+- finds the env `env_id` in the runtime's registry (`/arena/state/envs`) and drives every robot its fleet
+  (`<env node>/state/robots`) lists;
+- reads each robot's odometry (`<robot ns>/odom`), the env's pedestrians (`<env ns>/arena_peds`) and the state of the
+  world doors from the env's semantics (`<env node>/state/semantics`), in any simulator that runs door semantics;
+- assigns goals and stops robots through the env's `<env node>/runtime/run_task` action;
+- publishes one global plan per robot on `<robot ns>/plan` (local planner drlvo, started with
+  `robot.mobile.global_planner:=none`), or sends it as a Nav2 `<robot ns>/follow_path` goal (`local:=dwb`).
 
 ## What it decides
 
@@ -70,7 +73,7 @@ EX=$(ros2 pkg prefix arena_fleet)/share/arena_fleet/examples/doorway
 ros2 run arena_fleet dispatcher --ros-args \
   -p world:=$ARENA_DIR/arena_simulation_setup/worlds/mechanisms_doorway/world.yaml \
   -p resources:=$EX/resources.yaml -p scenario:=$EX/scenario/scenario.yaml \
-  -p profile:=full -p info:=oracle -p n:=4 -p seed:=6 -p out:=/tmp/arena_fleet_run
+  -p profile:=full -p info:=oracle -p seed:=6 -p out:=/tmp/arena_fleet_run
 ```
 
 The node ends the episode `tail_s` after the last robot arrives, or after `duration_s`. With Nav2 DWB instead of drlvo,

@@ -8,7 +8,7 @@ import yaml
 
 from arena_fleet import features
 from arena_fleet.config import CostConfig, RulesConfig, load_cost, load_rules
-from arena_fleet.dispatcher import FleetDispatcher, Info, PublishPlan, SendGoal, Stop, robot_names
+from arena_fleet.dispatcher import DoorState, FleetDispatcher, Info, PublishPlan, SendGoal, Stop
 from arena_fleet.geometry import Point, hungarian, inside, seg_cross
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics, PeopleView
@@ -25,6 +25,10 @@ def site() -> Site:
     return Site.load(WORLD, EXAMPLE / "resources.yaml", EXAMPLE / "scenario" / "scenario.yaml")
 
 
+def fleet(n: int) -> list[str]:
+    return [f"jackal_{i}" for i in range(n)]
+
+
 def cost(name: str = "cost.yaml") -> CostConfig:
     return load_cost(PKG / "configs" / name)
 
@@ -39,9 +43,9 @@ class Episode:
     def __init__(self, out: pathlib.Path, n: int = 4, profile: str = "base", info: Info = "none", peds: Peds | None = None, seed: int = 6, mod: MapOfDynamics | None = None, cost_file: str = "cost.yaml", world: Site | None = None) -> None:
         s = world or site()
         if n > len(s.starts):
-            s = Site(walls=s.walls, leaves=s.leaves, doors=s.doors, zones=s.zones, starts=tuple((2.6 + 1.2 * (i // 4), 4.5 + (i % 4)) for i in range(n)))
+            s = Site(walls=s.walls, leaves=s.leaves, doors=s.doors, zones=s.zones, starts=tuple((2.6 + 1.2 * (i // 4), 4.5 + (i % 4)) for i in range(n)), level=s.level)
         self.out = out
-        self.d = FleetDispatcher(s, cost(cost_file), rules(), names=robot_names("jackal", n), info=info, profile=profile, seed=seed, out=out, duration=1e9, mod=mod)
+        self.d = FleetDispatcher(s, cost(cost_file), rules(), names=fleet(n), info=info, profile=profile, seed=seed, out=out, duration=1e9, mod=mod)
         self.t = 0.0
         self.d.set_time(0.0)
         assert self.d.try_setup({m: (*p, 0.0) for m, p in zip(self.d.names, s.starts, strict=False)})
@@ -448,9 +452,13 @@ def test_flow_level_without_a_map_is_refused(tmp_path: pathlib.Path) -> None:
         FleetDispatcher(site(), cost(), rules(), names=["jackal"], info="flow", out=tmp_path)
 
 
-def test_a_single_robot_is_named_like_arena_names_it() -> None:
-    assert robot_names("jackal", 1) == ["jackal"]
-    assert robot_names("jackal", 3) == ["jackal_0", "jackal_1", "jackal_2"]
+def test_a_door_is_open_only_once_the_env_reports_it_open(tmp_path: pathlib.Path) -> None:
+    d = Episode(tmp_path, 1).d
+    assert not d.door_is_open("main_door")
+    d.set_doors({"main_door": DoorState("opening", 0.95), "elsewhere": DoorState("open", 1.0)})
+    assert not d.door_is_open("main_door") and "elsewhere" not in d.door_state
+    d.set_doors({"main_door": DoorState("open", 1.0)})
+    assert d.door_is_open("main_door") and not d.door_is_open("side_door")
 
 
 def yielding(tmp_path: pathlib.Path, at: Point, people: Peds) -> Episode:
@@ -587,7 +595,7 @@ def room_for_one_goal() -> CostConfig:
 
 def test_a_goal_zone_without_room_for_the_fleet_is_refused(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ValueError, match="cannot place 2 goals"):
-        FleetDispatcher(site(), room_for_one_goal(), rules(), names=robot_names("jackal", 2), info="none", out=tmp_path)
+        FleetDispatcher(site(), room_for_one_goal(), rules(), names=fleet(2), info="none", out=tmp_path)
 
 
 def test_a_rerun_into_the_same_directory_starts_its_logs_afresh_and_a_refused_one_writes_none(tmp_path: pathlib.Path) -> None:
@@ -596,7 +604,7 @@ def test_a_rerun_into_the_same_directory_starts_its_logs_afresh_and_a_refused_on
     again.run(5)
     assert len(again.events("setup")) == 1 and len(again.events("d1_assign")) == 1
     with pytest.raises(ValueError, match="cannot place"):
-        FleetDispatcher(site(), room_for_one_goal(), rules(), names=robot_names("jackal", 2), info="none", out=tmp_path / "refused")
+        FleetDispatcher(site(), room_for_one_goal(), rules(), names=fleet(2), info="none", out=tmp_path / "refused")
     assert not (tmp_path / "refused").exists()
 
 

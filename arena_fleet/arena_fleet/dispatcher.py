@@ -45,11 +45,12 @@ class Stop:
 Command = PublishPlan | SendGoal | Stop
 
 
-@attrs.define
-class LeafState:
-    c: Point
-    span: float
-    prog: float = 0.0
+@attrs.frozen
+class DoorState:
+    """A world door as the env's semantics report it: closed, opening, open or closing, and how far open in [0, 1]."""
+
+    state: str = "closed"
+    progress: float = 0.0
 
 
 @attrs.define
@@ -104,11 +105,6 @@ class RobotState:
         return d
 
 
-def robot_names(robot: str, n: int) -> list[str]:
-    """Arena names a fleet <robot>_0..<robot>_{n-1} and a single robot <robot>."""
-    return [robot] if n == 1 else [f"{robot}_{i}" for i in range(n)]
-
-
 class FleetDispatcher:
     """Assigns goals, one plan per robot through a door, and applies the profile's rules every tick; ROS-free."""
 
@@ -131,7 +127,7 @@ class FleetDispatcher:
         self.walls = site.walls
         self.doors = site.doors
         self.grid = Grid(self.walls, cost["robot"]["radius_m"], cost["plan"]["snap_m"], cost["plan"]["route_expansions"])
-        self.door_open = {leaf.name: LeafState(leaf.c, leaf.span) for leaf in site.leaves}
+        self.door_state: dict[str, DoorState] = {leaf.name: DoorState() for leaf in site.leaves}
         self.hata = cost.get("mode") == "hata"
         self.view = None if info == "none" else PeopleView(cost, self.walls, mod)
         self.pose: dict[str, Pose2] = {}
@@ -228,16 +224,9 @@ class FleetDispatcher:
         if self.off is not None:
             self.peds = {k: (x - self.off[0], y - self.off[1], vx, vy) for k, (x, y, vx, vy) in peds.items()}
 
-    def set_leaves(self, leaves: Sequence[tuple[str, float, float]]) -> None:
-        """Door leaf positions (entity name, x, y) in the map frame."""
-        if self.off is None:
-            return
-        for name, x, y in leaves:
-            parts = name.split("/")
-            d = parts[1] if len(parts) > 1 else name
-            if d in self.door_open:
-                g = self.door_open[d]
-                g.prog = max(0.0, min(1.0, math.dist((x - self.off[0], y - self.off[1]), g.c) / g.span))
+    def set_doors(self, doors: dict[str, DoorState]) -> None:
+        """State of the world doors by name, as the env's door semantics report it."""
+        self.door_state.update({d: s for d, s in doors.items() if d in self.door_state})
 
     def try_setup(self, raw: dict[str, Pose2]) -> bool:
         """Map offset from the parked robots at their scenario starts; False until all stand there."""
@@ -298,7 +287,7 @@ class FleetDispatcher:
             self.heat_f.write(json.dumps({"t": round(self.t_rel(), 2), "heat": {str(k): v for k, v in self.view.heat.items()}}) + "\n")
 
     def door_is_open(self, d: str) -> bool:
-        return d not in self.door_open or self.door_open[d].prog >= 0.9
+        return d not in self.door_state or self.door_state[d].state == "open"
 
     # predictions
 
@@ -1137,7 +1126,7 @@ class FleetDispatcher:
                 "aside": list(r.aside) if r.aside else None,
                 "ttc": r.ttc,
             }
-        doors = {d: {"prog": round(g.prog, 2), "state": "open" if g.prog >= 0.9 else ("closed" if g.prog <= 0.05 else "moving")} for d, g in self.door_open.items()}
+        doors = {d: {"prog": round(g.progress, 2), "state": g.state} for d, g in self.door_state.items()}
         self.st.write(json.dumps({"t": round(self.t_rel(), 2), "robots": robots, "inside": {d: list(m) for d, m in self.inside.items()}, "queue": self.queue_of, "doors": doors, "known": sorted(self.known), "n_peds": len(self.peds), "trips": dict(self.trips_done)}) + "\n")
 
 
