@@ -10,15 +10,31 @@ from arena_fleet.geometry import Point, Wall, area, inside
 
 @attrs.frozen
 class Door:
-    """A managed door: the smallest world zone holding the door's span, and its centre."""
+    """A managed door: the smallest world zone holding the door's span, its centre and its crossing axis."""
 
     id: str
     polygon: tuple[Point, ...]
+    normal: Point
 
     @property
     def c(self) -> Point:
         n = len(self.polygon)
         return sum(p[0] for p in self.polygon) / n, sum(p[1] for p in self.polygon) / n
+
+    @property
+    def along(self) -> Point:
+        return -self.normal[1], self.normal[0]
+
+    def u(self, p: Point) -> float:
+        """Signed distance of p from the door plane, along the crossing axis."""
+        return (p[0] - self.c[0]) * self.normal[0] + (p[1] - self.c[1]) * self.normal[1]
+
+    def v(self, p: Point) -> float:
+        """Offset of p from the door axis, along the door span."""
+        return (p[0] - self.c[0]) * self.along[0] + (p[1] - self.c[1]) * self.along[1]
+
+    def at(self, u: float, v: float) -> Point:
+        return self.c[0] + u * self.normal[0] + v * self.along[0], self.c[1] + u * self.normal[1] + v * self.along[1]
 
 
 @attrs.frozen
@@ -28,6 +44,7 @@ class DoorLeaf:
     name: str
     c: Point
     span: float
+    normal: Point
 
 
 @attrs.frozen
@@ -52,7 +69,8 @@ class Site:
         leaves: list[DoorLeaf] = []
         for d in lv.get("doors", []):
             a, b = _point(d["span"][0]), _point(d["span"][1])
-            leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), math.dist(a, b)))
+            length = math.dist(a, b)
+            leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), length, ((b[1] - a[1]) / length, (a[0] - b[0]) / length)))
         zones = {str(z["name"]): tuple(_point(p) for p in z["polygon"]) for z in lv.get("zones", [])}
         doors: dict[str, Door] = {}
         for r in _mapping(resources)["resources"]:
@@ -65,7 +83,7 @@ class Site:
             holding = [z for z in zones.values() if inside(leaf.c, z)]
             if not holding:
                 raise ValueError(f"{world}: no zone of level {level} holds door {name}")
-            doors[name] = Door(name, min(holding, key=area))
+            doors[name] = Door(name, min(holding, key=area), leaf.normal)
         if not doors:
             raise ValueError(f"{resources}: no resource of kind door")
         starts = tuple(_point(r["start"]) for r in _mapping(scenario)["robots"])

@@ -21,7 +21,7 @@ Terms = dict[str, float]
 VERSION = "1.3"
 WAITING = ("approach", "hold", "cross", "to_slot", "queued", "yield")
 NO_ROUTE = 1e9
-_FIELDS: dict[tuple[int, float, float, Point, tuple[Box, ...], tuple[float, float]], list[float]] = {}
+_FIELDS: dict[tuple[int, float, float, Point, Point, tuple[Box, ...], tuple[float, float]], list[float]] = {}
 
 
 @attrs.frozen
@@ -170,9 +170,9 @@ class FleetDispatcher:
         for g in self.goals:
             for d, door in self.doors.items():
                 closed = tuple(grown(o.polygon, 0.0) for k, o in self.doors.items() if k != d)
-                key = (key0, round(g[0], 2), round(g[1], 2), door.c, closed, funnel)
+                key = (key0, round(g[0], 2), round(g[1], 2), door.c, door.normal, closed, funnel)
                 if key not in _FIELDS:
-                    _FIELDS[key] = self.grid.field(g, closed, (*door.c, *funnel))
+                    _FIELDS[key] = self.grid.field(g, closed, (*door.c, *door.normal, *funnel))
                 self.fields[(g, d)] = _FIELDS[key]
         out.mkdir(parents=True, exist_ok=True)
         self.ev = (out / "events.jsonl").open("w", buffering=1)
@@ -355,9 +355,8 @@ class FleetDispatcher:
     def cross_window(self, n: str, d: str) -> float:
         """Seconds from now until robot n is through_m past door d at v_nom, plus margin_s."""
         g, cp = self.rcfg["door_gate"], self.rcfg["capacity"]
-        x, y, _ = self.pose[n]
-        cx = self.doors[d].c[0]
-        return (abs(x - cx) + cp["through_m"] + abs(y - self.doors[d].c[1])) / self.cost["time"]["v_nom"] + g["margin_s"]
+        p, door = self.pose[n][:2], self.doors[d]
+        return (abs(door.u(p)) + cp["through_m"] + abs(door.v(p))) / self.cost["time"]["v_nom"] + g["margin_s"]
 
     def gate_clear(self, d: str, t0: float, t1: float) -> bool:
         """No person predicted in door d (polygon + margin_m) between t0 and t1 seconds ahead."""
@@ -382,7 +381,7 @@ class FleetDispatcher:
 
     def funnel(self, d: str) -> Funnel:
         pl = self.cost["plan"]
-        return (*self.doors[d].c, pl["funnel_len_m"], pl["funnel_k"])
+        return (*self.doors[d].c, *self.doors[d].normal, pl["funnel_len_m"], pl["funnel_k"])
 
     def path(self, goal: Point, d: str, x: float, y: float, around: bool = True) -> list[Point]:
         """Plan to the goal through door d, around people when plan_around is on and people are known."""
@@ -515,9 +514,9 @@ class FleetDispatcher:
 
     def past_door(self, n: str) -> bool:
         r = self.rob[n]
-        cx = self.doors[r.route_door].c[0]
-        x = self.pose[n][0]
-        return (x - cx) * (r.target[0] - cx) > 0 and abs(x - cx) >= self.rcfg["capacity"]["through_m"]
+        door = self.doors[r.route_door]
+        u = door.u(self.pose[n][:2])
+        return u * door.u(r.target) > 0 and abs(u) >= self.rcfg["capacity"]["through_m"]
 
     def occupants(self, d: str, skip: str) -> list[str]:
         """Robots holding door d; with occupy_timeout_s, one holding it longer no longer counts."""
@@ -580,7 +579,7 @@ class FleetDispatcher:
 
     def choose_slots(self, d: str, side: float) -> list[Point]:
         """Zig-zag slot column beside the door axis, clear of walls and other queues; by people when slot_by_people is on."""
-        q, (cx, cy) = self.rcfg["queue"], self.doors[d].c
+        q = self.rcfg["queue"]
         taken = [p for dd, sl in self.slot_set.items() if dd != d and self.queue_of.get(dd) for p in sl]
         sep = q["other_queue_m"]
         for k in range(len(self.names), 0, -1):  # one slot per robot; fewer only when the room has no space for all
@@ -591,13 +590,13 @@ class FleetDispatcher:
         return []
 
     def best_slots(self, d: str, side: float, k: int, taken: Sequence[Point], sep: float) -> list[Point] | None:
-        q, (cx, cy) = self.rcfg["queue"], self.doors[d].c
+        q, door = self.rcfg["queue"], self.doors[d]
         best: list[Point] | None = None
         best_s = math.inf
         for lat in (-q["lateral_m"], q["lateral_m"]):
             for head in q["head_m"]:
                 out = math.copysign(q["stagger_m"], lat)
-                sl = [(cx + side * (head + i * q["spacing_m"]), cy + lat + (i % 2) * out) for i in range(k)]
+                sl = [door.at(side * (head + i * q["spacing_m"]), lat + (i % 2) * out) for i in range(k)]
                 if all(self.grid.clearance(p) >= q["clearance_m"] for p in sl) and all(math.dist(p, o) >= sep for p in sl for o in taken):
                     score = self.slot_score(sl)
                     if not self.rules["slot_by_people"]:
@@ -727,7 +726,7 @@ class FleetDispatcher:
             if dd > rc["queue"]["join_m"]:
                 return
             if not Q:
-                self.slot_set[d] = self.choose_slots(d, -1.0 if self.pose[n][0] < self.doors[d].c[0] else 1.0)
+                self.slot_set[d] = self.choose_slots(d, -1.0 if self.doors[d].u(self.pose[n][:2]) < 0 else 1.0)
             Q.append(n)
             r.t_at, r.t_head = self._now, None
             self.log("join", robot=n, door=d, pos=len(Q))
@@ -773,9 +772,9 @@ class FleetDispatcher:
         """door_gate: a granted robot short of the no-return zone gives the door back when people are predicted in it."""
         r = self.rob[n]
         d = r.route_door
-        cx = self.doors[d].c[0]
-        x = self.pose[n][0]
-        if (x - cx) * (r.target[0] - cx) >= 0 or self.in_no_return(n) or self.gate_clear(d, 0.0, self.cross_window(n, d)):
+        door = self.doors[d]
+        u = door.u(self.pose[n][:2])
+        if u * door.u(r.target) >= 0 or self.in_no_return(n) or self.gate_clear(d, 0.0, self.cross_window(n, d)):
             return False
         self.inside[d].pop(n, None)
         Q = self.queue_of[d]
@@ -783,16 +782,16 @@ class FleetDispatcher:
             Q.remove(n)
         Q.insert(0, n)
         if d not in self.slot_set:
-            self.slot_set[d] = self.choose_slots(d, -1.0 if x < cx else 1.0)
+            self.slot_set[d] = self.choose_slots(d, -1.0 if u < 0 else 1.0)
         r.t_gate, r.t_cross = None, None
-        self.log("retreat", robot=n, door=d, x=round(x, 2), y=round(self.pose[n][1], 2))
+        self.log("retreat", robot=n, door=d, x=round(self.pose[n][0], 2), y=round(self.pose[n][1], 2))
         self.to_slot(n, d, 0, "people_coming")
         return True
 
     def in_no_return(self, n: str) -> bool:
         r = self.rob[n]
         d = r.door or r.door_used
-        return bool(d) and abs(self.pose[n][0] - self.doors[r.route_door].c[0]) <= self.rcfg["yield_people"]["no_return_m"]
+        return bool(d) and abs(self.doors[r.route_door].u(self.pose[n][:2])) <= self.rcfg["yield_people"]["no_return_m"]
 
     def claims(self, n: str) -> tuple[list[Point], list[Point]]:
         """Other robots' bodies, and the points they hold or will drive over soon (step-aside point, slot, plan ahead)."""

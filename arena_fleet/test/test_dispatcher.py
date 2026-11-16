@@ -36,8 +36,8 @@ def rules() -> RulesConfig:
 class Episode:
     """The dispatcher on the doorway world; robots walk their latest plan at time.v_nom and stand when stopped."""
 
-    def __init__(self, out: pathlib.Path, n: int = 4, profile: str = "base", info: Info = "none", peds: Peds | None = None, seed: int = 6, mod: MapOfDynamics | None = None, cost_file: str = "cost.yaml") -> None:
-        s = site()
+    def __init__(self, out: pathlib.Path, n: int = 4, profile: str = "base", info: Info = "none", peds: Peds | None = None, seed: int = 6, mod: MapOfDynamics | None = None, cost_file: str = "cost.yaml", world: Site | None = None) -> None:
+        s = world or site()
         if n > len(s.starts):
             s = Site(walls=s.walls, leaves=s.leaves, doors=s.doors, zones=s.zones, starts=tuple((2.6 + 1.2 * (i // 4), 4.5 + (i % 4)) for i in range(n)))
         self.out = out
@@ -380,6 +380,40 @@ def test_goals_lie_in_the_world_zones_the_cost_names_and_an_unknown_zone_is_refu
     c["task"]["goal_zones"] = ["east_mid", "roof"]
     with pytest.raises(ValueError, match="'roof'"):
         FleetDispatcher(site(), c, rules(), names=["jackal"], info="none", out=tmp_path / "refused")
+
+
+def quarter_turned(tmp_path: pathlib.Path) -> Site:
+    """The doorway world and its example scenario turned 90 degrees about the origin."""
+
+    def turn(p: list[float]) -> list[float]:
+        return [-p[1], p[0], *p[2:]]
+
+    world = yaml.safe_load(WORLD.read_text())
+    level = world["levels"][0]
+    for z in level["zones"]:
+        z["polygon"] = [turn(p) for p in z["polygon"]]
+    for w in level["walls"]:
+        w["path"] = [turn(p) for p in w["path"]]
+    for d in level["doors"]:
+        d["span"] = [turn(p) for p in d["span"]]
+    scenario = yaml.safe_load((EXAMPLE / "scenario" / "scenario.yaml").read_text())
+    for r in scenario["robots"]:
+        r["start"] = turn(r["start"])
+    (tmp_path / "world.yaml").write_text(yaml.safe_dump(world))
+    (tmp_path / "scenario.yaml").write_text(yaml.safe_dump(scenario))
+    return Site.load(tmp_path / "world.yaml", EXAMPLE / "resources.yaml", tmp_path / "scenario.yaml")
+
+
+def test_a_queue_on_the_doorway_world_turned_a_quarter_crosses_along_each_door_normal(tmp_path: pathlib.Path) -> None:
+    turned = quarter_turned(tmp_path)
+    assert all(abs(door.normal[0]) < 1e-9 for door in turned.doors.values())
+    e = Episode(tmp_path / "run", profile="queue", world=turned)
+    e.run()
+    assert all(r.phase == "done" for r in e.d.rob.values()) and e.cross_max <= 1
+    assert e.events("to_slot") and e.events("at_slot")
+    for row in e.events("slots"):
+        slots, door = row["slots"], e.d.doors[str(row["door"])]
+        assert isinstance(slots, list) and all(abs(door.v(tuple(p))) >= 1.5 for p in slots)
 
 
 def test_hata_cost_takes_every_key_it_does_not_set_from_cost() -> None:

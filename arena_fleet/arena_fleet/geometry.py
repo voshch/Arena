@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 Point = tuple[float, float]
 Wall = tuple[Point, Point]
 Box = tuple[float, float, float, float]
-Funnel = tuple[float, float, float, float]
+Funnel = tuple[float, float, float, float, float, float]
 
 RES = 0.1
 C0 = 1.0
@@ -134,12 +134,14 @@ class Grid:
     def _step(self, c: int, funnel: Funnel | None) -> float:
         x, y = self.xy(c)
         step = 1.0 + CLEAR_K * max(0.0, (C0 - self.clear[c]) / C0) ** 2
-        if funnel and abs(x - funnel[0]) <= funnel[2]:
-            step *= 1.0 + funnel[3] * (y - funnel[1]) ** 2
+        if funnel:
+            cx, cy, nx, ny, length, k = funnel
+            if abs((x - cx) * nx + (y - cy) * ny) <= length:
+                step *= 1.0 + k * ((y - cy) * nx - (x - cx) * ny) ** 2
         return step
 
     def field(self, goal: Point, closed: Sequence[Box], funnel: Funnel | None = None) -> list[float]:
-        """Dijkstra from the goal around walls and closed boxes; funnel = (door x, door y, length, k) aligns plans with a door."""
+        """Dijkstra from the goal around walls and closed boxes; funnel = (door x, door y, normal x, normal y, length, k) aligns plans with a door."""
         dist = [math.inf] * (self.nx * self.ny)
         g = self.cell(*goal)
         dist[g] = 0.0
