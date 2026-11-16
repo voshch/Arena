@@ -21,7 +21,7 @@ Terms = dict[str, float]
 VERSION = "1.3"
 WAITING = ("approach", "hold", "cross", "to_slot", "queued", "yield")
 NO_ROUTE = 1e9
-_FIELDS: dict[tuple[int, float, float, Point, Point, tuple[Box, ...], tuple[float, float]], list[float]] = {}
+_FIELDS: dict[tuple[int, float, float, float, Point, Point, tuple[Box, ...], tuple[float, float]], list[float]] = {}
 
 
 @attrs.frozen
@@ -108,7 +108,7 @@ class RobotState:
 class FleetDispatcher:
     """Assigns goals, one plan per robot through a door, and applies the profile's rules every tick; ROS-free."""
 
-    def __init__(self, site: Site, cost: CostConfig, rules: RulesConfig, *, names: Sequence[str], info: Info, profile: str = "", seed: int = 0, out: pathlib.Path, duration: float = 180.0, mod: MapOfDynamics | None = None, samples: bool = True) -> None:
+    def __init__(self, site: Site, cost: CostConfig, rules: RulesConfig, *, names: Sequence[str], robot_r: float, info: Info, profile: str = "", seed: int = 0, out: pathlib.Path, duration: float = 180.0, mod: MapOfDynamics | None = None, samples: bool = True) -> None:
         name = profile or rules["default_profile"]
         if name not in rules["profiles"]:
             raise ValueError(f"profile {name!r} not in {sorted(rules['profiles'])}")
@@ -126,10 +126,11 @@ class FleetDispatcher:
         self.starts = site.starts[: len(names)]
         self.walls = site.walls
         self.doors = site.doors
-        self.grid = Grid(self.walls, cost["robot"]["radius_m"], cost["plan"]["snap_m"], cost["plan"]["route_expansions"])
+        self.body_r = robot_r + cost["robot"]["margin_m"]
+        self.grid = Grid(self.walls, self.body_r, cost["plan"]["snap_m"], cost["plan"]["route_expansions"])
         self.door_state: dict[str, DoorState] = {leaf.name: DoorState() for leaf in site.leaves}
         self.hata = cost.get("mode") == "hata"
-        self.view = None if info == "none" else PeopleView(cost, self.walls, mod)
+        self.view = None if info == "none" else PeopleView(cost, self.walls, self.body_r, mod)
         self.pose: dict[str, Pose2] = {}
         self.peds: dict[str, tuple[float, float, float, float]] = {}
         self.seen: dict[str, tuple[float, float, float, float, float]] = {}
@@ -166,7 +167,7 @@ class FleetDispatcher:
         for g in self.goals:
             for d, door in self.doors.items():
                 closed = tuple(grown(o.polygon, 0.0) for k, o in self.doors.items() if k != d)
-                key = (key0, round(g[0], 2), round(g[1], 2), door.c, door.normal, closed, funnel)
+                key = (key0, self.body_r, round(g[0], 2), round(g[1], 2), door.c, door.normal, closed, funnel)
                 if key not in _FIELDS:
                     _FIELDS[key] = self.grid.field(g, closed, (*door.c, *door.normal, *funnel))
                 self.fields[(g, d)] = _FIELDS[key]
@@ -321,7 +322,7 @@ class FleetDispatcher:
             return 0.0
         mod, v = self.view.mod, self.cost["time"]["v_nom"]
         pv, tau_b = self.cost["people_view"], self.cost["flow"]["blend_tau_s"]
-        width = 2 * (pv["person_r_m"] + self.cost["robot"]["radius_m"])
+        width = 2 * (pv["person_r_m"] + self.body_r)
         t0, prev, out = self.t_rel(), None, 0.0
         for x, y, t, ds in self.walk(path, self.cost["encounter"]["horizon_s"]):
             if prev is not None and ds > 1e-9:

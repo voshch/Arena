@@ -17,6 +17,7 @@ PKG = pathlib.Path(__file__).resolve().parents[1]
 WORLD = PKG.parent / "arena_simulation_setup" / "worlds" / "mechanisms_doorway" / "world.yaml"
 EXAMPLE = PKG / "examples" / "doorway"
 TICK = 0.25
+JACKAL_R = float(yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps" / "mobile.yaml").read_text())["radius"])
 
 Peds = dict[str, tuple[float, float, float, float]]
 
@@ -45,7 +46,7 @@ class Episode:
         if n > len(s.starts):
             s = Site(walls=s.walls, leaves=s.leaves, doors=s.doors, zones=s.zones, starts=tuple((2.6 + 1.2 * (i // 4), 4.5 + (i % 4)) for i in range(n)), level=s.level)
         self.out = out
-        self.d = FleetDispatcher(s, cost(cost_file), rules(), names=fleet(n), info=info, profile=profile, seed=seed, out=out, duration=1e9, mod=mod)
+        self.d = FleetDispatcher(s, cost(cost_file), rules(), names=fleet(n), robot_r=JACKAL_R, info=info, profile=profile, seed=seed, out=out, duration=1e9, mod=mod)
         self.t = 0.0
         self.d.set_time(0.0)
         assert self.d.try_setup({m: (*p, 0.0) for m, p in zip(self.d.names, s.starts, strict=False)})
@@ -114,7 +115,7 @@ def walker(e: Episode, ahead: float = 6.0, speed: float = 1.0) -> Peds:
 
 
 def view_grid() -> PeopleView:
-    return PeopleView(cost(), site().walls)
+    return PeopleView(cost(), site().walls, JACKAL_R)
 
 
 def save_map(path: pathlib.Path, rho: np.ndarray, **arrays: np.ndarray) -> MapOfDynamics:
@@ -356,13 +357,12 @@ def test_a_managed_door_takes_the_smallest_world_zone_holding_its_span(tmp_path:
         Site.load(WORLD, unknown, EXAMPLE / "scenario" / "scenario.yaml")
 
 
-def test_one_robot_radius_sizes_the_wall_margin_and_the_body_tested_against_people(tmp_path: pathlib.Path) -> None:
-    c = cost()
-    c["robot"]["radius_m"] = 0.45
-    wide = FleetDispatcher(site(), c, rules(), names=["jackal"], info="oracle", seed=6, out=tmp_path / "wide")
+def test_the_robot_radius_plus_the_margin_sizes_the_wall_margin_and_the_body_tested_against_people(tmp_path: pathlib.Path) -> None:
+    wide = FleetDispatcher(site(), cost(), rules(), names=["jackal"], robot_r=0.37, info="oracle", seed=6, out=tmp_path / "wide")
     narrow = Episode(tmp_path / "narrow", 1, info="oracle").d
     plan = wide.grid.descend(wide.fields[(wide.goals[0], "main_door")], 2.6, 4.5)
-    assert plan and min(wide.grid.clearance(q) for q in plan) >= 0.45
+    assert wide.body_r == pytest.approx(0.37 + wide.cost["robot"]["margin_m"])
+    assert plan and min(wide.grid.clearance(q) for q in plan) >= wide.body_r
     assert wide.view is not None and narrow.view is not None and len(wide.view.robot) > len(narrow.view.robot)
 
 
@@ -383,7 +383,7 @@ def test_goals_lie_in_the_world_zones_the_cost_names_and_an_unknown_zone_is_refu
     c = cost()
     c["task"]["goal_zones"] = ["east_mid", "roof"]
     with pytest.raises(ValueError, match="'roof'"):
-        FleetDispatcher(site(), c, rules(), names=["jackal"], info="none", out=tmp_path / "refused")
+        FleetDispatcher(site(), c, rules(), names=["jackal"], robot_r=JACKAL_R, info="none", out=tmp_path / "refused")
 
 
 def quarter_turned(tmp_path: pathlib.Path) -> Site:
@@ -449,7 +449,7 @@ def test_rules_file_with_an_unknown_key_is_refused(tmp_path: pathlib.Path) -> No
 
 def test_flow_level_without_a_map_is_refused(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ValueError, match="map of dynamics"):
-        FleetDispatcher(site(), cost(), rules(), names=["jackal"], info="flow", out=tmp_path)
+        FleetDispatcher(site(), cost(), rules(), names=["jackal"], robot_r=JACKAL_R, info="flow", out=tmp_path)
 
 
 def test_a_door_is_open_only_once_the_env_reports_it_open(tmp_path: pathlib.Path) -> None:
@@ -595,7 +595,7 @@ def room_for_one_goal() -> CostConfig:
 
 def test_a_goal_zone_without_room_for_the_fleet_is_refused(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ValueError, match="cannot place 2 goals"):
-        FleetDispatcher(site(), room_for_one_goal(), rules(), names=fleet(2), info="none", out=tmp_path)
+        FleetDispatcher(site(), room_for_one_goal(), rules(), names=fleet(2), robot_r=JACKAL_R, info="none", out=tmp_path)
 
 
 def test_a_rerun_into_the_same_directory_starts_its_logs_afresh_and_a_refused_one_writes_none(tmp_path: pathlib.Path) -> None:
@@ -604,7 +604,7 @@ def test_a_rerun_into_the_same_directory_starts_its_logs_afresh_and_a_refused_on
     again.run(5)
     assert len(again.events("setup")) == 1 and len(again.events("d1_assign")) == 1
     with pytest.raises(ValueError, match="cannot place"):
-        FleetDispatcher(site(), room_for_one_goal(), rules(), names=fleet(2), info="none", out=tmp_path / "refused")
+        FleetDispatcher(site(), room_for_one_goal(), rules(), names=fleet(2), robot_r=JACKAL_R, info="none", out=tmp_path / "refused")
     assert not (tmp_path / "refused").exists()
 
 
@@ -612,7 +612,7 @@ def test_dispatchers_with_another_funnel_plan_on_their_own_fields(tmp_path: path
     a = Episode(tmp_path / "a", 1).d
     c = cost()
     c["plan"]["funnel_k"] = 0.0
-    b = FleetDispatcher(site(), c, rules(), names=["jackal"], info="none", seed=6, out=tmp_path / "b")
+    b = FleetDispatcher(site(), c, rules(), names=["jackal"], robot_r=JACKAL_R, info="none", seed=6, out=tmp_path / "b")
     g = a.goals[0]
     assert b.goals[0] == g and a.fields[(g, "main_door")] != b.fields[(g, "main_door")]
 

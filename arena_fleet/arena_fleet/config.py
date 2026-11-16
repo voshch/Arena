@@ -30,7 +30,7 @@ class PlanConfig(typing.TypedDict):
 
 
 class RobotConfig(typing.TypedDict):
-    radius_m: float
+    margin_m: float
 
 
 class TimeConfig(typing.TypedDict):

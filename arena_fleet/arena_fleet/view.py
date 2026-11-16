@@ -88,7 +88,7 @@ def disk(r: float, cell: float) -> list[tuple[int, int]]:
 class PeopleView:
     """Occupancy layers k * dt s ahead; every information level only changes how the layers are made."""
 
-    def __init__(self, cost: CostConfig, walls: Sequence[Wall], mod: MapOfDynamics | None = None) -> None:
+    def __init__(self, cost: CostConfig, walls: Sequence[Wall], body_r: float, mod: MapOfDynamics | None = None) -> None:
         v = cost["people_view"]
         self.cell, self.dt = v["grid"]["cell_m"], v["dt_s"]
         xs, ys = [p[0] for w in walls for p in w], [p[1] for w in walls for p in w]
@@ -103,7 +103,7 @@ class PeopleView:
         self.walls, self.mod = list(walls), mod
         self.flow: FlowConfig = cost["flow"]
         self.person_r = v["person_r_m"]
-        self.person, self.robot = disk(self.person_r, self.cell), disk(cost["robot"]["radius_m"], self.cell)
+        self.person, self.robot = disk(self.person_r, self.cell), disk(body_r, self.cell)
         self.layers: list[set[int]] = [set() for _ in range(self.n)]
         self.heat: dict[int, list[list[int]]] = {}
         self.probs: list[npt.NDArray[np.float32]] | None = None

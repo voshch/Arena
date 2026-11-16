@@ -24,7 +24,7 @@ plan:                     # shape of the plan sent to the robot (not a cost of J
   route_expansions: 8000  # plan_around gives up after this many A* expansions and keeps the plan down the field
 
 robot:
-  radius_m: 0.35          # a robot's body: plans keep it clear of walls, and it is added when testing a point of a plan
+  margin_m: 0.08          # added to the largest footprint radius of the fleet's robot models: plans keep that body clear of walls, and it is tested against people
 
 time:
   v_nom: 0.4              # m/s used to turn plan length into seconds

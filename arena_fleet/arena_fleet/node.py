@@ -13,6 +13,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
+from arena_robots.Robot import RobotIdentifier
 from arena_runtime_msgs.action import RunTask
 from arena_runtime_msgs.msg import EnvRegistry, RobotFleet, SemanticSnapshot
 from geometry_msgs.msg import PoseStamped
@@ -39,6 +40,13 @@ def _required(value: str, name: str) -> pathlib.Path:
     if not value:
         raise ValueError(f"parameter {name} is required")
     return pathlib.Path(value)
+
+
+def _radius(model: str) -> float:
+    mobile = RobotIdentifier(model).resolve_sync().mobile
+    if mobile is None or mobile.radius is None:
+        raise ValueError(f"robot model {model} has no mobile radius")
+    return float(mobile.radius)
 
 
 def _yaw(msg: Odometry) -> float:
@@ -105,7 +113,8 @@ class FleetNode(ArenaMixinNode):
             return
         names = [name for name, _ in robots]
         self.prefix = next(str(s.descriptor.frame) for s in msg.robots if str(s.descriptor.name).strip()).rsplit("/", 1)[0]
-        self.core = FleetDispatcher(self.site, self.cost, self.rules, names=names, info=self.people_info, profile=self.p.PROFILE.value, seed=self.p.SEED.value, out=self.out, duration=self.p.DURATION_S.value, mod=self.mod, samples=self.p.SAMPLES.value)
+        robot_r = max(_radius(str(s.descriptor.model)) for s in msg.robots if str(s.descriptor.name).strip())
+        self.core = FleetDispatcher(self.site, self.cost, self.rules, names=names, robot_r=robot_r, info=self.people_info, profile=self.p.PROFILE.value, seed=self.p.SEED.value, out=self.out, duration=self.p.DURATION_S.value, mod=self.mod, samples=self.p.SAMPLES.value)
         for name, ns in robots:
             self.plan_pub[name] = self.create_publisher(Path, f"{ns}/plan", 10)
             if self.dwb:
