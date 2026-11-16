@@ -130,7 +130,7 @@ class FleetDispatcher:
         self.starts = site.starts[: len(names)]
         self.walls = site.walls
         self.doors = site.doors
-        self.grid = Grid(self.walls)
+        self.grid = Grid(self.walls, cost["robot"]["radius_m"])
         self.door_open = {leaf.name: LeafState(leaf.c, leaf.span) for leaf in site.leaves}
         self.hata = cost.get("mode") == "hata"
         self.view = None if info == "none" else PeopleView(cost, self.walls, mod)
@@ -328,7 +328,7 @@ class FleetDispatcher:
             return 0.0
         mod, v = self.view.mod, self.cost["time"]["v_nom"]
         pv, tau_b = self.cost["people_view"], self.cost["flow"]["blend_tau_s"]
-        width = 2 * (pv["person_r_m"] + pv["robot_r_m"])
+        width = 2 * (pv["person_r_m"] + self.cost["robot"]["radius_m"])
         t0, prev, out = self.t_rel(), None, 0.0
         for x, y, t, ds in self.walk(path, self.cost["encounter"]["horizon_s"]):
             if prev is not None and ds > 1e-9:

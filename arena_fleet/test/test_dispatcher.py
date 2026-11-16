@@ -352,6 +352,16 @@ def test_a_managed_door_takes_the_smallest_world_zone_holding_its_span(tmp_path:
         Site.load(WORLD, unknown, EXAMPLE / "scenario" / "scenario.yaml")
 
 
+def test_one_robot_radius_sizes_the_wall_margin_and_the_body_tested_against_people(tmp_path: pathlib.Path) -> None:
+    c = cost()
+    c["robot"]["radius_m"] = 0.45
+    wide = FleetDispatcher(site(), c, rules(), names=["jackal"], info="oracle", seed=6, out=tmp_path / "wide")
+    narrow = Episode(tmp_path / "narrow", 1, info="oracle").d
+    plan = wide.grid.descend(wide.fields[(wide.goals[0], "main_door")], 2.6, 4.5)
+    assert plan and min(wide.grid.clearance(q) for q in plan) >= 0.45
+    assert wide.view is not None and narrow.view is not None and len(wide.view.robot) > len(narrow.view.robot)
+
+
 def test_hata_cost_takes_every_key_it_does_not_set_from_cost() -> None:
     base, hata = cost(), cost("hata_cost.yaml")
     assert hata.get("mode") == "hata" and "hata" in hata

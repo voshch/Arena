@@ -32,6 +32,10 @@ class PlanConfig(typing.TypedDict):
     around_horizon_s: float
 
 
+class RobotConfig(typing.TypedDict):
+    radius_m: float
+
+
 class TimeConfig(typing.TypedDict):
     v_nom: float
 
@@ -65,7 +69,6 @@ class PeopleViewConfig(typing.TypedDict):
     period_s: float
     dt_s: float
     person_r_m: float
-    robot_r_m: float
     grid: GridConfig
 
 
@@ -90,6 +93,7 @@ class CostConfig(typing.TypedDict):
     task: TaskConfig
     weights: WeightsConfig
     plan: PlanConfig
+    robot: RobotConfig
     time: TimeConfig
     encounter: EncounterConfig
     facility: FacilityConfig

@@ -9,7 +9,6 @@ Box = tuple[float, float, float, float]
 Funnel = tuple[float, float, float, float]
 
 RES = 0.1
-ROBOT_R = 0.35
 C0 = 1.0
 CLEAR_K = 6.0
 
@@ -78,7 +77,8 @@ class Grid:
 
     NB: typing.ClassVar[list[tuple[int, int, float]]] = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0), (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414)]
 
-    def __init__(self, walls: Sequence[Wall]) -> None:
+    def __init__(self, walls: Sequence[Wall], robot_r: float) -> None:
+        self.robot_r = robot_r
         xs = [p[0] for w in walls for p in w]
         ys = [p[1] for w in walls for p in w]
         self.x0, self.y0 = min(xs) - 0.5, min(ys) - 0.5
@@ -136,7 +136,7 @@ class Grid:
             if d > dist[c]:
                 continue
             for nc, w in self.neigh(c):
-                if self.clear[nc] < ROBOT_R:
+                if self.clear[nc] < self.robot_r:
                     continue
                 x, y = self.xy(nc)
                 if any(in_box(b, x, y) for b in closed):
