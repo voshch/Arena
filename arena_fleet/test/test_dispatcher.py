@@ -493,6 +493,16 @@ def test_a_goal_zone_without_room_for_the_fleet_is_refused(tmp_path: pathlib.Pat
         FleetDispatcher(site(), room_for_one_goal(), rules(), names=robot_names("jackal", 2), info="none", out=tmp_path)
 
 
+def test_a_rerun_into_the_same_directory_starts_its_logs_afresh_and_a_refused_one_writes_none(tmp_path: pathlib.Path) -> None:
+    Episode(tmp_path / "run", 1).run(5)
+    again = Episode(tmp_path / "run", 1)
+    again.run(5)
+    assert len(again.events("setup")) == 1 and len(again.events("d1_assign")) == 1
+    with pytest.raises(ValueError, match="cannot place"):
+        FleetDispatcher(site(), room_for_one_goal(), rules(), names=robot_names("jackal", 2), info="none", out=tmp_path / "refused")
+    assert not (tmp_path / "refused").exists()
+
+
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
     """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
     e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})

@@ -75,6 +75,8 @@ launch with `robot.mobile.local_planner:=dwb` and pass `-p local:=dwb`.
 
 ## Output (`out`)
 
+Every run writes these files afresh.
+
 | File | Content |
 | --- | --- |
 | `events.jsonl` | every decision: goal assignment with the cost matrix, door options with all terms, holds, queue, yields, re-assignments, trips, end with makespan |

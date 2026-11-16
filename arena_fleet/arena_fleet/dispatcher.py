@@ -162,11 +162,6 @@ class FleetDispatcher:
         self.t_gs, self.t_done_all, self.t_samp = -1e9, None, -1e9
         self.last_xy: dict[str, tuple[float, float, float]] = {}
         self._now = 0.0
-        out.mkdir(parents=True, exist_ok=True)
-        self.ev = (out / "events.jsonl").open("a", buffering=1)
-        self.st = (out / "state.jsonl").open("a", buffering=1)
-        self.heat_f = (out / "heat.jsonl").open("a", buffering=1) if self.view else None
-        self.samp_f = (out / "samples.jsonl").open("a", buffering=1) if samples else None
         self.goals = self.draw_goals(seed, len(self.names))
         self.fields: dict[tuple[Point, str], list[float]] = {}
         key0 = hash(self.walls)
@@ -178,6 +173,11 @@ class FleetDispatcher:
                     closed = [grown(o.polygon, 0.0) for k, o in self.doors.items() if k != d]
                     _FIELDS[key] = self.grid.field(g, closed, (*door.c, pl["funnel_len_m"], pl["funnel_k"]))
                 self.fields[(g, d)] = _FIELDS[key]
+        out.mkdir(parents=True, exist_ok=True)
+        self.ev = (out / "events.jsonl").open("w", buffering=1)
+        self.st = (out / "state.jsonl").open("w", buffering=1)
+        self.heat_f = (out / "heat.jsonl").open("w", buffering=1) if self.view else None
+        self.samp_f = (out / "samples.jsonl").open("w", buffering=1) if samples else None
         (out / "dispatch.json").write_text(json.dumps({"profile": name, "rules": self.rules, "info": info, "cost": cost, "rules_params": rules, "goals": self.goals, "seed": seed, "robots": self.names, "version": VERSION}, indent=1))
 
     def close(self) -> None:
