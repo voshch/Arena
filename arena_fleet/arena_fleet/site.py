@@ -1,12 +1,11 @@
 import math
 import pathlib
 import typing
-from collections.abc import Sequence
 
 import attrs
 import yaml
 
-from arena_fleet.geometry import Point, Wall
+from arena_fleet.geometry import Point, Wall, area, inside
 
 
 @attrs.frozen
@@ -33,11 +32,12 @@ class DoorLeaf:
 
 @attrs.frozen
 class Site:
-    """World walls and doors, the managed doors and the parked robot starts of one level."""
+    """World walls, doors and zones, the managed doors and the parked robot starts of one level."""
 
     walls: tuple[Wall, ...]
     leaves: tuple[DoorLeaf, ...]
     doors: dict[str, Door]
+    zones: dict[str, tuple[Point, ...]]
     starts: tuple[Point, ...]
 
     @classmethod
@@ -53,7 +53,7 @@ class Site:
         for d in lv.get("doors", []):
             a, b = _point(d["span"][0]), _point(d["span"][1])
             leaves.append(DoorLeaf(str(d["name"]), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), math.dist(a, b)))
-        zones = [tuple(_point(p) for p in z["polygon"]) for z in lv.get("zones", [])]
+        zones = {str(z["name"]): tuple(_point(p) for p in z["polygon"]) for z in lv.get("zones", [])}
         doors: dict[str, Door] = {}
         for r in _mapping(resources)["resources"]:
             if r["kind"] != "door":
@@ -62,27 +62,14 @@ class Site:
             leaf = next((x for x in leaves if x.name == name), None)
             if leaf is None:
                 raise ValueError(f"{resources}: {world} level {level} has no door {name}")
-            holding = [z for z in zones if _inside(leaf.c, z)]
+            holding = [z for z in zones.values() if inside(leaf.c, z)]
             if not holding:
                 raise ValueError(f"{world}: no zone of level {level} holds door {name}")
-            doors[name] = Door(name, min(holding, key=_area))
+            doors[name] = Door(name, min(holding, key=area))
         if not doors:
             raise ValueError(f"{resources}: no resource of kind door")
         starts = tuple(_point(r["start"]) for r in _mapping(scenario)["robots"])
-        return cls(walls=tuple(walls), leaves=tuple(leaves), doors=doors, starts=starts)
-
-
-def _inside(p: Point, polygon: Sequence[Point]) -> bool:
-    x, y = p
-    hit = False
-    for (ax, ay), (bx, by) in zip(polygon, (*polygon[1:], polygon[0]), strict=True):
-        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
-            hit = not hit
-    return hit
-
-
-def _area(polygon: Sequence[Point]) -> float:
-    return abs(sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(polygon, (*polygon[1:], polygon[0]), strict=True))) / 2
+        return cls(walls=tuple(walls), leaves=tuple(leaves), doors=doors, zones=zones, starts=starts)
 
 
 def _mapping(path: pathlib.Path) -> dict[str, typing.Any]:

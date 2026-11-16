@@ -10,7 +10,7 @@ are parked by a scenario (`task.robots:=scenario`, robots without phases), and d
 
 ## What it decides
 
-1. **Goals**: `n` goals are drawn from the seed in the goal zone and assigned to the robots by minimum total cost `J`
+1. **Goals**: `n` goals are drawn from the seed in the world zones `task.goal_zones` names and assigned to the robots by minimum total cost `J`
    (Hungarian). A smaller fleet with the same seed takes the first goals of a larger one.
 2. **Door and plan**: each robot gets one plan to its goal through the door with the lowest `J`, re-planned every `episode.replan_period_s`.
 3. **Rules**, switched on per profile in [configs/rules.yaml](configs/rules.yaml):

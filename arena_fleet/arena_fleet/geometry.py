@@ -33,6 +33,19 @@ def in_box(box: Box, x: float, y: float) -> bool:
     return box[0] <= x <= box[1] and box[2] <= y <= box[3]
 
 
+def inside(p: Point, polygon: Sequence[Point]) -> bool:
+    x, y = p
+    hit = False
+    for (ax, ay), (bx, by) in zip(polygon, (*polygon[1:], polygon[0]), strict=True):
+        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+            hit = not hit
+    return hit
+
+
+def area(polygon: Sequence[Point]) -> float:
+    return abs(sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(polygon, (*polygon[1:], polygon[0]), strict=True))) / 2
+
+
 def plan_len(p: Sequence[Point]) -> float:
     return sum(math.dist(p[i], p[i + 1]) for i in range(len(p) - 1))
 

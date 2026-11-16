@@ -9,7 +9,7 @@ import yaml
 from arena_fleet import features
 from arena_fleet.config import CostConfig, RulesConfig, load_cost, load_rules
 from arena_fleet.dispatcher import FleetDispatcher, Info, PublishPlan, SendGoal, Stop, robot_names
-from arena_fleet.geometry import Point, hungarian, seg_cross
+from arena_fleet.geometry import Point, hungarian, inside, seg_cross
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics, PeopleView
 
@@ -39,7 +39,7 @@ class Episode:
     def __init__(self, out: pathlib.Path, n: int = 4, profile: str = "base", info: Info = "none", peds: Peds | None = None, seed: int = 6, mod: MapOfDynamics | None = None, cost_file: str = "cost.yaml") -> None:
         s = site()
         if n > len(s.starts):
-            s = Site(walls=s.walls, leaves=s.leaves, doors=s.doors, starts=tuple((2.6 + 1.2 * (i // 4), 4.5 + (i % 4)) for i in range(n)))
+            s = Site(walls=s.walls, leaves=s.leaves, doors=s.doors, zones=s.zones, starts=tuple((2.6 + 1.2 * (i // 4), 4.5 + (i % 4)) for i in range(n)))
         self.out = out
         self.d = FleetDispatcher(s, cost(cost_file), rules(), names=robot_names("jackal", n), info=info, profile=profile, seed=seed, out=out, duration=1e9, mod=mod)
         self.t = 0.0
@@ -372,6 +372,16 @@ def test_samples_are_written_at_the_sample_period_of_the_rules(tmp_path: pathlib
     assert rows[0.5] > rows[1.0] > 0
 
 
+def test_goals_lie_in_the_world_zones_the_cost_names_and_an_unknown_zone_is_refused(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path / "run", 6)
+    zones = [e.d.site.zones[z] for z in e.d.cost["task"]["goal_zones"]]
+    assert all(any(inside(g, z) for z in zones) for g in e.d.goals)
+    c = cost()
+    c["task"]["goal_zones"] = ["east_mid", "roof"]
+    with pytest.raises(ValueError, match="'roof'"):
+        FleetDispatcher(site(), c, rules(), names=["jackal"], info="none", out=tmp_path / "refused")
+
+
 def test_hata_cost_takes_every_key_it_does_not_set_from_cost() -> None:
     base, hata = cost(), cost("hata_cost.yaml")
     assert hata.get("mode") == "hata" and "hata" in hata
@@ -634,11 +644,11 @@ def test_a_late_robot_never_takes_the_head_slot_left_free_ahead_of_the_queue(tmp
 
 
 def test_four_robots_arriving_side_by_side_at_one_door_queue_without_crossing_ways(tmp_path: pathlib.Path) -> None:
-    """The v1.3 smoke run (seed 6, N = 4) at 12.75 s: four robots in a column across the way to side_door, all routed there."""
+    """Four robots in a column across the way to side_door, all routed there (the v1.3 smoke run at 12.75 s)."""
     e = Episode(tmp_path, n=4, profile="queue")
     e.tick()
     at = {"jackal_0": (6.57, 7.68), "jackal_1": (6.76, 8.95), "jackal_2": (6.40, 9.56), "jackal_3": (6.98, 10.23)}
-    goal = {"jackal_0": (20.59, 5.38), "jackal_1": (18.66, 6.02), "jackal_2": (21.23, 8.29), "jackal_3": (19.08, 11.01)}
+    goal = dict(zip(at, e.d.goals, strict=True))
     for n, (x, y) in at.items():
         e.d.set_pose(n, x, y, 0.0)
         e.d.set_plan(n, goal[n], "side_door", e.d.path(goal[n], "side_door", x, y))

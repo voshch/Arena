@@ -3,7 +3,7 @@
 # Every term of every decision is written to dispatch/events.jsonl, so each choice can be recomputed by hand.
 
 task:                     # D1: goals are not tied to robots
-  goal_zone: {x: [16.0, 25.0], y: [5.0, 11.5]}   # world metres, the room behind the doors; drawn at random from the seed
+  goal_zones: [east_mid, east_queue, east_north]   # world zones of the room behind the doors; goals are drawn in them at random from the seed
   min_separation_m: 1.5   # between two goals
   clearance_m: 0.8        # from any wall
   assign: hungarian       # hungarian (min total J) | fixed (robot i -> goal i)

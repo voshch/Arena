@@ -5,13 +5,8 @@ import typing
 import yaml
 
 
-class Zone(typing.TypedDict):
-    x: list[float]
-    y: list[float]
-
-
 class TaskConfig(typing.TypedDict):
-    goal_zone: Zone
+    goal_zones: list[str]
     min_separation_m: float
     clearance_m: float
     assign: typing.Literal["hungarian", "fixed"]

@@ -9,7 +9,7 @@ import attrs
 
 from arena_fleet import features
 from arena_fleet.config import RULES, CostConfig, Profile, RulesConfig
-from arena_fleet.geometry import Box, Funnel, Grid, Point, grown, hungarian, plan_len, seg_cross
+from arena_fleet.geometry import Box, Funnel, Grid, Point, grown, hungarian, inside, plan_len, seg_cross
 from arena_fleet.site import Site
 from arena_fleet.view import MapOfDynamics, PeopleView
 
@@ -196,18 +196,22 @@ class FleetDispatcher:
         self.ev.write(json.dumps({"t": round(self.t_rel(), 2), "ev": ev, **kw}) + "\n")
 
     def draw_goals(self, seed: int, n: int) -> list[Point]:
-        """The first n goals the seed places in the goal zone, so a smaller fleet takes the first goals of a larger one."""
+        """The first n goals the seed places in the goal zones, so a smaller fleet takes the first goals of a larger one."""
         t = self.cost["task"]
-        (x0, x1), (y0, y1) = t["goal_zone"]["x"], t["goal_zone"]["y"]
+        unknown = sorted(set(t["goal_zones"]) - set(self.site.zones))
+        if unknown:
+            raise ValueError(f"goal zones {unknown} are not zones of the world, which has {sorted(self.site.zones)}")
+        zones = [self.site.zones[z] for z in t["goal_zones"]]
+        xs, ys = [p[0] for z in zones for p in z], [p[1] for z in zones for p in z]
         rng = random.Random(f"fleetbench-goals-{seed}")
         out: list[Point] = []
         for _ in range(20000):
-            p = (round(rng.uniform(x0, x1), 2), round(rng.uniform(y0, y1), 2))
-            if self.grid.clearance(p) >= t["clearance_m"] and all(math.dist(p, q) >= t["min_separation_m"] for q in out):
+            p = (round(rng.uniform(min(xs), max(xs)), 2), round(rng.uniform(min(ys), max(ys)), 2))
+            if any(inside(p, z) for z in zones) and self.grid.clearance(p) >= t["clearance_m"] and all(math.dist(p, q) >= t["min_separation_m"] for q in out):
                 out.append(p)
                 if len(out) == n:
                     return out
-        raise ValueError(f"cannot place {n} goals {t['clearance_m']} m from walls and {t['min_separation_m']} m apart in the goal zone")
+        raise ValueError(f"cannot place {n} goals {t['clearance_m']} m from walls and {t['min_separation_m']} m apart in the goal zones {t['goal_zones']}")
 
     # inputs
 
