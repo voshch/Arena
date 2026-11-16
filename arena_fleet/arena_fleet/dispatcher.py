@@ -582,7 +582,8 @@ class FleetDispatcher:
             best = self.best_slots(d, side, k, taken, sep)
             if best is not None:
                 return best
-        raise RuntimeError(f"no valid queue slots at {d}")
+        self.log("no_slots", door=d)
+        return []
 
     def best_slots(self, d: str, side: float, k: int, taken: Sequence[Point], sep: float) -> list[Point] | None:
         q, (cx, cy) = self.rcfg["queue"], self.doors[d].c
@@ -671,8 +672,15 @@ class FleetDispatcher:
     def to_slot(self, n: str, d: str, rank: int, why: str) -> None:
         r, q = self.rob[n], self.rcfg["queue"]
         x, y, _ = self.pose[n]
-        p = self.slot_set[d][self.slot_index(n, d, rank)]
         waited = round(self._now - (r.t_at if r.t_at is not None else self._now), 1)
+        if not self.slot_set[d]:
+            r.why, r.rank, r.diag = why, rank, {"why": why, "waited_s": waited}
+            if r.phase != "queued":
+                r.phase, r.slot_xy = "queued", None
+                self.stop(n)
+                self.log("hold", robot=n, door=d, why=why)
+            return
+        p = self.slot_set[d][self.slot_index(n, d, rank)]
         if r.phase in ("to_slot", "queued") and r.slot_xy == p:
             r.why, r.rank, r.diag = why, rank, {"why": why, "waited_s": waited}
             if r.phase == "to_slot" and math.dist((x, y), p) <= q["slot_tol_m"]:

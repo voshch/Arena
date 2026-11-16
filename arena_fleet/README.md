@@ -18,7 +18,7 @@ are parked by a scenario (`task.robots:=scenario`, robots without phases), and d
 | Rule | What it does |
 | --- | --- |
 | `capacity` | at most `k` robots inside a door; a robot holds its door until it is through |
-| `queue` | robots wait for a door one at a time, at zig-zag slots beside the door axis |
+| `queue` | robots wait for a door one at a time, at zig-zag slots beside the door axis, or where they stand when no slots fit |
 | `yield_people` | no entry while people are in the door; stop or step aside before a person predicted on the plan |
 | `plan_around` | the plan bends around cells the people map marks occupied |
 | `slot_by_people` | queue slots on the side of the door the people leave free |

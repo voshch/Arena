@@ -465,6 +465,15 @@ def test_an_episode_with_an_unreachable_goal_fails_once_and_goal_swaps_skip_robo
     assert not s.events("goal_swap")
 
 
+def test_a_queue_without_room_for_slots_holds_robots_where_they_join(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path, 4, profile="queue")
+    e.d.rcfg["queue"]["clearance_m"] = 1e9
+    e.run()
+    assert e.events("no_slots") and e.events("hold") and not e.events("to_slot")
+    assert e.cross_max <= 1
+    assert all(r.phase == "done" for r in e.d.rob.values())
+
+
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
     """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
     e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})
