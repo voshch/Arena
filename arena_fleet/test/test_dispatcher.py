@@ -449,6 +449,22 @@ def test_a_robot_whose_door_has_no_route_switches_door_and_keeps_its_plan_withou
     assert r.door == other and r.plan == plan
 
 
+def test_an_episode_with_an_unreachable_goal_fails_once_and_goal_swaps_skip_robots_without_a_route(tmp_path: pathlib.Path) -> None:
+    e = Episode(tmp_path / "start", 2)
+    no_route(e, e.d.goals[0], *e.d.doors)
+    with pytest.raises(ValueError, match="no route"):
+        e.tick()
+    assert e.d.finished
+    e.tick()
+    s = Episode(tmp_path / "swap", 2, profile="full")
+    s.tick()
+    a = s.d.names[0]
+    no_route(s, s.d.rob[a].target, *s.d.doors)
+    s.d.set_time(100.0)
+    s.d.reassign_goal()
+    assert not s.events("goal_swap")
+
+
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
     """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
     e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})

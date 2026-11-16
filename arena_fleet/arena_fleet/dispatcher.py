@@ -20,6 +20,7 @@ Terms = dict[str, float]
 
 VERSION = "1.3"
 WAITING = ("approach", "hold", "cross", "to_slot", "queued", "yield")
+NO_ROUTE = 1e9
 _FIELDS: dict[tuple[int, float, float, str], list[float]] = {}
 
 
@@ -490,10 +491,14 @@ class FleetDispatcher:
             self.rob[n].t0 = self._now
         C: list[list[float]] = []
         for n in self.names:
-            C.append([min(v["J"] for v in self.options(n, g, ignore_robots=True, around=False)[0].values()) for g in self.goals])
+            C.append([min((v["J"] for v in self.options(n, g, ignore_robots=True, around=False)[0].values()), default=NO_ROUTE) for g in self.goals])
         mode = self.cost["task"]["assign"]
         assign = hungarian(C) if mode == "hungarian" else list(range(len(self.names)))
         self.log("d1_assign", mode=mode, goals=[list(g) for g in self.goals], cost=C, assign={n: list(self.goals[j]) for n, j in zip(self.names, assign, strict=True)}, total=round(sum(C[i][j] for i, j in enumerate(assign)), 1))
+        lost = [self.names[i] for i, j in enumerate(assign) if C[i][j] >= NO_ROUTE]
+        if lost:
+            self.finished = True
+            raise ValueError(f"no route through any door to the assigned goal of {', '.join(lost)}")
         for i in sorted(range(len(self.names)), key=lambda i: C[i][assign[i]]):
             n, g = self.names[i], self.goals[assign[i]]
             opts, paths = self.options(n, g)
@@ -948,8 +953,11 @@ class FleetDispatcher:
         for i, a in enumerate(ok):
             for b in ok[i + 1 :]:
                 ra, rb = self.rob[a], self.rob[b]
-                cur = min(v["J"] for v in self.options(a, ra.target, around=False)[0].values()) + min(v["J"] for v in self.options(b, rb.target, around=False)[0].values())
+                ca, cb = self.options(a, ra.target, around=False)[0], self.options(b, rb.target, around=False)[0]
                 (oa, pa), (ob, pb) = self.options(a, rb.target, around=False), self.options(b, ra.target, around=False)
+                if not (ca and cb and oa and ob):
+                    continue
+                cur = min(v["J"] for v in ca.values()) + min(v["J"] for v in cb.values())
                 da, db = min(oa, key=lambda k: oa[k]["J"]), min(ob, key=lambda k: ob[k]["J"])
                 if cur - (oa[da]["J"] + ob[db]["J"]) >= rc["margin_j"]:
                     self.log("goal_swap", a=a, b=b, before=round(cur, 1), after=round(oa[da]["J"] + ob[db]["J"], 1))
