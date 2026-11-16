@@ -4,7 +4,6 @@ mode: hata                # terms() returns the HATA bid instead of J = T + H + 
 hata:                     # arXiv 2508.19731 eq. 3: c_ij = sum_k (w0 * d_k + w1 * p_k); weights as fitted by BO in the paper (their units: m and probability)
   w0: 1.15
   w1: 0.95
-  delta: 0.65             # A* avoids cells with p > delta (the paper's best value; it does not say hard block or penalty: here a 1000 s/m penalty, see plan below)
 
 task:                     # D1: goals are not tied to robots
   goal_zone: {x: [16.0, 25.0], y: [5.0, 11.5]}   # world metres, the room behind the doors; drawn at random from the seed

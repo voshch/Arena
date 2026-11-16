@@ -84,7 +84,6 @@ class FlowConfig(typing.TypedDict):
 class HataConfig(typing.TypedDict):
     w0: float
     w1: float
-    delta: float
 
 
 class CostConfig(typing.TypedDict):
