@@ -46,7 +46,8 @@ people at the door on arrival), `W` time standing at the door behind other robot
 
 Every rule reads only this map, so the levels differ only in how it is made. The map of dynamics (`mod`) is an `.npz`
 with `rho[t, y, x]` (pedestrians per m^2 per time window and 0.25 m cell, from robot-free runs) and `x_edges`,
-`y_edges`, `t_edges`.
+`y_edges`, `t_edges`. Its grid starts at the origin, has the cell size of `people_view.grid` in the cost file and
+covers that grid, otherwise the dispatcher refuses it.
 
 ## Run the doorway example
 

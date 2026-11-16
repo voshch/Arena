@@ -92,6 +92,10 @@ class PeopleView:
         v = cost["people_view"]
         self.cell, self.dt = v["grid"]["cell_m"], v["dt_s"]
         self.nx, self.ny = int(round(v["grid"]["x_max_m"] / self.cell)), int(round(v["grid"]["y_max_m"] / self.cell))
+        if mod is not None:
+            _, my, mx = mod.rho.shape
+            if not (math.isclose(mod.cell, self.cell) and abs(mod.x0) < 1e-6 and abs(mod.y0) < 1e-6 and mx >= self.nx and my >= self.ny):
+                raise ValueError(f"map of dynamics (origin {mod.x0}, {mod.y0}, cell {mod.cell}, {mx} x {my}) does not cover the people view grid (origin 0, 0, cell {self.cell}, {self.nx} x {self.ny})")
         self.n = int(cost["encounter"]["horizon_s"] / self.dt) + 1
         self.walls, self.mod = list(walls), mod
         self.flow: FlowConfig = cost["flow"]

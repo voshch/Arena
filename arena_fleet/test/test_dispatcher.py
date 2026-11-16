@@ -474,6 +474,14 @@ def test_a_queue_without_room_for_slots_holds_robots_where_they_join(tmp_path: p
     assert all(r.phase == "done" for r in e.d.rob.values())
 
 
+@pytest.mark.parametrize(("shape", "x0", "cell"), [((18, 52, 104), -1.0, 0.25), ((18, 52, 104), 0.0, 0.5), ((18, 40, 80), 0.0, 0.25)])
+def test_a_map_of_dynamics_off_the_people_view_grid_is_refused(tmp_path: pathlib.Path, shape: tuple[int, int, int], x0: float, cell: float) -> None:
+    _, ny, nx = shape
+    np.savez(tmp_path / "mod.npz", rho=np.zeros(shape), x_edges=x0 + np.arange(nx + 1) * cell, y_edges=np.arange(ny + 1) * cell, t_edges=np.arange(19) * 10.0)
+    with pytest.raises(ValueError, match="people view grid"):
+        Episode(tmp_path / "run", 1, profile="full", info="flow", mod=MapOfDynamics.load(tmp_path / "mod.npz"))
+
+
 def test_door_gate_never_lets_a_robot_into_a_door_with_people(tmp_path: pathlib.Path) -> None:
     """v13: a person standing in both doors keeps the robot out for good, no forced entry."""
     e = Episode(tmp_path, 1, profile="v13", info="oracle", peds={"p": (13.0, 10.6, 0.0, 0.0), "q": (13.0, 6.0, 0.0, 0.0)})
