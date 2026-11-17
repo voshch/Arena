@@ -352,6 +352,29 @@ def test_a_held_device_under_the_footprint_collides_apart_from_its_holder(on_sta
     on_stage(body)
 
 
+def test_collision_markers_turn_the_footprint_and_the_touched_device_red(on_stage):
+    import shapely
+
+    async def body(stage: Stage):
+        rm, tracker = stage.robot_manager()
+        await stage.arm(tracker)
+        holder, beside = (CLEAR[0], CLEAR[1] + 1.3), (CLEAR[0] + 3.0, CLEAR[1] + 1.3)
+        await stage.peds(tracker, ("blind", *holder, _cane(*holder, -math.pi / 2)), ("other", *beside, _cane(*beside, -math.pi / 2)))
+        footprint = shapely.box(CLEAR[0] - 0.2, CLEAR[1] - 0.2, CLEAR[0] + 0.2, CLEAR[1] + 0.2)
+        event = tracker._event("device", tracker._peds_msg.pedestrians[0], CLEAR[0], CLEAR[1] + 0.1, "cane")
+        robot, devices, column = tracker._markers(footprint, [event]).markers
+        assert (robot.ns, robot.color.r > 0.8, len(robot.points)) == ("footprint", True, 8)
+        assert len(devices.points) == len(devices.colors) == 16  # two cane outlines of four edges
+        assert [c.r > 0.8 for c in devices.colors] == [True] * 8 + [False] * 8
+        assert (column.ns, column.pose.position.x, column.lifetime.sec) == ("contacts", CLEAR[0], 1)
+        tracker._shapes = []  # everyone walked out of range
+        idle, cleared = tracker._markers(shapely.box(0.0, 0.0, 0.1, 0.1), []).markers
+        assert idle.color.r < 0.8
+        assert cleared.action == cleared.DELETE
+
+    on_stage(body)
+
+
 def test_a_device_beside_the_footprint_and_one_of_a_lost_pedestrian_do_not_collide(on_stage):
     async def body(stage: Stage):
         rm, tracker = stage.robot_manager()

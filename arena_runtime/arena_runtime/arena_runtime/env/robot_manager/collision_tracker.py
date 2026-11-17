@@ -12,9 +12,11 @@ import rclpy.time
 import shapely
 import shapely.affinity
 import std_msgs.msg
+import visualization_msgs.msg as viz
 from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.caps import PolygonSpec
+from builtin_interfaces.msg import Duration
 from rclpy.parameter import Parameter
 
 from arena_runtime.env.collision_grid import Cell
@@ -32,6 +34,11 @@ _ACTION_CODES: dict[str | None, int] = {
     'limit': 4,
 }
 
+_RED = std_msgs.msg.ColorRGBA(r=0.9, g=0.1, b=0.1, a=1.0)
+_GREY = std_msgs.msg.ColorRGBA(r=0.55, g=0.6, b=0.65, a=1.0)
+_DEVICE = std_msgs.msg.ColorRGBA(r=0.1, g=0.45, b=0.95, a=1.0)
+_CONTACT = std_msgs.msg.ColorRGBA(r=0.95, g=0.1, b=0.1, a=0.6)
+
 _CELL_KINDS: dict[Cell, str] = {
     Cell.MAP: arena_robots_msgs.msg.CollisionEvent.KIND_STATIC,
     Cell.WALL: arena_robots_msgs.msg.CollisionEvent.KIND_WALL,
@@ -45,9 +52,8 @@ class CollisionTrackerNode(rclpy.node.Node):
     Reads RobotManager.pose + EnvironmentManager.collision_grid. The footprint
     defines a collision: it feeds `collision_events` and the robot manager's
     collision callback. Pedestrians are their body disc and held device on
-    the ground. The cap polygons only feed
-    `collision_monitor_state`. Tick timer uses sim time, so it is gated during
-    pauses.
+    the ground. The cap polygons only feed `collision_monitor_state`. Tick
+    timer uses sim time, so it is gated during pauses.
     """
 
     def __init__(
@@ -101,6 +107,8 @@ class CollisionTrackerNode(rclpy.node.Node):
 
         self._pub_state: LazyPublisher[nav2_msgs.msg.CollisionMonitorState] = LazyPublisher(self.create_publisher(nav2_msgs.msg.CollisionMonitorState, 'collision_monitor_state', 10))
         self._pub_events = None if self._footprint_base is None else self.create_publisher(arena_robots_msgs.msg.CollisionEvents, 'collision_events', 10)
+        self._pub_markers: LazyPublisher[viz.MarkerArray] = LazyPublisher(self.create_publisher(viz.MarkerArray, 'collision_markers', 10))
+        self._marker_ids: dict[tuple[str, str], int] = {}
         env_ns = Namespace(robot_manager.node.get_namespace())
         self._sub_peds = self.create_subscription(
             arena_people_msgs.msg.Pedestrians,
@@ -121,6 +129,7 @@ class CollisionTrackerNode(rclpy.node.Node):
 
     def _on_reset_end(self, _msg: std_msgs.msg.Empty):
         self._peds_msg = None
+        self._marker_ids.clear()
         self._shapes = None
         self._valid_after = self.get_clock().now()
 
@@ -191,6 +200,8 @@ class CollisionTrackerNode(rclpy.node.Node):
                 touch = footprint.intersection(device).centroid
                 events.append(self._event(arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE, p, touch.x, touch.y, p.device.kind))
 
+        self._pub_markers.publish(lambda: self._markers(footprint, events))
+
         evmsg = arena_robots_msgs.msg.CollisionEvents()
         evmsg.header.stamp = self.get_clock().now().to_msg()
         evmsg.header.frame_id = 'map'
@@ -199,6 +210,46 @@ class CollisionTrackerNode(rclpy.node.Node):
 
         if events:
             self._rm.report_collision()
+
+    def _markers(self, footprint: shapely.Polygon, events: list[arena_robots_msgs.msg.CollisionEvent]) -> viz.MarkerArray:
+        """The robot footprint and the held devices on the ground, red while touched, and a red column at each contact."""
+        stamp = self.get_clock().now().to_msg()
+        touched = {ev.obstacle_id for ev in events if ev.kind == arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE}
+
+        def marker(ns: str, mid: int, kind: int, scale: tuple[float, float, float]) -> viz.Marker:
+            m = viz.Marker(ns=ns, id=mid, type=kind, action=viz.Marker.ADD)
+            m.header.frame_id, m.header.stamp = 'map', stamp
+            m.pose.orientation.w = 1.0
+            m.scale.x, m.scale.y, m.scale.z = scale
+            return m
+
+        def ring(geom: shapely.Geometry) -> list[geometry_msgs.msg.Point]:
+            coords = list(geom.exterior.coords)
+            return [geometry_msgs.msg.Point(x=float(a[0]), y=float(a[1]), z=0.03) for pair in zip(coords, coords[1:], strict=False) for a in pair]
+
+        robot = marker('footprint', 0, viz.Marker.LINE_LIST, (0.03, 0.0, 0.0))
+        robot.points = ring(footprint)
+        robot.color = _RED if events else _GREY
+        devices = marker('devices', 0, viz.Marker.LINE_LIST, (0.025, 0.0, 0.0))
+        for p, _, device in self._pedestrian_shapes():
+            if device is not None:
+                points = ring(device)
+                devices.points.extend(points)
+                devices.colors.extend([_RED if p.name in touched else _DEVICE] * len(points))
+        devices.color = _DEVICE
+        if not devices.points:
+            devices.action = viz.Marker.DELETE  # clears outlines of people out of range
+        out = [robot, devices]
+        for ev in events:
+            if ev.kind not in (arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE, arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN):
+                continue
+            mid = self._marker_ids.setdefault((ev.kind, ev.obstacle_id), len(self._marker_ids))
+            column = marker('contacts', mid, viz.Marker.CYLINDER, (0.16, 0.16, 1.2))
+            column.pose.position = geometry_msgs.msg.Point(x=ev.obstacle_position.x, y=ev.obstacle_position.y, z=0.6)
+            column.color = _CONTACT
+            column.lifetime = Duration(sec=1)
+            out.append(column)
+        return viz.MarkerArray(markers=out)
 
     @staticmethod
     def _event(kind: str, ped: arena_people_msgs.msg.Pedestrian, x: float, y: float, device: str = "") -> arena_robots_msgs.msg.CollisionEvent:
