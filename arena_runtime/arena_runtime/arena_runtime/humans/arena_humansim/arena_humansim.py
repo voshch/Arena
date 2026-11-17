@@ -1120,12 +1120,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         gait_cadence = msg.gait_cadence if len(msg.gait_cadence) == n else [0.0] * n
         interaction_ids = msg.interaction_id if len(msg.interaction_id) == n else [-1] * n
         interaction_types = msg.interaction_type if len(msg.interaction_type) == n else [0] * n
-        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence, interaction_id, interaction_type in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, interaction_ids, interaction_types, strict=True):
+        radii = msg.radius if len(msg.radius) == n else [0.0] * n
+        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence, interaction_id, interaction_type, radius in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, interaction_ids, interaction_types, radii, strict=True):
             ped = Pedestrian()
             ped.id = agent_id
             ped.name = self._agent_names.get(agent_id, str(agent_id))
             ped.gait_phase = float(phase)
             ped.gait_cadence = float(cadence)
+            ped.radius = float(radius)
             ped.agent_type = self._agent_type_of(agent_id)
 
             x, y = self._from_engine(ex, ey)
