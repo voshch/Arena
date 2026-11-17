@@ -91,13 +91,14 @@ class Stage:
         await _until(lambda: tracker._valid_after is not None, "reset_end to arm the tracker")
         self.armed_ns = tracker._valid_after.nanoseconds
 
-    async def peds(self, tracker, *peds: tuple[str, float, float]) -> None:
-        from arena_people_msgs.msg import Pedestrian, Pedestrians
+    async def peds(self, tracker, *peds: tuple) -> None:
+        """Publish pedestrians (name, x, y[, held device])."""
+        from arena_people_msgs.msg import HeldDevice, Pedestrian, Pedestrians
 
         publisher = self.probe.create_publisher(Pedestrians, "/arena_peds", 10)
         msg = Pedestrians()
-        for name, x, y in peds:
-            ped = Pedestrian(name=name)
+        for name, x, y, *device in peds:
+            ped = Pedestrian(name=name, device=device[0] if device else HeldDevice())
             ped.pose.position.x = x
             ped.pose.position.y = y
             ped.pose.orientation.w = 1.0
@@ -318,6 +319,47 @@ def test_wall_and_pedestrian_together_yield_both_events_wall_first(on_stage):
         await stage.peds(tracker, ("walker", ON_WALL[0] + 0.3, ON_WALL[1]))
         stage.place(rm, *ON_WALL)
         assert [e.kind for e in await stage.tick(tracker, received)] == [arena_robots_msgs.msg.CollisionEvent.KIND_WALL, arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN]
+
+    on_stage(body)
+
+
+def _cane(x: float, y: float, heading: float):
+    """A pedestrian at (x, y) with a 1 m cane ahead along `heading`, the tip on the floor."""
+    from arena_people_msgs.msg import HeldDevice
+    from arena_runtime.humans.devices import DeviceSpec
+
+    spec = DeviceSpec.parse({"kind": "cane", "grip": {"x": 0.3, "y": 0.0, "z": 0.9}, "tip": {"x": 1.3, "y": 0.0, "z": 0.0}, "radius": 0.0125})
+    return spec.pose(x, y, 0.0, heading, 0.0, out=HeldDevice())
+
+
+def test_a_held_device_under_the_footprint_collides_apart_from_its_holder(on_stage):
+    import arena_robots_msgs.msg
+
+    async def body(stage: Stage):
+        rm, tracker = stage.robot_manager()
+        received = await stage.listen(tracker)
+        await stage.arm(tracker)
+        holder = (CLEAR[0], CLEAR[1] + 1.3)  # the tip just under the robot's centre, the holder well clear of it
+        await stage.peds(tracker, ("blind", *holder, _cane(*holder, -math.pi / 2)), ("walker", 6.0, 6.0))
+        stage.place(rm, *CLEAR)
+        (event,) = await stage.tick(tracker, received)
+        assert (event.kind, event.device, event.obstacle_id) == (arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE, "cane", "blind")
+        assert (event.obstacle_position.x, event.obstacle_position.y) == pytest.approx((CLEAR[0], CLEAR[1] + HALF_WIDTH / 2), abs=0.02)
+        hit = tracker._monitor_state(*CLEAR, 0.0)
+        assert hit.polygon_name != ""
+
+    on_stage(body)
+
+
+def test_a_device_beside_the_footprint_and_one_of_a_lost_pedestrian_do_not_collide(on_stage):
+    async def body(stage: Stage):
+        rm, tracker = stage.robot_manager()
+        received = await stage.listen(tracker)
+        await stage.arm(tracker)
+        beside = (CLEAR[0] + 0.5, CLEAR[1] + 1.3)
+        await stage.peds(tracker, ("blind", *beside, _cane(*beside, -math.pi / 2)), ("lost", math.nan, math.nan, _cane(math.nan, math.nan, 0.0)))
+        stage.place(rm, *CLEAR)
+        assert await stage.tick(tracker, received) == []
 
     on_stage(body)
 
