@@ -17,6 +17,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 from arena_bringup.future import IfElseSubstitution, PythonExpression  # noqa
+from arena_bringup.gazebo_gui import fixed_viewport_config, parse_resolution
 from arena_rclpy_mixins.launch_argument import LaunchArgument
 
 # Appended to gz's default gui.config so the ViewportCamera GUI plugin loads
@@ -82,6 +83,12 @@ def generate_launch_description():
     headless = LaunchArgument(
         'headless',
         description='true = run the gz-sim server without the GUI.',
+    )
+
+    viewport_resolution = LaunchArgument(
+        'viewport.resolution',
+        default_value='',
+        description='3D view size of the GUI, WxH: drops the docked panels and sizes the window to fit. Empty keeps the stock layout.',
     )
 
     # Injects PedSkeletonPlugin into the world SDF so gpu_lidar perceives
@@ -245,7 +252,7 @@ def generate_launch_description():
         tmp.close()
         return tmp.name
 
-    def _render_gui_config(engine: str) -> str:
+    def _render_gui_config(engine: str, resolution: str) -> str:
         """Render a --gui-config temp file from the user's own ~/.gz layout (else the
         stock config) with the engine pinned and the ViewportCamera plugin ensured."""
         user_config = os.path.join(os.path.expanduser('~'), '.gz', 'sim', '8', 'gui.config')
@@ -259,7 +266,9 @@ def generate_launch_description():
             content = ''
         # The default pins ogre2, so match it to the engine actually selected.
         content = re.sub(r'<engine>[^<]*</engine>', f'<engine>{engine}</engine>', content)
-        if 'Arena viewport camera' not in content:
+        if resolution:
+            content = fixed_viewport_config(content, parse_resolution(resolution))
+        elif 'Arena viewport camera' not in content:
             # gz config is a flat list of top-level elements, so append the plugin verbatim.
             content = content.rstrip() + '\n\n' + _VIEWPORT_GUI_PLUGIN.strip() + '\n'
         tmp = tempfile.NamedTemporaryFile(
@@ -284,7 +293,7 @@ def generate_launch_description():
             if engine == "ogre2":
                 gz_args += " --headless-rendering"
         else:
-            gz_args += f" --gui-config {_render_gui_config(engine)}"
+            gz_args += f" --gui-config {_render_gui_config(engine, context.perform_substitution(viewport_resolution.substitution))}"
         gz_launch_path = os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
         gz_launch_spec = importlib.util.spec_from_file_location('ros_gz_sim_gz_sim_launch', gz_launch_path)
         if gz_launch_spec is None or gz_launch_spec.loader is None:
@@ -364,6 +373,7 @@ def generate_launch_description():
             use_sim_time,
             world,
             headless,
+            viewport_resolution,
             ped_skeleton_enabled,
             # SetEnvironmentVariable(
             #     "GZ_SIM_PHYSICS_ENGINE_PATH", GZ_SIM_PHYSICS_ENGINE_PATH

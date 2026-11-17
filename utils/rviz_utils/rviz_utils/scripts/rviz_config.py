@@ -32,7 +32,7 @@ from arena_viz import DisplayKind, env_namespace
 from rviz_display_control_msgs.msg import DisplaySet, DisplaySpec
 
 from rviz_utils.renderers import REGISTRY
-from rviz_utils.params import ROBOT, VIEW
+from rviz_utils.params import ROBOT, VIEW, VIEWPORT_RESOLUTION
 
 
 class _VisualizationManager(TypedDict):
@@ -66,6 +66,7 @@ class ConfigFileGenerator(ArenaMixinNode):
         self._TASKGEN_NODE = TASKGEN_NODE
         self._view = declare(self, VIEW)
         self._robot = declare(self, ROBOT)
+        self._viewport_resolution = declare(self, VIEWPORT_RESOLUTION)
 
     async def _await_param(
         self,
@@ -323,6 +324,7 @@ class ConfigFileGenerator(ArenaMixinNode):
                 target = robot_frame
 
         base: dict[str, object] = {
+            'Capture Size': self._viewport_resolution.value,
             'Class': 'rviz_viewport_control/ViewportControl',
             'Name': 'Current View',
             'Near Clip Distance': 0.01,

@@ -175,6 +175,7 @@ def cmd(argv: list[str]) -> None:
       rviz:
         view:=map|robot|robot3p          camera view (default: map)
         robot:=<int>|all                 robot index in fleet, 'all' fans out one window per robot
+        viewport.resolution:=WxH         viewport capture size (default: the render panel size)
       rerun:
         web_port:=<int>                  web viewer port (default: 9090, auto-bumped per env)
         grpc_port:=<int>                 gRPC stream port (default: 9876, auto-bumped per env)
@@ -199,6 +200,7 @@ VIZ_KV = Kv(
         "cam": None,
         "view": Static(["map", "robot", "robot3p"]),
         "robot": Static(["all"]),
+        "viewport.resolution": None,
         "web_port": None,
         "grpc_port": None,
     }

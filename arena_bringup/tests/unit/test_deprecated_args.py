@@ -46,3 +46,11 @@ def test_explicit_scenario_file_wins_over_alias() -> None:
     configs, _ = _resolve({"task.scenario": "old", "task.scenario.file": "new"})
 
     assert configs == {"task.scenario.file": "new"}
+
+
+@_skip
+def test_isaac_viewport_resolution_lands_on_shared_viewport_resolution() -> None:
+    configs, warned = _resolve({"sim.isaac.viewport.resolution": "1280x720", "sim.isaac.viewport.preset": "boring"})
+
+    assert configs == {"sim.isaac.viewport.preset": "boring", "sim.viewport.resolution": "1280x720"}
+    assert warned == [("sim.isaac.viewport.resolution", "sim.viewport.resolution")]

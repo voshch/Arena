@@ -59,6 +59,12 @@ def generate_launch_description():
         description='Physics engine of flatsim.',
     )
 
+    viewport_resolution = LaunchArgument(
+        name='sim.viewport.resolution',
+        default_value='',
+        description='Render size of the simulator viewport and its captures, WxH (Isaac also takes dynamic). Empty keeps the simulator default.',
+    )
+
     viewport = {
         key: LaunchArgument(
             name=f'sim.isaac.viewport.{key}',
@@ -67,7 +73,6 @@ def generate_launch_description():
         )
         for key, default, description in (
             ('preset', 'photoreal', 'Base render preset: photoreal | boring. GUI only.'),
-            ('resolution', '', 'Viewport render size: WxH | dynamic. Empty keeps the preset value.'),
             ('scale', '', 'Viewport resolution scale factor. Empty keeps the preset value.'),
             ('dlss', '', 'DLSS mode: auto | quality | balanced | performance. Empty keeps the preset value.'),
             ('lighting', '', 'Lighting rig: lights_off | camera_light | stage_lights | colored_lights | default | grey_studio. Empty keeps the preset value.'),
@@ -116,7 +121,8 @@ def generate_launch_description():
                 headless.substitution,
                 launch.substitutions.TextSubstitution(text=' world:='),
                 world.substitution,
-            ]],
+                launch.substitutions.TextSubstitution(text=' ${1:+viewport.resolution:="$1"}'),
+            ], 'gazebo', viewport_resolution.substitution],
             sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='20'),
             sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
             on_exit=[launch.actions.Shutdown()],
@@ -134,6 +140,8 @@ def generate_launch_description():
                 launch.substitutions.LaunchConfiguration('log_level', default='debug'),
                 launch.substitutions.TextSubstitution(text=' physics:='),
                 physics.substitution,
+                launch.substitutions.TextSubstitution(text=' viewport.resolution:='),
+                viewport_resolution.substitution,
                 *(
                     sub
                     for key, arg in viewport.items()
@@ -155,7 +163,8 @@ def generate_launch_description():
                 headless.substitution,
                 launch.substitutions.TextSubstitution(text=' log_level:='),
                 launch.substitutions.LaunchConfiguration('log_level', default='info'),
-            ]],
+                launch.substitutions.TextSubstitution(text=' ${1:+viewport.resolution:="$1"}'),
+            ], 'mujoco', viewport_resolution.substitution],
             sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='5'),
             sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
             on_exit=[launch.actions.Shutdown()],
