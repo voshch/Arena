@@ -18,6 +18,7 @@ from arena_humansim_msgs.srv import RemoveAgents
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_runtime.env.constants.rng import EpisodeRng
 from arena_runtime.env.realizer import Realizer
+from arena_runtime.humans.gait import GaitGenerator
 from arena_runtime.humans.arena_humansim.arena_humansim import ArenaHumanSimulator
 from arena_runtime.sim.dummy_simulator import DummySimulator
 from rcl_interfaces.msg import SetParametersResult
@@ -30,6 +31,7 @@ class _Simulator(DummySimulator):
         self.deleted: list[list[str]] = []
         self.spawned: list[list[str]] = []
         self.updated: list[list[str]] = []
+        self.batches: list[Pedestrians] = []
 
     async def pedestrian_delete(self, pedestrians: typing.Sequence[typing.Any]) -> typing.Sequence[bool]:
         self.deleted.append([pedestrian.sim_path for pedestrian in pedestrians])
@@ -41,6 +43,7 @@ class _Simulator(DummySimulator):
 
     async def pedestrian_update(self, pedestrians: Pedestrians) -> typing.Sequence[bool]:
         self.updated.append([ped.name for ped in pedestrians.pedestrians])
+        self.batches.append(pedestrians)
         return await super().pedestrian_update(pedestrians)
 
 
@@ -170,5 +173,33 @@ def test_an_update_pass_never_hands_the_simulator_a_walker_under_its_bare_id() -
         body_name = Realizer().prefix("flow_8")
         assert simulator.spawned == [[body_name]] and adapter._agent_names == {8: body_name}
         assert simulator.updated == [[]]
+
+    _on_adapter(body)
+
+
+def test_a_possessed_walker_reaches_the_simulator_with_a_body_pose_from_its_streamed_gait() -> None:
+    async def body(adapter: ArenaHumanSimulator, simulator: _Simulator) -> None:
+        _walkers(adapter, flow=set(), bridge={100})
+        name = "env_0/scenario_ped_100"
+        adapter._ped_bus_index = {name: object()}
+        adapter._stream_gate = True
+        adapter._gate_open_stamp = 0.0
+        gait = GaitGenerator()
+        streamed = _ped(100, name)
+        streamed.animation_state = Pedestrian.WALKING
+        streamed.twist.linear.x = 1.0
+        streamed.joint_state = gait.joint_state(gait.compute(100, Pedestrian.WALKING, 1.0, 0.05))
+        batch = Pedestrians(pedestrians=[streamed])
+        batch.header.frame_id = "map"
+        batch.header.stamp.sec = 1
+        await adapter._on_human_stream(batch)
+        [relayed] = simulator.batches[-1].pedestrians
+        assert relayed.name == name
+        assert len(relayed.body.joints) == len(relayed.body.rotations) > 0
+        assert not set(relayed.joint_state.name) & set(GaitGenerator.JOINT_NAMES)
+
+        await adapter.relay_pedestrian_update(Pedestrians(pedestrians=[_ped(100, name), _ped(7, "env_0/flow_7")]))
+        possessed, free = simulator.batches[-1].pedestrians
+        assert possessed.body.joints and not free.body.joints
 
     _on_adapter(body)

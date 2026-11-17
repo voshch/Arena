@@ -34,6 +34,7 @@ def _yaml_iter(obj: list | dict) -> range | typing.KeysView:
 
 DEPRECATED_LAUNCH_ARGS: Mapping[str, str] = {
     'isaac.physics': 'sim.isaac.physics',
+    'sim.isaac.viewport.resolution': 'sim.viewport.resolution',
     'env_id': 'env.id',
     'ns': 'env.ns',
     'managed': 'env.managed',

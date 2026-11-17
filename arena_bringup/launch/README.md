@@ -34,6 +34,7 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `sim` | string | `arena settings sim` | Physics simulator: `dummy`, `flatsim`, `gazebo`, `isaac`, or `mujoco`. The default is the setting, else the first installed simulator in `SIM_ORDER` ([defaults.py](../arena_bringup/defaults.py)), else `dummy`. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
 | `sim.flatsim.dynamics` | string | `rigid` | `sim:=flatsim` only, a runtime argument. `rigid` = walls and obstacles stop or push the robot, pedestrians touch it without pushing, `kinematic` = the robot passes through. |
 | `sim.flatsim.physics` | string | `auto` | `sim:=flatsim` only, a runtime argument. `box2d`, `warp`, or `auto` = `warp` when GPU passthrough is on, else `box2d`. |
+| `sim.viewport.resolution` | string | `` (empty) | A runtime argument. `WxH` = render size of the simulator viewport and its captures (gazebo, isaac, mujoco), empty = the simulator default. See [BRINGUP.md](../BRINGUP.md#simviewportresolution). |
 | `headless` | bool string | `False` | `true` = hide sim GUI (server-only). `arena launch` also suppresses rviz unless `rviz:=true` is explicit. |
 | `viz` | bool string | `true` | `arena launch` only: run `arena viz --all` after envs are up. Forced `false` when `headless:=true` unless overridden. |
 | `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `flatsim`/`gazebo`/`isaac`/`mujoco` | Human-simulator backend |

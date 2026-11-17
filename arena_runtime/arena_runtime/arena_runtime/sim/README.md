@@ -40,6 +40,8 @@ Defined in [`_interface.py`](_interface.py):
 | `robot_move` | `(Sequence[Robot]) -> Sequence[bool]` |
 | `robot_delete` | `(Sequence[Robot]) -> Sequence[bool]` |
 
+Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
+
 ### `WorldITF`
 
 [`_interface.py`](_interface.py)
@@ -308,6 +310,8 @@ Overridable hooks (concrete default no-ops):
 | `after_reset_episode()` | episode-boundary hook after every reset; default no-op |
 | `step(n=1)` | advance simulation by `n` ticks; default no-op returns `True` |
 
+Gazebo, Isaac and MuJoCo launch each robot's stack (robot_state_publisher, controller_manager, urdf_publisher, twist_stamper, odom_relay) through `BaseSim._track_robot_stack`, which stops the stack of the robot's previous spawn first, and `robot_delete` stops it through `BaseSim._stop_robot_stacks`. Isaac's `remove_world` calls `ResetWorld` for the legacy `/World/Walls`, `Doors`, `Floors` and `Elevators` roots and `DeletePrims` for the env's own `env_<id>/Walls`, `Floors` and `Ceilings` roots.
+
 ## Lockstep
 
 `SimLifecycle.step_seconds(seconds) -> float` advances a held sim by an exact
@@ -319,7 +323,12 @@ tick first raises gz `real_time_factor` so the limiter does not pace it, and
 the next unpause restores it. A single-tick step leaves the factor alone. A step
 returns once `/clock` carries its target, and the next unpause first waits for
 `/world/default/stats` to report gz paused at or past that target, since gz undoes
-an unpause that lands while a batch is still running. Isaac calls
+an unpause that lands while a batch is still running. An unpause then waits up to
+2 s for `/clock` to move and resends itself up to three times while it stays
+frozen and no pause came after it. A pause does not drop queued `multi_step`
+iterations, and gz pauses itself when they run out, so after an unpause the host
+watches the stats until the clock has run 10 s and unpauses gz again whenever
+two reports show it paused with no pause or step called since. Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
 publishes `/clock` and drains its sensor and control pumps every 20 ms of sim
@@ -561,3 +570,5 @@ async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
 ```
 
 4. Add `MY_SIM = "my_sim"` to `SimSimulator` in `arena_bringup/constants.py`.
+
+Build a robot's robot_state_publisher with `_control.state_publisher_node`, whose `publish_frequency` of 1000 Hz puts every joint_states message on /tf instead of rsp's 20 Hz default.

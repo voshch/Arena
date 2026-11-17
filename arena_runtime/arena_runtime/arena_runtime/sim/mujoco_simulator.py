@@ -92,6 +92,7 @@ from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
     robot_controllers,
+    state_publisher_node,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
@@ -391,19 +392,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
         ld = launch.LaunchDescription()
         ld.add_action(launch_ros.actions.PushRosNamespace(namespace=ns))
 
-        ld.add_action(
-            launch_ros.actions.Node(
-                package='robot_state_publisher',
-                executable='robot_state_publisher',
-                name='robot_state_publisher',
-                output='screen',
-                parameters=[
-                    {'use_sim_time': True},
-                    {'robot_description': description},
-                    {'frame_prefix': robot.frame.tf()},
-                ],
-            )
-        )
+        ld.add_action(state_publisher_node(description, robot.frame.tf()))
 
         control_spec = robot_params.control
         if control_spec is not None and control_spec.is_ros2_control:
@@ -462,7 +451,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             if control_spec.odom_topic != "odom":
                 ld.add_action(odom_relay_node(control_spec.odom_topic))
 
-        await self.node.do_launch(ld)
+        await self._track_robot_stack(robot.sim_path, ld)
 
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         level = obstacles_optim_level(self.node)
@@ -610,6 +599,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             self._forget_agent_robot(robot.sim_path)
             self._map_offsets.pop(robot.sim_path, None)
             names.append(self._robot_prims.pop(robot.sim_path, self._NS_ROBOT(robot.name)))
+        await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(name) for name in names))
 
     async def remove_world(self) -> bool:
@@ -888,7 +878,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             self._clients.SetMapOffset.client.call_async(request).add_done_callback(lambda done: self._map_offset_done(sim_path, done))
 
     def _map_offset_done(self, sim_path: str, call: rclpy.task.Future) -> None:
-        if call.cancelled() or call.exception() is not None or (result := call.result()) is None or not result.success:
+        if call.cancelled() or call.exception() is not None or (result := call.result()) is None or not result.ok:
             self._map_offsets.pop(sim_path, None)
             self._logger.warning(f"SetMapOffset failed for {sim_path!r}, its map -> odom is stale")
 

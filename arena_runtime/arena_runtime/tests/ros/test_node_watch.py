@@ -196,9 +196,10 @@ def test_moveit_helper_nodes_cost_a_round_no_timeout(rclpy_context: object) -> N
             await asyncio.sleep(0.2)
         else:
             raise AssertionError("the moveit nodes never showed up in the graph")
+        timeout = 20.0
         start = time.monotonic()
-        assert await _ping(arm) is None
-        assert time.monotonic() - start < TIMEOUT / 2
+        assert await arm.round(timeout, new_episode=False) is None
+        assert time.monotonic() - start < timeout / 2
 
     _with_pinger(scenario)
 

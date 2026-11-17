@@ -10,6 +10,7 @@ from arena_simulation_setup.shared.body import SEMANTIC_DOFS
 _JOINT_NAMES: frozenset[str] = frozenset(SEMANTIC_DOFS)
 
 POSSESSION_TIMEOUT_S = 1.0
+POSSESSION_EXTRAPOLATION_S = 0.2
 
 
 class _JointStateLike(typing.Protocol):
@@ -17,6 +18,27 @@ class _JointStateLike(typing.Protocol):
     def name(self) -> typing.Collection[str]: ...
     @property
     def position(self) -> typing.Collection[float]: ...
+
+
+class _PointLike(typing.Protocol):
+    @property
+    def x(self) -> float: ...
+    @x.setter
+    def x(self, value: float) -> None: ...
+    @property
+    def y(self) -> float: ...
+    @y.setter
+    def y(self, value: float) -> None: ...
+
+
+class _PoseLike(typing.Protocol):
+    @property
+    def position(self) -> _PointLike: ...
+
+
+class _TwistLike(typing.Protocol):
+    @property
+    def linear(self) -> _PointLike: ...
 
 
 class _PedestrianLike(typing.Protocol):
@@ -39,6 +61,10 @@ class _PossessableLike(_PedestrianLike, typing.Protocol):
     def gait_phase(self) -> float: ...
     @gait_phase.setter
     def gait_phase(self, value: float) -> None: ...
+    @property
+    def pose(self) -> _PoseLike: ...
+    @property
+    def twist(self) -> _TwistLike: ...
 
 
 def bare_joint_names_valid(names: typing.Iterable[str]) -> bool:
@@ -113,7 +139,7 @@ class PossessionTable[PedestrianT: _PossessableLike]:
         return [(name, self._release(name)) for name in stale]
 
     def substitute(self, pedestrians: typing.Collection[PedestrianT], now: float) -> list[PedestrianT]:
-        """Copy-on-write overlay: possessed names swap to stored copies, everything else passes through untouched."""
+        """Copy-on-write overlay: possessed names swap to stored copies advanced along their twist since receipt, everything else passes through untouched."""
         out: list[PedestrianT] = []
         for ped in pedestrians:
             if ped.name not in self._entries or not self._live(ped.name, now):
@@ -121,6 +147,9 @@ class PossessionTable[PedestrianT: _PossessableLike]:
                 continue
             sub = copy.deepcopy(self._entries[ped.name])
             sub.id = ped.id
+            elapsed = min(max(now - self._last_seen[ped.name], 0.0), POSSESSION_EXTRAPOLATION_S)
+            sub.pose.position.x += sub.twist.linear.x * elapsed
+            sub.pose.position.y += sub.twist.linear.y * elapsed
             if self._phase is not None:
                 sub.gait_phase = self._phase(ped.id)
             out.append(sub)

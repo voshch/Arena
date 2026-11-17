@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 
 import pytest
 
@@ -65,3 +66,51 @@ def test_a_paused_report_from_before_the_target_does_not_count():
         return asyncio.get_running_loop().time() - start
 
     assert asyncio.run(run()) >= 0.6
+
+
+class _Gz:
+    def __init__(self, pauses_at: float) -> None:
+        self._control_generation = 1
+        self._stats: world_stats_pb2.WorldStatistics | None = None
+        self._stats_count = 0
+        self._logger = _Logger()
+        self.sim = 0.0
+        self.paused = False
+        self.pauses_at = pauses_at
+
+    def publish(self) -> None:
+        if not self.paused:
+            self.sim += 0.2
+            if self.sim >= self.pauses_at:
+                self.paused, self.pauses_at = True, float("inf")
+        self._stats = _stats(paused=self.paused, sim=self.sim)
+        self._stats_count += 1
+
+    async def _send_unpause(self, generation: int | None = None) -> bool:
+        if generation == self._control_generation:
+            self.paused = False
+        return True
+
+
+async def _run_gz(gz: _Gz, guard: Coroutine[None, None, None]) -> None:
+    task = asyncio.ensure_future(guard)
+    for _ in range(150):
+        gz.publish()
+        await asyncio.sleep(0.01)
+    assert task.done()
+
+
+def test_a_world_that_pauses_itself_after_an_unpause_runs_again():
+    gz = _Gz(pauses_at=1.0)
+    asyncio.run(_run_gz(gz, GazeboHost._keep_free_running(gz, 1)))  # pyright: ignore[reportArgumentType]
+    assert not gz.paused
+    assert gz.sim > 1.0
+    assert len(gz._logger.warnings) == 1
+
+
+def test_a_world_paused_by_a_later_control_stays_paused():
+    gz = _Gz(pauses_at=1.0)
+    gz._control_generation = 2
+    asyncio.run(_run_gz(gz, GazeboHost._keep_free_running(gz, 1)))  # pyright: ignore[reportArgumentType]
+    assert gz.paused
+    assert gz._logger.warnings == []

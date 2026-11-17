@@ -6,6 +6,7 @@ GazeboSimulator is per-env on arena_env_node and adapts env-namespace state (spa
 import asyncio
 import itertools
 import math
+import re
 import time
 import traceback
 import typing
@@ -67,6 +68,7 @@ from arena_runtime.sim._articulation import JointCommand as ArticulatedCommand
 from arena_runtime.sim._control import (
     effective_control_yaml,
     robot_controllers,
+    state_publisher_node,
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import resolve_obstacle_box
@@ -96,6 +98,10 @@ _CLEANUP_ATTEMPTS = 5
 _WORLD_STATS_TOPIC = '/world/default/stats'
 _BATCH_STALL_S = 5.0
 _BATCH_POLL_S = 0.05
+_UNPAUSE_CONFIRM_S = 2.0
+_UNPAUSE_RESENDS = 3
+_FREE_RUN_GUARD_S = 10.0
+_FREE_RUN_GUARD_WALL_S = 60.0
 
 _LATCHED_QOS = QoSProfile(
     depth=1,
@@ -141,12 +147,20 @@ class GazeboHost(SimLifecycle):
         self._dt = physics_dt
         self._rtf_boosted = False
         self._batch_target: Time | None = None
+        self._control_generation = 0
+        self._unpauses = 0
+        self._stepping = 0
+        self._steps_idle = asyncio.Event()
+        self._steps_idle.set()
         self._stats: world_stats_pb2.WorldStatistics | None = None
+        self._stats_count = 0
+        self._free_run: asyncio.Future[None] | None = None
         self._gz_node = gz.transport13.Node()
         self._gz_node.subscribe(world_stats_pb2.WorldStatistics, _WORLD_STATS_TOPIC, self._on_stats)
 
     def _on_stats(self, msg: world_stats_pb2.WorldStatistics) -> None:
         self._stats = msg
+        self._stats_count += 1
 
     async def ensure_ready(self) -> None:
         await self._node.do_launch(
@@ -174,6 +188,7 @@ class GazeboHost(SimLifecycle):
         )
 
     async def pause(self) -> bool:
+        self._control_generation += 1
         async with self._semaphore:
             self._logger.debug("Attempting to pause simulation")
             request = ControlWorld.Request()
@@ -222,13 +237,61 @@ class GazeboHost(SimLifecycle):
         return False
 
     async def unpause(self) -> bool:
+        """Free-run the world once every running step has stopped, resending the unpause while the clock stays frozen and no pause came after it."""
+        self._control_generation += 1
+        generation = self._control_generation
+        self._unpauses += 1
+        await self._steps_idle.wait()
         # returning to free-run: restore gz's realtime pacing
         if self._rtf_boosted:
             self._rtf_boosted = not await self._set_physics_rtf(1.0)
         if self._batch_target is not None:
             await self._await_batches_done(self._batch_target)
             self._batch_target = None
+        if not await self._send_unpause():
+            return False
+        for attempt in range(1, _UNPAUSE_RESENDS + 1):
+            moved = await self._node.await_sim_time(self._node.sim_time + Time.from_float(self._dt / 2), freeze_timeout=_UNPAUSE_CONFIRM_S)
+            if moved or generation != self._control_generation:
+                break
+            self._logger.warning(f"gz clock frozen {_UNPAUSE_CONFIRM_S:g}s after an unpause, resending it ({attempt}/{_UNPAUSE_RESENDS})")
+            if not await self._send_unpause():
+                return False
+        if generation == self._control_generation:
+            self._free_run = asyncio.ensure_future(self._keep_free_running(generation))
+        return True
+
+    async def _keep_free_running(self, generation: int) -> None:
+        """Unpause gz again when it pauses itself until its clock ran _FREE_RUN_GUARD_S past the unpause: queued multi_step iterations outlive a pause and re-pause gz when they run out."""
+        deadline = time.monotonic() + _FREE_RUN_GUARD_WALL_S
+        seen = self._stats_count
+        start: float | None = None
+        paused_reports = 0
+        while generation == self._control_generation and time.monotonic() < deadline:
+            await asyncio.sleep(_BATCH_POLL_S)
+            stats = self._stats
+            if stats is None or self._stats_count == seen:
+                continue
+            seen = self._stats_count
+            sim = stats.sim_time.sec + stats.sim_time.nsec * 1e-9
+            start = sim if start is None else start
+            if not stats.paused:
+                paused_reports = 0
+                if sim - start >= _FREE_RUN_GUARD_S:
+                    return
+                continue
+            paused_reports += 1
+            if paused_reports < 2:
+                continue
+            self._logger.warning(f"gz paused itself at {sim:.3f}s while free-running, unpausing it again")
+            if not await self._send_unpause(generation):
+                return
+            seen, paused_reports = self._stats_count, 0
+
+    async def _send_unpause(self, generation: int | None = None) -> bool:
         async with self._semaphore:
+            if generation is not None and generation != self._control_generation:
+                return True
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
             request.world_control = WorldControl()
@@ -265,13 +328,29 @@ class GazeboHost(SimLifecycle):
         # gz silently drops multi_step when the request lands while a previous
         # batch is still executing (Paused() is false mid-batch), so watch for
         # motion and resend the remaining ticks whenever the clock freezes
-        while self._node.sim_time < target:
-            start_sim = self._node.sim_time
-            remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
-            chunk = min(max_chunk, remaining)
-            chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
-            await self._send_multi_step(chunk, seconds)
-            await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
+        self._control_generation += 1
+        unpauses = self._unpauses
+        begin = self._node.sim_time
+        sent: Time | None = None
+        self._stepping += 1
+        self._steps_idle.clear()
+        try:
+            while self._node.sim_time < target:
+                if self._unpauses != unpauses:
+                    self._batch_target = sent
+                    self._logger.warning(f"step of {seconds:g}s superseded by an unpause after {(self._node.sim_time - begin).to_seconds():.3f}s")
+                    return (self._node.sim_time - begin).to_seconds()
+                start_sim = self._node.sim_time
+                remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
+                chunk = min(max_chunk, remaining)
+                chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
+                await self._send_multi_step(chunk, seconds)
+                sent = chunk_target
+                await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
+        finally:
+            self._stepping -= 1
+            if not self._stepping:
+                self._steps_idle.set()
         self._batch_target = target
         return n * self._dt
 
@@ -562,6 +641,7 @@ class GazeboSimulator(BaseSim):
     async def robot_delete(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:
             self._forget_agent_robot(robot.sim_path)
+        await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(robot.sim_path) for robot in robots))
 
     async def pedestrian_update(self, pedestrians: Pedestrians) -> Sequence[bool]:
@@ -890,7 +970,10 @@ class GazeboSimulator(BaseSim):
                     self._logger.warning(f"Failed to resolve model for entity {entity.name}: unknown model type {model}")
                     return False
 
-                ok = await self._spawn_model(entity.sim_path, model, self._placed(entity.pose))
+                if isinstance(entity, Robot):
+                    ok = await self._spawn_sdf(entity.sim_path, _free_position_joints(model.description), self._placed(entity.pose))
+                else:
+                    ok = await self._spawn_model(entity.sim_path, model, self._placed(entity.pose))
                 if ok and (model.path is None or model.type is ModelType.URDF):
                     self.entities[entity.name] = entity
                 if ok and model.path and model.type is not ModelType.URDF:
@@ -1138,19 +1221,7 @@ class GazeboSimulator(BaseSim):
                 parameters=[{"use_sim_time": True}],
             )
         )
-        launch_description.add_action(
-            launch_ros.actions.Node(
-                package="robot_state_publisher",
-                executable="robot_state_publisher",
-                name="robot_state_publisher",
-                output="screen",
-                parameters=[
-                    {"use_sim_time": True},
-                    {"robot_description": description},
-                    {"frame_prefix": robot.frame.tf()},
-                ],
-            )
-        )
+        launch_description.add_action(state_publisher_node(description, robot.frame.tf()))
 
         control_spec = robot_config.model_params.control
         is_ros2_control = control_spec is not None and control_spec.is_ros2_control
@@ -1196,7 +1267,7 @@ class GazeboSimulator(BaseSim):
         #         remappings=[('/joint_states', '/joint_states')]
         #     )
         # )
-        await self.node.do_launch(launch_description)
+        await self._track_robot_stack(robot.sim_path, launch_description)
 
     def _robot_initialpose(self, robot: Robot):
         pose = PoseWithCovarianceStamped()
@@ -1686,6 +1757,21 @@ def _articulated_sdf(name: str, runtime: ArticulatedObject, links: Sequence[tupl
         drives.append(f'<joint name="{joint.name}" stiffness="{dynamics.stiffness}" damping="{dynamics.drive_damping}" effort="{dynamics.effort}" wraps="{wraps}" initial="{runtime.current[joint.name]}"/>')
     plugin = f'<plugin filename="ArticulatedDrive" name="arena_gz_plugins::ArticulatedDrive">{"".join(drives)}</plugin>'
     return f'<?xml version="1.0"?><sdf version="1.9"><model name="{name}">{"".join(body)}{plugin}</model></sdf>'
+
+
+def _free_position_joints(urdf: str) -> str:
+    """The URDF with zero `<dynamics damping>` on the joints ros2_control commands by position, which resists their servo."""
+    root = xml.etree.ElementTree.fromstring(urdf)
+    position = {joint.get('name') for rc in root.iter('ros2_control') for joint in rc.findall('joint') if any(ci.get('name') == 'position' for ci in joint.findall('command_interface'))}
+    damped = [name for joint in root.findall('joint') if (name := joint.get('name', '')) in position and (dynamics := joint.find('dynamics')) is not None and 'damping' in dynamics.attrib]
+    for name in damped:
+        urdf = re.sub(
+            rf"<joint\b[^>]*\bname=([\"']){re.escape(name)}\1.*?</joint>",
+            lambda block: re.sub(r"(<dynamics\b[^>]*?\sdamping=)([\"'])[^\"']*\2", r'\1"0"', block.group(0)),
+            urdf,
+            flags=re.S,
+        )
+    return urdf
 
 
 def _sdf_file(path: Path) -> Path:

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import abc
+import asyncio
 import traceback
 import typing
+from collections.abc import Iterable
 
+import launch
 from arena_bringup.constants import SimSimulator
 from arena_rclpy_mixins import ArenaMixinNode
+from arena_rclpy_mixins.Async import LaunchHandle
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_simulation_setup.tree import IdentifierProtocol
@@ -16,6 +20,8 @@ from arena_runtime.shared import Pose, Position
 
 from ._interface import MechanismITF, ObstacleITF, PedestrianITF, RobotITF, SimLifecycle, ViewportITF, WorldITF
 from ._interface import SimUnavailable as SimUnavailable
+
+_STACK_SHUTDOWN_TIMEOUT_S = 15.0
 
 
 class SimKwargs(typing.TypedDict):
@@ -30,6 +36,7 @@ class BaseSim(NodeInterface[ArenaMixinNode], ObstacleITF, PedestrianITF, RobotIT
     _realizer: Realizer
     _env_id: int
     _robot_levels: dict[str, str]
+    _robot_stacks: dict[str, LaunchHandle]
 
     def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
         super().__init__(node=kwargs['node'])
@@ -37,6 +44,26 @@ class BaseSim(NodeInterface[ArenaMixinNode], ObstacleITF, PedestrianITF, RobotIT
         self._realizer = kwargs['realizer']
         self._env_id = kwargs.get('env_id', 0)
         self._robot_levels = {}
+        self._robot_stacks = {}
+
+    async def _track_robot_stack(self, sim_path: str, ld: launch.LaunchDescription) -> None:
+        """Launch the ROS nodes of a spawned robot in place of the ones it ran before."""
+        await self._stop_robot_stacks((sim_path,))
+        self._robot_stacks[sim_path] = await self.node.do_launch_tracked(ld)
+
+    async def _stop_robot_stacks(self, sim_paths: Iterable[str]) -> None:
+        """Stop the launched ROS nodes of the robots."""
+
+        async def stop(sim_path: str) -> None:
+            handle = self._robot_stacks.pop(sim_path, None)
+            if handle is None:
+                return
+            try:
+                await asyncio.wait_for(handle.shutdown(), timeout=_STACK_SHUTDOWN_TIMEOUT_S)
+            except TimeoutError:
+                self._logger.warning(f"robot stack of {sim_path!r} did not exit within {_STACK_SHUTDOWN_TIMEOUT_S}s")
+
+        await asyncio.gather(*(stop(sim_path) for sim_path in sim_paths))
 
     async def before_reset_episode(self) -> bool:
         """Episode-boundary hook before the task resets, for sim work that must not ride

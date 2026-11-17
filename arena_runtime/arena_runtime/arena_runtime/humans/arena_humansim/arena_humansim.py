@@ -667,13 +667,18 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if response is not None and all(result.successful for result in response.results):
             self._viz_config = cfg
 
+    def _render_ns(self, now_ns: int) -> int:
+        """Sim time shown to receivers: one engine frame behind now, so it falls between the two newest frames."""
+        curr, prev = self._curr_agent_states, self._prev_agent_states
+        if curr is None or prev is None:
+            return now_ns
+        frame_ns = (curr.header.stamp.sec - prev.header.stamp.sec) * int(1e9) + curr.header.stamp.nanosec - prev.header.stamp.nanosec
+        return now_ns - max(frame_ns, 0)
+
     async def _publish_interpolated(self) -> None:
-        """Interpolate at the current sim time, never before the engine's latest frame, and publish the roster."""
+        """Interpolate one engine frame behind the current sim time and publish the roster."""
         now = self.node.sim_time
-        now_ns = now.sec * int(1e9) + now.nanosec
-        if self._engine_stamp_ns is not None:
-            now_ns = max(now_ns, self._engine_stamp_ns)
-        states = self._interpolate_agent_states(now_ns)
+        states = self._interpolate_agent_states(self._render_ns(now.sec * int(1e9) + now.nanosec))
         if states is None:
             return
         peds = self._agent_states_to_pedestrians(states)
@@ -839,7 +844,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     name="peds",
                     topic=str(self._namespace("arena_peds")),
                     type="arena_people_msgs/msg/Pedestrians",
-                    period_s=engine_dt,
+                    period_s=2 * engine_dt,
                     hard=True,
                 ),
             ]

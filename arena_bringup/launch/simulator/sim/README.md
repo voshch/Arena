@@ -33,7 +33,7 @@ delegates with an `ExecuteProcess` (`bash -c 'arena feature <sim> launch ...'`,
 `on_exit=Shutdown`). The verb refuses unless the feature is installed
 (`arena feature <sim> install`), so the dispatcher is the single live entry and
 the verb is never a dead path. Forwarded args: gazebo gets
-`use_sim_time`/`headless`/`world`, isaac and mujoco get `headless`/`log_level`, flatsim
+`use_sim_time`/`headless`/`world`, isaac and mujoco get `headless`/`log_level`, gazebo, isaac and mujoco get `sim.viewport.resolution` as `viewport.resolution` (gazebo and mujoco only when set), flatsim
 gets `sim.flatsim.dynamics` as `dynamics` and `sim.flatsim.physics` as `physics`. `sim:=flatsim` without the flatsim
 package fails at launch with the install hint.
 
@@ -58,6 +58,10 @@ arena_mujoco:  run_mujoco.launch.py                           (MuJoCo server)
   `arena_bringup/configs/gazebo/empty.sdf` if the file is absent.
 - Launches `ros_gz_sim gz_sim.launch.py` (gz-sim 8, dart physics, ogre
   renderer). When `headless=True`, passes `-s` (server-only).
+- Renders the GUI's `--gui-config` from `~/.gz/sim/8/gui.config` or the checked-in
+  `configs/gazebo/gui.config` with the ViewportCamera plugin added. A
+  `viewport.resolution:=WxH` swaps the docked panels for a hidden ViewportCamera and
+  sizes the window so the 3D view is exactly `WxH` ([gazebo_gui.py](../../../arena_bringup/gazebo_gui.py)).
 - Starts a `ros_gz_bridge parameter_bridge` for gz's clock on `/gz/clock` and the arena_runtime `clock_relay` that forwards it to `/clock` only when sim time advances (a paused gz loop republishes the same stamp every iteration).
 
 ### run_isaacsim.launch.py (arena_isaac)

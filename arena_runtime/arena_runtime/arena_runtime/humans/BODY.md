@@ -192,7 +192,8 @@ A bundle without a neutral clip takes its stance from the skin's bind pose.
 ## 6. Semantic DOFs
 
 `semantic_to_body` in `arena_simulation_setup/shared/body.py` compiles the 54 wire DOFs of
-JOINTS.md, and `body_to_semantic` extracts them back.
+JOINTS.md, and `body_to_semantic` extracts them back. `semantic_to_bodies` compiles N bodies in
+one batch, each over a `CompiledStance` (`compile_stance`), and `semantic_to_body` is its one-row case.
 
 | JOINTS.md DOFs | joint |
 |---|---|

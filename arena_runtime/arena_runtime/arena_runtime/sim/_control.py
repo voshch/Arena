@@ -16,6 +16,9 @@ if typing.TYPE_CHECKING:
     from arena_robots.Robot import RobotView
 
 
+STATE_PUBLISH_HZ = 1000.0
+
+
 def load_control_yaml(config_uri: str, sim: SimSimulator | None = None) -> dict:
     """Resolve a ``control.config`` URI (``package://...`` or a bare path) and
     load the raw YAML as a dict, overlaid key by key with its sibling
@@ -128,6 +131,22 @@ def robot_controllers(robot_config: "RobotView", resolved: ResolvedAssembly | No
         return []
     prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
     return effective_controllers(resolved, control_spec.controllers, prefix=prefix)
+
+
+def state_publisher_node(description: str, frame_prefix: str) -> launch_ros.actions.Node:
+    """robot_state_publisher of `description` that puts every joint_states message on /tf."""
+    return launch_ros.actions.Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[
+            {'use_sim_time': True},
+            {'robot_description': description},
+            {'frame_prefix': frame_prefix},
+            {'publish_frequency': STATE_PUBLISH_HZ},
+        ],
+    )
 
 
 def odom_relay_node(odom_topic: str) -> launch_ros.actions.Node:
