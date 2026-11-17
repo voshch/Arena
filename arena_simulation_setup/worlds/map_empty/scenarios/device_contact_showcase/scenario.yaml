@@ -1,0 +1,13 @@
+# A robot drives through five people crossing its path, each device reaching it as the robot passes.
+# Run with robot.mobile:=test-collision robot.mobile.linear_x:=0.6; RViz's Collisions display marks every contact.
+format: arena-scenario/2
+humans:
+- {name: white_cane, model: Common/casual_female_caucasian_middleage_whitecane, pose: [7.0, 14.81, -1.5708], waypoints: [[7.0, 6.0, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_white_cane/blind_white_cane_unaware.yaml, desired_velocity: 0.6}}
+- {name: rolling_cane, model: Common/casual_male_asian_young_rollingcane, pose: [9.5, 17.32, -1.5708], waypoints: [[9.5, 6.0, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_rolling_cane/blind_rolling_cane_unaware.yaml, desired_velocity: 0.6}}
+- {name: rollator, model: Common/casual_male_caucasian_old_rollator, pose: [12.0, 18.35, -1.5708], waypoints: [[12.0, 6.0, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_rollator/elder_rollator_unaware.yaml, desired_velocity: 0.5}}
+- {name: iv_stand, model: Hospital/patient_male_caucasian_old_ivpole, pose: [14.5, 20.15, -1.5708], waypoints: [[14.5, 6.0, 0.0]], waypoint_mode: once, agent: {agent_type: ./patient_iv_pole_unaware.yaml, desired_velocity: 0.5}}
+- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [17.0, 15.67, -1.5708], waypoints: [[17.0, 6.0, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_walking_frame/patient_walking_frame_unaware.yaml}}
+robots:
+- start: [5.0, 11.5, 0.0]
+  phases:
+  - {goto: [22.0, 11.5, 0.0]}

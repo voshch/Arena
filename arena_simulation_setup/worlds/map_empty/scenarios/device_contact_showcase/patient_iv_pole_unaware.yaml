@@ -1,0 +1,4 @@
+name: patient_iv_pole_unaware
+extends: patient_iv_pole
+perception:
+  robot_awareness: 0.0
