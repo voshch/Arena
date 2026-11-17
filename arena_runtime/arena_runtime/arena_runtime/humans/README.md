@@ -323,14 +323,12 @@ A scripted entry renders with its `model:`. A source-spawned agent has none, so 
 
 ### Held devices
 
-An agent type's `device:` block (a long cane, a rollator, a walking frame or an IV stand, schema in
-[config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)) is passed through
-humansim untouched. `publish_arena_peds` poses it on every pedestrian of that type from the phase the arm is drawn at
-([`devices.py`](devices.py)): `Pedestrian.device` on `arena_peds` and `sim_peds` (shifted with the pedestrian when levels
-are stacked) holds a cane's shaft from the fist to the tip, or a box's footprint, height and lift, plus the object model
-renderers draw. The robot's collision tracker tests its footprint against it. Any backend that fills `agent_type` and
-`gait_phase` gets devices. The blocks are fitted from the gait profile posed on the type's character:
-`python3 -m arena_simulation_setup.adapters.arena_animation_retarget.devices`.
+An agent type's `device:` block names the assistive device its pedestrians hold: the prop bone their character carries
+(`{kind: cane, bone: cane}`), or an object held in both hands (`{kind: walking_frame, model: <object>}`, centred under the
+`pose.hold` grips). `publish_arena_peds` poses the character with the joint angles it publishes, through the same forward
+kinematics the simulators draw with (`ActorPose`), and writes the device's outline on the ground into `Pedestrian.device`
+([`devices.py`](devices.py)). Bodies are loaded off the publish path, once per character. The robot's collision tracker
+tests its footprint against `Pedestrian.radius` and `Pedestrian.device` (`devices.shapes`).
 
 ### Static world objects
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import arena_people_msgs.msg
@@ -19,7 +18,7 @@ from arena_robots.caps import PolygonSpec
 from rclpy.parameter import Parameter
 
 from arena_runtime.env.collision_grid import Cell
-from arena_runtime.humans.devices import footprint as device_footprint
+from arena_runtime.humans.devices import shapes as pedestrian_shapes
 
 if TYPE_CHECKING:
     from arena_runtime.env.environment_manager import EnvironmentManager
@@ -45,8 +44,8 @@ class CollisionTrackerNode(rclpy.node.Node):
 
     Reads RobotManager.pose + EnvironmentManager.collision_grid. The footprint
     defines a collision: it feeds `collision_events` and the robot manager's
-    collision callback. A pedestrian's held device (`Pedestrian.device`) is
-    tested in plan view, a cane's whole shaft from the fist to the tip. The cap polygons only feed
+    collision callback. Pedestrians are their body disc and held device on
+    the ground. The cap polygons only feed
     `collision_monitor_state`. Tick timer uses sim time, so it is gated during
     pauses.
     """
@@ -74,7 +73,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         self._env: EnvironmentManager = robot_manager._environment_manager
         self._default_peds_radius = default_pedestrian_radius
         self._peds_msg: arena_people_msgs.msg.Pedestrians | None = None
-        self._devices: list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry]] | None = None  # of _peds_msg, built on first use
+        self._shapes: list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Geometry | None]] | None = None  # of _peds_msg, built on first use
 
         self._poly_cache: dict[str, dict] = {}
         for name, spec in polygons.items():
@@ -115,14 +114,14 @@ class CollisionTrackerNode(rclpy.node.Node):
 
     def _on_peds(self, msg: arena_people_msgs.msg.Pedestrians):
         self._peds_msg = msg
-        self._devices = None
+        self._shapes = None
 
     def _on_reset_start(self, _msg: std_msgs.msg.Empty):
         self._valid_after = None
 
     def _on_reset_end(self, _msg: std_msgs.msg.Empty):
         self._peds_msg = None
-        self._devices = None
+        self._shapes = None
         self._valid_after = self.get_clock().now()
 
     def _robot_polygon(self, entry: dict, rx: float, ry: float, rth: float) -> shapely.Polygon:
@@ -185,27 +184,12 @@ class CollisionTrackerNode(rclpy.node.Node):
             ev.obstacle_position = geometry_msgs.msg.Point(x=rx, y=ry, z=0.0) if static is None else geometry_msgs.msg.Point(x=float(static.centroid.x), y=float(static.centroid.y), z=0.0)
             events.append(ev)
 
-        for p, px, py in self._pedestrians():
-            if not footprint.intersects(shapely.Point(px, py).buffer(self._default_peds_radius)):
-                continue
-            ev = arena_robots_msgs.msg.CollisionEvent()
-            ev.kind = arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN
-            ev.obstacle_id = p.name
-            ev.distance = 0.0
-            ev.obstacle_position = geometry_msgs.msg.Point(x=px, y=py, z=0.0)
-            events.append(ev)
-
-        for p, shape in self._held_devices():
-            if not footprint.intersects(shape):
-                continue
-            touch = footprint.intersection(shape).centroid
-            ev = arena_robots_msgs.msg.CollisionEvent()
-            ev.kind = arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE
-            ev.device = p.device.kind
-            ev.obstacle_id = p.name
-            ev.distance = 0.0
-            ev.obstacle_position = geometry_msgs.msg.Point(x=float(touch.x), y=float(touch.y), z=0.0)
-            events.append(ev)
+        for p, body, device in self._pedestrian_shapes():
+            if body is not None and footprint.intersects(body):
+                events.append(self._event(arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN, p, p.pose.position.x, p.pose.position.y))
+            if device is not None and footprint.intersects(device):
+                touch = footprint.intersection(device).centroid
+                events.append(self._event(arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE, p, touch.x, touch.y, p.device.kind))
 
         evmsg = arena_robots_msgs.msg.CollisionEvents()
         evmsg.header.stamp = self.get_clock().now().to_msg()
@@ -216,26 +200,19 @@ class CollisionTrackerNode(rclpy.node.Node):
         if events:
             self._rm.report_collision()
 
-    def _pedestrians(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, float, float]]:
-        if self._peds_msg is None:
-            return []
-        out: list[tuple[arena_people_msgs.msg.Pedestrian, float, float]] = []
-        for p in self._peds_msg.pedestrians:
-            px, py = p.pose.position.x, p.pose.position.y
-            if math.isnan(px) or math.isnan(py):
-                continue
-            out.append((p, px, py))
-        return out
+    @staticmethod
+    def _event(kind: str, ped: arena_people_msgs.msg.Pedestrian, x: float, y: float, device: str = "") -> arena_robots_msgs.msg.CollisionEvent:
+        return arena_robots_msgs.msg.CollisionEvent(kind=kind, obstacle_id=ped.name, distance=0.0, obstacle_position=geometry_msgs.msg.Point(x=float(x), y=float(y), z=0.0), device=device)
 
-    def _held_devices(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry]]:
-        """The plan view of every held device of the latest pedestrians, built once per message."""
-        if self._devices is None:
+    def _pedestrian_shapes(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Geometry | None]]:
+        """Body disc and held device of every pedestrian of the latest message, built once per message."""
+        if self._shapes is None:
             peds = self._peds_msg.pedestrians if self._peds_msg is not None else []
-            self._devices = [(p, shape) for p in peds if p.device.kind and (shape := device_footprint(p.device)) is not None]
-        return self._devices
+            self._shapes = [(p, *pedestrian_shapes(p, self._default_peds_radius)) for p in peds]
+        return self._shapes
 
     def _hits_pedestrian(self, poly: shapely.Polygon) -> bool:
-        return any(poly.intersects(shapely.Point(px, py).buffer(self._default_peds_radius)) for _, px, py in self._pedestrians()) or any(poly.intersects(shape) for _, shape in self._held_devices())
+        return any((body is not None and poly.intersects(body)) or (device is not None and poly.intersects(device)) for _, body, device in self._pedestrian_shapes())
 
     def shutdown(self):
         self.destroy_node()

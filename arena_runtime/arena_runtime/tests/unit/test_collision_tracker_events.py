@@ -324,12 +324,13 @@ def test_wall_and_pedestrian_together_yield_both_events_wall_first(on_stage):
 
 
 def _cane(x: float, y: float, heading: float):
-    """A pedestrian at (x, y) with a 1 m cane ahead along `heading`, the tip on the floor."""
+    """A 1 m cane ahead of a pedestrian at (x, y) along `heading`, on the ground."""
     from arena_people_msgs.msg import HeldDevice
-    from arena_runtime.humans.devices import DeviceSpec
+    from geometry_msgs.msg import Point32
 
-    spec = DeviceSpec.parse({"kind": "cane", "grip": {"x": 0.3, "y": 0.0, "z": 0.9}, "tip": {"x": 1.3, "y": 0.0, "z": 0.0}, "radius": 0.0125})
-    return spec.pose(x, y, 0.0, heading, 0.0, out=HeldDevice())
+    c, s = math.cos(heading), math.sin(heading)
+    outline = [(0.3, -0.0125), (1.3, -0.0125), (1.3, 0.0125), (0.3, 0.0125)]
+    return HeldDevice(kind="cane", footprint=[Point32(x=x + c * u - s * v, y=y + s * u + c * v, z=0.0) for u, v in outline])
 
 
 def test_a_held_device_under_the_footprint_collides_apart_from_its_holder(on_stage):

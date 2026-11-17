@@ -39,7 +39,8 @@ from arena_runtime._node import NodeInterface
 from arena_runtime.env.constants import Constants
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.animation_manager import AnimationManager
-from arena_runtime.humans.devices import DeviceSpec
+from arena_runtime.humans.devices import DeviceSpec, HeldBodies
+from arena_runtime.humans.devices import place as place_device
 from arena_runtime.humans.devices import shift as shift_device
 from arena_runtime.humans.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from arena_runtime.humans.gestures import Channel, GestureLayer, GestureRequest
@@ -82,7 +83,7 @@ def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
     placed = copy.deepcopy(msg)
     for ped in placed.pedestrians:
         position = placement.place(Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z))
-        shift_device(ped.device, position.x - ped.pose.position.x, position.y - ped.pose.position.y, position.z - ped.pose.position.z)
+        shift_device(ped.device, position.x - ped.pose.position.x, position.y - ped.pose.position.y)
         ped.pose.position.x, ped.pose.position.y, ped.pose.position.z = position.x, position.y, position.z
     return placed
 
@@ -94,6 +95,7 @@ def stair_running(stair: Stairs, stairs: Iterable[Stairs], running: Mapping[str,
 
 
 DEFAULT_ROBOT_RADIUS = 0.3  # m, a robot whose model gives no footprint
+DEVICE_RANGE = 2.0  # m beyond a robot's radius within which held devices are posed, a long cane reaches 1.1 m
 
 
 @attrs.define
@@ -231,6 +233,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._devices: dict[str, DeviceSpec | None] = {}
+        self._held_bodies = HeldBodies(self._logger.warning)
         self._driven = DrivenJoints()
         self._stances: dict[str, CompiledStance] = {}
         self._drivers: dict[str, Drivers] = {}
@@ -348,12 +351,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
         pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
+        robots: list[tuple[float, float, float]] | None = None
         for ped in out.pedestrians:
             ped.pose.position.z = self.footing(ped.pose.position.x, ped.pose.position.y)
-            if (device := self._device_for(ped.agent_type)) is not None:  # from the phase the arm is drawn at
-                yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
-                warped = self._pose_profile_for(ped.agent_type).walk.phase_warp(float(ped.gait_phase))
-                device.pose(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z, yaw, warped, out=ped.device)
+            if (device := self._device_for(ped.agent_type)) is not None:
+                if robots is None:
+                    robots = [(t.pose.position.x, t.pose.position.y, t.radius + DEVICE_RANGE) for t in self.tracked_robots()]
+                self._hold_device(ped, device, robots)
             drivers = self._drivers_for(ped.model_uri)
             if not drivers.rollers and not drivers.joystick:
                 continue
@@ -423,6 +427,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""
         return None
+
+    def _hold_device(self, ped: Pedestrian, device: DeviceSpec, robots: Sequence[tuple[float, float, float]]) -> None:
+        """Pose `ped`'s device into `ped.device` when a robot (x, y, reach) is near enough to touch it."""
+        x, y = ped.pose.position.x, ped.pose.position.y
+        if not ped.model_uri or not ped.joint_state.name or not any(math.hypot(x - rx, y - ry) <= reach for rx, ry, reach in robots):
+            return
+        if (held := self._held_bodies.get(ped.model_uri, device)) is None:
+            return
+        angles = dict(zip(ped.joint_state.name, ped.joint_state.position, strict=True))
+        outline = held.footprint(angles, self._pose_profile_for(ped.agent_type).while_in(self._interaction(ped)).hold)
+        if len(outline) >= 3:
+            place_device(ped, held.kind, outline, Orientation.from_msg(ped.pose.orientation).to_yaw())
 
     def _interaction(self, ped: Pedestrian) -> str | None:
         """Name of the interaction the ped is in, the key of its pose profile's `while` section, None outside one."""
@@ -568,7 +584,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         return profile
 
     def preload_pose_profiles(self, agent_types: Iterable[str]) -> None:
-        """Resolve pose profiles and held devices before the publish tick, which only reads them (a held grip is solved once per type)."""
+        """Resolve pose profiles and device blocks before the publish tick, which only reads them (a held grip is solved once per type)."""
         for agent_type in set(agent_types):
             self._pose_profile_for(agent_type)
             self._device_for(agent_type)
@@ -582,7 +598,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             try:
                 section = agent_type_device_section(agent_type, self._builtin_agent_types())
                 device = None if section is None else DeviceSpec.parse(section)
+                if device is not None and device.model and not self._pose_profile_for(agent_type).hold:
+                    raise ValueError(f"{device.kind} held in both hands needs the type's pose.hold")
             except (ValueError, TypeError, OSError, yaml.YAMLError) as e:
+                device = None
                 self._logger.warning(f"agent type {agent_type!r} device rejected ({e}), it holds none")
         self._devices[agent_type] = device
         return device
