@@ -1,4 +1,5 @@
-# blind_white_cane that does not react to robots, so the robot driving at it reaches the held device (device_contact_white_cane).
+# blind_white_cane that does not react to robots, so a robot driving at it reaches the device it holds
+# (the device_contact_white_cane* scenarios).
 name: blind_white_cane_unaware
 extends: blind_white_cane
 perception:

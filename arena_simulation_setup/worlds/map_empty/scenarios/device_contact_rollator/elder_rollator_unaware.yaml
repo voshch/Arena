@@ -1,4 +1,5 @@
-# elder_rollator that does not react to robots, so the robot driving at it reaches the held device (device_contact_rollator).
+# elder_rollator that does not react to robots, so a robot driving at it reaches the device it holds
+# (the device_contact_rollator* scenarios).
 name: elder_rollator_unaware
 extends: elder_rollator
 perception:

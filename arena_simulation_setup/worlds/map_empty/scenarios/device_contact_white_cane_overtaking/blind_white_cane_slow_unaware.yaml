@@ -1,6 +1,0 @@
-# blind_white_cane walking at 0.25 m/s that does not react to robots, so the robot overtakes it from behind (device_contact_white_cane_overtaking).
-name: blind_white_cane_slow_unaware
-extends: blind_white_cane
-desired_velocity: {mean: 0.25, std: 0.02, clip_low: 0.22, clip_high: 0.28}
-perception:
-  robot_awareness: 0.0

@@ -1,10 +1,14 @@
-# Robot contact with a held assistive device, crossing: the robot drives across the path of an older adult pushing a rollator at 90 degrees, from the
-# person's left. The person does not react to robots, and the robot touches the side of the rollator first (humansim robot_contacts).
-# Record with --start-within 3.05: the robot starts when the person is 3.05 m away, timed so it meets the device.
+# Robot contact with a held assistive device, crossing: the robot drives across the path of an older adult pushing a rollator at 90 degrees,
+# from the person's left. The person does not react to robots; both start so that the robot meets the rollator.
+# Run: arena launch sim:=gazebo world:=map_empty robot:=jackal human:=arena tm_robots:=scenario tm_obstacles:=scenario \
+#        task.scenario.file:=device_contact_rollator_crossing robot.mobile:=test-collision robot.mobile.linear_x:=0.4 task.episode.fail_on_collision:=true
+# The robot drives straight ahead; the collision tracker reports the first contact on <robot>/collision_events (kind
+# `device` for the held device, `pedestrian` for the body), which ends the episode. With a planner instead of
+# test-collision the scenario checks whether it keeps clear. record.dir:=... records it, `arena cam` films it.
 format: arena-scenario/2
 humans:
-- {name: rollator, model: Common/casual_male_caucasian_old_rollator, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ./elder_rollator_unaware.yaml}}
+- {name: rollator, model: Common/casual_male_caucasian_old_rollator, pose: [17.6, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_rollator/elder_rollator_unaware.yaml}}
 robots:
-- start: [15.0, 9.9, 1.5708]
+- start: [15.0, 9.90, 1.5708]
   phases:
-  - {goto: [15.0, 14.5, 1.5708]}
+  - {goto: [15.0, 14.50, 1.5708]}

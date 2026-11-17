@@ -1,5 +1,0 @@
-# elder_rollator that does not react to robots, so the robot crossing its path reaches the held device (device_contact_rollator_crossing).
-name: elder_rollator_unaware
-extends: elder_rollator
-perception:
-  robot_awareness: 0.0

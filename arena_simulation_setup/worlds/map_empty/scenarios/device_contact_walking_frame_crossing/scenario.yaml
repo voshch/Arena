@@ -1,11 +1,14 @@
-# Robot contact with a held assistive device, crossing: the robot drives across the path of a patient with a walking frame at 90 degrees, from the
-# person's left. The person does not react to robots, and the robot touches the side of the walking frame first (humansim robot_contacts).
-# Record with --start-within 1.95: the robot starts when the person is 1.95 m away, timed so it meets the device.
-# There is no walking-frame character: record with --props walking_frame to draw the frame in Isaac Sim.
+# Robot contact with a held assistive device, crossing: the robot drives across the path of a patient with a walking frame at 90 degrees,
+# from the person's left. The person does not react to robots; both start so that the robot meets the walking frame.
+# Run: arena launch sim:=gazebo world:=map_empty robot:=jackal human:=arena tm_robots:=scenario tm_obstacles:=scenario \
+#        task.scenario.file:=device_contact_walking_frame_crossing robot.mobile:=test-collision robot.mobile.linear_x:=0.4 task.episode.fail_on_collision:=true
+# The robot drives straight ahead; the collision tracker reports the first contact on <robot>/collision_events (kind
+# `device` for the held device, `pedestrian` for the body), which ends the episode. With a planner instead of
+# test-collision the scenario checks whether it keeps clear. record.dir:=... records it, `arena cam` films it.
 format: arena-scenario/2
 humans:
-- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ./patient_walking_frame_unaware.yaml}}
+- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [19.61, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_walking_frame/patient_walking_frame_unaware.yaml}}
 robots:
-- start: [18.5, 9.9, 1.5708]
+- start: [18.5, 9.90, 1.5708]
   phases:
-  - {goto: [18.5, 14.5, 1.5708]}
+  - {goto: [18.5, 14.50, 1.5708]}

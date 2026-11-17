@@ -1,10 +1,13 @@
-# Robot contact from behind: the robot catches up with a patient with a walking frame walking at its own pace (0.17 m/s) away from it. The person does not react
-# to robots, and the robot touches their body, not the walking frame held ahead of them (humansim robot_contacts, part body).
-# Record with the default --drive 0.4: the robot gains on the person from 2 m behind.
-# There is no walking-frame character: record with --props walking_frame to draw the frame in Isaac Sim.
+# Robot contact from behind: the robot catches up with a patient with a walking frame walking at its own pace (0.17 m/s) away from it.
+# The person does not react to robots, and the robot touches their body, not the device held ahead of them.
+# Run: arena launch sim:=gazebo world:=map_empty robot:=jackal human:=arena tm_robots:=scenario tm_obstacles:=scenario \
+#        task.scenario.file:=device_contact_walking_frame_overtaking robot.mobile:=test-collision robot.mobile.linear_x:=0.4 task.episode.fail_on_collision:=true
+# The robot drives straight ahead; the collision tracker reports the first contact on <robot>/collision_events (kind
+# `device` for the held device, `pedestrian` for the body), which ends the episode. With a planner instead of
+# test-collision the scenario checks whether it keeps clear. record.dir:=... records it, `arena cam` films it.
 format: arena-scenario/2
 humans:
-- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ./patient_walking_frame_unaware.yaml}}
+- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_walking_frame/patient_walking_frame_unaware.yaml}}
 robots:
 - start: [22.5, 11.5, 3.1416]
   phases:

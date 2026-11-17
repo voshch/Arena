@@ -1,4 +1,5 @@
-# patient_walking_frame that does not react to robots, so the robot driving at it reaches the held device (device_contact_walking_frame).
+# patient_walking_frame that does not react to robots, so a robot driving at it reaches the device it holds
+# (the device_contact_walking_frame* scenarios).
 name: patient_walking_frame_unaware
 extends: patient_walking_frame
 perception:

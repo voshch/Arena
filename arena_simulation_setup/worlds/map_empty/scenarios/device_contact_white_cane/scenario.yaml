@@ -1,6 +1,10 @@
-# Robot contact with a held assistive device: the robot drives straight across the room at a blind long-cane user (two-point touch) walking toward it,
-# who does not react to robots, so the robot touches the device first (humansim robot_contacts, part white_cane).
-# Drive and record: python3 -m arena_runtime.humans.arena_humansim.device_contacts record (robot.mobile:=none).
+# Robot contact with a held assistive device, head-on: the robot drives straight at a blind long-cane user (two-point touch) walking toward it,
+# who does not react to robots, so the robot touches the white cane first.
+# Run: arena launch sim:=gazebo world:=map_empty robot:=jackal human:=arena tm_robots:=scenario tm_obstacles:=scenario \
+#        task.scenario.file:=device_contact_white_cane robot.mobile:=test-collision robot.mobile.linear_x:=0.4 task.episode.fail_on_collision:=true
+# The robot drives straight ahead; the collision tracker reports the first contact on <robot>/collision_events (kind
+# `device` for the held device, `pedestrian` for the body), which ends the episode. With a planner instead of
+# test-collision the scenario checks whether it keeps clear. record.dir:=... records it, `arena cam` films it.
 format: arena-scenario/2
 humans:
 - {name: white_cane, model: Common/casual_female_caucasian_middleage_whitecane, pose: [20.5, 11.65, 3.1416], waypoints: [[9.5, 11.65, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_white_cane_unaware.yaml}}

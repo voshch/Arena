@@ -1,9 +1,13 @@
-# Robot contact with a held assistive device, crossing: the robot drives across the path of a blind long-cane user (two-point touch) at 90 degrees, from the
-# person's left. The person does not react to robots, and the sweeping cane touches the robot first (humansim robot_contacts).
-# Record with --start-within 4.2: the robot starts when the person is 4.2 m away, timed so it meets the device.
+# Robot contact with a held assistive device, crossing: the robot drives across the path of a blind long-cane user (two-point touch) at 90 degrees,
+# from the person's left. The person does not react to robots; both start so that the robot meets the white cane.
+# Run: arena launch sim:=gazebo world:=map_empty robot:=jackal human:=arena tm_robots:=scenario tm_obstacles:=scenario \
+#        task.scenario.file:=device_contact_white_cane_crossing robot.mobile:=test-collision robot.mobile.linear_x:=0.4 task.episode.fail_on_collision:=true
+# The robot drives straight ahead; the collision tracker reports the first contact on <robot>/collision_events (kind
+# `device` for the held device, `pedestrian` for the body), which ends the episode. With a planner instead of
+# test-collision the scenario checks whether it keeps clear. record.dir:=... records it, `arena cam` films it.
 format: arena-scenario/2
 humans:
-- {name: white_cane, model: Common/casual_female_caucasian_middleage_whitecane, pose: [20.5, 11.65, 3.1416], waypoints: [[9.5, 11.65, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_white_cane_unaware.yaml}}
+- {name: white_cane, model: Common/casual_female_caucasian_middleage_whitecane, pose: [18.88, 11.65, 3.1416], waypoints: [[9.5, 11.65, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_white_cane/blind_white_cane_unaware.yaml}}
 robots:
 - start: [15.0, 10.05, 1.5708]
   phases:
