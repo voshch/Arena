@@ -35,6 +35,13 @@ def _robot(x: float, y: float, name: str = "rob"):
     return Robot(name=name, pose=Pose(Position(x=x, y=y)), model=RobotIdentifier.parse("jackal"), adapters={"mobile": "nav2"}, extra={})
 
 
+def _jackal_radius() -> float:
+    from arena_robots.Robot import RobotIdentifier
+    from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+
+    return footprint_radius(RobotIdentifier.parse("jackal").resolve_sync())
+
+
 def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop", offset: tuple[float, float] = (0.0, 0.0), robots_visible: bool = True) -> None:
     import tf2_ros
     from arena_rclpy_mixins.Async import AsyncNode
@@ -78,6 +85,7 @@ def test_spawned_robot_follows_its_base_frame(rclpy_context):
         assert await human.spawn_robot((_robot(1.0, 2.0),)) == (True,)
         (tracked,) = human.tracked_robots()
         assert tracked.tf_frame is not None
+        assert tracked.radius == pytest.approx(_jackal_radius())
         assert (tracked.pose.position.x, tracked.pose.position.y) == (1.0, 2.0)
         assert tracked.velocity == (0.0, 0.0)
 
@@ -170,6 +178,7 @@ def test_arena_adapter_streams_robot_pose_and_velocity_in_the_engine_frame(rclpy
         assert agent.agent_id == stable_int("rob") & 0x7FFFFFFF
         assert (agent.pose.x, agent.pose.y) == pytest.approx((1.05, 1.98))
         assert (agent.velocity.x, agent.velocity.y) == pytest.approx((1.0, -0.4))
+        assert agent.radius == pytest.approx(_jackal_radius())  # the footprint's, not a fixed disc
         assert alias.name == "robot_0"
         assert alias.agent_id == agent.agent_id
         assert (alias.pose, alias.velocity, alias.radius) == (agent.pose, agent.velocity, agent.radius)
@@ -265,7 +274,7 @@ def test_arena_adapter_with_visible_robots_streams_robots_and_possessed_pedestri
         msg = _world_state_after_publish(human)
         assert msg is not None
         assert [agent.name for agent in msg.agents] == ["rob", "robot_0", "ped_1"]
-        assert [agent.radius for agent in msg.agents] == pytest.approx([0.3, 0.3, 0.35])
+        assert [agent.radius for agent in msg.agents] == pytest.approx([_jackal_radius(), _jackal_radius(), 0.35])
 
     _with_human(scenario, backend="arena", offset=(10.0, -5.0))
 

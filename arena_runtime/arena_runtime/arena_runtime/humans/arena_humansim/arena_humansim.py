@@ -1096,7 +1096,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.name = name
             a.pose = self._engine_pose(tracked.pose)
             a.velocity.x, a.velocity.y = tracked.velocity
-            a.radius = 0.3
+            a.radius = tracked.radius
             msg.agents.append(a)  # pyright: ignore[reportAttributeAccessIssue]
         ids = self._agent_ids()
         for name, ped in possessed.items():

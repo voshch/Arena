@@ -90,6 +90,9 @@ def stair_running(stair: Stairs, stairs: Iterable[Stairs], running: Mapping[str,
     return all(running.get(name, True) for name in linked if name)
 
 
+DEFAULT_ROBOT_RADIUS = 0.3  # m, a robot whose model gives no footprint
+
+
 @attrs.define
 class TrackedRobot:
     """A robot's map-frame pose and velocity, followed through its base frame in TF."""
@@ -99,6 +102,7 @@ class TrackedRobot:
     pose: Pose
     velocity: tuple[float, float] = (0.0, 0.0)
     stamp: float | None = None
+    radius: float = DEFAULT_ROBOT_RADIUS  # the footprint's disc radius, the robot's size in human engines
 
     def place(self, pose: Pose) -> None:
         """Teleport to pose, at rest until TF reports the next one."""
@@ -1307,14 +1311,18 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
 
     async def _track_robots(self, robots: Sequence[Robot]) -> Sequence[bool]:
+        from arena_runtime.env.robot_manager.robot_manager import footprint_radius  # robot_manager imports this module
+
         for robot in robots:
             tf_frame: str | None = None
+            radius = DEFAULT_ROBOT_RADIUS
             try:
                 view = await robot.model.resolve()
                 tf_frame = robot.frame(view.model_params.base_frame).raw()
+                radius = footprint_radius(view)
             except Exception as e:
-                self._logger.warning(f"robot {robot.name!r}: base frame unresolved ({e}), using spawn pose only")
-            self._robots[robot.name] = TrackedRobot(robot=robot, tf_frame=tf_frame, pose=copy.deepcopy(robot.pose))
+                self._logger.warning(f"robot {robot.name!r}: base frame or footprint unresolved ({e}), using the spawn pose only and a {radius} m radius")
+            self._robots[robot.name] = TrackedRobot(robot=robot, tf_frame=tf_frame, pose=copy.deepcopy(robot.pose), radius=radius)
         return await self._spawn_robot_impl(robots)
 
     async def _untrack_robots(self, robots: Sequence[Robot]) -> Sequence[bool]:
