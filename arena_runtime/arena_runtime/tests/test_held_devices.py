@@ -13,6 +13,7 @@ from arena_runtime.humans.devices import DeviceSpec, Track, footprint, shift
 from arena_runtime.humans.profile import agent_type_device_section
 
 CANE = {"kind": "cane", "model": "Common/Object/WhiteCane", "grip": {"x": 0.3, "y": -0.1, "z": 0.9}, "tip": {"x": {"mean": 1.0, "harmonics": [[0.0, 0.0]]}, "y": {"mean": 0.0, "harmonics": [[0.3, 0.0]]}, "z": 0.0}, "radius": 0.0125}
+HUMANSIM_TYPES = Path(__file__).resolve().parents[3] / "humansim" / "arena_humansim" / "config" / "agent_types"
 FRAME = {"kind": "walking_frame", "origin": {"x": 0.35, "y": 0.0, "z": {"mean": 0.02, "harmonics": [[0.02, 0.0]]}}, "size": {"length": 0.4, "width": 0.5, "height": 0.67, "ahead": 0.1, "left": 0.0}}
 
 
@@ -102,6 +103,16 @@ def test_the_device_block_comes_whole_from_the_nearest_type_along_extends(tmp_pa
     assert agent_type_device_section("ghost", builtin) is None
     with pytest.raises(ValueError, match="cycle"):
         agent_type_device_section("loop_a", builtin)
+
+
+@pytest.mark.skipif(not HUMANSIM_TYPES.is_dir(), reason="the humansim submodule is not checked out")
+@pytest.mark.parametrize(("name", "kind"), [("blind_white_cane", "cane"), ("blind_rolling_cane", "cane"), ("elder_rollator", "rollator"), ("patient_walking_frame", "walking_frame"), ("patient_iv_pole", "iv_stand")])
+def test_the_shipped_device_blocks_parse(name: str, kind: str) -> None:
+    section = agent_type_device_section(name, HUMANSIM_TYPES)
+    assert section is not None
+    spec = DeviceSpec.parse(section)
+    assert spec.kind == kind
+    assert spec.model
 
 
 def test_the_published_roster_carries_each_holders_device(rclpy_context, tmp_path: Path) -> None:
