@@ -12,6 +12,7 @@ members = [
     "arena-bringup",
     "arena-cam",
     "arena-cli",
+    "arena-fleet",
     "arena-mcp",
     "arena-rosnav",
     "arena-runtime",
@@ -195,6 +196,30 @@ provides-extras = ["test"]
 name = "arena-cli"
 version = "0.0.0"
 source = { editable = "_meta/arena_cli" }
+
+[[package]]
+name = "arena-fleet"
+version = "0.0.1"
+source = { virtual = "arena_fleet" }
+dependencies = [
+    { name = "attrs" },
+    { name = "numpy" },
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "attrs" },
+    { name = "numpy" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+    { name = "pyyaml" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "arena-mcp"

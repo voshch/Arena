@@ -1,0 +1,14 @@
+# Baseline HATA (arXiv 2508.19731): cost.yaml with the HATA bid instead of J. Use with profile hata and info mod.
+
+base: cost.yaml           # every key not set here comes from this file
+
+mode: hata                # terms() returns the HATA bid instead of J = T + H + F + W
+hata:                     # arXiv 2508.19731 eq. 3: c_ij = sum_k (w0 * d_k + w1 * p_k); weights as fitted by BO in the paper (their units: m and probability)
+  w0: 1.15
+  w1: 0.95
+
+plan:
+  occupied_cost_per_m: 1000.0  # plan_around: extra cost of a metre of plan through cells the people map says are occupied
+
+flow:
+  threshold: 0.65         # probability above which a cell counts as "a person is here"

@@ -1,0 +1,15 @@
+[project]
+name = "arena_fleet"
+version = "0.0.1"
+dependencies = [
+    "attrs",
+    "numpy",
+    "PyYAML",
+]
+dynamic = ["authors", "description", "license", "maintainers", "scripts", "entry-points"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.uv]
+package = false
