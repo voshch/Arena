@@ -285,3 +285,19 @@ def test_lerp_snaps_a_jump_its_speed_cannot_explain_and_sweeps_a_fast_walk() -> 
     lerped = _adapter(prev, curr)._interpolate_agent_states(int(0.25e9))
 
     assert list(lerped.x) == pytest.approx([20.0, 1.0])
+
+
+def test_a_repeated_frame_republishes_without_shifting_the_interpolation_pair() -> None:
+    """The engine answers a repeated clock with its last frame: the roster goes out again, the lerp pair stays."""
+    columns = {"agent_id": [1], "y": [0.0], "theta": [0.0], "vx": [1.0], "vy": [0.0]}
+    prev, curr = _frame(1, x=[0.0], **columns), _frame(2, x=[1.0], **columns)
+    adapter = _adapter(prev, curr, engine_stamp_ns=2_000_000_000)
+    adapter._publish_pending = True
+    adapter._agent_states_callback(_frame(2, x=[1.0], **columns))
+    assert adapter._prev_agent_states is prev
+    assert adapter._curr_agent_states is curr
+    newer = _frame(3, x=[2.0], **columns)
+    adapter._agent_states_callback(newer)
+    assert adapter._prev_agent_states is curr
+    assert adapter._curr_agent_states is newer
+    assert adapter._engine_stamp_ns == 3_000_000_000
