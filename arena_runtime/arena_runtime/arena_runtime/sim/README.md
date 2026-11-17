@@ -406,7 +406,8 @@ clock registers `period_s` equal to its own tick length, which paces the
 sim to the producer's true coverage. An elapsed-based rate loop registers
 a period strictly above its interval. The arena_humansim engine ticks off
 `/clock` itself rather than an rcl timer, so a clock the gate is holding
-still owes it the tick the gate is waiting for.
+still owes it the tick the gate is waiting for, and it answers a repeated
+clock, which the gate sends while it waits, with its last frame.
 
 `sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`)
 starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced
@@ -419,7 +420,8 @@ idles while a foreign hold is open (episode resets) and rebases its window
 grid to whatever sim time passed meanwhile. An unpause window never unpauses
 the sim during a run: the scheduler keeps stepping for it, also under a
 foreign hold or `pause`, gated on every hard channel except those registered
-in the window holder's env. A failed step is retried under the run's hold
+in the window holder's env, which stay subscribed and keep their latest stamp
+for when the window closes. A failed step is retried under the run's hold
 after 1, 2, 4, 8 and 16 s, rebasing on the clock first, and a sixth
 consecutive failure ends the run and counts one lifecycle failure.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run

@@ -303,11 +303,12 @@ class LockstepScheduler:
                         self._node.destroy_subscription(subs.pop(ch.topic))
                     for ch in added:
                         subs[ch.topic] = self._subscribe(ledger, ch)
+                    ledger.skip(ledger.channels.keys() - self._gated().keys())
 
                 pace = config.target_rtf
-                if not config.ungated and not ledger.channels and pace <= 0.0:
+                if not config.ungated and not ledger.active() and pace <= 0.0:
                     pace = 1.0
-                gated = not config.ungated and bool(ledger.channels)
+                gated = not config.ungated and bool(ledger.active())
                 try:
                     advanced = await self._node._lifecycle.step_seconds(ledger.next_delta() if gated else step_slice(pace, dt))
                 except RuntimeError as e:
@@ -359,6 +360,9 @@ class LockstepScheduler:
                 self._node.destroy_subscription(sub)
 
     def _desired(self) -> dict[str, tuple[ChannelSpec, str]]:
+        return self._registry.desired(env_id for env_id, record in self._node._env_registry.items() if not record.draining)
+
+    def _gated(self) -> dict[str, tuple[ChannelSpec, str]]:
         windowed = self._window_holders()
         return self._registry.desired((env_id for env_id, record in self._node._env_registry.items() if not record.draining and record.fqn not in windowed), skip=windowed)
 
@@ -382,8 +386,8 @@ class LockstepScheduler:
             if self._gate_key() != version:
                 # a deregistered channel (env despawn) must not stall the tick forever
                 version = self._gate_key()
-                desired = self._desired()
-                hard_due = [ch for ch in hard_due if ch.topic in desired]
+                gated = self._gated()
+                hard_due = [ch for ch in hard_due if ch.topic in gated]
             waiting = ledger.waiting(hard_due)
             if not waiting:
                 break

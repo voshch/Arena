@@ -432,3 +432,36 @@ def test_a_beat_buys_one_period_when_steps_overshoot_the_due() -> None:
         ledger.complete(hard_due)
     assert ledger.now / beats < 0.1 + 1.5 * physics_dt
     assert ledger.counts[nav.topic].due == pytest.approx(beats, abs=1)
+
+
+def test_a_skipped_channel_stays_observed_and_gates_again_on_its_latest_stamp() -> None:
+    """A window holder's channels leave gating but not the ledger: stamps published while the
+    window runs the sim still count once it closes, so a producer that beats once per clock
+    advance cannot be lost to a fresh subscription (live wedge, 2026-11-17)."""
+    ledger = GateLedger(dt=DT, base=0.0)
+    ledger.refresh(_desired(_spec("engine", 0.05), _spec("other", 0.1)))
+    engine, other = ledger.channels["/engine"], ledger.channels["/other"]
+    ledger.skip({"/engine"})
+    assert ledger.active() == [other]
+    for _ in range(6):
+        hard_due = _tick(ledger)
+        assert engine not in hard_due
+        ledger.observe(other, ledger.now)
+        ledger.observe(engine, ledger.now)
+        ledger.complete(hard_due)
+    ledger.skip(set())
+    assert engine.next_due == pytest.approx(ledger.now + engine.period)
+    assert ledger.waiting([engine]) == []
+    hard_due = _tick(ledger)
+    assert engine in hard_due
+    assert ledger.waiting([engine]) == [engine]
+
+
+def test_skip_leaves_the_due_times_of_channels_that_stay_skipped() -> None:
+    ledger = GateLedger(dt=DT, base=0.0)
+    ledger.refresh(_desired(_spec("a", 0.1), _spec("b", 0.1)))
+    a = ledger.channels["/a"]
+    ledger.skip({"/a"})
+    a.next_due = 0.7
+    ledger.skip({"/a"})
+    assert a.next_due == pytest.approx(0.7)

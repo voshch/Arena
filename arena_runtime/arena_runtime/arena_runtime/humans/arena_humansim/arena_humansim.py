@@ -612,10 +612,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return {object_id: seats for object_id, seats in self._held_seats.items() if object_id in self._seat_slots}
 
     def _agent_states_callback(self, msg: AgentFrameMsg):
-        """Cache prev/curr snapshots from arena_humansim for local interpolation."""
-        self._prev_agent_states = self._curr_agent_states
-        self._curr_agent_states = msg
-        self._engine_stamp_ns = msg.header.stamp.sec * int(1e9) + msg.header.stamp.nanosec
+        """Cache prev/curr snapshots from arena_humansim for local interpolation, a frame repeating curr's stamp only republishes the roster."""
+        curr = self._curr_agent_states
+        if curr is None or msg.header.stamp != curr.header.stamp:
+            self._prev_agent_states = curr
+            self._curr_agent_states = msg
+            self._engine_stamp_ns = msg.header.stamp.sec * int(1e9) + msg.header.stamp.nanosec
         # publish on receipt (the rate loop can race a stepped clock burst), but
         # coalesced: one roster compute per burst, not per engine tick
         if self._publish_pending:

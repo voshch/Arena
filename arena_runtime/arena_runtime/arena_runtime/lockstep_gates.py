@@ -4,7 +4,7 @@ Ledger times are sim seconds, `now` relative to the run's `base`, observed stamp
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 
 _NS = 1_000_000_000
 
@@ -111,6 +111,7 @@ class Channel:
     period: float
     next_due: float
     latest_stamp: float | None = None
+    skipped: bool = False
 
     @property
     def hard(self) -> bool:
@@ -167,7 +168,7 @@ class GateLedger:
 
     def next_delta(self) -> float:
         """Sim seconds to the earliest due channel, at least one step."""
-        due = min(ch.next_due for ch in self.channels.values())
+        due = min(ch.next_due for ch in self.active())
         delta = due - self.now
         return self.dt if delta <= 0.0 else delta
 
@@ -175,7 +176,18 @@ class GateLedger:
         self.now += seconds
 
     def due(self) -> list[Channel]:
-        return [ch for ch in self.channels.values() if ch.next_due <= self.now + 1e-9]
+        return [ch for ch in self.active() if ch.next_due <= self.now + 1e-9]
+
+    def active(self) -> list[Channel]:
+        return [ch for ch in self.channels.values() if not ch.skipped]
+
+    def skip(self, topics: Collection[str]) -> None:
+        """Leave the channels of `topics` out of gating, still subscribed and observed, a channel gated again is due one period from now."""
+        for topic, ch in self.channels.items():
+            skipped = topic in topics
+            if ch.skipped and not skipped:
+                ch.next_due = self.now + ch.period
+            ch.skipped = skipped
 
     def covers(self, channel: Channel) -> bool:
         """Latest stamp within one period of the ledger's tick, at clock resolution."""
