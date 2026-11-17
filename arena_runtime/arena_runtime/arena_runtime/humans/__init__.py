@@ -39,12 +39,14 @@ from arena_runtime._node import NodeInterface
 from arena_runtime.env.constants import Constants
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.animation_manager import AnimationManager
+from arena_runtime.humans.devices import DeviceSpec
+from arena_runtime.humans.devices import shift as shift_device
 from arena_runtime.humans.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from arena_runtime.humans.gestures import Channel, GestureLayer, GestureRequest
 from arena_runtime.humans.hands import POINT_CLIP, Grip, clip_pose, held_pose
 from arena_runtime.humans.itinerary import semantic_atom
 from arena_runtime.humans.possession import PossessionTable
-from arena_runtime.humans.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
+from arena_runtime.humans.profile import PoseProfile, agent_type_device_section, agent_type_pose_section, default_profile, resolve_pose_profile
 from arena_runtime.humans.support import LIE_S, SETTLE_S, SIT_CLIP, SQUAT_CLIP, TYPICAL_BODY, BodyMeasurements, SeatPlan, Support, blend_pose, load_body, plan_seat, rise_seconds, seat_depth, supported_pose, tilted_pose
 from arena_runtime.humans.utils import (
     KnownObstacle,
@@ -80,6 +82,7 @@ def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
     placed = copy.deepcopy(msg)
     for ped in placed.pedestrians:
         position = placement.place(Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z))
+        shift_device(ped.device, position.x - ped.pose.position.x, position.y - ped.pose.position.y, position.z - ped.pose.position.z)
         ped.pose.position.x, ped.pose.position.y, ped.pose.position.z = position.x, position.y, position.z
     return placed
 
@@ -227,6 +230,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait = AnimationManager(logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
+        self._devices: dict[str, DeviceSpec | None] = {}
         self._driven = DrivenJoints()
         self._stances: dict[str, CompiledStance] = {}
         self._drivers: dict[str, Drivers] = {}
@@ -346,6 +350,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
         for ped in out.pedestrians:
             ped.pose.position.z = self.footing(ped.pose.position.x, ped.pose.position.y)
+            if (device := self._device_for(ped.agent_type)) is not None:  # from the phase the arm is drawn at
+                yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
+                warped = self._pose_profile_for(ped.agent_type).walk.phase_warp(float(ped.gait_phase))
+                device.pose(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z, yaw, warped, out=ped.device)
             drivers = self._drivers_for(ped.model_uri)
             if not drivers.rollers and not drivers.joystick:
                 continue
@@ -536,11 +544,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if not agent_type:
             return default_profile()
         try:
-            builtin_dir: Path | None = Path(get_package_share_directory("arena_humansim")) / "config" / "agent_types"
-        except PackageNotFoundError:
-            builtin_dir = None
-        try:
-            section = agent_type_pose_section(agent_type, builtin_dir)
+            section = agent_type_pose_section(agent_type, self._builtin_agent_types())
             if section is None:
                 self._logger.warning(f"agent type {agent_type!r} not found, using the default pose profile")
                 return default_profile()
@@ -564,9 +568,31 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         return profile
 
     def preload_pose_profiles(self, agent_types: Iterable[str]) -> None:
-        """Resolve pose profiles before the publish tick, which only reads them (a held grip is solved once per type)."""
+        """Resolve pose profiles and held devices before the publish tick, which only reads them (a held grip is solved once per type)."""
         for agent_type in set(agent_types):
             self._pose_profile_for(agent_type)
+            self._device_for(agent_type)
+
+    def _device_for(self, agent_type: str) -> DeviceSpec | None:
+        """The device an agent type holds (its `device:` block), resolved once per type, None without one or when it is rejected."""
+        if agent_type in self._devices:
+            return self._devices[agent_type]
+        device: DeviceSpec | None = None
+        if agent_type:
+            try:
+                section = agent_type_device_section(agent_type, self._builtin_agent_types())
+                device = None if section is None else DeviceSpec.parse(section)
+            except (ValueError, TypeError, OSError, yaml.YAMLError) as e:
+                self._logger.warning(f"agent type {agent_type!r} device rejected ({e}), it holds none")
+        self._devices[agent_type] = device
+        return device
+
+    @staticmethod
+    def _builtin_agent_types() -> Path | None:
+        try:
+            return Path(get_package_share_directory("arena_humansim")) / "config" / "agent_types"
+        except PackageNotFoundError:
+            return None
 
     def held_seats(self) -> dict[str, list[int]]:
         """Indices into each object's annotated sit slots that agents hold, by object sim path."""

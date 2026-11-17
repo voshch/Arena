@@ -40,6 +40,9 @@ string agent_type
 # Resolved local SDF path for this ped's actor, read once per name by the spawner.
 string model_uri
 
+# Held assistive device (agent type `device:`), kind empty = none.
+HeldDevice device
+
 # Active humansim interaction, -1 = none.
 int32 interaction_id -1
 # Kind of that interaction, meaningful only when interaction_id >= 0.

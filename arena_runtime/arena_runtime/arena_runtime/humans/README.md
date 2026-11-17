@@ -321,6 +321,17 @@ A `regions:` source entry's `config.agent:` block uses a different, wider schema
 
 A scripted entry renders with its `model:`. A source-spawned agent has none, so it takes a model from its agent type: when the type lists `assets:` tags, one of the human bundles on disk (world-local, shared-local or already cached) whose `annotation.yaml` carries every tag is drawn per agent from the episode seed. A type without `assets:`, or tags no bundle carries (warned once per type), keeps the default model.
 
+### Held devices
+
+An agent type's `device:` block (a long cane, a rollator, a walking frame or an IV stand, schema in
+[config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)) is passed through
+humansim untouched. `publish_arena_peds` poses it on every pedestrian of that type from the phase the arm is drawn at
+([`devices.py`](devices.py)): `Pedestrian.device` on `arena_peds` and `sim_peds` (shifted with the pedestrian when levels
+are stacked) holds a cane's shaft from the fist to the tip, or a box's footprint, height and lift, plus the object model
+renderers draw. The robot's collision tracker tests its footprint against it. Any backend that fills `agent_type` and
+`gait_phase` gets devices. The blocks are fitted from the gait profile posed on the type's character:
+`python3 -m arena_simulation_setup.adapters.arena_animation_retarget.devices`.
+
 ### Static world objects
 
 An `objects:` scenario or world entry that pedestrians can interact with (a bench, a
