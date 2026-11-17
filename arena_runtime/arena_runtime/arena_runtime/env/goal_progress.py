@@ -68,9 +68,13 @@ class GoalProgressTracker:
             self._waiting.discard(name)
         self._by_robot.setdefault(name, GoalProgress()).sample(xy, goal_xy, t)
 
-    def longest_stall(self, t: float, goal_radius: float) -> float:
-        """Longest stall among robots not yet within goal_radius and not holding at a reached goal, 0.0 if there are none."""
-        return max((p.stalled_for(t) for name, p in self._by_robot.items() if p.min_dist > goal_radius and name not in self._waiting), default=0.0)
+    def idle(self, name: str) -> None:
+        """Mark a robot without an active goto as not stalled until its next sample."""
+        self._waiting.add(name)
+
+    def longest_stall(self, t: float) -> float:
+        """Longest stall among robots that have not arrived at their goto and are not idle, 0.0 if there are none."""
+        return max((p.stalled_for(t) for name, p in self._by_robot.items() if name not in self._waiting), default=0.0)
 
     def least_progress(self) -> GoalProgress | None:
         """Tracked robot with the lowest closed fraction, or None if nothing was sampled."""

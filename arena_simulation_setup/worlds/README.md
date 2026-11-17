@@ -16,12 +16,19 @@ worlds/<name>/
 |   `-- <scenario>/
 |       |-- scenario.yaml     # Scenario (format: arena-scenario/2)
 |       |-- scenario.json     # alternative; ScenarioView tries .yaml first
-|       `-- <agent_type>.yaml # optional scenario-local arena_humansim agent types
+|       |-- <agent_type>.yaml # optional scenario-local arena_humansim agent types
+|       `-- <task layer files> # optional, read by the active task layer
 `-- assets/
     `-- <domain>/
         `-- <asset_type>/
             `-- <name>/       # world-local asset; overrides network-fetched assets
 ```
+
+A scenario folder may carry the files of a task layer beside `scenario.yaml`, so
+switching the scenario between episodes switches the layer's configuration with
+it. The `casper` layer reads `goal.json`, `team.yaml`, `scene.yaml` and
+`casper.yaml` from the folder of `task.scenario.file`, see
+[arena_casper](../../task_layers/casper/arena_casper/README.md).
 
 A world without `format:` in its `world.yaml`, or with one
 `<level_id>/world.yaml` per level, is format 1 and loads through the legacy
@@ -310,7 +317,9 @@ humans:
     waypoints:
     - [4.0, 2.0, 0.0]
 robots:
-  - start: [x, y, yaw]           # required. [x,y], [x,y,yaw], {x,y,yaw} or a zone name
+  - name: ""                     # optional, robot name, platform naming when empty
+    model: ""                    # optional, robot model, every entry having one declares the fleet
+    start: [x, y, yaw]           # required. [x,y], [x,y,yaw], {x,y,yaw} or a zone name
     level: ""                    # optional, multi-level worlds
     goal_level: ""               # optional, level for goto phases
     phases:                      # ordered. each entry is one of:
@@ -318,6 +327,7 @@ robots:
       - {goto: kitchen}          #   navigate into a zone, door, elevator or to a pedestrian by name
       - {gesture: wave}          #   arm gesture, "random" allowed, optional instance: <mount>
       - {reach: stow}            #   arm reach: named target, "random", or a pose (optional frame:)
+      - {grasp: close, object: cup_1}  #   gripper close or open, optional instance: <name>, a close with object is met once the robot holds it
       - {until: "door_1.open == true"}  # hold where the robot is until the atom holds
       - {loop: [{goto: [x, y, yaw]}, {goto: [x, y, yaw]}], until: "robot sees caller within 12 and caller plays beckon for 0.5"}
     conditions: []               # optional, clauses judged over this robot's whole phase list
@@ -454,12 +464,16 @@ An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
 `<subject> within <r> of <subject>` (planar distance), `<subject> sees <subject>
 [within <r>]` (planar distance at most `r`, default 12, and no wall cell of the
 world's rendered wall grid on the segment between them, doors open), `<ped>
-plays <clip>` (the pedestrian publishes that gesture clip) and `not <atom>`. A
+plays <clip>` (the pedestrian publishes that gesture clip), `<robot> holds
+<object>` (the robot's gripper holds that entity, unresolved while the simulator
+does not measure holding, which is every simulator but MuJoCo) and `not <atom>`. A
 subject is `robot` (the robot being judged), another robot's name or a
 pedestrian's name, and a `within` subject may also be a point `x,y` (no
 spaces).
 Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
-`failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
+`failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom,
+and `holding` (the comma-joined objects its gripper carries) where the simulator
+measures holding.
 A world entity (zone, door, elevator, schedule, sound) is named
 `<name>/<level>`, or `<name>` alone when no other level has one. An object,
 of a level or of the scenario, is named as authored, and a scenario object
@@ -476,7 +490,7 @@ saved back in the form it was read:
 | `{some: <entity>.<family>, <op>: <value>}` | any member of the family compares true |
 | `{each: <entity>.<family>, <op>: <value>}` | every member compares true |
 | `{all: [<node>, ...]}`, `{any: [<node>, ...]}`, `{not: <node>}` | every, any, or not the inner node |
-| `{subject: s, in: zone}`, `{subject: s, near: other, radius: r}`, `{subject: s, sees: other, range: r}`, `{subject: s, plays: clip}` | as the text atoms of the same meaning |
+| `{subject: s, in: zone}`, `{subject: s, near: other, radius: r}`, `{subject: s, sees: other, range: r}`, `{subject: s, plays: clip}`, `{subject: s, holds: object}` | as the text atoms of the same meaning |
 | a text string | as the text grammar, `a and b for 3 or c` included |
 
 Any node takes `for: <seconds>`: it holds once its inner node has held that
@@ -603,6 +617,8 @@ wrapping whichever of the above resolved first. Call `view.load()` to parse
 | Name | Notes |
 |---|---|
 | `airport` | Airport terminal layout |
+| `backyard` | Walled garden with a house behind it for the CASPER barbecue party, prep, grill and drinks tables |
+| `backyard_b` | `backyard` variant with the house on two sides, a south gate, meat and fish grills and prep tables for salad and vegetables |
 | `hospital_1` | Multi-zone hospital with patient rooms, reception, hallways |
 | `hospital_2` | Hospital variant |
 | `map_empty` | Single open zone |

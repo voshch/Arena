@@ -25,6 +25,7 @@ domain = Domain(
 
 FEATURE_ACTIONS = ("install", "update", "stop", "uninstall")
 ROBOTS_ACTIONS = ("ls", "add", "rm", "update")
+TASK_LAYER_ACTIONS = ("ls", "add", "rm", "update")
 RECREATE = "applies once `source arena` on the host recreates the container, new shells in it pick it up at once"
 ROW_RE = re.compile(r"^([a-z]+):\s+(.*)$")
 GIT_ENV = {**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0"}
@@ -278,3 +279,35 @@ async def workspace_robots(
         raise ToolError("update takes no names, it refreshes every initialized robot submodule")
     args = list(names or [])
     return (await cli.job("robots", f"arena feature robots {action} {' '.join(args)}".strip(), "feature", "robots", action, *args)).as_dict()
+
+
+def task_layer_rows(arena: Path) -> dict[str, Any]:
+    """The built-in task layer and the optional ones under task_layers/, installed or available."""
+    from arena_cli.features import tasks
+
+    subs = tasks.layers(arena)
+    return {
+        "built_in": tasks.BUILTIN,
+        "installed": [name for name, path in subs.items() if tasks.installed(arena, path)],
+        "available": [name for name, path in subs.items() if not tasks.installed(arena, path)],
+    }
+
+
+@domain.tool(destructive=True, open_world=True)
+async def workspace_task_layers(
+    action: Annotated[str, Field(description="ls (built-in, installed and available task layers), add (clone the layer, then deps and build), rm (deinit it) or update (refresh the installed ones, then deps and build)")],
+    names: Annotated[list[str] | None, Field(description="task layer names for add and rm, or ['--all']")] = None,
+) -> dict[str, Any]:
+    """Manage the optional task layers through `arena feature tasks <action>`, ls answers at once, the others run as jobs, an env selects one with task_layer:=<name>."""
+    module = _feature("tasks")
+    offered = [command for command in _commands(module) if command in TASK_LAYER_ACTIONS]
+    if action not in offered:
+        raise ToolError(f"unknown action {action!r}", hint=f"actions: {', '.join(offered)}")
+    if action == "ls":
+        return task_layer_rows(cli.arena_dir())
+    if action in ("add", "rm") and not names:
+        raise ToolError(f"{action} needs task layer names", hint="names lists task layers, ['--all'] takes every one, workspace_task_layers('ls') shows them")
+    if action == "update" and names:
+        raise ToolError("update takes no names, it refreshes every installed task layer")
+    args = list(names or [])
+    return (await cli.job("tasks", f"arena feature tasks {action} {' '.join(args)}".strip(), "feature", "tasks", action, *args)).as_dict()

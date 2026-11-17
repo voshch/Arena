@@ -29,7 +29,7 @@ from arena_robots.SetupFile import Config as RobotSetupConfig
 from arena_runtime_msgs.msg import AdapterDisplay
 from arena_simulation_setup.shared.conditions import Node
 from arena_simulation_setup.shared.judge import NodeMonitor, zone_polygons
-from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+from arena_simulation_setup.shared.task import GoToPhase, GraspPhase, LoopPhase, ReachPhase, TaskPhase, TaskRequest
 from arena_simulation_setup.tree import DynamicPaths
 from arena_simulation_setup.tree.assets.Camera import collect, pick_camera
 from arena_simulation_setup.tree.World import point_scenario_assets
@@ -37,13 +37,14 @@ from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, Timelin
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
 from rcl_interfaces.msg import Parameter as RclParameter
-from rcl_interfaces.msg import ParameterValue
+from rcl_interfaces.msg import ParameterType, ParameterValue
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.parameter import Parameter
 from std_msgs.msg import Bool, Empty, Int16, String
+from visualization_msgs.msg import MarkerArray
 
 from arena_runtime.env.adapters import ResetContext
 from arena_runtime.env.catalogs import LISTERS
@@ -58,6 +59,7 @@ from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
 from arena_runtime.env.robot_manager.robot_manager import footprint_radius
 from arena_runtime.env.run_task import RunningTask
+from arena_runtime.env.task_board import TaskBoard
 from arena_runtime.env.task_layer import (
     EpisodeContext,
     EpisodeRecord,
@@ -65,6 +67,7 @@ from arena_runtime.env.task_layer import (
     InteractiveContext,
     TaskConfiguration,
     TaskContext,
+    TaskEvent,
     TaskModeOverrides,
     TaskModes,
     declare_mode_schemas,
@@ -75,6 +78,7 @@ from arena_runtime.env.task_layer import (
     task_layer,
     task_layer_name,
 )
+from arena_runtime.env.task_markers import task_markers
 from arena_runtime.node_params import TASK_LAYER
 from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot
 
@@ -85,6 +89,8 @@ if typing.TYPE_CHECKING:
 _MAX_CONSECUTIVE_RESET_FAILURES = 3
 
 _CAM_PLAY_TIMEOUT = 10.0
+
+_TASK_MARKERS_PERIOD = 0.5
 
 # Deeper KeepLast for state/episode: terminal-then-next-RUNNING bursts.
 _EPISODE_QOS = rclpy.qos.QoSProfile(
@@ -111,6 +117,15 @@ class EpisodeRuntime:
     decided: bool = False
     action_in_flight: bool = False
     respawn_requested: bool = False
+
+
+def stamp_task_event(event: TaskEvent, t: float) -> dict[str, object]:
+    """The recorded form of a reported event at `t` sim seconds into its episode."""
+    return {"task": event.task, "kind": event.kind, "robot": event.robot, "t": t, "detail": dict(event.detail)}
+
+
+def task_event_msg(stamped: Mapping[str, object]) -> arena_runtime_msgs.msg.TaskEvent:
+    return arena_runtime_msgs.msg.TaskEvent(task=stamped["task"], kind=stamped["kind"], robot=stamped["robot"], t=stamped["t"], detail=json.dumps(stamped["detail"]))
 
 
 def _is_map_frame(frame_id: str) -> bool:
@@ -205,6 +220,21 @@ class EpisodeNode(EnvNode):
         )
         self._pub_state_resetting.publish(Bool(data=False))
 
+        self._pub_task_events = self.create_publisher(
+            arena_runtime_msgs.msg.TaskEvent,
+            self.service_namespace("task_events"),
+            _EPISODE_QOS,
+        )
+
+        self._task_board = TaskBoard()
+        self._task_markers_at = float("-inf")
+        self._pub_state_agents = self.create_publisher(
+            arena_runtime_msgs.msg.AgentStates,
+            self.service_namespace("state", "agents"),
+            _LATCHED,
+        )
+        self._pub_task_markers = self.create_publisher(MarkerArray, "task_markers", 1)
+
         self._pub_state_episode = self.create_publisher(
             arena_runtime_msgs.msg.EpisodeRecord,
             self.service_namespace("state", "episode"),
@@ -266,6 +296,7 @@ class EpisodeNode(EnvNode):
                     register_timeline=self.register_timeline,
                     register_conditions=self.register_conditions,
                     register_sound_levels=self.register_sound_levels,
+                    task_event=self.task_event,
                 ),
                 interactive=InteractiveContext(markers=self.markers, robot_colors=self.robot_colors, tf_buffer=self.tf_buffer),
             ),
@@ -277,6 +308,7 @@ class EpisodeNode(EnvNode):
     async def _on_tick(self, ended: Mapping[str, "PhaseState"]) -> None:
         self._evaluate_timeline(self._sample.t)
         self._advance_run_tasks()
+        self._publish_task_overlay()
         if self._task is not None and self._episodes.current.outcome_state == arena_runtime_msgs.action.RunEpisode.Result.RUNNING and not self._reset_lock.locked():
             assigned, self._assigned = self._assigned, set()
             await self._task.tick(ended, assigned)
@@ -409,7 +441,59 @@ class EpisodeNode(EnvNode):
         msg.start_time = record.start_time.to_msg()
         msg.conditions = json.dumps([c.serialize() for c in self._episode_conditions])
         msg.phases = self._phases_json()
+        msg.tasks = json.dumps(record.tasks)
         return msg
+
+    def task_event(self, event: TaskEvent) -> None:
+        """Record a task layer's event against the current episode, stamped with sim seconds since its start, and publish it on task_events."""
+        record = self._episodes.current
+        stamped = stamp_task_event(event, (self.sim_time - record.start_time).to_seconds() if record.start_time.to_nanoseconds() else 0.0)
+        record.tasks.append(stamped)
+        self._pub_task_events.publish(task_event_msg(stamped))
+        self._task_board.apply(stamped)
+
+    @staticmethod
+    def _phase_activity(manager: "RobotManager") -> str:
+        state = manager.runner.active_state
+        if state is None:
+            return ""
+        if isinstance(state.phase, GoToPhase):
+            return "holding" if state.phase.hold or state.monitor.held else "navigating"
+        if isinstance(state.phase, ReachPhase):
+            return "reaching"
+        if isinstance(state.phase, GraspPhase):
+            return "grasping"
+        return ""
+
+    def _publish_task_overlay(self) -> None:
+        """Publish state/agents when the board changed and the task markers when it changed or every half sim second."""
+        board = self._task_board
+        changed, board.changed = board.changed, False
+        if changed:
+            pedestrians = set(self.ped_names())
+            self._pub_state_agents.publish(arena_runtime_msgs.msg.AgentStates(agents=[arena_runtime_msgs.msg.AgentState(name=entry.name, kind="pedestrian" if entry.name in pedestrians else "robot", task=entry.task, state=entry.state, zones=list(entry.zones), since=entry.since) for entry in board.agents()]))
+        agents = board.agents()
+        if self._robots_manager is None or not (changed or agents):
+            return
+        now = self.sim_time.to_seconds()
+        if not changed and now - self._task_markers_at < _TASK_MARKERS_PERIOD:
+            return
+        self._task_markers_at = now
+        frames: dict[str, str] = {}
+        positions: dict[str, tuple[float, float]] = {}
+        activity: dict[str, str] = {}
+        for manager in self._robots_manager.managers.values():
+            pose = manager.pose
+            if pose is not None and manager.placed:
+                frames[manager.name] = manager.base_frame
+                positions[manager.name] = (pose.position.x, pose.position.y)
+                activity[manager.name] = self._phase_activity(manager)
+        for name, (x, y), _radius in self._human_simulator.pedestrian_discs():
+            authored = self._human_simulator.authored_name(name)
+            frames[authored] = self._human_simulator.pedestrian_frame(name)
+            positions[authored] = (x, y)
+        zone_corners = self._world_manager.world_compacted().lookup_zone_polygon if any(entry.state == "working" for entry in agents) else lambda _zone: None
+        self._pub_task_markers.publish(MarkerArray(markers=task_markers(agents, frames, positions, zone_corners, activity, self._realizer, self.sim_time.to_msg())))
 
     def _publish_episode_state(self) -> None:
         record = self._episodes.current
@@ -636,6 +720,7 @@ class EpisodeNode(EnvNode):
             self._pub_state_resetting.publish(Bool(data=True))
 
             record = self._episodes.current
+            self._task_board.reset()
             clock = PhaseClock()
             await self.hold("reset")
             clock.lap("hold")
@@ -644,7 +729,8 @@ class EpisodeNode(EnvNode):
             self._known_subjects.clear()
             try:
                 if record.world:
-                    await self._world_manager.apply_world(record.world)
+                    if not await self._world_manager.apply_world(record.world):
+                        raise RuntimeError(f"world {record.world!r} could not be applied")
                     clock.lap("world")
                 await self._reset_episode(record, clock)
             finally:
@@ -695,7 +781,10 @@ class EpisodeNode(EnvNode):
         for manager in self._robots_manager.managers.values():
             pose = manager.pose
             goal = manager.goal
-            if pose is None or goal is None:
+            if goal is None:
+                self._goal_progress.idle(manager.name)
+                continue
+            if pose is None:
                 continue
             self._goal_progress.sample(
                 manager.name,
@@ -724,7 +813,7 @@ class EpisodeNode(EnvNode):
                     continue
                 self._sample_goal_progress()
                 stall_limit = self.conf.Robot.NO_PROGRESS_TIMEOUT.value
-                if self._goal_progress.longest_stall(self.sim_time.to_seconds(), self.conf.Robot.GOAL_TOLERANCE_RADIUS.value) > stall_limit:
+                if self._goal_progress.longest_stall(self.sim_time.to_seconds()) > stall_limit:
                     self.fail_episode("no progress")
                     continue
                 if not await self._episode_done():
@@ -817,7 +906,16 @@ class EpisodeNode(EnvNode):
             self.conf.General.RNG.reseed(record.seed)
             point_scenario_assets(None)
 
+            await self._reconcile_fleet(record)
+            fleet = dict(self._robots_manager.managers)
             await self._robots_manager.set_up()
+            if self._node_pinger is not None:
+                for name, manager in fleet.items():
+                    if self._robots_manager.managers.get(name) is not manager:
+                        self._node_pinger.forget_under(str(manager.namespace))
+                for name, manager in self._robots_manager.managers.items():
+                    if fleet.get(name) is not manager:
+                        self._node_pinger.track_under(str(manager.namespace))
             clock.lap("set_up")
             await self._robots_manager.launch_pending()
             clock.lap("launch")
@@ -994,14 +1092,29 @@ class EpisodeNode(EnvNode):
             for p in request.human_params:
                 self._staged_human_params[p.name] = p.value
 
-        mid_episode = self._episodes.action_in_flight and self._episodes.current.episode_id > 0
-        if mid_episode:
+        if self._episode_running:
             self._compromise("task parameters changed mid-episode")
 
         self._publish_queue_state()
 
         response.success = True
         return response
+
+    @property
+    def _episode_running(self) -> bool:
+        return self._episodes.action_in_flight and self._episodes.current.episode_id > 0
+
+    async def _reconcile_fleet(self, record: EpisodeRecord) -> None:
+        assert self._task is not None and self._robots_manager is not None
+        staged = {name: value.string_value for name, value in self._staged_params.items() if value.type == ParameterType.PARAMETER_STRING}
+        fleet = await self._task.fleet_for(record, staged)
+        if fleet is not None:
+            self._robots_manager.reconcile(fleet, self._staged_robot)
+
+    def _staged_robot(self, name: str, model: str) -> Robot:
+        (config,) = RobotSetupConfig.parse({"robot": model, "name": name})
+        config.extra["pos"] = Pose(Position(x=0.0, y=0.0)).to_2d()
+        return Robot.from_setup(config, node=self)
 
     def _apply_staged_params(self) -> None:
         log = self.get_logger()
@@ -1119,7 +1232,8 @@ class EpisodeNode(EnvNode):
         try:
             self._robots_manager.remove_pending(request.name)
             self._robots_manager.publish_queue()
-            self._compromise(f"robot {request.name} despawned by hand")
+            if self._episode_running:
+                self._compromise(f"robot {request.name} despawned by hand")
             response.success = True
         except Exception as e:
             response.success = False
@@ -1143,7 +1257,8 @@ class EpisodeNode(EnvNode):
                 async with self._reset_lock:
                     await self._robots_manager.spawn_now(name_out, pose, self.episode_id)
             self._robots_manager.publish_queue()
-            self._compromise(f"robot {name_out} spawned by hand")
+            if self._episode_running:
+                self._compromise(f"robot {name_out} spawned by hand")
             response.name = name_out
             response.success = True
         except Exception as e:

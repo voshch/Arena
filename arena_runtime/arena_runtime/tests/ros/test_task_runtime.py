@@ -49,6 +49,9 @@ class Task:
     async def reset_obstacles(self, plan, record):
         log.append(f"reset_obstacles {record.seed}")
 
+    async def fleet_for(self, record, params):
+        return None
+
     async def tick(self, ended, assigned):
         pass
 

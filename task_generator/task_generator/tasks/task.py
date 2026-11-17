@@ -2,7 +2,7 @@ import typing
 from collections.abc import Collection, Mapping, Sequence
 
 from arena_runtime.env.task_api import NodeInterface, PhaseState, TaskRequest
-from arena_runtime.env.task_layer import EpisodeRecord, ResetPlan, TaskContext
+from arena_runtime.env.task_layer import EpisodeRecord, FleetEntry, ResetPlan, TaskContext
 from arena_runtime.shared import Pose
 
 from task_generator.modes import Modes
@@ -27,6 +27,9 @@ if typing.TYPE_CHECKING:
 
     from task_generator.tasks.layer import TaskModeParams
     from task_generator.tasks.modules import TM_Module
+
+
+SCENARIO_FILE_PARAM = str(_REGISTRY_NAMESPACE("scenario")("file"))
 
 
 class Task(NodeInterface["ArenaMixinNode"]):
@@ -190,6 +193,14 @@ class Task(NodeInterface["ArenaMixinNode"]):
         for module in self.__modules:
             module.on_reset_plan(plan)
         return plan
+
+    async def fleet_for(self, record: EpisodeRecord, params: Mapping[str, str]) -> Sequence[FleetEntry] | None:
+        """The fleet the record's robot mode wants on the loaded world, None under a task config or a mode with no opinion."""
+        if self._params.TM_CONFIG.value:
+            return None
+        mode = Modes.TM_Robots(record.modes["robots"][0]) if record.modes.get("robots") else self._params.TM_ROBOTS.value
+        scenario_file = params.get(SCENARIO_FILE_PARAM) or self.node.rosparam[str].get_unsafe(SCENARIO_FILE_PARAM, "")
+        return await ROBOTS_MODES.get(mode).fleet_for(self._ctx, scenario_file)
 
     async def reset_obstacles(self, plan: ResetPlan, record: EpisodeRecord) -> None:
         """Reset the obstacle mode into the plan, once the robots' part is applied."""

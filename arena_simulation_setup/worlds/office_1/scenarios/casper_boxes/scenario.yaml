@@ -1,0 +1,6 @@
+format: arena-scenario/2
+robots:
+- name: tiago
+  model: tiago
+  start: [14.0, 18.5, 1.5708]
+  phases: []

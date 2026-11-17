@@ -1,0 +1,183 @@
+supervisor: human_host_1
+supervisor_team: true
+members:
+  fr3_0:
+    workspace:
+    - Prep_Salad
+    constraints:
+      can_transport_objects: false
+      max_payload_kg: 3.0
+      max_size_object_cm: 8
+      max_reach_cm: 85
+    skills:
+      HouseParty:
+        manipulation:
+        - 1.0
+        - 1
+        supervise:
+        - 0.55
+        - 2
+        chopping:
+        - 0.45
+        - 3
+        grill:
+        - 1.0
+        - 4
+      quality_check:
+        manipulation:
+        - 1.0
+        - 0.2
+        planning:
+        - 0.3
+        - 0.5
+  tiago:
+    workspace:
+    - GrillMeat_Table
+    - Grill_Meat
+    - Drinks_Table
+    - House_Entrance
+    - Garden
+    - Kitchen_Table
+    - Kitchen_Stove
+    - Kitchen_Dishwasher
+    - Kitchen_Shelves
+    - Prep_Vegetables
+    - Prep_Salad
+    constraints:
+      can_transport_objects: true
+      max_payload_kg: 2.1
+      max_size_object_cm: 4.4
+      max_reach_cm: 92
+    skills:
+      HouseParty:
+        transport:
+        - 1.0
+        - 1
+        manipulation:
+        - 0.8
+        - 2
+        planning:
+        - 0.7
+        - 3
+        communication:
+        - 0.75
+        - 4
+        supervise:
+        - 0.6
+        - 5
+        cook:
+        - 0.6
+        - 6
+        grill:
+        - 0.55
+        - 7
+        openDoor:
+        - 0.5
+        - 8
+        chopping:
+        - 0.3
+        - 9
+  fr3_1:
+    workspace:
+    - Prep_Vegetables
+    constraints:
+      can_transport_objects: false
+      max_payload_kg: 3.0
+      max_size_object_cm: 8
+      max_reach_cm: 85
+    skills:
+      HouseParty:
+        manipulation:
+        - 1.0
+        - 1
+        supervise:
+        - 0.55
+        - 2
+        chopping:
+        - 0.45
+        - 3
+        grill:
+        - 1.0
+        - 4
+      quality_check:
+        manipulation:
+        - 1.0
+        - 0.2
+        planning:
+        - 0.3
+        - 0.5
+  human_host_1:
+    kind: pedestrian
+    workspace:
+    - GrillMeat_Table
+    - Grill_Meat
+    - Drinks_Table
+    - House_Entrance
+    - Garden
+    - Kitchen_Table
+    - Kitchen_Stove
+    - Kitchen_Dishwasher
+    - Kitchen_Shelves
+    - Prep_Vegetables
+    - Prep_Salad
+    constraints:
+      can_transport_objects: true
+      max_payload_kg: 5
+      max_size_object_cm: 50
+      max_reach_cm: 100
+    skills:
+      HouseParty:
+        communication:
+        - 1.0
+        - 1
+        supervise:
+        - 0.8
+        - 2
+        planning:
+        - 0.9
+        - 3
+        transport:
+        - 1.0
+        - 4
+        manipulation:
+        - 0.8
+        - 5
+        openDoor:
+        - 1.0
+        - 6
+        cook:
+        - 0.9
+        - 7
+        chopping:
+        - 0.4
+        - 8
+  fr3_2:
+    workspace:
+    - GrillMeat_Table
+    - Grill_Meat
+    constraints:
+      can_transport_objects: false
+      max_payload_kg: 3.0
+      max_size_object_cm: 8
+      max_reach_cm: 85
+    skills:
+      HouseParty:
+        manipulation:
+        - 1.0
+        - 1
+        supervise:
+        - 0.55
+        - 2
+        chopping:
+        - 0.45
+        - 3
+        grill:
+        - 1.0
+        - 4
+      quality_check:
+        manipulation:
+        - 1.0
+        - 0.2
+        planning:
+        - 0.3
+        - 0.5

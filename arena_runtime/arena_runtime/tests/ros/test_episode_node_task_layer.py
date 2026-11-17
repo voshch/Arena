@@ -233,6 +233,13 @@ def test_a_hand_spawned_robot_is_queued_for_the_next_reset(rclpy_context: object
         response = await env._cb_spawn_robot(request, arena_runtime_msgs.srv.SpawnRobot.Response())
         assert response.success, response.error_msg
         assert response.name in env._robots_manager._diff.to_add
+        assert env._episodes.current.integrity == []
+        env._episodes.action_in_flight = True
+        env._episodes.current.episode_id = 1
+        request = arena_runtime_msgs.srv.SpawnRobot.Request(model="jackal", name="", use_pose=False, immediate=False)
+        response = await env._cb_spawn_robot(request, arena_runtime_msgs.srv.SpawnRobot.Response())
+        assert response.success, response.error_msg
         assert env._episodes.current.integrity == [f"robot {response.name} spawned by hand"]
+        env._episodes.action_in_flight = False
 
     asyncio.run(_on_running_env(body))

@@ -201,6 +201,14 @@ share one definition. [`request.py`](../../../../arena_runtime/arena_runtime/are
   `arm blocked` or `arm state not finite`. Any phase that ends while its
   action still runs (a `stop`, a loop `until`, an abort) cancels the action
   before the next phase is dispatched.
+- `GraspPhase(action, object?, instance?)`: closes or opens a gripper (`action`
+  `close` or `open`, YAML `{grasp: close, object: cup_1}`), completed by the
+  `GripperCommand` action result. A close with an `object` is met only once
+  the `Sample` shows the robot holding it (`Sample.holding`, the `robot holds
+  <object>` atom). A sample without `holding` leaves it unmeasured and the
+  close is judged on the action alone. An open, or a close without `object`,
+  is met when the action returns. A close that stalls on an object counts as
+  returned.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 

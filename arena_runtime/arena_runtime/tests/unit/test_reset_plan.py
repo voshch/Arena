@@ -132,6 +132,8 @@ def test_the_node_applies_the_plan_between_the_robot_and_the_obstacle_reset() ->
         _environment_manager=_Environment(log),
         _pub_reset_start=SimpleNamespace(publish=lambda message: None),
         _pub_reset_end=SimpleNamespace(publish=lambda message: None),
+        _reconcile_fleet=lambda record: nothing(),
+        _node_pinger=None,
         _apply_staged_params=lambda: None,
         _apply_staged_human_params=nothing,
         _consecutive_reset_failures=0,

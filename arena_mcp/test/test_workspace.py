@@ -139,6 +139,13 @@ def test_feature_and_setting_arguments_are_validated() -> None:
         asyncio.run(workspace.workspace_robots("check"))
     with pytest.raises(ToolError, match="needs robot names"):
         asyncio.run(workspace.workspace_robots("add"))
+    with pytest.raises(ToolError, match="unknown action") as layer_action:
+        asyncio.run(workspace.workspace_task_layers("install"))
+    assert layer_action.value.hint == "actions: add, rm, ls, update"
+    with pytest.raises(ToolError, match="needs task layer names"):
+        asyncio.run(workspace.workspace_task_layers("rm"))
+    with pytest.raises(ToolError, match="update takes no names"):
+        asyncio.run(workspace.workspace_task_layers("update", ["casper"]))
     with pytest.raises(ToolError, match="not a fork name"):
         asyncio.run(workspace.workspace_fork_down("--all"))
     with pytest.raises(ToolError, match="not a fork name"):
@@ -150,6 +157,16 @@ def test_net_setting_reads_through_the_real_verb() -> None:
     read = workspace.workspace_settings_net()
     assert read["net"] in ("local", "lan") and read["values"] == ["local", "lan"]
     assert "applies" not in read
+
+
+@pytest.mark.usefixtures("arena_shell")
+def test_task_layers_split_installed_and_available(tmp_path: Path) -> None:
+    (tmp_path / ".gitmodules").write_text(
+        '[submodule "task_layers/casper"]\n\tpath = task_layers/casper\n\turl = https://example.invalid/casper.git\n[submodule "task_layers/auction"]\n\tpath = task_layers/auction\n\turl = https://example.invalid/auction.git\n[submodule "flatsim"]\n\tpath = flatsim\n\turl = https://example.invalid/flatsim.git\n'
+    )
+    (tmp_path / "task_layers" / "casper").mkdir(parents=True)
+    (tmp_path / "task_layers" / "casper" / ".git").write_text("gitdir: elsewhere\n")
+    assert workspace.task_layer_rows(tmp_path) == {"built_in": "task_generator", "installed": ["casper"], "available": ["auction"]}
 
 
 @pytest.mark.usefixtures("arena_shell")

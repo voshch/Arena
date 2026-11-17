@@ -23,15 +23,17 @@ from arena_people_msgs.msg import AnimationSlot, AnimationState, AnimationStates
 from arena_people_msgs.srv import MovePedestrians
 from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
-from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared import Placement, Stairs, stair_height
 from arena_simulation_setup.shared.body import DEFAULT_COMPILED_STANCE, CompiledStance, compile_stance, load_stance
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
+from builtin_interfaces.msg import Time as TimeMsg
 from geometry_msgs.msg import Point as PointMsg
 from geometry_msgs.msg import Pose as PoseMsg
 from geometry_msgs.msg import Quaternion as QuaternionMsg
+from geometry_msgs.msg import TransformStamped
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from visualization_msgs.msg import MarkerArray
 
@@ -82,6 +84,19 @@ def placed_peds(msg: Pedestrians, placement: Placement) -> Pedestrians:
         position = placement.place(Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z))
         ped.pose.position.x, ped.pose.position.y, ped.pose.position.z = position.x, position.y, position.z
     return placed
+
+
+def ped_transform(ped: Pedestrian, parent: str, child: str, stamp: TimeMsg) -> TransformStamped:
+    """The pedestrian's pose as the transform from parent to its own frame child."""
+    transform = TransformStamped()
+    transform.header.stamp = stamp
+    transform.header.frame_id = parent
+    transform.child_frame_id = child
+    transform.transform.translation.x = ped.pose.position.x
+    transform.transform.translation.y = ped.pose.position.y
+    transform.transform.translation.z = ped.pose.position.z
+    transform.transform.rotation = ped.pose.orientation
+    return transform
 
 
 def stair_running(stair: Stairs, stairs: Iterable[Stairs], running: Mapping[str, bool]) -> bool:
@@ -240,6 +255,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._on_arena_peds,
             10,
         )
+        self._ped_tf = tf2_ros.TransformBroadcaster(self.node)
 
         self._possession: PossessionTable[Pedestrian] = PossessionTable(phase=self._gait.phase)
         self._stream_gate = False
@@ -592,7 +608,15 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """Publish a latched MarkerArray on `pedestrian_markers/static` (TRANSIENT_LOCAL, late subscribers catch up)."""
         self._static_marker_publisher.publish(markers)
 
+    @staticmethod
+    def pedestrian_frame(name: str) -> str:
+        """TF frame a tracked pedestrian is broadcast in, by the name it is published with."""
+        return FrameNamespace(name).tf("base_link")
+
     def _on_arena_peds(self, msg: Pedestrians) -> None:
+        if msg.pedestrians:
+            stamp = msg.header.stamp if msg.header.stamp.sec or msg.header.stamp.nanosec else self.node.get_clock().now().to_msg()
+            self._ped_tf.sendTransform([ped_transform(p, msg.header.frame_id or "map", self.pedestrian_frame(p.name), stamp) for p in msg.pedestrians])
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
         self._ped_orientations = {p.name: p.pose.orientation for p in msg.pedestrians}
         self._ped_clips = {p.name: frozenset(g.clip for g in p.gestures) for p in msg.pedestrians}

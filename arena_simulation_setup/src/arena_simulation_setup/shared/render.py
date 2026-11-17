@@ -16,6 +16,7 @@ from arena_simulation_setup.shared.conditions import (
     FamilyTest,
     FieldTest,
     HoldNode,
+    HoldsAtom,
     MembershipAtom,
     Node,
     NotAtom,
@@ -26,7 +27,7 @@ from arena_simulation_setup.shared.conditions import (
     needs_parentheses,
     parse_point,
 )
-from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase
+from arena_simulation_setup.shared.task import GoToPhase, GraspPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase
 
 Nouns = Mapping[str, str]
 
@@ -49,6 +50,8 @@ def render_atom_text(atom: Atom, nouns: Nouns | None = None, robot: str = "you")
             return f"{_subject(inner.subject, nouns, robot)} cannot see {_subject(inner.other, nouns, robot)} within {inner.range:g} m"
         if isinstance(inner, PlaysAtom):
             return f"{_subject(inner.subject, nouns, robot)} {_be(inner.subject)} not {_playing(inner.clip, nouns)}"
+        if isinstance(inner, HoldsAtom):
+            return f"{_subject(inner.subject, nouns, robot)} {_do(inner.subject)} not hold {noun(inner.object, nouns)}"
         return f"{noun(inner.entity, nouns)} {inner.field.replace('_', ' ')} is not {inner.value}"
     if isinstance(atom, MembershipAtom):
         return f"{_subject(atom.subject, nouns, robot)} {_be(atom.subject)} in {noun(atom.zone, nouns)}"
@@ -58,6 +61,8 @@ def render_atom_text(atom: Atom, nouns: Nouns | None = None, robot: str = "you")
         return f"{_subject(atom.subject, nouns, robot)} can see {_subject(atom.other, nouns, robot)} within {atom.range:g} m"
     if isinstance(atom, PlaysAtom):
         return f"{_subject(atom.subject, nouns, robot)} {_be(atom.subject)} {_playing(atom.clip, nouns)}"
+    if isinstance(atom, HoldsAtom):
+        return f"{_subject(atom.subject, nouns, robot)} {_have(atom.subject)} {noun(atom.object, nouns)} in the gripper"
     return f"{noun(atom.entity, nouns)} {atom.field.replace('_', ' ')} is {atom.value}"
 
 
@@ -76,7 +81,7 @@ def render_until_text(node: Node, nouns: Nouns | None = None, robot: str = "you"
         return " or ".join(_child_text(node, child, nouns, robot) for child in node.nodes)
     if isinstance(node, NotNode):
         if isinstance(node.node, ATOM_TYPES) and not isinstance(node.node, NotAtom):
-            return render_atom_text(NotAtom(atom=typing.cast("EntityAtom | MembershipAtom | WithinAtom | SeesAtom | PlaysAtom", node.node)), nouns, robot)
+            return render_atom_text(NotAtom(atom=typing.cast("EntityAtom | MembershipAtom | WithinAtom | SeesAtom | PlaysAtom | HoldsAtom", node.node)), nouns, robot)
         return f"it is not the case that {_child_text(node, node.node, nouns, robot)}"
     assert isinstance(node, HoldNode)
     text = _child_text(node, node.node, nouns, robot)
@@ -111,6 +116,14 @@ def _subject(subject: str, nouns: Nouns | None, robot: str) -> str:
     if point is not None:
         return f"the point ({point[0]:g}, {point[1]:g})"
     return noun(subject, nouns)
+
+
+def _do(subject: str) -> str:
+    return "do" if subject == "robot" else "does"
+
+
+def _have(subject: str) -> str:
+    return "have" if subject == "robot" else "has"
 
 
 def _be(subject: str) -> str:
@@ -156,6 +169,8 @@ def render_phase(phase: TaskPhase, nouns: Nouns | None = None) -> str:
         stop = phase.stop_node
         if stop is not None:
             sentence += f" and stop once {render_until_text(stop, nouns)}"
+    elif isinstance(phase, GraspPhase):
+        sentence = _render_grasp(phase, nouns)
     else:
         sentence = "Carry out the step"
     until = phase.until_node
@@ -164,6 +179,12 @@ def render_phase(phase: TaskPhase, nouns: Nouns | None = None) -> str:
     for condition in phase.conditions:
         sentence += ", " + _condition_clause(condition, nouns)
     return sentence + "."
+
+
+def _render_grasp(phase: GraspPhase, nouns: Nouns | None) -> str:
+    if phase.action == "open":
+        return f"Release {noun(phase.object, nouns)}" if phase.object else "Open your gripper"
+    return f"Grasp {noun(phase.object, nouns)}" if phase.object else "Close your gripper"
 
 
 def _render_loop(phase: LoopPhase, nouns: Nouns | None) -> str:

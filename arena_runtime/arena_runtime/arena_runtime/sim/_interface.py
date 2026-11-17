@@ -29,6 +29,7 @@ if typing.TYPE_CHECKING:
     from arena_simulation_setup.utils.articulation import Values
 
     from ._articulation import ArticulatedObject, JointCommand
+    from ._carry import Carry
 
 
 _BOX_FLOOR_CLEARANCE = 0.01  # keep the box base off the floor plane to avoid z-fight / poke-through
@@ -278,6 +279,7 @@ class MechanismITF:
         from arena_runtime.env.realizer import Realizer
 
         from ._articulation import ArticulatedObject
+        from ._carry import Carry
         from ._mechanism_shim import _DoorRuntime, _ElevatorRuntime, _StairsRuntime
         from ._semantics import SemanticChange, SemanticEntitySnapshot, SemanticsManager
 
@@ -300,6 +302,9 @@ class MechanismITF:
         _light_poses: dict[str, tuple[Position, float]]
         _incident_callback: Callable[[str], None] | None
         _articulated: dict[str, ArticulatedObject]
+        _carry_objects: dict[str, Obstacle]
+        _carried: dict[tuple[str, str], Carry]
+        _carry_resting: dict[str, Obstacle]
         _realizer: Realizer
 
         @property
@@ -339,6 +344,9 @@ class MechanismITF:
         self._light_poses = {}
         self._incident_callback = None
         self._articulated = {}
+        self._carry_objects = {}
+        self._carried = {}
+        self._carry_resting = {}
 
     def _register_agent_robot(self, robot: Robot, model_params: "arena_robots.Robot.ModelParams") -> None:
         """Track a spawned robot for disc and pose reads, bringing up the TF machinery on first use."""
@@ -351,7 +359,10 @@ class MechanismITF:
         )
 
     def _forget_agent_robot(self, sim_path: str) -> None:
+        from ._carry import forget_robot
+
         self._agent_robots.pop(sim_path, None)
+        forget_robot(self, sim_path)
 
     def attach_human_simulator(self, hs: HumanSimulator) -> None:
         """Attach a human simulator for ped position reads and teleport dispatch."""
@@ -420,20 +431,72 @@ class MechanismITF:
     async def spawn_objects(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         """Spawn obstacles, an articulated one as one obstacle per link bundle, its joints driven by the tick loop."""
         from ._articulation import spawn_objects
+        from ._carry import remember
 
+        remember(self, obstacles)
         return await spawn_objects(self, obstacles)
 
     async def move_objects(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         """Move obstacles, an articulated one placed with its joints back at the initial values of its `joints`."""
         from ._articulation import move_objects
+        from ._carry import remember
 
+        remember(self, obstacles)
         return await move_objects(self, obstacles)
 
     async def delete_objects(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         """Delete obstacles, an articulated one with all its link obstacles and its semantics."""
         from ._articulation import delete_objects
+        from ._carry import forget
 
+        forget(self, obstacles)
         return await delete_objects(self, obstacles)
+
+    async def grasp_attach(self, robot: Robot, joint: str, obj: str, hand: str) -> bool:
+        """Carry the world object obj (an authored name) with the gripper joint of robot until grasp_detach, False when none is within reach of the TF frame hand."""
+        from ._carry import attach
+
+        return await attach(self, robot, joint, obj, hand)
+
+    async def grasp_detach(self, robot: Robot, joint: str) -> None:
+        """Release what the gripper joint of robot carries, leaving it where it is."""
+        from ._carry import detach
+
+        await detach(self, robot, joint)
+
+    def held_objects(self) -> Mapping[str, frozenset[str]] | None:
+        """Authored names of the objects each robot's grippers carry now, None when the simulator does not measure holding."""
+        from ._carry import held
+
+        return held(self)
+
+    def carry_offsets(self, robot: str) -> Mapping[str, tuple[str, Pose]]:
+        """Hand frame and the pose in it of each object the robot's grippers carry now, by authored name."""
+        from ._carry import offsets
+
+        return offsets(self, robot)
+
+    async def _carry_lift(self, obstacles: Sequence[Obstacle]) -> None:
+        """Take obstacles a gripper starts to carry without a weld out of the way of the robot. No-op by default."""
+        del obstacles
+
+    async def _carry_weld(self, carry: "Carry") -> bool:
+        """Hold the carried obstacle where it is relative to the robot body holding the carry's hand frame on every physics step, its collisions off, until `_carry_unweld` or its robot's or its own deletion, False without a weld so the obstacle is lifted and follows the hand on the mechanism tick."""
+        del carry
+        return False
+
+    async def _carry_unweld(self, carry: "Carry") -> Pose | None:
+        """Stop holding a welded obstacle and leave it where it is, its pose there or None when the simulator cannot tell."""
+        del carry
+        return None
+
+    async def _carry_follow(self, obstacles: Sequence[Obstacle]) -> None:
+        """Place carried obstacles at their new poses."""
+        await self.obstacle_move(obstacles)
+
+    async def _carry_drop(self, obstacles: Sequence[Obstacle]) -> None:
+        """Place released obstacles at their poses, back in the way of the robot."""
+        await self.obstacle_move(obstacles)
 
     async def _articulated_spawn(self, objects: "Sequence[ArticulatedObject]") -> Sequence[bool]:
         """Spawn each object as one physics model at its obstacle's pose, links with their inertias, joints at their current values with their dynamics and drives off."""
@@ -559,6 +622,18 @@ class MechanismITF:
         rot = t.transform.rotation
         return Position(x=tr.x, y=tr.y, z=tr.z), Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z).to_yaw()
 
+    def frame_transform(self, frame: str) -> Pose | None:
+        """Map-frame pose of a TF frame, None while it is unknown."""
+        if self._mechanism_tf_buffer is None:
+            return None
+        try:
+            t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            return None
+        tr = t.transform.translation
+        rot = t.transform.rotation
+        return Pose(position=Position(x=tr.x, y=tr.y, z=tr.z), orientation=Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z))
+
     def robot_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
         """Yield (sim_path, (x, y), footprint radius) for each tracked robot."""
         if self._mechanism_tf_buffer is None:
@@ -575,16 +650,4 @@ class MechanismITF:
     def robot_pose(self, sim_path: str) -> Pose | None:
         """Return the current full pose of a tracked robot, or None if unavailable."""
         entry = self._agent_robots.get(sim_path)
-        if entry is None or self._mechanism_tf_buffer is None:
-            return None
-        frame, _radius = entry
-        try:
-            t = self._mechanism_tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            return None
-        tr = t.transform.translation
-        rot = t.transform.rotation
-        return Pose(
-            position=Position(x=tr.x, y=tr.y, z=tr.z),
-            orientation=Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z),
-        )
+        return None if entry is None else self.frame_transform(entry[0])

@@ -1,0 +1,16 @@
+format: arena-scenario/2
+humans:
+- name: human_host_1
+  model: Common/worker_male_asian_middleage
+  pose: [0.0, 1.0, 0.0]
+  velocity: 1.0
+robots:
+- name: fr3_0
+  model: fr3
+  start: [3.5, 5.4, 0.0]
+- name: fr3_1
+  model: fr3
+  start: [1.0, 4.25, 1.5708]
+- name: tiago
+  model: tiago
+  start: [-3.02, 2.77, -3.14]

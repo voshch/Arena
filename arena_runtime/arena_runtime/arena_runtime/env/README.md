@@ -111,8 +111,14 @@ this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_m
 
 1. Publish `reset_start` (`std_msgs/Empty`), reseed the RNG and reset the
    scenario asset pointer.
-2. `robots_manager.set_up()` reconciles the fleet (spawn and remove robots),
-   then `launch_pending()`.
+2. `Task.fleet_for(record, params)` is asked for the fleet the record wants,
+   given the string params staged for it. A fleet is reconciled into the queue
+   (`RobotsManager.reconcile`: robots missing from it are despawned, missing
+   ones spawned at the staging pose, a robot of the right name but another
+   model replaced, unnamed entries matched by model), `None` leaves the queue
+   alone. Then `robots_manager.set_up()` applies the queue (spawn and remove
+   robots) and `launch_pending()` follows. A world that `apply_world` rejects
+   fails the reset before this step.
 3. `environment_manager.before_reset_episode()` pauses the simulator. The sim
    is paused for the entire body below; only node-discovery and lifecycle
    signals are observable here.
@@ -146,7 +152,11 @@ survive all episode resets for the lifetime of the world.
 ### Task runtimes
 
 `task_generator` is one task runtime among any that register under the
-`arena_runtime.task_layer` entry point group. A runtime is a module with the
+`arena_runtime.task_layer` entry point group. The optional ones are submodules under
+`task_layers/<name>`, installed with `arena feature tasks add <name>` and listed by
+`arena feature tasks ls`, the directory name being the entry point name, for example
+[`casper`](../../../../task_layers/casper/README.md), which wraps task_generator and lets CASPER++
+allocate and dispatch the team robots' tasks. A runtime is a module with the
 functions of the `TaskLayer` protocol, selected with `task_layer:=<entry point
 name>`:
 
@@ -162,6 +172,7 @@ setup(entry_points={"arena_runtime.task_layer": ["my_runtime = my_runtime.layer"
 | `mode_namespaces()` | The registered modes per axis, each with its param namespace: the one source of param names. `registered_modes(layer)` is its names. |
 | `multi_axes()` | The axes that take several modes at once, the ones it passes to `validate_modes`. |
 | `fleet_only_robots()` | Robot modes reachable only through a fleet config. |
+| `EpisodeTask.fleet_for(record, params)` | The `FleetEntry` (model, optional name) list the record wants live, or `None` for no opinion. |
 | `next_episode(previous=, queued=)` | Chooses what the next episode changes, given the finished record and what was queued. |
 
 `mode_param(axis)` is the parameter that selects an axis, `selection_args(modes)`
@@ -187,6 +198,29 @@ exactly one name are refused, `[]` clears a multi-mode axis such as modules.
 with the mode's param namespace. Clients take param names from it and never build
 `task.<mode>`. `EpisodeRecord.task_layer` is the name of the runtime that ran the
 episode, the env's resolved `task_layer` param.
+
+A runtime reports the steps of its own tasks through
+`ctx.episode.task_event(TaskEvent(task, kind, robot, detail))`, `kind` being one of
+`TASK_EVENT_KINDS`. `EpisodeNode.task_event` stamps the event with `t`, the sim
+seconds since the current episode's `start_time` (0 before the episode starts),
+appends it to the episode's list, publishes it as `arena_runtime_msgs/TaskEvent` on
+`task_events` of the env namespace (detail as JSON). `EpisodeRecord.tasks` is that
+list as JSON in report order, carried by every later publication of the record and
+empty for a new episode, and the `episode` MCP domain parses it as `tasks`. `EpisodeNode` folds the same events in a `TaskBoard`
+([`task_board.py`](task_board.py)), reset at every episode start, and from it publishes
+the latched `state/agents` (`arena_runtime_msgs/AgentStates`, one `AgentState` per robot and
+pedestrian with its task, state `idle|assigned|working|met|failed|dropped`, zones and the
+sim time of its last change) and the `task_markers` MarkerArray
+([`task_markers.py`](task_markers.py)) behind the "Tasks" display: a label per agent colored by
+state, and for working agents a line to the first zone of their task plus the outline of its zones.
+Each label is frame-locked in its agent's TF frame (a robot's base frame, a pedestrian's
+`<name>/base_link`), so it moves with the agent on every render. Markers republish every 0.5 sim
+seconds and on every board change.
+
+A request's `task`
+travels through `RobotManager.submit_task` into `TaskRunner.submit`, so each
+robot's entry of the `phases` JSON lists the id of every phase's request under
+`tasks`, parallel to `phases` (empty without one).
 
 Staged params are one dict by full name. `QueueEpisode.params` carries full names
 and upserts them. Changing an axis's mode drops
@@ -230,7 +264,8 @@ over a loop ends `dropped`.
 `runtime/spawn_static` and `runtime/spawn_dynamic` spawn one obstacle into a running
 episode, `runtime/spawn_robot` queues or spawns one robot. Without a pose,
 [`placement.py`](placement.py) picks a free one. Each adds a reason to
-`EpisodeRecord.integrity`.
+`EpisodeRecord.integrity`, `spawn_robot` and `despawn_robot` only while an
+episode is running.
 
 ### `EpisodeRecord`
 

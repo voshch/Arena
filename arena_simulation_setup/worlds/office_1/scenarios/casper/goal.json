@@ -1,0 +1,100 @@
+{
+  "tasks": [
+    {
+      "id": "GreetVisitors",
+      "context": "OfficeMeeting",
+      "required_skills": {"communication": 0.5},
+      "required_constraints": {"can_move": true, "workspace": ["reception"]},
+      "duration": 20,
+      "priority": 1
+    },
+    {
+      "id": "GuideToMeeting",
+      "context": "OfficeMeeting",
+      "required_skills": {"communication": 0.4, "navigation": 0.5},
+      "required_constraints": {"can_move": true, "workspace": ["reception", "meeting_room_big"]},
+      "duration": 10,
+      "priority": 2
+    },
+    {
+      "id": "FetchSupplies",
+      "context": "OfficeMeeting",
+      "required_skills": {"transport": 0.5},
+      "required_constraints": {"can_move": true, "can_transport_objects": true, "max_payload_kg": 2, "workspace": ["storage"]},
+      "duration": 15,
+      "priority": 3
+    },
+    {
+      "id": "DeliverSupplies",
+      "context": "OfficeMeeting",
+      "required_skills": {"transport": 0.6, "navigation": 0.4},
+      "required_constraints": {"can_move": true, "can_transport_objects": true, "max_payload_kg": 2, "workspace": ["storage", "meeting_room_big"]},
+      "duration": 10,
+      "priority": 4
+    },
+    {
+      "id": "FetchCoffee",
+      "context": "OfficeMeeting",
+      "required_skills": {"transport": 0.5},
+      "required_constraints": {"can_move": true, "can_transport_objects": true, "max_payload_kg": 1, "workspace": ["cafeteria"]},
+      "duration": 15,
+      "priority": 5
+    },
+    {
+      "id": "ServeCoffee",
+      "context": "OfficeMeeting",
+      "required_skills": {"transport": 0.6, "navigation": 0.4},
+      "required_constraints": {"can_move": true, "can_transport_objects": true, "max_payload_kg": 1, "workspace": ["cafeteria", "meeting_room_big"]},
+      "duration": 10,
+      "priority": 6
+    },
+    {
+      "id": "HostMeeting",
+      "context": "OfficeMeeting",
+      "required_skills": {"communication": 0.6, "supervise": 0.5},
+      "required_constraints": {"can_move": true, "workspace": ["meeting_room_big"]},
+      "duration": 30,
+      "priority": 7,
+      "subgoal_level": 1
+    },
+    {
+      "id": "TidyMeetingRoom",
+      "context": "OfficeMeeting",
+      "required_skills": {"transport": 0.4},
+      "required_constraints": {"can_move": true, "workspace": ["meeting_room_big", "storage"]},
+      "duration": 10,
+      "priority": 8,
+      "time_to_clean": false
+    },
+    {
+      "id": "CloseUp",
+      "context": "OfficeMeeting",
+      "required_skills": {"supervise": 0.3},
+      "required_constraints": {"can_move": true, "workspace": ["reception"]},
+      "duration": 10,
+      "priority": 9,
+      "subgoal_level": 1,
+      "at_end": true
+    },
+    {
+      "id": "OfficeMeeting",
+      "context": "OfficeMeeting",
+      "required_skills": {"communication": 0.5, "supervise": 0.5},
+      "required_constraints": {"can_move": true, "workspace": ["meeting_room_big", "reception"]},
+      "duration": 5,
+      "priority": 10,
+      "is_end_goal": true
+    }
+  ],
+  "dependencies": [
+    ["GreetVisitors", "GuideToMeeting"],
+    ["FetchSupplies", "DeliverSupplies"],
+    ["FetchCoffee", "ServeCoffee"],
+    ["GuideToMeeting", "HostMeeting"],
+    ["DeliverSupplies", "HostMeeting"],
+    ["ServeCoffee", "HostMeeting"],
+    ["TidyMeetingRoom", "CloseUp"],
+    ["HostMeeting", "OfficeMeeting"],
+    ["CloseUp", "OfficeMeeting"]
+  ]
+}

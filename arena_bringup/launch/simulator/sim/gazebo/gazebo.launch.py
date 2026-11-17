@@ -179,16 +179,12 @@ def generate_launch_description():
         else_value=desired_world,
     )
 
-    def _inject_ped_skeleton_plugin(world_sdf_path: str, enabled: bool) -> str:
-        """Return a patched world SDF path with PedSkeletonPlugin injected.
+    def _inject_world_plugins(world_sdf_path: str, enabled: bool) -> str:
+        """Return a patched world SDF path with CarryWeld and, when enabled, PedSkeletonPlugin injected.
 
-        Parses the world SDF, appends the plugin element to the <world> element,
-        writes a temp file, and returns its path. When disabled, returns the
-        original path unchanged.
+        Parses the world SDF, appends the plugin elements to the <world> element,
+        writes a temp file, and returns its path.
         """
-        if not enabled:
-            return world_sdf_path
-
         try:
             tree = ET.parse(world_sdf_path)
             root = tree.getroot()
@@ -196,12 +192,16 @@ def generate_launch_description():
             if world_el is None:
                 return world_sdf_path
 
-            plugin_el = ET.SubElement(world_el, 'plugin')
-            plugin_el.set('filename', 'PedSkeletonPlugin')
-            plugin_el.set('name', 'arena_gz_plugins::PedSkeletonPlugin')
-            enabled_el = ET.SubElement(plugin_el, 'enabled')
-            enabled_el.text = 'true'
-            ET.SubElement(plugin_el, 'topic_suffix').text = '/sim_peds'
+            carry_el = ET.SubElement(world_el, 'plugin')
+            carry_el.set('filename', 'CarryWeld')
+            carry_el.set('name', 'arena_gz_plugins::CarryWeld')
+            if enabled:
+                plugin_el = ET.SubElement(world_el, 'plugin')
+                plugin_el.set('filename', 'PedSkeletonPlugin')
+                plugin_el.set('name', 'arena_gz_plugins::PedSkeletonPlugin')
+                enabled_el = ET.SubElement(plugin_el, 'enabled')
+                enabled_el.text = 'true'
+                ET.SubElement(plugin_el, 'topic_suffix').text = '/sim_peds'
 
             tmp = tempfile.NamedTemporaryFile(
                 mode='wb', suffix='.sdf', delete=False,
@@ -213,7 +213,7 @@ def generate_launch_description():
 
         except Exception as exc:
             # Non-fatal: fall back to original world without the plugin.
-            print(f'[gazebo.launch] PedSkeletonPlugin injection failed: {exc}', file=sys.stderr)
+            print(f'[gazebo.launch] world plugin injection failed: {exc}', file=sys.stderr)
             return world_sdf_path
 
     def _world_declares_lights(world_name: str, lighting: str) -> bool:
@@ -285,7 +285,7 @@ def generate_launch_description():
         skeleton_on = skeleton_val.lower() not in ('false', '0')
         if _world_declares_lights(context.perform_substitution(world.substitution), context.launch_configurations.get('world.lighting', 'authored') or 'authored'):
             resolved_world = _darken_scene(resolved_world)
-        resolved_world = _inject_ped_skeleton_plugin(resolved_world, skeleton_on)
+        resolved_world = _inject_world_plugins(resolved_world, skeleton_on)
         engine = _select_render_engine()
         gz_args = resolved_world + f" -r --render-engine {engine}"
         if headless_val.lower() in ("true", "1"):

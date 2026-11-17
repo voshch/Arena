@@ -19,6 +19,7 @@ from arena_simulation_setup.shared.conditions import (
     FamilyTest,
     FieldTest,
     HoldNode,
+    HoldsAtom,
     MembershipAtom,
     Node,
     NotAtom,
@@ -85,7 +86,7 @@ class WallGrid:
 
 @attrs.frozen
 class Sample:
-    """World state at one instant: robot poses (x, y, yaw), ped positions (x, y), ped gesture clips and semantic fields by name, a missing subject is nowhere if in `known`, else unresolvable."""
+    """World state at one instant: robot poses (x, y, yaw), ped positions (x, y), ped gesture clips, the entities each robot's gripper holds (None when not measured) and semantic fields by name, a missing subject is nowhere if in `known`, else unresolvable."""
 
     t: float
     robots: Mapping[str, tuple[float, float, float]] = attrs.field(factory=dict)
@@ -95,6 +96,7 @@ class Sample:
     clips: Mapping[str, frozenset[str]] = attrs.field(factory=dict)
     walls: WallGrid | None = None
     family: FamilyLookup = attrs.field(default=lambda entity, name: None)
+    holding: Mapping[str, frozenset[str]] | None = None
 
     def point(self, subject: str, robot: str) -> tuple[float, float] | None | typing.Literal[False]:
         """Planar position of a subject or an `x,y` literal, False when it is known but absent, None when it is unknown."""
@@ -161,6 +163,8 @@ def atom_holds(atom: Atom, sample: Sample, zones: Zones, robot: str = 'robot') -
         if clips is not None:
             return atom.clip in clips
         return False if atom.subject in sample.known and atom.subject not in sample.peds else None
+    if isinstance(atom, HoldsAtom):
+        return holds(sample, robot if atom.subject == 'robot' else atom.subject, atom.object)
     a = sample.point(atom.subject, robot)
     b = sample.point(atom.other, robot)
     if a is None or b is None:
@@ -172,6 +176,13 @@ def atom_holds(atom: Atom, sample: Sample, zones: Zones, robot: str = 'robot') -
             return False
         return None if sample.walls is None else sample.walls.clear(a, b)
     return math.hypot(a[0] - b[0], a[1] - b[1]) <= atom.radius
+
+
+def holds(sample: Sample, robot: str, obj: str) -> bool | None:
+    """Whether the robot's gripper holds the entity on this sample, None when holding is not measured."""
+    if sample.holding is None:
+        return None
+    return obj in sample.holding.get(robot, frozenset())
 
 
 def compare(recorded: str, op: str, value: CompareValue) -> bool | None:
@@ -503,7 +514,7 @@ class PhaseMonitor:
                 self._park.reset()
                 if self.phase.until is None:
                     self.arrived_at = None
-        elif action_done or (self._stop is not None and self._stop.step(sample, zones)):
+        elif (action_done and self._grasped(sample)) or (self._stop is not None and self._stop.step(sample, zones)):
             if self.arrived_at is None:
                 self.arrived_at = sample.t
             self.held = True
@@ -514,6 +525,15 @@ class PhaseMonitor:
             return False
         self.met_at = sample.t
         return True
+
+    def _grasped(self, sample: Sample) -> bool:
+        """Whether a finished action satisfies its phase, a close on an object needing it held unless holding is unmeasured."""
+        from arena_simulation_setup.shared.task import GraspPhase
+
+        phase = self.phase
+        if not isinstance(phase, GraspPhase) or phase.action != 'close' or not phase.object:
+            return True
+        return holds(sample, self.robot, phase.object) is not False
 
     def _goal_distance(self, sample: Sample) -> float:
         from arena_simulation_setup.shared.task import GoToPhase
@@ -550,6 +570,7 @@ __all__ = [
     'arrived',
     'atom_holds',
     'compare',
+    'holds',
     'node_holds',
     'operator_verdict',
     'values_equal',

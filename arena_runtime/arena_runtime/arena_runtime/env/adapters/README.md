@@ -33,7 +33,8 @@ judge tick while a phase is active, with the phase as `dispatch_phase` received 
 uses it to redispatch a finished action while the judge has not seen the robot arrive,
 never while `robot.waiting`). Mobile adapters inherit
 [`MobileAdapter`](mobile/__init__.py), whose `on_reset` teleports the robot
-to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
+to `ctx.start_pose`. `RobotManager.reset` teleports a robot without a mobile adapter (a
+stationary base) there itself before the adapter hooks run. Subclass overrides chain `super().on_reset(...)` before
 any post-teleport work. The episode's first phase is dispatched before `on_reset`
 runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
 again after the teleport (rosnav_rl, external) or redispatches it on a later tick (Nav2).
@@ -54,7 +55,8 @@ sync and a base that moved between reaches is followed. Ids are `arena/<entity>`
 object and `arena/<entity>/<link>` for each link of an articulated one, `<entity>` the obstacle
 name as the scenario authors it. Only the env's static and articulated obstacles enter, no walls,
 pedestrians or robots, and objects whose bounds lie farther than the arm cap's `scene_radius` from
-the base are left out.
+the base are left out. A static object stands where the simulator last put it, so a box a robot
+carried and set down enters at its resting pose, not where it was spawned.
 
 Objects are expressed in the robot's MoveIt root frame, the root link of its
 `robot_description`, posed from the base TF in the map frame because the SRDFs carry no virtual
@@ -65,9 +67,20 @@ joint and the planning frame moves with the base. Geometry lives in
   (`<model>.urdf`, meshes under `links/<link>/`), each link posed by URDF forward kinematics at
   the joint values the simulator holds for the entity now (the state behind its `q.<joint>`
   fields). The obstacle scale multiplies the link translations and the vertices.
-- A rigid object takes the annotated `bounding_box` as one box.
+- A rigid object takes the annotated `bounding_box` as one box. A box that encloses the origin of
+  another object (more than 1 cm inside) is a rack or shelf whose box is no solid and stays out,
+  the objects it holds stay in.
 - OBJ files are read by a standard-library reader (`v` and `f` lines, `i`, `i/j` and `i/j/k`
   corners, negative indices, fan triangulation).
+
+### Carried objects
+
+An object a robot's gripper holds (`EnvironmentManager.carry_offsets`) is not a world object of that
+arm's scene: the same diff attaches it to the arm's `tip_link` as an `AttachedCollisionObject`
+(`touch_links` are the TF frames below the tip link, so the fingers may touch it) at its pose in
+the hand frame at the grasp, and leaves its ids out of the world part. Every reach of the arm is
+planned with the object moving with the hand. When the gripper lets go, the next dispatch detaches
+it and it is a world object again.
 
 ### Object frames
 
@@ -75,7 +88,7 @@ A `ReachPhase.frame` naming an episode entity (`chest`) or one of its links (`ch
 is resolved at dispatch into a `PoseStamped` in the robot base frame: robot pose and entity pose
 in the map frame, the URDF link frame at the current joint values, then the authored target in
 that frame. With `relative: true` the offset is rotated into the base frame instead of composed.
-Any other frame keeps `reach_frame`. A linear reach in an entity's frame sets the goal's
+Any other frame keeps `reach_frame`. A reach in an entity's frame sets the goal's
 `contact` to the object ids of all its links, so the arm may touch that object and nothing else.
 The frame is a snapshot at dispatch: a link frame moves with its joint afterwards, so a target
 meant to stay put is given in the entity frame.
@@ -164,8 +177,8 @@ are exempt, and so is any point more than 1 m from the mesh.
 
 ## Lift and gripper adapters
 
-`lift` and `gripper` adapters accept no task phase (`accepts=()`, no client): they own a ROS command
-surface instead. `robot.lift` / `robot.gripper` (default `direct`) select the kind for every robot
+`lift` and `gripper` adapters own a ROS command surface. `lift` accepts no task phase
+(`accepts=()`, no client). `gripper: direct` accepts `TaskKind.GRASP` (see below), `gripper: none` accepts nothing. `robot.lift` / `robot.gripper` (default `direct`) select the kind for every robot
 advertising the cap, `adapters: {lift: none}` in a robot setup file overrides one robot.
 
 | Cap | Kind | Command topic under `<robot_ns>` | Type | Effect |
@@ -175,8 +188,12 @@ advertising the cap, `adapters: {lift: none}` in a robot setup file overrides on
 | both | `none` | - | - | binds nothing |
 
 `direct` echoes the clamped command on `lift/<instance>/applied` and `gripper/<instance>/applied`
-(same types, transient-local). The gripper goal is fire and forget: the adapter does not await the
-result. `<instance>` is the instance key of `caps/lift.yaml` / `caps/gripper.yaml`, or the mount name
+(same types, transient-local). A command on the topic is fire and forget: the adapter does not await
+the result. A `GraspPhase` (`close` or `open`) sends the same kind of goal with the instance's
+`positions.close` or `positions.open` and its `max_effort`, the sole gripper unless the phase names an
+`instance`, and the phase ends when the `GripperCommand` action returns: a goal that reaches its position
+or stalls (a close on an object) is a success, any other abort or cancel fails the phase. A robot with
+An `open` first detaches whatever the instance's joint carries. A `close` with an `object` attaches it once the goal succeeds, through `EnvironmentManager.grasp_attach` with the TF frame of the tip of the gripper's arm, and fails the phase when the object is not within reach (every simulator carries the object with the hand, see [attach on grasp](../../sim/README.md#attach-on-grasp)). `gripper: none` has no adapter for the kind, so the phase fails as unsupported. `<instance>` is the instance key of `caps/lift.yaml` / `caps/gripper.yaml`, or the mount name
 for component caps. The `robots_lift` and `robots_gripper` MCP tools publish these commands and
 return the echo. Topic names and clamping live in
 [`arena_robots/actuators.py`](../../../../../arena_robots/arena_robots/arena_robots/actuators.py).

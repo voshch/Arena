@@ -34,6 +34,24 @@ def test_robot_goal_parse_full_dict():
     assert (rg.level, rg.goal_level) == ("1", "2")
 
 
+def test_robot_goal_parse_name_and_model():
+    rg = RobotGoal.parse({"start": [0.0, 0.0], "name": "lead", "model": "jackal"})
+    assert (rg.name, rg.model) == ("lead", "jackal")
+    assert RobotGoal.parse({"start": [0.0, 0.0]}).name == ""
+
+
+def test_robot_goal_rejects_unknown_key_beside_name_and_model():
+    with pytest.raises(ValueError, match="unknown keys"):
+        RobotGoal.parse({"start": [0.0, 0.0], "name": "lead", "models": "jackal"})
+
+
+def test_scenario_rejects_two_robots_with_one_name():
+    first = RobotGoal.parse({"start": [0.0, 0.0], "name": "lead"})
+    second = RobotGoal.parse({"start": [1.0, 1.0], "name": "lead"})
+    with pytest.raises(ValueError, match="duplicate scenario robot"):
+        Scenario(robots=[first, second])
+
+
 def test_robot_goal_parse_start_only():
     rg = RobotGoal.parse({"start": [5.0, 6.0]})
     assert rg.start.position.x == pytest.approx(5.0)

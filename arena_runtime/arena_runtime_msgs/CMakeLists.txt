@@ -17,6 +17,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/AdapterEntry.msg
   msg/AdapterPlugin.msg
   msg/AdapterVizManifest.msg
+  msg/AgentState.msg
+  msg/AgentStates.msg
   msg/EnvRecord.msg
   msg/EnvRegistry.msg
   msg/EpisodeRecord.msg
@@ -39,6 +41,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/SemanticSnapshot.msg
   msg/ShutdownRequest.msg
   msg/SimState.msg
+  msg/TaskEvent.msg
   msg/WorldExtent.msg
   srv/CleanupEnv.srv
   srv/ConfirmWorld.srv
