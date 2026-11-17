@@ -1,6 +1,6 @@
 """Device tracks: where the assistive device an agent type holds sits in its body frame over one gait cycle.
 
-arena_runtime poses a held cane, rollator or walking frame (humansim agent types, `device:`) on each pedestrian
+arena_runtime poses a held cane, rollator, walking frame or IV stand (humansim agent types, `device:`) on each pedestrian
 from its position, heading and rendered gait phase, and the collision tracker tests the robot footprint against it. The
 device's body-frame geometry is fitted here once per agent type: the type's pose profile, resolved as the renderer resolves
 it, is posed over one cycle on the character it was solved for (`ActorPose`, the pose the simulators draw), the grips
@@ -11,8 +11,9 @@ value = mean + sum_k amp_k * sin(k * w + phase_k), w the phase after the profile
   cane           a segment from `grip` (the fist's grip centre) along the grip axis to `tip`, `length - grip_at` beyond it
   rollator       a box of the object's footprint (`size`), `origin` on the floor under the middle of the two grips
   walking_frame  the same, `origin.z` its lift while it is carried forward
+  iv_stand       the same under the one hand on the pole, rolled on the floor
 
-each with `model`, the held object's model renderers draw (WhiteCane, RollingCane, RollatorFitted, WalkerFitted),
+each with `model`, the held object's model renderers draw (WhiteCane, RollingCane, RollatorFitted, WalkerFitted, IVStand),
 its footprint turned by the model's annotated `face`.
 
 Body frame: x forward, y left, z up from the soles, origin under the agent's position, metres.
@@ -63,8 +64,9 @@ SOURCES: dict[str, DeviceSource] = {
     "blind_rolling_cane": DeviceSource("cane", "Common/Human/casual_male_asian_young_rollingcane", "rolling", "Common/Object/RollingCane"),
     "elder_rollator": DeviceSource("rollator", "Common/Human/casual_male_caucasian_old_rollator", "rollator", "Common/Object/RollatorFitted"),
     "patient_walking_frame": DeviceSource("walking_frame", "Hospital/Human/patient_female_asian_old", "frame", "Common/Object/WalkerFitted"),
+    "patient_iv_pole": DeviceSource("iv_stand", "Hospital/Human/patient_male_caucasian_old_ivpole", "iv", "Common/Object/IVStand"),
 }
-LIFTED = {"walking_frame"}  # carried forward each step; a rollator rolls on the floor
+LIFTED = {"walking_frame"}  # carried forward each step; the others roll on the floor
 
 
 def fit_track(w: np.ndarray, v: np.ndarray, tolerance: float = TOLERANCE, max_harmonics: int = MAX_HARMONICS) -> tuple[float, list[list[float]], float]:
@@ -108,7 +110,7 @@ def cane_points(poses: Sequence[Mapping[str, np.ndarray]], grip: Mapping[str, fl
 
 def box_origin(poses: Sequence[Mapping[str, np.ndarray]], grip: Mapping[str, object], lifted: bool) -> np.ndarray:
     """The device origin per pose: under the middle of the grips of the hand(s) holding it, at the height those stand above
-    their lowest when the device is `lifted` (a carried frame), on the floor otherwise (a pushed rollator)."""
+    their lowest when the device is `lifted` (a carried frame), on the floor otherwise (a pushed rollator or IV stand)."""
     sides = str(grip["side"])
     mids = np.array([np.mean([HANDS.palm_frame(q, s).grip(grip["radius"], grip["angle"]) for s in sides], axis=0) for q in poses])
     mids[:, 2] = mids[:, 2] - mids[:, 2].min() if lifted else 0.0
