@@ -4,6 +4,7 @@ Ledger times are sim seconds, `now` relative to the run's `base`, observed stamp
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Collection, Iterable, Mapping, Sequence
 
 _NS = 1_000_000_000
@@ -48,6 +49,25 @@ def step_slice(target_rtf: float, dt: float) -> float:
     if target_rtf <= 0.0:
         return 1.0
     return min(max(target_rtf * 0.05, dt), 1.0)
+
+
+class Pacer:
+    """Wall schedule of a paced run that repays an overrun from later slack, up to `max_debt` wall seconds."""
+
+    def __init__(self, rtf: float, max_debt: float, wall: float) -> None:
+        self.rtf = rtf
+        self.max_debt = max_debt
+        self.anchor = wall
+        self.advanced = 0.0
+
+    def delay(self, advanced: float, wall: float) -> float:
+        """Wall seconds to sleep after `advanced` more sim seconds, read at `wall`."""
+        self.advanced += advanced
+        lag = self.anchor + self.advanced / self.rtf - wall
+        if lag < -self.max_debt:
+            self.anchor -= lag + self.max_debt
+            lag = -self.max_debt
+        return max(lag, 0.0)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -167,10 +187,10 @@ class GateLedger:
         return removed, added
 
     def next_delta(self) -> float:
-        """Sim seconds to the earliest due channel, at least one step."""
+        """Sim seconds to the earliest due channel in whole steps, at least one, so every due inside that last step shares the tick."""
         due = min(ch.next_due for ch in self.active())
-        delta = due - self.now
-        return self.dt if delta <= 0.0 else delta
+        steps = math.ceil(round((due - self.now) / self.dt, 9))
+        return max(steps, 1) * self.dt
 
     def advance(self, seconds: float) -> None:
         self.now += seconds

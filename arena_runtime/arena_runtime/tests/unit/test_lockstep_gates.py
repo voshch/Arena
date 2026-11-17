@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import math
+import random
+
 import pytest
 
 from arena_runtime.lockstep_gates import (
     ChannelRegistry,
     ChannelSpec,
     GateLedger,
+    Pacer,
     env_match,
     parse_channel_entry,
     step_slice,
@@ -356,7 +360,7 @@ def test_soft_channel_schedules_but_never_gates() -> None:
     ledger = GateLedger(dt=DT, base=0.0)
     ledger.refresh(_desired(_spec("engine", 0.1), _spec("peds", 0.04, hard=False)))
     ledger.advance(ledger.next_delta())
-    assert ledger.now == pytest.approx(0.04)
+    assert ledger.now == pytest.approx(3 * DT)
     due = ledger.due()
     assert [ch.name for ch in due] == ["peds"]
     assert [ch for ch in due if ch.hard] == []
@@ -376,7 +380,8 @@ def test_due_survives_float_accumulation() -> None:
         assert ledger.waiting(due) == []
         ledger.complete(due)
     for ch in ledger.channels.values():
-        assert expected[ch.topic] == pytest.approx(ledger.now / ch.period, abs=1)
+        stepped = math.ceil(round(ch.period / DT, 9)) * DT
+        assert expected[ch.topic] == pytest.approx(ledger.now / stepped, abs=1)
 
 
 def test_counts_gated_ticks_dues_and_receipts() -> None:
@@ -432,6 +437,77 @@ def test_a_beat_buys_one_period_when_steps_overshoot_the_due() -> None:
         ledger.complete(hard_due)
     assert ledger.now / beats < 0.1 + 1.5 * physics_dt
     assert ledger.counts[nav.topic].due == pytest.approx(beats, abs=1)
+
+
+def test_next_delta_rounds_up_to_whole_steps() -> None:
+    ledger = GateLedger(dt=DT, base=0.0)
+    ledger.refresh(_desired(_spec("a", 1.5 * DT), _spec("b", 2 * DT)))
+    assert ledger.next_delta() == pytest.approx(2 * DT)
+    ledger.channels["/a"].next_due = 10.0
+    assert ledger.next_delta() == pytest.approx(2 * DT)
+
+
+def test_phased_producers_of_many_envs_share_one_tick_per_step() -> None:
+    """Four envs of clock-driven producers at random phases on a 2 ms physics grid tick
+    once per ledger step instead of once per distinct due, and no due is overshot by more than a step."""
+    physics_dt = 0.002
+    dt = 0.0333
+    rng = random.Random(7)
+    ledger = GateLedger(dt=dt, base=0.0)
+    ledger.refresh(_desired(*(_spec(f"{kind}{env}", period) for env in range(4) for kind, period in (("engine", 0.05), ("peds", 0.1), ("nav", 0.1)))))
+    phases = {topic: rng.uniform(0.0, ch.period) for topic, ch in ledger.channels.items()}
+    ticks = 0
+    while ledger.now < 30.0:
+        ledger.advance(max(1, round(ledger.next_delta() / physics_dt)) * physics_dt)
+        hard_due = [ch for ch in ledger.due() if ch.hard]
+        assert all(ledger.now - ch.next_due < dt + physics_dt for ch in hard_due)
+        for topic, ch in ledger.channels.items():
+            ledger.observe(ch, phases[topic] + math.floor((ledger.now - phases[topic]) / ch.period) * ch.period)
+        assert ledger.waiting(hard_due) == []
+        ledger.complete(hard_due)
+        ticks += 1
+    assert ticks <= ledger.now / dt + 1
+
+
+STEP = 0.0333
+
+
+def test_pacer_holds_the_target_rtf() -> None:
+    pacer = Pacer(1.0, 0.25, wall=0.0)
+    wall = 0.0
+    for _ in range(100):
+        wall += 0.01
+        wall += pacer.delay(STEP, wall)
+    assert wall == pytest.approx(100 * STEP)
+
+
+@pytest.mark.parametrize("rtf", [0.5, 1.0, 4.0])
+def test_pacer_repays_an_overrun_from_later_slack(rtf: float) -> None:
+    """A slow tick is made up by sleeping less afterwards, so wall jitter costs no sim time."""
+    pacer = Pacer(rtf, 0.25, wall=0.0)
+    wall = 0.0
+    work = [0.002] * 200
+    work[10] = 0.1
+    work[50] = 0.2
+    for spent in work:
+        wall += spent
+        wall += pacer.delay(STEP, wall)
+    assert wall == pytest.approx(200 * STEP / rtf)
+
+
+def test_pacer_forgives_debt_beyond_the_cap() -> None:
+    """A long stall buys at most the cap of unpaced catch-up, then pacing resumes."""
+    pacer = Pacer(1.0, 0.25, wall=0.0)
+    wall = 5.0
+    assert pacer.delay(STEP, wall) == 0.0
+    sleeps = []
+    for _ in range(40):
+        wall += 0.001
+        sleeps.append(pacer.delay(STEP, wall))
+        wall += sleeps[-1]
+    assert sleeps[:7] == [0.0] * 7
+    assert all(s > 0.0 for s in sleeps[9:])
+    assert wall == pytest.approx(5.0 - 0.25 + 40 * STEP)
 
 
 def test_a_skipped_channel_stays_observed_and_gates_again_on_its_latest_stamp() -> None:

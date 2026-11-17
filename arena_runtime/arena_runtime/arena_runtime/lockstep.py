@@ -14,7 +14,7 @@ from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.Time import Time
 from rosidl_runtime_py.utilities import get_message
 
-from arena_runtime.lockstep_gates import Channel, ChannelRegistry, ChannelSpec, GateLedger, parse_channel_entry, step_slice
+from arena_runtime.lockstep_gates import Channel, ChannelRegistry, ChannelSpec, GateLedger, Pacer, parse_channel_entry, step_slice
 from arena_runtime.runtime_params import RuntimeParams
 
 if typing.TYPE_CHECKING:
@@ -35,6 +35,7 @@ _STALL_AFTER = 1.0
 _CLOCK_NUDGE_S = 0.5
 _STEP_RETRIES = 5
 _STEP_BACKOFF_S = 1.0
+_PACE_DEBT_S = 0.25
 
 _CLOCK_QOS = rclpy.qos.QoSProfile(
     depth=1,
@@ -264,11 +265,14 @@ class LockstepScheduler:
     def _gate_key(self) -> tuple[int, frozenset[str]]:
         return self._registry.version, self._window_holders()
 
-    async def _idle_while_owned(self) -> None:
+    async def _idle_while_owned(self) -> bool:
         """Idle while paused or while a foreign hold (env reset) owns the sim, an open
-        unpause window (robot bringup, teleport) gets its sim time from gated steps."""
+        unpause window (robot bringup, teleport) gets its sim time from gated steps. True when it idled."""
+        idled = False
         while self._node._windows.is_empty() and (not self._resume.is_set() or self._foreign_hold_active()):
+            idled = True
             await asyncio.sleep(0.05)
+        return idled
 
     async def _run(self, config: LockstepConfig) -> None:
         dt = declare(self._node, RuntimeParams.PHYSICS_DT).value
@@ -280,11 +284,11 @@ class LockstepScheduler:
         window_start = loop.time()
         window_advance = 0.0
         failures = 0
+        pacer: Pacer | None = None
         try:
             while True:
-                iter_start = loop.time()
                 sim_before = ledger.now
-                await self._idle_while_owned()
+                idled = await self._idle_while_owned()
 
                 # the window/hold ran the sim outside this loop's bookkeeping, so
                 # rebase or every gate is satisfied by the previous window's stamp
@@ -309,6 +313,10 @@ class LockstepScheduler:
                 if not config.ungated and not ledger.active() and pace <= 0.0:
                     pace = 1.0
                 gated = not config.ungated and bool(ledger.active())
+                if pace <= 0.0:
+                    pacer = None
+                elif pacer is None or pacer.rtf != pace or idled or drift != 0.0:
+                    pacer = Pacer(pace, _PACE_DEBT_S, loop.time())
                 try:
                     advanced = await self._node._lifecycle.step_seconds(ledger.next_delta() if gated else step_slice(pace, dt))
                 except RuntimeError as e:
@@ -337,8 +345,8 @@ class LockstepScheduler:
                     window_advance = 0.0
                     self._publish_status(tick=Time.from_float(ledger.tick))
 
-                if pace > 0.0:
-                    lag = (ledger.now - sim_before) / pace - (loop.time() - iter_start)
+                if pacer is not None:
+                    lag = pacer.delay(ledger.now - sim_before, loop.time())
                     if lag > 0.0:
                         await asyncio.sleep(lag)
         except asyncio.CancelledError:
