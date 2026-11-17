@@ -1,10 +1,4 @@
-# Robot contact with a held assistive device, head-on: the robot drives straight at a patient with a walking frame walking toward it,
-# who does not react to robots, so the robot touches the walking frame first.
-# Run: arena launch sim:=gazebo world:=map_empty robot:=jackal human:=arena tm_robots:=scenario tm_obstacles:=scenario \
-#        task.scenario.file:=device_contact_walking_frame robot.mobile:=test-collision robot.mobile.linear_x:=0.4 task.episode.fail_on_collision:=true
-# The robot drives straight ahead; the collision tracker reports the first contact on <robot>/collision_events (kind
-# `device` for the held device, `pedestrian` for the body), which ends the episode. With a planner instead of
-# test-collision the scenario checks whether it keeps clear. record.dir:=... records it, `arena cam` films it.
+# Run with robot.mobile:=test-collision task.episode.fail_on_collision:=true; the first contact ends the episode.
 format: arena-scenario/2
 humans:
 - {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [20.5, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ./patient_walking_frame_unaware.yaml}}
