@@ -1,21 +1,23 @@
-"""Device tracks: where the assistive device an agent type holds sits in its body frame over one gait cycle, for humansim.
+"""Device tracks: where the assistive device an agent type holds sits in its body frame over one gait cycle.
 
-humansim detects a robot touching a held cane, rollator or walking frame (arena_humansim agent types, `device:`). It knows
-each agent's position, heading and gait phase, not its arm, so the device's body-frame geometry is fitted here once per
-agent type: the type's gait profile is posed over one cycle on the character it was solved for (`ActorPose`, the pose the
-simulators draw), the grips (arena_runtime `hands.palm_frame(...).grip`, the cylinder the fingers close on) place the
-device, and every coordinate is fitted as harmonics of the warped gait phase, the convention of the profile's own signals:
+arena_runtime poses a held cane, rollator or walking frame (humansim agent types, `device:`) on each pedestrian
+from its position, heading and rendered gait phase, and the collision tracker tests the robot footprint against it. The
+device's body-frame geometry is fitted here once per agent type: the type's pose profile, resolved as the renderer resolves
+it, is posed over one cycle on the character it was solved for (`ActorPose`, the pose the simulators draw), the grips
+(arena_runtime `hands.palm_frame(...).grip`, the cylinder the fingers close on) place the device, and every coordinate is
+fitted as harmonics of the warped gait phase, the convention of the profile's own signals:
 value = mean + sum_k amp_k * sin(k * w + phase_k), w the phase after the profile's phase warp.
 
   cane           a segment from `grip` (the fist's grip centre) along the grip axis to `tip`, `length - grip_at` beyond it
   rollator       a box of the object's footprint (`size`), `origin` on the floor under the middle of the two grips
   walking_frame  the same, `origin.z` its lift while it is carried forward
 
-each with `model`, the held object's model renderers draw (WhiteCane, RollingCane, RollatorFitted, WalkerFitted).
+each with `model`, the held object's model renderers draw (WhiteCane, RollingCane, RollatorFitted, WalkerFitted),
+its footprint turned by the model's annotated `face`.
 
-Body frame: x forward, y left, z up from the soles, origin under the agent's position (humansim's pose), metres.
+Body frame: x forward, y left, z up from the soles, origin under the agent's position, metres.
 
-  python3 -m arena_simulation_setup.adapters.arena_animation_retarget.devices [AGENT_TYPE ...]
+  python3 -m arena_simulation_setup.adapters.arena_animation_retarget.devices [AGENT_TYPE ...] [--agent-types DIR]
 
 prints the `device:` block of each agent type, ready for humansim's config/agent_types/<type>.yaml, and the largest fit
 residual to stderr.
@@ -48,21 +50,21 @@ DECIMALS = 4
 
 @attrs.frozen
 class DeviceSource:
-    """One agent type's device: its gait profile, the character the profile's arm was solved on and how the hands hold it."""
+    """One agent type's device: the character its arm was solved on and how the hands hold it."""
 
     kind: str
-    profile: str
     body: str
-    grip: str  # hold.TASKS entry whose radius and angle the hands close on
-    obj: str  # the held object's model: drawn by renderers, its footprint is a rollator's or walking frame's box
+    grip: str  # hold.TASKS entry whose radius, angle and hand(s) the device is held with
+    obj: str  # the held object's model: drawn by renderers, its footprint is a box device's
 
 
 SOURCES: dict[str, DeviceSource] = {
-    "blind_white_cane": DeviceSource("cane", "walk_whitecane", "Common/Human/casual_female_caucasian_middleage_whitecane", "cane", "Common/Object/WhiteCane"),
-    "blind_rolling_cane": DeviceSource("cane", "walk_rollingcane", "Common/Human/casual_male_asian_young_rollingcane", "rolling", "Common/Object/RollingCane"),
-    "elder_rollator": DeviceSource("rollator", "walk_rollator", "Common/Human/casual_male_caucasian_old_rollator", "rollator", "Common/Object/RollatorFitted"),
-    "patient_walking_frame": DeviceSource("walking_frame", "walk_walkingframe", "Hospital/Human/patient_female_asian_old", "frame", "Common/Object/WalkerFitted"),
+    "blind_white_cane": DeviceSource("cane", "Common/Human/casual_female_caucasian_middleage_whitecane", "cane", "Common/Object/WhiteCane"),
+    "blind_rolling_cane": DeviceSource("cane", "Common/Human/casual_male_asian_young_rollingcane", "rolling", "Common/Object/RollingCane"),
+    "elder_rollator": DeviceSource("rollator", "Common/Human/casual_male_caucasian_old_rollator", "rollator", "Common/Object/RollatorFitted"),
+    "patient_walking_frame": DeviceSource("walking_frame", "Hospital/Human/patient_female_asian_old", "frame", "Common/Object/WalkerFitted"),
 }
+LIFTED = {"walking_frame"}  # carried forward each step; a rollator rolls on the floor
 
 
 def fit_track(w: np.ndarray, v: np.ndarray, tolerance: float = TOLERANCE, max_harmonics: int = MAX_HARMONICS) -> tuple[float, list[list[float]], float]:
@@ -104,21 +106,42 @@ def cane_points(poses: Sequence[Mapping[str, np.ndarray]], grip: Mapping[str, fl
     return centres, tips
 
 
-def box_origin(poses: Sequence[Mapping[str, np.ndarray]], grip: Mapping[str, float]) -> np.ndarray:
-    """The device origin per pose: under the middle of the two grips, at the height the grips stand above their mean."""
-    mids = np.array([np.mean([HANDS.palm_frame(q, s).grip(grip["radius"], grip["angle"]) for s in "lr"], axis=0) for q in poses])
-    mids[:, 2] -= mids[:, 2].min()  # the lift of a carried frame; a pushed rollator stays on the floor
+def box_origin(poses: Sequence[Mapping[str, np.ndarray]], grip: Mapping[str, object], lifted: bool) -> np.ndarray:
+    """The device origin per pose: under the middle of the grips of the hand(s) holding it, at the height those stand above
+    their lowest when the device is `lifted` (a carried frame), on the floor otherwise (a pushed rollator)."""
+    sides = str(grip["side"])
+    mids = np.array([np.mean([HANDS.palm_frame(q, s).grip(grip["radius"], grip["angle"]) for s in sides], axis=0) for q in poses])
+    mids[:, 2] = mids[:, 2] - mids[:, 2].min() if lifted else 0.0
     return mids
 
 
+def front_yaw(face: str) -> float:
+    """Yaw (rad) of an annotated `face` in the model frame: the direction the model's front points."""
+    from arena_assets.impl import Face
+
+    return math.remainder(math.radians(Face(face).angle + 180.0), math.tau)
+
+
+def box_footprint(bounding_box: Sequence[Sequence[float]], face: str) -> dict[str, float]:
+    """Footprint of an object model's bounding box with its front turned onto the heading: length along the heading, width
+    across it, height, and the box centre's offset ahead of / left of the object origin."""
+    (x0, x1), (y0, y1), (_z0, z1) = bounding_box
+    yaw = front_yaw(face)
+    if abs(math.sin(yaw)) > 1e-6 and abs(math.cos(yaw)) > 1e-6:
+        raise ValueError(f"face {face!r}: a box device's front must lie along a model axis")
+    c, s = round(math.cos(yaw)), round(math.sin(yaw))
+    cx, cy, dx, dy = (x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0
+    length, width = (dx, dy) if c else (dy, dx)
+    return {k: round(v, DECIMALS) + 0.0 for k, v in {"length": length, "width": width, "height": z1, "ahead": c * cx + s * cy, "left": -s * cx + c * cy}.items()}
+
+
 def footprint(obj: str) -> dict[str, float]:
-    """Footprint of an object model from its annotation's bounding box, the model facing -y (Arena's mobility aids): length along
-    the heading, width across it, height, and the box centre's offset ahead of / left of the object origin."""
+    """`box_footprint` of an object model from its annotation (bounding box and `face`)."""
     from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 
     path = Path(asyncio.run(ObjectIdentifier.parse(obj).resolve_path()))
-    (x0, x1), (y0, y1), (_z0, z1) = yaml.safe_load((path / "annotation.yaml").read_text())["bounding_box"]
-    return {"length": round(y1 - y0, DECIMALS), "width": round(x1 - x0, DECIMALS), "height": round(z1, DECIMALS), "ahead": round(-(y0 + y1) / 2, DECIMALS) + 0.0, "left": round((x0 + x1) / 2, DECIMALS) + 0.0}
+    annotation = yaml.safe_load((path / "annotation.yaml").read_text())
+    return box_footprint(annotation["bounding_box"], str(annotation.get("face", "+x")))
 
 
 def track_block(w: np.ndarray, points: np.ndarray) -> tuple[dict[str, object], float]:
@@ -132,10 +155,28 @@ def track_block(w: np.ndarray, points: np.ndarray) -> tuple[dict[str, object], f
     return out, worst
 
 
-def device_block(name: str) -> tuple[dict[str, object], float]:
+def walk_profile(name: str, agent_types: Path | None) -> object:
+    """The walk gait of a humansim agent type, resolved as the renderer resolves it (its `pose:` along `extends:`)."""
+    section = PROFILE.agent_type_pose_section(name, agent_types)
+    if section is None:
+        raise FileNotFoundError(f"agent type {name!r} not found in {agent_types}")
+    gaits = {key: value for key, value in section.items() if key not in ("hold", "while")}  # grips need the arena_runtime package
+    return PROFILE.resolve_pose_profile(gaits).walk
+
+
+def default_agent_types() -> Path | None:
+    from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+
+    try:
+        return Path(get_package_share_directory("arena_humansim")) / "config" / "agent_types"
+    except PackageNotFoundError:
+        return None
+
+
+def device_block(name: str, agent_types: Path | None = None) -> tuple[dict[str, object], float]:
     """The `device:` block of a humansim agent type and its largest fit residual (m)."""
     src = SOURCES[name]
-    profile = PROFILE.load_library()[src.profile]
+    profile = walk_profile(name, default_agent_types() if agent_types is None else agent_types)
     positions, _stance, _label = load_body(src.body)
     w, poses = cycle(profile, positions)
     grip = {**CANE, **TASKS[src.grip]}
@@ -144,13 +185,14 @@ def device_block(name: str) -> tuple[dict[str, object], float]:
         start, e0 = track_block(w, centres)
         end, e1 = track_block(w, tips)
         return {"kind": src.kind, "model": src.obj, "grip": start, "tip": end, "radius": grip["radius"]}, max(e0, e1)
-    origin, err = track_block(w, box_origin(poses, grip))
+    origin, err = track_block(w, box_origin(poses, grip, src.kind in LIFTED))
     return {"kind": src.kind, "model": src.obj, "origin": origin, "size": footprint(src.obj)}, err
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python3 -m arena_simulation_setup.adapters.arena_animation_retarget.devices", description=__doc__.split("\n\n")[0])
     parser.add_argument("agent_types", nargs="*", metavar="AGENT_TYPE", help=f"agent types to fit (default: all of {', '.join(SOURCES)})")
+    parser.add_argument("--agent-types", dest="agent_types_dir", type=Path, help="humansim agent type directory (default: the installed arena_humansim's)")
     return parser
 
 
@@ -161,9 +203,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if unknown:
         parser.error(f"no device source for {', '.join(unknown)}, known: {', '.join(SOURCES)}")
     for name in args.agent_types or list(SOURCES):
-        block, err = device_block(name)
-        src = SOURCES[name]
-        print(f"# {name}: profile {src.profile} posed on {src.body}, largest fit residual {1000 * err:.1f} mm", file=sys.stderr)
+        block, err = device_block(name, args.agent_types_dir)
+        print(f"# {name}: posed on {SOURCES[name].body}, largest fit residual {1000 * err:.1f} mm", file=sys.stderr)
         print(f"# {name}\n" + yaml.safe_dump({"device": block}, default_flow_style=None, sort_keys=False, width=200))
     return 0
 
