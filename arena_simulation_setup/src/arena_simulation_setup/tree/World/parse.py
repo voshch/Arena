@@ -146,6 +146,11 @@ def _stair_entries(path: str, raw: Mapping) -> list[tuple[str, str, Mapping]]:
     return entries
 
 
+def _base_rise(path: str, raw: Mapping) -> tuple[float, float]:
+    """The height of the mouth and the climb from it of a ramp or of a stair on its own level, 0 where not set."""
+    return _at(f'{path}.base', lambda: float(raw.get('base', 0.0))), _at(f'{path}.rise', lambda: float(raw.get('rise', 0.0)))
+
+
 def _stair_halves(path: str, raw: Mapping, kind: str, level_id: str, layout: str, elevations: Mapping[str, float], c: ArenaConverter, stair_kind: Callable[[str], Mapping]) -> tuple[Stairs, Stairs]:
     """The bottom half on `level_id` and the top half on the `to` level of one authored stair, over the stair kind it names."""
     preset = str(raw['kind']) if 'kind' in raw else ''
@@ -162,10 +167,9 @@ def _stair_halves(path: str, raw: Mapping, kind: str, level_id: str, layout: str
     if same:
         if 'exit' in raw:
             raise WorldFormatError(f'{path}.exit: a stair on its own level runs straight on, its top half right after the bottom half')
-        rise = _at(f'{path}.rise', lambda: float(raw.get('rise', 0.0)))
+        base, rise = _base_rise(path, raw)
         if rise <= 0.0:
             raise WorldFormatError(f'{path}.rise: a stair on its own level climbs `rise` meters from `base`, expected more than 0, got {rise!r}')
-        base = _at(f'{path}.base', lambda: float(raw.get('base', 0.0)))
     else:
         for key in ('base', 'rise'):
             if key in raw:
@@ -230,10 +234,9 @@ def _ramp(path: str, raw: object, defaults: Mapping, c: ArenaConverter) -> Stair
     if not isinstance(size, list) or len(size) != 2 or min(float(v) for v in size) <= 0.0:
         raise WorldFormatError(f'{path}.size: expected a positive [length, width], got {size!r}')
     length, width = float(size[0]), float(size[1])
-    rise = _at(f'{path}.rise', lambda: float(raw.get('rise', 0.0)))
+    base, rise = _base_rise(path, raw)
     if rise < 0.0:
         raise WorldFormatError(f'{path}.rise: the mouth is the low end, expected 0 or more, got {rise!r}')
-    base = _at(f'{path}.base', lambda: float(raw.get('base', 0.0)))
     mouth_side = str(raw.get('mouth_side', '-x'))
     if mouth_side not in _SIDES:
         raise WorldFormatError(f'{path}.mouth_side: expected one of {sorted(_SIDES)}, got {mouth_side!r}')

@@ -172,7 +172,7 @@ def test_a_stair_with_floor_off_walks_on_its_ramp_line_not_on_treads() -> None:
     assert max(abs(b - a) for a, b in zip(smooth, smooth[1:], strict=False)) < max(abs(b - a) for a, b in zip(steps, steps[1:], strict=False))
 
 
-def test_a_stair_half_holds_its_footing_over_the_ramp_under_it() -> None:
+def test_a_stair_on_its_own_level_holds_its_footing_over_the_ramp_under_it() -> None:
     def deck(data: dict) -> None:
         _link()(data)
         data['levels'][0]['ramps'] = [{'name': 'deck', 'mouth': [4.0, 8.0], 'size': [14.0, 4.0], 'base': 1.5}]
@@ -180,6 +180,35 @@ def test_a_stair_half_holds_its_footing_over_the_ramp_under_it() -> None:
     level = parse_world(_world(deck)).levels['0'].stairs
     assert stair_height(level, 11.0, 8.0) == pytest.approx(-0.4, abs=0.3)
     assert stair_height(level, 11.0, 9.5) == pytest.approx(1.5)
+
+
+def test_a_stair_between_levels_leaves_the_footing_to_the_ramp_listed_before_it() -> None:
+    def deck(data: dict) -> None:
+        data['levels'][0]['ramps'] = [{'name': 'deck', 'mouth': [4.0, 2.0], 'size': [3.0, 4.0], 'base': 1.5}]
+
+    level = parse_world(_world(deck)).levels['0'].stairs
+    assert [stair.name for stair in level][0] == 'deck' and _stairs(parse_world(_world(deck)))['up_bottom'].contains(6.5, 2.0)
+    assert stair_height(level, 6.5, 2.0) == pytest.approx(1.5)
+    assert stair_height(level, 8.0, 2.0) > 0.0
+
+
+@pytest.mark.parametrize(('kind', 'base', 'cut'), [('escalators', -2.3, (True, True)), ('stairs', -2.3, (True, True)), ('escalators', 0.0, (True, False)), ('stairs', 0.0, (False, False)), ('escalators', 0.5, (False, False))])
+def test_a_stair_on_its_own_level_opens_the_floor_only_under_the_halves_that_run_below_it(kind: str, base: float, cut: tuple[bool, bool]) -> None:
+    stairs = _stairs(parse_world(_world(lambda data: data['levels'][0][kind].append({**LINK, 'base': base}))))
+    bottom, top = (stairs[name].floor_openings() for name in ('link_bottom', 'link_top'))
+    assert (bool(bottom), bool(top)) == cut
+    for holes, (x0, x1) in ((bottom, (11.0, 16.0)), (top, (6.0, 11.0))):
+        for hole in holes:
+            assert hole[0] <= x0 + 1e-9 and hole[2] >= x1 - 1e-9 and (hole[1], hole[3]) == pytest.approx((7.4, 8.6))
+
+
+def test_a_leveled_stair_on_its_own_level_lies_flat_with_nothing_built() -> None:
+    world = parse_world(_world(_link()))
+    flat = [stair.leveled() for stair in world.levels['0'].stairs if stair.same_level]
+    assert [stair.name for stair in flat] == ['link_bottom', 'link_top'] and all(stair.joined for stair in flat)
+    assert all(stair.static_boxes() == [] and stair.floor_openings() == [] for stair in flat)
+    assert [stair_height(flat, x, 8.0) for x in (15.9, 13.0, 11.0, 8.0, 6.1)] == [0.0] * 5
+    assert (flat[0].belt, flat[1].belt) == (_stairs(world)['link_bottom'].belt, _stairs(world)['link_top'].belt)
 
 
 def _set(level: int, key: str, index: int, **fields: object) -> Callable[[dict], None]:

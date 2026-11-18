@@ -290,12 +290,16 @@ its own, and the entry also takes `exit`.
 
 A staircase whose `to` is its own level joins two floors of that level, whose heights come from its `ramps`, as in a
 scanned building on one level: it takes `base` and `rise` instead of the levels' elevations and runs straight on, its
-halves joined as in a stacked world in any layout, so it has no seam wall and nothing crosses it: an agent walks or is
-carried from one half onto the other. The floor
-plan walks through it like any floor, and HumanSim weighs walking over it, riding it and walking round, and never
-routes a walker against a running belt, see HumanSim's [stairs](../humansim/README.md#stairs). With `floor: false` its
+halves joined as in a stacked world in any layout, so it has no seam wall and nothing teleports over it: an agent walks
+or is carried from one half onto the other. The floor plan walks through it like any floor. Pedestrians cross it only as
+a stair: HumanSim keeps its seam shut for their plans and sends over it the types that climb its kind, an escalator from
+its boarding end while it runs, by the quicker of riding and walking round, see HumanSim's
+[stairs](../humansim/README.md#stairs). With `floor: false` its
 side walls (`sides`, e.g. an invisible wall kind) are all it adds, and the walking height on it follows its ramp line,
-not treads, since the steps are the world's own.
+not treads, since the steps are the world's own. Bodies on it stand at its own height, also over a ramp under it,
+while a staircase between levels leaves a point they share to the ramp. It opens the zone floors only under a half
+that runs below them, as from a `base` under 0, with an escalator's pit. A simulator without floor heights lays it as
+flat as the ramps it climbs between: nothing is built, and pedestrians cross it at floor height, still only as a stair.
 
 `size` sets the incline, nothing else does, and nothing rejects a steep one:
 

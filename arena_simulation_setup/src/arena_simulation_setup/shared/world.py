@@ -617,8 +617,12 @@ class Stairs(Named):
         return min(c.x for c in corners), min(c.y for c in corners), max(c.x for c in corners), max(c.y for c in corners)
 
     def floor_openings(self) -> list[tuple[float, float, float, float]]:
-        """Rectangles (x_min, y_min, x_max, y_max) the half cuts out of its level's floor: a top half's well with its overhang, an escalator's pit."""
+        """Rectangles (x_min, y_min, x_max, y_max) the half cuts out of its level's floor: a top half's well with its overhang, an escalator's pit, and on a stair on its own level the half that runs under the floor, with its pit. With `floor` off the world's own stair fills them."""
         pit = -(self.pitch + STAIRS_GAP) if self.kind == 'escalator' else 0.0
+        if self.same_level:
+            under = self.drop + STAIRS_BASE if self.kind == 'escalator' and self.floor else 0.0
+            low = self.position.z + min(self.height(0.0), self.height(self.length)) - under
+            return [self._rect(pit, self.length)] if low < 0.0 else []
         if self.top:
             return [self._rect(pit, self.length + self.overhang)]
         if self.kind == 'escalator':
@@ -630,6 +634,10 @@ class Stairs(Named):
         if self.top or not self.stacked:
             return []
         return [self._rect(self.length - self.overhang, 2.0 * self.length)]
+
+    def leveled(self) -> Stairs:
+        """This half lying flat on the floor with nothing built, what a simulator without floor heights keeps of a stair on its own level."""
+        return attrs.evolve(self, position=Position(self.position.x, self.position.y), rise=0.0, floor=False)
 
     def whole_stair(self) -> Stairs:
         """The stair a joined bottom half and its partner make together, in the bottom half's frame, as one body from mouth to mouth."""
@@ -671,11 +679,10 @@ class Stairs(Named):
 
 
 def stair_height(stairs: typing.Iterable[Stairs], x: float, y: float, travel: typing.Mapping[str, float] | None = None) -> float:
-    """Footing at a map point on the first stair half holding it, else the first ramp, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
+    """Footing at a map point on the half of a stair on its own level holding it, which stands on the ramps that are its floors, else on the first stair half or ramp holding it, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
     stairs = tuple(stairs)
     travel = travel or {}
-    holding = [stair for stair in stairs if stair.contains(x, y, stair.reach)]
-    stair = next((stair for stair in holding if stair.kind != 'ramp'), holding[0] if holding else None)
+    stair = next((stair for own in (True, False) for stair in stairs if stair.same_level == own and stair.contains(x, y, stair.reach)), None)
     if stair is None:
         return 0.0
     along = stair.along(x, y)

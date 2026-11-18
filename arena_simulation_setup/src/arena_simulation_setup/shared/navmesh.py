@@ -269,7 +269,7 @@ def navmesh_levels(world: World, shifts: Mapping[str, tuple[float, float, float]
         halves: list[Stairs] = []
         for stair in level.stairs:
             half = attrs.evolve(stair)
-            half.joined = stair.same_level or (stacked and (stair.to in names or any(other.to == stair.name for other in stairs)))
+            half.joined = half.joined or (stacked and (stair.to in names or any(other.to == stair.name for other in stairs)))
             halves.append(half)
         joined = attrs.evolve(level, stairs=halves)
         placed: list[Stairs] = []

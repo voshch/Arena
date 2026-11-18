@@ -194,14 +194,14 @@ def dump_wall(wall: WallPath, defaults: Mapping) -> dict:
 _STAIRS_DEFAULTS = Stairs(name='', position=Position(0.0, 0.0))
 
 
-def dump_stair(bottom: Stairs, top: Stairs, to: str, layout: str, same: bool = False) -> dict:
+def dump_stair(bottom: Stairs, top: Stairs, to: str, layout: str) -> dict:
     """The authored entry of the stair a bottom and a top half make, over a stair kind only the keys it sets itself."""
     result: dict = {'name': bottom.group, **({'kind': bottom.preset} if bottom.preset else {}), 'mouth': [_number(bottom.mouth.x, POSITION_DECIMALS), _number(bottom.mouth.y, POSITION_DECIMALS)]}
     if bottom.mouth_side != _STAIRS_DEFAULTS.mouth_side:
         result['mouth_side'] = bottom.mouth_side
     result['size'] = [_number(2.0 * bottom.length), _number(bottom.width)]
     result['to'] = to
-    if same:
+    if bottom.same_level:
         if bottom.position.z:
             result['base'] = _number(bottom.position.z)
         result['rise'] = _number(bottom.rise)
@@ -278,7 +278,7 @@ def _stair_entries(world: World, level: Level) -> dict[str, list[dict]]:
         if stair.top or stair.group not in tops:
             continue
         to, top = tops[stair.group]
-        entries['stairs' if stair.kind == 'stairs' else 'escalators'].append(dump_stair(stair, top, to, world.layout, same=to == level.id))
+        entries['stairs' if stair.kind == 'stairs' else 'escalators'].append(dump_stair(stair, top, to, world.layout))
     return entries
 
 
