@@ -56,7 +56,7 @@ from arena_runtime.humans.utils import (
 )
 from arena_runtime.humans.wire import fill_bodies, fill_body
 from arena_runtime.lockstep import register_channels
-from arena_runtime.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from arena_runtime.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall, footprint_radius
 from arena_runtime.sim import BaseSim
 
 if typing.TYPE_CHECKING:
@@ -1358,8 +1358,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
 
     async def _track_robots(self, robots: Sequence[Robot]) -> Sequence[bool]:
-        from arena_runtime.env.robot_manager.robot_manager import footprint_radius  # robot_manager imports this module
-
         for robot in robots:
             tf_frame: str | None = None
             radius = DEFAULT_ROBOT_RADIUS

@@ -34,7 +34,7 @@ from arena_runtime.env.robot_manager.controller_manager_client import Controller
 from arena_runtime.env.robot_manager.controller_transitions import next_transition
 from arena_runtime.env.robot_manager.task_runner import PhaseState, TaskRunner, Transition, standoff_pose
 from arena_runtime.node_params import NodeParams
-from arena_runtime.shared import Orientation, Pose, Position, PositionRadius, Robot
+from arena_runtime.shared import Orientation, Pose, Position, PositionRadius, Robot, footprint_radius
 from arena_runtime.sim._interface import SimUnavailable
 
 if typing.TYPE_CHECKING:
@@ -87,18 +87,6 @@ def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevel
         NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES, fallback=True),
         NodeLogLevelExtension.SetGlobalLogLevelAction(_COLLISION_MONITOR_RULES, fallback=True),
     ]
-
-
-def footprint_radius(config: RobotView) -> float:
-    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint."""
-    mobile = config.mobile
-    if mobile is None:
-        raise ValueError(f"robot model {config.name!r} has no mobile cap, so no footprint radius")
-    if mobile.radius is not None:
-        return mobile.radius
-    if mobile.footprint:
-        return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
-    raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
 
 
 class RobotManager(NodeInterface):

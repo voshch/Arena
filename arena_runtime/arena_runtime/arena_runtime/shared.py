@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -7,7 +8,7 @@ import attrs
 import rclpy.logging
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.assembly import ResolvedAssembly
-from arena_robots.Robot import RobotIdentifier
+from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config as RobotSetupConfig
 from arena_simulation_setup.shared import (  # noqa
     Ceiling,
@@ -169,3 +170,15 @@ class Region:
     polygon: list[Position] = attrs.field(factory=list)  # CCW vertices, 2D
     config: dict = attrs.Factory(dict)  # type-specific passthrough
     included_from: Path | None = None
+
+
+def footprint_radius(config: RobotView) -> float:
+    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint."""
+    mobile = config.mobile
+    if mobile is None:
+        raise ValueError(f"robot model {config.name!r} has no mobile cap, so no footprint radius")
+    if mobile.radius is not None:
+        return mobile.radius
+    if mobile.footprint:
+        return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
+    raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
