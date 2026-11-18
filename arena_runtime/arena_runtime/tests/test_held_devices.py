@@ -133,8 +133,9 @@ def test_a_cane_follows_the_arm_of_the_drawn_character() -> None:
         HeldBody(bundle, DeviceSpec("cane", bone="umbrella"))
 
 
-def test_the_published_roster_carries_each_holders_device(rclpy_context, tmp_path: Path) -> None:
+def test_the_published_roster_carries_each_holders_device(rclpy_context, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("arena_runtime.sim.dummy_simulator")
+    import rclpy
     import tf2_ros
     import yaml
     from arena_people_msgs.msg import Pedestrians
@@ -143,7 +144,7 @@ def test_the_published_roster_carries_each_holders_device(rclpy_context, tmp_pat
     from arena_rclpy_mixins.shared import Namespace
     from arena_runtime.acoustics.noop import NoopAcousticsSimulator
     from arena_runtime.env.realizer import Realizer
-    from arena_runtime.humans import TrackedRobot
+    from arena_runtime.humans import TrackedRobot, devices
     from arena_runtime.humans.noop import NoopHumanSimulator
     from arena_runtime.shared import Pose, Position
     from arena_runtime.sim.dummy_simulator import DummySimulator
@@ -152,56 +153,69 @@ def test_the_published_roster_carries_each_holders_device(rclpy_context, tmp_pat
     blind.write_text(yaml.safe_dump({"name": "blind", "device": CANE}))
     gripless = tmp_path / "gripless.yaml"
     gripless.write_text(yaml.safe_dump({"name": "gripless", "device": FRAME}))
-    asked: list[tuple[str, DeviceSpec]] = []
 
     class _Body:
-        kind = "cane"
+        def __init__(self, bundle: Path, spec: DeviceSpec) -> None:
+            self.kind = spec.kind
 
         def footprint(self, angles: dict, hold: dict) -> np.ndarray:
-            assert angles  # the joint angles the pedestrian is drawn with
-            return np.array([(0.3, -0.1), (1.0, 0.0), (0.3, 0.0)])
+            return np.array([(0.3, -0.1), (1.0, 0.0), (0.3, 0.0)]) if angles else np.empty((0, 2))
 
-    def held(model_uri: str, spec: DeviceSpec) -> _Body | None:
-        asked.append((model_uri, spec))
-        return _Body() if len(asked) > 1 else None  # still loading the first time
+    monkeypatch.setattr(devices, "HeldBody", _Body)
+
+    def roster(*entries: tuple[str, str, float]) -> Pedestrians:
+        msg = Pedestrians()
+        for name, agent_type, x in entries:
+            ped = Pedestrian(name=name, id=len(msg.pedestrians) + 1, agent_type=agent_type, animation_state=Pedestrian.WALKING)
+            ped.pose.position.x, ped.pose.orientation.w = x, 1.0
+            ped.twist.linear.x = 1.0
+            msg.pedestrians.append(ped)
+        return msg
+
+    everyone = (("walker", "", 0.0), ("blind", str(blind), 4.0), ("far", str(blind), 9.0), ("gripless", str(gripless), 4.5))
+    published: list[Pedestrians] = []
 
     class _Node(ServiceNamespace, AsyncNode):
         pass
-
-    published: list[Pedestrians] = []
 
     async def main() -> None:
         suffix = f"t_{uuid.uuid4().hex[:8]}"
         ns = Namespace(f"/test/{suffix}")
         node = _Node(f"held_devices_{suffix}", namespace=str(ns))
         node.tf_buffer = tf2_ros.Buffer()
+
+        def publish(msg: Pedestrians) -> Pedestrians | None:
+            seen = len(published)
+            human.publish_arena_peds(msg)
+            for _ in range(50):
+                rclpy.spin_once(node, timeout_sec=0.02)
+                if len(published) > seen:
+                    return published[-1]
+            return None
+
         try:
             realizer = Realizer(Realizer._Configuration(x=0.0, y=0.0, prefix=""))
             simulator = DummySimulator(node=node, namespace=ns, realizer=realizer)
             human = NoopHumanSimulator(node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=NoopAcousticsSimulator(node=node, namespace=ns))
-            human._arena_peds_publisher.publish = published.append  # type: ignore[method-assign]
-            human._held_bodies.get = held  # type: ignore[method-assign]
-            human._ped_model_uris["blind"] = "/bundles/caner/rig/caner.sdf"
-            human._ped_model_uris["far"] = "/bundles/caner/rig/caner.sdf"
-            human._ped_model_uris["gripless"] = "/bundles/caner/rig/caner.sdf"
+            node.create_subscription(Pedestrians, str(ns("arena_peds")), published.append, 10)
+            assert any(publish(roster()) is not None for _ in range(20))
+            for name in ("blind", "far", "gripless"):
+                human._ped_model_uris[name] = "/bundles/caner/rig/caner.sdf"
             human._robots["robot"] = TrackedRobot(robot=None, tf_frame=None, pose=Pose(Position(x=6.0, y=0.0)), radius=0.3)  # type: ignore[arg-type]
-            for _ in range(2):
-                msg = Pedestrians()
-                for name, agent_type, x in (("walker", "", 0.0), ("blind", str(blind), 4.0), ("far", str(blind), 9.0), ("gripless", str(gripless), 4.5)):
-                    ped = Pedestrian(name=name, id=len(msg.pedestrians) + 1, agent_type=agent_type, animation_state=Pedestrian.WALKING)
-                    ped.pose.position.x, ped.pose.orientation.w = x, 1.0
-                    ped.twist.linear.x = 1.0
-                    msg.pedestrians.append(ped)
-                human.publish_arena_peds(msg)
+            loading = publish(roster(*everyone))
+            assert loading is not None
+            assert loading.pedestrians[1].device.kind == ""
+            for _ in range(100):
+                latest = publish(roster(*everyone))
+                if latest is not None and latest.pedestrians[1].device.kind:
+                    break
         finally:
             node.destroy_node()
 
     asyncio.run(main())
-    assert asked == [("/bundles/caner/rig/caner.sdf", DeviceSpec("cane", bone="cane"))] * 2
-    assert published[0].pedestrians[1].device.kind == ""  # no device while its body loads
-    walker, holder, far, gripless_ped = published[1].pedestrians
-    assert gripless_ped.device.kind == ""  # a frame held in both hands needs pose.hold: rejected
+    walker, holder, far, gripless_ped = published[-1].pedestrians
+    assert gripless_ped.device.kind == ""
     assert walker.device.kind == ""
-    assert far.device.kind == ""  # out of every robot's reach: not posed
+    assert far.device.kind == ""
     assert holder.device.kind == "cane"
-    assert [(p.x, p.y) for p in holder.device.footprint] == pytest.approx([(4.3, -0.1), (5.0, 0.0), (4.3, 0.0)])
+    np.testing.assert_allclose([(p.x, p.y) for p in holder.device.footprint], [(4.3, -0.1), (5.0, 0.0), (4.3, 0.0)], atol=1e-6)

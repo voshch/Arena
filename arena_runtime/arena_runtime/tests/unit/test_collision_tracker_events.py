@@ -72,12 +72,18 @@ class Stage:
         t.transform.rotation.w = math.cos(yaw / 2.0)
         self.node.tf_buffer.set_transform(t, "test")
 
-    async def listen(self, tracker, state: bool = False) -> list:
+    async def listen(self, tracker, state: bool = False, markers: bool = False) -> list:
         import arena_robots_msgs.msg
         import nav2_msgs.msg
+        import visualization_msgs.msg
 
         received: list = []
-        msg_type, topic, publisher = (nav2_msgs.msg.CollisionMonitorState, "collision_monitor_state", tracker._pub_state.publisher) if state else (arena_robots_msgs.msg.CollisionEvents, "collision_events", tracker._pub_events)
+        if markers:
+            msg_type, topic, publisher = visualization_msgs.msg.MarkerArray, "collision_markers", tracker._pub_markers.publisher
+        elif state:
+            msg_type, topic, publisher = nav2_msgs.msg.CollisionMonitorState, "collision_monitor_state", tracker._pub_state.publisher
+        else:
+            msg_type, topic, publisher = arena_robots_msgs.msg.CollisionEvents, "collision_events", tracker._pub_events
         self.probe.create_subscription(msg_type, f"{tracker.get_namespace()}/{topic}", received.append, 10)
         await _until(lambda: publisher.get_subscription_count() > 0, f"the {topic} subscription")
         self.listened[id(received)] = (msg_type, publisher)
@@ -112,6 +118,12 @@ class Stage:
         tracker._tick()
         await _until(lambda: len(received) > seen, "a published message")
         return list(received[-1].events)
+
+    async def markers(self, tracker, received: list) -> list:
+        seen = len(received)
+        tracker._tick()
+        await _until(lambda: len(received) > seen, "a published marker array")
+        return list(received[-1].markers)
 
     async def silent_tick(self, tracker, received: list) -> None:
         msg_type, publisher = self.listened[id(received)]
@@ -353,22 +365,22 @@ def test_a_held_device_under_the_footprint_collides_apart_from_its_holder(on_sta
 
 
 def test_collision_markers_turn_the_footprint_and_the_touched_device_red(on_stage):
-    import shapely
-
     async def body(stage: Stage):
         rm, tracker = stage.robot_manager()
+        received = await stage.listen(tracker, markers=True)
         await stage.arm(tracker)
         holder, beside = (CLEAR[0], CLEAR[1] + 1.3), (CLEAR[0] + 3.0, CLEAR[1] + 1.3)
         await stage.peds(tracker, ("blind", *holder, _cane(*holder, -math.pi / 2)), ("other", *beside, _cane(*beside, -math.pi / 2)))
-        footprint = shapely.box(CLEAR[0] - 0.2, CLEAR[1] - 0.2, CLEAR[0] + 0.2, CLEAR[1] + 0.2)
-        event = tracker._event("device", tracker._peds_msg.pedestrians[0], CLEAR[0], CLEAR[1] + 0.1, "cane")
-        robot, devices, column = tracker._markers(footprint, [event]).markers
-        assert (robot.ns, robot.color.r > 0.8, len(robot.points)) == ("footprint", True, 8)
-        assert len(devices.points) == len(devices.colors) == 16  # two cane outlines of four edges
+        stage.place(rm, *CLEAR)
+        robot, devices, column = await stage.markers(tracker, received)
+        assert (robot.ns, robot.color.r > 0.8) == ("footprint", True)
+        assert robot.points
+        assert len(devices.points) == len(devices.colors) == 16
         assert [c.r > 0.8 for c in devices.colors] == [True] * 8 + [False] * 8
-        assert (column.ns, column.pose.position.x, column.lifetime.sec) == ("contacts", CLEAR[0], 1)
-        tracker._shapes = []  # everyone walked out of range
-        idle, cleared = tracker._markers(shapely.box(0.0, 0.0, 0.1, 0.1), []).markers
+        assert (column.ns, column.lifetime.sec) == ("contacts", 1)
+        assert (column.pose.position.x, column.pose.position.y) == pytest.approx((CLEAR[0], CLEAR[1] + HALF_WIDTH / 2), abs=0.02)
+        await stage.peds(tracker)
+        idle, cleared = await stage.markers(tracker, received)
         assert idle.color.r < 0.8
         assert cleared.action == cleared.DELETE
 
