@@ -47,7 +47,7 @@ def bundle_of(model_uri: str) -> Path:
 
 
 def box_footprint(bounding_box: Sequence[Sequence[float]], face: str) -> tuple[float, float, float, float]:
-    """(length along the heading, width, centre ahead of and left of the origin) of a model's box, its front on the heading."""
+    """(length along the heading, width, center ahead of and left of the origin) of a model's box, its front on the heading."""
     from arena_assets.impl import Face
 
     yaw = math.remainder(math.radians(Face(face).angle + 180.0), math.tau)
@@ -78,7 +78,7 @@ class HeldBody:
             skin = read_skin(self._actor.skin)
             points = np.array([p for p, owner in zip(skin.points, skin.dominant, strict=True) if owner == spec.bone])
             local = (skin.inverse_binds[spec.bone] @ np.c_[points, np.ones(len(points))].T).T[:, :3]
-            self._hull = local[ConvexHull(local).vertices]  # the prop mesh's extreme points in its bone frame
+            self._hull = local[ConvexHull(local).vertices]
             self._bone = self._actor.bone_names.index(spec.bone)
         else:
             from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
@@ -92,7 +92,7 @@ class HeldBody:
         if self._bone >= 0:
             R, P, _ = self._actor.bone_worlds(angles)
             points = (self._hull @ R[self._bone].T + P[self._bone])[:, :2]
-            if not np.isfinite(points).all():  # GEOS aborts on NaN
+            if not np.isfinite(points).all():
                 return _NONE
             hull = shapely.MultiPoint(points).convex_hull
             return np.asarray(hull.exterior.coords)[:-1] if isinstance(hull, shapely.Polygon) else _NONE
@@ -148,6 +148,6 @@ def shapes(ped: Pedestrian, default_radius: float) -> tuple[shapely.Geometry | N
     body = shapely.Point(x, y).buffer(ped.radius if ped.radius > 0.0 else default_radius) if math.isfinite(x) and math.isfinite(y) else None
     outline = [(p.x, p.y) for p in ped.device.footprint]
     device = None
-    if ped.device.kind and len(outline) >= 3 and all(math.isfinite(v) for xy in outline for v in xy):  # GEOS aborts on NaN
+    if ped.device.kind and len(outline) >= 3 and all(math.isfinite(v) for xy in outline for v in xy):
         device = shapely.Polygon(outline)
     return body, device

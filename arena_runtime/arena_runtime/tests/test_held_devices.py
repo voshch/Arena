@@ -128,7 +128,7 @@ def test_a_cane_follows_the_arm_of_the_drawn_character() -> None:
     still = body.footprint({}, {})
     raised = body.footprint({"r_p_shoulder": -0.6}, {})
     assert len(still) >= 3
-    assert not np.allclose(still.mean(axis=0), raised.mean(axis=0), atol=0.05)  # the cane rides the arm
+    assert not np.allclose(still.mean(axis=0), raised.mean(axis=0), atol=0.05)
     assert len(body.footprint({"r_p_shoulder": math.nan}, {})) == 0
     with pytest.raises(ValueError, match="no prop bone"):
         HeldBody(bundle, DeviceSpec("cane", bone="umbrella"))

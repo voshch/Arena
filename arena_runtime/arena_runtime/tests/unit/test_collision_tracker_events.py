@@ -352,7 +352,7 @@ def test_a_held_device_under_the_footprint_collides_apart_from_its_holder(on_sta
         rm, tracker = stage.robot_manager()
         received = await stage.listen(tracker)
         await stage.arm(tracker)
-        holder = (CLEAR[0], CLEAR[1] + 1.3)  # the tip just under the robot's centre, the holder well clear of it
+        holder = (CLEAR[0], CLEAR[1] + 1.3)
         await stage.peds(tracker, ("blind", *holder, _cane(*holder, -math.pi / 2)), ("walker", 6.0, 6.0))
         stage.place(rm, *CLEAR)
         (event,) = await stage.tick(tracker, received)

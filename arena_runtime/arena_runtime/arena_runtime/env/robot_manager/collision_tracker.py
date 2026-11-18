@@ -77,7 +77,7 @@ class CollisionTrackerNode(TimeNode):
         self._env: EnvironmentManager = robot_manager._environment_manager
         self._default_peds_radius = default_pedestrian_radius
         self._peds_msg: arena_people_msgs.msg.Pedestrians | None = None
-        self._shapes: list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Polygon | None]] | None = None  # of _peds_msg, built on first use
+        self._shapes: list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Polygon | None]] | None = None
 
         self._poly_cache: dict[str, dict] = {}
         for name, spec in polygons.items():
@@ -238,7 +238,7 @@ class CollisionTrackerNode(TimeNode):
                 colors.extend([_RED if p.name in touched else _DEVICE] * len(outline))
         devices.points, devices.colors, devices.color = points, colors, _DEVICE
         if not devices.points:
-            devices.action = viz.Marker.DELETE  # clears outlines of people out of range
+            devices.action = viz.Marker.DELETE
         out = [robot, devices]
         for ev in events:
             if ev.kind not in (arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE, arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN):

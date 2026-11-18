@@ -178,7 +178,7 @@ def test_arena_adapter_streams_robot_pose_and_velocity_in_the_engine_frame(rclpy
         assert agent.agent_id == stable_int("rob") & 0x7FFFFFFF
         assert (agent.pose.x, agent.pose.y) == pytest.approx((1.05, 1.98))
         assert (agent.velocity.x, agent.velocity.y) == pytest.approx((1.0, -0.4))
-        assert agent.radius == pytest.approx(_jackal_radius())  # the footprint's, not a fixed disc
+        assert agent.radius == pytest.approx(_jackal_radius())
         assert alias.name == "robot_0"
         assert alias.agent_id == agent.agent_id
         assert (alias.pose, alias.velocity, alias.radius) == (agent.pose, agent.velocity, agent.radius)

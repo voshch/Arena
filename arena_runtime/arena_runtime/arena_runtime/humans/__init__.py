@@ -94,8 +94,8 @@ def stair_running(stair: Stairs, stairs: Iterable[Stairs], running: Mapping[str,
     return all(running.get(name, True) for name in linked if name)
 
 
-DEFAULT_ROBOT_RADIUS = 0.3  # m, a robot whose model gives no footprint
-DEVICE_RANGE = 2.0  # m beyond a robot's radius within which held devices are posed, a long cane reaches 1.1 m
+DEFAULT_ROBOT_RADIUS = 0.3
+DEVICE_RANGE = 2.0
 
 
 @attrs.define
@@ -107,7 +107,7 @@ class TrackedRobot:
     pose: Pose
     velocity: tuple[float, float] = (0.0, 0.0)
     stamp: float | None = None
-    radius: float = DEFAULT_ROBOT_RADIUS  # the footprint's disc radius, the robot's size in human engines
+    radius: float = DEFAULT_ROBOT_RADIUS
 
     def place(self, pose: Pose) -> None:
         """Teleport to pose, at rest until TF reports the next one."""
