@@ -1366,9 +1366,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             try:
                 view = await robot.model.resolve()
                 tf_frame = robot.frame(view.model_params.base_frame).raw()
-                radius = footprint_radius(view)
             except Exception as e:
-                self._logger.warning(f"robot {robot.name!r}: base frame or footprint unresolved ({e}), using the spawn pose only and a {radius} m radius")
+                self._logger.warning(f"robot {robot.name!r}: base frame unresolved ({e}), using the spawn pose only and a {radius} m radius")
+            else:
+                try:
+                    radius = footprint_radius(view)
+                except ValueError as e:
+                    self._logger.warning(f"robot {robot.name!r}: {e}, sized {radius} m in the human simulator")
             self._robots[robot.name] = TrackedRobot(robot=robot, tf_frame=tf_frame, pose=copy.deepcopy(robot.pose), radius=radius)
         return await self._spawn_robot_impl(robots)
 
