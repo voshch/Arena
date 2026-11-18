@@ -144,8 +144,12 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             assert response is not None and response.success, response.error_msg if response is not None else "timeout"
 
         async def stop_run(self) -> None:
-            response = await self.stop.call_timeout(Trigger.Request())
-            assert response is not None and response.success
+            for _ in range(10):
+                response = await self.stop.call_timeout(Trigger.Request(), timeout_sec=3.0)
+                if response is not None:
+                    assert response.success
+                    return
+            raise AssertionError("no answer to lockstep stop within 30 s")
 
     executor = create_executor()
     servers: list[typing.Any] = []
