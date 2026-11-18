@@ -1,4 +1,4 @@
 name: elder_rollator_unaware
 extends: elder_rollator
 perception:
-  robot_awareness: 0.0
+  robot_awareness: blind

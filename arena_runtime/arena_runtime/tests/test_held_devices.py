@@ -104,6 +104,17 @@ def test_the_shipped_device_blocks_parse(name: str, kind: str) -> None:
     assert DeviceSpec.parse(section).kind == kind
 
 
+SCENARIO_TYPES = sorted((Path(__file__).resolve().parents[3] / "arena_simulation_setup" / "worlds" / "map_empty" / "scenarios").glob("device_contact_*/*_unaware.yaml"))
+
+
+@pytest.mark.parametrize("path", SCENARIO_TYPES, ids=lambda p: p.stem)
+def test_the_device_contact_people_load_in_humansim_with_their_device(path: Path) -> None:
+    from arena_runtime.humans.arena_humansim.agent import agent_type_def
+
+    assert agent_type_def(str(path)) is not None
+    assert agent_type_device_section(str(path), HUMANSIM_TYPES) is not None
+
+
 def test_a_cane_follows_the_arm_of_the_drawn_character() -> None:
     from arena_runtime.humans.devices import HeldBody
     from arena_simulation_setup.tree.assets.Human import HumanIdentifier
