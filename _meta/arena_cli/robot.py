@@ -318,9 +318,16 @@ def cmd_paths(entry: str) -> int:
     except (ValueError, RuntimeError) as e:
         print(f"arena robot paths: {e}\nwrite the entry as <model>[<mount|type>=<type>/<variant>[<path>=<value>],<cap>.<path>=<value>], see 'arena robot paths --help'", file=sys.stderr)
         return 1
+    from arena_robots.caps import simulator_names
+
+    everywhere = simulator_names()
     for item in found:
-        row = f"{item.path}\t{item.kind}\t{'-' if item.kind == 'unset' else json.dumps(item.value, default=str)}"
-        print(f"{row}\tbrackets of {item.part}: {item.relative}" if item.part else row)
+        columns = [item.path, item.kind, "-" if item.kind == "unset" else json.dumps(item.value, default=str)]
+        if item.simulators != everywhere:
+            columns.append(f"only in {','.join(sorted(item.simulators))}")
+        if item.part:
+            columns.append(f"brackets of {item.part}: {item.relative}")
+        print("\t".join(columns))
     return 0
 
 
@@ -383,6 +390,7 @@ PATHS_HELP = """Print the cap override paths of a robot entry.
 An entry is a model or `<model>[<mount|type>=<type>/<variant>[<path>=<value>],<cap>.<path>=<value>]`.
 Each row is `<path> <kind> <value>`: kind `value`, `list` or `map` with the effective
 value, or `unset` for a typed field or adapter block the cap file leaves out.
+A path that only some simulators honor adds `only in <sims>`.
 Paths of a part placed through assembly.yaml end in `brackets of <mount>: <relative>`,
 write the relative path inside that part's brackets. Quote the entry.
 Exit 1 on an unknown model or an invalid entry, with the models listed."""

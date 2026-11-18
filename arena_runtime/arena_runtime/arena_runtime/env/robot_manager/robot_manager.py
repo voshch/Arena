@@ -221,6 +221,8 @@ class RobotManager(NodeInterface):
         self._goal_pos = Pose()
         self._robot_radius = footprint_radius(self._caps, robot.model.name)
         self._climbs = self._caps.mobile.climbs if 'mobile' in self._caps.available else frozenset()
+        for warning in self._caps.warnings(self.node.conf.Arena.SIM.value.value):
+            self._logger.warning(f"robot {robot.name!r}: {warning}")
 
         self._robot = robot
         self._robot.sim_path = self._environment_manager.realize(robot.name)
