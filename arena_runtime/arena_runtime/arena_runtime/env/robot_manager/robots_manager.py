@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import os
 import typing
 from collections.abc import Callable
@@ -12,6 +13,7 @@ import geometry_msgs.msg
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.assembly import ResolvedAssembly
+from arena_robots.inline import parse_inline_override
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.env.environment_manager import EnvironmentManager
@@ -96,12 +98,20 @@ def desugar_robot_entry(entry: str) -> dict:
         key = key.strip()
         value = value.strip()
         value_prefix, value_body = _extract_bracket(value, entry)
-        if value_body is None:
-            parsed_value: str | list[str] = value_prefix
+        if value_body is None or value_prefix:
+            parsed_value: str | list[str] = value
         else:
-            if value_prefix:
-                raise RuntimeError(f"robot entry {entry!r}: malformed value {value!r}")
             parsed_value = [v.strip() for v in split_robot_arg(value_body)]
+
+        cap, dot, tail = key.partition('.')
+        if dot and cap and tail != 'adapter':
+            if key in result:
+                raise RuntimeError(f"robot entry {entry!r}: duplicate cap override {key!r}")
+            try:
+                result[key] = parse_inline_override(parsed_value)
+            except ValueError as e:
+                raise RuntimeError(f"robot entry {entry!r}: {e}") from e
+            continue
 
         if key in result:
             existing = result[key] if isinstance(result[key], list) else [result[key]]
@@ -130,12 +140,15 @@ def _physical_params(manager: RobotManager) -> list[diagnostic_msgs.msg.KeyValue
     return params
 
 
-def _morphology_params(robot: Robot) -> list[diagnostic_msgs.msg.KeyValue]:
-    """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise."""
+def _morphology_params(robot: Robot, overrides: dict[str, object]) -> list[diagnostic_msgs.msg.KeyValue]:
+    """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise, then one `cap:<path>` entry per effective cap override."""
     resolved = robot.resolved_assembly
     if resolved is not None:
-        return [diagnostic_msgs.msg.KeyValue(key=f'{p.type}@{p.mount.name}', value=p.variant) for p in resolved.placements]
-    return [diagnostic_msgs.msg.KeyValue(key=ptype, value=str(values)) for ptype, values in robot.parts.items()]
+        params = [diagnostic_msgs.msg.KeyValue(key=f'{p.type}@{p.mount.name}', value=p.variant) for p in resolved.placements]
+    else:
+        params = [diagnostic_msgs.msg.KeyValue(key=ptype, value=str(values)) for ptype, values in robot.parts.items()]
+    params.extend(diagnostic_msgs.msg.KeyValue(key=f'cap:{path}', value=json.dumps(value)) for path, value in overrides.items())
+    return params
 
 
 @attrs.define(frozen=True)
@@ -500,10 +513,10 @@ class RobotsManager(NodeInterface):
                             instance=instance,
                             variant=variant,
                         )
-                        for cap in sorted(mgr.robot_view.effective_caps(mgr.robot.resolved_request, frames=mgr.robot.frames).available)
+                        for cap in sorted(mgr.caps.available)
                         for instance, variant in _cap_instances(mgr.robot.resolved_assembly, cap)
                     ],
-                    params=[*_morphology_params(mgr.robot), *_physical_params(mgr)],
+                    params=[*_morphology_params(mgr.robot, mgr.caps.all_overrides), *_physical_params(mgr)],
                 )
                 for mgr in self.managers.values()
             ]

@@ -7,7 +7,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from arena_cli.common import make_verb
-from arena_cli.complete import Flags, Kv, Manifest, Static, Sub, Union
+from arena_cli.complete import Dynamic, Flags, Kv, Manifest, Static, Sub, Union
 
 if TYPE_CHECKING:
     import argparse
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
     import rclpy.node
     from arena_runtime_msgs.msg import RobotFleet, RobotState
+
+    from arena_cli.complete import Context
 
 ROBOTS_SUFFIX = "/state/robots"
 
@@ -297,6 +299,31 @@ def cmd_caps(model: str) -> int:
     return 0
 
 
+def _models() -> list[str]:
+    from arena_robots.Robot import RobotIdentifier
+
+    return sorted(identifier.shortname for identifier in RobotIdentifier.listall())
+
+
+def cmd_paths(entry: str) -> int:
+    import json
+
+    from arena_robots.override_paths import entry_paths
+
+    try:
+        found = entry_paths(entry)
+    except FileNotFoundError as e:
+        print(f"arena robot paths: {e}\nmodels: {', '.join(_models())}", file=sys.stderr)
+        return 1
+    except (ValueError, RuntimeError) as e:
+        print(f"arena robot paths: {e}\nwrite the entry as <model>[<mount|type>=<type>/<variant>[<path>=<value>],<cap>.<path>=<value>], see 'arena robot paths --help'", file=sys.stderr)
+        return 1
+    for item in found:
+        row = f"{item.path}\t{item.kind}\t{'-' if item.kind == 'unset' else json.dumps(item.value, default=str)}"
+        print(f"{row}\tbrackets of {item.part}: {item.relative}" if item.part else row)
+    return 0
+
+
 def _add_target(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--env", dest="env", type=int)
     parser.add_argument("--ns", dest="ns")
@@ -319,11 +346,21 @@ Usage:
   arena robot rm <name> [--env <id>|--ns <ns>] [--nowait]
   arena robot ls [--env <id>|--ns <ns>|--all]
   arena robot caps <model>
+  arena robot paths <entry>
 
 `caps` is a build-time, ROS-network-free lookup: it prints a robot model's caps,
 morphology (mounts/priority/defaults, if migrated to assembly.yaml), catalog
 variants per mounted type, and effective default sensors. Use it to see what a
 `robot:=<model>[...]` bracket can legally do before spawning anything.
+
+`paths` is the same ROS-network-free lookup for overrides: it prints every cap
+override path of a `robot:=` entry (a model, or `<model>[...]` with its parts and
+overrides applied), one `<path> <kind> <value>` row each. `kind` is `value`, `list`
+or `map`, or `unset` for a typed field or adapter block the cap file leaves out
+(settable, with no value yet). Paths of a part placed through assembly.yaml end in
+`brackets of <mount>: <relative>`: write the relative path inside that part's
+bracket, `top=arm/ur5e[stall_time=2.0]`. Quote the entry, `[` is a shell glob class.
+The same paths complete on TAB after `robot:=` in `arena launch`.
 
 <key>:=<value> tokens describe the robot and are forwarded to the spawn service:
 `name` selects the instance name, `count` spawns that many, and every other key
@@ -339,6 +376,16 @@ as the request is accepted.
 Discovers envs by polling `ros2 topic list` for `<ns>/state/robots`, waiting
 forever (10s heartbeat) until a match appears.
 """
+
+
+PATHS_HELP = """Print the cap override paths of a robot entry.
+
+An entry is a model or `<model>[<mount|type>=<type>/<variant>[<path>=<value>],<cap>.<path>=<value>]`.
+Each row is `<path> <kind> <value>`: kind `value`, `list` or `map` with the effective
+value, or `unset` for a typed field or adapter block the cap file leaves out.
+Paths of a part placed through assembly.yaml end in `brackets of <mount>: <relative>`,
+write the relative path inside that part's brackets. Quote the entry.
+Exit 1 on an unknown model or an invalid entry, with the models listed."""
 
 
 def _main(argv: list[str]) -> int:
@@ -369,6 +416,16 @@ def _main(argv: list[str]) -> int:
         pargs = parser.parse_args(passthrough[1:])
         return cmd_caps(pargs.model)
 
+    if sub == "paths":
+        parser = argparse.ArgumentParser(prog="arena robot paths", description=PATHS_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+        parser.add_argument("entry", nargs="?")
+        pargs = parser.parse_args(passthrough[1:])
+        if pargs.entry is None:
+            parser.print_usage(sys.stderr)
+            print(f"arena robot paths: pass a robot entry. models: {', '.join(_models())}\nexample: arena robot paths 'jackal[top=arm/ur5e]'", file=sys.stderr)
+            return 2
+        return cmd_paths(pargs.entry)
+
     if sub == "rm":
         parser = argparse.ArgumentParser(prog="arena robot rm")
         parser.add_argument("name")
@@ -387,6 +444,18 @@ def _main(argv: list[str]) -> int:
     return cmd_spawn(pargs.model, kv, pargs)
 
 
+def _robot_entries(words: list[str], cur: str, ctx: Context) -> dict[str, str]:
+    if "[" not in cur:
+        return dict(ctx.values("robot") or {})
+    quote = cur[0] if cur[:1] in ("'", '"') else ""
+    try:
+        from arena_robots.override_paths import complete
+    except ImportError:
+        return {}
+    return {quote + entry: "" for entry in complete(cur[len(quote) :])}
+
+
+ROBOT_ENTRY = Dynamic(_robot_entries)
 _TARGET = Flags({"--env": "env id", "--ns": "env namespace"}, valued=("--env", "--ns"))
 _NOWAIT = Flags({"--nowait": "return once the request is accepted"})
 _SPAWN = Union(
@@ -399,6 +468,7 @@ SPEC = Sub(
         "ls": Union(_TARGET, Flags({"--all": "every env"})),
         "rm": Union(_TARGET, _NOWAIT),
         "caps": Sub({}, extra=Manifest("robot")),
+        "paths": ROBOT_ENTRY,
     },
     extra=Union(Manifest("robot"), _SPAWN),
     fallback=_SPAWN,

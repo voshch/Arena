@@ -1,5 +1,6 @@
 """Shared launch helpers for the ros2_control plane (Gazebo + Isaac)."""
 
+import math
 import os
 import tempfile
 import typing
@@ -13,10 +14,37 @@ from arena_robots.assembly import ResolvedAssembly
 from arena_robots.catalog import Catalog, render_effective_control
 
 if typing.TYPE_CHECKING:
+    from arena_robots.caps import PlanarSpec
     from arena_robots.Robot import RobotView
 
 
 STATE_PUBLISH_HZ = 1000.0
+
+_PLANAR_CONTROLLER_AXES = {'linear': 'linear.x', 'lateral': 'linear.y', 'angular': 'angular.z'}
+
+
+def overlay_planar_limits(params: dict, planar: "PlanarSpec") -> dict:
+    """A copy of a drive controller's parameters with the limit keys it declares set from ``planar``, infinite limits skipped."""
+    out = dict(params)
+    for axis, prefix in _PLANAR_CONTROLLER_AXES.items():
+        limits = {}
+        if axis in planar.velocity:
+            limits[f'{prefix}.min_velocity'] = planar.velocity[axis].min
+            limits[f'{prefix}.max_velocity'] = planar.velocity[axis].max
+        if axis in planar.acceleration:
+            limits[f'{prefix}.min_acceleration'] = -planar.acceleration[axis]
+            limits[f'{prefix}.max_acceleration'] = planar.acceleration[axis]
+        out.update({key: value for key, value in limits.items() if key in params and math.isfinite(value)})
+    return out
+
+
+def _with_planar_limits(control: dict, planar: "PlanarSpec") -> dict:
+    out = dict(control)
+    for name, section in control.items():
+        if name == 'controller_manager' or not isinstance(section, dict) or not isinstance(section.get('ros__parameters'), dict):
+            continue
+        out[name] = {**section, 'ros__parameters': overlay_planar_limits(section['ros__parameters'], planar)}
+    return out
 
 
 def load_control_yaml(config_uri: str, sim: SimSimulator | None = None) -> dict:
@@ -96,12 +124,15 @@ def effective_control_yaml(
     sim: SimSimulator,
     catalog: Catalog | None = None,
     prefix: str = 'robot_',
+    planar: "PlanarSpec | None" = None,
 ) -> str:
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged."""
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys."""
     base_control = load_control_yaml(config_uri, sim)
+    if planar is not None:
+        base_control = _with_planar_limits(base_control, planar)
     if resolved is None:
         return render_ros2_control_yaml(config_uri, sim_path, frame_prefix, data=base_control)
     merged, _ = render_effective_control(resolved, base_control, catalog if catalog is not None else Catalog(), prefix=prefix)

@@ -239,7 +239,7 @@ class FlatsimSimulator(BaseSim):
     def _sensors(self, robot: Robot, robot_config: arena_robots.Robot.RobotView) -> list[SensorSpec]:
         """Sensors the server simulates, a laserscan carrying the caps laser block for a URDF without its sensor."""
         namespace = str(self.node.service_namespace(robot.name))
-        laser = robot_config.model_params.caps.mobile.laser
+        laser = robot.caps_of(robot_config).mobile.laser
         fan = [Fan(angle_min=laser.angle.min, angle_increment=laser.angle.increment, beams=laser.num_beams, range_max=laser.range, update_rate=float(laser.update_rate or 0.0))] if laser is not None else []
         return [
             SensorSpec(
@@ -272,7 +272,7 @@ class FlatsimSimulator(BaseSim):
         control_spec = robot_config.model_params.control
         if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
             control_prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
-            rendered_yaml = effective_control_yaml(robot.resolved_assembly, control_spec.config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, prefix=control_prefix)
+            rendered_yaml = effective_control_yaml(robot.resolved_assembly, control_spec.config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, prefix=control_prefix, planar=robot.planar_override(robot_config))
             cm_node = launch_ros.actions.Node(
                 package='controller_manager',
                 executable='ros2_control_node',
@@ -325,7 +325,8 @@ class FlatsimSimulator(BaseSim):
                 description = mock_arm_hardware(f.read())
 
             robot_params = robot_config.model_params
-            mobile = robot_params.caps.mobile
+            caps = robot.caps_of(robot_config)
+            mobile = caps.mobile
             footprint = mobile.footprint or []
             position = robot.pose.position
             request = SpawnRobot.Request(
@@ -334,14 +335,14 @@ class FlatsimSimulator(BaseSim):
                 tf_topic=self.node.resolve_topic_name('/tf'),
                 world_frame='map',
                 frame_prefix=robot.frame.tf(),
-                odom_frame=robot_params.odom_frame,
+                odom_frame=mobile.odom_frame,
                 base_frame=robot_params.base_frame,
                 x=position.x,
                 y=position.y,
                 z=position.z,
                 yaw=robot.pose.orientation.to_yaw(),
                 footprint=Ring(x=[float(point[0]) for point in footprint], y=[float(point[1]) for point in footprint]),
-                radius=robot_footprint_radius(robot_params),
+                radius=robot_footprint_radius(caps),
                 drive=drive_model(mobile.planar, holonomic=mobile.is_holonomic, min_turning_radius=mobile.min_turning_radius),
                 urdf=description,
                 sensors=self._sensors(robot, robot_config),
@@ -352,7 +353,7 @@ class FlatsimSimulator(BaseSim):
             if not response.success:
                 raise RuntimeError(f'flatsim refused robot {robot.sim_path!r}: {response.message}')
             self._robots[robot.sim_path] = handle
-            self._register_agent_robot(robot, robot_params)
+            self._register_agent_robot(robot, robot_config)
             return True
 
         except Exception as e:

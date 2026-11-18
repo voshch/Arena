@@ -88,6 +88,73 @@ def test_compatible_different_parts():
     assert r1.compatible(r2) is False
 
 
+def test_compatible_different_caps():
+    from arena_robots.Robot import RobotIdentifier
+    from arena_runtime.shared import Pose, Robot
+
+    def robot(name, caps):
+        return Robot(name=name, pose=Pose(), model=RobotIdentifier.parse("jackal"), adapters={"mobile": "nav2"}, caps=caps, extra={})
+
+    slow = robot("r1", {"mobile.velocity_limits.linear": [-0.5, 0.5]})
+    assert slow.compatible(robot("r2", {"mobile.velocity_limits.linear": [-0.5, 0.5]})) is True
+    assert slow.compatible(robot("r3", {"mobile.velocity_limits.linear": [-0.5, 1.0]})) is False
+    assert slow.compatible(robot("r4", {})) is False
+
+
+def test_parse_valid_cap_override_builds_the_instance_caps(stub_node):
+    from arena_runtime.shared import Robot
+
+    robot = Robot.parse({"name": "slow", "model": "jackal", "caps": {"mobile.velocity_limits.linear": [-0.5, 0.5]}}, node=stub_node)
+    limits = robot.instance_request.caps_of(robot.model.resolve_sync()).mobile.velocity_limits
+    assert (limits.linear.min, limits.linear.max) == (-0.5, 0.5)
+
+
+@pytest.mark.parametrize("caps", [{"mobile.radius": "wide"}, {"mobile.nonsense.x": 1.0}, {"arm.fr3.stall_time": 2.0}])
+def test_parse_invalid_cap_override_raises_naming_the_robot(stub_node, caps):
+    from arena_runtime.shared import Robot
+
+    with pytest.raises(RuntimeError, match="'slow'"):
+        Robot.parse({"name": "slow", "model": "jackal", "caps": caps}, node=stub_node)
+
+
+def test_parse_part_brackets_reach_the_placed_instances(stub_node):
+    from arena_runtime.shared import Robot
+
+    robot = Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3[stall_time=2.0]"], "top_tool": ["gripper/franka_hand[max_effort=*0.5]"]}}, node=stub_node)
+    view = robot.model.resolve_sync()
+    caps = robot.caps_of(view)
+    assert caps.arm is not None and caps.gripper is not None
+    assert caps.arm["top"].stall_time == 2.0
+    assert caps.all_overrides["gripper.top_tool.max_effort"] == {"scale": 0.5}
+    again = robot.instance_request.caps_of(view)
+    assert again.arm is not None and again.arm["top"].stall_time == 2.0
+
+
+def test_parse_robot_level_override_of_a_placed_part_raises(stub_node):
+    from arena_runtime.shared import Robot
+
+    with pytest.raises(RuntimeError, match=r"top=arm/fr3\[stall_time=\.\.\.\]"):
+        Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3"]}, "caps": {"arm.top.stall_time": 2.0}}, node=stub_node)
+
+
+def test_parse_bad_part_override_raises_naming_the_robot(stub_node):
+    from arena_runtime.shared import Robot
+
+    with pytest.raises(RuntimeError, match="'arm'"):
+        Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3[stall_tme=2.0]"]}}, node=stub_node)
+
+
+def test_compatible_different_part_brackets():
+    from arena_robots.Robot import RobotIdentifier
+    from arena_runtime.shared import Pose, Robot
+
+    def robot(directive: str) -> Robot:
+        return Robot(name="arm", pose=Pose(), model=RobotIdentifier.parse("jackal"), parts={"top": [directive]}, extra={})
+
+    assert robot("arm/fr3[stall_time=2.0]").compatible(robot("arm/fr3[stall_time=2.0]"))
+    assert not robot("arm/fr3[stall_time=2.0]").compatible(robot("arm/fr3[stall_time=3.0]"))
+
+
 def test_parse_minimal_value(stub_node):
     from arena_runtime.shared import Robot
 

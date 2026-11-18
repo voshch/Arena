@@ -13,9 +13,9 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
-from arena_robots.Robot import RobotIdentifier
+from arena_robots.fleet import instance_caps
 from arena_runtime_msgs.action import RunTask
-from arena_runtime_msgs.msg import EnvRegistry, RobotFleet, SemanticSnapshot
+from arena_runtime_msgs.msg import EnvRegistry, RobotFleet, RobotState, SemanticSnapshot
 from arena_simulation_setup.tree.World.view import WorldIdentifier
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import FollowPath
@@ -45,11 +45,12 @@ def _required(value: str, name: str) -> pathlib.Path:
     return pathlib.Path(value)
 
 
-def _robot(model: str) -> RobotFacts:
-    mobile = RobotIdentifier(model).resolve_sync().mobile
-    if mobile is None:
+def _robot(state: RobotState) -> RobotFacts:
+    model = str(state.descriptor.model)
+    caps = instance_caps(model, {item.key: item.value for item in state.params})
+    if "mobile" not in caps.available:
         raise ValueError(f"robot model {model} has no mobile cap")
-    return RobotFacts.from_mobile(mobile.raw)
+    return RobotFacts.from_mobile(caps.mobile)
 
 
 def _yaw(msg: Odometry) -> float:
@@ -128,7 +129,7 @@ class FleetNode(ArenaMixinNode):
         robots = [(str(s.descriptor.name), str(s.descriptor.ns).rstrip("/")) for s in msg.robots if str(s.descriptor.name).strip()]
         names = [name for name, _ in robots]
         self.prefix = next(str(s.descriptor.frame) for s in msg.robots if str(s.descriptor.name).strip()).rsplit("/", 1)[0]
-        robot = RobotFacts.fleet([_robot(str(s.descriptor.model)) for s in msg.robots if str(s.descriptor.name).strip()])
+        robot = RobotFacts.fleet([_robot(s) for s in msg.robots if str(s.descriptor.name).strip()])
         self.core = FleetDispatcher(site, self.cost, self.rules, names=names, robot=robot, info=self.people_info, profile=self.p.PROFILE.value, seed=self.p.SEED.value, out=self.out, duration=self.p.DURATION_S.value, mod=self.mod, samples=self.p.SAMPLES.value)
         for name, ns in robots:
             self.plan_pub[name] = self.create_publisher(Path, f"{ns}/plan", 10)

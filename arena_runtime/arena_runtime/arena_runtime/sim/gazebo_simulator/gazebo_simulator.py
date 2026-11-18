@@ -492,7 +492,7 @@ class GazeboSimulator(BaseSim):
         return args
 
     def _render_ros2_control_yaml(self, robot: Robot, config_uri: str, *, frame_prefix: str, control_prefix: str) -> str:
-        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix)
+        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix, planar=robot.planar_override(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()))
 
     def _placed_light(self, params: dict[str, typing.Any]) -> dict[str, typing.Any]:
         x, y, z = params['pose']
@@ -542,8 +542,8 @@ class GazeboSimulator(BaseSim):
             await self._sweep_entity_name(robot.sim_path)
             if not await self._spawn_entity(robot):
                 return False
-            robot_params = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync().model_params
-            self._odom_frames[robot.sim_path] = robot.frame.tf(robot_params.odom_frame)
+            robot_view = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
+            self._odom_frames[robot.sim_path] = robot.frame.tf(robot.odom_frame(robot_view))
             self._track_level(robot.sim_path, robot.pose)
             _loader_args = self._robot_loader_args(robot)
             model = await (await robot.model.resolve()).model.get(ModelType.URDF, loader_args=_loader_args)
@@ -558,7 +558,7 @@ class GazeboSimulator(BaseSim):
             self._robot_initialpose(robot)
             await self._robot_bridge(robot, model_description)
             robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-            self._register_agent_robot(robot, robot_config.model_params)
+            self._register_agent_robot(robot, robot_config)
             return True
 
         success = await asyncio.gather(*map(impl, robots))
@@ -1235,7 +1235,7 @@ class GazeboSimulator(BaseSim):
                 parameters=[
                     {
                         "use_sim_time": True,
-                        "parent_frame": robot.frame.tf(robot_config.model_params.odom_frame),
+                        "parent_frame": robot.frame.tf(robot.odom_frame(robot_config)),
                         "child_frame": robot.frame.tf(robot_config.model_params.base_frame),
                         "pose_topic": "pose",
                         "odom_in_topic": (ros2_control_spec.odom_topic if ros2_control_spec is not None and ros2_control_spec.odom_topic != "odom" else ""),

@@ -61,8 +61,7 @@ class _Robot:
 
     def __init__(self, arms: dict[str, ArmSpec], node: _Node) -> None:
         self.node = node
-        self.robot = SimpleNamespace(resolved_request={}, frames=None)
-        self.robot_view = SimpleNamespace(effective_caps=lambda request, frames: SimpleNamespace(arm=arms))
+        self.caps = SimpleNamespace(arm=arms)
 
     def namespace(self, *parts: str) -> str:
         return "/env/jackal/" + "/".join(parts)

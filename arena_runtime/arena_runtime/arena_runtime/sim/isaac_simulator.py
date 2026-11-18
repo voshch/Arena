@@ -289,7 +289,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                 if model.type == ModelType.URDF:
                     assert model.path is not None, f"URDF model {model.name} must have a valid file path"
-                    robot_params = (await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()).model_params
+                    robot_config = await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()
+                    robot_params = robot_config.model_params
 
                     fq_name = self._NS_ROBOT(robot.name)
 
@@ -305,7 +306,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                             localization=True,
                             tf_prefix=robot.frame.tf(),
                             base_frame=robot_params.base_frame,
-                            odom_frame=robot_params.odom_frame,
+                            odom_frame=robot.odom_frame(robot_config),
                             pose=self._placed(robot.pose).to_msg(),
                             cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
                             joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
@@ -336,7 +337,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     await self._launch_robot_stack(robot, robot_params, rsp_urdf_path)
 
-                    self._register_agent_robot(robot, robot_params)
+                    self._register_agent_robot(robot, robot_config)
                     self._robot_prims[robot.sim_path] = fq_name
                     self._map_offsets[robot.sim_path] = (0.0, 0.0, 0.0)
                     self._map_offset_calls.pop(robot.sim_path, None)
@@ -386,6 +387,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     robot.frame.tf(),
                     sim=SimSimulator.ISAAC,
                     prefix=control_prefix,
+                    planar=robot.planar_override(robot_config),
                 )
                 if control_spec.config is not None
                 else None

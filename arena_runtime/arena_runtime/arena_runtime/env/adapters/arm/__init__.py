@@ -46,7 +46,7 @@ async def park_arms(robot: RobotManager) -> list:
     while their controllers step up), and wait in sim time until the arms settled.
     Returns the publishers so callers keep them alive."""
     pubs = []
-    caps = robot.robot_view.effective_caps(robot.robot.resolved_request, frames=robot.robot.frames)
+    caps = robot.caps
     for arm in (caps.arm or {}).values():
         point = trajectory_msgs.msg.JointTrajectoryPoint()
         point.positions = park_positions(arm)

@@ -38,7 +38,7 @@ class MobileAdapter(Adapter):
         self._trail_sub = self.rm.node.create_subscription(nav_msgs.msg.Odometry, str(self.rm.namespace("odom")), self._extend_trail, best_effort(1))
         self.rm.watch(self._restart_trail)
         self._collision: CollisionTrackerNode | None = None
-        mobile = self.rm.robot.model.resolve_sync().caps.mobile
+        mobile = self.rm.caps.mobile
         polys = mobile.polygons_dict
         footprint = mobile.footprint
         if footprint is None:

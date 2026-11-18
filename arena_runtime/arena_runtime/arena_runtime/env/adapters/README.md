@@ -24,8 +24,10 @@ class MyAdapter(Adapter):
         await self.client.send_goal(goal)
 ```
 
-The base class constructor builds `self.bringup` and `self.client` from
-`bringup_cls` / `client_cls`; subclasses only implement `dispatch_phase`.
+The base class constructor builds `self.bringup` (from the robot's
+`instance_request`, so it sees the instance's cap overrides) and `self.client` from
+`bringup_cls` / `client_cls`; subclasses only implement `dispatch_phase`. Adapters
+read caps through `self.rm.caps`, the instance's effective caps.
 
 Goto completion is judged by the task runner from the robot pose. Gesture and
 reach phases complete on `self.client.is_done()`, and `on_phase_tick(phase, robot)` runs every
@@ -247,7 +249,7 @@ An adapter that does not subclass `MobileAdapter` mounts the node in
 class MyMobileAdapter(Adapter):
     def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
         super().__init__(robot_manager, **bringup_kwargs)
-        mobile = self.rm.robot.model.resolve_sync().caps.mobile
+        mobile = self.rm.caps.mobile
         self._collision = CollisionTrackerNode(self.rm, mobile.polygons_dict, footprint=mobile.footprint)
         self.rm.node.executor.add_node(self._collision)
 ```

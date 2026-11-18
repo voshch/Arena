@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import math
 import os
 import time
@@ -25,6 +24,7 @@ import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace, Namespace
+from arena_robots.caps import MobileSpec, typed_fields
 from arena_robots.Robot import RobotView
 from arena_simulation_setup.shared.conditions import render_until
 
@@ -38,8 +38,9 @@ from arena_runtime.shared import Orientation, Pose, Position, PositionRadius, Ro
 from arena_runtime.sim._interface import SimUnavailable
 
 if typing.TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Sequence
 
+    from arena_robots.caps import RobotCaps
     from arena_simulation_setup.shared.conditions import EpisodeCondition
     from arena_simulation_setup.shared.judge import Sample, Zones
 
@@ -77,6 +78,21 @@ _TELEPORT_POLL = 0.02
 _TELEPORT_ATTEMPTS = 3
 _TELEPORT_TICK_CAP = 5
 _TELEPORT_TICK_WAIT = 0.5
+
+
+def reject_cap_field_overlay(cap: str, keys: Iterable[str], fields: Collection[str]) -> None:
+    """Raises on a `robot.<cap>.<key>` launch key whose first segment is a field of the cap file, which only a per-instance override can change."""
+    for key in keys:
+        field = key.partition('.')[0]
+        if field in fields:
+            raise ValueError(f"robot.{cap}.{key} names the cap field {field!r}, which `robot.{cap}.<key>` cannot set (it only passes adapter arguments). Override it per robot instance with robot:=<model>[{cap}.{key}=<value>] or `{cap}.{key}: <value>` in the setup file, `{cap}.{key}=*<factor>` scales it.")
+
+
+def cap_file_fields(cap: str, cap_raw: dict[str, typing.Any], adapter_kinds: Collection[str]) -> frozenset[str]:
+    """Top-level fields of the mobile cap file (its non-adapter keys plus the typed fields), empty for instance caps keyed by instance."""
+    if cap != 'mobile':
+        return frozenset()
+    return frozenset({key for key in cap_raw if key not in adapter_kinds} | typed_fields(MobileSpec))
 
 
 def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevelAction]:
@@ -120,6 +136,11 @@ class RobotManager(NodeInterface):
     @property
     def robot_view(self) -> RobotView:
         return self._config
+
+    @property
+    def caps(self) -> RobotCaps:
+        """This instance's effective caps: parts, frames and cap overrides."""
+        return self._caps
 
     @property
     def tf_buffer(self) -> tf2_ros.Buffer:
@@ -191,14 +212,15 @@ class RobotManager(NodeInterface):
         self._rate_setup = self.node.create_rate(0.1)
 
         self._config = robot.model.resolve_sync()
+        self._caps = robot.caps_of(self._config)
 
         self._namespace = namespace
         self._environment_manager = environment_manager
 
         self._start_pos = Pose()
         self._goal_pos = Pose()
-        self._robot_radius = footprint_radius(self._config)
-        self._climbs = frozenset() if self._config.mobile is None else self._config.mobile.climbs
+        self._robot_radius = footprint_radius(self._caps, robot.model.name)
+        self._climbs = self._caps.mobile.climbs if 'mobile' in self._caps.available else frozenset()
 
         self._robot = robot
         self._robot.sim_path = self._environment_manager.realize(robot.name)
@@ -212,7 +234,7 @@ class RobotManager(NodeInterface):
         from arena_runtime.env.adapters import ADAPTERS
         from arena_runtime.env.request import TaskKind
 
-        caps_available = self._config.effective_caps(self._robot.resolved_request, frames=self._robot.frames).available
+        caps_available = self._caps.available
         caps_to_kind: dict[str, str] = {}
         for cap in caps_available:
             override = self._robot.adapters.get(cap)
@@ -280,15 +302,18 @@ class RobotManager(NodeInterface):
 
     def _adapter_kwargs_for(self, cap: str, kind: str) -> dict[str, typing.Any]:
         try:
-            cap_raw = self._config.caps._load_cap_file(cap)
+            cap_raw = self._caps._load_cap_file(cap)
         except FileNotFoundError:
             cap_raw = {}  # allocation-derived cap, no static caps/<cap>.yaml
+        from arena_runtime.env.adapters import ADAPTERS
+
         sub = cap_raw.get(kind, {})
         kwargs: dict[str, typing.Any] = dict(sub) if isinstance(sub, dict) else {}
         # CLI overrides land as `robot.<cap>.<key>` ROS params; they overlay the
         # cap-file YAML so the bound adapter sees flag-level user intent.
-        for key, param in self.node.get_parameters_by_prefix(f"robot.{cap}").items():
-            kwargs[key] = param.value
+        overlay = {key: param.value for key, param in self.node.get_parameters_by_prefix(f"robot.{cap}").items()}
+        reject_cap_field_overlay(cap, overlay, cap_file_fields(cap, cap_raw, ADAPTERS[cap].keys()))
+        kwargs.update(overlay)
         if cap == 'mobile':
             kwargs.setdefault('train_mode', declare(self.node, NodeParams.ROBOT_TRAIN).value)
         return kwargs
@@ -863,7 +888,7 @@ class RobotManager(NodeInterface):
             env_namespace=self.node.get_namespace(),
             use_sim_time=True,
             base_frame=self._config.model_params.base_frame,
-            odom_frame=self._config.model_params.odom_frame,
+            odom_frame=self._robot.odom_frame(self._config),
             sensors=self._config.effective_sensors(self._robot.resolved_request, frames=self._robot.frames),
             tf_buffer=None,
             node_handle=self.node,
@@ -885,7 +910,7 @@ class RobotManager(NodeInterface):
                             "robot_name": self._robot.model.name,
                             "bringup_caps": bringup_caps,
                             "bringup_kinds": bringup_kinds,
-                            "parts_json": json.dumps({t: [{"variant": p.variant, "mount": p.mount} for p in ps] for t, ps in self._robot.resolved_request.items()}),
+                            "request_json": self._robot.instance_request.dumps(),
                             "frame": self._robot.frame.tf(),
                             "use_sim_time": adapter_ctx.use_sim_time,
                         }

@@ -15,6 +15,7 @@ from arena_fleet.dispatcher import DoorState, FleetDispatcher, Info, PublishPlan
 from arena_fleet.geometry import Point, hungarian, inside, seg_cross
 from arena_fleet.robot import RobotFacts
 from arena_fleet.site import Door, Site
+from arena_robots.Robot import RobotIdentifier
 from arena_simulation_setup.tree.World.model import World
 from arena_simulation_setup.tree.World.view import WorldView
 from arena_fleet.view import MapOfDynamics, PeopleView
@@ -23,7 +24,7 @@ PKG = pathlib.Path(__file__).resolve().parents[1]
 WORLD = PKG.parent / "arena_simulation_setup" / "worlds" / "mechanisms_doorway" / "world.yaml"
 EXAMPLE = PKG / "examples" / "doorway"
 TICK = 0.25
-JACKAL = RobotFacts.from_mobile(yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps" / "mobile.yaml").read_text()))
+JACKAL = RobotFacts.from_mobile(RobotIdentifier("jackal").resolve_sync().caps.mobile)
 
 Peds = dict[str, tuple[float, float, float, float]]
 

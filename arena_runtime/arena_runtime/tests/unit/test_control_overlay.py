@@ -5,7 +5,8 @@ from pathlib import Path
 import yaml
 
 from arena_bringup.constants import SimSimulator
-from arena_runtime.sim._control import effective_control_yaml, load_control_yaml
+from arena_robots.caps import PlanarSpec
+from arena_runtime.sim._control import effective_control_yaml, load_control_yaml, overlay_planar_limits
 
 BASE = {
     'controller_manager': {'ros__parameters': {'update_rate': 50}},
@@ -60,3 +61,56 @@ def test_jackal_turns_on_its_gazebo_track_only_in_gazebo():
     multiplier = {sim: load_control_yaml(config, sim)['jackal_velocity_controller']['ros__parameters']['wheel_separation_multiplier'] for sim in SimSimulator}
     assert multiplier.pop(SimSimulator.GAZEBO) == 1.106
     assert set(multiplier.values()) == {1.5}
+
+
+DRIVE = {
+    'drive_controller': {
+        'ros__parameters': {
+            'wheel_separation': 0.4,
+            'linear.x.max_velocity': 2.0,
+            'linear.x.min_velocity': -2.0,
+            'linear.x.max_acceleration': 20.0,
+            'angular.z.max_velocity': 4.0,
+        }
+    },
+    'controller_manager': {'ros__parameters': {'update_rate': 50}},
+}
+
+
+def _planar(**fields: object) -> PlanarSpec:
+    return PlanarSpec.from_dict({'velocity': {'linear': [-0.5, 0.5], 'lateral': [0.0, 0.0], 'angular': [-1.0, 1.0]}, 'acceleration': {'linear': 5.0, 'lateral': float('inf'), 'angular': float('inf')}, **fields})
+
+
+def test_planar_limits_overlay_the_declared_keys_only():
+    params = DRIVE['drive_controller']['ros__parameters']
+    out = overlay_planar_limits(params, _planar())
+    assert out == {
+        'wheel_separation': 0.4,
+        'linear.x.max_velocity': 0.5,
+        'linear.x.min_velocity': -0.5,
+        'linear.x.max_acceleration': 5.0,
+        'angular.z.max_velocity': 1.0,
+    }
+    assert params['linear.x.max_velocity'] == 2.0
+
+
+def test_infinite_planar_limits_leave_the_controller_keys_alone():
+    params = {'linear.x.max_acceleration': 20.0, 'linear.x.max_velocity': 2.0}
+    out = overlay_planar_limits(params, _planar(acceleration={'linear': float('inf')}))
+    assert out['linear.x.max_acceleration'] == 20.0
+    assert out['linear.x.max_velocity'] == 0.5
+
+
+def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest(tmp_path):
+    config = _write(tmp_path, 'control.yaml', DRIVE)
+    out = Path(effective_control_yaml(None, str(config), f'test_planar/{tmp_path.name}', 'env_0/r/', sim=SimSimulator.GAZEBO, planar=_planar()))
+    rendered = yaml.safe_load(out.read_text())
+    assert rendered['/**/drive_controller']['ros__parameters']['linear.x.max_velocity'] == 0.5
+    assert rendered['/**/controller_manager'] == DRIVE['controller_manager']
+
+
+def test_rendered_control_yaml_without_a_planar_override_is_the_file_content(tmp_path):
+    config = _write(tmp_path, 'control.yaml', DRIVE)
+    out = Path(effective_control_yaml(None, str(config), f'test_no_planar/{tmp_path.name}', 'env_0/r/', sim=SimSimulator.GAZEBO))
+    rendered = yaml.safe_load(out.read_text())
+    assert rendered['/**/drive_controller']['ros__parameters'] == DRIVE['drive_controller']['ros__parameters']

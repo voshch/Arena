@@ -554,7 +554,7 @@ are what Arena sends it.
 - Robots: body from the mobile cap footprint, driven by the Twist on
   `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
   the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
-  robot: per-axis (linear, lateral, angular) velocity bounds, acceleration and
+  robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
   `pivot` x the body turns about and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
@@ -592,6 +592,16 @@ are what Arena sends it.
 - Lockstep: no channel is registered, so the other producers set the strides.
   A step is complete when the service answers, every message of it is already
   published.
+
+## Drive limits of a ros2_control base
+
+When a robot overrides anything under `mobile.limits` or `mobile.planar`, Gazebo,
+MuJoCo and Isaac overlay the base controller's limit keys from the instance's
+effective `planar` (its velocity and acceleration read from `limits`)
+(`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
+`angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
+`min_acceleration`, only the keys the controller declares and never an infinite
+limit. Without such an override the `control.yaml` content is used as is.
 
 ## Adding a new simulator
 

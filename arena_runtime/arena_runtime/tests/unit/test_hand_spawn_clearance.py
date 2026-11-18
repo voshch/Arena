@@ -49,7 +49,7 @@ def _own_clearance() -> float:
     from arena_robots.Robot import RobotIdentifier
     from arena_runtime.shared import footprint_radius
 
-    return footprint_radius(RobotIdentifier.parse("jackal").resolve_sync()) + SAFE_DIST
+    return footprint_radius(RobotIdentifier.parse("jackal").resolve_sync().caps, "jackal") + SAFE_DIST
 
 
 def test_a_robot_bigger_than_the_fleet_gets_its_own_clearance() -> None:

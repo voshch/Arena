@@ -334,7 +334,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                             localization=True,
                             tf_prefix=robot.frame.tf(),
                             base_frame=robot_params.base_frame,
-                            odom_frame=robot_params.odom_frame,
+                            odom_frame=robot.odom_frame(robot_config),
                             pose=self._placed(robot.pose).to_msg(),
                             cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
                             joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
@@ -369,7 +369,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
 
                     await self._launch_robot_stack(robot, robot_params, rsp_urdf_path)
 
-                    self._register_agent_robot(robot, robot_params)
+                    self._register_agent_robot(robot, robot_config)
                     return True
 
                 raise NotImplementedError(f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}")
@@ -412,6 +412,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     robot.frame.tf(),
                     sim=SimSimulator.MUJOCO,
                     prefix=control_prefix,
+                    planar=robot.planar_override(robot_config),
                 )
                 if control_spec.config is not None
                 else None
