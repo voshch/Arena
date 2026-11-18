@@ -351,13 +351,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
         pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
-        robots: list[tuple[float, float, float]] | None = None
         for ped in out.pedestrians:
             ped.pose.position.z = self.footing(ped.pose.position.x, ped.pose.position.y)
-            if (device := self._device_for(ped.agent_type)) is not None:
-                if robots is None:
-                    robots = [(t.pose.position.x, t.pose.position.y, t.radius + DEVICE_RANGE) for t in self.tracked_robots()]
-                self._hold_device(ped, device, robots)
             drivers = self._drivers_for(ped.model_uri)
             if not drivers.rollers and not drivers.joystick:
                 continue
@@ -377,6 +372,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if ped.id in tilts and self._support(ped) is None:
                 self._tilt_body(ped, tilts[ped.id])
             self._place_resting(ped, now_sec)
+
+        robots: list[tuple[float, float, float]] | None = None
+        for ped in out.pedestrians:
+            if (device := self._device_for(ped.agent_type)) is not None:
+                if robots is None:
+                    robots = [(t.pose.position.x, t.pose.position.y, t.radius + DEVICE_RANGE) for t in self.tracked_robots()]
+                self._hold_device(ped, device, robots)
 
         fill_bodies(
             out.pedestrians,
