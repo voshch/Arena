@@ -97,7 +97,7 @@ class FleetNode(ArenaMixinNode):
             self.core.close()
 
     def now_s(self) -> float:
-        return self.get_clock().now().nanoseconds * 1e-9
+        return self.sim_time.to_seconds()
 
     def on_envs(self, msg: EnvRegistry) -> None:
         """Attach once to the env with our env_id: its fleet, door semantics, pedestrians and run_task action."""
@@ -204,7 +204,7 @@ class FleetNode(ArenaMixinNode):
     def execute(self, cmd: Command) -> None:
         match cmd:
             case PublishPlan(robot=n, path=path):
-                header = Header(frame_id="map", stamp=self.get_clock().now().to_msg())
+                header = Header(frame_id="map", stamp=self.sim_time.to_msg())
                 poses = [self.pose_msg(header, *self.to_map(p)) for p in path]
                 self.plan_pub[n].publish(Path(header=header, poses=poses))
                 if self.dwb:

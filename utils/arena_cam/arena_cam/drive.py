@@ -22,10 +22,10 @@ import threading
 import typing
 
 from arena_people_msgs.msg import FaceView
+from arena_rclpy_mixins.Time import Time
 from arena_runtime_msgs.msg import EnvRegistry, RobotFleet
 from geometry_msgs.msg import PoseStamped
 from hri_msgs.msg import IdsList
-from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import (
@@ -304,7 +304,7 @@ class Driver:
         return pos, quat, fov
 
     def _stream(self, pos: Vec3, quat: Quat, fov: float) -> None:
-        stamp = (self._node.get_clock().now() + Duration(seconds=self.lead)).to_msg()
+        stamp = (self._node.sim_time + Time.from_float(self.lead)).to_msg()
         for surface in self._surfaces.values():
             msg = ViewportView()
             msg.target_time = stamp

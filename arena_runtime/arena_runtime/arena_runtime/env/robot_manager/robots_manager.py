@@ -503,7 +503,7 @@ class RobotsManager(NodeInterface):
         self.node._pub_state_robots.publish(fleet)
         self.node._publish_viz_manifest()
 
-        now = self.node.get_clock().now().to_msg()
+        now = self.node.sim_time.to_msg()
         aliases: list[geometry_msgs.msg.TransformStamped] = []
         for mgr in self.managers.values():
             alias = geometry_msgs.msg.TransformStamped()

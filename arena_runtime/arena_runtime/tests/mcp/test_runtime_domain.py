@@ -65,6 +65,7 @@ class Rig:
 async def _start(rig: Rig) -> None:
     import rclpy.node
     from arena_rclpy_mixins.spin import create_executor
+    from arena_rclpy_mixins.Time import TimeNode
     from arena_runtime_msgs.msg import Heartbeat, ShutdownRequest
     from arena_runtime_msgs.srv import ConfirmWorld, LifecycleHold, RegisterEnv
     from lifecycle_msgs.msg import State, TransitionEvent
@@ -79,7 +80,7 @@ async def _start(rig: Rig) -> None:
     rig.cold_envs = str(cold_envs.value)
     rig.cold_s = time.monotonic() - started
 
-    class EnvPeer(rclpy.node.Node):
+    class EnvPeer(TimeNode):
         """Registers like an unmanaged env, goes ACTIVE, and finalizes on despawn_env."""
 
         def __init__(self) -> None:
@@ -103,7 +104,7 @@ async def _start(rig: Rig) -> None:
             self.transition.publish(msg)
 
         def beat(self) -> None:
-            self.heartbeat.publish(Heartbeat(fqn=f"/{self.ns}", stamp=self.get_clock().now().to_msg()))
+            self.heartbeat.publish(Heartbeat(fqn=f"/{self.ns}", stamp=self.wall_time.to_msg()))
 
         def _on_shutdown(self, msg: ShutdownRequest) -> None:
             if msg.env_id == self.env_id and msg.reason == "despawn_env":

@@ -161,7 +161,7 @@ class EpisodeNode(EnvNode):
         self._goal_progress = GoalProgressTracker()
 
         self.markers = MarkerHub(self, self.service_namespace("markers"), self._reset_lock)
-        self._start_time = self.time
+        self._start_time = self.sim_time
         self._task: EpisodeTask | None = None
         self._force_reset = False
         self._abort_reason: str | None = None

@@ -89,7 +89,7 @@ class Stage:
         await _until(lambda: self.reset_end.get_subscription_count() >= len(self.trackers), "the reset_end subscriptions")
         self.reset_end.publish(std_msgs.msg.Empty())
         await _until(lambda: tracker._valid_after is not None, "reset_end to arm the tracker")
-        self.armed_ns = tracker._valid_after.nanoseconds
+        self.armed_ns = tracker._valid_after.to_nanoseconds()
 
     async def peds(self, tracker, *peds: tuple[str, float, float]) -> None:
         from arena_people_msgs.msg import Pedestrian, Pedestrians
