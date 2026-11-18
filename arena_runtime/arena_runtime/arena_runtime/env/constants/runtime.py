@@ -100,7 +100,7 @@ class HumanParams(ParamGroup):
 
 class EpisodeParams(ParamGroup):
     AUTO_RESET = Param[bool]('task.episode.auto_reset', True, 'true = standalone: node auto-advances episodes. false = managed: external controller drives resets via lifecycle/reset_episode.')
-    FAIL_ON_COLLISION = Param[bool]('task.episode.fail_on_collision', False, 'true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, or pedestrian.')
+    FAIL_ON_COLLISION = Param[bool]('task.episode.fail_on_collision', False, 'true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, pedestrian or held device.')
     RUN_SEED = Param[str]('run_seed', '', 'Hex seed of the episode RNG (empty = random at startup).')
     QUEUE_DEPTH = Param[int]('episode_queue_depth', 10, 'Publisher depth of the state/queue topic.', constraint=Range(1, 100))
 

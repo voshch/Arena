@@ -72,12 +72,18 @@ class Stage:
         t.transform.rotation.w = math.cos(yaw / 2.0)
         self.node.tf_buffer.set_transform(t, "test")
 
-    async def listen(self, tracker, state: bool = False) -> list:
+    async def listen(self, tracker, state: bool = False, markers: bool = False) -> list:
         import arena_robots_msgs.msg
         import nav2_msgs.msg
+        import visualization_msgs.msg
 
         received: list = []
-        msg_type, topic, publisher = (nav2_msgs.msg.CollisionMonitorState, "collision_monitor_state", tracker._pub_state.publisher) if state else (arena_robots_msgs.msg.CollisionEvents, "collision_events", tracker._pub_events)
+        if markers:
+            msg_type, topic, publisher = visualization_msgs.msg.MarkerArray, "collision_markers", tracker._pub_markers.publisher
+        elif state:
+            msg_type, topic, publisher = nav2_msgs.msg.CollisionMonitorState, "collision_monitor_state", tracker._pub_state.publisher
+        else:
+            msg_type, topic, publisher = arena_robots_msgs.msg.CollisionEvents, "collision_events", tracker._pub_events
         self.probe.create_subscription(msg_type, f"{tracker.get_namespace()}/{topic}", received.append, 10)
         await _until(lambda: publisher.get_subscription_count() > 0, f"the {topic} subscription")
         self.listened[id(received)] = (msg_type, publisher)
@@ -91,13 +97,14 @@ class Stage:
         await _until(lambda: tracker._valid_after is not None, "reset_end to arm the tracker")
         self.armed_ns = tracker._valid_after.to_nanoseconds()
 
-    async def peds(self, tracker, *peds: tuple[str, float, float]) -> None:
-        from arena_people_msgs.msg import Pedestrian, Pedestrians
+    async def peds(self, tracker, *peds: tuple) -> None:
+        """Publish pedestrians (name, x, y[, held device])."""
+        from arena_people_msgs.msg import HeldDevice, Pedestrian, Pedestrians
 
         publisher = self.probe.create_publisher(Pedestrians, "/arena_peds", 10)
         msg = Pedestrians()
-        for name, x, y in peds:
-            ped = Pedestrian(name=name)
+        for name, x, y, *device in peds:
+            ped = Pedestrian(name=name, device=device[0] if device else HeldDevice())
             ped.pose.position.x = x
             ped.pose.position.y = y
             ped.pose.orientation.w = 1.0
@@ -111,6 +118,12 @@ class Stage:
         tracker._tick()
         await _until(lambda: len(received) > seen, "a published message")
         return list(received[-1].events)
+
+    async def markers(self, tracker, received: list) -> list:
+        seen = len(received)
+        tracker._tick()
+        await _until(lambda: len(received) > seen, "a published marker array")
+        return list(received[-1].markers)
 
     async def silent_tick(self, tracker, received: list) -> None:
         msg_type, publisher = self.listened[id(received)]
@@ -318,6 +331,71 @@ def test_wall_and_pedestrian_together_yield_both_events_wall_first(on_stage):
         await stage.peds(tracker, ("walker", ON_WALL[0] + 0.3, ON_WALL[1]))
         stage.place(rm, *ON_WALL)
         assert [e.kind for e in await stage.tick(tracker, received)] == [arena_robots_msgs.msg.CollisionEvent.KIND_WALL, arena_robots_msgs.msg.CollisionEvent.KIND_PEDESTRIAN]
+
+    on_stage(body)
+
+
+def _cane(x: float, y: float, heading: float):
+    """A 1 m cane ahead of a pedestrian at (x, y) along `heading`, on the ground."""
+    from arena_people_msgs.msg import HeldDevice
+    from geometry_msgs.msg import Point32
+
+    c, s = math.cos(heading), math.sin(heading)
+    outline = [(0.3, -0.0125), (1.3, -0.0125), (1.3, 0.0125), (0.3, 0.0125)]
+    return HeldDevice(kind="cane", footprint=[Point32(x=x + c * u - s * v, y=y + s * u + c * v, z=0.0) for u, v in outline])
+
+
+def test_a_held_device_under_the_footprint_collides_apart_from_its_holder(on_stage):
+    import arena_robots_msgs.msg
+
+    async def body(stage: Stage):
+        rm, tracker = stage.robot_manager()
+        received = await stage.listen(tracker)
+        await stage.arm(tracker)
+        holder = (CLEAR[0], CLEAR[1] + 1.3)
+        await stage.peds(tracker, ("blind", *holder, _cane(*holder, -math.pi / 2)), ("walker", 6.0, 6.0))
+        stage.place(rm, *CLEAR)
+        (event,) = await stage.tick(tracker, received)
+        assert (event.kind, event.device, event.obstacle_id) == (arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE, "cane", "blind")
+        assert (event.obstacle_position.x, event.obstacle_position.y) == pytest.approx((CLEAR[0], CLEAR[1] + HALF_WIDTH / 2), abs=0.02)
+        hit = tracker._monitor_state(*CLEAR, 0.0)
+        assert hit.polygon_name != ""
+
+    on_stage(body)
+
+
+def test_collision_markers_turn_the_footprint_and_the_touched_device_red(on_stage):
+    async def body(stage: Stage):
+        rm, tracker = stage.robot_manager()
+        received = await stage.listen(tracker, markers=True)
+        await stage.arm(tracker)
+        holder, beside = (CLEAR[0], CLEAR[1] + 1.3), (CLEAR[0] + 3.0, CLEAR[1] + 1.3)
+        await stage.peds(tracker, ("blind", *holder, _cane(*holder, -math.pi / 2)), ("other", *beside, _cane(*beside, -math.pi / 2)))
+        stage.place(rm, *CLEAR)
+        robot, devices, column = await stage.markers(tracker, received)
+        assert (robot.ns, robot.color.r > 0.8) == ("footprint", True)
+        assert robot.points
+        assert len(devices.points) == len(devices.colors) == 16
+        assert [c.r > 0.8 for c in devices.colors] == [True] * 8 + [False] * 8
+        assert (column.ns, column.lifetime.sec) == ("contacts", 1)
+        assert (column.pose.position.x, column.pose.position.y) == pytest.approx((CLEAR[0], CLEAR[1] + HALF_WIDTH / 2), abs=0.02)
+        await stage.peds(tracker)
+        idle, cleared = await stage.markers(tracker, received)
+        assert idle.color.r < 0.8
+        assert cleared.action == cleared.DELETE
+
+    on_stage(body)
+
+
+def test_a_device_beside_the_footprint_and_one_of_a_lost_pedestrian_do_not_collide(on_stage):
+    async def body(stage: Stage):
+        rm, tracker = stage.robot_manager()
+        received = await stage.listen(tracker)
+        await stage.arm(tracker)
+        beside = (CLEAR[0] + 0.5, CLEAR[1] + 1.3)
+        await stage.peds(tracker, ("blind", *beside, _cane(*beside, -math.pi / 2)), ("lost", math.nan, math.nan, _cane(math.nan, math.nan, 0.0)))
+        stage.place(rm, *CLEAR)
+        assert await stage.tick(tracker, received) == []
 
     on_stage(body)
 

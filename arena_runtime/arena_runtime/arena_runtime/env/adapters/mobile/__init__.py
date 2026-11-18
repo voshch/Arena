@@ -65,6 +65,12 @@ class MobileAdapter(Adapter):
     cap_displays: ClassVar[tuple[AdapterDisplayHint, ...]] = (
         *Adapter.cap_displays,
         AdapterDisplayHint(
+            name="Collisions",
+            topic="{ns}/collision_markers",
+            topic_type="visualization_msgs/MarkerArray",
+            kind=DisplayKind.MARKER_ARRAY,
+        ),
+        AdapterDisplayHint(
             name="Goal Pose",
             topic="{ns}/goal_pose",
             topic_type="geometry_msgs/PoseStamped",

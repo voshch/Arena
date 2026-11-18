@@ -47,7 +47,7 @@ def _spawn(robots: _Robots, world: _World, pose: object = None, **args: str) -> 
 
 def _own_clearance() -> float:
     from arena_robots.Robot import RobotIdentifier
-    from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+    from arena_runtime.shared import footprint_radius
 
     return footprint_radius(RobotIdentifier.parse("jackal").resolve_sync()) + SAFE_DIST
 

@@ -71,6 +71,7 @@ class ActorPose:
         self.rig: Rig = rig
         self.stance = stance_of(rig)
         self._bones = _skeleton(self.skin)
+        self.bone_names = [b.name for b in self._bones]
         clip = clips.get("neutral") or clips.get("idle")
         self.neutral_clip = clip if clip is not None and clip.is_file() else None
         keys = first_keys(self.neutral_clip) if self.neutral_clip is not None else {}
