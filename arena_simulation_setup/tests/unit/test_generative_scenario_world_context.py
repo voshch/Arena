@@ -141,7 +141,7 @@ def test_statics_read_each_object_asset_once_and_an_unknown_asset_stays_offline(
     doc = yaml.safe_load((furnished / "world.yaml").read_text())
     doc["levels"][0]["objects"].append({"name": "ghost", "pose": [1.0, 5.0, 0.0], "model": "Hospital/NoSuchAsset"})
     (furnished / "world.yaml").write_text(yaml.safe_dump(doc))
-    env = {**os.environ, "ASSET_BUCKETS": ",", "ARENA_ASSETS_DIR_LOCAL": str(furnished.parent / "assets")}
+    env = {**os.environ, "ARENA_BUCKETS": ",", "ARENA_ASSETS_DIR_LOCAL": str(furnished.parent / "assets")}
     done = subprocess.run([sys.executable, "-c", _COUNT_READS, str(furnished)], env=env, capture_output=True, text=True, timeout=120, check=False)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == {"opened": ["TestDesk", "TestDesk"], "spawned": [], "resolved": {"desk_a": True, "desk_b": True, "plant": False, "ghost": False}}

@@ -285,8 +285,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def publish_arena_peds(self, msg: Pedestrians) -> None:
         """Stamp the header, substitute possessed peds, fill the joint angles of peds missing them, compile them into body poses, then publish."""
-        now = self.node.get_clock().now()
-        now_sec = now.nanoseconds * 1e-9
+        now = self.node.sim_time
+        now_sec = now.to_seconds()
         stamp = now.to_msg()
         for name, last_state in self._possession.expire(now_sec):
             self._on_ped_released(name, last_state)
@@ -727,7 +727,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _now_s(self) -> float:
         """Sim-clock seconds from the node clock."""
-        return self.node.get_clock().now().nanoseconds * 1e-9
+        return self.node.sim_time.to_seconds()
 
     def _warn_new(self, names: frozenset[str], warned: set[str], reason: str) -> None:
         for name in sorted(names - warned):

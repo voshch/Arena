@@ -42,7 +42,6 @@ from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep
 from builtin_interfaces.msg import Time as RosTime
 from geometry_msgs.msg import Point, PoseStamped
 from hri_msgs.msg import IdsList
-from rclpy.duration import Duration
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import (
     ViewportCapture,
@@ -898,7 +897,7 @@ class CamNode(ArenaMixinNode):
     def keyframe_stamp(self) -> RosTime:
         """The target time of a keyframe sent now. A gated frame shows at once, since lockstep already paces it."""
         lead = 0.0 if self._lockstep else self.lead
-        return (self.get_clock().now() + Duration(seconds=lead)).to_msg()
+        return (self.sim_time + Time.from_float(lead)).to_msg()
 
     async def set_projection(self, projection: str, endpoints: Iterable[_Endpoint]) -> bool:
         ok = True

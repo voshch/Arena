@@ -6,15 +6,13 @@ import arena_people_msgs.msg
 import arena_robots_msgs.msg
 import geometry_msgs.msg
 import nav2_msgs.msg
-import rclpy
-import rclpy.node
-import rclpy.time
 import shapely
 import shapely.affinity
 import std_msgs.msg
 import visualization_msgs.msg as viz
 from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.Time import Time, TimeNode
 from arena_robots.caps import PolygonSpec
 from builtin_interfaces.msg import Duration
 from rclpy.parameter import Parameter
@@ -46,7 +44,7 @@ _CELL_KINDS: dict[Cell, str] = {
 }
 
 
-class CollisionTrackerNode(rclpy.node.Node):
+class CollisionTrackerNode(TimeNode):
     """Separate Node, same process, same executor as the env node.
 
     Reads RobotManager.pose + EnvironmentManager.collision_grid. The footprint
@@ -103,7 +101,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         if footprint is not None and len(footprint) >= 3:
             self._footprint_base = shapely.Polygon(footprint)
         # None while a reset is in flight
-        self._valid_after: rclpy.time.Time | None = None
+        self._valid_after: Time | None = None
 
         self._pub_state: LazyPublisher[nav2_msgs.msg.CollisionMonitorState] = LazyPublisher(self.create_publisher(nav2_msgs.msg.CollisionMonitorState, 'collision_monitor_state', 10))
         self._pub_events = None if self._footprint_base is None else self.create_publisher(arena_robots_msgs.msg.CollisionEvents, 'collision_events', 10)
@@ -131,7 +129,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         self._peds_msg = None
         self._marker_ids.clear()
         self._shapes = None
-        self._valid_after = self.get_clock().now()
+        self._valid_after = self.sim_time
 
     def _robot_polygon(self, entry: dict, rx: float, ry: float, rth: float) -> shapely.Polygon:
         if entry['type'] == 'polygon':
@@ -162,7 +160,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         if stamped is None:
             return
         pose, stamp = stamped
-        if self._valid_after is None or stamp <= self._valid_after:
+        if self._valid_after is None or Time.from_rclpy(stamp) <= self._valid_after:
             return
 
         rx, ry, rth = pose.to_2d()
@@ -203,7 +201,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         self._pub_markers.publish(lambda: self._markers(footprint, events))
 
         evmsg = arena_robots_msgs.msg.CollisionEvents()
-        evmsg.header.stamp = self.get_clock().now().to_msg()
+        evmsg.header.stamp = self.sim_time.to_msg()
         evmsg.header.frame_id = 'map'
         evmsg.events = events
         self._pub_events.publish(evmsg)
@@ -213,7 +211,7 @@ class CollisionTrackerNode(rclpy.node.Node):
 
     def _markers(self, footprint: shapely.Polygon, events: list[arena_robots_msgs.msg.CollisionEvent]) -> viz.MarkerArray:
         """The robot footprint and the held devices on the ground, red while touched, and a red column at each contact."""
-        stamp = self.get_clock().now().to_msg()
+        stamp = self.sim_time.to_msg()
         touched = {ev.obstacle_id for ev in events if ev.kind == arena_robots_msgs.msg.CollisionEvent.KIND_DEVICE}
 
         def marker(ns: str, mid: int, kind: int, scale: tuple[float, float, float]) -> viz.Marker:

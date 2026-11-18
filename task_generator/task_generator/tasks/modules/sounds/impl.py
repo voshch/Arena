@@ -561,7 +561,7 @@ class Mod_Sounds(TM_Module):
             sounding = bool(snap.predicates.get("sounding", False))
             state = self._sound_state.setdefault(snap.entity, _SoundState())
             if sounding and not state.last_sounding:
-                state.program_start_ns = self.node.get_clock().now().nanoseconds
+                state.program_start_ns = self.node.sim_time.to_nanoseconds()
             state.last_sounding = sounding
             state.volume_db = float(snap.continuous.get("volume_db", resolved.level_db))
             emissions.append(

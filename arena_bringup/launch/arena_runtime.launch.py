@@ -85,7 +85,7 @@ def generate_launch_description():
 
     LaunchArgument(
         name='lockstep',
-        default_value='false',
+        default_value='true',
         description='Start the lockstep scheduler at bringup.',
     )
 
@@ -97,13 +97,13 @@ def generate_launch_description():
 
     LaunchArgument(
         name='lockstep.rtf',
-        default_value='',
-        description='Target real-time factor of the lockstep scheduler (empty = as fast as it can).',
+        default_value='1',
+        description='Target real-time factor of the lockstep scheduler (0 or empty = as fast as the gates allow).',
     )
 
     LaunchArgument(
         name='lockstep.paused',
-        default_value='true',
+        default_value='false',
         description='true = the lockstep scheduler comes up paused.',
     )
 

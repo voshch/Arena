@@ -398,7 +398,9 @@ latest stamp is newer than `T - period_s`, compared at the clock's
 nanosecond resolution: the gate asks whether the producer has covered the
 clock, never whether it landed on a window boundary, so a producer whose
 own grid is phased against the ledger's cannot deadlock the run. Windows
-only pick the step sizes the scheduler takes, and a covered hard channel's
+only pick the step sizes the scheduler takes: each step is a whole number of
+`physics_dt` steps up to the earliest due channel, so every channel due
+inside that last step, across all envs, shares one tick. A covered hard channel's
 next check falls at its latest stamp plus `period_s`, so one beat never
 covers more than one period past its stamp, even when physics steps
 overshoot the due tick. A producer driven by the sim
@@ -406,12 +408,16 @@ clock registers `period_s` equal to its own tick length, which paces the
 sim to the producer's true coverage. An elapsed-based rate loop registers
 a period strictly above its interval. The arena_humansim engine ticks off
 `/clock` itself rather than an rcl timer, so a clock the gate is holding
-still owes it the tick the gate is waiting for.
+still owes it the tick the gate is waiting for, and it answers a repeated
+clock, which the gate sends while it waits, with its last frame.
 
 `sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`)
 starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced
 while gates hold the pace and wall rate while no channel is registered,
-`ungated` free-steps ignoring every gate. Hard channels freeze-and-wait: the
+`ungated` free-steps ignoring every gate. A paced run sleeps against a wall
+schedule of the sim time it advanced, so a tick that overruns its share is
+repaid from the slack of the next ones, up to 0.25 s of wall time, and a pause,
+foreign hold or rebase restarts the schedule. Hard channels freeze-and-wait: the
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by
 design. `soft` channels are observed and reported only. The scheduler also
@@ -419,7 +425,8 @@ idles while a foreign hold is open (episode resets) and rebases its window
 grid to whatever sim time passed meanwhile. An unpause window never unpauses
 the sim during a run: the scheduler keeps stepping for it, also under a
 foreign hold or `pause`, gated on every hard channel except those registered
-in the window holder's env. A failed step is retried under the run's hold
+in the window holder's env, which stay subscribed and keep their latest stamp
+for when the window closes. A failed step is retried under the run's hold
 after 1, 2, 4, 8 and 16 s, rebasing on the clock first, and a sixth
 consecutive failure ends the run and counts one lifecycle failure.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
@@ -436,7 +443,8 @@ the messages `received`), both reset when a run starts.
 
 `lockstep.autostart`/`lockstep.channels`/`lockstep.target_rtf`/
 `lockstep.paused` params are read once at bringup (launch args
-`lockstep:=true lockstep.channels:="..."`), registering the channels under
+`lockstep`, `lockstep.rtf`, `lockstep.paused` and `lockstep.channels:="..."`,
+by default a run starts unpaused at rtf 1, `arena train` starts none), registering the channels under
 caller `launch`. Channel specs are `name|topic|type|period_s|hard-or-soft`
 with `{env}` expanded per env. CLI: `arena lockstep run [rtf:=N] [ungated]`
 (blocks, ctrl-c pauses), `on [rtf:=N] [ungated]`, `off`, `pause`, `resume`,
