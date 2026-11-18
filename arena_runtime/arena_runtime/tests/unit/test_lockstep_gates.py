@@ -541,3 +541,17 @@ def test_skip_leaves_the_due_times_of_channels_that_stay_skipped() -> None:
     a.next_due = 0.7
     ledger.skip({"/a"})
     assert a.next_due == pytest.approx(0.7)
+
+
+def test_steps_to_rounds_a_target_up_to_whole_steps_and_is_zero_at_or_past_it() -> None:
+    ledger = GateLedger(dt=DT, base=10.0)
+    ledger.advance(3 * DT)
+    assert ledger.steps_to(ledger.tick + 2.5 * DT) == 3
+    assert ledger.steps_to(ledger.tick + 2 * DT) == 2
+    assert ledger.steps_to(ledger.tick) == 0
+    assert ledger.steps_to(ledger.tick - DT) == 0
+    stepped = 0.0
+    for _ in range(1000):
+        ledger.advance(DT)
+        stepped += DT
+    assert ledger.steps_to(10.0 + 3 * DT + stepped) == 0

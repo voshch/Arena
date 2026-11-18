@@ -354,7 +354,7 @@ def test_lockstep_gate_runs_the_cli_verb_with_specs_and_presets(rig: Rig) -> Non
 def test_lockstep_start_pause_resume_stop(rig: Rig) -> None:
     with pytest.raises(ToolError, match="not running"):
         rig.run(mcp.runtime_lockstep_pause())
-    assert rig.run(mcp.runtime_lockstep_start(rtf=1.0, gated=False)) == {"lockstep": "on", "target_rtf": 1.0, "gated": False}
+    assert rig.run(mcp.runtime_lockstep_start(rtf=1.0, gated=False)) == {"lockstep": "on", "target_rtf": 1.0, "gated": False, "driven": False}
     rig.run(_status_where(rig, lambda status: status["active"] and status["ungated"] and status["measured_rtf"] > 0.3, "active ungated run"))
     assert rig.run(mcp.runtime_state())["paused"] is True
     assert rig.run(mcp.runtime_lockstep_pause()) == {"lockstep": "paused"}
@@ -373,6 +373,19 @@ def test_lockstep_start_for_seconds_pauses_through_a_job(rig: Rig) -> None:
     assert done.state == "succeeded" and done.result == {"lockstep": "paused", "after_s": 0.5}
     status = rig.run(_status_where(rig, lambda status: status["paused"], "paused after the job"))
     assert status["active"] and status["target_rtf"] == 2.0 and not status["ungated"]
+    rig.run(mcp.runtime_lockstep_stop())
+    rig.run(_status_where(rig, lambda status: not status["active"], "stopped run"))
+
+
+def test_lockstep_advance_steps_a_driven_run_by_the_requested_sim_time(rig: Rig) -> None:
+    with pytest.raises(ToolError, match="driven lockstep run"):
+        rig.run(mcp.runtime_lockstep_advance(0.5))
+    assert rig.run(mcp.runtime_lockstep_start(driven=True))["driven"] is True
+    rig.run(_status_where(rig, lambda status: status["active"] and status["driven"], "driven run"))
+    advanced = rig.run(mcp.runtime_lockstep_advance(0.5))
+    assert advanced["advanced"] == pytest.approx(0.5, abs=0.05)
+    later = rig.run(mcp.runtime_lockstep_advance(0.25))
+    assert later["sim_time"] - advanced["sim_time"] == pytest.approx(later["advanced"], abs=0.05)
     rig.run(mcp.runtime_lockstep_stop())
     rig.run(_status_where(rig, lambda status: not status["active"], "stopped run"))
 

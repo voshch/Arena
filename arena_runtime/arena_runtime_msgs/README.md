@@ -13,8 +13,9 @@ rosidl interfaces of arena_runtime: the runtime's (`arena_runtime_node`: env reg
 | `LifecycleHold.srv` | Acquire or release a pause hold (ref-counted across callers). |
 | `LifecycleUnpauseWindow.srv` | Acquire or release the exclusive unpause window. |
 | `LifecycleStep.srv` | Advance the held sim by an exact sim-time delta (quantized to physics steps). |
+| `LockstepAdvance.srv` | Advance a driven lockstep run by `seconds` of sim time, returning once the gates cover the new time. |
 | `LockstepRegister.srv` | Register (or replace, or clear) a caller's set of lockstep data channels. |
-| `LockstepStart.srv` | Start or reconfigure the lockstep scheduler, paced to a target RTF, gated or ungated. |
+| `LockstepStart.srv` | Start or reconfigure the lockstep scheduler, paced to a target RTF or driven by advance requests, gated or ungated. |
 | `CleanupEnv.srv` | Delete the sim entities of `env_id`, under the prefix the active simulator derives from it. |
 
 ## Messages (`msg/`)
@@ -30,7 +31,7 @@ rosidl interfaces of arena_runtime: the runtime's (`arena_runtime_node`: env reg
 | `LockstepChannelCount.msg` | Per-channel counters of one scheduler run: `name`, `topic`, ticks `due`, messages `received`. |
 | `LockstepHeartbeat.msg` | Coverage stamp republished by producers with no natively stamped output (task_server beats). |
 | `LockstepRegistration.msg` | One caller's channel set: `caller`, `env`, `channels[]` (`LockstepChannel`). |
-| `LockstepStatus.msg` | Scheduler state: run flags, target/measured RTF, gated tick, registrations, stall lists, gated tick count and per-channel counters (`LockstepChannelCount`), both cumulative per run. Published latched on `state/lockstep`. |
+| `LockstepStatus.msg` | Scheduler state: run flags, target/measured RTF, sim seconds owed to advance requests, gated tick, registrations, stall lists, gated tick count and per-channel counters (`LockstepChannelCount`), both cumulative per run. Published latched on `state/lockstep`. |
 | `ShutdownRequest.msg` | Broadcast asking `env_id` to shut down (reason carried as a string). |
 | `SimState.msg` | Sim lifecycle liveness: `alive`, `reason`, wall-time `header.stamp` of the transition. Published latched on `state/sim`. |
 | `WorldExtent.msg` | World bounding box submitted with `ConfirmWorld`. |

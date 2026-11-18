@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import dataclasses
 import typing
@@ -36,6 +37,7 @@ _CLOCK_NUDGE_S = 0.5
 _STEP_RETRIES = 5
 _STEP_BACKOFF_S = 1.0
 _PACE_DEBT_S = 0.25
+_CLOCK_CATCHUP_S = 1.0
 
 _CLOCK_QOS = rclpy.qos.QoSProfile(
     depth=1,
@@ -118,10 +120,19 @@ class LockstepConfig:
 
     target_rtf: float
     ungated: bool
+    driven: bool = False
 
     def __post_init__(self) -> None:
         if self.target_rtf < 0.0:
             raise ValueError("target_rtf must be >= 0")
+
+
+@dataclasses.dataclass
+class _Advance:
+    seconds: float
+    future: asyncio.Future[float]
+    start: float = 0.0
+    target: float | None = None
 
 
 class LockstepScheduler:
@@ -139,6 +150,8 @@ class LockstepScheduler:
         self._resume = asyncio.Event()
         self._resume.set()
         self._arrived = asyncio.Event()
+        self._kick = asyncio.Event()
+        self._pending: collections.deque[_Advance] = collections.deque()
         self._registry = ChannelRegistry()
         self._pub_status = node.create_publisher(
             arena_runtime_msgs.msg.LockstepStatus,
@@ -173,8 +186,26 @@ class LockstepScheduler:
     def wake(self) -> None:
         """Let a gate wait re-read the ledger: a message arrived, the registry or the open unpause windows changed."""
         self._node.event_loop.call_soon_threadsafe(self._arrived.set)
+        self._node.event_loop.call_soon_threadsafe(self._kick.set)
+
+    async def advance(self, seconds: float) -> float:
+        """Queue `seconds` of sim time on a driven run and return the sim seconds advanced once its last tick is gated. Raises RuntimeError without a driven run or when the run ends first."""
+        config = self._config
+        if not self.running or config is None or not config.driven:
+            raise RuntimeError("advance requires a driven lockstep run")
+        if seconds <= 0.0:
+            raise ValueError("advance seconds must be > 0")
+        request = _Advance(seconds=seconds, future=asyncio.get_running_loop().create_future())
+        self._pending.append(request)
+        self._kick.set()
+        return await request.future
 
     async def start(self, config: LockstepConfig) -> None:
+        """Start a run, or reconfigure a running one. A start with the running config only resumes it."""
+        if self.running and config == self._config:
+            self._resume.set()
+            self._publish_status()
+            return
         if self.running:
             # reconfigure: swap the task under the existing hold, no unpause blip
             await self._cancel_task()
@@ -187,6 +218,7 @@ class LockstepScheduler:
         self._config = config
         self._resume.set()
         self._task = asyncio.create_task(self._run(config))
+        self._publish_status()
 
     async def stop(self) -> None:
         if self.running:
@@ -265,6 +297,52 @@ class LockstepScheduler:
     def _gate_key(self) -> tuple[int, frozenset[str]]:
         return self._registry.version, self._window_holders()
 
+    async def _await_request(self) -> bool:
+        """Wait for an advance request or an unpause window to serve. True when it waited."""
+        waited = False
+        while self._node._windows.is_empty() and not self._pending:
+            waited = True
+            self._kick.clear()
+            await self._kick.wait()
+        return waited
+
+    def _settle(self, ledger: GateLedger) -> None:
+        """Resolve the queued requests the tick has reached, giving the next one its target."""
+        while self._pending:
+            head = self._pending[0]
+            if head.target is None:
+                head.start = ledger.tick
+                head.target = ledger.tick + ledger.steps_to(ledger.tick + head.seconds) * ledger.dt
+            if ledger.steps_to(head.target) > 0:
+                return
+            self._pending.popleft()
+            if not head.future.done():
+                head.future.set_result(ledger.tick - head.start)
+
+    def _fail_pending(self, reason: str) -> None:
+        while self._pending:
+            request = self._pending.popleft()
+            if not request.future.done():
+                request.future.set_exception(RuntimeError(reason))
+
+    def _owed(self) -> float:
+        ledger = self._ledger
+        owed = 0.0
+        for request in self._pending:
+            if request.target is not None and ledger is not None:
+                owed += max(request.target - ledger.tick, 0.0)
+            else:
+                owed += request.seconds
+        return owed
+
+    async def _await_clock(self, ledger: GateLedger) -> None:
+        """Let /clock catch up with the steps this run took, so a late clock message is not read as the sim going back."""
+        target = Time.from_float(ledger.tick - ledger.dt / 2.0)
+        if self._node.sim_time >= target:
+            return
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._node.await_sim_time(target), _CLOCK_CATCHUP_S)
+
     async def _idle_while_owned(self) -> bool:
         """Idle while paused or while a foreign hold (env reset) owns the sim, an open
         unpause window (robot bringup, teleport) gets its sim time from gated steps. True when it idled."""
@@ -289,9 +367,12 @@ class LockstepScheduler:
             while True:
                 sim_before = ledger.now
                 idled = await self._idle_while_owned()
+                if config.driven and await self._await_request():
+                    continue
 
                 # the window/hold ran the sim outside this loop's bookkeeping, so
                 # rebase or every gate is satisfied by the previous window's stamp
+                await self._await_clock(ledger)
                 drift = ledger.rebase(self._node.sim_time.to_seconds())
                 if drift > 0.0:
                     self._node.get_logger().info(f"lockstep: sim advanced {drift:.3f}s outside the run, rebasing")
@@ -309,16 +390,27 @@ class LockstepScheduler:
                         subs[ch.topic] = self._subscribe(ledger, ch)
                     ledger.skip(ledger.channels.keys() - self._gated().keys())
 
-                pace = config.target_rtf
-                if not config.ungated and not ledger.active() and pace <= 0.0:
+                if config.driven:
+                    self._settle(ledger)
+                    if not self._pending and self._node._windows.is_empty():
+                        continue
+                serving = config.driven and bool(self._pending)
+                pace = 0.0 if config.driven else config.target_rtf
+                if not config.ungated and not ledger.active() and pace <= 0.0 and not serving:
                     pace = 1.0
                 gated = not config.ungated and bool(ledger.active())
                 if pace <= 0.0:
                     pacer = None
                 elif pacer is None or pacer.rtf != pace or idled or drift != 0.0:
                     pacer = Pacer(pace, _PACE_DEBT_S, loop.time())
+                if serving:
+                    target = self._pending[0].target
+                    assert target is not None
+                    delta = ledger.steps_to(target) * dt
+                else:
+                    delta = ledger.next_delta() if gated else step_slice(pace, dt)
                 try:
-                    advanced = await self._node._lifecycle.step_seconds(ledger.next_delta() if gated else step_slice(pace, dt))
+                    advanced = await self._node._lifecycle.step_seconds(delta)
                 except RuntimeError as e:
                     failures += 1
                     if failures > _STEP_RETRIES:
@@ -336,6 +428,8 @@ class LockstepScheduler:
                     if hard_due:
                         await self._await_hard(ledger, hard_due, version)
                     ledger.complete(due)
+                if config.driven:
+                    self._settle(ledger)
 
                 window_advance += ledger.now - sim_before
                 elapsed = loop.time() - window_start
@@ -362,6 +456,7 @@ class LockstepScheduler:
             self._measured_rtf = 0.0
             self._publish_status()
         finally:
+            self._fail_pending("lockstep run ended before the advance completed")
             self._waiting = []
             self._ledger = None
             for sub in subs.values():
@@ -454,6 +549,8 @@ class LockstepScheduler:
                 active=config is not None,
                 paused=config is not None and not self._resume.is_set(),
                 ungated=config.ungated if config is not None else False,
+                driven=config.driven if config is not None else False,
+                pending=self._owed(),
                 target_rtf=config.target_rtf if config is not None else 0.0,
                 measured_rtf=self._measured_rtf,
                 tick=(tick if tick is not None else Time()).to_msg(),

@@ -208,6 +208,105 @@ async def _window_under_a_run(rig: Rig) -> None:
     await probe.set_window(holder, False)
 
 
+async def _advance(rig: Rig, seconds: float) -> typing.Any:
+    from arena_runtime_msgs.srv import LockstepAdvance
+
+    response = await rig.probe.advance.call_timeout(LockstepAdvance.Request(seconds=seconds))
+    assert response is not None
+    return response
+
+
+async def _driven_run(rig: Rig) -> None:
+    """A driven run advances only on requests, by whole steps, and answers once the gates cover the new time."""
+    from arena_runtime_msgs.msg import LockstepChannel
+
+    probe = rig.probe
+    response = await _advance(rig, PERIOD)
+    assert not response.success and "driven" in response.error_msg
+    await probe.start_run()
+    response = await _advance(rig, PERIOD)
+    assert not response.success and "driven" in response.error_msg
+
+    await probe.start_run(driven=True)
+    await rig.until(lambda: probe.status is not None and probe.status.active and probe.status.driven, 30.0, "driven status")
+    before = await rig.frozen(0.3)
+    assert (await rig.frozen(1.0)) == pytest.approx(before, abs=1e-9)
+
+    response = await _advance(rig, 0.061)
+    assert response.success, response.error_msg
+    assert response.advanced == pytest.approx(4 * DT)
+    await rig.until(lambda: probe.clock() >= before + 4 * DT - 1e-6, 30.0, "advanced clock on the wire")
+    assert (await rig.frozen(0.5)) == pytest.approx(before + 4 * DT, abs=1e-6)
+
+    first, second = await asyncio.gather(_advance(rig, 2 * DT), _advance(rig, 3 * DT))
+    assert first.success and second.success
+    assert (first.advanced, second.advanced) == (pytest.approx(2 * DT), pytest.approx(3 * DT))
+    assert (await rig.frozen(0.3)) == pytest.approx(before + 9 * DT, abs=1e-6)
+
+    beat = LockstepChannel(name="beat", topic=probe.beat_topic, type=HEARTBEAT, period_s=PERIOD, hard=True)
+    assert (await probe.register_channels([beat])).success
+    await rig.until(lambda: [ch.name for reg in probe.status.registrations for ch in reg.channels] == ["beat"], 30.0, "beat registered")
+    pending = asyncio.ensure_future(_advance(rig, PERIOD))
+    await rig.until(lambda: probe.stalled_on("beat"), 30.0, "advance stalled on the silent channel")
+    assert not pending.done()
+    tick = probe.status_tick()
+    await probe.start_run(driven=True)
+    await asyncio.sleep(0.3)
+    assert not pending.done() and probe.stalled_on("beat")
+    await _pulse(rig, tick, pending.done, "advance released by the covering beat")
+    assert pending.result().success and pending.result().advanced == pytest.approx(PERIOD)
+
+    start = probe.status_tick()
+    pending = asyncio.ensure_future(_advance(rig, 5 * PERIOD))
+    await rig.until(lambda: probe.stalled_on("beat") and probe.status_tick() > start + PERIOD / 2, 30.0, "advance gated once at its end")
+    tick = probe.status_tick()
+    assert tick == pytest.approx(start + 5 * PERIOD, abs=1e-6)
+    await _pulse(rig, tick, pending.done, "advance released by the beat covering its end")
+    assert pending.result().success and pending.result().advanced == pytest.approx(5 * PERIOD)
+    assert (await probe.register_channels([])).success
+
+    await probe.stop_run()
+    await rig.until(lambda: probe.status is not None and not probe.status.active, 30.0, "stopped run")
+
+
+async def _driven_run_waits_out_holds_and_serves_windows(rig: Rig) -> None:
+    """A foreign hold delays a pending advance, a window gets sim time with no request, a stop fails what is pending."""
+    from arena_runtime_msgs.msg import LockstepChannel
+    from arena_runtime_msgs.srv import LifecycleHold
+
+    probe = rig.probe
+    caller = probe.get_fully_qualified_name()
+    holder = "/arena/env_0/arena_env_node"
+    await probe.start_run(driven=True)
+    await rig.until(lambda: probe.status is not None and probe.status.active and probe.status.driven, 30.0, "driven status")
+
+    response = await probe.hold.call_timeout(LifecycleHold.Request(action=LifecycleHold.Request.ACQUIRE, caller_id=caller, reason="reset"))
+    assert response is not None and response.paused
+    before = await rig.frozen(0.3)
+    pending = asyncio.ensure_future(_advance(rig, PERIOD))
+    assert (await rig.frozen(1.0)) == pytest.approx(before, abs=1e-9)
+    assert not pending.done()
+    await probe.hold.call_timeout(LifecycleHold.Request(action=LifecycleHold.Request.RELEASE, caller_id=caller, reason="reset"))
+    await rig.until(pending.done, 30.0, "advance after the hold's release")
+    assert pending.result().success and pending.result().advanced == pytest.approx(PERIOD)
+
+    t0 = await rig.frozen(0.3)
+    await probe.set_window(holder, True)
+    await rig.until(lambda: probe.clock() > t0 + 0.2, 30.0, "window gets sim time without a request")
+    await probe.set_window(holder, False)
+    t1 = await rig.frozen(0.5)
+    assert (await rig.frozen(1.0)) == pytest.approx(t1, abs=1e-9)
+
+    beat = LockstepChannel(name="beat", topic=probe.beat_topic, type=HEARTBEAT, period_s=PERIOD, hard=True)
+    assert (await probe.register_channels([beat])).success
+    pending = asyncio.ensure_future(_advance(rig, PERIOD))
+    await rig.until(lambda: probe.stalled_on("beat"), 30.0, "advance stalled on the silent channel")
+    await probe.stop_run()
+    await rig.until(pending.done, 30.0, "pending advance answered on stop")
+    assert not pending.result().success and "ended" in pending.result().error_msg
+    assert (await probe.register_channels([])).success
+
+
 def test_held_step(arena_rig) -> None:
     arena_rig(_held_step)
 
@@ -230,3 +329,11 @@ def test_channel_dropped_after_its_last_beat(arena_rig) -> None:
 
 def test_window_under_a_run(arena_rig) -> None:
     arena_rig(_window_under_a_run)
+
+
+def test_driven_run(arena_rig) -> None:
+    arena_rig(_driven_run)
+
+
+def test_driven_run_waits_out_holds_and_serves_windows(arena_rig) -> None:
+    arena_rig(_driven_run_waits_out_holds_and_serves_windows)
