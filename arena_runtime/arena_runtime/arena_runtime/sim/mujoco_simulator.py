@@ -62,6 +62,7 @@ from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
+from arena_robots.caps import BodySpec
 from arena_simulation_setup.shared import Light as LightDefinition
 from arena_simulation_setup.shared import Obstacle as ObstacleDefinition
 from arena_simulation_setup.shared import cct_to_rgb
@@ -306,13 +307,14 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     assert model.path is not None, f"URDF model {model.name} must have a valid file path"
                     robot_config = await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()
                     robot_params = robot_config.model_params
+                    body = robot.body_of(robot_config)
 
                     fq_name = self._NS_ROBOT(robot.name)
                     ns = str(self.node.service_namespace(robot.name))
 
                     control_spec = robot_params.control
                     is_ros2_control = control_spec is not None and control_spec.is_ros2_control
-                    relays_odom = control_spec is not None and is_ros2_control and control_spec.odom_topic != "odom"
+                    relays_odom = control_spec is not None and is_ros2_control and body.odom_topic != "odom"
 
                     bridge_urdf_path = os.path.join('/tmp', f"arena_bridge_{robot.frame.sanitize()}.urdf")
                     transform_urdf_for_bridge(
@@ -333,7 +335,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                             robot_model=robot.model.name,
                             localization=True,
                             tf_prefix=robot.frame.tf(),
-                            base_frame=robot_params.base_frame,
+                            base_frame=body.base_frame,
                             odom_frame=robot.odom_frame(robot_config),
                             pose=self._placed(robot.pose).to_msg(),
                             cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
@@ -367,7 +369,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
 
                     rsp_urdf_path = bridge_urdf_path if is_ros2_control else str(model.path)
 
-                    await self._launch_robot_stack(robot, robot_params, rsp_urdf_path)
+                    await self._launch_robot_stack(robot, robot_params, body, rsp_urdf_path)
 
                     self._register_agent_robot(robot, robot_config)
                     return True
@@ -384,6 +386,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self,
         robot: Robot,
         robot_params: arena_robots.Robot.ModelParams,
+        body: BodySpec,
         urdf_path: str,
     ) -> None:
         """Launch RSP, and (if ros2_control) controller_manager + twist_stamper."""
@@ -447,12 +450,12 @@ class MujocoSimulator(BaseSim, NodeInterface):
             )
             ld.add_action(
                 twist_stamper_node(
-                    control_spec.cmd_vel_topic,
-                    robot.frame.tf(robot_params.base_frame),
+                    body.cmd_vel_topic,
+                    robot.frame.tf(body.base_frame),
                 )
             )
-            if control_spec.odom_topic != "odom":
-                ld.add_action(odom_relay_node(control_spec.odom_topic))
+            if body.odom_topic != "odom":
+                ld.add_action(odom_relay_node(body.odom_topic))
 
         await self._track_robot_stack(robot.sim_path, ld)
 

@@ -1363,7 +1363,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             radius = DEFAULT_ROBOT_RADIUS
             try:
                 view = await robot.model.resolve()
-                tf_frame = robot.frame(view.model_params.base_frame).raw()
+                tf_frame = robot.frame(robot.body_of(view).base_frame).raw()
             except Exception as e:
                 self._logger.warning(f"robot {robot.name!r}: base frame unresolved ({e}), using the spawn pose only and a {radius} m radius")
             else:

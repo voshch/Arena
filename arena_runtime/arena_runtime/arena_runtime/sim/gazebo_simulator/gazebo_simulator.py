@@ -1223,6 +1223,7 @@ class GazeboSimulator(BaseSim):
         )
         launch_description.add_action(state_publisher_node(description, robot.frame.tf()))
 
+        body = robot.body_of(robot_config)
         control_spec = robot_config.model_params.control
         is_ros2_control = control_spec is not None and control_spec.is_ros2_control
         ros2_control_spec = control_spec if is_ros2_control else None
@@ -1236,9 +1237,9 @@ class GazeboSimulator(BaseSim):
                     {
                         "use_sim_time": True,
                         "parent_frame": robot.frame.tf(robot.odom_frame(robot_config)),
-                        "child_frame": robot.frame.tf(robot_config.model_params.base_frame),
+                        "child_frame": robot.frame.tf(body.base_frame),
                         "pose_topic": "pose",
-                        "odom_in_topic": (ros2_control_spec.odom_topic if ros2_control_spec is not None and ros2_control_spec.odom_topic != "odom" else ""),
+                        "odom_in_topic": (body.odom_topic if ros2_control_spec is not None and body.odom_topic != "odom" else ""),
                     }
                 ],
             )
@@ -1250,8 +1251,8 @@ class GazeboSimulator(BaseSim):
                 raise ValueError(f"control.mode=ros2_control but no controllers declared for {robot.name}")
             launch_description.add_action(
                 twist_stamper_node(
-                    ros2_control_spec.cmd_vel_topic,
-                    robot.frame.tf(robot_config.model_params.base_frame),
+                    body.cmd_vel_topic,
+                    robot.frame.tf(body.base_frame),
                 )
             )
 

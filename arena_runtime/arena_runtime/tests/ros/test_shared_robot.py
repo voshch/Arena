@@ -368,3 +368,12 @@ def test_parse_frames_without_assembly_raises(stub_node):
     value = {"name": "bot9", "model": "rbkairos_plus", "frames": {"front": "x"}}
     with pytest.raises(RuntimeError, match="requires an assembly.yaml"):
         Robot.parse(value, node=stub_node)
+
+
+def test_body_of_reads_the_instance_body_facts_of_the_model_files():
+    robot = _make_robot("r", "jackal")
+    view = robot.model.resolve_sync()
+    body = robot.body_of(view)
+    assert body.base_frame == view.model_params.base_frame
+    assert body.cmd_vel_topic == view.model_params.control.cmd_vel_topic
+    assert body.odom_topic == view.model_params.control.odom_topic

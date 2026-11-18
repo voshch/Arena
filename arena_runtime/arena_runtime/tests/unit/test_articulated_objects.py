@@ -161,7 +161,7 @@ def _register_jackal(sim) -> tuple[str, float]:
     robot = Robot(name="jackal", pose=Pose(), model=model, adapters={}, extra={})
     view = model.resolve_sync()
     sim._register_agent_robot(robot, view)
-    return robot.frame.tf(view.model_params.base_frame), robot_footprint_radius(robot.caps_of(view))
+    return robot.frame.tf(robot.body_of(view).base_frame), robot_footprint_radius(robot.caps_of(view))
 
 
 def _place(sim, frame: str, x: float, y: float, stamp: int) -> None:

@@ -143,6 +143,12 @@ def _mobile() -> typing.Any:
     return RobotIdentifier.parse("jackal").resolve_sync().model_params
 
 
+def _caps() -> typing.Any:
+    from arena_robots.Robot import RobotIdentifier
+
+    return RobotIdentifier.parse("jackal").resolve_sync().caps
+
+
 async def _drives_and_scans(bench: typing.Any, sim: typing.Any, robot: typing.Any, cmd_vel: typing.Any) -> None:
     import geometry_msgs.msg
     from arena_people_msgs.msg import Pedestrian, Pedestrians
@@ -150,10 +156,11 @@ async def _drives_and_scans(bench: typing.Any, sim: typing.Any, robot: typing.An
 
     params = _mobile()
     mobile = params.caps.mobile
+    base_frame = _caps().body.base_frame
     top, accel = 0.5, mobile.planar.traction
 
     first = bench.odom[-1]
-    assert first.header.frame_id.endswith("odom") and first.child_frame_id.endswith(params.base_frame)
+    assert first.header.frame_id.endswith("odom") and first.child_frame_id.endswith(base_frame)
     assert first.pose.pose.position.x == pytest.approx(0.0, abs=1e-6)
     scan = bench.scans[-1]
     assert len(scan.ranges) == mobile.laser.num_beams

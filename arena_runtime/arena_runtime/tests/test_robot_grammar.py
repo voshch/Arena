@@ -157,9 +157,36 @@ class TestCapFieldOverlayGuard:
 
 
 class TestFleetStateCapParams:
+    @staticmethod
+    def _params(robot) -> dict[str, str]:
+        from arena_robots.Robot import RobotIdentifier
+
+        caps = robot.caps_of(RobotIdentifier(robot.model.name).resolve_sync())
+        return {p.key: p.value for p in _morphology_params(robot, caps)}
+
     def test_each_cap_override_is_a_json_valued_cap_entry(self):
         from arena_robots.Robot import RobotIdentifier
         from arena_runtime.shared import Pose, Robot
 
         robot = Robot(name="slow", pose=Pose(), model=RobotIdentifier.parse("jackal"), caps={"mobile.velocity_limits.linear": [-0.5, 1.0], "mobile.radius": {"scale": 1.2}}, extra={})
-        assert {p.key: p.value for p in _morphology_params(robot, robot.caps)} == {"cap:mobile.velocity_limits.linear": "[-0.5, 1.0]", "cap:mobile.radius": '{"scale": 1.2}'}
+        params = self._params(robot)
+        assert {key: value for key, value in params.items() if key.startswith("cap:")} == {"cap:mobile.velocity_limits.linear": "[-0.5, 1.0]", "cap:mobile.radius": '{"scale": 1.2}'}
+
+    def test_caps_hash_is_the_hash_of_the_instance_caps(self):
+        from arena_robots.fleet import instance_caps
+        from arena_robots.Robot import RobotIdentifier
+        from arena_runtime.shared import Pose, Robot
+
+        robot = Robot(name="slow", pose=Pose(), model=RobotIdentifier.parse("jackal"), caps={"mobile.velocity_limits.linear": [-0.5, 1.0]}, extra={})
+        params = self._params(robot)
+        expected = robot.caps_of(RobotIdentifier("jackal").resolve_sync()).caps_hash()
+        assert params["caps:hash"] == expected
+        assert instance_caps("jackal", params).caps_hash() == expected
+
+    def test_caps_hash_differs_between_overridden_and_plain_instances(self):
+        from arena_robots.Robot import RobotIdentifier
+        from arena_runtime.shared import Pose, Robot
+
+        plain = Robot(name="a", pose=Pose(), model=RobotIdentifier.parse("jackal"), extra={})
+        slow = Robot(name="b", pose=Pose(), model=RobotIdentifier.parse("jackal"), caps={"mobile.velocity_limits.linear": [-0.5, 1.0]}, extra={})
+        assert self._params(plain)["caps:hash"] != self._params(slow)["caps:hash"]

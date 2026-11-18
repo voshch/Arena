@@ -348,7 +348,7 @@ class MechanismITF:
             self._mechanism_tf_buffer = tf2_ros.Buffer()
             self._mechanism_tf_listener = tf2_ros.TransformListener(self._mechanism_tf_buffer, self.node)
         self._agent_robots[robot.sim_path] = (
-            robot.frame.tf(view.model_params.base_frame),
+            robot.frame.tf(robot.body_of(view).base_frame),
             robot_footprint_radius(robot.caps_of(view)),
         )
 

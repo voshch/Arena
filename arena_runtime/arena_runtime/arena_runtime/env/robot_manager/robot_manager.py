@@ -24,7 +24,7 @@ import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace, Namespace
-from arena_robots.caps import MobileSpec, typed_fields
+from arena_robots.caps import BodySpec, MobileSpec, typed_fields
 from arena_robots.Robot import RobotView
 from arena_simulation_setup.shared.conditions import render_until
 
@@ -138,6 +138,11 @@ class RobotManager(NodeInterface):
         return self._config
 
     @property
+    def body(self) -> BodySpec:
+        """This instance's effective body facts."""
+        return self._caps.body
+
+    @property
     def caps(self) -> RobotCaps:
         """This instance's effective caps: parts, frames and cap overrides."""
         return self._caps
@@ -163,7 +168,7 @@ class RobotManager(NodeInterface):
     @property
     def pose_stamped(self) -> tuple[Pose, rclpy.time.Time] | None:
         """Current map-frame pose with its TF stamp (None during reset/respawn windows)."""
-        base = self.frame(self._config.model_params.base_frame).raw()
+        base = self.base_frame
         try:
             t = self.node.tf_buffer.lookup_transform('map', base, rclpy.time.Time())
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
@@ -362,7 +367,7 @@ class RobotManager(NodeInterface):
 
     @property
     def base_frame(self) -> str:
-        return self.frame(self._config.model_params.base_frame).raw()
+        return self.frame(self.body.base_frame).raw()
 
     @property
     def environment_manager(self) -> EnvironmentManager:
@@ -783,7 +788,7 @@ class RobotManager(NodeInterface):
             raise RuntimeError(f"simulator rejected teleport of robot {self.name!r} (move_robot -> {tuple(results)})")
 
     def _teleport_unverifiable(self, wait: str) -> None:
-        base = self.frame(self._config.model_params.base_frame).raw()
+        base = self.base_frame
         detail = f"no map -> {base} transform" if self.pose_stamped is None else f"no map -> {base} sample newer than the teleport"
         self._logger.warning(f"teleport of robot {self.name!r} is unverifiable within {wait}: {detail}")
 
@@ -889,7 +894,7 @@ class RobotManager(NodeInterface):
             arena_env_node=self.node.get_fully_qualified_name(),
             env_namespace=self.node.get_namespace(),
             use_sim_time=True,
-            base_frame=self._config.model_params.base_frame,
+            base_frame=self.body.base_frame,
             odom_frame=self._robot.odom_frame(self._config),
             sensors=self._config.effective_sensors(self._robot.resolved_request, frames=self._robot.frames),
             tf_buffer=None,
@@ -931,7 +936,7 @@ class RobotManager(NodeInterface):
                 launch.actions.IncludeLaunchDescription(
                     launch.launch_description_sources.PythonLaunchDescriptionSource(bringup),
                     launch_arguments={
-                        'base_frame': self._robot.frame.tf(self._config.model_params.base_frame),
+                        'base_frame': self._robot.frame.tf(self.body.base_frame),
                         'use_sim_time': 'True',
                     }.items(),
                 )

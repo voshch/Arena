@@ -31,6 +31,7 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
     import tf2_ros
     from arena_rclpy_mixins import ArenaMixinNode
     from arena_rclpy_mixins.shared import FrameNamespace
+    from arena_robots.Robot import RobotIdentifier
     from arena_rclpy_mixins.spin import create_executor
     from arena_rclpy_mixins.Time import Time
     from arena_runtime._node import NodeInterface
@@ -103,7 +104,8 @@ async def _run(scenario: typing.Callable[..., typing.Awaitable[None]], *, follow
         def __init__(self, node: Bench, environment: Environment) -> None:
             NodeInterface.__init__(self, node=node)
             self._robot = types.SimpleNamespace(name="probe", frame=frame, pose=None)
-            self._config = types.SimpleNamespace(model_params=types.SimpleNamespace(z_offset=0.0, base_frame="base_link"))
+            self._config = types.SimpleNamespace(model_params=types.SimpleNamespace(z_offset=0.0))
+            self._caps = RobotIdentifier.parse("jackal").resolve_sync().caps
             self._environment_manager = environment
             self._adapter_instances = []
             self._stop_pub = node.create_publisher(geometry_msgs.msg.Twist, "/probe/stop", 1)

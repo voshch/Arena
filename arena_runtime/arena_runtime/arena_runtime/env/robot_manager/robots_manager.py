@@ -13,6 +13,7 @@ import geometry_msgs.msg
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.assembly import ResolvedAssembly
+from arena_robots.caps import RobotCaps
 from arena_robots.inline import parse_inline_override
 
 from arena_runtime._node import NodeInterface
@@ -133,21 +134,22 @@ def _cap_instances(resolved: ResolvedAssembly | None, cap: str) -> list[tuple[st
 
 
 def _physical_params(manager: RobotManager) -> list[diagnostic_msgs.msg.KeyValue]:
-    """`robot_radius` and, when the model states `mass.base_kg`, `robot_mass_kg`."""
+    """`robot_radius` and, when the caps state a mass, `robot_mass_kg`."""
     params = [diagnostic_msgs.msg.KeyValue(key='robot_radius', value=str(manager.radius))]
-    if (mass := manager.robot_view.model_params.get('mass', {}).get('base_kg')) is not None:
+    if (mass := manager.body.mass_total) is not None:
         params.append(diagnostic_msgs.msg.KeyValue(key='robot_mass_kg', value=str(float(mass))))
     return params
 
 
-def _morphology_params(robot: Robot, overrides: dict[str, object]) -> list[diagnostic_msgs.msg.KeyValue]:
-    """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise, then one `cap:<path>` entry per effective cap override."""
+def _morphology_params(robot: Robot, caps: RobotCaps) -> list[diagnostic_msgs.msg.KeyValue]:
+    """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise, one `cap:<path>` entry per effective cap override, then `caps:hash` of the effective caps."""
     resolved = robot.resolved_assembly
     if resolved is not None:
         params = [diagnostic_msgs.msg.KeyValue(key=f'{p.type}@{p.mount.name}', value=p.variant) for p in resolved.placements]
     else:
         params = [diagnostic_msgs.msg.KeyValue(key=ptype, value=str(values)) for ptype, values in robot.parts.items()]
-    params.extend(diagnostic_msgs.msg.KeyValue(key=f'cap:{path}', value=json.dumps(value)) for path, value in overrides.items())
+    params.extend(diagnostic_msgs.msg.KeyValue(key=f'cap:{path}', value=json.dumps(value)) for path, value in caps.all_overrides.items())
+    params.append(diagnostic_msgs.msg.KeyValue(key='caps:hash', value=caps.caps_hash()))
     return params
 
 
@@ -516,7 +518,7 @@ class RobotsManager(NodeInterface):
                         for cap in sorted(mgr.caps.available)
                         for instance, variant in _cap_instances(mgr.robot.resolved_assembly, cap)
                     ],
-                    params=[*_morphology_params(mgr.robot, mgr.caps.all_overrides), *_physical_params(mgr)],
+                    params=[*_morphology_params(mgr.robot, mgr.caps), *_physical_params(mgr)],
                 )
                 for mgr in self.managers.values()
             ]

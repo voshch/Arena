@@ -260,7 +260,7 @@ class FlatsimSimulator(BaseSim):
         control_spec = robot_config.model_params.control
         if control_spec is None:
             return []
-        base = control_spec.cmd_vel_topic.split('/')[0]
+        base = robot.body_of(robot_config).cmd_vel_topic.split('/')[0]
         return mock_controllers(robot_controllers(robot_config, robot.resolved_assembly), base)
 
     async def _launch_robot_stack(self, robot: Robot, description: str) -> LaunchHandle:
@@ -324,7 +324,6 @@ class FlatsimSimulator(BaseSim):
             with open(model.path) as f:
                 description = mock_arm_hardware(f.read())
 
-            robot_params = robot_config.model_params
             caps = robot.caps_of(robot_config)
             mobile = caps.mobile
             footprint = mobile.footprint or []
@@ -336,7 +335,7 @@ class FlatsimSimulator(BaseSim):
                 world_frame='map',
                 frame_prefix=robot.frame.tf(),
                 odom_frame=mobile.odom_frame,
-                base_frame=robot_params.base_frame,
+                base_frame=caps.body.base_frame,
                 x=position.x,
                 y=position.y,
                 z=position.z,

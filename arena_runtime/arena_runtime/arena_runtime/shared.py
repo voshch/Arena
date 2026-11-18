@@ -8,7 +8,7 @@ import attrs
 import rclpy.logging
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.assembly import ResolvedAssembly
-from arena_robots.caps import PlanarSpec, RobotCaps
+from arena_robots.caps import BodySpec, PlanarSpec, RobotCaps
 from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config as RobotSetupConfig
@@ -94,6 +94,10 @@ class Robot(Entity):
     def caps_of(self, view: RobotView) -> RobotCaps:
         """The instance's effective caps on ``view``."""
         return self.instance_request.caps_of(view)
+
+    def body_of(self, view: RobotView) -> BodySpec:
+        """The instance's effective body facts on ``view``."""
+        return self.caps_of(view).body
 
     def planar_override(self, view: RobotView) -> PlanarSpec | None:
         """The instance's effective planar spec when it overrides anything under `mobile.planar` or `mobile.limits`, else None."""

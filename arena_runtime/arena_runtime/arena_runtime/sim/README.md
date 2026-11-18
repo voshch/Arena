@@ -79,7 +79,9 @@ Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints 
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |
 
-Robot tracking is not a primitive to override: call `_register_agent_robot(robot, model_params)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+Robot tracking is not a primitive to override: call `_register_agent_robot(robot, view)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+
+A simulator reads the base frame and the `cmd_vel` and odom topics of a robot it spawns from `Robot.body_of(view)`, the instance's effective `body` caps. The control mode, config, controllers, sensors and `z_offset` stay with the resolver on `view.model_params`.
 
 Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` keep the light table, and every tick pushes each `light` semantic entity whose output changed, after moving frame-anchored and link-riding lights that moved more than 2 cm or 0.02 rad. A simulator renders lights by overriding four no-op hooks:
 
