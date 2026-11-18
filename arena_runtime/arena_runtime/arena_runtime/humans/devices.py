@@ -73,14 +73,13 @@ class HeldBody:
         self._actor = ActorPose(bundle)
         self._bone = -1
         if spec.bone:
-            names = [b.name for b in self._actor._bones]
-            if spec.bone not in names:
+            if spec.bone not in self._actor.bone_names:
                 raise ValueError(f"{bundle.name} has no prop bone {spec.bone!r}")
             skin = read_skin(self._actor.skin)
             points = np.array([p for p, owner in zip(skin.points, skin.dominant, strict=True) if owner == spec.bone])
             local = (skin.inverse_binds[spec.bone] @ np.c_[points, np.ones(len(points))].T).T[:, :3]
             self._hull = local[ConvexHull(local).vertices]  # the prop mesh's extreme points in its bone frame
-            self._bone = names.index(spec.bone)
+            self._bone = self._actor.bone_names.index(spec.bone)
         else:
             from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 
