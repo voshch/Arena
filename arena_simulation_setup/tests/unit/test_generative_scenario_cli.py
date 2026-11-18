@@ -194,7 +194,7 @@ def test_writes_default_to_the_source_tree(tmp_path: Path) -> None:
 
 def test_without_a_root_the_verb_asks_for_one(tmp_path: Path) -> None:
     env = {k: v for k, v in os.environ.items() if k != "ARENA_DIR"}
-    done = subprocess.run([sys.executable, "-m", "arena_simulation_setup.generative.scenario.cli", "populate", "sbend"], env={**env, "ARENA_WORLD_PATH": "", "WORLD_BUCKETS": ","}, capture_output=True, text=True, timeout=300, check=False)
+    done = subprocess.run([sys.executable, "-m", "arena_simulation_setup.generative.scenario.cli", "populate", "sbend"], env={**env, "ARENA_WORLD_PATH": "", "ARENA_BUCKETS": ","}, capture_output=True, text=True, timeout=300, check=False)
     assert done.returncode == 1
     assert "no resolver has it" in done.stderr
     assert "--worlds" in done.stderr and "ARENA_DIR" in done.stderr
@@ -207,10 +207,10 @@ def test_a_world_outside_the_source_roots_is_read_through_the_resolvers_but_not_
     cache = tmp_path / "assets"
     cache.mkdir()
     resolved = Path(WorldIdentifier("hospital_1").resolve_sync().path)
-    done = _run("zones", "hospital_1", ARENA_DIR=str(arena), WORLD_BUCKETS=",", ARENA_ASSETS_DIR=str(cache))
+    done = _run("zones", "hospital_1", ARENA_DIR=str(arena), ARENA_BUCKETS=",", ARENA_ASSETS_DIR=str(cache))
     assert done.returncode == 0, done.stdout + done.stderr
     assert "transit" in done.stdout
-    done = _run("populate", "hospital_1", "--write", ARENA_DIR=str(arena), WORLD_BUCKETS=",", ARENA_ASSETS_DIR=str(cache))
+    done = _run("populate", "hospital_1", "--write", ARENA_DIR=str(arena), ARENA_BUCKETS=",", ARENA_ASSETS_DIR=str(cache))
     assert done.returncode == 1
     assert f"resolves to {resolved}, which is no source world root ({arena / 'arena_simulation_setup' / 'worlds'})" in done.stderr
     assert not any(cache.rglob("*"))

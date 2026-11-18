@@ -24,7 +24,7 @@ current working directory.
 
 `WorldIdentifier` resolves a name against, in order: `ARENA_WORLD_PATH` roots,
 then the writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds`, then this
-package's `worlds/`, then a network bucket named by `WORLD_BUCKETS`. Worlds
+package's `worlds/`, then a network bucket named by `WORLD_BUCKETS` or `ARENA_BUCKETS`. Worlds
 saved through `resolve_write_sync()` (the world generator, the `worlds` MCP
 tools) land in the writable local root, outside the repo and the install
 space. Once authored, publish a world with

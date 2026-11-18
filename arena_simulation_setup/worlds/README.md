@@ -537,15 +537,15 @@ Resolvers run in order, first hit wins
    `resolve_write_sync()` view and the `worlds` MCP tools. A world written here
    under the name of a shipped world shadows the shipped one.
 3. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
-4. One `NetResolver` per `WORLD_BUCKETS` provider (default
-   `public/worlds`), fetching into `$ARENA_ASSETS_DIR/<provider>/<name>/`, by default
+4. One `NetResolver` per world source (`WORLD_BUCKETS` entries, then
+   `ARENA_BUCKETS`, default `arena-public`), fetching into `$ARENA_ASSETS_DIR/<source>/<name>/`, by default
    under `$ARENA_DATA_DIR/assets`, outside the checkout.
    A world keys off its bare name, so the worlds bucket is itself the namespace.
 
 Worlds not shipped in this package are hosted on the asset store
 (`ARENA_ASSETS_URL`, default `https://storage.arena-rosnav.org`) under the sources
-named by `WORLD_BUCKETS` and pulled on demand. `default` in that list stands for
-`public/worlds`, and `arena-internal` needs `ARENA_ASSETS_TOKEN` or a gcloud login. `arena asset find world <name>`
+named by `WORLD_BUCKETS` and `ARENA_BUCKETS` and pulled on demand. `default` in those lists stands for
+`arena-public`, a world cannot be named like a model domain folder or a benchmark folder (`suites`, `contests`, `manifests`), and `arena-internal` needs `ARENA_ASSETS_TOKEN` or a gcloud login. `arena asset find world <name>`
 prints every resolver's verdict for a name (which one hit, which were
 shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 `arena asset expire world <name>` makes the next use download it again.
@@ -553,7 +553,7 @@ shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 preflight that checks every asset it references would resolve for someone
 else, sends only the files the store lacks and says how many were already
 there. `arena asset rm world <name>` removes a published world and its cached
-copy, and `arena asset browse public/worlds` walks the store by folders.
+copy, and `arena asset browse arena-public` walks the store by folders.
 
 `arena asset import world houseexpo <plan id>` writes one HouseExpo floor plan
 as `houseexpo_<plan id>` into the imported worlds root
