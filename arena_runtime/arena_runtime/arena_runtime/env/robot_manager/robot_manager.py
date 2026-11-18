@@ -932,13 +932,17 @@ class RobotManager(NodeInterface):
             'bringup.launch.py',
         )
         if os.path.isfile(bringup):
+            bringup_arguments = {
+                'base_frame': self._robot.frame.tf(self.body.base_frame),
+                'use_sim_time': 'True',
+            }
+            gait_config = self.caps.champ_gait_file(str(self.namespace).strip('/').replace('/', '_') or self._robot.name)
+            if gait_config is not None:
+                bringup_arguments['gait_config'] = gait_config
             adapter_actions.append(
                 launch.actions.IncludeLaunchDescription(
                     launch.launch_description_sources.PythonLaunchDescriptionSource(bringup),
-                    launch_arguments={
-                        'base_frame': self._robot.frame.tf(self.body.base_frame),
-                        'use_sim_time': 'True',
-                    }.items(),
+                    launch_arguments=bringup_arguments.items(),
                 )
             )
 

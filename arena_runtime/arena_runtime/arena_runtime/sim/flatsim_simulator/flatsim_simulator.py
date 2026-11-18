@@ -45,6 +45,8 @@ from .planar import drive_model
 
 if typing.TYPE_CHECKING:
     import shapely
+    from arena_robots.caps import RobotCaps
+    from rclpy.impl.rcutils_logger import RcutilsLogger
 
 SERVER = '/flatsim'
 SERVICE_QOS = rclpy.qos.QoSProfile(depth=100)
@@ -64,6 +66,15 @@ Point = tuple[float, float]
 def env_prefix(env_id: int) -> str:
     """Name prefix of everything env_id puts into the world."""
     return f'env_{env_id}/'
+
+
+def body_ring(caps: RobotCaps, robot_name: str, logger: RcutilsLogger) -> Ring:
+    """The collision outline of the body as the Box2D footprint, the mobile footprint when the robot has no collision geometry."""
+    outline = caps.body.outline
+    if outline is None:
+        logger.warning(f'robot {robot_name!r} has no collision outline, flatsim uses its mobile footprint')
+        outline = caps.mobile.footprint or []
+    return Ring(x=[float(point[0]) for point in outline], y=[float(point[1]) for point in outline])
 
 
 class FlatsimHost(SimLifecycle):
@@ -272,7 +283,7 @@ class FlatsimSimulator(BaseSim):
         control_spec = robot_config.model_params.control
         if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
             control_prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
-            rendered_yaml = effective_control_yaml(robot.resolved_assembly, control_spec.config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, prefix=control_prefix, planar=robot.planar_override(robot_config))
+            rendered_yaml = effective_control_yaml(robot.resolved_assembly, control_spec.config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, prefix=control_prefix, planar=robot.planar_of(robot_config))
             cm_node = launch_ros.actions.Node(
                 package='controller_manager',
                 executable='ros2_control_node',
@@ -326,7 +337,6 @@ class FlatsimSimulator(BaseSim):
 
             caps = robot.caps_of(robot_config)
             mobile = caps.mobile
-            footprint = mobile.footprint or []
             position = robot.pose.position
             request = SpawnRobot.Request(
                 name=self._name(robot.sim_path),
@@ -340,7 +350,7 @@ class FlatsimSimulator(BaseSim):
                 y=position.y,
                 z=position.z,
                 yaw=robot.pose.orientation.to_yaw(),
-                footprint=Ring(x=[float(point[0]) for point in footprint], y=[float(point[1]) for point in footprint]),
+                footprint=body_ring(caps, robot.name, self._logger),
                 radius=robot_footprint_radius(caps),
                 drive=drive_model(mobile.planar, holonomic=mobile.is_holonomic, min_turning_radius=mobile.min_turning_radius),
                 urdf=description,

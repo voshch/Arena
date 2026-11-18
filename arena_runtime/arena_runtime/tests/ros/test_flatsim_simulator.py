@@ -408,3 +408,32 @@ def test_overrides_take_the_parameters_of_the_simulator_interface() -> None:
     for name, base in inspect.getmembers(BaseSim, inspect.isfunction):
         if name in own and not name.startswith("_"):
             assert list(inspect.signature(own[name]).parameters) == list(inspect.signature(base).parameters), name
+
+
+def test_the_body_outline_is_the_flatsim_footprint_when_the_robot_has_one(caplog: pytest.LogCaptureFixture) -> None:
+    pytest.importorskip("flatsim_msgs")
+    import logging
+    from types import SimpleNamespace
+
+    from arena_runtime.sim.flatsim_simulator.flatsim_simulator import body_ring
+
+    outline = [(0.5, 0.3), (-0.5, 0.3), (-0.5, -0.3), (0.5, -0.3)]
+    caps = SimpleNamespace(body=SimpleNamespace(outline=outline), mobile=SimpleNamespace(footprint=[(0.1, 0.1), (-0.1, 0.1), (0.0, -0.1)]))
+    with caplog.at_level(logging.WARNING):
+        ring = body_ring(caps, "jackal", logging.getLogger("body_ring"))  # pyright: ignore[reportArgumentType]
+    assert list(ring.x) == [0.5, -0.5, -0.5, 0.5]
+    assert list(ring.y) == [0.3, 0.3, -0.3, -0.3]
+    assert not caplog.records
+
+
+def test_a_robot_without_collision_geometry_keeps_its_mobile_footprint_and_warns() -> None:
+    pytest.importorskip("flatsim_msgs")
+    from types import SimpleNamespace
+
+    from arena_runtime.sim.flatsim_simulator.flatsim_simulator import body_ring
+
+    warnings: list[str] = []
+    caps = SimpleNamespace(body=SimpleNamespace(outline=None), mobile=SimpleNamespace(footprint=[(0.1, 0.1), (-0.1, 0.1), (0.0, -0.1)]))
+    ring = body_ring(caps, "jackal", SimpleNamespace(warning=warnings.append))  # pyright: ignore[reportArgumentType]
+    assert list(ring.x) == pytest.approx([0.1, -0.1, 0.0])
+    assert any("jackal" in message for message in warnings)

@@ -553,7 +553,7 @@ are what Arena sends it.
   levels side by side in xy at one z, so an elevator ride there is an xy
   teleport within one level. An entity that ends within 0.05 m above its level
   floor, such as an elevator cabin floor, is no obstacle.
-- Robots: body from the mobile cap footprint, driven by the Twist on
+- Robots: body from the `body.outline` of the instance's caps (the convex hull of the base, fixed-link and wheel collision geometry in the rendered URDF, at most 8 vertices), the mobile cap footprint with a logged warning for a robot without collision geometry, driven by the Twist on
   `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
   the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
   robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
@@ -597,13 +597,13 @@ are what Arena sends it.
 
 ## Drive limits of a ros2_control base
 
-When a robot overrides anything under `mobile.limits` or `mobile.planar`, Gazebo,
+For every robot with a mobile cap, Gazebo,
 MuJoCo and Isaac overlay the base controller's limit keys from the instance's
 effective `planar` (its velocity and acceleration read from `limits`)
 (`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
 `angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
 `min_acceleration`, only the keys the controller declares and never an infinite
-limit. Without such an override the `control.yaml` content is used as is.
+limit. The literals in `control.yaml` declare which keys exist and equal the shipped `mobile.limits`, so a robot without an override renders the same parameters as its file.
 
 ## Adding a new simulator
 

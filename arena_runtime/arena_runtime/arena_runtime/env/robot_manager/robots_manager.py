@@ -142,10 +142,13 @@ def _physical_params(manager: RobotManager) -> list[diagnostic_msgs.msg.KeyValue
 
 
 def _morphology_params(robot: Robot, caps: RobotCaps) -> list[diagnostic_msgs.msg.KeyValue]:
-    """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise, one `cap:<path>` entry per effective cap override, then `caps:hash` of the effective caps."""
+    """Resolved morphology (type@mount: variant, `param:` xacro args) when assembled, raw parts otherwise, one `cap:<path>` entry per effective cap override, then `caps:hash` of the effective caps."""
     resolved = robot.resolved_assembly
     if resolved is not None:
+        from arena_robots.fleet import placement_params  # noqa: PLC0415
+
         params = [diagnostic_msgs.msg.KeyValue(key=f'{p.type}@{p.mount.name}', value=p.variant) for p in resolved.placements]
+        params.extend(diagnostic_msgs.msg.KeyValue(key=key, value=value) for key, value in placement_params(resolved).items())
     else:
         params = [diagnostic_msgs.msg.KeyValue(key=ptype, value=str(values)) for ptype, values in robot.parts.items()]
     params.extend(diagnostic_msgs.msg.KeyValue(key=f'cap:{path}', value=json.dumps(value)) for path, value in caps.all_overrides.items())

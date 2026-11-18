@@ -492,7 +492,7 @@ class GazeboSimulator(BaseSim):
         return args
 
     def _render_ros2_control_yaml(self, robot: Robot, config_uri: str, *, frame_prefix: str, control_prefix: str) -> str:
-        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix, planar=robot.planar_override(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()))
+        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix, planar=robot.planar_of(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()))
 
     def _placed_light(self, params: dict[str, typing.Any]) -> dict[str, typing.Any]:
         x, y, z = params['pose']

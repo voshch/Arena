@@ -81,10 +81,7 @@ class Robot(Entity):
 
         from arena_robots import assembly as arena_assembly  # noqa: PLC0415
 
-        request: dict[str, list] = {}
-        for p in self.resolved_assembly.placements:
-            request.setdefault(p.type, []).append(arena_assembly.RequestPart(variant=p.variant, mount=p.mount.name, overrides=p.overrides, caps=dict(p.caps)))
-        return request
+        return arena_assembly.placed_request(self.resolved_assembly)
 
     @property
     def instance_request(self) -> InstanceRequest:
@@ -99,11 +96,10 @@ class Robot(Entity):
         """The instance's effective body facts on ``view``."""
         return self.caps_of(view).body
 
-    def planar_override(self, view: RobotView) -> PlanarSpec | None:
-        """The instance's effective planar spec when it overrides anything under `mobile.planar` or `mobile.limits`, else None."""
-        if not any(path.split('.')[:2] in (['mobile', 'planar'], ['mobile', 'limits'], ['mobile', '*']) for path in self.caps):
-            return None
-        return self.caps_of(view).mobile.planar
+    def planar_of(self, view: RobotView) -> PlanarSpec | None:
+        """The instance's effective planar spec, None for a robot without a mobile cap."""
+        caps = self.caps_of(view)
+        return caps.mobile.planar if 'mobile' in caps.available else None
 
     def odom_frame(self, view: RobotView) -> str:
         """The instance's odometry frame stem, from its mobile cap when it has one."""

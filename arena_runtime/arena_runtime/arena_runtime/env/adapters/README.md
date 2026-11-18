@@ -115,6 +115,11 @@ planner through its edge node, which zeroes `cmd_vel`, since a learned policy ha
 no stop of its own and the park judge wants the robot still. It redispatches the
 phase if the robot leaves the tolerance before the hold ends.
 
+`park_arms` (parked once per bring-up) commands each arm to its `stow` pose over
+the larger of 3 s and the largest chain joint travel (`max_position - min_position`)
+divided by that joint's effective `max_velocity` from `arm.joint_limits`, then waits that
+long plus 1 s of sim time. Joints without limits count as 3 s.
+
 `DrlAdapter` (and so `VlaAdapter`) can send the signals its planner lists
 under `signals:` in `planner.yaml`. For a goto phase with a `signal`, it
 passes the expected signal to the planner in the reset payload and ends the

@@ -415,7 +415,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     robot.frame.tf(),
                     sim=SimSimulator.MUJOCO,
                     prefix=control_prefix,
-                    planar=robot.planar_override(robot_config),
+                    planar=robot.planar_of(robot_config),
                 )
                 if control_spec.config is not None
                 else None

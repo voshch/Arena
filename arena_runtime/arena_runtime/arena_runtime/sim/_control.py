@@ -129,7 +129,7 @@ def effective_control_yaml(
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys."""
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys it declares."""
     base_control = load_control_yaml(config_uri, sim)
     if planar is not None:
         base_control = _with_planar_limits(base_control, planar)

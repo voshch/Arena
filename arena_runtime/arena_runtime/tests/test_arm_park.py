@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from arena_rclpy_mixins.Time import Time
 from arena_robots.caps import ArmSpec
 
-from arena_runtime.env.adapters.arm import park_arms, park_positions
+from arena_runtime.env.adapters.arm import park_arms, park_positions, park_seconds
 
 
 def _arm(raw: dict) -> ArmSpec:
@@ -28,6 +30,28 @@ class TestParkPositions:
     def test_zeros_without_stow(self):
         arm = _arm({"chain": ["a", "b"], "controller": "top_controller"})
         assert park_positions(arm) == [0.0, 0.0]
+
+
+def _limited_arm(joints: dict[str, dict[str, float]], chain: list[str] | None = None) -> SimpleNamespace:
+    return SimpleNamespace(name="top", chain=chain or list(joints), controller="top_controller", named_poses={"stow": {}}, joint_limits=joints)
+
+
+def _joint(span: float, velocity: float) -> dict[str, float]:
+    return {"min_position": -span / 2, "max_position": span / 2, "max_velocity": velocity}
+
+
+class TestParkSeconds:
+    def test_a_slow_wide_joint_stretches_the_park_time(self):
+        assert park_seconds(_limited_arm({"a": _joint(4 * math.pi, math.pi), "b": _joint(1.0, 1.0)})) == pytest.approx(4.0)  # pyright: ignore[reportArgumentType]
+
+    def test_halved_velocities_double_the_duration(self):
+        full = park_seconds(_limited_arm({"a": _joint(6 * math.pi, 2 * math.pi)}))  # pyright: ignore[reportArgumentType]
+        halved = park_seconds(_limited_arm({"a": _joint(6 * math.pi, math.pi)}))  # pyright: ignore[reportArgumentType]
+        assert (full, halved) == (pytest.approx(3.0), pytest.approx(6.0))
+
+    def test_joints_without_limits_fall_back_to_the_default(self):
+        assert park_seconds(_limited_arm({}, chain=["a", "b"])) == 3  # pyright: ignore[reportArgumentType]
+        assert park_seconds(_limited_arm({"a": {"max_velocity": 0.1}})) == 3  # pyright: ignore[reportArgumentType]
 
 
 class _Publisher:
@@ -70,11 +94,23 @@ class _Robot:
 class TestParkArms:
     def test_waits_in_sim_time_until_the_parked_arms_settled(self):
         node = _Node(Time.from_float(10.0))
-        arm = _arm({"chain": ["a", "b"], "controller": "top_controller", "named_poses": {"stow": {"joints": {"a": -1.57}}}})
+        arm = _limited_arm({})
+        arm.chain = ["a", "b"]
+        arm.named_poses = {"stow": {"a": -1.57}}
         asyncio.run(park_arms(_Robot({"top": arm}, node)))  # pyright: ignore[reportArgumentType]
         [traj] = node.publishers["/env/jackal/top_controller/joint_trajectory"].sent
         assert list(traj.points[0].positions) == [-1.57, 0.0]
         assert [t.to_seconds() for t in node.waited] == [14.0]
+
+    def test_a_slow_joint_sets_the_trajectory_time_and_the_settle_wait(self):
+        node = _Node(Time.from_float(10.0))
+        arm = _limited_arm({"a": _joint(2 * math.pi, math.pi / 2.5), "b": _joint(1.0, 1.0)})
+        asyncio.run(park_arms(_Robot({"top": arm}, node)))  # pyright: ignore[reportArgumentType]
+        [traj] = node.publishers["/env/jackal/top_controller/joint_trajectory"].sent
+        duration = 2 * math.pi / (math.pi / 2.5)
+        assert traj.points[0].time_from_start.sec == 5
+        assert traj.points[0].time_from_start.nanosec == 0
+        assert [t.to_seconds() for t in node.waited] == [pytest.approx(10.0 + duration + 1.0)]
 
     def test_a_robot_without_arms_does_not_wait(self):
         node = _Node(Time.from_float(10.0))

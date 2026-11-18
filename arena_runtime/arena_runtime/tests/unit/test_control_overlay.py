@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
+from ament_index_python.packages import get_package_share_directory
 
 from arena_bringup.constants import SimSimulator
+import arena_robots.Robot
 from arena_robots.caps import PlanarSpec
+from arena_robots.fleet import instance_caps
 from arena_runtime.sim._control import effective_control_yaml, load_control_yaml, overlay_planar_limits
 
 BASE = {
@@ -114,3 +118,30 @@ def test_rendered_control_yaml_without_a_planar_override_is_the_file_content(tmp
     out = Path(effective_control_yaml(None, str(config), f'test_no_planar/{tmp_path.name}', 'env_0/r/', sim=SimSimulator.GAZEBO))
     rendered = yaml.safe_load(out.read_text())
     assert rendered['/**/drive_controller']['ros__parameters'] == DRIVE['drive_controller']['ros__parameters']
+
+
+def _shipped_control_files() -> list[tuple[str, str]]:
+    root = Path(get_package_share_directory('arena_robots')) / 'robots'
+    return [(path.parent.name, str(path)) for path in sorted(root.glob('*/control*.yaml'))]
+
+
+@pytest.mark.parametrize(('model', 'path'), _shipped_control_files())
+def test_the_effective_planar_limits_of_a_shipped_robot_leave_its_controller_sections_unchanged(model, path):
+    caps = arena_robots.Robot.RobotIdentifier(model).resolve_sync().caps
+    if 'mobile' not in caps.available:
+        pytest.skip(f'{model} has no mobile cap')
+    control = yaml.safe_load(Path(path).read_text())
+    for name, section in control.items():
+        if name == 'controller_manager' or not isinstance(section, dict) or not isinstance(section.get('ros__parameters'), dict):
+            continue
+        params = section['ros__parameters']
+        assert overlay_planar_limits(params, caps.mobile.planar) == params, f'{path}: {name}'
+
+
+def test_a_halving_limits_override_halves_the_jackal_controller_limits():
+    config = 'package://arena_robots/robots/jackal/control.yaml'
+    base = load_control_yaml(config)['jackal_velocity_controller']['ros__parameters']
+    planar = instance_caps('jackal', {'cap:mobile.limits': '{"scale": 0.5}'}).mobile.planar
+    halved = overlay_planar_limits(base, planar)
+    assert halved['linear.x.max_velocity'] == pytest.approx(base['linear.x.max_velocity'] / 2)
+    assert halved['angular.z.max_velocity'] == pytest.approx(base['angular.z.max_velocity'] / 2)
