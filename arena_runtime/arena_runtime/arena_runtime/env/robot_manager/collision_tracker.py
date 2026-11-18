@@ -77,7 +77,7 @@ class CollisionTrackerNode(TimeNode):
         self._env: EnvironmentManager = robot_manager._environment_manager
         self._default_peds_radius = default_pedestrian_radius
         self._peds_msg: arena_people_msgs.msg.Pedestrians | None = None
-        self._shapes: list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Geometry | None]] | None = None  # of _peds_msg, built on first use
+        self._shapes: list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Polygon | None]] | None = None  # of _peds_msg, built on first use
 
         self._poly_cache: dict[str, dict] = {}
         for name, spec in polygons.items():
@@ -221,7 +221,7 @@ class CollisionTrackerNode(TimeNode):
             m.scale.x, m.scale.y, m.scale.z = scale
             return m
 
-        def ring(geom: shapely.Geometry) -> list[geometry_msgs.msg.Point]:
+        def ring(geom: shapely.Polygon) -> list[geometry_msgs.msg.Point]:
             coords = list(geom.exterior.coords)
             return [geometry_msgs.msg.Point(x=float(a[0]), y=float(a[1]), z=0.03) for pair in zip(coords, coords[1:], strict=False) for a in pair]
 
@@ -229,12 +229,14 @@ class CollisionTrackerNode(TimeNode):
         robot.points = ring(footprint)
         robot.color = _RED if events else _GREY
         devices = marker('devices', 0, viz.Marker.LINE_LIST, (0.025, 0.0, 0.0))
+        points: list[geometry_msgs.msg.Point] = []
+        colors: list[std_msgs.msg.ColorRGBA] = []
         for p, _, device in self._pedestrian_shapes():
             if device is not None:
-                points = ring(device)
-                devices.points.extend(points)
-                devices.colors.extend([_RED if p.name in touched else _DEVICE] * len(points))
-        devices.color = _DEVICE
+                outline = ring(device)
+                points.extend(outline)
+                colors.extend([_RED if p.name in touched else _DEVICE] * len(outline))
+        devices.points, devices.colors, devices.color = points, colors, _DEVICE
         if not devices.points:
             devices.action = viz.Marker.DELETE  # clears outlines of people out of range
         out = [robot, devices]
@@ -253,7 +255,7 @@ class CollisionTrackerNode(TimeNode):
     def _event(kind: str, ped: arena_people_msgs.msg.Pedestrian, x: float, y: float, device: str = "") -> arena_robots_msgs.msg.CollisionEvent:
         return arena_robots_msgs.msg.CollisionEvent(kind=kind, obstacle_id=ped.name, distance=0.0, obstacle_position=geometry_msgs.msg.Point(x=float(x), y=float(y), z=0.0), device=device)
 
-    def _pedestrian_shapes(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Geometry | None]]:
+    def _pedestrian_shapes(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, shapely.Geometry | None, shapely.Polygon | None]]:
         """Body disc and held device of every pedestrian of the latest message, built once per message."""
         if self._shapes is None:
             peds = self._peds_msg.pedestrians if self._peds_msg is not None else []

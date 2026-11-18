@@ -108,7 +108,7 @@ class HeldBody:
 class HeldBodies:
     """HeldBody per (bundle, device), loaded off the publish path: a pedestrian holds no device until its body is loaded."""
 
-    def __init__(self, warn: Callable[[str], None]) -> None:
+    def __init__(self, warn: Callable[[str], object]) -> None:
         self._bodies: dict[tuple[str, DeviceSpec], Future[HeldBody]] = {}
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="held_bodies")
         self._warn = warn
@@ -143,7 +143,7 @@ def shift(device: HeldDevice, dx: float, dy: float) -> None:
         point.x, point.y = point.x + dx, point.y + dy
 
 
-def shapes(ped: Pedestrian, default_radius: float) -> tuple[shapely.Geometry | None, shapely.Geometry | None]:
+def shapes(ped: Pedestrian, default_radius: float) -> tuple[shapely.Geometry | None, shapely.Polygon | None]:
     """(body disc, device outline) of a pedestrian on the ground, None for a part it lacks or whose pose is not finite."""
     x, y = ped.pose.position.x, ped.pose.position.y
     body = shapely.Point(x, y).buffer(ped.radius if ped.radius > 0.0 else default_radius) if math.isfinite(x) and math.isfinite(y) else None
