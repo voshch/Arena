@@ -161,8 +161,6 @@ def _stair_halves(path: str, raw: Mapping, kind: str, level_id: str, layout: str
     to = str(raw['to'])
     if to not in elevations:
         raise WorldFormatError(f'{path}.to: no level {to!r} in this world')
-    # a stair on its own level joins two floors whose heights come from ramps, so it takes them as a ramp does, and its
-    # halves meet in one place, joined as in a stacked world
     same = to == level_id
     if same:
         if 'exit' in raw:

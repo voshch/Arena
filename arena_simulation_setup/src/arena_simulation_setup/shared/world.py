@@ -217,7 +217,6 @@ class Stairs(Named):
     whole: bool = attrs.field(default=False, init=False)
 
     def __attrs_post_init__(self) -> None:
-        # the two halves of a stair on its own level are one body in one place, in any layout
         self.joined = self.same_level
 
     @property
@@ -277,7 +276,6 @@ class Stairs(Named):
     @property
     def reach(self) -> float:
         """How far past the seam agents still stand on a half, up to a trigger line past it, nowhere on a stair on its own level."""
-        # the partner of a half on the same level starts at the seam, where an agent walks or rides on without a crossing
         return 0.0 if self.same_level else max(0.0, -2.0 * self.inset)
 
     def contains(self, x: float, y: float, beyond: float = 0.0) -> bool:
@@ -499,7 +497,6 @@ class Stairs(Named):
 
     def surface(self, along: float, travel: float = 0.0) -> float:
         """Walking surface height `along` meters from the mouth: the top of the tread there, the belt or ramp, or the base between treads, the ramp line with `floor` off."""
-        # with floor off the steps are the world's (a scan), not where this stair would put its treads
         if self.kind == 'ramp' or (self.kind == 'escalator' and self.style == 'belt') or not self.floor:
             return self.height(along)
         for start, length in self.spans(travel):
