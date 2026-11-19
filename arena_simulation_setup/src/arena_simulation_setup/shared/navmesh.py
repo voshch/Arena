@@ -259,7 +259,7 @@ def _at(position: Position, shift: tuple[float, float, float]) -> Position:
 
 
 def navmesh_levels(world: World, shifts: Mapping[str, tuple[float, float, float]]) -> list[NavLevel]:
-    """The levels of a world moved by their shifts into the simulator frame, stair pairs joined when the world stacks."""
+    """The levels of a world moved by their shifts into the simulator frame, stair pairs joined when the world stacks or they share a level."""
     stairs = [stair for level in world.levels.values() for stair in level.stairs]
     names = {stair.name for stair in stairs}
     stacked = world.layout == 'stacked' and len(world.levels) > 1
@@ -269,7 +269,7 @@ def navmesh_levels(world: World, shifts: Mapping[str, tuple[float, float, float]
         halves: list[Stairs] = []
         for stair in level.stairs:
             half = attrs.evolve(stair)
-            half.joined = stacked and (stair.to in names or any(other.to == stair.name for other in stairs))
+            half.joined = half.joined or (stacked and (stair.to in names or any(other.to == stair.name for other in stairs)))
             halves.append(half)
         joined = attrs.evolve(level, stairs=halves)
         placed: list[Stairs] = []

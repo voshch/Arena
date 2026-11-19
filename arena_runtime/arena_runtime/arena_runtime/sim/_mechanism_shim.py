@@ -1209,14 +1209,14 @@ class StairsPrim(typing.NamedTuple):
 
 
 def stair_boxes(stair: Stairs) -> list[StairsPrim]:
-    """Box primitives of a stair half, the velocity None on static boxes, the landing plates combs."""
+    """Box primitives of a stair half, the velocity None on static boxes, the landing plates combs, none with `floor` off."""
     body = stair_body(stair)
     if body is None:
         return []
     if body is not stair:
         return [prim._replace(name=prim.name.replace(body.name, stair.name, 1)) for prim in stair_boxes(body)]
     static = [StairsPrim(f'{stair.name}/{name}', material, box, comb=name.startswith('plate_')) for name, material, box in stair.static_boxes()]
-    treads = [StairsPrim(_tread_name(stair, k), stair.material_of('steps'), box, velocity) for k, (box, velocity) in enumerate(zip(stair.treads(0.0), stair.tread_velocities(0.0), strict=True))] if stair.kind == 'escalator' else []
+    treads = [StairsPrim(_tread_name(stair, k), stair.material_of('steps'), box, velocity) for k, (box, velocity) in enumerate(zip(stair.treads(0.0), stair.tread_velocities(0.0), strict=True))] if stair.kind == 'escalator' and stair.floor else []
     return [*static, *treads]
 
 

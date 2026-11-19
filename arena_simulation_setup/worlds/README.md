@@ -129,8 +129,11 @@ how it splits into halves and opens floors, dressing and staircase kinds.
 | `mouth` | required | middle of the open lower end, also for `direction: down` |
 | `mouth_side` | `-x` | side the stair is entered from (`+x`, `-x`, `+y`, `-y`), it runs away from it |
 | `size` | `[5.2, 1.4]` | `[length, width]` of the whole staircase in metres, length along the walking direction, width between the side walls' center lines, both positive. The length and the rise set the incline |
-| `to` | required | id of the level the stair reaches, above its own |
-| `exit` | none | spread worlds only and required there: middle of the open upper end on the `to` level |
+| `to` | required | id of the level the stair reaches, above its own, or its own id for a stair between two floors of it |
+| `exit` | none | spread worlds only and required there: middle of the open upper end on the `to` level, refused on a staircase on its own level |
+| `base` | `0` | a staircase on its own level (`to` its own level id) only: height of its mouth |
+| `rise` | required there | a staircase on its own level only: how far it climbs from `base`, positive |
+| `floor` | `true` | `false` builds only its side walls (and a seam wall between levels), for a scanned staircase. Walkers then stand on its ramp line |
 | `direction` | `up` | escalators only: `up` or `down` |
 | `speed` | `0.5` | escalator belt speed along the axis in m/s, positive |
 | `style` | `steps` | escalator treads: `steps` (moving step blocks) or `belt` (an inclined conveyor of moving planks), both level with the floor over a `landing_length` landing at each mouth. Stairs take only `steps` |

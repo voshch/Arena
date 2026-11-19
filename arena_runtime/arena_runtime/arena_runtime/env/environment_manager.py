@@ -445,6 +445,8 @@ class EnvironmentManager(NodeInterface):
                 # A planar simulator keeps a robot at its spawn height, where a slab blocks it and walkers rise out of its lidar.
                 if stair.kind == 'ramp' and not self.stacks_levels:
                     continue
+                if stair.same_level and not self.stacks_levels:
+                    realized_f = self._realizer.realize(stair.leveled(), fid)
                 stairs_list.append(realized_f)
                 level_stairs[fid].append(realized_f)
         stairs = tuple(stairs_list)
