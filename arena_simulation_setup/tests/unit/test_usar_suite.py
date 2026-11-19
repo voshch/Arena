@@ -20,7 +20,9 @@ from arena_simulation_setup.tree.World import World, WorldView
 from arena_simulation_setup.tree.World.Scenario import ScenarioView
 
 STUDY = Path(__file__).parents[2] / "configs" / "usar" / "study.yaml"
+TUNE = Path(__file__).parents[2] / "configs" / "usar" / "tune.yaml"
 TUNING_SEED = 7
+SUITE: dict[str, object] = {"robot": "turtlebot", "episodes": 2, "timeout": "120s", "search": {"radius": 1.5, "line_of_sight": False, "dwell_s": 1.0}}
 SPLIT: dict[str, object] = {"name": "unit", "seed": 3, "spots_per_world": 2, "worlds": [{"world": {"rows": 3, "cols": 3, "loops": 1}, "world_variants": 2, "corners": [0, 1], "test_worlds": 1}]}
 
 
@@ -292,6 +294,39 @@ def test_without_the_suite_flag_the_worlds_and_one_index_go_to_out(tmp_path: Pat
     assert not imported.exists()
 
 
+def test_the_suite_block_sets_the_robot_episodes_timeout_and_find_test_of_every_stage(tmp_path: Path):
+    for path in written(tmp_path, {**SPLIT, "suite": SUITE}):
+        for stage in stages(path):
+            assert (stage["robot"], stage["episodes"], stage["timeout"]) == ("turtlebot", 2, "120s")
+            assert stage["config"]["search"] == SUITE["search"]
+        assert "Every stage runs `robot: turtlebot`." in (path / "README.md").read_text()
+
+
+def test_the_command_line_suite_settings_win_over_the_manifest(tmp_path: Path, imported: Path):
+    data = {**SPLIT, "suite": {"robot": "turtlebot", "timeout": "120s"}}
+    assert cli.main([manifest_file(tmp_path, data), "--suite", "unit", "--write", "--robot", "jackal", "--episodes", "2"]) == 0
+    for path in (imported / "suites").iterdir():
+        assert {(stage["robot"], stage["episodes"], stage["timeout"]) for stage in stages(path)} == {("jackal", 2, "120s")}
+
+
+@pytest.mark.parametrize("extra", [["--robot", "jackal"], ["--episodes", "2"], ["--timeout", "120s"]])
+def test_a_suite_setting_without_the_suite_flag_is_refused(tmp_path: Path, imported: Path, extra: list[str], capsys: pytest.CaptureFixture[str]):
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as raised:
+        cli.main([manifest_file(tmp_path), "--write", "--out", str(out), *extra])
+    assert raised.value.code == 2
+    assert f"{extra[0]} sets the stages of a bundle and needs --suite" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_a_suite_setting_out_of_range_on_the_command_line_is_refused(tmp_path: Path, imported: Path, capsys: pytest.CaptureFixture[str]):
+    with pytest.raises(SystemExit) as raised:
+        cli.main([manifest_file(tmp_path), "--suite", "unit", "--write", "--episodes", "0"])
+    assert raised.value.code == 2
+    assert "suite settings: episodes" in capsys.readouterr().err
+    assert not imported.exists()
+
+
 @pytest.fixture(scope="module")
 def study() -> tuple[Manifest, Report[Task]]:
     manifest = Manifest.load(STUDY)
@@ -357,3 +392,16 @@ def test_the_study_shares_no_world_with_the_same_manifest_on_the_tuning_seed():
     manifest = Manifest.load(STUDY)
     tuning = manifest.model_copy(update={"seed": TUNING_SEED})
     assert not {task.world_key for task in tasks(manifest)} & {task.world_key for task in tasks(tuning)}
+
+
+def test_the_tuning_manifest_writes_8_turtlebot_stages_on_2_worlds_none_of_them_a_study_world(tmp_path: Path):
+    tuning = Manifest.load(TUNE)
+    assert tuning.seed == TUNING_SEED
+    planned = bundle.write(tuning, cli.run(tuning), tmp_path, "usar")
+    (path,) = [path for path, outcomes in planned.items() if outcomes]
+    assert path.name == "usar_tune"
+    assert len(stages(path)) == 8
+    assert {stage["robot"] for stage in stages(path)} == {"turtlebot"}
+    maps = {stage["map"] for stage in stages(path)}
+    assert len(maps) == 2
+    assert not maps & {task.world_key for task in tasks(Manifest.load(STUDY))}
