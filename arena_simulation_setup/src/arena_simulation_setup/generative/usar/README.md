@@ -84,6 +84,6 @@ suites/NAME_test/
 `-- worlds/<world>/         the world with its scenarios/
 ```
 
-Every stage runs `modes: {robots: search, obstacles: scenario}` on its scenario with the manifest's `suite`: by default 3 episodes of at most 300 s, judged with `search: {radius: 1.0, line_of_sight: true, dwell_s: 0.0}`, on `robot: auto`, the robot of the contestant's planner. `--robot`, `--episodes` and `--timeout` override the manifest. The stage seeds derive from the stage fields, so another robot runs other episodes.
+Every stage runs `modes: {robots: search, obstacles: scenario}` on its scenario with the manifest's `suite`: by default 3 episodes of at most 300 s, judged with `search: {radius: 1.0, line_of_sight: true, dwell_s: 0.0}`, on `robot: auto`, the robot of the contestant's planner. `--robot`, `--episodes` and `--timeout` override the manifest. The stage seeds derive from the stage fields, so another robot runs other episodes. `python -m arena_evaluation.experiments.usar analyze` pairs the runs on a bundle against the baseline.
 
 A bundle is written only when every task was placed, otherwise the run prints the rejections and exits 1. The same manifest writes the same bytes wherever it runs, and nothing in a bundle names a path outside it. `checksum` in the index is the SHA-256 over every other file of the bundle by relative path, without the dot files an asset cache adds, so a copy can be told from a regenerated one. A flat `suites/NAME_test.yaml` would take precedence over the bundle.
