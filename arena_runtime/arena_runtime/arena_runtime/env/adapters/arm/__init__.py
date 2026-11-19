@@ -42,14 +42,17 @@ def park_positions(arm: ArmSpec) -> list[float]:
 
 
 def park_seconds(arm: ArmSpec) -> float:
-    """The larger of the default park time and the slowest chain joint's position span over its max velocity."""
-    seconds = float(_PARK_SECONDS)
+    """The default park time, stretched by the largest factor an override slows a chain joint below its joint_limits file velocity."""
+    from arena_robots.caps import moveit_joint_limits
+
+    authored = moveit_joint_limits(arm.raw)
+    factor = 1.0
     for joint in arm.chain:
-        limits = arm.joint_limits.get(joint, {})
-        low, high, speed = limits.get("min_position"), limits.get("max_position"), limits.get("max_velocity")
-        if isinstance(low, int | float) and isinstance(high, int | float) and isinstance(speed, int | float) and speed > 0:
-            seconds = max(seconds, (high - low) / speed)
-    return seconds
+        base = authored.get(joint, {}).get("max_velocity")
+        speed = arm.joint_limits.get(joint, {}).get("max_velocity")
+        if isinstance(base, int | float) and isinstance(speed, int | float) and 0 < speed < base:
+            factor = max(factor, base / speed)
+    return _PARK_SECONDS * factor
 
 
 async def park_arms(robot: RobotManager) -> list:

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import math
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from arena_rclpy_mixins.Time import Time
 from arena_robots.caps import ArmSpec
-
 from arena_runtime.env.adapters.arm import park_arms, park_positions, park_seconds
 
 
@@ -33,24 +31,30 @@ class TestParkPositions:
 
 
 def _limited_arm(joints: dict[str, dict[str, float]], chain: list[str] | None = None) -> SimpleNamespace:
-    return SimpleNamespace(name="top", chain=chain or list(joints), controller="top_controller", named_poses={"stow": {}}, joint_limits=joints)
+    return SimpleNamespace(name="top", chain=chain or list(joints), controller="top_controller", named_poses={"stow": {}}, joint_limits=joints, raw={})
 
 
-def _joint(span: float, velocity: float) -> dict[str, float]:
-    return {"min_position": -span / 2, "max_position": span / 2, "max_velocity": velocity}
+def _tiago_arm(caps: dict | None = None) -> ArmSpec:
+    from arena_robots.Robot import RobotIdentifier
+
+    view = RobotIdentifier("tiago").resolve_sync()
+    return view.effective_caps({}, caps=caps or {}).arm["arm"]
 
 
 class TestParkSeconds:
-    def test_a_slow_wide_joint_stretches_the_park_time(self):
-        assert park_seconds(_limited_arm({"a": _joint(4 * math.pi, math.pi), "b": _joint(1.0, 1.0)})) == pytest.approx(4.0)  # pyright: ignore[reportArgumentType]
+    def test_authored_limits_park_in_the_default_time(self):
+        assert park_seconds(_tiago_arm()) == 3
 
-    def test_halved_velocities_double_the_duration(self):
-        full = park_seconds(_limited_arm({"a": _joint(6 * math.pi, 2 * math.pi)}))  # pyright: ignore[reportArgumentType]
-        halved = park_seconds(_limited_arm({"a": _joint(6 * math.pi, math.pi)}))  # pyright: ignore[reportArgumentType]
-        assert (full, halved) == (pytest.approx(3.0), pytest.approx(6.0))
+    def test_halving_every_joint_velocity_doubles_the_park_time(self):
+        pytest.importorskip("xacro")
+        assert park_seconds(_tiago_arm({"arm.arm.joint_limits.*.max_velocity": {"scale": 0.5}})) == pytest.approx(6.0)
 
-    def test_joints_without_limits_fall_back_to_the_default(self):
-        assert park_seconds(_limited_arm({}, chain=["a", "b"])) == 3  # pyright: ignore[reportArgumentType]
+    def test_the_most_slowed_joint_sets_the_factor(self):
+        pytest.importorskip("xacro")
+        arm = _tiago_arm({"arm.arm.joint_limits.arm_1_joint.max_velocity": {"scale": 0.25}, "arm.arm.joint_limits.arm_2_joint.max_velocity": {"scale": 0.5}})
+        assert park_seconds(arm) == pytest.approx(12.0)
+
+    def test_arms_without_a_joint_limits_file_park_in_the_default_time(self):
         assert park_seconds(_limited_arm({"a": {"max_velocity": 0.1}})) == 3  # pyright: ignore[reportArgumentType]
 
 
@@ -102,15 +106,15 @@ class TestParkArms:
         assert list(traj.points[0].positions) == [-1.57, 0.0]
         assert [t.to_seconds() for t in node.waited] == [14.0]
 
-    def test_a_slow_joint_sets_the_trajectory_time_and_the_settle_wait(self):
+    def test_an_override_slowing_the_arm_stretches_the_trajectory_time_and_the_settle_wait(self):
+        pytest.importorskip("xacro")
         node = _Node(Time.from_float(10.0))
-        arm = _limited_arm({"a": _joint(2 * math.pi, math.pi / 2.5), "b": _joint(1.0, 1.0)})
-        asyncio.run(park_arms(_Robot({"top": arm}, node)))  # pyright: ignore[reportArgumentType]
-        [traj] = node.publishers["/env/jackal/top_controller/joint_trajectory"].sent
-        duration = 2 * math.pi / (math.pi / 2.5)
-        assert traj.points[0].time_from_start.sec == 5
-        assert traj.points[0].time_from_start.nanosec == 0
-        assert [t.to_seconds() for t in node.waited] == [pytest.approx(10.0 + duration + 1.0)]
+        arm = _tiago_arm({"arm.arm.joint_limits.*.max_velocity": {"scale": 0.4}})
+        asyncio.run(park_arms(_Robot({"arm": arm}, node)))  # pyright: ignore[reportArgumentType]
+        [traj] = node.publishers[f"/env/jackal/{arm.controller}/joint_trajectory"].sent
+        assert traj.points[0].time_from_start.sec == 7
+        assert traj.points[0].time_from_start.nanosec == pytest.approx(5e8, abs=1)
+        assert [t.to_seconds() for t in node.waited] == [pytest.approx(10.0 + 7.5 + 1.0)]
 
     def test_a_robot_without_arms_does_not_wait(self):
         node = _Node(Time.from_float(10.0))

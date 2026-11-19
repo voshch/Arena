@@ -116,9 +116,8 @@ no stop of its own and the park judge wants the robot still. It redispatches the
 phase if the robot leaves the tolerance before the hold ends.
 
 `park_arms` (parked once per bring-up) commands each arm to its `stow` pose over
-the larger of 3 s and the largest chain joint travel (`max_position - min_position`)
-divided by that joint's effective `max_velocity` from `arm.joint_limits`, then waits that
-long plus 1 s of sim time. Joints without limits count as 3 s.
+3 s, stretched by the largest factor a `joint_limits` override slows a chain joint
+below its joint_limits file `max_velocity`, then waits that long plus 1 s of sim time.
 
 `DrlAdapter` (and so `VlaAdapter`) can send the signals its planner lists
 under `signals:` in `planner.yaml`. For a goto phase with a `signal`, it
