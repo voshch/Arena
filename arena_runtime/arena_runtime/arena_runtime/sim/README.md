@@ -409,7 +409,12 @@ sim to the producer's true coverage. An elapsed-based rate loop registers
 a period strictly above its interval. The arena_humansim engine ticks off
 `/clock` itself rather than an rcl timer, so a clock the gate is holding
 still owes it the tick the gate is waiting for, and it answers a repeated
-clock, which the gate sends while it waits, with its last frame.
+clock, which the gate sends while it waits, with its last frame. A producer
+that beats from an rcl timer on the sim clock (the hearing belief and policy
+nodes) gets it from `TimeNode.create_timer`, which drops the `EventsExecutor`'s
+repeated dispatch of a ready timer, so the timer never runs a period past the
+clock the gate holds, and stamps from `TimeNode.sim_time`, which already holds
+the time that fired the timer.
 
 `sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`, `driven`)
 starts a run or reconfigures one in place, and a start with the running
