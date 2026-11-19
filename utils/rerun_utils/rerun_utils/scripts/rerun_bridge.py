@@ -14,16 +14,20 @@ import rcl_interfaces.msg
 import rcl_interfaces.srv
 import rclpy
 import rclpy.client
+import rclpy.clock
 import rclpy.qos
 import rclpy.utilities
 import rerun as rr
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.params import declare
 from arena_runtime_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
-from arena_viz import DisplayKind, env_namespace
+from arena_viz import DisplayKind, StyleSpec, env_namespace
 
+from rerun_utils.blueprint import blueprint
+from rerun_utils.entity_paths import display_path
 from rerun_utils.renderers import REGISTRY, RendererCtx
-from rerun_utils.params import GRPC_PORT, WEB_PORT
+from rerun_utils.params import GRPC_PORT, MAX_RATE_HZ, MEMORY_LIMIT, WEB_PORT
+from rerun_utils.stream import Stream, recording
 from rerun_utils.tf_mirror import TFMirror
 
 
@@ -39,6 +43,9 @@ class RerunBridge(ArenaMixinNode):
         self._TASKGEN_NODE = TASKGEN_NODE
         self._web_port = declare(self, WEB_PORT)
         self._grpc_port = declare(self, GRPC_PORT)
+        self._memory_limit = declare(self, MEMORY_LIMIT)
+        self._max_rate_hz = declare(self, MAX_RATE_HZ)
+        self._dispatched: list[tuple[DisplayKind, str, str]] = []
 
     async def _await_param(
         self,
@@ -99,11 +106,11 @@ class RerunBridge(ArenaMixinNode):
 
         web_port = self._web_port.value
         grpc_port = self._grpc_port.value
-        rec_id = f"arena_env_{self._env_id}"
-        rr.init(rec_id, spawn=False)
+        rec = recording(f"arena_env_{self._env_id}", self._max_rate_hz.value)
         grpc_uri = rr.serve_grpc(
             grpc_port=grpc_port,
-            server_memory_limit="2GiB",
+            server_memory_limit=self._memory_limit.value,
+            recording=rec,
         )
         rr.serve_web_viewer(
             web_port=web_port,
@@ -113,9 +120,13 @@ class RerunBridge(ArenaMixinNode):
         viewer_url = f"http://localhost:{web_port}/?url={urllib.parse.quote(grpc_uri, safe='')}"
         self.get_logger().info(f"rerun web viewer: open {viewer_url}")
 
-        self._tf_mirror = TFMirror(self, self._env_id, self._tf_namespace)
-        self._ctx = RendererCtx(env_id=self._env_id, node=self, env_namespace=env_namespace(self._TASKGEN_NODE))
+        stream = Stream(rec, self._max_rate_hz.value, lambda: self.sim_time.to_nanoseconds() * 1e-9)
+        if stream.period > 0:
+            self.create_timer(stream.period, stream.flush, clock=rclpy.clock.Clock(clock_type=rclpy.clock.ClockType.STEADY_TIME))
+        self._tf_mirror = TFMirror(self, stream, self._env_id, self._tf_namespace)
+        self._ctx = RendererCtx(env_id=self._env_id, node=self, stream=stream, env_namespace=env_namespace(self._TASKGEN_NODE))
         self._dispatch_manifest()
+        rr.send_blueprint(blueprint(self._dispatched), recording=rec)
 
         loop = asyncio.get_running_loop()
         stop = loop.create_future()
@@ -151,6 +162,10 @@ class RerunBridge(ArenaMixinNode):
             renderer(display, robot, self._ctx)
         except Exception as e:
             self.get_logger().error(f"renderer {kind!r} for {display.name!r} failed: {e}")
+            return
+        if StyleSpec.from_json(display.style_json).enabled:
+            name = display.name if robot is None else f"{robot.name}/{display.name}"
+            self._dispatched.append((kind, display_path(self._env_id, robot, display.name), name))
 
 
 def main() -> None:

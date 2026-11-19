@@ -154,20 +154,25 @@ def subscribe_marker_array(ctx: RendererCtx, d: AdapterDisplay, base: str) -> No
     store = MarkerStore()
     log = MarkerLog(base)
 
+    emit = ctx.stream.fixed if StyleSpec.from_json(d.style_json).latched else ctx.stream.log
+
     def flush() -> None:
         for entry in log.entries(store.take_dirty()):
             if entry.archetype is None:
-                rr.log(entry.entity, rr.Clear(recursive=False))
+                emit(entry.entity, rr.Clear(recursive=False))
             else:
-                rr.log(entry.entity, entry.archetype, *in_frame(entry.frame))
+                emit(entry.entity, entry.archetype, *in_frame(entry.frame))
 
-    timer = ExpiryTimer(ctx.node, store, flush)
+    def offer_flush() -> None:
+        ctx.stream.offer(d.topic, flush)
+
+    timer = ExpiryTimer(ctx.node, store, offer_flush)
 
     def cb(msg: MarkerArray) -> None:
         now = timer.now_ns()
         store.ingest(msg.markers, now)
         store.expire(now)
-        flush()
+        offer_flush()
         timer.arm()
 
     if StyleSpec.from_json(d.style_json).latched:

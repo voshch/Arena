@@ -1,4 +1,4 @@
-"""DisplayKind.POINTS_3D renderer: sensor_msgs/PointCloud2 → rr.Points3D in sensor frame."""
+"""DisplayKind.POINTS_3D renderer: sensor_msgs/PointCloud2 -> rr.Points3D of its finite points in sensor frame, strided to `MAX_POINTS`."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from sensor_msgs.msg import PointCloud2
 
 from rerun_utils.entity_paths import display_path, in_frame
 from rerun_utils.renderers._registry import RendererCtx, register
+
+MAX_POINTS = 20_000
 
 
 def _read_xyz(msg: PointCloud2) -> np.ndarray:
@@ -25,6 +27,12 @@ def _read_xyz(msg: PointCloud2) -> np.ndarray:
     return pts
 
 
+def thinned(pts: np.ndarray, cap: int = MAX_POINTS) -> np.ndarray:
+    """The finite points, every k-th of them for the smallest k that keeps at most `cap`."""
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    return pts[:: -(-len(pts) // cap)] if len(pts) > cap else pts
+
+
 @register(DisplayKind.POINTS_3D)
 def render_points3d(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererCtx) -> None:
     style = StyleSpec.from_json(d.style_json)
@@ -34,10 +42,10 @@ def render_points3d(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Rende
     entity = display_path(ctx.env_id, robot, d.name)
 
     def cb(msg: PointCloud2) -> None:
-        pts = _read_xyz(msg)
+        pts = thinned(_read_xyz(msg))
         if pts.size == 0:
             return
-        rr.log(entity, rr.Points3D(pts, colors=[color], radii=0.02), *in_frame(msg.header.frame_id))
+        ctx.stream.log(entity, rr.Points3D(pts, colors=[color], radii=0.02), *in_frame(msg.header.frame_id), stamp=msg.header.stamp)
 
     qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
-    ctx.node.create_subscription(PointCloud2, d.topic, cb, qos)
+    ctx.node.create_subscription(PointCloud2, d.topic, ctx.stream.subscriber(d.topic, cb), qos)

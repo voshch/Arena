@@ -11,6 +11,9 @@ from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 
 from rerun_utils.entity_paths import ENV_ORIGIN, frame_name, root_path, tf_path
+from rerun_utils.stream import Stream
+
+SAME_TRANSFORM_TOLERANCE = 1e-5
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,20 @@ class TFTree:
         return ties
 
 
+class TransformMemo:
+    """The last transform logged into each frame, to tell a moved one from a repeat."""
+
+    def __init__(self) -> None:
+        self._last: dict[str, tuple[str, tuple[float, ...]]] = {}
+
+    def changed(self, child: str, parent: str, values: tuple[float, ...]) -> bool:
+        last = self._last.get(child)
+        if last is not None and last[0] == parent and max(abs(a - b) for a, b in zip(last[1], values, strict=True)) < SAME_TRANSFORM_TOLERANCE:
+            return False
+        self._last[child] = (parent, values)
+        return True
+
+
 class TFMirror:
     """Long-lived `<tf_namespace>/tf` subscriber that logs each transform as a child -> parent frame relation.
 
@@ -53,10 +70,12 @@ class TFMirror:
     on `/` reach it, and untied again if a transform into it arrives later.
     """
 
-    def __init__(self, node: rclpy.node.Node, env_id: int, tf_namespace: str = "") -> None:
+    def __init__(self, node: rclpy.node.Node, stream: Stream, env_id: int, tf_namespace: str = "") -> None:
         self._node = node
+        self._stream = stream
         self._env_id = env_id
         self._tree = TFTree()
+        self._memo = TransformMemo()
         self._dyn_sub = node.create_subscription(
             TFMessage,
             f"{tf_namespace}/tf",
@@ -75,7 +94,7 @@ class TFMirror:
 
     def _on_tf(self, msg: TFMessage) -> None:
         for t in msg.transforms:
-            self._log(t, static=False)
+            self._stream.offer(("tf", t.child_frame_id), lambda t=t: self._log(t, static=False))
 
     def _on_tf_static(self, msg: TFMessage) -> None:
         for t in msg.transforms:
@@ -83,20 +102,22 @@ class TFMirror:
 
     def _log(self, t: TransformStamped, static: bool) -> None:
         child, parent = frame_name(t.child_frame_id), frame_name(t.header.frame_id)
-        for tie in self._tree.ingest(child, parent):
-            if tie.tied:
-                rr.log(root_path(self._env_id, tie.frame), rr.Transform3D(child_frame=tie.frame, parent_frame=ENV_ORIGIN))
-            else:
-                rr.log(root_path(self._env_id, tie.frame), rr.Clear(recursive=False))
         tr = t.transform.translation
         q = t.transform.rotation
-        rr.log(
-            tf_path(self._env_id, child),
-            rr.Transform3D(
-                translation=[tr.x, tr.y, tr.z],
-                rotation=rr.Quaternion(xyzw=[q.x, q.y, q.z, q.w]),
-                child_frame=child,
-                parent_frame=parent,
-            ),
-            static=static,
+        if not self._memo.changed(child, parent, (tr.x, tr.y, tr.z, q.x, q.y, q.z, q.w)):
+            return
+        for tie in self._tree.ingest(child, parent):
+            if tie.tied:
+                self._stream.fixed(root_path(self._env_id, tie.frame), rr.Transform3D(child_frame=tie.frame, parent_frame=ENV_ORIGIN))
+            else:
+                self._stream.fixed(root_path(self._env_id, tie.frame), rr.Clear(recursive=False))
+        transform = rr.Transform3D(
+            translation=[tr.x, tr.y, tr.z],
+            rotation=rr.Quaternion(xyzw=[q.x, q.y, q.z, q.w]),
+            child_frame=child,
+            parent_frame=parent,
         )
+        if static:
+            self._stream.fixed(tf_path(self._env_id, child), transform)
+        else:
+            self._stream.log(tf_path(self._env_id, child), transform, stamp=t.header.stamp)

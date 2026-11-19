@@ -114,14 +114,14 @@ def render_map(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererCt
         last = key
         if overlay:
             centers, colors = occupied_cells(msg, cells, z)
-            rr.log(entity, rr.Points3D(centers, colors=colors, radii=msg.info.resolution / 2), *in_frame(msg.header.frame_id))
+            ctx.stream.log(entity, rr.Points3D(centers, colors=colors, radii=msg.info.resolution / 2), *in_frame(msg.header.frame_id), stamp=msg.header.stamp)
             return
         corners, uv = grid_quad(msg, z)
-        rr.log(
+        ctx.stream.fixed(
             entity,
             rr.Mesh3D(vertex_positions=corners, triangle_indices=[[0, 1, 2], [0, 2, 3]], vertex_texcoords=uv, albedo_texture=grid_texture(downsample(cells))),
             *in_frame(msg.header.frame_id),
         )
 
     qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-    ctx.node.create_subscription(OccupancyGrid, d.topic, cb, qos)
+    ctx.node.create_subscription(OccupancyGrid, d.topic, ctx.stream.subscriber(d.topic, cb), qos)

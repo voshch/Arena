@@ -24,6 +24,6 @@ def render_path(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
         pts = [(p.pose.position.x, p.pose.position.y, p.pose.position.z) for p in msg.poses]
         if not pts:
             return
-        rr.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]), *in_frame(msg.header.frame_id))
+        ctx.stream.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]), *in_frame(msg.header.frame_id), stamp=msg.header.stamp)
 
-    ctx.node.create_subscription(Path, d.topic, cb, 10)
+    ctx.node.create_subscription(Path, d.topic, ctx.stream.subscriber(d.topic, cb), 10)
