@@ -275,7 +275,7 @@ joins and names one whole staircase:
 | `to` | id of the level it reaches, above its own, or its own level for a staircase between two floors of it |
 | `exit` | spread worlds only: `[x, y]` middle of the open upper end on the `to` level, in that level's frame |
 | `base`, `rise` | a staircase on its own level only: height of its mouth and how far it climbs, as for a [ramp](#ramps) |
-| `floor` | `false` builds nothing of it (steps, landings, treads, linings, brushes), for a staircase the world already shows, a scan |
+| `floor` | `false` builds only its side walls, for a staircase the world already shows (a scan) |
 | `kind` | optional staircase kind to start from, see below |
 
 The rise is the difference of the two levels' `elevation`, a level without
@@ -288,18 +288,11 @@ level shares one floor plan and the staircase runs straight up from its
 mouth. In a `spread` world (the default) every level keeps a floor plan of
 its own, and the entry also takes `exit`.
 
-A staircase whose `to` is its own level joins two floors of that level, whose heights come from its `ramps`, as in a
-scanned building on one level: it takes `base` and `rise` instead of the levels' elevations and runs straight on, its
-halves joined as in a stacked world in any layout, so it has no seam wall and nothing teleports over it: an agent walks
-or is carried from one half onto the other. The floor plan walks through it like any floor. Pedestrians cross it only as
-a stair: HumanSim keeps its seam shut for their plans and sends over it the types that climb its kind, an escalator from
-its boarding end while it runs, by the quicker of riding and walking round, see HumanSim's
-[stairs](../humansim/README.md#stairs). With `floor: false` its
-side walls (`sides`, e.g. an invisible wall kind) are all it adds, and the walking height on it follows its ramp line,
-not treads, since the steps are the world's own. Bodies on it stand at its own height, also over a ramp under it,
-while a staircase between levels leaves a point they share to the ramp. It opens the zone floors only under a half
-that runs below them, as from a `base` under 0, with an escalator's pit. A simulator without floor heights lays it as
-flat as the ramps it climbs between: nothing is built, and pedestrians cross it at floor height, still only as a stair.
+A staircase whose `to` is its own level joins two floors of that level whose heights come from its `ramps`, as in a
+scanned building. It takes `base` and `rise` instead of the levels' elevations, and no `exit`. Its halves meet in
+place, so agents walk or ride straight over, with no seam wall and no teleport. Pedestrians cross it only on a stair
+route, see HumanSim's [stairs](../humansim/README.md#stairs). With `floor: false` only its side walls are built, for a
+staircase the scan already shows. A simulator without floor heights lays it flat.
 
 `size` sets the incline, nothing else does, and nothing rejects a steep one:
 

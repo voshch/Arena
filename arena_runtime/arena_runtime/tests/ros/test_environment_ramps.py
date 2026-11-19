@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 def _spawn(stacks: bool, level: Level, check: Callable[[EnvironmentManager, list[Stairs], list[Obstacle]], Awaitable[None]]) -> None:
-    """Spawn a level on a simulator that stacks levels or not and run `check` on the environment, the stairs and the objects the simulator got."""
+    """Spawn a level on a stacking or planar simulator and run `check` on what it got."""
     from arena_rclpy_mixins.spin import create_executor
     from arena_runtime.acoustics import AcousticsSimulatorRegistry
     from arena_runtime.env.constants import Constants

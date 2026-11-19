@@ -147,7 +147,7 @@ def _stair_entries(path: str, raw: Mapping) -> list[tuple[str, str, Mapping]]:
 
 
 def _base_rise(path: str, raw: Mapping) -> tuple[float, float]:
-    """The height of the mouth and the climb from it of a ramp or of a stair on its own level, 0 where not set."""
+    """Mouth height and climb of a ramp or a stair on its own level, 0 where not set."""
     return _at(f'{path}.base', lambda: float(raw.get('base', 0.0))), _at(f'{path}.rise', lambda: float(raw.get('rise', 0.0)))
 
 

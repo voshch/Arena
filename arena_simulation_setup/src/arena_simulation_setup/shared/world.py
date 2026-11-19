@@ -359,7 +359,7 @@ class Stairs(Named):
         return (kind, None) if kind else ('', material if material is not None else self.material)
 
     def walls(self) -> list[Wall]:
-        """Walls that block the floor plan: each side's lining below the walking surface in the fixture material, reaching under the floor, and its wall above it, the seam wall, a top half's guards around its overhang, and the solid rails. With `floor` off the world already has the stair's body: no linings, and the seam wall in the left side's style."""
+        """Walls that block the floor plan: each side's lining below the walking surface in the fixture material, reaching under the floor, and its wall above it, the seam wall, a top half's guards around its overhang, and the solid rails, no linings with `floor` off."""
         half = self.width / 2.0
         fixture = self.material_of('fixture')
         seam = ('', fixture) if self.floor else self._style(self.sides['left'].kind, self.sides['left'].material)
@@ -614,7 +614,7 @@ class Stairs(Named):
         return min(c.x for c in corners), min(c.y for c in corners), max(c.x for c in corners), max(c.y for c in corners)
 
     def floor_openings(self) -> list[tuple[float, float, float, float]]:
-        """Rectangles (x_min, y_min, x_max, y_max) the half cuts out of its level's floor: a top half's well with its overhang, an escalator's pit, and on a stair on its own level the half that runs under the floor, with its pit. With `floor` off the world's own stair fills them."""
+        """Rectangles (x_min, y_min, x_max, y_max) the half cuts out of its level's floor: a top half's well with its overhang, an escalator's pit, on a stair on its own level the half below the floor."""
         pit = -(self.pitch + STAIRS_GAP) if self.kind == 'escalator' else 0.0
         if self.same_level:
             under = self.drop + STAIRS_BASE if self.kind == 'escalator' and self.floor else 0.0
@@ -633,7 +633,7 @@ class Stairs(Named):
         return [self._rect(self.length - self.overhang, 2.0 * self.length)]
 
     def leveled(self) -> Stairs:
-        """This half lying flat on the floor with nothing built, what a simulator without floor heights keeps of a stair on its own level."""
+        """This half flat on the floor with nothing built."""
         return attrs.evolve(self, position=Position(self.position.x, self.position.y), rise=0.0, floor=False)
 
     def whole_stair(self) -> Stairs:
@@ -676,7 +676,7 @@ class Stairs(Named):
 
 
 def stair_height(stairs: typing.Iterable[Stairs], x: float, y: float, travel: typing.Mapping[str, float] | None = None) -> float:
-    """Footing at a map point on the half of a stair on its own level holding it, which stands on the ramps that are its floors, else on the first stair half or ramp holding it, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
+    """Footing at a map point on a stair on its own level holding it, else on the first stair half or ramp holding it, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
     stairs = tuple(stairs)
     travel = travel or {}
     stair = next((stair for own in (True, False) for stair in stairs if stair.same_level == own and stair.contains(x, y, stair.reach)), None)
