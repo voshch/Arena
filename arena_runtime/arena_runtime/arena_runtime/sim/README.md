@@ -414,7 +414,10 @@ that beats from an rcl timer on the sim clock (the hearing belief and policy
 nodes) gets it from `TimeNode.create_timer`, which drops the `EventsExecutor`'s
 repeated dispatch of a ready timer, so the timer never runs a period past the
 clock the gate holds, and stamps from `TimeNode.sim_time`, which already holds
-the time that fired the timer.
+the time that fired the timer. These producers, the hearing front-ends and every
+`LockstepBeat` publish their beat through `ClockEcho`, so like the engine they
+answer a repeated clock with their last beat and one lost message does not hold
+the gate.
 
 `sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`, `driven`)
 starts a run or reconfigures one in place, and a start with the running
