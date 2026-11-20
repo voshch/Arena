@@ -62,6 +62,17 @@ def test_missing_spec_moves_sideways_only_when_holonomic(holonomic, lateral):
     assert (model.traction, model.timeout) == (math.inf, DEFAULT_TIMEOUT)
 
 
+@pytest.mark.parametrize('spec', [None, {}])
+def test_turning_radius_reaches_the_drive_model_with_and_without_a_spec(spec):
+    pytest.importorskip('flatsim_msgs')
+    from arena_robots.caps import PlanarSpec
+    from arena_runtime.sim.flatsim_simulator.planar import drive_model
+
+    planar = None if spec is None else PlanarSpec.from_dict(spec)
+    assert drive_model(planar, holonomic=False, min_turning_radius=0.74).min_turning_radius == 0.74
+    assert drive_model(planar, holonomic=False).min_turning_radius == 0.0
+
+
 def test_spec_rejects_an_unknown_axis():
     from arena_robots.caps import PlanarSpec
 
