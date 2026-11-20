@@ -31,7 +31,7 @@ def _launch_candidates(cur: str) -> list[str]:
 
 
 def test_paths_verb_prints_a_row_per_path_with_the_effective_value(capsys: pytest.CaptureFixture[str]) -> None:
-    authored = yaml.safe_load((ARENA / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps" / "mobile.yaml").read_text())
+    authored = yaml.safe_load((ARENA / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps.yaml").read_text())["mobile"]
     assert robot._main(["paths", "jackal"]) == 0
     rows = _rows(capsys)
     assert ["mobile.velocity_limits.linear", "list", json.dumps(authored["velocity_limits"]["linear"])] in rows

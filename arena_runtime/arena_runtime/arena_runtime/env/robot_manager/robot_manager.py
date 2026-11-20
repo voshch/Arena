@@ -312,7 +312,7 @@ class RobotManager(NodeInterface):
         try:
             cap_raw = self._caps._load_cap_file(cap)
         except FileNotFoundError:
-            cap_raw = {}  # allocation-derived cap, no static caps/<cap>.yaml
+            cap_raw = {}  # allocation-derived cap, no static caps.yaml section
         from arena_runtime.env.adapters import ADAPTERS
 
         sub = cap_raw.get(kind, {})

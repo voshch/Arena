@@ -557,7 +557,7 @@ are what Arena sends it.
   floor, such as an elevator cabin floor, is no obstacle.
 - Robots: body from the `body.outline` of the instance's caps (the convex hull of the base, fixed-link and wheel collision geometry in the rendered URDF, at most 8 vertices), the mobile cap footprint with a logged warning for a robot without collision geometry, driven by the Twist on
   `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
-  the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
+  the `planar` block of the `mobile` section of the robot's `caps.yaml`, the same keys for every
   robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
   `pivot` x the body turns about and the command `timeout`. A diff drive has

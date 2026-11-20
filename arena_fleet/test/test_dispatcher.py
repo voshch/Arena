@@ -475,7 +475,7 @@ def test_a_queue_on_the_doorway_world_turned_a_quarter_crosses_along_each_door_n
 
 
 def test_the_fleet_is_as_large_as_its_largest_robot_and_as_slow_and_short_sighted_as_its_weakest(tmp_path: pathlib.Path) -> None:
-    mobile = yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps" / "mobile.yaml").read_text())
+    mobile = yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps.yaml").read_text())["mobile"]
     assert JACKAL.radius_m == pytest.approx(0.3338, abs=2e-3) and JACKAL.max_speed_mps == max(abs(v) for v in mobile["velocity_limits"]["linear"])
     laser = yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "tests" / "golden" / "mobile_laser_blocks.yaml").read_text())["jackal"]
     assert JACKAL.sensor_range_m == pytest.approx(laser["range"]) and JACKAL.sensor_fov_deg == pytest.approx(math.degrees(laser["angle"]["max"] - laser["angle"]["min"]), abs=0.5)

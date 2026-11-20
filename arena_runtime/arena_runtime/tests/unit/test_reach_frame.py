@@ -29,6 +29,6 @@ def test_reach_frames_take_the_robot_prefix_once(frame, resolved):
 
 
 def test_sampled_and_explicit_targets_share_the_prefixed_frame():
-    arm = ArmSpec(path=Path("caps/arm.yaml"), raw={"workspace": {"type": "box", "min": [0.1, -0.1, 0.2], "max": [0.3, 0.1, 0.4], "frame": "base_link"}}, name="arm")
+    arm = ArmSpec(path=Path("caps.yaml"), raw={"workspace": {"type": "box", "min": [0.1, -0.1, 0.2], "max": [0.3, 0.1, 0.4], "frame": "base_link"}}, name="arm")
     sampled = sample_reach_target(arm, ROBOT, np.random.default_rng(0))
     assert sampled.header.frame_id == reach_frame("base_link", ROBOT) == "env_0/jackal/base_link"

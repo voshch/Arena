@@ -128,7 +128,7 @@ otherwise the episode fails as `signaled <signal> <d> m from goal`.
 cannot send.
 
 `ExternalBringup` reads `goal_topic`, `cmd_vel_topic`, `launch_file`,
-`requires`, and `extra` from `caps/mobile.yaml > external:`, configure them
+`requires`, and `extra` from `caps.yaml > mobile > external:`, configure them
 there, not as constructor arguments.
 
 `MeshNavAdapter` (`robot.mobile_adapter:=meshnav`, needs `arena feature meshnav
@@ -182,7 +182,7 @@ advertising the cap, `adapters: {lift: none}` in a robot setup file overrides on
 
 `direct` echoes the clamped command on `lift/<instance>/applied` and `gripper/<instance>/applied`
 (same types, transient-local). The gripper goal is fire and forget: the adapter does not await the
-result. `<instance>` is the instance key of `caps/lift.yaml` / `caps/gripper.yaml`, or the mount name
+result. `<instance>` is the instance key of the `lift` / `gripper` section of `caps.yaml`, or the mount name
 for component caps. The `robots_lift` and `robots_gripper` MCP tools publish these commands and
 return the echo. Topic names and clamping live in
 [`arena_robots/actuators.py`](../../../../../arena_robots/arena_robots/arena_robots/actuators.py).

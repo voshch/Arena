@@ -467,7 +467,7 @@ shapes of argument:
 | Shape | Example | Lands as | Purpose |
 |---|---|---|---|
 | `robot.<cap>:=<kind>` | `robot.mobile:=rosnav_rl`, `robot.mobile:=drl`, `robot.mobile:=meshnav` | `robot.<cap>_adapter` | Pick which `Bringup` runs for the cap. |
-| `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from `caps/<cap>.yaml`. |
+| `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from the `<cap>` section of `caps.yaml`. |
 | `<adapter-kwarg>:=<val>` | `global_planner:=smac`, `global_planner:=nav2/navfn` | `robot.<cap>.<key>` (via the adapter's launch file) | Adapter-internal launch kwargs (nav2 planner names, or the `<family>/<kind>` form consumed by the `drl` adapter). |
 
 One adapter-readiness timeout lives under the task namespace: `task.episode.timeout.robot_ready`
@@ -475,7 +475,7 @@ One adapter-readiness timeout lives under the task namespace: `task.episode.time
 
 The cap-scoped form is the recommended style because it's self-documenting and
 maps unambiguously to a single cap. To discover what `<key>`s a cap accepts,
-read the robot's `arena_robots/.../robots/<name>/caps/<cap>.yaml`: every
+read the robot's `arena_robots/.../robots/<name>/caps.yaml`: every
 top-level key there is overridable by the same name with the cap prefix.
 
 Contestant args in benchmark YAMLs use the same shapes and the same forwarding

@@ -1446,7 +1446,7 @@ spawn, lower the more floor is stranded in other components.
 layout fault (a missing, misplaced or too narrow door), one that is cut off
 only in the furnished run is blocked by furniture. `--robot` takes a robot name
 from the installed `arena_robots` package or a robot directory and reads
-`radius` from its `caps/mobile.yaml`. A world name resolves like at runtime,
+`radius` from the `mobile` section of its `caps.yaml`. A world name resolves like at runtime,
 and `name[0,1]` restricts the levels.
 
 The same numbers are available in Python:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
+import yaml
 
 
 def _view(model: str):
@@ -16,8 +17,7 @@ def _write_model(root, mobile: str | None):
 
     (root / "model_params.yaml").write_text("base_frame: base_link\n")
     if mobile is not None:
-        (root / "caps").mkdir()
-        (root / "caps" / "mobile.yaml").write_text(mobile)
+        (root / "caps.yaml").write_text(yaml.safe_dump({"mobile": yaml.safe_load(mobile)}))
     return RobotView(root)
 
 
