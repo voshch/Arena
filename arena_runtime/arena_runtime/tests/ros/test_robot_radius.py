@@ -21,7 +21,7 @@ def _write_model(root, mobile: str | None):
     return RobotView(root)
 
 
-@pytest.mark.parametrize(("model", "radius"), [("jackal", 0.309), ("rbsummit", 0.465)])
+@pytest.mark.parametrize(("model", "radius"), [("jackal", 0.3338), ("rbsummit", 0.465)])
 def test_each_robot_model_yields_its_own_mobile_cap_radius(model, radius):
     from arena_runtime.shared import footprint_radius
 

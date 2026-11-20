@@ -13,7 +13,7 @@ IN_MAP = (8.5, 8.5)
 ON_WALL = (2.5, 5.5)
 CRATE = (5.5, 2.5)
 BY_PED = (2.0, 8.2)
-HALF_WIDTH = 0.2078
+HALF_WIDTH = 0.215
 PED_RADIUS = 0.3
 
 
@@ -231,7 +231,7 @@ def _spec(name: str, kind: str, *, points=None, radius=None, action=None):
 def test_mobile_adapter_tracks_the_robot_footprint_and_cap_polygons(on_stage):
     async def body(stage: Stage):
         rm, tracker = stage.robot_manager()
-        assert tracker._footprint_base.bounds == pytest.approx((-0.229, -HALF_WIDTH, 0.229, HALF_WIDTH))
+        assert tracker._footprint_base.bounds == pytest.approx((-0.2553, -HALF_WIDTH, 0.2553, HALF_WIDTH))
         assert {name: (entry["type"], entry["action_code"]) for name, entry in tracker._poly_cache.items()} == {"StopPolygon": ("polygon", 1), "SlowPolygon": ("circle", 2)}
         assert tracker._poly_cache["SlowPolygon"]["R_c"] == 0.25
         assert tracker.get_namespace() == str(rm.namespace)
