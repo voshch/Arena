@@ -42,7 +42,7 @@ class MobileAdapter(Adapter):
         polys = mobile.polygons_dict
         footprint = mobile.footprint
         if footprint is None:
-            self.rm.node.get_logger().warning(f'{self.rm.namespace}: caps/mobile.yaml has no footprint, collisions are not tracked')
+            self.rm.node.get_logger().warning(f'{self.rm.namespace}: the URDF has no ground collision outline and no footprint is set, collisions are not tracked')
         if not polys and footprint is None:
             return
         self._collision = CollisionTrackerNode(self.rm, polys or {}, footprint=footprint)

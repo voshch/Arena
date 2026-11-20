@@ -10,9 +10,11 @@ from arena_bringup.constants import SimSimulator
 import arena_robots.Robot
 from arena_robots.caps import PlanarSpec
 from arena_robots.fleet import instance_caps
-from arena_runtime.sim._control import effective_control_yaml, overlay_planar_limits
+from arena_runtime.sim._control import effective_control_yaml, overlay_drive_geometry, overlay_planar_limits
 
 JACKAL = arena_robots.Robot.RobotIdentifier('jackal').resolve_sync()
+JACKAL_URDF = JACKAL.effective_caps({}).rendered_urdf()
+JACKAL_GEOMETRY = {'wheel_radius': 0.098, 'wheel_separation': 0.37559}
 
 
 def _controller(sim: SimSimulator) -> dict:
@@ -20,7 +22,7 @@ def _controller(sim: SimSimulator) -> dict:
 
 
 def test_rendered_control_yaml_carries_the_overlay_and_prefixed_frames():
-    out = Path(effective_control_yaml(None, JACKAL, 'test_overlay/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO))
+    out = Path(effective_control_yaml(None, JACKAL, 'test_overlay/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF))
     params = yaml.safe_load(out.read_text())['/**/jackal_velocity_controller']['ros__parameters']
     out.unlink()
     assert params['wheel_separation_multiplier'] == 1.106
@@ -72,7 +74,7 @@ def test_infinite_planar_limits_leave_the_controller_keys_alone():
 
 
 def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest():
-    out = Path(effective_control_yaml(None, JACKAL, 'test_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, planar=_planar()))
+    out = Path(effective_control_yaml(None, JACKAL, 'test_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF, planar=_planar()))
     rendered = yaml.safe_load(out.read_text())
     out.unlink()
     assert rendered['/**/jackal_velocity_controller']['ros__parameters']['linear.x.max_velocity'] == 0.5
@@ -80,10 +82,10 @@ def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest()
 
 
 def test_rendered_control_yaml_without_a_planar_override_keeps_the_controller_limits():
-    out = Path(effective_control_yaml(None, JACKAL, 'test_no_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO))
+    out = Path(effective_control_yaml(None, JACKAL, 'test_no_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF))
     rendered = yaml.safe_load(out.read_text())
     out.unlink()
-    expected = {k: v for k, v in _controller(SimSimulator.GAZEBO).items() if not k.endswith('_frame_id')}
+    expected = {k: v for k, v in {**_controller(SimSimulator.GAZEBO), **JACKAL_GEOMETRY}.items() if not k.endswith('_frame_id')}
     assert {k: v for k, v in rendered['/**/jackal_velocity_controller']['ros__parameters'].items() if not k.endswith('_frame_id')} == expected
 
 
@@ -111,3 +113,53 @@ def test_a_halving_limits_override_halves_the_jackal_controller_limits():
     halved = overlay_planar_limits(base, planar)
     assert halved['linear.x.max_velocity'] == pytest.approx(base['linear.x.max_velocity'] / 2)
     assert halved['angular.z.max_velocity'] == pytest.approx(base['angular.z.max_velocity'] / 2)
+
+
+def _rendered_drive(model: str, controller: str) -> dict:
+    view = arena_robots.Robot.RobotIdentifier(model).resolve_sync()
+    out = Path(effective_control_yaml(None, view, f'test_geometry/{model}', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=view.effective_caps({}).rendered_urdf()))
+    rendered = yaml.safe_load(out.read_text())
+    out.unlink()
+    return rendered[f'/**/{controller}']['ros__parameters']
+
+
+def test_the_drive_geometry_overlay_writes_over_the_controller_and_leaves_the_input():
+    params = {'wheel_radius': 0.5, 'wheel_separation_multiplier': 1.5}
+    out = overlay_drive_geometry(params, {'wheel_radius': 0.098, 'wheel_separation': 0.37559})
+    assert out == {'wheel_radius': 0.098, 'wheel_separation_multiplier': 1.5, 'wheel_separation': 0.37559}
+    assert params['wheel_radius'] == 0.5
+
+
+def test_jackal_rendered_control_yaml_carries_its_urdf_wheels():
+    params = _rendered_drive('jackal', 'jackal_velocity_controller')
+    assert params['wheel_radius'] == pytest.approx(0.098)
+    assert params['wheel_separation'] == pytest.approx(0.37559)
+    assert params['wheel_separation_multiplier'] == 1.106
+
+
+def test_rbkairos_rendered_control_yaml_carries_the_mecanum_projection():
+    params = _rendered_drive('rbkairos', 'rbkairos_velocity_controller')
+    assert params['kinematics.wheels_radius'] == pytest.approx(0.127)
+    assert params['kinematics.sum_of_robot_center_projection_on_X_Y_axis'] == pytest.approx(0.47428)
+
+
+def test_rbvogui_rendered_control_yaml_carries_the_swerve_modules():
+    params = _rendered_drive('rbvogui', 'robotnik_base_controller')
+    assert params['wheel_radius'] == pytest.approx(0.1165)
+    assert params['wheel_positions_x'] == pytest.approx([0.368, 0.368, -0.368, -0.368])
+    assert params['wheel_positions_y'] == pytest.approx([-0.235, 0.235, -0.235, 0.235])
+
+
+def test_rskomnidirectional_rendered_control_yaml_carries_the_omni_wheels():
+    params = _rendered_drive('rskomnidirectional', 'rskomni_velocity_controller')
+    assert params['wheel_radius'] == pytest.approx(0.0345)
+    assert params['wheel_angles'] == pytest.approx([2.617995, 0.523599, 4.712393], abs=1e-5)
+    assert params['direction'] == 'ccw'
+
+
+def test_a_legged_robot_control_yaml_has_no_drive_geometry():
+    view = arena_robots.Robot.RobotIdentifier('a1').resolve_sync()
+    out = Path(effective_control_yaml(None, view, 'test_geometry/a1', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=view.effective_caps({}).rendered_urdf()))
+    rendered = yaml.safe_load(out.read_text())
+    out.unlink()
+    assert rendered['/**/joint_group_position_controller'] == yaml.safe_load(yaml.safe_dump(view.control_config()['joint_group_position_controller']))

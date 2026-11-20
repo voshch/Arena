@@ -403,7 +403,7 @@ def test_resources_written_for_another_world_are_refused() -> None:
 
 def test_the_robot_radius_plus_the_margin_sizes_the_wall_margin_and_the_body_tested_against_people(tmp_path: pathlib.Path) -> None:
     wide = FleetDispatcher(site(), cost(), rules(), names=["jackal"], robot=attrs.evolve(JACKAL, radius_m=0.37), info="oracle", seed=6, out=tmp_path / "wide")
-    narrow = Episode(tmp_path / "narrow", 1, info="oracle").d
+    narrow = FleetDispatcher(site(), cost(), rules(), names=["jackal"], robot=attrs.evolve(JACKAL, radius_m=0.2), info="oracle", seed=6, out=tmp_path / "narrow")
     plan = wide.grid.descend(wide.fields[(wide.goals[0], "main_door")], *starts()[0])
     assert wide.body_r == pytest.approx(0.37 + wide.cost["robot"]["margin_m"])
     assert plan and min(wide.grid.clearance(q) for q in plan) >= wide.body_r
@@ -476,7 +476,7 @@ def test_a_queue_on_the_doorway_world_turned_a_quarter_crosses_along_each_door_n
 
 def test_the_fleet_is_as_large_as_its_largest_robot_and_as_slow_and_short_sighted_as_its_weakest(tmp_path: pathlib.Path) -> None:
     mobile = yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "robots" / "jackal" / "caps" / "mobile.yaml").read_text())
-    assert JACKAL.radius_m == mobile["radius"] and JACKAL.max_speed_mps == max(abs(v) for v in mobile["velocity_limits"]["linear"])
+    assert JACKAL.radius_m == pytest.approx(0.3092, abs=2e-3) and JACKAL.max_speed_mps == max(abs(v) for v in mobile["velocity_limits"]["linear"])
     laser = yaml.safe_load((PKG.parent / "arena_robots" / "arena_robots" / "tests" / "golden" / "mobile_laser_blocks.yaml").read_text())["jackal"]
     assert JACKAL.sensor_range_m == pytest.approx(laser["range"]) and JACKAL.sensor_fov_deg == pytest.approx(math.degrees(laser["angle"]["max"] - laser["angle"]["min"]), abs=0.5)
     small = attrs.evolve(JACKAL, radius_m=0.1, max_speed_mps=0.5, sensor_range_m=3.0, sensor_fov_deg=90.0)

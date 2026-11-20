@@ -21,18 +21,18 @@ def _write_model(root, mobile: str | None):
     return RobotView(root)
 
 
-@pytest.mark.parametrize(("model", "radius"), [("jackal", 0.267), ("rbsummit", 0.61)])
+@pytest.mark.parametrize(("model", "radius"), [("jackal", 0.309), ("rbsummit", 0.465)])
 def test_each_robot_model_yields_its_own_mobile_cap_radius(model, radius):
     from arena_runtime.shared import footprint_radius
 
-    assert footprint_radius(_view(model).caps, model) == pytest.approx(radius)
+    assert footprint_radius(_view(model).caps, model) == pytest.approx(radius, abs=5e-3)
 
 
-def test_a_model_without_radius_uses_its_padded_footprint_circumradius(tmp_path):
+def test_a_model_without_radius_uses_its_unpadded_footprint_circumradius(tmp_path):
     from arena_runtime.shared import footprint_radius
 
     view = _write_model(tmp_path, "footprint: [[0.3, 0.4], [0.3, -0.4], [-0.3, -0.4], [-0.3, 0.4]]\nfootprint_padding: 0.05\n")
-    assert footprint_radius(view.caps, "model") == pytest.approx(math.hypot(0.3, 0.4) + 0.05)
+    assert footprint_radius(view.caps, "model") == pytest.approx(math.hypot(0.3, 0.4))
 
 
 def test_a_model_without_radius_or_footprint_fails(tmp_path):

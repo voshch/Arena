@@ -391,6 +391,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     robot.sim_path,
                     robot.frame.tf(),
                     sim=SimSimulator.MUJOCO,
+                    urdf=robot.caps_of(robot_config).rendered_urdf(),
                     prefix=control_prefix,
                     planar=robot.planar_of(robot_config),
                 )

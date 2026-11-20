@@ -11,6 +11,7 @@ import yaml
 from arena_bringup.constants import SimSimulator
 from arena_robots.assembly import ResolvedAssembly
 from arena_robots.catalog import Catalog, render_effective_control
+from arena_robots.urdf_facts import drive_controller, drive_geometry
 
 if typing.TYPE_CHECKING:
     from arena_robots.caps import PlanarSpec
@@ -37,6 +38,11 @@ def overlay_planar_limits(params: dict, planar: "PlanarSpec") -> dict:
     return out
 
 
+def overlay_drive_geometry(params: dict, geometry: dict) -> dict:
+    """A copy of a drive controller's parameters with the URDF-derived ``geometry`` written over them."""
+    return {**params, **geometry}
+
+
 def _with_planar_limits(control: dict, planar: "PlanarSpec") -> dict:
     out = dict(control)
     for name, section in control.items():
@@ -44,6 +50,14 @@ def _with_planar_limits(control: dict, planar: "PlanarSpec") -> dict:
             continue
         out[name] = {**section, 'ros__parameters': overlay_planar_limits(section['ros__parameters'], planar)}
     return out
+
+
+def _with_drive_geometry(control: dict, urdf: str) -> dict:
+    drive = drive_controller(control)
+    if drive is None:
+        return control
+    name, kind, params = drive
+    return {**control, name: {**control[name], 'ros__parameters': overlay_drive_geometry(params, drive_geometry(urdf, kind, params))}}
 
 
 def _prefix_frames(obj: object, frame_prefix: str) -> object:
@@ -82,6 +96,7 @@ def effective_control_yaml(
     frame_prefix: str,
     *,
     sim: SimSimulator,
+    urdf: str,
     catalog: Catalog | None = None,
     prefix: str = 'robot_',
     planar: "PlanarSpec | None" = None,
@@ -89,8 +104,8 @@ def effective_control_yaml(
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys it declares."""
-    base_control = view.control_config(sim.value)
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys it declares, and the geometry ``urdf`` measures overwrites its wheel keys."""
+    base_control = _with_drive_geometry(view.control_config(sim.value), urdf)
     if planar is not None:
         base_control = _with_planar_limits(base_control, planar)
     if resolved is None:

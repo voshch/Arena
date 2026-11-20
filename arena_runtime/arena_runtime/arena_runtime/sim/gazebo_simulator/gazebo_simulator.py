@@ -477,7 +477,7 @@ class GazeboSimulator(BaseSim):
         return render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix=f"/model/{robot.sim_path}", xacro_args=xacro_args)
 
     def _render_ros2_control_yaml(self, robot: Robot, robot_config: arena_robots.Robot.RobotView, *, frame_prefix: str, control_prefix: str) -> str:
-        return effective_control_yaml(robot.resolved_assembly, robot_config, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix, planar=robot.planar_of(robot_config))
+        return effective_control_yaml(robot.resolved_assembly, robot_config, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, urdf=robot.caps_of(robot_config).rendered_urdf(), prefix=control_prefix, planar=robot.planar_of(robot_config))
 
     def _placed_light(self, params: dict[str, typing.Any]) -> dict[str, typing.Any]:
         x, y, z = params['pose']

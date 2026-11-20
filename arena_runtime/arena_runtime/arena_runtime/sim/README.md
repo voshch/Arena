@@ -607,6 +607,8 @@ effective `planar` (its velocity and acceleration read from `limits`)
 `min_acceleration`, only the keys the controller declares and never an infinite
 limit. `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. The literals in `control.yaml` declare which keys exist and equal the shipped `mobile.limits`, so a robot without an override renders the same parameters as its file.
 
+The same function writes the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
+
 ## Adding a new simulator
 
 1. Subclass `BaseSim`; implement all abstract methods from the four

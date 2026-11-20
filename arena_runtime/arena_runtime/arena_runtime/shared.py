@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -209,12 +208,10 @@ class Region:
 
 
 def footprint_radius(caps: RobotCaps, name: str) -> float:
-    """Disc radius of a robot instance: the mobile cap's `radius`, else the circumradius of its padded footprint."""
+    """Disc radius of a robot instance: the mobile cap's `radius`, the circumradius of its unpadded footprint unless authored."""
     if 'mobile' not in caps.available:
         raise ValueError(f"robot {name!r} has no mobile cap, so no footprint radius")
     mobile = caps.mobile
-    if mobile.radius is not None:
-        return mobile.radius
-    if mobile.footprint:
-        return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
-    raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
+    if mobile.radius is None:
+        raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
+    return mobile.radius
