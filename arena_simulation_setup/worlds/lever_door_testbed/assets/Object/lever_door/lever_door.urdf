@@ -1,0 +1,74 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="lever_door">
+  <link name="frame">
+    <inertial>
+      <origin xyz="0.6 0 1.02" rpy="0 0 0" />
+      <mass value="1" />
+      <inertia ixx="0.348" ixy="0" ixz="0" iyy="0.483333333" iyz="0" izz="0.137733333" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.57079633 0 0" />
+      <geometry>
+        <mesh filename="links/frame/frame.obj/frame.obj" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.57079633 0 0" />
+      <geometry>
+        <mesh filename="links/frame/frame.obj/frame.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="leaf">
+    <inertial>
+      <origin xyz="0.55 0 1" rpy="0 0 0" />
+      <mass value="1" />
+      <inertia ixx="0.30736875" ixy="0" ixz="0" iyy="0.408033333" iyz="0" izz="0.101002083" />
+    </inertial>
+    <visual>
+      <origin xyz="-0.06 0 0" rpy="1.57079633 0 0" />
+      <geometry>
+        <mesh filename="links/leaf/leaf.obj/leaf.obj" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0.06 0 0" rpy="1.57079633 0 0" />
+      <geometry>
+        <mesh filename="links/leaf/leaf.obj/leaf.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="handle_link">
+    <inertial>
+      <origin xyz="0.0835 0 0" rpy="0 0 0" />
+      <mass value="1" />
+      <inertia ixx="0.000641333" ixy="0" ixz="0" iyy="0.003542083" iyz="0" izz="0.003967417" />
+    </inertial>
+    <visual>
+      <origin xyz="-1 0.0625 -1" rpy="1.57079633 0 0" />
+      <geometry>
+        <mesh filename="links/handle_link/handle_link.obj/handle_link.obj" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-1 0.0625 -1" rpy="1.57079633 0 0" />
+      <geometry>
+        <mesh filename="links/handle_link/handle_link.obj/handle_link.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="hinge" type="revolute">
+    <origin xyz="0.06 0 0" rpy="0 0 0" />
+    <parent link="frame" />
+    <child link="leaf" />
+    <axis xyz="0 0 1" />
+    <limit lower="0" upper="1.570796" effort="100" velocity="1" />
+  </joint>
+  <joint name="handle_joint" type="revolute">
+    <origin xyz="0.94 -0.0625 1" rpy="0 0 0" />
+    <parent link="leaf" />
+    <child link="handle_link" />
+    <axis xyz="0 1 0" />
+    <limit lower="0" upper="0.65" effort="100" velocity="2" />
+  </joint>
+</robot>

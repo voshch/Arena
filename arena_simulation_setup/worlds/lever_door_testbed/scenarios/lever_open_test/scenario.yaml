@@ -1,0 +1,11 @@
+format: arena-scenario/2
+robots:
+- start: [4.0, 2.0, 0.0]
+  phases:
+  - {until: "lever_door.state == open"}
+timeline:
+- at: 2.0
+  set:
+  - {entity: lever_door, field: target, value: open}
+conditions:
+- {op: eventually, p: "lever_door.state == open"}
