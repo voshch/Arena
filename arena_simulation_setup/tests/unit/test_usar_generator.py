@@ -162,6 +162,18 @@ def test_the_short_form_and_a_group_list_together_are_refused():
         manifest(worlds=[ROOMS_3X3])
 
 
+def test_without_a_suite_block_the_stages_keep_the_default_robot_episodes_timeout_and_find_test():
+    suite = manifest().suite
+    assert (suite.robot, suite.episodes, suite.timeout) == ("auto", 3, "300s")
+    assert suite.search.model_dump() == {"radius": 1.0, "line_of_sight": True, "dwell_s": 0.0}
+
+
+@pytest.mark.parametrize("suite", [{"robto": "x"}, {"episodes": 0}, {"search": {"radius": 0}}, {"search": {"dwell_s": -1}}, {"search": {"range": 2}}])
+def test_a_suite_block_with_an_unknown_key_or_a_value_out_of_range_is_refused(suite: dict[str, object]):
+    with pytest.raises(pydantic.ValidationError, match="suite"):
+        manifest(suite=suite)
+
+
 @pytest.mark.parametrize("data", [{"name": "unit"}, {"name": "unit", "worlds": []}])
 def test_a_manifest_without_worlds_is_refused(data: dict[str, object]):
     with pytest.raises(pydantic.ValidationError):

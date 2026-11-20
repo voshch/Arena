@@ -13,6 +13,7 @@ manifest --tasks--> worlds x tasks --rooms generator--> worlds --placement--> se
 ros2 run arena_simulation_setup generate_usar configs/usar/mvp.yaml               # dry run
 ros2 run arena_simulation_setup generate_usar configs/usar/mvp.yaml --write --out data/usar_mvp
 ros2 run arena_simulation_setup generate_usar configs/usar/mvp.yaml --write --suite usar_mvp   # benchmark suite bundles
+ros2 run arena_simulation_setup generate_usar configs/usar/tune.yaml --write --suite usar --robot jackal   # usar_tune on another robot
 ```
 
 | Option | Effect |
@@ -21,6 +22,7 @@ ros2 run arena_simulation_setup generate_usar configs/usar/mvp.yaml --write --su
 | `--out DIR` | write every world to `DIR/<world>` and the index to `DIR/<name>.index.yaml`. Without it worlds go to the writable world root, and the index next to them |
 | `--limit N` | only the first N spots, each at every call level and each world in its split of the full run |
 | `--suite NAME` | write the suite bundles `NAME_test` and `NAME_tune` instead, see [Suite bundles](#suite-bundles). `NAME` is lowercase letters, digits and underscores. Not with `--out` or `--limit` |
+| `--robot`, `--episodes`, `--timeout` | the robot, episodes and sim-time budget of every stage in place of the manifest's `suite`, only with `--suite` |
 
 It prints every rejected scenario with its reason and exits 1 when none was placed. Tasks on the same world configuration and seed share one world, which holds all their scenarios.
 
@@ -33,7 +35,7 @@ arena launch world:=<world> task.robots:=search task.obstacles:=scenario task.sc
 
 ## Manifest
 
-[`configs/usar/mvp.yaml`](../../../../configs/usar/mvp.yaml) is the MVP study: 10 worlds, 6 spots each at both call levels (120 scenarios), 2 worlds held out. [`configs/usar/study.yaml`](../../../../configs/usar/study.yaml) is the held-out test set of the study: 25 worlds in four groups (3 x 3 and 3 x 4 rooms, chains of six rooms, rings of six rooms, a hall of two wide rooms), 5 spots each at both call levels (250 scenarios), all held out, written as the bundle `usar_test` with `--suite usar`.
+[`configs/usar/mvp.yaml`](../../../../configs/usar/mvp.yaml) is the MVP study: 10 worlds, 6 spots each at both call levels (120 scenarios), 2 worlds held out. [`configs/usar/study.yaml`](../../../../configs/usar/study.yaml) is the held-out test set of the study: 25 worlds in four groups (3 x 3 and 3 x 4 rooms, chains of six rooms, rings of six rooms, a hall of two wide rooms), 5 spots each at both call levels (250 scenarios), all held out, written as the bundle `usar_test` with `--suite usar`. [`configs/usar/tune.yaml`](../../../../configs/usar/tune.yaml) is the tuning set on seed 7: a 3 x 3 and a 3 x 4 rooms world, 2 spots each at both call levels (8 scenarios), on the turtlebot, written as the bundle `usar_tune` with `--suite usar`.
 
 | Key | Meaning |
 |---|---|
@@ -48,6 +50,7 @@ arena launch world:=<world> task.robots:=search task.obstacles:=scenario task.sc
 | `hiding` | `random`, or `adversarial`: the spot whose call points furthest from the route's first leg |
 | `call_asset`, `call_period_s`, `call_on_s` | the looped sound the person calls with, on for `call_on_s` every `call_period_s` |
 | `agent_type` | pedestrian profile of the person |
+| `suite` | what every stage of a suite bundle runs: `robot` (default `auto`), `episodes` (3), `timeout` (`300s`) and the find test `search: {radius, line_of_sight, dwell_s}` (1.0, true, 0.0) |
 
 Groups let one study mix building shapes that no single grid spans, such as 3 x 3 rooms beside a 1 x 6 chain, and give each shape the corner counts it can offer. A world configuration and seed belongs to one group only, so every world sits in exactly one split.
 
@@ -81,6 +84,6 @@ suites/NAME_test/
 `-- worlds/<world>/         the world with its scenarios/
 ```
 
-Every stage runs `modes: {robots: search, obstacles: scenario}` on its scenario for 3 episodes of at most 300 s, judged with `search: {radius: 1.0, line_of_sight: true, dwell_s: 0.0}`, on `robot: auto`, the robot of the contestant's planner.
+Every stage runs `modes: {robots: search, obstacles: scenario}` on its scenario with the manifest's `suite`: by default 3 episodes of at most 300 s, judged with `search: {radius: 1.0, line_of_sight: true, dwell_s: 0.0}`, on `robot: auto`, the robot of the contestant's planner. `--robot`, `--episodes` and `--timeout` override the manifest. The stage seeds derive from the stage fields, so another robot runs other episodes. `python -m arena_evaluation.experiments.usar analyze` pairs the runs on a bundle against the baseline.
 
 A bundle is written only when every task was placed, otherwise the run prints the rejections and exits 1. The same manifest writes the same bytes wherever it runs, and nothing in a bundle names a path outside it. `checksum` in the index is the SHA-256 over every other file of the bundle by relative path, without the dot files an asset cache adds, so a copy can be told from a regenerated one. A flat `suites/NAME_test.yaml` would take precedence over the bundle.

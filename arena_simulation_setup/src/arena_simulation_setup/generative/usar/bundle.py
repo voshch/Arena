@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -12,18 +11,30 @@ from arena_simulation_setup.generative.study.bundle import by_world
 from arena_simulation_setup.generative.study.runner import Outcome, Report
 from arena_simulation_setup.generative.world.rooms import WorldGeneratorRooms
 
-from .manifest import CallLevel, Hiding, Manifest
+from .manifest import CallLevel, Hiding, Manifest, Suite
 from .sampler import TEST, TUNE, Task
 
 SPLITS = (TEST, TUNE)  # the order the bundles are written in
-SEARCH: dict[str, object] = {"radius": 1.0, "line_of_sight": True, "dwell_s": 0.0}
-STAGE: dict[str, object] = {"robot": "auto", "modes": {"robots": "search", "obstacles": "scenario"}, "episodes": 3, "timeout": "300s"}
+MODES: dict[str, str] = {"robots": "search", "obstacles": "scenario"}
 
 
-def stages(outcomes: Sequence[Outcome[Task]]) -> list[dict[str, object]]:
+def stage(world: str, scenario: str, suite: Suite) -> dict[str, object]:
+    """The suite stage of one task, running the suite settings of its manifest."""
+    return {
+        "name": f"{world}__{scenario}",
+        "map": world,
+        "robot": suite.robot,
+        "modes": dict(MODES),
+        "episodes": suite.episodes,
+        "timeout": suite.timeout,
+        "config": {"scenario": {"file": scenario}, "search": suite.search.model_dump()},
+    }
+
+
+def stages(outcomes: Sequence[Outcome[Task]], suite: Suite) -> list[dict[str, object]]:
     """One suite stage per task, in world then scenario order."""
     keys = sorted((outcome.item.world_key, outcome.item.scenario_key) for outcome in outcomes)
-    return [{"name": f"{world}__{scenario}", "map": world, **copy.deepcopy(STAGE), "config": {"scenario": {"file": scenario}, "search": dict(SEARCH)}} for world, scenario in keys]
+    return [stage(world, scenario, suite) for world, scenario in keys]
 
 
 def _configuration(outcome: Outcome[Task]) -> WorldGeneratorRooms.Configuration:
@@ -42,6 +53,10 @@ def coverage(outcomes: Sequence[Outcome[Task]]) -> str:
     return "\n".join(lines)
 
 
+def _robot_sentence(robot: str) -> str:
+    return "The stages name no robot (`robot: auto`)." if robot == "auto" else f"Every stage runs `robot: {robot}`."
+
+
 def _readme(manifest: Manifest, name: str, split: str, outcomes: Sequence[Outcome[Task]]) -> str:
     worlds = by_world(outcomes)
     door = min(_configuration(members[0]).door_width for members in worlds.values())
@@ -55,7 +70,7 @@ def _readme(manifest: Manifest, name: str, split: str, outcomes: Sequence[Outcom
             f"arena evaluation benchmark --suite {name} --contest <contest>",
             "```",
             "",
-            f"The stages name no robot (`robot: auto`). The narrowest door is {door:g} m wide, and the start is placed for a robot of up to {ROBOT_RADIUS:g} m radius with {CLEARANCE:g} m to the walls.",
+            f"{_robot_sentence(manifest.suite.robot)} The narrowest door is {door:g} m wide, and the start is placed for a robot of up to {ROBOT_RADIUS:g} m radius with {CLEARANCE:g} m to the walls.",
             "",
             coverage(outcomes),
             "",
@@ -77,6 +92,6 @@ def write(manifest: Manifest, report: Report[Task], root: Path, name: str) -> di
         manifest=manifest.name,
         seed=manifest.seed,
         splits=SPLITS,
-        stages=stages,
+        stages=lambda outcomes: stages(outcomes, manifest.suite),
         readme=lambda bundle_name, split, outcomes: _readme(manifest, bundle_name, split, outcomes),
     )

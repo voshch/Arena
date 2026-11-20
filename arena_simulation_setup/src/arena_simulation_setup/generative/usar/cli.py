@@ -5,8 +5,10 @@ from __future__ import annotations
 import random
 import re
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+
+import pydantic
 
 from arena_simulation_setup.generative.core.generated import Generated, Rejected
 from arena_simulation_setup.generative.study import cli
@@ -17,7 +19,7 @@ from arena_simulation_setup.tree import imported_root
 from arena_simulation_setup.tree.World import World
 
 from . import bundle
-from .manifest import Manifest
+from .manifest import Manifest, Suite
 from .placement import Hideout, hide
 from .sampler import TEST, TUNE, Task, held_out, tasks
 from .scenario import build
@@ -71,10 +73,19 @@ def _suite(manifest: Manifest, report: Report[Task], name: str, write: bool) -> 
     return 0
 
 
+def with_suite(manifest: Manifest, overrides: Mapping[str, str | int]) -> Manifest:
+    """The manifest with the given suite settings in place of its own, checked like the manifest's."""
+    return manifest.model_copy(update={"suite": Suite.model_validate({**manifest.suite.model_dump(), **overrides})})
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = cli.parser("generate_usar", __doc__, "generate only the first N spots, each at every call level")
     parser.add_argument("--suite", help="write one benchmark suite bundle <SUITE>_<split> per split into the imported suites root instead of bare worlds")
+    parser.add_argument("--robot", help="robot of every stage, in place of the manifest's suite.robot")
+    parser.add_argument("--episodes", type=int, help="episodes per stage, in place of the manifest's suite.episodes")
+    parser.add_argument("--timeout", help="sim-time budget per episode such as 300s, in place of the manifest's suite.timeout")
     args = parser.parse_args(argv)
+    overrides = {key: value for key, value in {"robot": args.robot, "episodes": args.episodes, "timeout": args.timeout}.items() if value is not None}
     if args.suite is not None:
         if SUITE_NAME.fullmatch(args.suite) is None:
             parser.error(f"a suite name is lowercase letters, digits and underscores, got {args.suite!r}")
@@ -82,8 +93,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("--suite takes no --out, its bundles go to the imported suites root")
         if args.limit:
             parser.error("--suite takes no --limit, a bundle holds every task of its split")
+    elif overrides:
+        parser.error(f"--{next(iter(overrides))} sets the stages of a bundle and needs --suite")
 
     manifest = Manifest.load(args.manifest)
+    try:
+        manifest = with_suite(manifest, overrides)
+    except pydantic.ValidationError as error:
+        parser.error(f"suite settings: {error.errors()[0]['loc'][0]} {error.errors()[0]['msg']}")
     report = run(manifest, out=args.out, limit=args.limit, write=args.write and args.suite is None)
     cli.summarize(report, "scenarios")
     if args.suite is not None:

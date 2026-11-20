@@ -1,0 +1,14 @@
+# USAR tuning: one 3 x 3 and one 3 x 4 rooms world, 2 hiding spots per world, each spot calling weak and loud (8 scenarios).
+# Write the suite bundle usar_tune with `generate_usar configs/usar/tune.yaml --suite usar --write`.
+# Seed 7 is the tuning seed the study names; none of its worlds is a test world of configs/usar/study.yaml.
+# The tuning runs used the turtlebot; pass --robot to run the same worlds on another robot.
+name: usar_tune
+seed: 7
+world: {rows: 3, cols: [3, 4], max_depth: 6, deep: 0.6, loops: 1}
+world_variants: 1
+spots_per_world: 2
+corners: [0, 1, 2]
+call_levels: [weak, loud]
+hiding: [random, adversarial]
+suite:
+  robot: turtlebot
