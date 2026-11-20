@@ -924,24 +924,19 @@ class RobotManager(NodeInterface):
                     ],
                 )
             )
-        bringup = os.path.join(
-            ament_index_python.packages.get_package_share_directory('arena_robots'),
-            'robots',
-            self.model_name,
-            'launch',
-            'bringup.launch.py',
-        )
-        if os.path.isfile(bringup):
+        bringup = self._config.bringup_launch
+        if bringup is not None:
             bringup_arguments = {
                 'base_frame': self._robot.frame.tf(self.body.base_frame),
                 'use_sim_time': 'True',
+                'urdf_path': str(self.caps.served_urdf().path),
             }
             gait_config = self.caps.champ_gait_file(str(self.namespace).strip('/').replace('/', '_') or self._robot.name)
             if gait_config is not None:
                 bringup_arguments['gait_config'] = gait_config
             adapter_actions.append(
                 launch.actions.IncludeLaunchDescription(
-                    launch.launch_description_sources.PythonLaunchDescriptionSource(bringup),
+                    launch.launch_description_sources.PythonLaunchDescriptionSource(str(bringup)),
                     launch_arguments=bringup_arguments.items(),
                 )
             )

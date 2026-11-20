@@ -13,7 +13,6 @@ import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
 import arena_simulation_setup.tree.assets.Material
-import attrs
 import geometry_msgs.msg
 import launch
 import launch.event_handlers
@@ -97,6 +96,7 @@ from arena_runtime.sim._control import (
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
+from arena_runtime.sim._robot import render_robot
 from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable, sloped_box
 
@@ -276,105 +276,82 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self._map_offsets: dict[str, tuple[float, float, float]] = {}
         self._box_centers: dict[str, tuple[float, float, float]] = {}
 
-    def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
-        robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-        args: dict[str, object] = {
-            **robot.extra,
-            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': declare(self.node, NodeParams.OPTIM).value,
-            'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
-        }
-        args.pop('resolved_assembly', None)
-        if robot.resolved_assembly is not None:
-            assert robot_config.assembly is not None
-            catalog = arena_robots.catalog.Catalog()
-            args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
-            args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
-        return args
-
     def robot_controllers(self, robot: Robot) -> list[str]:
         return robot_controllers(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync(), robot.resolved_assembly)
 
     async def robot_spawn(self, robots: Sequence[Robot]) -> Sequence[bool]:
         async def impl(robot: Robot) -> bool:
             try:
-                model = await (await robot.model.resolve()).model.get(
-                    (ModelType.URDF,),
-                    loader_args=self._robot_loader_args(robot),
+                robot_config = await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()
+                served = render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix='')
+
+                robot_params = robot_config.model_params
+                body = robot.body_of(robot_config)
+
+                fq_name = self._NS_ROBOT(robot.name)
+                ns = str(self.node.service_namespace(robot.name))
+
+                control_spec = robot_params.control
+                is_ros2_control = control_spec is not None and control_spec.is_ros2_control
+                relays_odom = control_spec is not None and is_ros2_control and body.odom_topic != "odom"
+
+                bridge_urdf_path = os.path.join('/tmp', f"arena_bridge_{robot.frame.sanitize()}.urdf")
+                transform_urdf_for_bridge(
+                    str(served.path),
+                    {
+                        'velocity': f"{ns}/mujoco/joint_commands_velocity",
+                        'position': f"{ns}/mujoco/joint_commands_position",
+                    },
+                    f"{ns}/mujoco/joint_states",
+                    bridge_urdf_path,
                 )
 
-                if model.type == ModelType.URDF:
-                    assert model.path is not None, f"URDF model {model.name} must have a valid file path"
-                    robot_config = await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()
-                    robot_params = robot_config.model_params
-                    body = robot.body_of(robot_config)
-
-                    fq_name = self._NS_ROBOT(robot.name)
-                    ns = str(self.node.service_namespace(robot.name))
-
-                    control_spec = robot_params.control
-                    is_ros2_control = control_spec is not None and control_spec.is_ros2_control
-                    relays_odom = control_spec is not None and is_ros2_control and body.odom_topic != "odom"
-
-                    bridge_urdf_path = os.path.join('/tmp', f"arena_bridge_{robot.frame.sanitize()}.urdf")
-                    transform_urdf_for_bridge(
-                        str(model.path),
-                        {
-                            'velocity': f"{ns}/mujoco/joint_commands_velocity",
-                            'position': f"{ns}/mujoco/joint_commands_position",
-                        },
-                        f"{ns}/mujoco/joint_states",
-                        bridge_urdf_path,
+                spawn_res = await self._clients.SpawnUrdf.call_timeout(
+                    SpawnUrdf.Request(
+                        env_id=self._env_id,
+                        name=fq_name,
+                        urdf_path=str(served.path),
+                        robot_model=robot.model.name,
+                        localization=True,
+                        tf_prefix=robot.frame.tf(),
+                        base_frame=body.base_frame,
+                        odom_frame=robot.odom_frame(robot_config),
+                        pose=self._placed(robot.pose).to_msg(),
+                        cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
+                        joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
+                        odom_topic='' if relays_odom else self.node.service_namespace(robot.name, 'odom'),
+                        sensors=[
+                            arena_mujoco_msgs.msg.Sensor(
+                                name=spec.name,
+                                type=str(spec.type),
+                                topic=arena_robots.Sensor.resolve_topic(spec, ns),
+                                frame=spec.frame,
+                                sensor=spec.sensor or '',
+                            )
+                            for spec in robot_config.effective_sensors(robot.resolved_request, frames=robot.frames)
+                        ],
                     )
+                )
+                if spawn_res is None or not spawn_res.path:
+                    self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check mujoco log'}")
+                    return False
 
-                    spawn_res = await self._clients.SpawnUrdf.call_timeout(
-                        SpawnUrdf.Request(
-                            env_id=self._env_id,
-                            name=fq_name,
-                            urdf_path=str(model.path),
-                            robot_model=robot.model.name,
-                            localization=True,
-                            tf_prefix=robot.frame.tf(),
-                            base_frame=body.base_frame,
-                            odom_frame=robot.odom_frame(robot_config),
-                            pose=self._placed(robot.pose).to_msg(),
-                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
-                            joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
-                            odom_topic='' if relays_odom else self.node.service_namespace(robot.name, 'odom'),
-                            sensors=[
-                                arena_mujoco_msgs.msg.Sensor(
-                                    name=spec.name,
-                                    type=str(spec.type),
-                                    topic=arena_robots.Sensor.resolve_topic(spec, ns),
-                                    frame=spec.frame,
-                                    sensor=spec.sensor or '',
-                                )
-                                for spec in robot_config.effective_sensors(robot.resolved_request, frames=robot.frames)
-                            ],
-                        )
-                    )
-                    if spawn_res is None or not spawn_res.path:
-                        self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check mujoco log'}")
+                self._track_level(robot.sim_path, robot.pose)
+                self._robot_prims[robot.sim_path] = spawn_res.path
+                self._map_offsets.pop(robot.sim_path, None)
+                if (offset := self._map_offset_request(robot.sim_path)) is not None:
+                    offset_res = await self._clients.SetMapOffset.call_timeout(offset)
+                    if offset_res is None or not offset_res.ok:
+                        self._map_offsets.pop(robot.sim_path, None)
+                        self._logger.error(f"SetMapOffset failed for {fq_name!r}: {'timeout' if offset_res is None else 'no odom entry, check mujoco log'}")
                         return False
 
-                    self._track_level(robot.sim_path, robot.pose)
-                    self._robot_prims[robot.sim_path] = spawn_res.path
-                    self._map_offsets.pop(robot.sim_path, None)
-                    if (offset := self._map_offset_request(robot.sim_path)) is not None:
-                        offset_res = await self._clients.SetMapOffset.call_timeout(offset)
-                        if offset_res is None or not offset_res.ok:
-                            self._map_offsets.pop(robot.sim_path, None)
-                            self._logger.error(f"SetMapOffset failed for {fq_name!r}: {'timeout' if offset_res is None else 'no odom entry, check mujoco log'}")
-                            return False
+                rsp_urdf_path = bridge_urdf_path if is_ros2_control else str(served.path)
 
-                    rsp_urdf_path = bridge_urdf_path if is_ros2_control else str(model.path)
+                await self._launch_robot_stack(robot, robot_params, body, rsp_urdf_path)
 
-                    await self._launch_robot_stack(robot, robot_params, body, rsp_urdf_path)
-
-                    self._register_agent_robot(robot, robot_config)
-                    return True
-
-                raise NotImplementedError(f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}")
+                self._register_agent_robot(robot, robot_config)
+                return True
 
             except Exception as e:
                 self._logger.error(f"{repr(e)}\n{traceback.format_exc()}")
@@ -410,7 +387,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
             rendered_yaml = (
                 effective_control_yaml(
                     robot.resolved_assembly,
-                    control_spec.config,
+                    robot_config,
                     robot.sim_path,
                     robot.frame.tf(),
                     sim=SimSimulator.MUJOCO,

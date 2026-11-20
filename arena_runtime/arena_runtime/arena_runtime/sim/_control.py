@@ -8,7 +8,6 @@ from collections.abc import Sequence
 
 import launch_ros.actions
 import yaml
-from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_bringup.constants import SimSimulator
 from arena_robots.assembly import ResolvedAssembly
 from arena_robots.catalog import Catalog, render_effective_control
@@ -47,42 +46,6 @@ def _with_planar_limits(control: dict, planar: "PlanarSpec") -> dict:
     return out
 
 
-def load_control_yaml(config_uri: str, sim: SimSimulator | None = None) -> dict:
-    """Resolve a ``control.config`` URI (``package://...`` or a bare path) and
-    load the raw YAML as a dict, overlaid key by key with its sibling
-    ``<name>.<sim>.yaml`` when ``sim`` is given and that file exists. No frame
-    prefixing; the caller merges/prefixes."""
-    if config_uri.startswith("package://"):
-        pkg, _, sub = config_uri[len("package://") :].partition('/')
-        try:
-            src_path = os.path.join(get_package_share_directory(pkg), sub)
-        except PackageNotFoundError as e:
-            raise FileNotFoundError(f"control.config package '{pkg}' not found") from e
-    else:
-        src_path = config_uri
-
-    data = _read_mapping(src_path)
-    if sim is None:
-        return data
-    root, ext = os.path.splitext(src_path)
-    overlay_path = f"{root}.{sim.value}{ext}"
-    if not os.path.isfile(overlay_path):
-        return data
-    return _overlay(data, _read_mapping(overlay_path))
-
-
-def _read_mapping(path: str) -> dict:
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"control config at {path} must be a mapping; got {type(data).__name__}")
-    return data
-
-
-def _overlay(base: dict, top: dict) -> dict:
-    return {**base, **{k: _overlay(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v for k, v in top.items()}}
-
-
 def _prefix_frames(obj: object, frame_prefix: str) -> object:
     if isinstance(obj, dict):
         return {k: (f"{frame_prefix}{v}" if isinstance(k, str) and k.endswith("_frame_id") and isinstance(v, str) and "/" not in v else _prefix_frames(v, frame_prefix)) for k, v in obj.items()}
@@ -92,20 +55,17 @@ def _prefix_frames(obj: object, frame_prefix: str) -> object:
 
 
 def render_ros2_control_yaml(
-    config_uri: str,
+    data: dict,
     sim_path: str,
     frame_prefix: str,
-    *,
-    data: dict | None = None,
 ) -> str:
     """Render and write a ros2_control YAML to /tmp.
 
     Prefixes bare frame_id values and writes the result to a deterministic temp
-    path. Returns the absolute output path. ``data`` overrides the config loaded
-    from ``config_uri`` (the caller's merged effective control dict); when
-    omitted, loads ``config_uri`` unchanged.
+    path. Returns the absolute output path. ``data`` is the caller's merged
+    effective control dict.
     """
-    rendered = _prefix_frames(data if data is not None else load_control_yaml(config_uri), frame_prefix)
+    rendered = _prefix_frames(data, frame_prefix)
     if isinstance(rendered, dict):
         rendered = {(k if k.startswith('/') else f'/**/{k}'): v for k, v in rendered.items()}
 
@@ -117,7 +77,7 @@ def render_ros2_control_yaml(
 
 def effective_control_yaml(
     resolved: ResolvedAssembly | None,
-    config_uri: str,
+    view: "RobotView",
     sim_path: str,
     frame_prefix: str,
     *,
@@ -130,13 +90,13 @@ def effective_control_yaml(
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
     take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys it declares."""
-    base_control = load_control_yaml(config_uri, sim)
+    base_control = view.control_config(sim.value)
     if planar is not None:
         base_control = _with_planar_limits(base_control, planar)
     if resolved is None:
-        return render_ros2_control_yaml(config_uri, sim_path, frame_prefix, data=base_control)
+        return render_ros2_control_yaml(base_control, sim_path, frame_prefix)
     merged, _ = render_effective_control(resolved, base_control, catalog if catalog is not None else Catalog(), prefix=prefix)
-    return render_ros2_control_yaml(config_uri, sim_path, frame_prefix, data=merged)
+    return render_ros2_control_yaml(merged, sim_path, frame_prefix)
 
 
 def effective_controllers(

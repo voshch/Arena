@@ -48,11 +48,8 @@ class _TopicMapping(dict[str, str]):
 
 class BridgeConfiguration(list[_TopicMapping]):
     @classmethod
-    def from_file(cls, path: str) -> "BridgeConfiguration":
-        with open(path) as f:
-            config = yaml.safe_load(f)
-            assert isinstance(config, list), "expected a list of topic mappings"
-            return BridgeConfiguration([_TopicMapping(**mapping) for mapping in config])
+    def from_rows(cls, rows: list[dict[str, str]]) -> "BridgeConfiguration":
+        return BridgeConfiguration([_TopicMapping(**row) for row in rows])
 
     def substitute(self, subs: dict[str, str]) -> "BridgeConfiguration":
         return BridgeConfiguration([mapping.substitute(subs) for mapping in self])

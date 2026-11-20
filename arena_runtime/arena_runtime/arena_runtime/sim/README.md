@@ -42,6 +42,8 @@ Defined in [`_interface.py`](_interface.py):
 
 Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
 
+Every simulator loads the URDF of a robot from `render_robot` in [_robot.py](_robot.py), which calls `arena_robots.served_urdf.serve` with the robot's resolved request and frames, the xacro arguments of the robot (its attributes and `extra`, plus `sim_path`, `namespace` and `gazebo_controllers` in Gazebo), the `optim` parameter and the sensor topic patches of its effective sensors. It returns the XML (`description`) and the file it is written to (`path`). Gazebo's robot bridge reads its topic mappings from `RobotView.bridge_mappings()`.
+
 ### `WorldITF`
 
 [`_interface.py`](_interface.py)
@@ -603,7 +605,7 @@ effective `planar` (its velocity and acceleration read from `limits`)
 (`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
 `angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
 `min_acceleration`, only the keys the controller declares and never an infinite
-limit. The literals in `control.yaml` declare which keys exist and equal the shipped `mobile.limits`, so a robot without an override renders the same parameters as its file.
+limit. `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. The literals in `control.yaml` declare which keys exist and equal the shipped `mobile.limits`, so a robot without an override renders the same parameters as its file.
 
 ## Adding a new simulator
 

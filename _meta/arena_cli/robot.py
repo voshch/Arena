@@ -240,7 +240,6 @@ def cmd_ls(opts: argparse.Namespace) -> int:
 
 
 def cmd_caps(model: str) -> int:
-    from ament_index_python.packages import get_package_share_path
     from arena_robots.Robot import RobotIdentifier
 
     try:
@@ -276,22 +275,14 @@ def cmd_caps(model: str) -> int:
                     extra += f"\toverrides={p.overrides}"
                 print(f"  {t}={p.variant}@{p.mount}{extra}")
 
-        from arena_robots.catalog import ComponentSpec
+        from arena_robots.catalog import Catalog
 
         types = sorted({t for m in spec.mounts.values() for t in m.accepts})
-        components_root = get_package_share_path("arena_robots") / "components"
+        catalog = Catalog()
         print("catalog:")
         for t in types:
-            type_dir = components_root / t
-            variants: list[str] = []
-            if type_dir.is_dir():
-                for d in sorted(type_dir.iterdir()):
-                    manifest = d / "component.yaml"
-                    if not manifest.is_file():
-                        continue
-                    family = ComponentSpec.from_yaml(manifest).variants
-                    variants.extend(family or [d.name])
-            print(f"  {t}: {', '.join(sorted(variants)) if variants else '(none)'}")
+            variants = catalog.variants(t)
+            print(f"  {t}: {', '.join(variants) if variants else '(none)'}")
 
     print("sensors:")
     for s in view.effective_sensors({}):

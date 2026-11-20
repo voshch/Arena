@@ -10,59 +10,25 @@ from arena_bringup.constants import SimSimulator
 import arena_robots.Robot
 from arena_robots.caps import PlanarSpec
 from arena_robots.fleet import instance_caps
-from arena_runtime.sim._control import effective_control_yaml, load_control_yaml, overlay_planar_limits
+from arena_runtime.sim._control import effective_control_yaml, overlay_planar_limits
 
-BASE = {
-    'controller_manager': {'ros__parameters': {'update_rate': 50}},
-    'base_controller': {
-        'ros__parameters': {
-            'wheel_separation': 0.4,
-            'wheel_separation_multiplier': 1.5,
-            'odom_frame_id': 'odom',
-        }
-    },
-}
+JACKAL = arena_robots.Robot.RobotIdentifier('jackal').resolve_sync()
 
 
-def _write(tmp_path: Path, name: str, data: dict) -> Path:
-    path = tmp_path / name
-    path.write_text(yaml.safe_dump(data))
-    return path
+def _controller(sim: SimSimulator) -> dict:
+    return JACKAL.control_config(sim.value)['jackal_velocity_controller']['ros__parameters']
 
 
-def test_sim_overlay_replaces_only_the_keys_it_names(tmp_path):
-    config = _write(tmp_path, 'control.yaml', BASE)
-    _write(tmp_path, 'control.gazebo.yaml', {'base_controller': {'ros__parameters': {'wheel_separation_multiplier': 1.1}}})
-    loaded = load_control_yaml(str(config), SimSimulator.GAZEBO)
-    assert loaded['base_controller']['ros__parameters'] == {'wheel_separation': 0.4, 'wheel_separation_multiplier': 1.1, 'odom_frame_id': 'odom'}
-    assert loaded['controller_manager'] == BASE['controller_manager']
-
-
-def test_other_sims_and_no_sim_ignore_the_overlay(tmp_path):
-    config = _write(tmp_path, 'control.yaml', BASE)
-    _write(tmp_path, 'control.gazebo.yaml', {'base_controller': {'ros__parameters': {'wheel_separation_multiplier': 1.1}}})
-    assert load_control_yaml(str(config), SimSimulator.MUJOCO) == BASE
-    assert load_control_yaml(str(config)) == BASE
-
-
-def test_missing_overlay_loads_the_base_config(tmp_path):
-    config = _write(tmp_path, 'control.yaml', BASE)
-    assert load_control_yaml(str(config), SimSimulator.GAZEBO) == BASE
-
-
-def test_rendered_control_yaml_carries_the_overlay_and_prefixed_frames(tmp_path):
-    config = _write(tmp_path, 'control.yaml', BASE)
-    _write(tmp_path, 'control.gazebo.yaml', {'base_controller': {'ros__parameters': {'wheel_separation_multiplier': 1.1}}})
-    out = Path(effective_control_yaml(None, str(config), f'test_overlay/{tmp_path.name}', 'env_0/r/', sim=SimSimulator.GAZEBO))
-    params = yaml.safe_load(out.read_text())['/**/base_controller']['ros__parameters']
+def test_rendered_control_yaml_carries_the_overlay_and_prefixed_frames():
+    out = Path(effective_control_yaml(None, JACKAL, 'test_overlay/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO))
+    params = yaml.safe_load(out.read_text())['/**/jackal_velocity_controller']['ros__parameters']
     out.unlink()
-    assert params['wheel_separation_multiplier'] == 1.1
+    assert params['wheel_separation_multiplier'] == 1.106
     assert params['odom_frame_id'] == 'env_0/r/odom'
 
 
 def test_jackal_turns_on_its_gazebo_track_only_in_gazebo():
-    config = 'package://arena_robots/robots/jackal/control.yaml'
-    multiplier = {sim: load_control_yaml(config, sim)['jackal_velocity_controller']['ros__parameters']['wheel_separation_multiplier'] for sim in SimSimulator}
+    multiplier = {sim: _controller(sim)['wheel_separation_multiplier'] for sim in SimSimulator}
     assert multiplier.pop(SimSimulator.GAZEBO) == 1.106
     assert set(multiplier.values()) == {1.5}
 
@@ -105,19 +71,20 @@ def test_infinite_planar_limits_leave_the_controller_keys_alone():
     assert out['linear.x.max_velocity'] == 0.5
 
 
-def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest(tmp_path):
-    config = _write(tmp_path, 'control.yaml', DRIVE)
-    out = Path(effective_control_yaml(None, str(config), f'test_planar/{tmp_path.name}', 'env_0/r/', sim=SimSimulator.GAZEBO, planar=_planar()))
+def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest():
+    out = Path(effective_control_yaml(None, JACKAL, 'test_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, planar=_planar()))
     rendered = yaml.safe_load(out.read_text())
-    assert rendered['/**/drive_controller']['ros__parameters']['linear.x.max_velocity'] == 0.5
-    assert rendered['/**/controller_manager'] == DRIVE['controller_manager']
+    out.unlink()
+    assert rendered['/**/jackal_velocity_controller']['ros__parameters']['linear.x.max_velocity'] == 0.5
+    assert rendered['/**/controller_manager'] == JACKAL.control_config(SimSimulator.GAZEBO.value)['controller_manager']
 
 
-def test_rendered_control_yaml_without_a_planar_override_is_the_file_content(tmp_path):
-    config = _write(tmp_path, 'control.yaml', DRIVE)
-    out = Path(effective_control_yaml(None, str(config), f'test_no_planar/{tmp_path.name}', 'env_0/r/', sim=SimSimulator.GAZEBO))
+def test_rendered_control_yaml_without_a_planar_override_keeps_the_controller_limits():
+    out = Path(effective_control_yaml(None, JACKAL, 'test_no_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO))
     rendered = yaml.safe_load(out.read_text())
-    assert rendered['/**/drive_controller']['ros__parameters'] == DRIVE['drive_controller']['ros__parameters']
+    out.unlink()
+    expected = {k: v for k, v in _controller(SimSimulator.GAZEBO).items() if not k.endswith('_frame_id')}
+    assert {k: v for k, v in rendered['/**/jackal_velocity_controller']['ros__parameters'].items() if not k.endswith('_frame_id')} == expected
 
 
 def _shipped_control_files() -> list[tuple[str, str]]:
@@ -139,8 +106,7 @@ def test_the_effective_planar_limits_of_a_shipped_robot_leave_its_controller_sec
 
 
 def test_a_halving_limits_override_halves_the_jackal_controller_limits():
-    config = 'package://arena_robots/robots/jackal/control.yaml'
-    base = load_control_yaml(config)['jackal_velocity_controller']['ros__parameters']
+    base = JACKAL.control_config()['jackal_velocity_controller']['ros__parameters']
     planar = instance_caps('jackal', {'cap:mobile.limits': '{"scale": 0.5}'}).mobile.planar
     halved = overlay_planar_limits(base, planar)
     assert halved['linear.x.max_velocity'] == pytest.approx(base['linear.x.max_velocity'] / 2)

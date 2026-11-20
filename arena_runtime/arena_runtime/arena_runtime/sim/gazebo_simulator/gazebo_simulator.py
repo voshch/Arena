@@ -17,7 +17,6 @@ from pathlib import Path
 import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
-import attrs
 import gz.transport13
 import launch
 import launch_ros
@@ -29,6 +28,7 @@ from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.Time import Time
+from arena_robots.served_urdf import ServedURDF
 from arena_simulation_setup.shared import Ceiling, Light, cct_to_rgb
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
@@ -72,6 +72,7 @@ from arena_runtime.sim._control import (
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import resolve_obstacle_box
+from arena_runtime.sim._robot import render_robot
 from arena_runtime.sim._walls import realize_renderable, sloped_box
 from arena_runtime.static_tf import StaticTransformBroadcaster
 
@@ -460,39 +461,23 @@ class GazeboSimulator(BaseSim):
         self._odom_broadcaster = StaticTransformBroadcaster(self.node)
         self._velocity_publishers: dict[str, gz.transport13.Publisher] = {}
 
-    def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
-        args: dict[str, object] = {
-            **robot.extra,
-            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'sim_path': robot.sim_path,
-            'optim': declare(self.node, NodeParams.OPTIM).value,
-        }
-        args.pop('resolved_assembly', None)
+    def _robot_urdf(self, robot: Robot) -> ServedURDF:
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-        args['sensor_topic_patches'] = arena_robots.Sensor.topic_elements(
-            robot_config.effective_sensors(robot.resolved_request, frames=robot.frames),
-            f"/model/{robot.sim_path}",
-        )
-        if robot.resolved_assembly is not None:
-            assert robot_config.assembly is not None
-            catalog = arena_robots.catalog.Catalog()
-            args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
-            args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
+        xacro_args: dict[str, object] = {'sim_path': robot.sim_path}
         control_spec = robot_config.model_params.control
-        if control_spec is None or not control_spec.is_ros2_control:
-            return args
-        args['namespace'] = str(self.node.service_namespace(robot.name))
-        if control_spec.config is not None:
-            args['gazebo_controllers'] = self._render_ros2_control_yaml(
-                robot,
-                control_spec.config,
-                frame_prefix=robot.frame.tf(),
-                control_prefix=(robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'),
-            )
-        return args
+        if control_spec is not None and control_spec.is_ros2_control:
+            xacro_args['namespace'] = str(self.node.service_namespace(robot.name))
+            if control_spec.config is not None:
+                xacro_args['gazebo_controllers'] = self._render_ros2_control_yaml(
+                    robot,
+                    robot_config,
+                    frame_prefix=robot.frame.tf(),
+                    control_prefix=(robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'),
+                )
+        return render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix=f"/model/{robot.sim_path}", xacro_args=xacro_args)
 
-    def _render_ros2_control_yaml(self, robot: Robot, config_uri: str, *, frame_prefix: str, control_prefix: str) -> str:
-        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix, planar=robot.planar_of(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()))
+    def _render_ros2_control_yaml(self, robot: Robot, robot_config: arena_robots.Robot.RobotView, *, frame_prefix: str, control_prefix: str) -> str:
+        return effective_control_yaml(robot.resolved_assembly, robot_config, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix, planar=robot.planar_of(robot_config))
 
     def _placed_light(self, params: dict[str, typing.Any]) -> dict[str, typing.Any]:
         x, y, z = params['pose']
@@ -545,18 +530,18 @@ class GazeboSimulator(BaseSim):
             robot_view = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
             self._odom_frames[robot.sim_path] = robot.frame.tf(robot.odom_frame(robot_view))
             self._track_level(robot.sim_path, robot.pose)
-            _loader_args = self._robot_loader_args(robot)
-            model = await (await robot.model.resolve()).model.get(ModelType.URDF, loader_args=_loader_args)
-            if model.type is ModelType.UNKNOWN:
-                self._logger.error(f"robot {robot.name!r} resolved to an unknown model type after spawning; removing the entity again")
+            try:
+                served = self._robot_urdf(robot)
+            except Exception:
+                self._logger.error(f"robot {robot.name!r} URDF could not be served after spawning; removing the entity again")
+                self._logger.debug(traceback.format_exc())
                 await self._delete_entity(robot.sim_path)
                 return False
             self._id_wanted.add(robot.sim_path)
             if await self._resolve_entity_id(robot.sim_path, timeout=_ENTITY_ID_TIMEOUT) is None:
                 self._logger.warning(f"entity id of {robot.sim_path!r} not in scene/info within {_ENTITY_ID_TIMEOUT}s, will retry at the first teleport")
-            model_description = model.description
             self._robot_initialpose(robot)
-            await self._robot_bridge(robot, model_description)
+            await self._robot_bridge(robot, served.description)
             robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
             self._register_agent_robot(robot, robot_config)
             return True
@@ -955,12 +940,20 @@ class GazeboSimulator(BaseSim):
     async def _spawn_entity(self, entity: Entity) -> bool:
         async with self._semaphore:
             try:
+                if isinstance(entity, Robot):
+                    try:
+                        served = self._robot_urdf(entity)
+                    except Exception:
+                        self._logger.warning(f"Failed to resolve model for entity {entity.name}")
+                        self._logger.debug(traceback.format_exc())
+                        return False
+                    ok = await self._spawn_sdf(entity.sim_path, _free_position_joints(served.description), self._placed(entity.pose))
+                    if ok:
+                        self.entities[entity.name] = entity
+                    return ok
+
                 try:
-                    if isinstance(entity, Robot):
-                        _loader_args = self._robot_loader_args(entity)
-                        model = await (await entity.model.resolve()).model.get(ModelType.URDF, loader_args=_loader_args)
-                    else:
-                        model = await (await entity.model.resolve()).model.get(ModelType.SDF)
+                    model = await (await entity.model.resolve()).model.get(ModelType.SDF)
                 except Exception:
                     self._logger.warning(f"Failed to resolve model for entity {entity.name}")
                     self._logger.debug(traceback.format_exc())
@@ -970,13 +963,10 @@ class GazeboSimulator(BaseSim):
                     self._logger.warning(f"Failed to resolve model for entity {entity.name}: unknown model type {model}")
                     return False
 
-                if isinstance(entity, Robot):
-                    ok = await self._spawn_sdf(entity.sim_path, _free_position_joints(model.description), self._placed(entity.pose))
-                else:
-                    ok = await self._spawn_model(entity.sim_path, model, self._placed(entity.pose))
-                if ok and (model.path is None or model.type is ModelType.URDF):
+                ok = await self._spawn_model(entity.sim_path, model, self._placed(entity.pose))
+                if ok and model.path is None:
                     self.entities[entity.name] = entity
-                if ok and model.path and model.type is not ModelType.URDF:
+                if ok and model.path:
                     self._bind_glow(entity, _sdf_file(model.path))
                 return ok
 
@@ -1196,7 +1186,7 @@ class GazeboSimulator(BaseSim):
             "robot_name": robot.sim_path,
             "world": "/world/default",
         }
-        file_mappings = BridgeConfiguration.from_file(robot_config.mappings)
+        file_mappings = BridgeConfiguration.from_rows(robot_config.bridge_mappings())
         # Derived gz topics are already concrete, so dedupe against the file mappings' own
         # substituted form rather than their raw placeholder strings.
         existing = {(m.gz_topic, m.ros_topic) for m in file_mappings.substitute(subs)}

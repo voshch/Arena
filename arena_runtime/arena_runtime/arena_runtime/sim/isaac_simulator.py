@@ -13,7 +13,6 @@ import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
 import arena_simulation_setup.tree.assets.Material
-import attrs
 import geometry_msgs.msg
 import isaacsim_msgs.msg
 import launch
@@ -98,6 +97,7 @@ from arena_runtime.sim._control import (
     twist_stamper_node,
 )
 from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
+from arena_runtime.sim._robot import render_robot
 from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable, sloped_box
 
@@ -256,100 +256,71 @@ class IsaacSimulator(BaseSim, NodeInterface):
         self._shared_lights: set[str] = set()
         self._box_centers: dict[str, tuple[float, float, float]] = {}
 
-    def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
-        robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-        args: dict[str, object] = {
-            **robot.extra,
-            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': declare(self.node, NodeParams.OPTIM).value,
-            # no world-scoped topic namespace in Isaac, empty prefix keeps the
-            # injected sensor topics namespace-relative
-            'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
-        }
-        args.pop('resolved_assembly', None)
-        if robot.resolved_assembly is not None:
-            assert robot_config.assembly is not None
-            catalog = arena_robots.catalog.Catalog()
-            args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
-            args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
-        return args
-
     def robot_controllers(self, robot: Robot) -> list[str]:
         return robot_controllers(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync(), robot.resolved_assembly)
 
     async def robot_spawn(self, robots: Sequence[Robot]) -> Sequence[bool]:
         async def impl(robot: Robot) -> bool:
             try:
-                model = await (await robot.model.resolve()).model.get(
-                    (
-                        ModelType.URDF,
-                        # ModelType.USD
-                    ),
-                    loader_args=self._robot_loader_args(robot),
-                )
+                robot_config = await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()
+                served = render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix='')
 
-                if model.type == ModelType.URDF:
-                    assert model.path is not None, f"URDF model {model.name} must have a valid file path"
-                    robot_config = await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()
-                    robot_params = robot_config.model_params
-                    body = robot.body_of(robot_config)
+                robot_params = robot_config.model_params
+                body = robot.body_of(robot_config)
 
-                    fq_name = self._NS_ROBOT(robot.name)
+                fq_name = self._NS_ROBOT(robot.name)
 
-                    control_spec = robot_params.control
-                    is_ros2_control = control_spec is not None and control_spec.is_ros2_control
-                    relays_odom = control_spec is not None and is_ros2_control and body.odom_topic != "odom"
+                control_spec = robot_params.control
+                is_ros2_control = control_spec is not None and control_spec.is_ros2_control
+                relays_odom = control_spec is not None and is_ros2_control and body.odom_topic != "odom"
 
-                    spawn_res = await self._clients.SpawnUrdf.call_timeout(
-                        SpawnUrdf.Request(
-                            name=fq_name,
-                            urdf_path=str(model.path),
-                            robot_model=robot.model.name,
-                            localization=True,
-                            tf_prefix=robot.frame.tf(),
-                            base_frame=body.base_frame,
-                            odom_frame=robot.odom_frame(robot_config),
-                            pose=self._placed(robot.pose).to_msg(),
-                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
-                            joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
-                            odom_topic='' if relays_odom else self.node.service_namespace(robot.name, 'odom'),
-                        )
+                spawn_res = await self._clients.SpawnUrdf.call_timeout(
+                    SpawnUrdf.Request(
+                        name=fq_name,
+                        urdf_path=str(served.path),
+                        robot_model=robot.model.name,
+                        localization=True,
+                        tf_prefix=robot.frame.tf(),
+                        base_frame=body.base_frame,
+                        odom_frame=robot.odom_frame(robot_config),
+                        pose=self._placed(robot.pose).to_msg(),
+                        cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
+                        joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
+                        odom_topic='' if relays_odom else self.node.service_namespace(robot.name, 'odom'),
                     )
-                    if spawn_res is None or not spawn_res.path:
-                        self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check isaac log'}")
-                        return False
+                )
+                if spawn_res is None or not spawn_res.path:
+                    self._logger.error(f"SpawnUrdf failed for {fq_name!r}: {'timeout' if spawn_res is None else 'spawn error, check isaac log'}")
+                    return False
 
-                    # Jazzy controller_manager reads URDF from the robot_description topic, not
-                    # its parameter; feed RSP the bridge URDF so the same topic serves both
-                    # RViz/Nav2 (which only care about link/joint geometry) and the bridge
-                    # controller_manager (which needs TopicBasedSystem as the hw plugin).
-                    rsp_urdf_path = str(model.path)
-                    if is_ros2_control:
-                        rsp_urdf_path = os.path.join('/tmp', f"arena_bridge_{robot.frame.sanitize()}.urdf")
-                        ns = str(self.node.service_namespace(robot.name))
-                        transform_urdf_for_bridge(
-                            str(model.path),
-                            {
-                                'velocity': f"{ns}/isaac/joint_commands_velocity",
-                                'position': f"{ns}/isaac/joint_commands_position",
-                            },
-                            f"{ns}/isaac/joint_states",
-                            rsp_urdf_path,
-                        )
+                # Jazzy controller_manager reads URDF from the robot_description topic, not
+                # its parameter; feed RSP the bridge URDF so the same topic serves both
+                # RViz/Nav2 (which only care about link/joint geometry) and the bridge
+                # controller_manager (which needs TopicBasedSystem as the hw plugin).
+                rsp_urdf_path = str(served.path)
+                if is_ros2_control:
+                    rsp_urdf_path = os.path.join('/tmp', f"arena_bridge_{robot.frame.sanitize()}.urdf")
+                    ns = str(self.node.service_namespace(robot.name))
+                    transform_urdf_for_bridge(
+                        str(served.path),
+                        {
+                            'velocity': f"{ns}/isaac/joint_commands_velocity",
+                            'position': f"{ns}/isaac/joint_commands_position",
+                        },
+                        f"{ns}/isaac/joint_states",
+                        rsp_urdf_path,
+                    )
 
-                    await self._launch_robot_stack(robot, robot_params, body, rsp_urdf_path)
+                await self._launch_robot_stack(robot, robot_params, body, rsp_urdf_path)
 
-                    self._register_agent_robot(robot, robot_config)
-                    self._robot_prims[robot.sim_path] = fq_name
-                    self._map_offsets[robot.sim_path] = (0.0, 0.0, 0.0)
-                    self._map_offset_calls.pop(robot.sim_path, None)
-                    self._track_level(robot.sim_path, robot.pose)
-                    if (call := self._map_offset_calls.get(robot.sim_path)) is not None and await AsyncUtil.timeout(self.node.await_ros(call), timeout_sec=_MAP_OFFSET_TIMEOUT_S) is None:
-                        self._logger.warning(f"SetMapOffset for {fq_name!r} timed out, its map -> odom is stale")
-                    return True
-
-                # TODO
-                raise NotImplementedError(f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}")
+                self._register_agent_robot(robot, robot_config)
+                self._robot_prims[robot.sim_path] = fq_name
+                self._map_offsets[robot.sim_path] = (0.0, 0.0, 0.0)
+                self._map_offset_calls.pop(robot.sim_path, None)
+                self._track_level(robot.sim_path, robot.pose)
+                if (call := self._map_offset_calls.get(robot.sim_path)) is not None and await AsyncUtil.timeout(self.node.await_ros(call), timeout_sec=_MAP_OFFSET_TIMEOUT_S) is None:
+                    self._logger.warning(f"SetMapOffset for {fq_name!r} timed out, its map -> odom is stale")
+                return True
 
             except Exception as e:
                 self._logger.error(f"{repr(e)}\n{traceback.format_exc()}")
@@ -385,7 +356,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             rendered_yaml = (
                 effective_control_yaml(
                     robot.resolved_assembly,
-                    control_spec.config,
+                    robot_config,
                     robot.sim_path,
                     robot.frame.tf(),
                     sim=SimSimulator.ISAAC,

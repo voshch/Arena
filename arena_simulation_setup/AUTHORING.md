@@ -1415,7 +1415,7 @@ reach, the NAV@r metric of the IndoorBench paper:
 
 ```bash
 ros2 run arena_simulation_setup nav_at_r my_world
-ros2 run arena_simulation_setup nav_at_r my_world --robot jackal --walls-only
+ros2 run arena_simulation_setup nav_at_r my_world --radius 0.267 --walls-only
 ros2 run arena_simulation_setup nav_at_r /path/to/world --radius 0.3 --start 2.0,3.5 --json
 ```
 
