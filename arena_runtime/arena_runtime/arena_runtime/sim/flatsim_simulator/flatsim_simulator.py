@@ -72,7 +72,7 @@ class FlatsimHost(SimLifecycle):
     CLOCK_TIMEOUT = 5.0
 
     def __init__(self, physics_dt: float, node: ArenaMixinNode) -> None:
-        self._dt = physics_dt
+        self.physics_dt = physics_dt
         self._node = node
         self._control = node.create_client_wrapper(ControlWorld, f'{SERVER}/control_world', qos_profile=SERVICE_QOS)
         self._delete_prefix = node.create_client_wrapper(DeletePrefix, f'{SERVER}/delete_prefix', qos_profile=SERVICE_QOS)
@@ -98,18 +98,18 @@ class FlatsimHost(SimLifecycle):
 
     async def step_seconds(self, seconds: float) -> float:
         """Take whole physics steps on the paused server, returns once /clock carries the last one."""
-        n = round(seconds / self._dt)
+        n = round(seconds / self.physics_dt)
         if seconds > 0:
             n = max(1, n)
         if n <= 0:
             return 0.0
-        chunk = max(1, round(1.0 / self._dt))
+        chunk = max(1, round(1.0 / self.physics_dt))
         reached = self._node.sim_time
         for start in range(0, n, chunk):
             reached = await self._send(True, min(chunk, n - start))
         if not await self._node.await_sim_time(reached - Time.from_float(_EPS), freeze_timeout=self.CLOCK_TIMEOUT):
             raise SimUnavailable(f'flatsim: /clock silent for {self.CLOCK_TIMEOUT}s after a step')
-        return n * self._dt
+        return n * self.physics_dt
 
     def env_prefix(self, env_id: int) -> str:
         return env_prefix(env_id)

@@ -106,8 +106,8 @@ IsaacSimulator is per-env on arena_env_node and adapts env-namespace state (per-
 """
 
 
-# matches World(physics_dt=rendering_dt=1/60) pinned in run_isaacsim.py
-_ISAAC_PHYSICS_HZ = 60.0
+# one step is one rendered frame, matches rendering_dt in run_isaacsim.py
+_ISAAC_FRAME_HZ = 50.0
 _ISAAC_EXPOSURE_GAIN = 5.0
 _TILT_EPS = 1e-9
 _MAP_OFFSET_TIMEOUT_S = 10.0
@@ -120,6 +120,8 @@ def world_roots(env_id: int | str) -> list[str]:
 
 
 class IsaacHost(SimLifecycle):
+    physics_dt = 1.0 / _ISAAC_FRAME_HZ
+
     def __init__(self, node: ArenaMixinNode) -> None:
         self._node = node
         self._logger = node.get_logger().get_child(type(self).__name__)
@@ -164,16 +166,16 @@ class IsaacHost(SimLifecycle):
         return 1 if res.ret[0] else 0
 
     async def step_seconds(self, seconds: float) -> float:
-        n = max(1, round(seconds * _ISAAC_PHYSICS_HZ))
+        n = max(1, round(seconds * _ISAAC_FRAME_HZ))
         start = self._node.sim_time
         res = await self._step_client.call_forever(StepSimulation.Request(steps=n))
         if not res.success:
             raise RuntimeError(res.error_msg)
-        reported = res.target_sim_time - n / _ISAAC_PHYSICS_HZ
-        if not self._clock_skew_logged and abs(reported - start.to_seconds()) > 1.0 / _ISAAC_PHYSICS_HZ:
+        reported = res.target_sim_time - n / _ISAAC_FRAME_HZ
+        if not self._clock_skew_logged and abs(reported - start.to_seconds()) > 1.0 / _ISAAC_FRAME_HZ:
             self._clock_skew_logged = True
             self._logger.warning(f"isaac sim time {reported:.3f}s vs /clock {start.to_seconds():.3f}s, stepping on /clock")
-        target = start + Time.from_float((n - 0.5) / _ISAAC_PHYSICS_HZ)
+        target = start + Time.from_float((n - 0.5) / _ISAAC_FRAME_HZ)
         while not await self._node.await_sim_time(target, freeze_timeout=10.0):
             self._node.get_logger().warning(f"waiting on isaac sim clock >= {target.to_seconds():.3f}s (at {self._node.sim_time.to_seconds():.3f}s)")
         return (self._node.sim_time - start).to_seconds()

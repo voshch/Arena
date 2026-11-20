@@ -144,6 +144,8 @@ class _PrimBatch:
 
 
 class MujocoHost(SimLifecycle):
+    physics_dt = _MUJOCO_PHYSICS_DT
+
     def __init__(self, node: ArenaMixinNode) -> None:
         self._node = node
         self._logger = node.get_logger().get_child(type(self).__name__)

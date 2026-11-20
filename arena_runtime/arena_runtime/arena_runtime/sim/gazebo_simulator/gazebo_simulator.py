@@ -144,7 +144,7 @@ class GazeboHost(SimLifecycle):
         self._service_control_world = service_control_world
         self._service_delete_entity = service_delete_entity
         self._logger = logger
-        self._dt = physics_dt
+        self.physics_dt = physics_dt
         self._rtf_boosted = False
         self._batch_target: Time | None = None
         self._control_generation = 0
@@ -251,7 +251,7 @@ class GazeboHost(SimLifecycle):
         if not await self._send_unpause():
             return False
         for attempt in range(1, _UNPAUSE_RESENDS + 1):
-            moved = await self._node.await_sim_time(self._node.sim_time + Time.from_float(self._dt / 2), freeze_timeout=_UNPAUSE_CONFIRM_S)
+            moved = await self._node.await_sim_time(self._node.sim_time + Time.from_float(self.physics_dt / 2), freeze_timeout=_UNPAUSE_CONFIRM_S)
             if moved or generation != self._control_generation:
                 break
             self._logger.warning(f"gz clock frozen {_UNPAUSE_CONFIRM_S:g}s after an unpause, resending it ({attempt}/{_UNPAUSE_RESENDS})")
@@ -310,7 +310,7 @@ class GazeboHost(SimLifecycle):
 
     async def step_seconds(self, seconds: float) -> float:
         """Advance sim time by paused ControlWorld multi_step requests. Raises on service failure."""
-        n = round(seconds / self._dt)
+        n = round(seconds / self.physics_dt)
         if seconds > 0:
             n = max(1, n)
         if n <= 0:
@@ -321,10 +321,10 @@ class GazeboHost(SimLifecycle):
             self._rtf_boosted = await self._set_physics_rtf(_RTF_BOOST)
         # gz acks multi_step on acceptance and completion is observed via /clock, so
         # record the target before sending (half-tick slack for float vs ns rounding)
-        target = self._node.sim_time + Time.from_float((n - 0.5) * self._dt)
+        target = self._node.sim_time + Time.from_float((n - 0.5) * self.physics_dt)
         # send in chunks of at most one sim second: pending iterations cannot be
         # cancelled, so a caller that dies mid-step orphans at most one chunk
-        max_chunk = max(1, round(1.0 / self._dt))
+        max_chunk = max(1, round(1.0 / self.physics_dt))
         # gz silently drops multi_step when the request lands while a previous
         # batch is still executing (Paused() is false mid-batch), so watch for
         # motion and resend the remaining ticks whenever the clock freezes
@@ -341,9 +341,9 @@ class GazeboHost(SimLifecycle):
                     self._logger.warning(f"step of {seconds:g}s superseded by an unpause after {(self._node.sim_time - begin).to_seconds():.3f}s")
                     return (self._node.sim_time - begin).to_seconds()
                 start_sim = self._node.sim_time
-                remaining = max(1, round((target - start_sim).to_seconds() / self._dt + 0.5))
+                remaining = max(1, round((target - start_sim).to_seconds() / self.physics_dt + 0.5))
                 chunk = min(max_chunk, remaining)
-                chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
+                chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self.physics_dt))
                 await self._send_multi_step(chunk, seconds)
                 sent = chunk_target
                 await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
@@ -352,7 +352,7 @@ class GazeboHost(SimLifecycle):
             if not self._stepping:
                 self._steps_idle.set()
         self._batch_target = target
-        return n * self._dt
+        return n * self.physics_dt
 
     async def _await_batches_done(self, target: Time) -> None:
         """Wait until gz paused at or past target: an unpause sent while a multi_step batch is pending is undone when the batch ends."""

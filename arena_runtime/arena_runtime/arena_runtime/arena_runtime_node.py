@@ -130,6 +130,7 @@ class _LifecycleLiveness(SimLifecycle):
         self._node = node
         self._inner = inner
         self._failures = 0
+        self.physics_dt = inner.physics_dt
 
     async def ensure_ready(self) -> None:
         await self._inner.ensure_ready()

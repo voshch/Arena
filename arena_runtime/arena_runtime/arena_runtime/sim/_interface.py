@@ -86,6 +86,8 @@ class SimUnavailable(RuntimeError):
 class SimLifecycle(abc.ABC):
     """Process-singleton hooks for sim-wide pause/unpause and namespace cleanup."""
 
+    physics_dt: float
+
     @abc.abstractmethod
     async def pause(self) -> bool: ...
 

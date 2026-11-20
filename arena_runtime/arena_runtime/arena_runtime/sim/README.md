@@ -315,8 +315,10 @@ Gazebo, Isaac and MuJoCo launch each robot's stack (robot_state_publisher, contr
 ## Lockstep
 
 `SimLifecycle.step_seconds(seconds) -> float` advances a held sim by an exact
-sim-time delta, quantized to whole physics steps (`physics_dt` rosparam,
-default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
+sim-time delta, quantized to whole physics steps of `SimLifecycle.physics_dt`,
+the sim's own step: MuJoCo 0.002 s, Isaac one rendered frame of 0.02 s, and for Gazebo, flatsim and
+dummy the `physics_dt` rosparam (default 0.0333, matching `empty.sdf`). The
+lockstep ledger steps in the same quantum. The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). A step of more than one
 tick first raises gz `real_time_factor` so the limiter does not pace it, and
@@ -469,6 +471,25 @@ with `{env}` expanded per env. CLI: `arena lockstep run [rtf:=N] [ungated]`
 `status`, and `arena lockstep gate [engine|peds|<spec> ...]` to register
 extra channels under caller `cli`.
 
+## Robot control and physics per simulator
+
+| | MuJoCo | Isaac | Gazebo |
+| --- | --- | --- | --- |
+| physics step | 0.002 s (`scene.PHYSICS_DT`) | 0.004 s (`run_isaacsim.PHYSICS_DT`), five per rendered frame of 0.02 s (`RENDERING_DT`), one solver substep under newton | 0.0333 s (`empty.sdf` `max_step_size`) |
+| lockstep quantum | the physics step | the rendered frame (0.02 s) | the physics step |
+| position servo | PD, revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped, force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
+| servo rate (revolute) | 20 per s | 20 per s | 2 per s per 10 Hz of the controller manager's `update_rate` (20 per s at go1's 200 Hz, 5 per s at 50 Hz) |
+| gravity compensation | none | none | none |
+| joint armature | `max(URDF, min(0.2, effort / 50))` kg m^2 | URDF | URDF |
+| command and joint state exchange | every 0.02 s of sim time | every rendered frame (0.02 s) | every physics step |
+| camera rate | URDF `update_rate`, checked every 0.02 s tick | the divisor of the 50 Hz render rate nearest the URDF `update_rate` (a 30 Hz camera runs at 25 Hz) | URDF `update_rate` |
+| `odom` with `odom_topic: odom` | ground truth from the free joint | ground truth from the articulation | `pose_to_tf` from the model pose, twist differenced |
+| command interfaces | position, velocity | position, velocity | position, velocity (effort unused) |
+
+Gains are derived from the URDF only, no robot sets them per joint.
+
+In Gazebo a joint below its URDF position limit gets no servo force (DART 6.13 `JointConstraint::update` handles it as a limit only), so a loaded position joint that a spawn transient pushes onto its limit stays there. A robot's URDF limits therefore sit outside the range its caps command, as TIAGo's torso stops at -0.05 m below its `[0.0, 0.35]` lift range.
+
 ## Sim-paused invariant
 
 The sim is paused for the entire body of `EpisodeNode._reset_episode`. Only
@@ -489,7 +510,7 @@ controller activation lives inside the robot bring-up unpause window.
 | --- | --- | --- | --- |
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
 | `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/flatsim_simulator.py`](flatsim_simulator/flatsim_simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
-| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI. `pose_to_tf` turns the bridged model pose into `odom -> base` and republishes a ros2_control robot's controller odometry on `odom` with that pose and those frames, so the pose follows teleports and the twist stays the wheel reading |
+| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI. `pose_to_tf` turns the bridged model pose into `odom -> base` and republishes a ros2_control robot's controller odometry on `odom` with that pose and those frames, so the pose follows teleports and the twist stays the wheel reading. A robot with no controller odometry (`odom_topic: odom`, go1 and a1) gets the pose itself on `odom` with the twist differenced between consecutive poses in the base frame, the ground truth MuJoCo and Isaac publish for it |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
 | `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
 
