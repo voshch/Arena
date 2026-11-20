@@ -1,0 +1,70 @@
+#usda 1.0
+(
+    defaultPrim = "lever_door"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "lever_door" (
+    prepend apiSchemas = ["PhysicsArticulationRootAPI"]
+)
+{
+    def Xform "frame" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        prepend references = @./links/frame/frame.usdz@
+    )
+    {
+        float physics:mass = 1
+    }
+
+    def Xform "leaf" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        prepend references = @./links/leaf/leaf.usdz@
+    )
+    {
+        float physics:mass = 1
+    }
+
+    def Xform "handle_link" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        prepend references = @./links/handle_link/handle_link.usdz@
+    )
+    {
+        float physics:mass = 1
+    }
+
+    def Scope "joints"
+    {
+        def PhysicsFixedJoint "world"
+        {
+            rel physics:body1 = </lever_door/frame>
+        }
+
+        def PhysicsRevoluteJoint "hinge"
+        {
+            uniform token physics:axis = "X"
+            rel physics:body0 = </lever_door/frame>
+            rel physics:body1 = </lever_door/leaf>
+            point3f physics:localPos0 = (0.06, 0, 0)
+            point3f physics:localPos1 = (0.06, 0, 0)
+            quatf physics:localRot0 = (0.70710677, 0, -0.70710677, 0)
+            quatf physics:localRot1 = (0.70710677, 0, -0.70710677, 0)
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 89.999985
+        }
+
+        def PhysicsRevoluteJoint "handle_joint"
+        {
+            uniform token physics:axis = "X"
+            rel physics:body0 = </lever_door/leaf>
+            rel physics:body1 = </lever_door/handle_link>
+            point3f physics:localPos0 = (1, -0.0625, 1)
+            point3f physics:localPos1 = (1, -0.0625, 1)
+            quatf physics:localRot0 = (0.70710677, 0, 0, 0.70710677)
+            quatf physics:localRot1 = (0.70710677, 0, 0, 0.70710677)
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 37.242256
+        }
+    }
+}
+

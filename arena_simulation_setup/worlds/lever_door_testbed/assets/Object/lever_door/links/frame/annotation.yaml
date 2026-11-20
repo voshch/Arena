@@ -1,0 +1,9 @@
+bounding_box:
+- - -0.04
+  - 1.24
+- - -0.06
+  - 0.06
+- - 0.0
+  - 2.04
+name: frame
+path: Object/lever_door/links/frame
