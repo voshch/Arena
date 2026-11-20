@@ -53,6 +53,8 @@ KINDS = {
     "suite": Kind("benchmark suites", _BENCH, "SuiteIdentifier", "BENCHMARK_PROVIDERS", bundle=True, closure="suite"),
     "contest": Kind("benchmark contests", _BENCH, "ContestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
     "manifest": Kind("report manifests", _BENCH, "ManifestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
+    "plot": Kind("reusable plot declarations", _BENCH, "PlotIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
+    "query": Kind("stored SQL queries", _BENCH, "QueryIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
 }
 
 DESCRIPTION = """Inspect and move resolvable arena data.
