@@ -9,7 +9,6 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-
 WIDTH = 1.2
 HEIGHT = 2.0
 LEAF_THICKNESS = 0.045
