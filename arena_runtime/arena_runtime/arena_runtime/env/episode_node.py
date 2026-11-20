@@ -1102,7 +1102,7 @@ class EpisodeNode(EnvNode):
         if "pos" not in config.extra:
             if pose is None:
                 identifier = RobotIdentifier.parse(config.robot)
-                clearance = footprint_radius(InstanceRequest(frames=config.frames, caps=config.caps).caps_of(identifier.resolve_sync()), identifier.name) + self.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
+                clearance = footprint_radius(InstanceRequest.of(view := identifier.resolve_sync(), config).caps_of(view), identifier.name) + self.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
                 pose = random_robot_pose(self._world_manager, self._robots_manager, safe_dist=clearance)
             config.extra["pos"] = pose.to_2d()
         self._robots_manager.add_pending(assigned_name, Robot.from_setup(config, node=self))

@@ -42,7 +42,7 @@ Defined in [`_interface.py`](_interface.py):
 
 Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
 
-Every simulator loads the URDF of a robot from `render_robot` in [_robot.py](_robot.py), which calls `arena_robots.served_urdf.serve` with the robot's resolved request and frames, the xacro arguments of the robot (its attributes and `extra`, plus `sim_path`, `namespace` and `gazebo_controllers` in Gazebo), the `optim` parameter and the sensor topic patches of its effective sensors. It returns the XML (`description`) and the file it is written to (`path`). Gazebo's robot bridge reads its topic mappings from `RobotView.bridge_mappings()`.
+Every simulator loads the URDF of a robot from `render_robot` in [_robot.py](_robot.py), which calls `arena_robots.served_urdf.serve` with the robot's resolved request and frames, the xacro arguments of the robot (its attributes and `extra`, plus `sim_path`, `namespace` and `gazebo_controllers` in Gazebo), the `optim` parameter and the sensor topic patches of its effective sensors. It returns the XML (`description`) and the file it is written to (`path`). Gazebo's robot bridge takes its topic mappings from the plugins of the canonical URDF (`Sensor.plugin_bridge_rows`) and the effective sensors (`Sensor.bridge_rows`).
 
 ### `WorldITF`
 
@@ -604,8 +604,9 @@ MuJoCo and Isaac overlay the base controller's limit keys from the instance's
 effective `planar` (its velocity and acceleration read from `limits`)
 (`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
 `angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
-`min_acceleration`, only the keys the controller declares and never an infinite
-limit. `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. The literals in `control.yaml` declare which keys exist and equal the shipped `mobile.limits`, so a robot without an override renders the same parameters as its file.
+`min_acceleration`, written for every axis whose `has_velocity_limits` or
+`has_acceleration_limits` flag the controller sets and never an infinite limit (the
+key stays unset, which the controllers read as unbounded). `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. `control.yaml` carries the flags and no limit values.
 
 The same function writes the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
 

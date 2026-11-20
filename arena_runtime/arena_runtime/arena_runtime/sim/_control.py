@@ -24,17 +24,17 @@ _PLANAR_CONTROLLER_AXES = {'linear': 'linear.x', 'lateral': 'linear.y', 'angular
 
 
 def overlay_planar_limits(params: dict, planar: "PlanarSpec") -> dict:
-    """A copy of a drive controller's parameters with the limit keys it declares set from ``planar``, infinite limits skipped."""
+    """A copy of a drive controller's parameters with the limit keys of every axis whose limit flag is true set from ``planar``, infinite limits skipped."""
     out = dict(params)
     for axis, prefix in _PLANAR_CONTROLLER_AXES.items():
         limits = {}
-        if axis in planar.velocity:
+        if params.get(f'{prefix}.has_velocity_limits') is True and axis in planar.velocity:
             limits[f'{prefix}.min_velocity'] = planar.velocity[axis].min
             limits[f'{prefix}.max_velocity'] = planar.velocity[axis].max
-        if axis in planar.acceleration:
+        if params.get(f'{prefix}.has_acceleration_limits') is True and axis in planar.acceleration:
             limits[f'{prefix}.min_acceleration'] = -planar.acceleration[axis]
             limits[f'{prefix}.max_acceleration'] = planar.acceleration[axis]
-        out.update({key: value for key, value in limits.items() if key in params and math.isfinite(value)})
+        out.update({key: value for key, value in limits.items() if math.isfinite(value)})
     return out
 
 
@@ -104,7 +104,7 @@ def effective_control_yaml(
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys it declares, and the geometry ``urdf`` measures overwrites its wheel keys."""
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys of every axis whose limit flag it sets, and the geometry ``urdf`` measures overwrites its wheel keys."""
     base_control = _with_drive_geometry(view.control_config(sim.value), urdf)
     if planar is not None:
         base_control = _with_planar_limits(base_control, planar)

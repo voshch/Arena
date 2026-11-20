@@ -98,6 +98,45 @@ def test_unknown_variant_is_skipped(tmp_path):
     ]
 
 
+def _preset(arena: Path, body: str = "robot: mpo700\nparts:\n  arm: ur5e\n") -> Path:
+    directory = arena / robots.ROBOTS_PREFIX / "mpo700_arm"
+    directory.mkdir()
+    (directory / "preset.yaml").write_text(body)
+    return directory
+
+
+def test_preset_request_reads_the_base_robot_and_the_part_refs(tmp_path):
+    directory = _preset(_arena(tmp_path), "robot: mpo700\nparts:\n  arm: ur5e[stall_time=2]\n  lidar: none\n  top: arm/ur10\n")
+    assert robots.preset_request(directory) == ("mpo700", {"arm/ur5e", "arm/ur10"})
+    assert robots.preset_request(directory.parent / "mpo700") is None
+
+
+def test_preset_inherits_the_submodules_of_its_base_and_its_parts(tmp_path):
+    arena = _arena(tmp_path)
+    _preset(arena)
+    subs = robots.robot_submodules(arena)
+    assert subs["mpo700_arm"] == [
+        "arena_robots/arena_robots/robots/mpo700/meshes",
+        "arena_robots/arena_robots/components/lidar/sick_s300/meshes",
+        "arena_robots/arena_robots/components/arm/ur/meshes",
+    ]
+    assert subs["mpo700"] == [
+        "arena_robots/arena_robots/robots/mpo700/meshes",
+        "arena_robots/arena_robots/components/lidar/sick_s300/meshes",
+    ]
+
+
+def test_preset_is_pending_until_its_component_is_checked_out(tmp_path):
+    arena = _arena(tmp_path)
+    _preset(arena)
+    _check_out(arena, "arena_robots/arena_robots/robots/mpo700/meshes")
+    _check_out(arena, "arena_robots/arena_robots/components/lidar/sick_s300/meshes")
+    assert "mpo700" in robots._ready_robots(arena)
+    assert "mpo700_arm" not in robots._ready_robots(arena)
+    _check_out(arena, "arena_robots/arena_robots/components/arm/ur/meshes")
+    assert "mpo700_arm" in robots._ready_robots(arena)
+
+
 def test_uri_owner():
     assert robots._uri_owner("robots/mpo700/meshes/body.dae") == "mpo700"
     assert robots._uri_owner("components/lidar/sick_s300/meshes/s300.dae") == "lidar/sick_s300"

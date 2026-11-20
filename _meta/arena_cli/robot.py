@@ -240,17 +240,27 @@ def cmd_ls(opts: argparse.Namespace) -> int:
 
 
 def cmd_caps(model: str) -> int:
+    from arena_robots.request import InstanceRequest
     from arena_robots.Robot import RobotIdentifier
+    from arena_robots.SetupFile import Config
 
     try:
-        view = RobotIdentifier(model).resolve_sync()
-    except FileNotFoundError as e:
+        config = Config.parse(model)[0]
+        view = RobotIdentifier(config.robot).resolve_sync()
+        request = InstanceRequest.of(view, config)
+    except (FileNotFoundError, RuntimeError, ValueError) as e:
         print(f"arena robot: {e}", file=sys.stderr)
         return 1
 
     print(f"model: {model}")
+    if config.robot != model:
+        print(f"preset of: {config.robot}")
+        for lhs, values in config.parts.items():
+            print(f"  {lhs}={','.join(values)}")
+        for path, value in config.caps.items():
+            print(f"  {path}={value}")
 
-    caps = sorted(view.caps.available)
+    caps = sorted(request.caps_of(view).available)
     print(f"caps: {', '.join(caps) if caps else '(none)'}")
 
     spec = view.assembly
@@ -285,7 +295,7 @@ def cmd_caps(model: str) -> int:
             print(f"  {t}: {', '.join(variants) if variants else '(none)'}")
 
     print("sensors:")
-    for s in view.effective_sensors({}):
+    for s in view.effective_sensors(request.parts, frames=request.frames):
         print(f"  {s.name}\t{s.type}\t{s.topic}")
     return 0
 

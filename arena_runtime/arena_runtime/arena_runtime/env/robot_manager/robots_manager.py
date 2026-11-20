@@ -332,6 +332,8 @@ class RobotsManager(NodeInterface):
             if ready is not None and name not in ready:
                 continue
             view = robot_id.resolve_sync()
+            if not view.is_definition:
+                continue
             mobile = view.mobile
             if mobile is None:
                 continue

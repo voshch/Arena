@@ -1182,20 +1182,12 @@ class GazeboSimulator(BaseSim):
 
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
 
-        subs = {
-            "robot_name": robot.sim_path,
-            "world": "/world/default",
-        }
-        file_mappings = BridgeConfiguration.from_rows(robot_config.bridge_mappings())
-        # Derived gz topics are already concrete, so dedupe against the file mappings' own
-        # substituted form rather than their raw placeholder strings.
-        existing = {(m.gz_topic, m.ros_topic) for m in file_mappings.substitute(subs)}
-        for gz_topic, ros_topic, ros_type, gz_type in arena_robots.Sensor.bridge_rows(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), f"/model/{robot.sim_path}"):
-            if (gz_topic, ros_topic) in existing:
-                continue
-            file_mappings.append(_TopicMapping(gz_topic=gz_topic, ros_topic=ros_topic, ros_type=ros_type, gz_type=gz_type, direction=MappingDirection.GZ_TO_ROS))
-
-        mappings = file_mappings.substitute(subs)
+        prefix = f"/model/{robot.sim_path}"
+        rows = [
+            *arena_robots.Sensor.plugin_bridge_rows(robot.caps_of(robot_config).rendered_urdf(), prefix),
+            *arena_robots.Sensor.bridge_rows(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), prefix),
+        ]
+        mappings = BridgeConfiguration(_TopicMapping(gz_topic=gz_topic, ros_topic=ros_topic, ros_type=ros_type, gz_type=gz_type, direction=MappingDirection.GZ_TO_ROS) for gz_topic, ros_topic, ros_type, gz_type in dict.fromkeys(rows))
 
         bridge_arguments = mappings.as_args()
         remappings = mappings.as_remappings()

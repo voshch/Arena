@@ -25,6 +25,7 @@ from arena_rclpy_mixins.Async import LaunchHandle
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.caps import BodySpec, MobileSpec, typed_fields
+from arena_robots.champ import served_champ_files
 from arena_robots.Robot import RobotView
 from arena_simulation_setup.shared.conditions import render_until
 
@@ -930,10 +931,8 @@ class RobotManager(NodeInterface):
                 'base_frame': self._robot.frame.tf(self.body.base_frame),
                 'use_sim_time': 'True',
                 'urdf_path': str(self.caps.served_urdf().path),
+                **{name: str(path) for name, path in served_champ_files(self.caps).items()},
             }
-            gait_config = self.caps.champ_gait_file(str(self.namespace).strip('/').replace('/', '_') or self._robot.name)
-            if gait_config is not None:
-                bringup_arguments['gait_config'] = gait_config
             adapter_actions.append(
                 launch.actions.IncludeLaunchDescription(
                     launch.launch_description_sources.PythonLaunchDescriptionSource(str(bringup)),

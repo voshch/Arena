@@ -92,6 +92,20 @@ class TestDesugarRobotEntry:
             desugar_robot_entry("jackal2]")
 
 
+class TestPresetEntries:
+    def test_a_preset_entry_expands_to_its_base_robot_and_parts(self):
+        (config,) = Config.parse(desugar_robot_entry("rbvogui_plus"))
+        assert (config.robot, config.parts) == ("rbvogui", {"arm": ["ur5e"]})
+
+    def test_the_brackets_of_the_entry_win_over_the_preset(self):
+        (config,) = Config.parse(desugar_robot_entry("rbkairos_plus[arm=ur10,name=picker]"))
+        assert (config.robot, config.name, config.parts) == ("rbkairos", "picker", {"arm": ["ur10"]})
+
+    def test_every_counted_instance_carries_the_preset_parts(self):
+        configs = Config.parse(desugar_robot_entry("ridgeback_plus[2]"))
+        assert [(config.robot, config.parts) for config in configs] == [("ridgeback", {"arm": ["ur5e"]})] * 2
+
+
 class TestCapOverrideGrammar:
     ENTRY = "jackal[mobile.velocity_limits.linear=[-0.5,1.0], mobile.radius=*1.2, mobile.adapter=drl]"
 

@@ -335,7 +335,7 @@ def test_parse_parts_without_assembly_raises(stub_node):
 
     value = {
         "name": "bot6",
-        "model": "rbkairos_plus",
+        "model": "not_an_arena_robot",
         "parts": {"lidar": ["sick"]},
     }
     with pytest.raises(RuntimeError, match="requires an assembly.yaml"):
@@ -365,7 +365,7 @@ def test_parse_frames_unknown_mount_raises(stub_node):
 def test_parse_frames_without_assembly_raises(stub_node):
     from arena_runtime.shared import Robot
 
-    value = {"name": "bot9", "model": "rbkairos_plus", "frames": {"front": "x"}}
+    value = {"name": "bot9", "model": "not_an_arena_robot", "frames": {"front": "x"}}
     with pytest.raises(RuntimeError, match="requires an assembly.yaml"):
         Robot.parse(value, node=stub_node)
 
