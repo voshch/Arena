@@ -172,6 +172,21 @@ class ColonnadeFeature(BaseModel):
         return self
 
 
+class FlowLaneSpec(BaseModel):
+    """Pedestrian lane of a crowd flow: walkers follow its centreline inside the free space."""
+
+    side: Literal["right", "left", "centre"] = Field(description="Side the lane keeps to when no offset is given: right, left or centre. Required.")
+    offset: float | None = Field(default=None, description="Lateral position in metres, positive left of travel (unset = derived from side).")
+    two_way: bool = Field(default=False, description="The lane shares a stretch of its centreline with a flow that walks the other way (also detected automatically).")
+    sigma_q: float | None = Field(default=None, gt=0.0, description="Spread of the walker fraction q (unset = 0.5).")
+    chord_tolerance: float | None = Field(default=None, gt=0.0, description="Largest distance in metres between a track segment and the centreline (unset = 0.05).")
+    sweep_length: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="Longitudinal window in metres that closes gaps (unset = column spacing past a colonnade, else the track spacing).",
+    )
+
+
 class FlowStreamSpec(BaseModel):
     """Continuous pedestrian crowd flow stream between dock socket zones."""
 
@@ -192,6 +207,7 @@ class FlowStreamSpec(BaseModel):
     active_window: tuple[float, float] = Field(default=(0.0, DEFAULT_ACTIVE_WINDOW_END_S), description="Active time window (t_start, t_end)")
     max_concurrent: int = Field(default=-1, description="Max concurrent agents alive (-1 for unlimited)")
     max_total: int = Field(default=-1, description="Total agents to spawn over episode (-1 for unlimited)")
+    lane: FlowLaneSpec | None = Field(default=None, description="Pedestrian lane of this flow; unset = walkers aim at the sink.")
 
     @model_validator(mode="after")
     def validate_active_window(self) -> FlowStreamSpec:
@@ -271,6 +287,55 @@ class ConcourseConfiguration(BaseConfiguration):
         if len(names) != len(set(names)):
             raise ValueError(f"Flow stream names must be unique, found duplicates: {names}")
         return self
+
+
+def _xy(value: object) -> tuple[float, float]:
+    x, y = cast("list[float]", value)[:2]
+    return float(x), float(y)
+
+
+def _station(metadata: dict[str, object]) -> float:
+    return float(cast("float", metadata["spine_s"]))
+
+
+def _length(points: list[tuple[float, float]]) -> float:
+    return sum(math.dist(a, b) for a, b in zip(points, points[1:], strict=False))
+
+
+SHARED_STRETCH_STEP = 0.05
+SHARED_STRETCH_TOLERANCE = 0.05
+OPPOSITE_COSINE = -0.5
+
+
+def _sampled_centreline(segments: list[list[tuple[float, float]]]) -> tuple[np.ndarray, np.ndarray]:
+    """Points every SHARED_STRETCH_STEP metres along a centreline, each with the unit direction of the straight piece it lies on."""
+    points: list[tuple[float, float]] = []
+    directions: list[tuple[float, float]] = []
+    for leg in segments:
+        for (ax, ay), (bx, by) in zip(leg, leg[1:], strict=False):
+            length = math.dist((ax, ay), (bx, by))
+            if length <= 1e-9:
+                continue
+            count = max(1, math.ceil(length / SHARED_STRETCH_STEP))
+            ux, uy = (bx - ax) / length, (by - ay) / length
+            for k in range(count):
+                fraction = k / count
+                points.append((ax + (bx - ax) * fraction, ay + (by - ay) * fraction))
+                directions.append((ux, uy))
+    return np.array(points, dtype=np.float64).reshape(-1, 2), np.array(directions, dtype=np.float64).reshape(-1, 2)
+
+
+def _shares_opposite_stretch(segments: list[list[tuple[float, float]]], other: list[list[tuple[float, float]]]) -> bool:
+    """True when the two centrelines share a stretch, within SHARED_STRETCH_TOLERANCE, that the two flows walk in opposite directions."""
+    points, directions = _sampled_centreline(segments)
+    other_points, other_directions = _sampled_centreline(other)
+    if len(points) == 0 or len(other_points) == 0:
+        return False
+    distance = np.linalg.norm(points[:, None, :] - other_points[None, :, :], axis=2)
+    nearest = np.argmin(distance, axis=1)
+    shared = distance[np.arange(len(points)), nearest] <= SHARED_STRETCH_TOLERANCE
+    opposite = np.einsum("ij,ij->i", directions, other_directions[nearest]) < OPPOSITE_COSINE
+    return bool(np.any(shared & opposite))
 
 
 def _oriented_box(
@@ -693,6 +758,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._dock_metadata[dock_name] = {
             "nav_pose": [round(dock_cx, 2), round(dock_cy, 2), round(yaw_into, 3)],
             "is_room": branch.is_room,
+            "spine_s": branch.at_s,
+            "junction": [px, py],
         }
 
     def _build_elevators(self, total_len: float) -> None:
@@ -717,6 +784,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
             self._dock_metadata[dock_name] = {
                 "nav_pose": [round(cabin_cx, 2), round(cabin_cy, 2), round(yaw_out, 3)],
                 "is_room": False,
+                "spine_s": elev.at_s,
+                "junction": [px, py],
             }
 
             # Door faces outward from the cabin back into the concourse corridor
@@ -801,6 +870,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._semantic_zones.append(("dock_start", "Terminal Dock Socket Start", dock_s_poly))
         self._dock_metadata["dock_start"] = {
             "nav_pose": [round(dock_s_cx, 2), round(dock_s_cy, 2), round(yaw0, 3)],
+            "spine_s": depth / 2.0,
+            "junction": None,
         }
 
         anchor_end = self._anchor_at(self._spine.length)
@@ -820,6 +891,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         self._semantic_zones.append(("dock_end", "Terminal Dock Socket End", dock_e_poly))
         self._dock_metadata["dock_end"] = {
             "nav_pose": [round(dock_e_cx, 2), round(dock_e_cy, 2), round(yaw_end_norm, 3)],
+            "spine_s": self._spine.length - depth / 2.0,
+            "junction": None,
         }
 
     def _validate_dock_pillar_clearance(self) -> None:
@@ -879,6 +952,84 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         target_pose = list(cast("list[float]", self._dock_metadata[target_key]["nav_pose"]))
         return start_pose, target_pose
 
+    def _spine_between(self, s0: float, s1: float) -> list[tuple[float, float]]:
+        """Spine points from arc length s0 to s1, in that order."""
+        lo, hi = min(s0, s1), max(s0, s1)
+        if hi - lo < 1e-9:
+            point = self._spine.interpolate(s0)
+            return [(point.x, point.y), (point.x, point.y)]
+        line = shapely.ops.substring(self._spine, lo, hi)
+        points = [(float(x), float(y)) for x, y in line.coords]
+        return points if s0 <= s1 else list(reversed(points))
+
+    def _lane_segments(self, spec: FlowStreamSpec) -> list[list[tuple[float, float]]]:
+        """Centreline segments of a lane flow, from its source nav pose to its sink nav pose."""
+        source = self._dock_metadata[spec.source_dock]
+        sink = self._dock_metadata[spec.sink_dock]
+        src_nav = _xy(source["nav_pose"])
+        dst_nav = _xy(sink["nav_pose"])
+        src_junction = None if source["junction"] is None else _xy(source["junction"])
+        dst_junction = None if sink["junction"] is None else _xy(sink["junction"])
+        spine = self._spine_between(_station(source), _station(sink))
+        if src_junction is None:
+            spine[0] = src_nav
+        if dst_junction is None:
+            spine[-1] = dst_nav
+        legs: list[list[tuple[float, float]]] = []
+        if src_junction is not None:
+            legs.append([src_nav, src_junction])
+        legs.append(spine)
+        if dst_junction is not None:
+            legs.append([dst_junction, dst_nav])
+        return [leg for leg in legs if _length(leg) > 1e-6]
+
+    def _colonnade_spacing(self, spec: FlowStreamSpec) -> float | None:
+        """Column spacing of the first colonnade that the flow passes, if any."""
+        lo, hi = sorted((_station(self._dock_metadata[spec.source_dock]), _station(self._dock_metadata[spec.sink_dock])))
+        for colonnade in self.config.colonnades:
+            if colonnade.start_s <= hi and colonnade.end_s >= lo:
+                return colonnade.spacing
+        return None
+
+    def _source_half_depth(self, dock_name: str, segments: list[list[tuple[float, float]]]) -> float:
+        """Half-extent of a source dock along the lane's initial direction, matching nav_pose at the dock centre."""
+        first = segments[0]
+        dx, dy = first[1][0] - first[0][0], first[1][1] - first[0][1]
+        length = math.hypot(dx, dy)
+        tx, ty = dx / length, dy / length
+        poly = next(z_poly for z_name, _, z_poly in self._semantic_zones if z_name == dock_name)
+        coords = poly.geoms[0].exterior.coords if isinstance(poly, MultiPolygon) else poly.exterior.coords
+        along = [x * tx + y * ty for x, y in coords]
+        return (max(along) - min(along)) / 2.0
+
+    def _lane_blocks(self, streams: list[FlowStreamSpec]) -> dict[str, dict[str, object]]:
+        """Lane blocks of the lane flows, with two-way and colonnade sweep settings resolved."""
+        lanes = {spec.name: spec for spec in streams if spec.lane is not None}
+        segments = {name: self._lane_segments(spec) for name, spec in lanes.items()}
+        blocks: dict[str, dict[str, object]] = {}
+        for name, spec in lanes.items():
+            lane = spec.lane
+            if lane is None:
+                continue
+            opposed = any(_shares_opposite_stretch(segments[name], other) for other_name, other in segments.items() if other_name != name)
+            block: dict[str, object] = {
+                "side": lane.side,
+                "two_way": lane.two_way or opposed,
+                "spawn_length": round(self._source_half_depth(spec.source_dock, segments[name]) * 0.5, 3),
+                "segments": [{"centreline": [[round(x, 3), round(y, 3)] for x, y in leg]} for leg in segments[name]],
+            }
+            if lane.offset is not None:
+                block["offset"] = lane.offset
+            if lane.sigma_q is not None:
+                block["sigma_q"] = lane.sigma_q
+            if lane.chord_tolerance is not None:
+                block["chord_tolerance"] = lane.chord_tolerance
+            sweep = lane.sweep_length if lane.sweep_length is not None else self._colonnade_spacing(spec)
+            if sweep is not None:
+                block["sweep_length"] = sweep
+            blocks[name] = block
+        return blocks
+
     def _compile_rate_profile(self, spec: FlowStreamSpec) -> list[dict[str, float]]:
         """Construct keyframes holding constant spawn rate throughout the active window."""
         t0, t1 = spec.active_window
@@ -937,6 +1088,8 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                     )
                 )
 
+        lane_blocks = self._lane_blocks(streams)
+
         # Register sink regions first in deterministic sorted order
         used_sinks = {s.sink_dock for s in streams}
         for sink_dock in sorted(used_sinks):
@@ -966,6 +1119,9 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                     },
                 },
             }
+            if spec.name in lane_blocks:
+                source_config = cast("dict[str, object]", regions[src_reg_name]["config"])
+                source_config["lane"] = lane_blocks[spec.name]
 
         robot_start, robot_goal = self._resolve_robot_mission()
         return {
