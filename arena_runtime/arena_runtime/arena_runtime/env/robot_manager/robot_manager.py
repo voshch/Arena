@@ -310,7 +310,7 @@ class RobotManager(NodeInterface):
 
     def _adapter_kwargs_for(self, cap: str, kind: str) -> dict[str, typing.Any]:
         try:
-            cap_raw = self._caps._load_cap_file(cap)
+            cap_raw = self._caps.cap_section(cap)
         except FileNotFoundError:
             cap_raw = {}  # allocation-derived cap, no static caps.yaml section
         from arena_runtime.env.adapters import ADAPTERS

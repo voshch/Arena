@@ -363,6 +363,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     urdf=robot.caps_of(robot_config).rendered_urdf(),
                     prefix=control_prefix,
                     planar=robot.planar_of(robot_config),
+                    base_frame=robot.body_of(robot_config).base_frame,
+                    odom_frame=robot.odom_frame(robot_config),
                 )
                 if control_spec.config is not None
                 else None

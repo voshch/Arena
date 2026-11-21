@@ -38,6 +38,11 @@ def overlay_planar_limits(params: dict, planar: "PlanarSpec") -> dict:
     return out
 
 
+def overlay_drive_frames(params: dict, base_frame: str, odom_frame: str) -> dict:
+    """A copy of a drive controller's parameters with its base and odometry frames set."""
+    return {**params, 'base_frame_id': base_frame, 'odom_frame_id': odom_frame}
+
+
 def overlay_drive_geometry(params: dict, geometry: dict) -> dict:
     """A copy of a drive controller's parameters with the URDF-derived ``geometry`` written over them."""
     return {**params, **geometry}
@@ -50,6 +55,14 @@ def _with_planar_limits(control: dict, planar: "PlanarSpec") -> dict:
             continue
         out[name] = {**section, 'ros__parameters': overlay_planar_limits(section['ros__parameters'], planar)}
     return out
+
+
+def _with_frames(control: dict, base_frame: str, odom_frame: str) -> dict:
+    drive = drive_controller(control)
+    if drive is None:
+        return control
+    name, _, params = drive
+    return {**control, name: {**control[name], 'ros__parameters': overlay_drive_frames(params, base_frame, odom_frame)}}
 
 
 def _with_drive_geometry(control: dict, urdf: str) -> dict:
@@ -100,12 +113,14 @@ def effective_control_yaml(
     catalog: Catalog | None = None,
     prefix: str = 'robot_',
     planar: "PlanarSpec | None" = None,
+    base_frame: str,
+    odom_frame: str,
 ) -> str:
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys of every axis whose limit flag it sets, and the geometry ``urdf`` measures overwrites its wheel keys."""
-    base_control = _with_drive_geometry(view.control_config(sim.value), urdf)
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys of every axis whose limit flag it sets, ``base_frame`` and ``odom_frame`` are written to its frame keys, and the geometry ``urdf`` measures overwrites its wheel keys."""
+    base_control = _with_drive_geometry(_with_frames(view.control_config(sim.value), base_frame, odom_frame), urdf)
     if planar is not None:
         base_control = _with_planar_limits(base_control, planar)
     if resolved is None:

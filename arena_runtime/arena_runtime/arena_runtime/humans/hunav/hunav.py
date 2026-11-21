@@ -23,7 +23,7 @@ from hunav_msgs.srv import ComputeAgent, ComputeAgents, GetAgents, GetWalls, Mov
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 
-from arena_runtime.humans import BaseHumanSimulator, HumanSimulatorOptions, TrackedRobot
+from arena_runtime.humans import DEFAULT_ROBOT_RADIUS, BaseHumanSimulator, HumanSimulatorOptions, TrackedRobot
 from arena_runtime.humans.noop import NoopHumanSimulator
 from arena_runtime.shared import (
     DynamicObstacle,
@@ -217,7 +217,7 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
         msg.id = 0
         msg.type = Agent.ROBOT
         msg.name = "robot"
-        msg.radius = 0.3
+        msg.radius = DEFAULT_ROBOT_RADIUS
         tracked = self._primary_robot()
         if tracked is None:
             msg.position.position.x = _ROBOT_PARK_XY
@@ -225,7 +225,7 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
             return msg
         tracked.refresh(self.node.tf_buffer)
         msg.name = tracked.robot.name
-        msg.radius = self.node.rosparam[float].get_unsafe('robot_radius', msg.radius)
+        msg.radius = tracked.radius
         msg.position.position.x = tracked.pose.position.x
         msg.position.position.y = tracked.pose.position.y
         msg.position.orientation = tracked.pose.orientation.to_msg()

@@ -23,20 +23,6 @@ class Constants:
         NODE_NAME = "map_generator"
         MAP_FOLDER_NAME = "dynamic_map"
 
-    PLUGIN_FULL_RANGE_LASER = {
-        "type": "Laser",
-        "name": "full_static_laser",
-        "frame": "full_laser",
-        "topic": "full_scan",
-        "body": "base_link",
-        "broadcast_tf": "true",
-        "origin": [0, 0, 0],
-        "range": 2.0,
-        "angle": {"min": -3.14, "max": 3.14, "increment": 0.01745},
-        "noise_std_dev": 0.0,
-        "update_rate": 10,
-    }
-
 
 class UnityConstants:
     WALL_HEIGHT = 4.0

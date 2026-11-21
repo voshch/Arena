@@ -11,13 +11,14 @@ from arena_bringup.constants import SimSimulator
 import arena_robots.Robot
 from arena_robots.caps import PlanarSpec
 from arena_robots.fleet import instance_caps
-from arena_runtime.sim._control import effective_control_yaml, overlay_drive_geometry, overlay_planar_limits
+from arena_runtime.sim._control import effective_control_yaml, overlay_drive_frames, overlay_drive_geometry, overlay_planar_limits
 
 JACKAL = arena_robots.Robot.RobotIdentifier('jackal').resolve_sync()
 JACKAL_URDF = JACKAL.effective_caps({}).rendered_urdf()
 AXIS_PREFIXES = {'linear': 'linear.x', 'lateral': 'linear.y', 'angular': 'angular.z'}
 LIMIT_VALUE_SUFFIXES = ('min_velocity', 'max_velocity', 'min_acceleration', 'max_acceleration')
 JACKAL_GEOMETRY = {'wheel_radius': 0.098, 'wheel_separation': 0.37559}
+JACKAL_FRAMES = {'base_frame': 'base_link', 'odom_frame': 'odom'}
 
 
 def _controller(sim: SimSimulator) -> dict:
@@ -25,11 +26,12 @@ def _controller(sim: SimSimulator) -> dict:
 
 
 def test_rendered_control_yaml_carries_the_overlay_and_prefixed_frames():
-    out = Path(effective_control_yaml(None, JACKAL, 'test_overlay/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF))
+    out = Path(effective_control_yaml(None, JACKAL, 'test_overlay/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF, **JACKAL_FRAMES))
     params = yaml.safe_load(out.read_text())['/**/jackal_velocity_controller']['ros__parameters']
     out.unlink()
     assert params['wheel_separation_multiplier'] == 1.106
     assert params['odom_frame_id'] == 'env_0/r/odom'
+    assert params['base_frame_id'] == 'env_0/r/base_link'
 
 
 def test_jackal_turns_on_its_gazebo_track_only_in_gazebo():
@@ -84,7 +86,7 @@ def test_an_axis_the_planar_spec_leaves_out_stays_unset():
 
 
 def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest():
-    out = Path(effective_control_yaml(None, JACKAL, 'test_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF, planar=_planar()))
+    out = Path(effective_control_yaml(None, JACKAL, 'test_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF, planar=_planar(), **JACKAL_FRAMES))
     rendered = yaml.safe_load(out.read_text())
     out.unlink()
     assert rendered['/**/jackal_velocity_controller']['ros__parameters']['linear.x.max_velocity'] == 0.5
@@ -92,11 +94,10 @@ def test_rendered_control_yaml_carries_the_planar_override_and_leaves_the_rest()
 
 
 def test_rendered_control_yaml_without_a_planar_override_keeps_the_controller_as_authored():
-    out = Path(effective_control_yaml(None, JACKAL, 'test_no_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF))
+    out = Path(effective_control_yaml(None, JACKAL, 'test_no_planar/jackal', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=JACKAL_URDF, **JACKAL_FRAMES))
     rendered = yaml.safe_load(out.read_text())
     out.unlink()
-    expected = {k: v for k, v in {**_controller(SimSimulator.GAZEBO), **JACKAL_GEOMETRY}.items() if not k.endswith('_frame_id')}
-    assert {k: v for k, v in rendered['/**/jackal_velocity_controller']['ros__parameters'].items() if not k.endswith('_frame_id')} == expected
+    assert rendered['/**/jackal_velocity_controller']['ros__parameters'] == {**_controller(SimSimulator.GAZEBO), **JACKAL_GEOMETRY, 'base_frame_id': 'env_0/r/base_link', 'odom_frame_id': 'env_0/r/odom'}
 
 
 def _shipped_control_files() -> list[tuple[str, str]]:
@@ -145,10 +146,32 @@ def test_a_halving_limits_override_halves_the_jackal_controller_limits():
 
 def _rendered_drive(model: str, controller: str) -> dict:
     view = arena_robots.Robot.RobotIdentifier(model).resolve_sync()
-    out = Path(effective_control_yaml(None, view, f'test_geometry/{model}', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=view.effective_caps({}).rendered_urdf()))
+    out = Path(effective_control_yaml(None, view, f'test_geometry/{model}', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=view.effective_caps({}).rendered_urdf(), base_frame=view.model_params.base_frame, odom_frame=view.model_params.odom_frame))
     rendered = yaml.safe_load(out.read_text())
     out.unlink()
     return rendered[f'/**/{controller}']['ros__parameters']
+
+
+def test_the_drive_frames_overlay_writes_both_frames_and_leaves_the_input():
+    params = {'wheel_radius': 0.5, 'base_frame_id': 'stale'}
+    out = overlay_drive_frames(params, 'base_footprint', 'odom')
+    assert out == {'wheel_radius': 0.5, 'base_frame_id': 'base_footprint', 'odom_frame_id': 'odom'}
+    assert params == {'wheel_radius': 0.5, 'base_frame_id': 'stale'}
+
+
+@pytest.mark.parametrize(('model', 'controller'), [('jackal', 'jackal_velocity_controller'), ('rbkairos', 'rbkairos_velocity_controller'), ('rbvogui', 'robotnik_base_controller'), ('rskomnidirectional', 'rskomni_velocity_controller')])
+def test_every_drive_controller_is_rendered_with_the_robots_own_frames(model, controller):
+    view = arena_robots.Robot.RobotIdentifier(model).resolve_sync()
+    params = _rendered_drive(model, controller)
+    assert params['base_frame_id'] == f'env_0/r/{view.model_params.base_frame}'
+    assert params['odom_frame_id'] == f'env_0/r/{view.model_params.odom_frame}'
+
+
+def test_a_shipped_control_file_leaves_the_frames_to_the_renderer():
+    for _, path in _shipped_control_files():
+        for name, section in yaml.safe_load(Path(path).read_text()).items():
+            if name != 'controller_manager' and isinstance(section, dict) and isinstance(section.get('ros__parameters'), dict):
+                assert not [key for key in section['ros__parameters'] if key in ('base_frame_id', 'odom_frame_id')], f'{path}: {name}'
 
 
 def test_the_drive_geometry_overlay_writes_over_the_controller_and_leaves_the_input():
@@ -187,7 +210,7 @@ def test_rskomnidirectional_rendered_control_yaml_carries_the_omni_wheels():
 
 def test_a_legged_robot_control_yaml_has_no_drive_geometry():
     view = arena_robots.Robot.RobotIdentifier('a1').resolve_sync()
-    out = Path(effective_control_yaml(None, view, 'test_geometry/a1', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=view.effective_caps({}).rendered_urdf()))
+    out = Path(effective_control_yaml(None, view, 'test_geometry/a1', 'env_0/r/', sim=SimSimulator.GAZEBO, urdf=view.effective_caps({}).rendered_urdf(), base_frame=view.model_params.base_frame, odom_frame=view.model_params.odom_frame))
     rendered = yaml.safe_load(out.read_text())
     out.unlink()
     assert rendered['/**/joint_group_position_controller'] == yaml.safe_load(yaml.safe_dump(view.control_config()['joint_group_position_controller']))

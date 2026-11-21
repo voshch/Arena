@@ -268,7 +268,9 @@ class FlatsimSimulator(BaseSim):
         control_spec = robot_config.model_params.control
         if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
             control_prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
-            rendered_yaml = effective_control_yaml(robot.resolved_assembly, robot_config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, urdf=robot.caps_of(robot_config).rendered_urdf(), prefix=control_prefix, planar=robot.planar_of(robot_config))
+            rendered_yaml = effective_control_yaml(
+                robot.resolved_assembly, robot_config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, urdf=robot.caps_of(robot_config).rendered_urdf(), prefix=control_prefix, planar=robot.planar_of(robot_config), base_frame=robot.body_of(robot_config).base_frame, odom_frame=robot.odom_frame(robot_config)
+            )
             cm_node = launch_ros.actions.Node(
                 package='controller_manager',
                 executable='ros2_control_node',

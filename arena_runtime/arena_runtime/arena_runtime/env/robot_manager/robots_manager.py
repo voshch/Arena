@@ -339,7 +339,7 @@ class RobotsManager(NodeInterface):
                 continue
             if mobile.is_holonomic != want_holonomic:
                 continue
-            robot_sensors = {s.type for s in view.model_params.sensors}
+            robot_sensors = {s.type for s in view.effective_sensors({})}
             if not set(sensor_needs) <= robot_sensors:
                 continue
             candidates.append((view.model_params.priority, name))

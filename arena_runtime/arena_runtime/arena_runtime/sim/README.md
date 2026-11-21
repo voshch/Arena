@@ -560,7 +560,7 @@ are what Arena sends it.
   the `planar` block of the `mobile` section of the robot's `caps.yaml`, the same keys for every
   robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
-  `pivot` x the body turns about and the command `timeout`. A diff drive has
+  `pivot` x the body turns about (`front` or `rear` in the file, the wheel joint x of the URDF) and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
   sideways only when `is_holonomic`. The base controller does not run. The
   cap's `min_turning_radius` bounds the turn rate of a car-like base at its
@@ -608,7 +608,7 @@ effective `planar` (its velocity and acceleration read from `limits`)
 `has_acceleration_limits` flag the controller sets and never an infinite limit (the
 key stays unset, which the controllers read as unbounded). `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. `control.yaml` carries the flags and no limit values.
 
-The same function writes the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
+The same function writes the drive controller's frames (`base_frame_id` from the instance's `body.base_frame`, `odom_frame_id` from its `mobile.odom_frame`, `overlay_drive_frames` in [_control.py](_control.py), the `control*.yaml` files do not carry them) and the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
 
 ## Adding a new simulator
 
