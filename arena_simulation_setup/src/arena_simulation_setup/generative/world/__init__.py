@@ -121,6 +121,9 @@ class WorldGenerator:
     def files(self) -> dict[str, bytes]:
         return self._active.files()
 
+    def scenarios(self) -> dict[str, Generated]:
+        return self._active.scenarios()
+
     def params(self) -> dict[str, typing.Any]:
         return self._active.params()
 
