@@ -1215,7 +1215,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         tmpl = flow_agent_template(cfg.get("agent", {}), region.included_from)
         self._remember_agent_type_path(tmpl.agent_type)
         src_msg.agent = tmpl
-        lane = lane_msg_from_config(region.name, cfg, self._to_engine)
+        # region.config['lane'] is in the authored/world frame, which is already the engine frame.
+        lane = lane_msg_from_config(region.name, cfg, lambda x, y: (float(x), float(y)))
         if lane is not None:
             src_msg.lane = lane
 
