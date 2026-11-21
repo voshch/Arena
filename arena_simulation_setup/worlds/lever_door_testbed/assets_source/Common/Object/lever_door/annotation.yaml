@@ -1,0 +1,33 @@
+desc: Simple articulated hinged door with a press-down lever handle.
+note: Prototype geometry; verify dimensions, axes, collision and contact forces before experiments.
+tags:
+- domain::common
+- kind::door
+articulation:
+  links:
+    frame: [frame]
+    leaf: [leaf]
+    handle_link: [handle]
+  joints:
+  - name: hinge
+    type: revolute
+    parent: frame
+    child: leaf
+    origin: [0.0600, 0.0, 0.0]
+    axis: [0.0, 0.0, 1.0]
+    limit: [0.0, 1.570796]
+    velocity: 1.0
+    role: door
+    latch: {by: handle_joint, release: 0.5}
+  - name: handle_joint
+    type: revolute
+    parent: leaf
+    child: handle_link
+    origin: [1.0000, -0.0625, 1.0000]
+    axis: [0.0, 1.0, 0.0]
+    limit: [0.0, 0.6500]
+    velocity: 2.0
+    role: handle
+  states:
+    closed: {hinge: 0.0, handle_joint: 0.0}
+    open: {hinge: 1.570796}

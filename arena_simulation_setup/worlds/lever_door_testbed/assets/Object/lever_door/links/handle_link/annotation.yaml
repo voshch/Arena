@@ -1,0 +1,9 @@
+bounding_box:
+- - 0.982
+  - 1.185
+- - -0.1025
+  - -0.0225
+- - 0.982
+  - 1.018
+name: handle_link
+path: Object/lever_door/links/handle_link
