@@ -469,7 +469,7 @@ top-level key there is overridable by the same name with the cap prefix.
 
 Contestant args in benchmark YAMLs use the same shapes and the same forwarding
 rules (see
-[benchmark README](../arena_evaluation/arena_evaluation/configs/benchmark/README.md#contestant-args)).
+[benchmark README](../arena_evaluation/arena_evaluation/configs/README.md#contestant-args)).
 
 ### robot:=auto
 
@@ -608,4 +608,4 @@ arena evaluation benchmark sim:=gazebo suite:=basic contest:=basic --lanes 4
 ```
 
 Suite and contest config, runner semantics, and output layout are documented in
-[arena_evaluation/configs/benchmark/](../arena_evaluation/arena_evaluation/configs/benchmark/README.md).
+[arena_evaluation/configs/](../arena_evaluation/arena_evaluation/configs/README.md).

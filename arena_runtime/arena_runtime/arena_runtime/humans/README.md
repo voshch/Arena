@@ -458,7 +458,7 @@ goal of every episode of the scene added, each 0.5 m clear of the walls. The 17 
 importable. The 16 on hotel, univ and the double hotel are refused, because SocNavBench plays those sequences at 15 fps
 although they were recorded at 25 fps and places the hotel as a mirror image. A scenario has no field for the time
 budget: pass `task.episode.timeout:=<s>` when launching one by hand, or run the
-[SocNavBench suite](../../../../arena_evaluation/arena_evaluation/configs/benchmark/README.md#socnavbench), whose stages carry it.
+[SocNavBench suite](../../../../arena_evaluation/arena_evaluation/configs/README.md#socnavbench), whose stages carry it.
 
 Dense crowds come from three more sources, their tracks resampled to 10 Hz with stays like the ETH and UCY ones.
 `arena asset import scenario juelich <set>/<run>` writes a run of the Juelich pedestrian dynamics archive (BaSiGo 2013
