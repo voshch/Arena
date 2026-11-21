@@ -64,6 +64,27 @@ class Group(pydantic.BaseModel):
         return len(self.configurations()) * self.world_variants
 
 
+class Search(pydantic.BaseModel):
+    """The find test of every stage, passed to the `search` robots mode."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    radius: float = pydantic.Field(default=1.0, gt=0)
+    line_of_sight: bool = True
+    dwell_s: float = pydantic.Field(default=0.0, ge=0)
+
+
+class Suite(pydantic.BaseModel):
+    """What every stage of a suite bundle runs."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    robot: str = "auto"  # auto = the robot the contestant's planner asks for
+    episodes: int = pydantic.Field(default=3, ge=1)
+    timeout: str = "300s"
+    search: Search = pydantic.Field(default_factory=Search)
+
+
 class Manifest(StudyManifest):
     """The dimensions of one USAR study; world axes are a value, a list of values or a stepped span."""
 
@@ -76,6 +97,7 @@ class Manifest(StudyManifest):
     call_period_s: float = pydantic.Field(8.0, gt=0)
     call_on_s: float = pydantic.Field(2.0, gt=0)
     agent_type: str = "adult"
+    suite: Suite = pydantic.Field(default_factory=Suite)
 
     @pydantic.model_validator(mode="before")
     @classmethod
