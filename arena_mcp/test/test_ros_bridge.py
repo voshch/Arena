@@ -80,3 +80,32 @@ def test_bridge_calls_reads_latched_and_coerces_params():
     assert "/arena_mcp_bridge_peer" in graph["nodes"]
     assert lingering == [] and lingering_after_probe == []
     assert ready_absent == (False, True, False)
+
+
+def test_latest_on_a_latched_topic_returns_the_newest_message_of_its_replay():
+    async def scenario():
+        await ROS.node()
+        node = rclpy.create_node("arena_mcp_replay_peer")
+        shallow = node.create_publisher(String, "/arena_mcp_test/replay_shallow", profile(LATCHED, 20))
+        deep = node.create_publisher(String, "/arena_mcp_test/replay_deep", profile(LATCHED, 20))
+        for index in range(20):
+            shallow.publish(String(data=str(index)))
+            deep.publish(String(data=str(index)))
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+        thread = threading.Thread(target=executor.spin, daemon=True)
+        thread.start()
+        try:
+            newest = await ROS.latest(String, "/arena_mcp_test/replay_shallow", timeout=10.0)
+            settled = await ROS.latest(String, "/arena_mcp_test/replay_deep", timeout=10.0, depth=50)
+            cache = await ROS.cache(String, "/arena_mcp_test/replay_deep", depth=50)
+            return newest.data, settled.data, [msg.data for msg in cache.snapshot()]
+        finally:
+            executor.shutdown()
+            node.destroy_node()
+            await ROS.shutdown()
+
+    newest, settled, replay = asyncio.run(scenario())
+    assert newest == "19"
+    assert settled == "19"
+    assert replay == [str(index) for index in range(20)]

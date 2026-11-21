@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 from pydantic import Field
 
-from arena_mcp.core import JOBS, LATCHED, ROS, Domain, ToolError, msgs, robot_ns, tg
+from arena_mcp.core import EPISODE_HISTORY, JOBS, LATCHED, ROS, Domain, ToolError, episode_records, msgs, robot_ns, tg
 from arena_mcp.core.envs import SUBMIT_TASK_TIMEOUT_S
 from arena_mcp.core.ros import python_to_param
 from arena_runtime.env.catalogs import CATALOGS
@@ -33,7 +33,6 @@ domain = Domain(
     requires=("arena_runtime_msgs",),
 )
 
-HISTORY = 200
 RESET_TIMEOUT = 120.0
 BUSY = "RunEpisode is single-flight: wait for the running episode (episode_wait until=terminal) or cancel the job that runs it, an env with task.episode.auto_reset true runs its own episodes and is always busy"
 
@@ -85,12 +84,6 @@ def record(msg: EpisodeRecord) -> dict[str, object]:
     return out
 
 
-async def _episodes(node: str) -> TopicCache:
-    from arena_runtime_msgs.msg import EpisodeRecord
-
-    return await ROS.cache(EpisodeRecord, f"{node}/state/episode", qos=LATCHED, depth=HISTORY)
-
-
 async def _latched(msg_type: type, topic: str) -> TopicCache:
     return await ROS.cache(msg_type, topic, qos=LATCHED)
 
@@ -103,12 +96,7 @@ async def _fresh(cache: TopicCache, previous: object | None, timeout: float = 1.
 
 
 async def _first(cache: TopicCache, timeout: float = 1.0) -> object | None:
-    if cache.last is not None:
-        return cache.last
-    try:
-        return await asyncio.wait_for(cache.next(), timeout)
-    except TimeoutError:
-        return cache.last
+    return await cache.settled(timeout)
 
 
 async def _resetting(node: str) -> TopicCache:
@@ -164,7 +152,7 @@ async def episode_reset(
     from arena_runtime_msgs.srv import ResetEpisode
 
     node = await tg(env_id)
-    episodes = await _episodes(node)
+    episodes = await episode_records(node)
     resetting = await _resetting(node)
     before = cast("EpisodeRecord | None", await _first(episodes))
     base = before.episode_id if before is not None else 0
@@ -199,7 +187,7 @@ async def episode_run(
     from arena_runtime.env.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN
 
     node = await tg(env_id)
-    episodes = await _episodes(node)
+    episodes = await episode_records(node)
     goal = RunEpisode.Goal(world=world, seed=seed)
     wrapper, handle = await ROS.send_goal(RunEpisode, f"{node}/lifecycle/run_episode", goal, hint=BUSY)
     states = msgs.constants(RunEpisode.Result)
@@ -237,7 +225,7 @@ async def episode_wait(
     if not 0 < timeout_s <= 300:
         raise ToolError("timeout_s must be in (0, 300]", hint="call again to keep waiting")
     node = await tg(env_id)
-    episodes = await _episodes(node)
+    episodes = await episode_records(node)
     resetting = await _resetting(node)
     base = cast("EpisodeRecord | None", await _first(episodes))
     terminal = _terminal()
@@ -280,7 +268,7 @@ async def episode_wait_for_world(
 async def episode_current(env_id: EnvId = None) -> dict[str, object]:
     """The current episode record, the queued next one and whether a reset is in progress."""
     node = await tg(env_id)
-    current = cast("EpisodeRecord | None", await _first(await _episodes(node)))
+    current = cast("EpisodeRecord | None", await _first(await episode_records(node)))
     queued = _last(await _queue(node))
     resetting = await _resetting(node)
     return {
@@ -298,7 +286,7 @@ async def episode_history(
 ) -> list[dict[str, object]]:
     """Episode records seen since the server first watched the env (the topic replays its last 20), newest first, one per episode with its final outcome."""
     node = await tg(env_id)
-    episodes = await _episodes(node)
+    episodes = await episode_records(node)
     await _first(episodes)
     latest = _by_id(episodes)
     return [record(latest[episode_id]) for episode_id in sorted(latest, reverse=True)[:limit]]
@@ -604,4 +592,4 @@ async def current_resource(env_id: str) -> str:
 
 @domain.resource("arena://episode/{env_id}/history", mime_type="application/json", description="episode records of an env, newest first")
 async def history_resource(env_id: str) -> str:
-    return json.dumps(await episode_history(int(env_id), limit=HISTORY))
+    return json.dumps(await episode_history(int(env_id), limit=EPISODE_HISTORY))

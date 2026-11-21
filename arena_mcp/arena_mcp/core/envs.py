@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from arena_bringup.viz_backends import env_idx_from_ns
 
@@ -8,9 +8,15 @@ from .errors import ToolError
 from .msgs import to_dict
 from .ros import LATCHED, ROS
 
+if TYPE_CHECKING:
+    from arena_runtime_msgs.msg import EpisodeRecord
+
+    from .ros import TopicCache
+
 RUNTIME = "/arena"
 ENVS_TOPIC = f"{RUNTIME}/state/envs"
 SUBMIT_TASK_TIMEOUT_S = 150.0
+EPISODE_HISTORY = 200
 NO_RUNTIME = "no Arena runtime is up, system_launch starts one"
 
 
@@ -56,6 +62,21 @@ async def tg(env_id: int | None = None) -> str:
 async def env_ns(env_id: int | None = None) -> str:
     """The env namespace that holds the task generator, e.g. /arena/env_0."""
     return (await tg(env_id)).rsplit("/", 1)[0]
+
+
+async def episode_records(node: str) -> TopicCache:
+    """The cache of the task generator's latched episode records, every version of each id in publication order."""
+    from arena_runtime_msgs.msg import EpisodeRecord
+
+    return await ROS.cache(EpisodeRecord, f"{node}/state/episode", qos=LATCHED, depth=EPISODE_HISTORY)
+
+
+async def current_episode(node: str, *, timeout: float = 2.0) -> EpisodeRecord:
+    """The newest episode record of the task generator."""
+    found = await (await episode_records(node)).settled(timeout)
+    if found is None:
+        raise ToolError(f"nothing received on {node}/state/episode within {timeout:.0f}s", hint="the env has not finished its first reset")
+    return cast("EpisodeRecord", found)
 
 
 async def fleet(env_id: int | None = None) -> list[dict[str, Any]]:

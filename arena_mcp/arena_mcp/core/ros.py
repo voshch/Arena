@@ -6,6 +6,7 @@ import contextlib
 import logging
 import os
 import threading
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -36,6 +37,8 @@ SENSOR = "sensor"
 SETTLE_S = 3.5
 PEER_MATCH_S = 0.3
 ACK_S = 1.0
+REPLAY_QUIET_S = 0.1
+REPLAY_CAP_S = 0.5
 
 
 def profile(kind: str, depth: int) -> QoSProfile:
@@ -66,10 +69,16 @@ class TopicCache:
         self.history: collections.deque[Any] = collections.deque(maxlen=depth)
         self._waiters: list[asyncio.Future[Any]] = []
         self._lock = threading.Lock()
+        self._first_at: float | None = None
+        self._last_at = 0.0
+        self._replayed = False
 
     def on_message(self, msg: object) -> None:
         with self._lock:
             self.history.append(msg)
+            self._last_at = time.monotonic()
+            if self._first_at is None:
+                self._first_at = self._last_at
             waiters, self._waiters = self._waiters, []
         for waiter in waiters:
             self._loop.call_soon_threadsafe(_resolve, waiter, msg)
@@ -93,6 +102,23 @@ class TopicCache:
         with self._lock:
             self._waiters.append(future)
         return future
+
+    async def settled(self, timeout: float) -> object | None:
+        """The newest message once the replay a latched publisher sends a new subscription has gone quiet, None when nothing arrives within timeout."""
+        if self.last is None:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self.next(), timeout)
+        while not self._replayed:
+            with self._lock:
+                first, last = self._first_at, self._last_at
+            if first is None:
+                return None
+            now = time.monotonic()
+            if now - last >= REPLAY_QUIET_S or now - first >= REPLAY_CAP_S:
+                self._replayed = True
+            else:
+                await asyncio.sleep(REPLAY_QUIET_S / 4)
+        return self.last
 
 
 def _resolve(future: asyncio.Future[Any], value: object) -> None:
@@ -276,14 +302,18 @@ class Ros:
         return entry[1]
 
     async def latest[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str = LATCHED, timeout: float = 2.0, depth: int = 1, hint: str | None = None) -> MsgT:
-        """The last message on topic, waiting up to timeout for the first one."""
+        """The last message on topic, waiting up to timeout for the first one, and on a latched topic for the end of its replay."""
         cache = await self.cache(msg_type, topic, qos=qos, depth=depth)
-        if cache.last is not None:
+        if qos == LATCHED:
+            found = await cache.settled(timeout)
+            if found is not None:
+                return cast(MsgT, found)
+        elif cache.last is not None:
             return cast(MsgT, cache.last)
-        try:
-            return cast(MsgT, await asyncio.wait_for(cache.next(), timeout))
-        except TimeoutError as exc:
-            raise ToolError(f"nothing received on {topic} within {timeout:.0f}s", hint=hint or "is the node that publishes it up?") from exc
+        else:
+            with contextlib.suppress(TimeoutError):
+                return cast(MsgT, await asyncio.wait_for(cache.next(), timeout))
+        raise ToolError(f"nothing received on {topic} within {timeout:.0f}s", hint=hint or "is the node that publishes it up?")
 
     async def next[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str = SENSOR, timeout: float = 5.0) -> MsgT:
         """The next message published on topic after this call."""
