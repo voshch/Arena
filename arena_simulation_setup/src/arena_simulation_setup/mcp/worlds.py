@@ -231,6 +231,21 @@ def worlds_validate(
         return {**world_verdict(view, None), "path": None}
 
 
+@domain.tool(read_only=True)
+def worlds_lane_check(
+    name: WorldName,
+    lane: Annotated[dict[str, object], Field(description="lane block: side (right, left or centre, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centreline: [[x, y], ...]}]")],
+    agent_radius: Annotated[float, Field(gt=0.0, description="agent collision radius in meters")],
+    source_extent: Annotated[float, Field(ge=0.0, description="source extent along the lane in meters")],
+) -> dict[str, object]:
+    """Check a pedestrian lane against a world's walls, offline: the derived settings, the band and the track points, or the reason the lane fails."""
+    from arena_simulation_setup.tree.World.lane_check import lane_summary
+    from arena_simulation_setup.tree.World.pedestrian_walls import wall_segments_of_world
+
+    view, world, _ = _loaded(name)
+    return {"world": view.name, **lane_summary("lane", lane, wall_segments_of_world(world), agent_radius=agent_radius, source_extent=source_extent)}
+
+
 def world_verdict(view: WorldView, levels: set[str] | None) -> dict[str, object]:
     """The strict verdict on a world directory: format, validity with the reason or the warnings, and its levels."""
     from arena_simulation_setup.tree.World import WorldFormatError
@@ -472,6 +487,10 @@ def _scenario_verdict(raw: object, world: World | None) -> dict[str, object]:
         for index, robot in enumerate(scenario.robots):
             problems.extend(f"robots[{index}].{key}: no level {value!r}, only {', '.join(world.level_ids)}" for key, value in (("level", robot.level), ("goal_level", robot.goal_level)) if value and value not in world.levels)
         problems.extend(articulation_problems(scenario, (obj for level in world.levels.values() for obj in level.objects if obj.name)))
+        if isinstance(raw, dict):
+            from arena_simulation_setup.tree.World.lane_check import scenario_lane_problems
+
+            problems.extend(scenario_lane_problems(raw.get("regions"), world))
     if problems:
         return {"valid": False, "reason": "; ".join(problems)}
     nouns = _nouns(world) if world is not None else {}

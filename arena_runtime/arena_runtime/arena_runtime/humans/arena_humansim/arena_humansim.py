@@ -120,6 +120,7 @@ from arena_runtime.env.constants import Constants
 from arena_runtime.env.constants.rng import stable_int
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans import PED_RADIUS, BaseHumanSimulator, HumanSimulatorOptions, Segment
+from arena_runtime.humans.arena_humansim.lane_config import lane_msg_from_config
 from arena_runtime.humans.itinerary import STIMULUS_TELEPORTED, ItineraryDriver, Stop, semantic_atom
 from arena_runtime.humans.support import Support, front_angle, seat_stand
 from arena_runtime.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
@@ -1184,10 +1185,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return cx, cy
 
     async def _add_regions_impl(self, regions: Sequence[Region]) -> bool:
-        results = await asyncio.gather(
-            *(self._add_region_single(r) for r in regions),
-        )
-        return all(results)
+        # Sinks first: a lane source checks its end band against an existing sink.
+        sinks = [r for r in regions if r.type == "sink"]
+        others = [r for r in regions if r.type != "sink"]
+        sink_results = await asyncio.gather(*(self._add_region_single(r) for r in sinks))
+        other_results = await asyncio.gather(*(self._add_region_single(r) for r in others))
+        return all(sink_results) and all(other_results)
 
     async def _add_region_single(self, region: Region) -> bool:
         if region.type == "source":
@@ -1216,6 +1219,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         tmpl = flow_agent_template(cfg.get("agent", {}), region.included_from)
         self._remember_agent_type_path(tmpl.agent_type)
         src_msg.agent = tmpl
+        # region.config['lane'] is in the authored/world frame, which is already the engine frame.
+        lane = lane_msg_from_config(region.name, cfg, lambda x, y: (float(x), float(y)))
+        if lane is not None:
+            src_msg.lane = lane
 
         request.source = src_msg
         try:
