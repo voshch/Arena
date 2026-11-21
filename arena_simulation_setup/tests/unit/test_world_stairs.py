@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest
 import yaml
 from arena_simulation_setup.kg import Scene
+from arena_simulation_setup.shared.navmesh import navmesh_levels
 from arena_simulation_setup.shared.judge import zone_polygons
+from arena_simulation_setup.shared.world import stair_height
 from arena_simulation_setup.tree.World import FORMAT, WorldFormatError, WorldView, contents, derive, parse_world, write_world
 from arena_simulation_setup.tree.World.model import World
 from arena_simulation_setup.tree.World.view import check_kg
@@ -115,6 +117,100 @@ def test_a_spread_world_places_the_top_half_at_its_exit() -> None:
     assert not stairs['up_top'].stacked
 
 
+LINK = {'name': 'link', 'mouth': [16.0, 8.0], 'mouth_side': '+x', 'size': [10.0, 1.2], 'to': '0', 'base': -2.3, 'rise': 3.8}
+
+
+def _link(**fields: object) -> Callable[[dict], None]:
+    return lambda data: data['levels'][0]['escalators'].append({**LINK, **fields})
+
+
+def test_a_stair_on_its_own_level_joins_two_floors_of_it_straight_on() -> None:
+    world = parse_world(_world(_link()))
+    stairs = _stairs(world)
+    bottom, top = stairs['link_bottom'], stairs['link_top']
+    assert [stair.name for stair in world.levels['0'].stairs][-2:] == ['link_bottom', 'link_top']
+    assert (bottom.position.z, top.position.z, bottom.rise) == pytest.approx((-2.3, 1.5, 3.8))
+    assert (top.mouth.x, top.mouth.y) == pytest.approx((6.0, 8.0))
+    assert (bottom.to, top.to) == ('link_top', '')
+    assert not bottom.stacked and not top.stacked and top.overhang == 0.0
+    level = world.levels['0'].stairs
+    assert stair_height(level, 15.9, 8.0) == pytest.approx(-2.3, abs=0.05)
+    assert stair_height(level, 6.1, 8.0) == pytest.approx(1.5, abs=0.05)
+    assert stair_height(level, 11.0, 8.0) == pytest.approx(-0.4, abs=0.3)
+    assert world.validate() == []
+
+
+def test_a_stair_on_its_own_level_is_joined_in_any_layout_with_no_seam_wall() -> None:
+    for change in (_link(), lambda data: (_spread(data), _link()(data))):
+        world = parse_world(_world(change))
+        stairs = _stairs(world)
+        assert stairs['link_bottom'].joined and stairs['link_top'].joined
+        assert stairs['link_bottom'].inset < 0.0 and stairs['link_bottom'].reach == 0.0
+        assert not [wall for wall in stairs['link_bottom'].walls() if wall.start.x == wall.end.x]
+        joined = {stair.name: stair.joined for level in navmesh_levels(world, world.stack_offsets() if world.layout == 'stacked' else {}) for stair in level.stairs}
+        assert joined['link_bottom'] and joined['link_top']
+        assert joined['up_bottom'] == (world.layout == 'stacked')
+
+
+def test_a_stair_with_floor_off_builds_nothing_and_walls_in_its_sides_style() -> None:
+    scan = {'kind': 'scan_boundary'}
+    sides = {'left': scan, 'right': scan}
+    world = parse_world(_world(lambda data: (_link(floor=False, sides=sides)(data), _set(0, 'stairs', 0, floor=False, sides=sides)(data))))
+    link, up = _stairs(world)['link_bottom'], _stairs(world)['up_bottom']
+    assert link.static_boxes() == [] and link.open_walls() == [] and link.tread_models(0.0) == [] and up.static_boxes() == []
+    assert len(link.walls()) == 4 and {wall.kind for wall in link.walls()} == {'scan_boundary'}
+    assert [wall.kind for wall in up.walls() if wall.start.x == wall.end.x] == ['scan_boundary']
+
+
+def test_a_stair_with_floor_off_walks_on_its_ramp_line_not_on_treads() -> None:
+    level = parse_world(_world(_link(floor=False))).levels['0'].stairs
+    stepped = parse_world(_world(_link())).levels['0'].stairs
+    xs = [15.0 - 0.137 * k for k in range(60)]
+    smooth = [stair_height(level, x, 8.0) for x in xs]
+    assert all(b <= a + 1e-9 for a, b in zip(smooth, smooth[1:], strict=False)) or all(b >= a - 1e-9 for a, b in zip(smooth, smooth[1:], strict=False))
+    steps = [stair_height(stepped, x, 8.0) for x in xs]
+    assert max(abs(b - a) for a, b in zip(smooth, smooth[1:], strict=False)) < max(abs(b - a) for a, b in zip(steps, steps[1:], strict=False))
+
+
+def test_a_stair_on_its_own_level_holds_its_footing_over_the_ramp_under_it() -> None:
+    def deck(data: dict) -> None:
+        _link()(data)
+        data['levels'][0]['ramps'] = [{'name': 'deck', 'mouth': [4.0, 8.0], 'size': [14.0, 4.0], 'base': 1.5}]
+
+    level = parse_world(_world(deck)).levels['0'].stairs
+    assert stair_height(level, 11.0, 8.0) == pytest.approx(-0.4, abs=0.3)
+    assert stair_height(level, 11.0, 9.5) == pytest.approx(1.5)
+
+
+def test_a_stair_between_levels_leaves_the_footing_to_the_ramp_listed_before_it() -> None:
+    def deck(data: dict) -> None:
+        data['levels'][0]['ramps'] = [{'name': 'deck', 'mouth': [4.0, 2.0], 'size': [3.0, 4.0], 'base': 1.5}]
+
+    level = parse_world(_world(deck)).levels['0'].stairs
+    assert [stair.name for stair in level][0] == 'deck' and _stairs(parse_world(_world(deck)))['up_bottom'].contains(6.5, 2.0)
+    assert stair_height(level, 6.5, 2.0) == pytest.approx(1.5)
+    assert stair_height(level, 8.0, 2.0) > 0.0
+
+
+@pytest.mark.parametrize(('kind', 'base', 'cut'), [('escalators', -2.3, (True, True)), ('stairs', -2.3, (True, True)), ('escalators', 0.0, (True, False)), ('stairs', 0.0, (False, False)), ('escalators', 0.5, (False, False))])
+def test_a_stair_on_its_own_level_opens_the_floor_only_under_the_halves_that_run_below_it(kind: str, base: float, cut: tuple[bool, bool]) -> None:
+    stairs = _stairs(parse_world(_world(lambda data: data['levels'][0][kind].append({**LINK, 'base': base}))))
+    bottom, top = (stairs[name].floor_openings() for name in ('link_bottom', 'link_top'))
+    assert (bool(bottom), bool(top)) == cut
+    for holes, (x0, x1) in ((bottom, (11.0, 16.0)), (top, (6.0, 11.0))):
+        for hole in holes:
+            assert hole[0] <= x0 + 1e-9 and hole[2] >= x1 - 1e-9 and (hole[1], hole[3]) == pytest.approx((7.4, 8.6))
+
+
+def test_a_leveled_stair_on_its_own_level_lies_flat_with_nothing_built() -> None:
+    world = parse_world(_world(_link()))
+    flat = [stair.leveled() for stair in world.levels['0'].stairs if stair.same_level]
+    assert [stair.name for stair in flat] == ['link_bottom', 'link_top'] and all(stair.joined for stair in flat)
+    assert all(stair.static_boxes() == [] and stair.floor_openings() == [] for stair in flat)
+    assert [stair_height(flat, x, 8.0) for x in (15.9, 13.0, 11.0, 8.0, 6.1)] == [0.0] * 5
+    assert (flat[0].belt, flat[1].belt) == (_stairs(world)['link_bottom'].belt, _stairs(world)['link_top'].belt)
+
+
 def _set(level: int, key: str, index: int, **fields: object) -> Callable[[dict], None]:
     return lambda data: data['levels'][level][key][index].update(fields)
 
@@ -127,7 +223,11 @@ def _append(level: int, key: str, **fields: object) -> Callable[[dict], None]:
     ('change', 'message'),
     [
         (_set(0, 'stairs', 0, to='9'), r"levels\[0\]\.stairs\[0\]\.to: no level '9' in this world"),
-        (_set(0, 'stairs', 0, to='0'), r"levels\[0\]\.stairs\[0\]\.to: level '0' lies at elevation 0\.0, not above level '0' at 0\.0"),
+        (lambda data: data['levels'][1].update(elevation=-1.0), r"levels\[0\]\.stairs\[0\]\.to: level '1' lies at elevation -1\.0, not above level '0' at 0\.0"),
+        (_set(0, 'stairs', 0, to='0'), r'levels\[0\]\.stairs\[0\]\.rise: a stair on its own level climbs `rise` meters from `base`, expected more than 0, got 0\.0'),
+        (_set(0, 'stairs', 0, to='0', rise=3.0, exit=[3.0, 2.0]), r'levels\[0\]\.stairs\[0\]\.exit: a stair on its own level runs straight on, its top half right after the bottom half'),
+        (_set(0, 'stairs', 0, base=1.0), r"levels\[0\]\.stairs\[0\]\.base: only a stair on its own level takes base, the levels' elevations set it between levels"),
+        (_set(0, 'escalators', 0, floor='no'), r"levels\[0\]\.escalators\[0\]\.floor: expected true or false, got 'no'"),
         (_set(0, 'stairs', 0, exit=[3.0, 2.0]), r'levels\[0\]\.stairs\[0\]\.exit: a stacked world places the top half itself, right after the bottom half'),
         (lambda data: data.update(layout='spread'), r"levels\[0\]\.stairs\[0\]\.exit: a spread world takes the mouth of the top half on level '1', in its frame"),
         (lambda data: data.update(layout='tall'), r'layout: expected stacked or spread, got .tall.'),
@@ -201,6 +301,22 @@ def test_a_partner_on_a_level_not_loaded_is_a_warning() -> None:
     assert world.validate(loaded_level_ids={'0'}) == ["stair 'up_bottom' leads to 'up_top' on a level that was not loaded, it will not board", "stair 'ride_bottom' leads to 'ride_top' on a level that was not loaded, it will not board"]
     with pytest.raises(ValueError, match=r"stair 'up_bottom' leads to unknown stair 'up_top'"):
         world.validate()
+
+
+@pytest.mark.parametrize('spread', [False, True])
+def test_a_written_stair_on_its_own_level_takes_base_rise_and_floor_and_parses_back_equal(spread: bool) -> None:
+    def change(data: dict) -> None:
+        if spread:
+            _spread(data)
+        _link(floor=False)(data)
+
+    world = parse_world(_world(change))
+    text = write_world(world)
+    written = yaml.safe_load(text)
+    assert written['levels'][0]['escalators'][-1] == {**LINK, 'floor': False}
+    again = parse_world(written)
+    assert [level.stairs for level in again.all_levels] == [level.stairs for level in world.all_levels]
+    assert write_world(again) == text
 
 
 @pytest.mark.parametrize('spread', [False, True])

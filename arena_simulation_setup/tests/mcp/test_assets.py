@@ -55,8 +55,8 @@ def test_pull_of_a_world_absent_from_the_bucket_fails():
 @sourced
 def test_browse_without_a_path_lists_the_sources_and_their_kinds():
     sources = {row["source"]: row["kinds"] for row in assets.assets_browse()["sources"]}
-    assert sources["public/worlds"] == ["world"]
-    assert "object" in sources["public/models"]
+    assert "world" in sources["arena-public"]
+    assert "object" in sources["arena-public"]
     assert "arena-internal" in sources
 
 
@@ -65,7 +65,7 @@ def test_browse_of_an_unreachable_store_fails_with_the_reason(monkeypatch, tmp_p
     monkeypatch.setenv("ARENA_ASSETS_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("ARENA_ASSETS_DIR", str(tmp_path))
     with pytest.raises(ToolError, match="cannot reach the asset store at http://127.0.0.1:9"):
-        assets.assets_browse("public/models")
+        assets.assets_browse("arena-public")
 
 
 def test_domain_serves_only_the_arena_asset_verbs():

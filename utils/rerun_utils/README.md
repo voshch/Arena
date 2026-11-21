@@ -27,6 +27,8 @@ ros2 launch rerun_utils rerun_bridge.launch.py ns:=/env_0 \
 | `ns` | required | Env namespace, e.g. `/env_0`. |
 | `web_port` | `9090` | Port of the rerun web viewer. |
 | `grpc_port` | `9876` | Port of the rerun gRPC server. |
+| `memory_limit` | `512MiB` | What the gRPC server buffers for viewers that connect later, in rerun size syntax. |
+| `max_rate_hz` | `30.0` | Most updates a second logged per topic and per tf frame, `0` = uncapped. |
 
 Then open `http://localhost:9090/` in any browser. No X server, no desktop
 environment, works inside a container.
@@ -43,13 +45,32 @@ The bridge follows the same lifecycle as `rviz_utils`:
    frames as tf does. A frame that is no transform's child (the env's `map`) is tied to the env's origin.
 6. Walk the manifest, dispatch each `AdapterDisplay` to its renderer.
 7. Each renderer creates a ROS subscription on the bridge node; callbacks
-   call `rr.log(...)`.
+   log through the bridge's `Stream`.
+8. Send the layout: the 3D scene on `/`, and beside it a 2D view per IMAGE display and a plot of the last 10 s per IMU
+   display. Panels start collapsed.
+
+## Logging
+
+`rerun_utils/stream.py` decides how everything reaches the viewer:
+
+- The recording flushes its batches once per `max_rate_hz` period (33 ms by default and when uncapped).
+- Streams are logged on the `sim_time` timeline from their header stamps (the node's sim clock for unstamped ones).
+- One-time data is logged static: `tf_static`, the ties of tf roots, the map (costmaps stay temporal), latched marker
+  arrays and the IMU series names. When the buffer is full the server drops the oldest temporal data first, so a
+  viewer that connects late still gets these. Streams logged static would be dropped together with them.
+- Each topic and each tf frame logs at most `max_rate_hz` times a second. A message that arrives too early waits,
+  replaced by any newer one, and is logged once its slot comes, so the view always ends on the latest message. A
+  message that waits is converted only when it is logged.
+- A dynamic transform that moved less than 1e-5 from the last one logged into its frame is skipped.
+- 8-bit color and mono images are sent as JPEG (quality 80), `16UC1` and `32FC1` depth as 16-bit PNG in millimeters,
+  other images raw.
+- Point clouds keep their finite points, every k-th of them when there are more than 20000.
 
 ## MCP tools
 
 The package registers the `viz` MCP domain (`rerun_utils/mcp.py`, entry point `arena_mcp.domains`), which runs the same launch file for an env without a terminal:
 
-- `viz_rerun_start(env_id=None, web_port=0, grpc_port=0)` starts the bridge of the env's task generator detached in its own process group, logging to `$ROS_LOG_DIR/rerun_view_env_<id>_<time>.log`. A port of 0 picks a free one. It returns once the web port accepts connections: `{env_id, ns, pid, web_port, grpc_port, url, started}`. A live view is returned unchanged with `started: false`.
+- `viz_rerun_start(env_id=None, web_port=0, grpc_port=0, memory_limit="512MiB", max_rate_hz=30.0)` starts the bridge of the env's task generator detached in its own process group, logging to `$ROS_LOG_DIR/rerun_view_env_<id>_<time>.log`. A port of 0 picks a free one. It returns once the web port accepts connections: `{env_id, ns, pid, web_port, grpc_port, url, started}`. A live view is returned unchanged with `started: false`.
 - `viz_rerun_stop(env_id=None)` sends SIGINT to the group, then SIGTERM and SIGKILL after the reaper grace windows: `{env_id, stopped}`.
 - `viz_rerun_list()` returns `{views: [{env_id, ns, pid, web_port, grpc_port, url, alive}]}`.
 
@@ -85,9 +106,9 @@ renderer.
 | `POSE` | `rr.Arrows3D` (one arrow at pose+yaw) in the pose's frame |
 | `ODOM` | `rr.Arrows3D` in the odometry's frame |
 | `LASER_SCAN` | `rr.Points3D` in the scan's frame |
-| `POINTS_3D` | `rr.Points3D` in the cloud's frame |
-| `IMAGE` | `rr.Image` |
-| `IMU` | `rr.Scalars` per axis |
+| `POINTS_3D` | `rr.Points3D` of the finite points, at most 20000, in the cloud's frame |
+| `IMAGE` | `rr.EncodedImage` (JPEG) for 8-bit color and mono, `rr.EncodedDepthImage` (PNG) for depth, `rr.Image` otherwise |
+| `IMU` | one `rr.Scalars` series each for `accel` and `gyro`, named `x`, `y`, `z` |
 | `POLYGON` | `rr.LineStrips3D` (closed loop) in the polygon's frame |
 | `PEDESTRIANS` | a reduced capsule view (one capsule and a heading arrow per person) of `<env ns>/arena_peds`, standing on the pose z; the display's ROS4HRI topic has no rerun skeleton plugin |
 | `ROBOT_MODEL` | URDF via `rerun-loader-urdf-python` (optional, warn-and-skip if absent) |

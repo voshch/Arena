@@ -331,7 +331,7 @@ Backend-specific knobs pass straight through:
 | Backend | Args | Notes |
 |---|---|---|
 | `rviz` | `view:=map\|robot\|robot3p`, `robot:=<int>\|all`, `viewport.resolution:=WxH` | `robot:=all` fans out one window per robot. |
-| `rerun` | `web_port:=<int>`, `grpc_port:=<int>` | Defaults 9090/9876; auto-bumped per env under `--all` to avoid collisions. Requires `pip install 'rerun-sdk>=0.38'` once. |
+| `rerun` | `web_port:=<int>`, `grpc_port:=<int>`, `memory_limit:=<size>`, `max_rate_hz:=<float>` | Ports default to 9090/9876, auto-bumped per env under `--all` to avoid collisions. `memory_limit` is what the gRPC server buffers for viewers that connect later (default 512MiB), `max_rate_hz` caps updates per topic and tf frame (default 30, 0 = uncapped). Requires `pip install 'rerun-sdk>=0.38'` once. |
 
 Rerun opens a browser-based viewer (no X server, container-friendly); for
 the default `web_port:=9090` go to `http://localhost:9090/`.
@@ -372,7 +372,7 @@ log_level:=debug     # verbose output from all nodes
 use_sim_time:=false  # real-time clock (unusual, only for real robots)
 complexity:=2        # AMCL (position unknown); 3 = SLAM
 record.dir:=/tmp/arena_run  # enable data recording (record.auto:=false keeps the recorder off)
-task.episode.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
+task.episode.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, pedestrian or held device (default false)
 ```
 
 ### sim:=

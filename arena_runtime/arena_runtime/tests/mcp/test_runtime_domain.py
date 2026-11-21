@@ -65,6 +65,7 @@ class Rig:
 async def _start(rig: Rig) -> None:
     import rclpy.node
     from arena_rclpy_mixins.spin import create_executor
+    from arena_rclpy_mixins.Time import TimeNode
     from arena_runtime_msgs.msg import Heartbeat, ShutdownRequest
     from arena_runtime_msgs.srv import ConfirmWorld, LifecycleHold, RegisterEnv
     from lifecycle_msgs.msg import State, TransitionEvent
@@ -79,7 +80,7 @@ async def _start(rig: Rig) -> None:
     rig.cold_envs = str(cold_envs.value)
     rig.cold_s = time.monotonic() - started
 
-    class EnvPeer(rclpy.node.Node):
+    class EnvPeer(TimeNode):
         """Registers like an unmanaged env, goes ACTIVE, and finalizes on despawn_env."""
 
         def __init__(self) -> None:
@@ -103,7 +104,7 @@ async def _start(rig: Rig) -> None:
             self.transition.publish(msg)
 
         def beat(self) -> None:
-            self.heartbeat.publish(Heartbeat(fqn=f"/{self.ns}", stamp=self.get_clock().now().to_msg()))
+            self.heartbeat.publish(Heartbeat(fqn=f"/{self.ns}", stamp=self.wall_time.to_msg()))
 
         def _on_shutdown(self, msg: ShutdownRequest) -> None:
             if msg.env_id == self.env_id and msg.reason == "despawn_env":
@@ -353,7 +354,7 @@ def test_lockstep_gate_runs_the_cli_verb_with_specs_and_presets(rig: Rig) -> Non
 def test_lockstep_start_pause_resume_stop(rig: Rig) -> None:
     with pytest.raises(ToolError, match="not running"):
         rig.run(mcp.runtime_lockstep_pause())
-    assert rig.run(mcp.runtime_lockstep_start(rtf=1.0, gated=False)) == {"lockstep": "on", "target_rtf": 1.0, "gated": False}
+    assert rig.run(mcp.runtime_lockstep_start(rtf=1.0, gated=False)) == {"lockstep": "on", "target_rtf": 1.0, "gated": False, "driven": False}
     rig.run(_status_where(rig, lambda status: status["active"] and status["ungated"] and status["measured_rtf"] > 0.3, "active ungated run"))
     assert rig.run(mcp.runtime_state())["paused"] is True
     assert rig.run(mcp.runtime_lockstep_pause()) == {"lockstep": "paused"}
@@ -372,6 +373,19 @@ def test_lockstep_start_for_seconds_pauses_through_a_job(rig: Rig) -> None:
     assert done.state == "succeeded" and done.result == {"lockstep": "paused", "after_s": 0.5}
     status = rig.run(_status_where(rig, lambda status: status["paused"], "paused after the job"))
     assert status["active"] and status["target_rtf"] == 2.0 and not status["ungated"]
+    rig.run(mcp.runtime_lockstep_stop())
+    rig.run(_status_where(rig, lambda status: not status["active"], "stopped run"))
+
+
+def test_lockstep_advance_steps_a_driven_run_by_the_requested_sim_time(rig: Rig) -> None:
+    with pytest.raises(ToolError, match="driven lockstep run"):
+        rig.run(mcp.runtime_lockstep_advance(0.5))
+    assert rig.run(mcp.runtime_lockstep_start(driven=True))["driven"] is True
+    rig.run(_status_where(rig, lambda status: status["active"] and status["driven"], "driven run"))
+    advanced = rig.run(mcp.runtime_lockstep_advance(0.5))
+    assert advanced["advanced"] == pytest.approx(0.5, abs=0.05)
+    later = rig.run(mcp.runtime_lockstep_advance(0.25))
+    assert later["sim_time"] - advanced["sim_time"] == pytest.approx(later["advanced"], abs=0.05)
     rig.run(mcp.runtime_lockstep_stop())
     rig.run(_status_where(rig, lambda status: not status["active"], "stopped run"))
 

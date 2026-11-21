@@ -161,7 +161,7 @@ async def runtime_state() -> dict[str, Any]:
         "paused": paused.data,
         "holders": _holders(holders),
         "own": {"caller_id": caller, "holds": dict(_mine(holders, caller)), "windows": _OWN.windows},
-        "lockstep": {key: status[key] for key in ("active", "paused", "ungated", "target_rtf", "measured_rtf", "tick", "waiting_on", "gated_ticks")},
+        "lockstep": {key: status[key] for key in ("active", "paused", "ungated", "driven", "target_rtf", "measured_rtf", "tick", "pending", "waiting_on", "gated_ticks")},
         "envs": {"count": len(envs.envs), "ready": sum(1 for record in envs.envs if record.ready), "env_ids": sorted(record.env_id for record in envs.envs)},
         "params": await ROS.get_params(RUNTIME),
     }
@@ -362,14 +362,15 @@ async def runtime_lockstep_start(
     rtf: Annotated[float, Field(ge=0, description="target real-time factor, 0 = flat out")] = 0.0,
     gated: Annotated[bool, Field(description="wait on the registered hard channels every tick, false free-steps")] = True,
     seconds: Annotated[float | None, Field(gt=0, description="pause the run after this many wall seconds as a job (arena lockstep run for:=), None keeps it running (arena lockstep on)")] = None,
+    driven: Annotated[bool, Field(description="advance only on runtime_lockstep_advance requests, unpaced, rtf is ignored")] = False,
 ) -> dict[str, Any]:
     """Start or reconfigure the lockstep scheduler, which holds the sim (every env) and steps it tick by tick, gated on hard channels."""
     from arena_runtime_msgs.srv import LockstepStart
 
-    response = await ROS.call(LockstepStart, f"{LOCKSTEP}/start", LockstepStart.Request(target_rtf=float(rtf), ungated=not gated), hint=NO_RUNTIME)
+    response = await ROS.call(LockstepStart, f"{LOCKSTEP}/start", LockstepStart.Request(target_rtf=float(rtf), ungated=not gated, driven=driven), hint=NO_RUNTIME)
     if not response.success:
         raise ToolError(f"lockstep start refused: {response.error_msg}")
-    out: dict[str, Any] = {"lockstep": "on", "target_rtf": rtf, "gated": gated}
+    out: dict[str, Any] = {"lockstep": "on", "target_rtf": rtf, "gated": gated, "driven": driven}
     if seconds is not None:
         wait = float(seconds)
 
@@ -381,6 +382,20 @@ async def runtime_lockstep_start(
 
         out["job"] = JOBS.start_task("runtime_lockstep", f"lockstep run for {wait:g}s", body, on_cancel=_lockstep_pause).as_dict()
     return out
+
+
+@domain.tool()
+async def runtime_lockstep_advance(
+    seconds: Annotated[float, Field(gt=0, description="sim seconds to advance, rounded up to whole physics steps")],
+    timeout: Annotated[float, Field(gt=0, description="wall seconds to wait for the gates")] = 60.0,
+) -> dict[str, Any]:
+    """Advance a driven lockstep run and return once every hard channel due at the new sim time has published for it."""
+    from arena_runtime_msgs.srv import LockstepAdvance
+
+    response = await ROS.call(LockstepAdvance, f"{LOCKSTEP}/advance", LockstepAdvance.Request(seconds=float(seconds)), timeout=timeout, hint=NO_RUNTIME)
+    if not response.success:
+        raise ToolError(f"lockstep advance refused: {response.error_msg}", hint="runtime_lockstep_start with driven=true starts a driven run")
+    return {"advanced": response.advanced, "sim_time": await _sim_now()}
 
 
 @domain.tool()
@@ -419,7 +434,7 @@ async def runtime_lockstep_resume() -> dict[str, Any]:
 
 @domain.tool(read_only=True)
 async def runtime_lockstep_status() -> dict[str, Any]:
-    """The scheduler's latched status: active, paused, ungated, target and measured rtf, gated tick (sim s), registrations, channels it waits on, per-channel counters."""
+    """The scheduler's latched status: active, paused, ungated, driven, target and measured rtf, sim seconds owed to advance requests, gated tick (sim s), registrations, channels it waits on, per-channel counters."""
     from arena_runtime_msgs.msg import LockstepStatus
 
     return _lockstep_dict(await _latest(LockstepStatus, "lockstep"))

@@ -1,0 +1,8 @@
+# Run with robot.mobile:=test-collision task.episode.fail_on_collision:=true; the first contact ends the episode.
+format: arena-scenario/2
+humans:
+- {name: walking_frame, model: Hospital/patient_female_asian_old, pose: [19.61, 11.5, 3.1416], waypoints: [[9.5, 11.5, 0.0]], waypoint_mode: once, agent: {agent_type: ../device_contact_walking_frame/patient_walking_frame_unaware.yaml}}
+robots:
+- start: [18.5, 9.90, 1.5708]
+  phases:
+  - {goto: [18.5, 14.50, 1.5708]}

@@ -195,6 +195,10 @@ class GateLedger:
     def advance(self, seconds: float) -> None:
         self.now += seconds
 
+    def steps_to(self, target: float) -> int:
+        """Whole steps from the tick to the absolute sim time `target`, none at or past it."""
+        return max(math.ceil(round((target - self.tick) / self.dt, 9)), 0)
+
     def due(self) -> list[Channel]:
         return [ch for ch in self.active() if ch.next_due <= self.now + 1e-9]
 

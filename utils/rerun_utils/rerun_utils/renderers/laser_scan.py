@@ -31,7 +31,7 @@ def render_laser_scan(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Ren
             ang += msg.angle_increment
         if not pts:
             return
-        rr.log(entity, rr.Points3D(pts, colors=[color], radii=0.02), *in_frame(msg.header.frame_id))
+        ctx.stream.log(entity, rr.Points3D(pts, colors=[color], radii=0.02), *in_frame(msg.header.frame_id), stamp=msg.header.stamp)
 
     qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
-    ctx.node.create_subscription(LaserScan, d.topic, cb, qos)
+    ctx.node.create_subscription(LaserScan, d.topic, ctx.stream.subscriber(d.topic, cb), qos)

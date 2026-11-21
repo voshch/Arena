@@ -1,5 +1,6 @@
 float64 target_rtf   # 0 = unpaced
 bool ungated         # ignore gates, free-step
+bool driven          # advance only on lockstep/advance requests, unpaced
 ---
 bool success
 string error_msg

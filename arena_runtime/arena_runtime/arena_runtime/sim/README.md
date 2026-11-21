@@ -409,10 +409,19 @@ sim to the producer's true coverage. An elapsed-based rate loop registers
 a period strictly above its interval. The arena_humansim engine ticks off
 `/clock` itself rather than an rcl timer, so a clock the gate is holding
 still owes it the tick the gate is waiting for, and it answers a repeated
-clock, which the gate sends while it waits, with its last frame.
+clock, which the gate sends while it waits, with its last frame. A producer
+that beats from an rcl timer on the sim clock (the hearing belief and policy
+nodes) gets it from `TimeNode.create_timer`, which drops the `EventsExecutor`'s
+repeated dispatch of a ready timer, so the timer never runs a period past the
+clock the gate holds, and stamps from `TimeNode.sim_time`, which already holds
+the time that fired the timer. These producers, the hearing front-ends and every
+`LockstepBeat` publish their beat through `ClockEcho`, so like the engine they
+answer a repeated clock with their last beat and one lost message does not hold
+the gate.
 
-`sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`)
-starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced
+`sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`, `driven`)
+starts a run or reconfigures one in place, and a start with the running
+config only resumes it: `target_rtf` of 0 is unpaced
 while gates hold the pace and wall rate while no channel is registered,
 `ungated` free-steps ignoring every gate. A paced run sleeps against a wall
 schedule of the sim time it advanced, so a tick that overruns its share is
@@ -429,13 +438,22 @@ in the window holder's env, which stay subscribed and keep their latest stamp
 for when the window closes. A failed step is retried under the run's hold
 after 1, 2, 4, 8 and 16 s, rebasing on the clock first, and a sixth
 consecutive failure ends the run and counts one lifecycle failure.
+A `driven` run is unpaced and steps only for requests and open unpause
+windows: `sim_lifecycle/lockstep/advance` (LockstepAdvance: `seconds`)
+queues sim time, rounded up to whole physics steps, steps it in one call
+and answers with the seconds advanced once every hard channel that came due
+inside it covers its last tick. Requests run in order, a foreign hold delays them, and a stop,
+reconfigure or crash fails the pending ones. arena_training's lockstep envs
+step the sim this way, one request per vec step, and gate on their own
+observation streams.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
 pause state and gz `real_time_factor`, responding as soon as the hold is
 released (the guard against a draining gz chunk re-pausing the world runs
 in the background). `sim_lifecycle/lockstep/pause` /
 `sim_lifecycle/lockstep/resume` freeze and unfreeze the clock within a run
 without ending it. Status is the latched `/arena/state/lockstep` topic
-(LockstepStatus): `active`, `paused`, `ungated`, `target_rtf`,
+(LockstepStatus): `active`, `paused`, `ungated`, `driven`, `target_rtf`,
+`pending` (sim seconds owed to advance requests),
 `measured_rtf`, `tick`, `registrations`, `waiting_on`, `arrived`, and the
 run's cumulative counters: `gated_ticks` (ticks that waited on a hard
 channel) and `counts` (per channel topic, the ticks it was `due` on and
@@ -519,9 +537,10 @@ are what Arena sends it.
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
   `pivot` x the body turns about and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
-  sideways only when `is_holonomic`. The base controller does not run. The adapter
-  launches `robot_state_publisher`, the server gets the URDF and the tf topic
-  of the env.
+  sideways only when `is_holonomic`. The base controller does not run. The
+  cap's `min_turning_radius` bounds the turn rate of a car-like base at its
+  forward speed over that radius. The adapter launches `robot_state_publisher`,
+  the server gets the URDF and the tf topic of the env.
 - Arm, torso and gripper joints: a ros2_control robot with controllers besides its
   base controller and `joint_state_broadcaster` gets a `controller_manager` on `mock_components/GenericSystem`
   (`mock_arm_hardware` in [_urdf.py](_urdf.py)), which keeps only the position-commanded

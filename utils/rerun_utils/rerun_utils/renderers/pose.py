@@ -30,7 +30,7 @@ def render_pose(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
     def cb(msg: PoseStamped) -> None:
         p = msg.pose.position
         q = msg.pose.orientation
-        rr.log(
+        ctx.stream.log(
             entity,
             rr.Arrows3D(
                 origins=[(p.x, p.y, p.z)],
@@ -38,6 +38,7 @@ def render_pose(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
                 colors=[color],
             ),
             *in_frame(msg.header.frame_id),
+            stamp=msg.header.stamp,
         )
 
-    ctx.node.create_subscription(PoseStamped, d.topic, cb, 10)
+    ctx.node.create_subscription(PoseStamped, d.topic, ctx.stream.subscriber(d.topic, cb), 10)

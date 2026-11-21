@@ -24,7 +24,7 @@ def render_odom(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
     def cb(msg: Odometry) -> None:
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
-        rr.log(
+        ctx.stream.log(
             entity,
             rr.Arrows3D(
                 origins=[(p.x, p.y, p.z)],
@@ -32,7 +32,8 @@ def render_odom(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererC
                 colors=[color],
             ),
             *in_frame(msg.header.frame_id),
+            stamp=msg.header.stamp,
         )
 
     qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
-    ctx.node.create_subscription(Odometry, d.topic, cb, qos)
+    ctx.node.create_subscription(Odometry, d.topic, ctx.stream.subscriber(d.topic, cb), qos)

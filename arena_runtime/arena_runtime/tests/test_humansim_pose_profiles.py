@@ -42,6 +42,7 @@ def _adapter() -> ArenaHumanSimulator:
     adapter = object.__new__(ArenaHumanSimulator)
     adapter._NodeInterface__node = _Node()
     adapter._pose_profiles = {}
+    adapter._devices = {}
     adapter._agent_types = {}
     adapter._agent_type_paths = {}
     return adapter

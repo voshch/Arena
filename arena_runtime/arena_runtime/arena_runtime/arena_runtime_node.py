@@ -279,6 +279,12 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
             self._cb_lockstep_start,
             callback_group=srv_cb_group,
         )
+        self._srv_lockstep_advance = self.create_service(
+            arena_runtime_msgs.srv.LockstepAdvance,
+            self.service_namespace("sim_lifecycle", "lockstep", "advance"),
+            self._cb_lockstep_advance,
+            callback_group=srv_cb_group,
+        )
         self._srv_lockstep_register = self.create_service(
             arena_runtime_msgs.srv.LockstepRegister,
             self.service_namespace("sim_lifecycle", "lockstep", "register"),
@@ -698,12 +704,28 @@ class ArenaRuntimeNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         response: arena_runtime_msgs.srv.LockstepStart.Response,
     ) -> arena_runtime_msgs.srv.LockstepStart.Response:
         try:
-            config = LockstepConfig(target_rtf=request.target_rtf, ungated=request.ungated)
+            config = LockstepConfig(target_rtf=request.target_rtf, ungated=request.ungated, driven=request.driven)
         except ValueError as e:
             response.success = False
             response.error_msg = str(e)
             return response
         await self._lockstep.start(config)
+        response.success = True
+        response.error_msg = ""
+        return response
+
+    async def _cb_lockstep_advance(
+        self,
+        request: arena_runtime_msgs.srv.LockstepAdvance.Request,
+        response: arena_runtime_msgs.srv.LockstepAdvance.Response,
+    ) -> arena_runtime_msgs.srv.LockstepAdvance.Response:
+        try:
+            response.advanced = await self._lockstep.advance(request.seconds)
+        except (RuntimeError, ValueError) as e:
+            response.success = False
+            response.advanced = 0.0
+            response.error_msg = str(e)
+            return response
         response.success = True
         response.error_msg = ""
         return response

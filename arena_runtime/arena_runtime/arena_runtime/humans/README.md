@@ -321,6 +321,15 @@ A `regions:` source entry's `config.agent:` block uses a different, wider schema
 
 A scripted entry renders with its `model:`. A source-spawned agent has none, so it takes a model from its agent type: when the type lists `assets:` tags, one of the human bundles on disk (world-local, shared-local or already cached) whose `annotation.yaml` carries every tag is drawn per agent from the episode seed. A type without `assets:`, or tags no bundle carries (warned once per type), keeps the default model.
 
+### Held devices
+
+An agent type's `device:` block names the assistive device its pedestrians hold: the prop bone their character carries
+(`{kind: cane, bone: cane}`), or an object held in both hands (`{kind: walking_frame, model: <object>}`, centered under the
+`pose.hold` grips). `publish_arena_peds` poses the character with the joint angles it publishes, through the same forward
+kinematics the simulators draw with (`ActorPose`), and writes the device's outline on the ground into `Pedestrian.device`
+([`devices.py`](devices.py)). Bodies are loaded off the publish path, once per character. The robot's collision tracker
+tests its footprint against `Pedestrian.radius` and `Pedestrian.device` (`devices.shapes`).
+
 ### Static world objects
 
 An `objects:` scenario or world entry that pedestrians can interact with (a bench, a
@@ -466,7 +475,8 @@ in Lyon to `madras_topview`, and `arena asset import scenario glow <YYYY-mm-ddTH
 `ArenaHumanSimulator` feeds possession back to the engine: a loop at the
 possession stream rate (20 Hz) publishes every possessed ped and every
 tracked robot on the engine's `world_state` topic, pose and world-frame
-velocity both. Possessed peds that are known engine agents go out under
+velocity both, each robot sized by its footprint's disc radius (the mobile cap's
+`radius`, else the padded footprint's circumradius, 0.3 m without a mobile cap). Possessed peds that are known engine agents go out under
 the engine's own agent id, so the engine keeps its internal copy in full
 sync: pose slaved to the feed, velocity carried through so neighboring
 agents anticipate the motion, autonomy suspended while the lease is

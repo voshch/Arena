@@ -21,6 +21,7 @@ def _expire(assets: Path, *args: str) -> subprocess.CompletedProcess[str]:
         "ASSET_BUCKETS": "assets",
         "WORLD_BUCKETS": "worlds",
         "BENCHMARK_BUCKETS": "bench",
+        "ARENA_BUCKETS": ",",
         "PYTHONPATH": os.pathsep.join([str(Path(__file__).parents[2]), os.environ.get("PYTHONPATH", "")]),
     }
     return subprocess.run([sys.executable, "-m", "arena_cli", "asset", "expire", *args], env=env, capture_output=True, text=True, check=False)

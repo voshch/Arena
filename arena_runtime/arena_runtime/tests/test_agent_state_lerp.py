@@ -33,11 +33,13 @@ def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, ori
     adapter._prev_agent_states = prev
     adapter._curr_agent_states = curr
     adapter._engine_stamp_ns = engine_stamp_ns
+    adapter._engine_dt_ns = 50_000_000
     adapter._agent_gestures = {}
     adapter._agent_names = {}
     adapter._agent_types = {}
     adapter._agent_type_paths = {}
     adapter._pose_profiles = {}
+    adapter._devices = {}
     adapter._seats = {}
     adapter._seat_holds = {}
     adapter._realizer = Realizer(Realizer._Configuration(x=origin[0], y=origin[1], prefix="env_0"))
@@ -151,6 +153,18 @@ def test_render_time_trails_now_by_one_engine_frame_so_every_sample_advances() -
         xs.append(lerped.x[0])
 
     assert xs == pytest.approx([0.0, 0.01, 0.02, 0.03, 0.04])
+
+
+def test_render_time_trails_a_coalesced_frame_by_one_engine_dt_only() -> None:
+    columns = {"agent_id": [1], "y": [0.0], "theta": [0.0], "vx": [1.0], "vy": [0.0]}
+    prev = _frame(10, 0, x=[0.0], **columns)
+    curr = _frame(10, 100_000_000, x=[0.1], **columns)
+    adapter = _adapter(prev, curr, engine_stamp_ns=10 * 10**9 + 100_000_000)
+
+    render_ns = adapter._render_ns(10 * 10**9 + 100_000_000)
+
+    assert render_ns == 10 * 10**9 + 50_000_000
+    assert adapter._interpolate_agent_states(render_ns).x[0] == pytest.approx(0.05)
 
 
 def test_render_time_without_two_frames_is_now() -> None:

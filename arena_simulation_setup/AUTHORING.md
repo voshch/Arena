@@ -24,7 +24,7 @@ current working directory.
 
 `WorldIdentifier` resolves a name against, in order: `ARENA_WORLD_PATH` roots,
 then the writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds`, then this
-package's `worlds/`, then a network bucket named by `WORLD_BUCKETS`. Worlds
+package's `worlds/`, then a network bucket named by `WORLD_BUCKETS` or `ARENA_BUCKETS`. Worlds
 saved through `resolve_write_sync()` (the world generator, the `worlds` MCP
 tools) land in the writable local root, outside the repo and the install
 space. Once authored, publish a world with
@@ -272,8 +272,10 @@ joins and names one whole staircase:
 | `mouth` | `[x, y]` middle of the open lower end, in the level frame |
 | `mouth_side` | side it is entered from (`+x`, `-x`, `+y`, `-y`, default `-x`), the staircase running away from it |
 | `size` | `[length, width]` of the whole staircase in metres, length along the walking direction |
-| `to` | id of the level it reaches, above its own |
+| `to` | id of the level it reaches, above its own, or its own level for a staircase between two floors of it |
 | `exit` | spread worlds only: `[x, y]` middle of the open upper end on the `to` level, in that level's frame |
+| `base`, `rise` | a staircase on its own level only: height of its mouth and how far it climbs, as for a [ramp](#ramps) |
+| `floor` | `false` builds only its side walls, for a staircase the world already shows (a scan) |
 | `kind` | optional staircase kind to start from, see below |
 
 The rise is the difference of the two levels' `elevation`, a level without
@@ -285,6 +287,12 @@ The world's `layout` says how its levels relate. In a `stacked` world every
 level shares one floor plan and the staircase runs straight up from its
 mouth. In a `spread` world (the default) every level keeps a floor plan of
 its own, and the entry also takes `exit`.
+
+A staircase whose `to` is its own level joins two floors of that level whose heights come from its `ramps`, as in a
+scanned building. It takes `base` and `rise` instead of the levels' elevations, and no `exit`. Its halves meet in
+place, so agents walk or ride straight over, with no seam wall and no teleport. Pedestrians cross it only on a stair
+route, see HumanSim's [stairs](../humansim/README.md#stairs). With `floor: false` only its side walls are built, for a
+staircase the scan already shows. A simulator without floor heights lays it flat.
 
 `size` sets the incline, nothing else does, and nothing rejects a steep one:
 

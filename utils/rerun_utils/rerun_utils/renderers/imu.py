@@ -1,4 +1,4 @@
-"""DisplayKind.IMU renderer: sensor_msgs/Imu → scalar time series (lin accel + ang vel)."""
+"""DisplayKind.IMU renderer: sensor_msgs/Imu -> two scalar time series, linear acceleration and angular velocity per axis."""
 
 from __future__ import annotations
 
@@ -19,15 +19,14 @@ def render_imu(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: RendererCt
         return
     base = display_path(ctx.env_id, robot, d.name)
 
+    for part in ("accel", "gyro"):
+        ctx.stream.fixed(f"{base}/{part}", rr.SeriesLines(names=["x", "y", "z"]))
+
     def cb(msg: Imu) -> None:
         a = msg.linear_acceleration
         w = msg.angular_velocity
-        rr.log(f"{base}/accel/x", rr.Scalars(a.x))
-        rr.log(f"{base}/accel/y", rr.Scalars(a.y))
-        rr.log(f"{base}/accel/z", rr.Scalars(a.z))
-        rr.log(f"{base}/gyro/x", rr.Scalars(w.x))
-        rr.log(f"{base}/gyro/y", rr.Scalars(w.y))
-        rr.log(f"{base}/gyro/z", rr.Scalars(w.z))
+        ctx.stream.log(f"{base}/accel", rr.Scalars([a.x, a.y, a.z]), stamp=msg.header.stamp)
+        ctx.stream.log(f"{base}/gyro", rr.Scalars([w.x, w.y, w.z]), stamp=msg.header.stamp)
 
     qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
-    ctx.node.create_subscription(Imu, d.topic, cb, qos)
+    ctx.node.create_subscription(Imu, d.topic, ctx.stream.subscriber(d.topic, cb), qos)

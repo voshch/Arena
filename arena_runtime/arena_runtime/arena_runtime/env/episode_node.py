@@ -56,7 +56,6 @@ from arena_runtime.env.node import _LATCHED, EnvNode
 from arena_runtime.env.node_watch import NodePinger
 from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
-from arena_runtime.env.robot_manager.robot_manager import footprint_radius
 from arena_runtime.env.run_task import RunningTask
 from arena_runtime.env.task_layer import (
     EpisodeContext,
@@ -76,7 +75,7 @@ from arena_runtime.env.task_layer import (
     task_layer_name,
 )
 from arena_runtime.node_params import TASK_LAYER
-from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot
+from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot, footprint_radius
 
 if typing.TYPE_CHECKING:
     from arena_runtime.env.robot_manager import RobotManager
@@ -161,7 +160,7 @@ class EpisodeNode(EnvNode):
         self._goal_progress = GoalProgressTracker()
 
         self.markers = MarkerHub(self, self.service_namespace("markers"), self._reset_lock)
-        self._start_time = self.time
+        self._start_time = self.sim_time
         self._task: EpisodeTask | None = None
         self._force_reset = False
         self._abort_reason: str | None = None

@@ -449,6 +449,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._prev_agent_states: AgentFrameMsg | None = None
         self._curr_agent_states: AgentFrameMsg | None = None
         self._engine_stamp_ns: int | None = None
+        self._engine_dt_ns: int = round(self._ENGINE_DT_DEFAULT * 1e9)
         self._agent_gestures: dict[int, list[EngineGestureMsg]] = {}
         self._agent_types: dict[int, str] = {}
         self._agent_type_paths: dict[str, str] = {}
@@ -671,12 +672,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._viz_config = cfg
 
     def _render_ns(self, now_ns: int) -> int:
-        """Sim time shown to receivers: one engine frame behind now, so it falls between the two newest frames."""
+        """Sim time shown to receivers: one engine frame behind now, at most one engine dt, so it falls between the two newest frames."""
         curr, prev = self._curr_agent_states, self._prev_agent_states
         if curr is None or prev is None:
             return now_ns
         frame_ns = (curr.header.stamp.sec - prev.header.stamp.sec) * int(1e9) + curr.header.stamp.nanosec - prev.header.stamp.nanosec
-        return now_ns - max(frame_ns, 0)
+        return now_ns - min(max(frame_ns, 0), self._engine_dt_ns)
 
     async def _publish_interpolated(self) -> None:
         """Interpolate one engine frame behind the current sim time and publish the roster."""
@@ -833,6 +834,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         # gate period = engine dt: one sample per window paces the sim to the
         # engine's true coverage, so the clock cannot outrun the ped simulation
         engine_dt = await self._engine_dt()
+        self._engine_dt_ns = round(engine_dt * 1e9)
         await self._register_lockstep_channels(
             [
                 LockstepChannel(
@@ -1099,7 +1101,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.name = name
             a.pose = self._engine_pose(tracked.pose)
             a.velocity.x, a.velocity.y = tracked.velocity
-            a.radius = 0.3
+            a.radius = tracked.radius
             msg.agents.append(a)  # pyright: ignore[reportAttributeAccessIssue]
         ids = self._agent_ids()
         for name, ped in possessed.items():
@@ -1123,12 +1125,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         gait_cadence = msg.gait_cadence if len(msg.gait_cadence) == n else [0.0] * n
         interaction_ids = msg.interaction_id if len(msg.interaction_id) == n else [-1] * n
         interaction_types = msg.interaction_type if len(msg.interaction_type) == n else [0] * n
-        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence, interaction_id, interaction_type in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, interaction_ids, interaction_types, strict=True):
+        radii = msg.radius if len(msg.radius) == n else [0.0] * n
+        for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence, interaction_id, interaction_type, radius in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, interaction_ids, interaction_types, radii, strict=True):
             ped = Pedestrian()
             ped.id = agent_id
             ped.name = self._agent_names.get(agent_id, str(agent_id))
             ped.gait_phase = float(phase)
             ped.gait_cadence = float(cadence)
+            ped.radius = float(radius)
             ped.agent_type = self._agent_type_of(agent_id)
 
             x, y = self._from_engine(ex, ey)
