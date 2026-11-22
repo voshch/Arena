@@ -7,13 +7,24 @@ from typing import cast
 
 import numpy as np
 from arena_humansim.params import GLOBAL_PLANNER_INFLATION_RADIUS, GLOBAL_PLANNER_RESOLUTION
-from arena_humansim.utils.lanes import build_lane, build_track, check_endpoints, resolve_clearance, sigma_meters, with_goal_corners
-from arena_humansim.utils.types import Lane, LaneConfig, LaneSide, Pose2D, Segments, Shape, ShapeType, SinkConfig, SourceConfig
+from arena_humansim.utils.lanes import build_lane, build_track, resolve_clearance, resolve_lane, sigma_meters, with_goal_corners
+from arena_humansim.utils.types import (
+    AgentTemplate,
+    Lane,
+    LaneConfig,
+    LaneSide,
+    Pose2D,
+    Segments,
+    Shape,
+    ShapeType,
+    SinkAffinity,
+    SinkConfig,
+    SourceConfig,
+)
 
 from arena_simulation_setup.shared.lane import LaneBlock
 from arena_simulation_setup.tree.World.model import World, Zone
 
-SCENARIO_AGENT_RADIUS = 0.35  # mean of humansim's default agent radius distribution
 PLANNER_CLEARANCE = resolve_clearance(
     cast("float", GLOBAL_PLANNER_INFLATION_RADIUS.default),
     cast("float", GLOBAL_PLANNER_RESOLUTION.default),
@@ -45,7 +56,7 @@ def lane_summary(flow: str, block: Mapping[str, object], walls: Segments, *, age
     """Derived settings, band and track points of a lane block on the walls, or the reason the lane fails."""
     try:
         config = lane_config_from_block(flow, block)
-        lane = _build(flow, config, walls, agent_radius=agent_radius, source_extent=source_extent)
+        lane = build_lane(config, walls, flow=flow, agent_radius=agent_radius, clearance=PLANNER_CLEARANCE, source_extent=source_extent)
     except ValueError as exc:
         return {"valid": False, "reason": str(exc)}
     return _summary_of(lane)
@@ -73,80 +84,36 @@ def _summary_of(lane: Lane) -> dict[str, object]:
     }
 
 
-def _endpoint_configs(
-    name: str,
-    regions: object,
-    zones: Mapping[str, Zone],
-    source_zone: Zone,
-) -> tuple[SourceConfig, SinkConfig] | None:
-    if not isinstance(regions, Mapping):
-        return None
-    region = regions.get(name)
-    config = region.get("config") if isinstance(region, Mapping) else None
-    agent = config.get("agent") if isinstance(config, Mapping) else None
-    affinity = agent.get("sink_affinity") if isinstance(agent, Mapping) else None
-    if not isinstance(affinity, Sequence) or isinstance(affinity, str) or len(affinity) != 1:
-        return None
-    entry = affinity[0]
-    sink_name = entry.get("sink") if isinstance(entry, Mapping) else None
-    sink_region = regions.get(sink_name) if isinstance(sink_name, str) else None
-    sink_ref = sink_region.get("ref") if isinstance(sink_region, Mapping) else None
-    sink_zone = zones.get(str(sink_ref)) if sink_ref is not None else None
-    if sink_zone is None:
-        return None
-    sink_cfg = sink_region.get("config") if isinstance(sink_region, Mapping) else None
-    absorption = sink_cfg.get("absorption_radius", 0.5) if isinstance(sink_cfg, Mapping) else 0.5
-    source_shape = Shape(type=ShapeType.POLYGON, vertices=[Pose2D(x=p.x, y=p.y) for p in source_zone.polygon])
-    sink_shape = Shape(type=ShapeType.POLYGON, vertices=[Pose2D(x=p.x, y=p.y) for p in sink_zone.polygon])
-    return (
-        SourceConfig(name=name, shape=source_shape),
-        SinkConfig(name=str(sink_name), shape=sink_shape, absorption_radius=_number(name, "absorption_radius", absorption)),
-    )
-
-
 def scenario_lane_results(regions: object, world: World) -> dict[str, dict[str, object]]:
     """Lane summary of each source region of a scenario that has a lane block, keyed by region."""
-    zones = {zone.name: (zone, level) for level in world.all_levels for zone in level.zones}
-    results: dict[str, dict[str, object]] = {}
-    for name, block, ref in _source_lane_blocks(regions):
-        found = zones.get(ref)
-        if found is None:
-            results[name] = {"valid": False, "reason": f"{name}: no zone {ref!r} in the world"}
-            continue
-        zone, level = found
-        walls = level.closed_wall_segments()
-        try:
-            tangent = _first_tangent(name, block)
-            config = lane_config_from_block(name, block)
-            lane = _build(name, config, walls, agent_radius=SCENARIO_AGENT_RADIUS, source_extent=_zone_extent(zone, tangent))
-            endpoints = _endpoint_configs(name, regions, {key: value[0] for key, value in zones.items()}, zone)
-            if endpoints is not None:
-                check_endpoints(lane, *endpoints)
-        except ValueError as exc:
-            results[name] = {"valid": False, "reason": str(exc)}
-            continue
-        results[name] = _summary_of(lane)
-    return results
+    lanes, failures = build_scenario_lanes(regions, world)
+    return {name: _summary_of(lanes[name]) if name in lanes else {"valid": False, "reason": failures[name]} for name, _, _ in _source_lane_blocks(regions)}
 
 
-def scenario_lanes(regions: object, world: World) -> dict[str, Lane]:
-    """Built lane of each source region of a scenario that has a lane block, keyed by region. An invalid lane raises."""
+def build_scenario_lanes(regions: object, world: World) -> tuple[dict[str, Lane], dict[str, str]]:
+    """Lanes the engine builds for a scenario's source regions with a lane block, and the reason per region that fails."""
     zones = {zone.name: (zone, level) for level in world.all_levels for zone in level.zones}
+    sinks = _sink_configs(regions, {name: zone for name, (zone, _) in zones.items()})
     built: dict[str, Lane] = {}
+    failures: dict[str, str] = {}
     for name, block, ref in _source_lane_blocks(regions):
         found = zones.get(ref)
         if found is None:
-            raise ValueError(f"{name}: no zone {ref!r} in the world")
+            failures[name] = f"{name}: no zone {ref!r} in the world"
+            continue
         zone, level = found
-        walls = level.closed_wall_segments()
-        tangent = _first_tangent(name, block)
-        config = lane_config_from_block(name, block)
-        lane = _build(name, config, walls, agent_radius=SCENARIO_AGENT_RADIUS, source_extent=_zone_extent(zone, tangent))
-        endpoints = _endpoint_configs(name, regions, {key: value[0] for key, value in zones.items()}, zone)
-        if endpoints is not None:
-            check_endpoints(lane, *endpoints)
-        built[name] = lane
-    return {name: with_goal_corners(lane, [other for other_name, other in built.items() if other_name != name]) for name, lane in built.items()}
+        try:
+            source = _source_config(name, regions, block, zone)
+            built[name] = resolve_lane(source, level.closed_wall_segments(), sinks, PLANNER_CLEARANCE)
+        except ValueError as exc:
+            failures[name] = str(exc)
+    narrowed = {name: with_goal_corners(lane, [other for other_name, other in built.items() if other_name != name]) for name, lane in built.items()}
+    return narrowed, failures
+
+
+def scenario_lane_problems(regions: object, world: World) -> list[str]:
+    """Lane problems of a scenario's source regions, each named by its region."""
+    return [str(result["reason"]) for result in scenario_lane_results(regions, world).values() if result["valid"] is not True]
 
 
 def _source_lane_blocks(regions: object) -> Iterator[tuple[str, Mapping[str, object], str]]:
@@ -162,30 +129,53 @@ def _source_lane_blocks(regions: object) -> Iterator[tuple[str, Mapping[str, obj
             yield str(name), block, str(region.get("ref"))
 
 
-def _build(flow: str, config: LaneConfig, walls: Segments, *, agent_radius: float, source_extent: float) -> Lane:
-    return build_lane(config, walls, flow=flow, agent_radius=agent_radius, clearance=PLANNER_CLEARANCE, source_extent=source_extent)
+def _zone_shape(zone: Zone) -> tuple[Pose2D, Shape]:
+    """Pose at the zone centroid and the polygon relative to it, as the runtime sends a region."""
+    cx = sum(point.x for point in zone.polygon) / len(zone.polygon)
+    cy = sum(point.y for point in zone.polygon) / len(zone.polygon)
+    vertices = [Pose2D(x=point.x - cx, y=point.y - cy) for point in zone.polygon]
+    return Pose2D(x=cx, y=cy), Shape(type=ShapeType.POLYGON, vertices=vertices)
 
 
-def scenario_lane_problems(regions: object, world: World) -> list[str]:
-    """Lane problems of a scenario's source regions, each named by its region."""
-    return [str(result["reason"]) for result in scenario_lane_results(regions, world).values() if result["valid"] is not True]
+def _region_config(region: object) -> Mapping[str, object]:
+    config = region.get("config") if isinstance(region, Mapping) else None
+    return config if isinstance(config, Mapping) else {}
 
 
-def _first_tangent(flow: str, block: Mapping[str, object]) -> tuple[float, float]:
-    first, second = lane_config_from_block(flow, block).centerlines[0][:2]
-    dx, dy = second.x - first.x, second.y - first.y
-    length = (dx * dx + dy * dy) ** 0.5
-    if length <= 1e-9:
-        raise ValueError(f"flow {flow!r}: the first segment has no length")
-    return dx / length, dy / length
+def _sink_configs(regions: object, zones: Mapping[str, Zone]) -> dict[str, SinkConfig]:
+    sinks: dict[str, SinkConfig] = {}
+    if not isinstance(regions, Mapping):
+        return sinks
+    for name, region in regions.items():
+        if not isinstance(region, Mapping) or region.get("type") != "sink":
+            continue
+        zone = zones.get(str(region.get("ref")))
+        if zone is None:
+            continue
+        pose, shape = _zone_shape(zone)
+        config = _region_config(region)
+        options = {"absorption_radius": _number(str(name), "absorption_radius", config["absorption_radius"])} if "absorption_radius" in config else {}
+        sinks[str(name)] = SinkConfig(name=str(name), pose=pose, shape=shape, **options)
+    return sinks
 
 
-def _zone_extent(zone: Zone, tangent: tuple[float, float]) -> float:
-    along = [point.x * tangent[0] + point.y * tangent[1] for point in zone.polygon]
-    return max(along) - min(along)
+def _source_config(name: str, regions: object, block: Mapping[str, object], zone: Zone) -> SourceConfig:
+    region = regions.get(name) if isinstance(regions, Mapping) else None
+    agent = _region_config(region).get("agent")
+    agent = agent if isinstance(agent, Mapping) else {}
+    entries = agent.get("sink_affinity")
+    affinity = [SinkAffinity(sink_name=str(entry.get("sink", "")), weight=_number(name, "weight", entry.get("weight", 1.0))) for entry in (entries if isinstance(entries, Sequence) and not isinstance(entries, str) else []) if isinstance(entry, Mapping)]
+    pose, shape = _zone_shape(zone)
+    return SourceConfig(
+        name=name,
+        pose=pose,
+        shape=shape,
+        agent=AgentTemplate(agent_radius=_number(name, "agent_radius", agent.get("agent_radius", 0.0)), sink_affinity=affinity),
+        lane_config=lane_config_from_block(name, block),
+    )
 
 
 def _number(flow: str, key: str, value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError(f"flow {flow!r}: lane {key} must be a number")
+        raise ValueError(f"flow {flow!r}: {key} must be a number")
     return float(value)

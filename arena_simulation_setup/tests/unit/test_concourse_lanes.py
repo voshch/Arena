@@ -16,7 +16,7 @@ import yaml
 from arena_humansim.utils.lanes import build_track
 from arena_humansim.utils.types import Lane, LaneSide, Track
 from arena_simulation_setup.generative.world.concourse import ConcourseConfiguration, WorldGeneratorConcourse
-from arena_simulation_setup.tree.World.lane_check import scenario_lanes
+from arena_simulation_setup.tree.World.lane_check import build_scenario_lanes
 from numpy.typing import NDArray
 
 
@@ -214,7 +214,8 @@ def _family_lanes(config: dict[str, Any]) -> dict[str, Lane]:
     """Lane of each flow of a branch layout, keyed by flow name, built from the generated scenario."""
     gen = WorldGeneratorConcourse(copy.deepcopy(config), random.Random(42))
     world = gen.compute()
-    lanes = scenario_lanes(gen.scenarios()["default"].scenario["regions"], world)
+    lanes, failures = build_scenario_lanes(gen.scenarios()["default"].scenario["regions"], world)
+    assert not failures
     return {flow["name"]: lanes[f"{flow['source_dock']}_source_{flow['name']}"] for flow in config["flows"]}
 
 
