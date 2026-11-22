@@ -24,7 +24,25 @@ def is_external(target: str) -> bool:
     return "://" in target or target.startswith(("mailto:", "data:", "#"))
 
 
-def unverifiable(resolved: pathlib.Path, root: pathlib.Path) -> bool:
+def sparse_excluded(root: pathlib.Path) -> set[pathlib.Path]:
+    """Tracked paths a sparse checkout keeps out of the tree, with their directories."""
+    listing = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z", "-t", "--recurse-submodules"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    excluded = set()
+    for entry in listing.decode().split("\0"):
+        if entry.startswith("S "):
+            path = root / entry[2:]
+            excluded.add(path)
+            excluded.update(path.parents)
+    return excluded
+
+
+def unverifiable(resolved: pathlib.Path, root: pathlib.Path, excluded: set[pathlib.Path]) -> bool:
+    if resolved in excluded:
+        return True
     # An empty existing ancestor is an uninitialized submodule (sparse CI checkout).
     ancestor = resolved
     while not ancestor.exists():
@@ -46,6 +64,7 @@ def tracked_docs(root: pathlib.Path) -> list[pathlib.Path]:
 
 def check(root: pathlib.Path) -> list[str]:
     errors = []
+    excluded = sparse_excluded(root)
     for entry in tracked_docs(root):
         if entry.is_file():
             for lineno, line in enumerate(entry.read_text(errors="replace").splitlines(), 1):
@@ -60,7 +79,7 @@ def check(root: pathlib.Path) -> list[str]:
                     if not plain:
                         continue
                     resolved = (entry.parent / plain).resolve()
-                    if resolved.exists() or unverifiable(resolved, root):
+                    if resolved.exists() or unverifiable(resolved, root, excluded):
                         continue
                     errors.append(f"{where}: dead link {target}")
     return errors
