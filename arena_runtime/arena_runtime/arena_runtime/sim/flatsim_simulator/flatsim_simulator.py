@@ -269,7 +269,17 @@ class FlatsimSimulator(BaseSim):
         if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
             control_prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
             rendered_yaml = effective_control_yaml(
-                robot.resolved_assembly, robot_config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, urdf=robot.caps_of(robot_config).rendered_urdf(), prefix=control_prefix, planar=robot.planar_of(robot_config), base_frame=robot.body_of(robot_config).base_frame, odom_frame=robot.odom_frame(robot_config)
+                robot.resolved_assembly,
+                robot_config,
+                robot.sim_path,
+                robot.frame.tf(),
+                sim=SimSimulator.FLATSIM,
+                urdf=robot.caps_of(robot_config).rendered_urdf(),
+                prefix=control_prefix,
+                planar=robot.planar_of(robot_config),
+                base_frame=robot.body_of(robot_config).base_frame,
+                odom_frame=robot.odom_frame(robot_config),
+                drives=robot.drives_of(robot_config, effort=False),
             )
             cm_node = launch_ros.actions.Node(
                 package='controller_manager',
@@ -312,7 +322,7 @@ class FlatsimSimulator(BaseSim):
             await self._release(robot.sim_path)
 
             robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-            served = render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix='')
+            served = render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix='', effort=False)
             description = mock_arm_hardware(served.path.read_text())
 
             caps = robot.caps_of(robot_config)

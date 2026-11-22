@@ -7,7 +7,7 @@ import attrs
 import rclpy.logging
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.assembly import ResolvedAssembly
-from arena_robots.caps import BodySpec, PlanarSpec, RobotCaps
+from arena_robots.caps import BodySpec, DriveSpec, PlanarSpec, RobotCaps
 from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config as RobotSetupConfig
@@ -94,6 +94,12 @@ class Robot(Entity):
     def body_of(self, view: RobotView) -> BodySpec:
         """The instance's effective body facts on ``view``."""
         return self.caps_of(view).body
+
+    def drives_of(self, view: RobotView, *, effort: bool = True) -> dict[str, DriveSpec]:
+        """The instance's effective servo of every position-commanded joint, all commanded by position unless ``effort``."""
+        drives = self.caps_of(view).drives
+        out = {} if drives is None else drives.all()
+        return out if effort else {name: attrs.evolve(drive, command='position') for name, drive in out.items()}
 
     def planar_of(self, view: RobotView) -> PlanarSpec | None:
         """The instance's effective planar spec, None for a robot without a mobile cap."""

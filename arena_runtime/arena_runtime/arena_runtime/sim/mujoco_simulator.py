@@ -301,6 +301,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     {
                         'velocity': f"{ns}/mujoco/joint_commands_velocity",
                         'position': f"{ns}/mujoco/joint_commands_position",
+                        'effort': f"{ns}/mujoco/joint_commands_effort",
                     },
                     f"{ns}/mujoco/joint_states",
                     bridge_urdf_path,
@@ -396,6 +397,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     planar=robot.planar_of(robot_config),
                     base_frame=robot.body_of(robot_config).base_frame,
                     odom_frame=robot.odom_frame(robot_config),
+                    drives=robot.drives_of(robot_config),
                 )
                 if control_spec.config is not None
                 else None

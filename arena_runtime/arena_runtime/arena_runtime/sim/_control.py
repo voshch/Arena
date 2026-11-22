@@ -4,17 +4,18 @@ import math
 import os
 import tempfile
 import typing
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import launch_ros.actions
 import yaml
 from arena_bringup.constants import SimSimulator
 from arena_robots.assembly import ResolvedAssembly
+from arena_robots.caps import check_effort_drives
 from arena_robots.catalog import Catalog, render_effective_control
 from arena_robots.urdf_facts import drive_controller, drive_geometry
 
 if typing.TYPE_CHECKING:
-    from arena_robots.caps import PlanarSpec
+    from arena_robots.caps import DriveSpec, PlanarSpec
     from arena_robots.Robot import RobotView
 
 
@@ -115,17 +116,20 @@ def effective_control_yaml(
     planar: "PlanarSpec | None" = None,
     base_frame: str,
     odom_frame: str,
+    drives: "Mapping[str, DriveSpec] | None" = None,
 ) -> str:
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys of every axis whose limit flag it sets, ``base_frame`` and ``odom_frame`` are written to its frame keys, and the geometry ``urdf`` measures overwrites its wheel keys."""
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys of every axis whose limit flag it sets, ``base_frame`` and ``odom_frame`` are written to its frame keys, and the geometry ``urdf`` measures overwrites its wheel keys. A controller claiming an effort-commanded joint of ``drives`` must command effort."""
     base_control = _with_drive_geometry(_with_frames(view.control_config(sim.value), base_frame, odom_frame), urdf)
     if planar is not None:
         base_control = _with_planar_limits(base_control, planar)
     if resolved is None:
-        return render_ros2_control_yaml(base_control, sim_path, frame_prefix)
-    merged, _ = render_effective_control(resolved, base_control, catalog if catalog is not None else Catalog(), prefix=prefix)
+        merged = base_control
+    else:
+        merged, _ = render_effective_control(resolved, base_control, catalog if catalog is not None else Catalog(), prefix=prefix)
+    check_effort_drives(merged, drives or {})
     return render_ros2_control_yaml(merged, sim_path, frame_prefix)
 
 

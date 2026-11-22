@@ -27,8 +27,9 @@ def render_robot(
     optim: Collection[str],
     sensor_prefix: str,
     xacro_args: Mapping[str, object] | None = None,
+    effort: bool = True,
 ) -> ServedURDF:
-    """The URDF a simulator loads for ``robot``, its sensor topics under ``sensor_prefix``."""
+    """The URDF a simulator loads for ``robot``, its sensor topics under ``sensor_prefix``, its drives commanded by position unless ``effort``."""
     return serve(
         view,
         robot.resolved_request,
@@ -36,4 +37,5 @@ def render_robot(
         xacro_args={**robot_xacro_args(robot), **(xacro_args or {})},
         optim=optim,
         sensor_topic_patches=arena_robots.Sensor.topic_elements(view.effective_sensors(robot.resolved_request, frames=robot.frames), sensor_prefix),
+        drives=robot.drives_of(view, effort=effort),
     )

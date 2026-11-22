@@ -306,6 +306,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                         {
                             'velocity': f"{ns}/isaac/joint_commands_velocity",
                             'position': f"{ns}/isaac/joint_commands_position",
+                            'effort': f"{ns}/isaac/joint_commands_effort",
                         },
                         f"{ns}/isaac/joint_states",
                         rsp_urdf_path,
@@ -365,6 +366,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     planar=robot.planar_of(robot_config),
                     base_frame=robot.body_of(robot_config).base_frame,
                     odom_frame=robot.odom_frame(robot_config),
+                    drives=robot.drives_of(robot_config),
                 )
                 if control_spec.config is not None
                 else None

@@ -481,16 +481,17 @@ extra channels under caller `cli`.
 | --- | --- | --- | --- |
 | physics step | 0.002 s (`scene.PHYSICS_DT`) | 0.004 s (`run_isaacsim.PHYSICS_DT`), five per rendered frame of 0.02 s (`RENDERING_DT`), one solver substep under newton | 0.0333 s (`empty.sdf` `max_step_size`) |
 | lockstep quantum | the physics step | the rendered frame (0.02 s) | the physics step |
-| position servo | PD, revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped, force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
+| position servo | PD with the `drives` kp and kd of the robot's caps (default revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped), force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
 | servo rate (revolute) | 20 per s | 20 per s | 2 per s per 10 Hz of the controller manager's `update_rate` (20 per s at go1's 200 Hz, 5 per s at 50 Hz) |
 | gravity compensation | none | none | none |
 | joint armature | `max(URDF, min(0.2, effort / 50))` kg m^2 | URDF | URDF |
 | command and joint state exchange | every 0.02 s of sim time | every rendered frame (0.02 s) | every physics step |
 | camera rate | URDF `update_rate`, checked every 0.02 s tick | the divisor of the 50 Hz render rate nearest the URDF `update_rate` (a 30 Hz camera runs at 25 Hz) | URDF `update_rate` |
 | `odom` with `odom_topic: odom` | ground truth from the free joint | ground truth from the articulation | `pose_to_tf` from the model pose, twist differenced |
-| command interfaces | position, velocity | position, velocity | position, velocity (effort unused) |
+| command interfaces | position, velocity, effort | position, velocity, effort | position, velocity, effort |
+| effort-commanded joint (`drives.<joint>.command: effort`) | motor actuator applying the commanded effort, a position servo with the joint's `drives` gains holds the spawn pose until the first finite effort command | zero-gain drive after the same spawn hold | effort command, gz_ros2_control's `hold_joints` until a controller claims the joint |
 
-Gains are derived from the URDF only, no robot sets them per joint.
+The gains are the `drives` fact block of the instance's caps, derived from the URDF unless a robot's caps.yaml or an instance override sets them, and travel to the simulators as `kp`, `kd` and `effort` params of the served URDF's ros2_control joints.
 
 In Gazebo a joint below its URDF position limit gets no servo force (DART 6.13 `JointConstraint::update` handles it as a limit only), so a loaded position joint that a spawn transient pushes onto its limit stays there. A robot's URDF limits therefore sit outside the range its caps command, as TIAGo's torso stops at -0.05 m below its `[0.0, 0.35]` lift range.
 
