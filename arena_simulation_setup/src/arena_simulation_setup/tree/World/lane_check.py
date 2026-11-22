@@ -154,8 +154,10 @@ def _sink_configs(regions: object, zones: Mapping[str, Zone]) -> dict[str, SinkC
             continue
         pose, shape = _zone_shape(zone)
         config = _region_config(region)
-        options = {"absorption_radius": _number(str(name), "absorption_radius", config["absorption_radius"])} if "absorption_radius" in config else {}
-        sinks[str(name)] = SinkConfig(name=str(name), pose=pose, shape=shape, **options)
+        if "absorption_radius" in config:
+            sinks[str(name)] = SinkConfig(name=str(name), pose=pose, shape=shape, absorption_radius=_number(str(name), "absorption_radius", config["absorption_radius"]))
+        else:
+            sinks[str(name)] = SinkConfig(name=str(name), pose=pose, shape=shape)
     return sinks
 
 

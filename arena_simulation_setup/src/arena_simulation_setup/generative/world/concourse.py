@@ -13,7 +13,7 @@ import shapely
 import shapely.affinity
 import shapely.ops
 from pydantic import BaseModel, Field, field_validator, model_validator
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from typing_extensions import override
 
@@ -332,7 +332,7 @@ def _shares_opposite_stretch(segments: list[list[tuple[float, float]]], other: l
     other_points, other_directions = _sampled_centerline(other)
     if len(points) == 0 or len(other_points) == 0:
         return False
-    distance, nearest = cKDTree(other_points).query(points)
+    distance, nearest = KDTree(other_points).query(points)
     shared = distance <= SHARED_STRETCH_TOLERANCE
     opposite = np.einsum("ij,ij->i", directions, other_directions[nearest]) < OPPOSITE_COSINE
     return bool(np.any(shared & opposite))
