@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import shutil
 import signal
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -14,13 +17,19 @@ from arena_mcp.core.jobs import tail_file
 
 domain = Domain(
     "system",
-    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, read logs, build, test, install deps, preload worlds.
+    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, inspect system health and logs, build, test, install deps, preload worlds.
     Launches, builds and tests are process jobs (jobs_status, jobs_log), they keep running when the server exits.
     A launch takes what `arena launch` takes, rviz included unless headless, and like it adds envs to a runtime that is already up.""",
 )
 
 LAUNCH_KINDS = ("launch", "runtime")
 LAUNCH_RE = re.compile(r"arena_bringup[./]supervisor|(^|[/\s])ros2 (launch|run) ")
+ARENA_PROC_RE = re.compile(
+    r"arena_bringup|arena_runtime|arena_env_node|arena_humansim|hri_producer|"
+    r"parameter_bridge|(^|[/\s])gz (sim|server)|gzserver|ruby.*gz\b|"
+    r"(^|[/\s])ros2 (launch|run) |bt_navigator|controller_server|planner_server|rviz2"
+)
+MCP_PROC_RE = re.compile(r"\barena_mcp\b")
 STACK_GRACE_S = proc.GRACE_INT_S + proc.GRACE_TERM_S + proc.GRACE_KILL_S
 
 ArgValue = str | int | float | bool
@@ -72,7 +81,7 @@ async def system_runtime(
     args: Annotated[dict[str, ArgValue] | None, Field(description="further runtime launch arguments as {name: value}")] = None,
     headless: Annotated[bool, Field(description="headless:=true, which hides the simulator GUI")] = False,
 ) -> dict[str, Any]:
-    """Start `arena runtime` (sim and arena_runtime_node, no envs) as a job."""
+    """Start a new `arena runtime` (sim and arena_runtime_node, no envs) as a job. Mutating: use runtime_state to inspect an already-running runtime."""
     tokens = launch_tokens({"sim": sim, "world": world, "headless": True if headless else None}, args)
     job = await cli.job("runtime", f"arena runtime {' '.join(tokens)}", "runtime", *tokens)
     return job.as_dict()
@@ -232,22 +241,138 @@ def node_log(root: Path, node: str, *, scan: int = 300) -> Path:
     raise ToolError(f"no log of {node} among the {len(files)} newest files under {root}", hint="pass the node's base name, e.g. arena_env_node")
 
 
+def _benchmarks_root() -> Path:
+    data_dir = os.environ.get("ARENA_DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "benchmarks"
+    return Path("/opt/arena_ws/data/benchmarks")
+
+
+def _roslog_dir(run_id: str | None) -> Path | None:
+    root = _benchmarks_root()
+    if not root.is_dir():
+        return None
+    if run_id is not None:
+        candidate = root / run_id / "roslog"
+        return candidate if candidate.is_dir() else None
+    runs = sorted(
+        (d for d in root.iterdir() if d.is_dir() and (d / "roslog").is_dir()),
+        key=lambda d: (d / "roslog").stat().st_mtime,
+        reverse=True,
+    )
+    return (runs[0] / "roslog") if runs else None
+
+
+def _arena_processes(exclude: set[int]) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid in exclude:
+            continue
+        line = proc.cmdline(pid)
+        if not line or MCP_PROC_RE.search(line):
+            continue
+        if ARENA_PROC_RE.search(line):
+            found.append({"pid": pid, "cmdline": line})
+    return sorted(found, key=lambda item: item["pid"])
+
+
+def _shm_usage() -> dict[str, Any] | None:
+    shm = Path("/dev/shm")
+    if not shm.is_dir():
+        return None
+    usage = shutil.disk_usage(shm)
+    total_mb = round(usage.total / (1024 * 1024), 1)
+    used_mb = round(usage.used / (1024 * 1024), 1)
+    avail_mb = round(usage.free / (1024 * 1024), 1)
+    used_pct = round(100.0 * usage.used / usage.total, 1) if usage.total > 0 else 0.0
+    return {"total_mb": total_mb, "used_mb": used_mb, "avail_mb": avail_mb, "used_pct": used_pct}
+
+
+def _gpu_summary() -> list[dict[str, Any]] | None:
+    if shutil.which("nvidia-smi") is None:
+        return None
+    try:
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    gpus: list[dict[str, Any]] = []
+    for raw_line in res.stdout.strip().splitlines():
+        parts = [p.strip() for p in raw_line.split(",")]
+        if len(parts) >= 5:
+            gpus.append(
+                {
+                    "index": parts[0],
+                    "name": parts[1],
+                    "memory_used_mb": parts[2],
+                    "memory_total_mb": parts[3],
+                    "utilization_pct": parts[4],
+                }
+            )
+    return gpus
+
+
+@domain.tool(read_only=True)
+def system_health(
+    run_id: Annotated[str | None, Field(description="benchmark run id whose roslog files to list; defaults to the newest run")] = None,
+) -> dict[str, Any]:
+    """Inspect live Arena/Gazebo/ROS processes outside arena_mcp, /dev/shm usage, GPU status, and recent benchmark roslog files."""
+    excluded = set(proc.ancestry())
+    processes = _arena_processes(excluded)
+    roslog = _roslog_dir(run_id)
+    recent_logs: list[str] = []
+    if roslog is not None:
+        recent_logs = [p.name for p in sorted(roslog.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)[:15]]
+    return {
+        "arena_processes": processes,
+        "process_count": len(processes),
+        "shm": _shm_usage(),
+        "gpus": _gpu_summary(),
+        "roslog_dir": str(roslog) if roslog is not None else None,
+        "recent_roslogs": recent_logs,
+    }
+
+
 @domain.tool(read_only=True)
 def system_logs(
     job_id: Annotated[str | None, Field(description="a job whose log to read")] = None,
-    node: Annotated[str | None, Field(description="a ROS node name or base name whose newest ROS log file to read")] = None,
+    node: Annotated[str | None, Field(description="a ROS node name, base name, or benchmark roslog filename stem to read")] = None,
+    run_id: Annotated[str | None, Field(description="optional benchmark run id whose roslog/ directory to search when reading node logs")] = None,
     lines: int = 200,
 ) -> dict[str, Any]:
-    """The tail of a job's log, of a node's newest ROS log file, or, with neither, of the only running launch job."""
+    """The tail of a job's log, of a node's newest ROS or benchmark roslog file, or, with neither, of the only running launch job."""
     if not 0 < lines <= 5000:
         raise ToolError("lines must be in (0, 5000]")
     if job_id is not None and node is not None:
         raise ToolError("pass job_id or node, not both")
     if node is not None:
+        if run_id is not None:
+            roslog = _roslog_dir(run_id)
+            if roslog is None:
+                raise ToolError(f"no roslog directory for run {run_id!r}", hint="evaluation_runs lists available runs")
+            path = node_log(roslog, node)
+            return {"node": node, "run_id": run_id, "path": str(path), "log": tail_file(path, lines)}
         from rclpy.logging import get_logging_directory
 
-        path = node_log(Path(get_logging_directory()), node)
-        return {"node": node, "path": str(path), "log": tail_file(path, lines)}
+        try:
+            path = node_log(Path(get_logging_directory()), node)
+            return {"node": node, "path": str(path), "log": tail_file(path, lines)}
+        except ToolError:
+            roslog = _roslog_dir(None)
+            if roslog is None:
+                raise
+            path = node_log(roslog, node)
+            return {"node": node, "run_id": roslog.parent.name, "path": str(path), "log": tail_file(path, lines)}
     job = JOBS.get(job_id) if job_id is not None else _launch_job(None)
     return {"job": job.id, "state": job.state, "path": str(job.log_path), "log": JOBS.tail(job.id, lines)}
 
