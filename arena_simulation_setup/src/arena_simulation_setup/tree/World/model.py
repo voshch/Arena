@@ -453,7 +453,14 @@ class Level:
         for wall in walls:
             covering = [tops[zone.name] for zone, shape in widened if _covers_middle(shape, wall.start, wall.end)] if wall.top is None and wall.height is None else []
             result.append(attrs.evolve(wall, top=max(covering)) if covering else wall)
-        return result + [wall for stair in self.stairs for wall in stair.open_walls()]
+        return result + self._stair_open_walls()
+
+    def closed_wall_segments(self) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        """Plan positions of the walls `closed_walls` builds."""
+        return [((wall.start.x, wall.start.y), (wall.end.x, wall.end.y)) for wall in [*self.all_walls, *self._stair_open_walls()]]
+
+    def _stair_open_walls(self) -> list[Wall]:
+        return [wall for stair in self.stairs for wall in stair.open_walls()]
 
     async def door_lintels(self) -> list[Wall]:
         """Visual-only wall pieces above the doors that are lower than a ceiling they open under."""

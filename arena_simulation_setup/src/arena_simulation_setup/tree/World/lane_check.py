@@ -12,7 +12,6 @@ from arena_humansim.utils.types import Lane, LaneConfig, LaneSide, Pose2D, Segme
 
 from arena_simulation_setup.shared.lane import LaneBlock
 from arena_simulation_setup.tree.World.model import World, Zone
-from arena_simulation_setup.tree.World.pedestrian_walls import wall_segments_of_world
 
 SCENARIO_AGENT_RADIUS = 0.35  # mean of humansim's default agent radius distribution
 PLANNER_CLEARANCE = resolve_clearance(
@@ -107,19 +106,20 @@ def _endpoint_configs(
 
 def scenario_lane_results(regions: object, world: World) -> dict[str, dict[str, object]]:
     """Lane summary of each source region of a scenario that has a lane block, keyed by region."""
-    walls = wall_segments_of_world(world)
-    zones = {zone.name: zone for level in world.all_levels for zone in level.zones}
+    zones = {zone.name: (zone, level) for level in world.all_levels for zone in level.zones}
     results: dict[str, dict[str, object]] = {}
     for name, block, ref in _source_lane_blocks(regions):
-        zone = zones.get(ref)
-        if zone is None:
+        found = zones.get(ref)
+        if found is None:
             results[name] = {"valid": False, "reason": f"{name}: no zone {ref!r} in the world"}
             continue
+        zone, level = found
+        walls = level.closed_wall_segments()
         try:
             tangent = _first_tangent(name, block)
             config = lane_config_from_block(name, block)
             lane = _build(name, config, walls, agent_radius=SCENARIO_AGENT_RADIUS, source_extent=_zone_extent(zone, tangent))
-            endpoints = _endpoint_configs(name, regions, zones, zone)
+            endpoints = _endpoint_configs(name, regions, {key: value[0] for key, value in zones.items()}, zone)
             if endpoints is not None:
                 check_endpoints(lane, *endpoints)
         except ValueError as exc:
@@ -131,17 +131,18 @@ def scenario_lane_results(regions: object, world: World) -> dict[str, dict[str, 
 
 def scenario_lanes(regions: object, world: World) -> dict[str, Lane]:
     """Built lane of each source region of a scenario that has a lane block, keyed by region. An invalid lane raises."""
-    walls = wall_segments_of_world(world)
-    zones = {zone.name: zone for level in world.all_levels for zone in level.zones}
+    zones = {zone.name: (zone, level) for level in world.all_levels for zone in level.zones}
     built: dict[str, Lane] = {}
     for name, block, ref in _source_lane_blocks(regions):
-        zone = zones.get(ref)
-        if zone is None:
+        found = zones.get(ref)
+        if found is None:
             raise ValueError(f"{name}: no zone {ref!r} in the world")
+        zone, level = found
+        walls = level.closed_wall_segments()
         tangent = _first_tangent(name, block)
         config = lane_config_from_block(name, block)
         lane = _build(name, config, walls, agent_radius=SCENARIO_AGENT_RADIUS, source_extent=_zone_extent(zone, tangent))
-        endpoints = _endpoint_configs(name, regions, zones, zone)
+        endpoints = _endpoint_configs(name, regions, {key: value[0] for key, value in zones.items()}, zone)
         if endpoints is not None:
             check_endpoints(lane, *endpoints)
         built[name] = lane

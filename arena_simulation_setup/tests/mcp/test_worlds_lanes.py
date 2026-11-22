@@ -11,7 +11,6 @@ pytest.importorskip("arena_mcp")
 import yaml
 from arena_simulation_setup.generative.world.concourse import WorldGeneratorConcourse
 from arena_simulation_setup.tree.World.lane_check import lane_config_from_block, lane_summary, scenario_lane_problems
-from arena_simulation_setup.tree.World.pedestrian_walls import wall_segments_of_world
 
 CORRIDOR = [((0.0, -2.0), (20.0, -2.0)), ((0.0, 2.0), (20.0, 2.0))]
 
@@ -83,4 +82,4 @@ def test_scenario_flow_with_a_lane_passes_the_lane_check_on_its_concourse() -> N
 def test_pedestrian_walls_of_a_concourse_are_what_the_lane_check_uses() -> None:
     config = {"length": 24.0, "width": 4.0, "pillars": [{"at_s": 12.0, "radius": 0.35}]}
     world = WorldGeneratorConcourse(config, random.Random(42)).compute()
-    assert len(wall_segments_of_world(world)) > 4
+    assert len(world.all_levels[0].closed_wall_segments()) > 4
