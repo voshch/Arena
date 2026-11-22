@@ -398,7 +398,12 @@ async def entities_ped_waypoints(
 
 @domain.tool()
 async def entities_ped_flow(
-    sources: Annotated[list[dict[str, object]], Field(description="arena_humansim_msgs/SourceConfig fields per source (name, pose {x, y, theta}, shape, type, rate_profile, max_concurrent, max_total, agent)")],
+    sources: Annotated[
+        list[dict[str, object]],
+        Field(
+            description="arena_humansim_msgs/SourceConfig fields per source (name, pose {x, y, theta}, shape, type, rate_profile, max_concurrent, max_total, agent, lane). lane: side (right, left or center, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centerline: [{x, y}, ...]}]. A lane flow needs exactly one sink affinity, and its end band must lie in that sink."
+        ),
+    ],
     sinks: Annotated[list[dict[str, object]], Field(description="arena_humansim_msgs/SinkConfig fields per sink (name, pose, shape, absorption_radius, capacity)")],
     env_id: EnvId = None,
 ) -> dict[str, object]:
@@ -414,17 +419,24 @@ async def entities_ped_flow(
 
 @domain.tool()
 async def entities_ped_add_source(
-    source: Annotated[dict[str, object], Field(description="arena_humansim_msgs/SourceConfig fields")],
+    source: Annotated[dict[str, object], Field(description="arena_humansim_msgs/SourceConfig fields; a lane block (side right, left or center, required) makes walkers follow the lane")],
     env_id: EnvId = None,
 ) -> dict[str, object]:
-    """Add one humansim flow source; returns the name it got."""
+    """Add one humansim flow source; returns its name and, for a lane, the derived track spacing, arrival radius, spawn length and sigma in meters."""
     from arena_humansim_msgs.msg import SourceConfig
     from arena_humansim_msgs.srv import AddSource
 
     node = await _humansim(env_id)
     response = await ROS.call(AddSource, f"{node}/add_source", AddSource.Request(source=msgs.fill(SourceConfig, source)))
     _done(response, "adding a source")
-    return {"env": node, "name": response.name}
+    return {
+        "env": node,
+        "name": response.name,
+        "track_spacing": response.track_spacing,
+        "arrival_radius": response.arrival_radius,
+        "spawn_length": response.spawn_length,
+        "sigma_m": response.sigma_m,
+    }
 
 
 @domain.tool(destructive=True)

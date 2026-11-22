@@ -231,6 +231,27 @@ def worlds_validate(
         return {**world_verdict(view, None), "path": None}
 
 
+@domain.tool(read_only=True)
+def worlds_lane_check(
+    name: WorldName,
+    lane: Annotated[dict[str, object], Field(description="lane block: side (right, left or center, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centerline: [[x, y], ...]}]")],
+    agent_radius: Annotated[float, Field(gt=0.0, description="agent collision radius in meters")],
+    source_extent: Annotated[float, Field(ge=0.0, description="source extent along the lane in meters")],
+    level: Annotated[str, Field(description="level id whose walls bound the lane, empty for the world's first level")] = "",
+) -> dict[str, object]:
+    """Check a pedestrian lane against a world's walls, offline: the derived settings, the band and the track points, or the reason the lane fails."""
+    from arena_simulation_setup.tree.World.lane_check import lane_summary
+
+    view, world, _ = _loaded(name)
+    if not world.levels:
+        raise ToolError(f"world {name!r} has no levels")
+    level_id = level or world.level_ids[0]
+    chosen = world.get_level(level_id)
+    if chosen is None:
+        raise ToolError(f"world {name!r} has no level {level_id!r}", hint=f"levels: {', '.join(world.level_ids)}")
+    return {"world": view.name, **lane_summary("lane", lane, chosen.closed_wall_segments(), agent_radius=agent_radius, source_extent=source_extent)}
+
+
 def world_verdict(view: WorldView, levels: set[str] | None) -> dict[str, object]:
     """The strict verdict on a world directory: format, validity with the reason or the warnings, and its levels."""
     from arena_simulation_setup.tree.World import WorldFormatError
@@ -472,6 +493,10 @@ def _scenario_verdict(raw: object, world: World | None) -> dict[str, object]:
         for index, robot in enumerate(scenario.robots):
             problems.extend(f"robots[{index}].{key}: no level {value!r}, only {', '.join(world.level_ids)}" for key, value in (("level", robot.level), ("goal_level", robot.goal_level)) if value and value not in world.levels)
         problems.extend(articulation_problems(scenario, (obj for level in world.levels.values() for obj in level.objects if obj.name)))
+        if isinstance(raw, dict):
+            from arena_simulation_setup.tree.World.lane_check import scenario_lane_problems
+
+            problems.extend(scenario_lane_problems(raw.get("regions"), world))
     if problems:
         return {"valid": False, "reason": "; ".join(problems)}
     nouns = _nouns(world) if world is not None else {}
