@@ -192,11 +192,13 @@ async def assets_import(
     kind: ImportKind,
     source: Source,
     items: Annotated[list[str], Field(description="item ids of that source, assets_import_items lists them", min_length=1)],
+    params: Annotated[dict[str, str] | None, Field(description="settings the source's importer takes, e.g. musohu radius_m and mass_kg, passed as --param NAME=VALUE")] = None,
 ) -> dict[str, object]:
     """Convert items of one dataset into the imported root the resolvers read, each with an ATTRIBUTION.yaml, as a job whose result lists the item paths."""
     if (kind, source) not in {(str(row["kind"]), str(row["name"])) for row in typing.cast(list[dict[str, object]], _json("asset", "import", "--json"))}:
         raise ToolError(f"no {kind} import source {source!r}", hint="assets_import_sources lists the sources by kind")
-    job = await cli.job("import", f"import {kind} {source} {' '.join(items)}", "asset", "import", kind, source, *items, result=_imported)
+    flags = [flag for name, value in (params or {}).items() for flag in ("--param", f"{name}={value}")]
+    job = await cli.job("import", f"import {kind} {source} {' '.join(items)}", "asset", "import", kind, source, *items, *flags, result=_imported)
     return job.as_dict()
 
 
