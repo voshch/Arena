@@ -56,11 +56,8 @@ def test_flow_through_two_branches_has_three_centerline_segments() -> None:
 
 
 def test_lane_block_without_a_side_is_rejected() -> None:
-    try:
+    with pytest.raises(pydantic.ValidationError):
         ConcourseConfiguration.model_validate({"flows": [{"name": "no_side", "lane": {"offset": 0.5}}]})
-    except pydantic.ValidationError:
-        return
-    raise AssertionError("a lane block without a side was accepted")
 
 
 def test_opposed_flows_with_lanes_are_marked_two_way() -> None:
