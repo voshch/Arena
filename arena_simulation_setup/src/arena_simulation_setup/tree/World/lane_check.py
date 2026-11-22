@@ -23,6 +23,7 @@ from arena_humansim.utils.types import (
 )
 
 from arena_simulation_setup.shared.lane import LaneBlock
+from arena_simulation_setup.shared.navmesh import cabin_walls
 from arena_simulation_setup.tree.World.model import World, Zone
 
 PLANNER_CLEARANCE = resolve_clearance(
@@ -104,7 +105,8 @@ def build_scenario_lanes(regions: object, world: World) -> tuple[dict[str, Lane]
         zone, level = found
         try:
             source = _source_config(name, regions, block, zone)
-            built[name] = resolve_lane(source, level.closed_wall_segments(), sinks, PLANNER_CLEARANCE)
+            walls = [*level.closed_wall_segments(), *(((wall.start.x, wall.start.y), (wall.end.x, wall.end.y)) for elevator in level.all_elevators for wall in cabin_walls(elevator))]
+            built[name] = resolve_lane(source, walls, sinks, PLANNER_CLEARANCE)
         except ValueError as exc:
             failures[name] = str(exc)
     narrowed = {name: with_goal_corners(lane, [other for other_name, other in built.items() if other_name != name]) for name, lane in built.items()}
