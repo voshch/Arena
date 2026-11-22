@@ -356,7 +356,7 @@ Parsing rules:
 - The `robot` param is a `ROSParamT[_RobotDiff]` with a parse callback, so
   it re-computes the diff on every parameter change.
 
-After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`) per robot. Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
+After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`: the morphology plus `robot_radius` and, when `model_params.yaml` states `mass.base_kg`, `robot_mass_kg`, which arena_evaluation records) per robot. Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
 
 ## `RobotManager`
 

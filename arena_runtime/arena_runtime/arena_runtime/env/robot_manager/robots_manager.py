@@ -122,6 +122,14 @@ def _cap_instances(resolved: ResolvedAssembly | None, cap: str) -> list[tuple[st
     return [('', '')]
 
 
+def _physical_params(manager: RobotManager) -> list[diagnostic_msgs.msg.KeyValue]:
+    """`robot_radius` and, when the model states `mass.base_kg`, `robot_mass_kg`."""
+    params = [diagnostic_msgs.msg.KeyValue(key='robot_radius', value=str(manager.radius))]
+    if (mass := manager.robot_view.model_params.get('mass', {}).get('base_kg')) is not None:
+        params.append(diagnostic_msgs.msg.KeyValue(key='robot_mass_kg', value=str(float(mass))))
+    return params
+
+
 def _morphology_params(robot: Robot) -> list[diagnostic_msgs.msg.KeyValue]:
     """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise."""
     resolved = robot.resolved_assembly
@@ -495,7 +503,7 @@ class RobotsManager(NodeInterface):
                         for cap in sorted(mgr.robot_view.effective_caps(mgr.robot.resolved_request, frames=mgr.robot.frames).available)
                         for instance, variant in _cap_instances(mgr.robot.resolved_assembly, cap)
                     ],
-                    params=_morphology_params(mgr.robot),
+                    params=[*_morphology_params(mgr.robot), *_physical_params(mgr)],
                 )
                 for mgr in self.managers.values()
             ]
