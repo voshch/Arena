@@ -45,6 +45,29 @@ def test_lane_block_without_a_side_is_rejected_with_its_flow_name() -> None:
         lane_config_from_block("nosided", block)
 
 
+def test_null_optional_fields_are_unset_in_the_offline_lane_config() -> None:
+    block = {**_block(), "offset": None, "sigma_q": None, "chord_tolerance": None, "track_spacing": None}
+    config = lane_config_from_block("nulls", block)
+    defaults = lane_config_from_block("plain", _block())
+    assert config.offset is None
+    assert config.track_spacing is None
+    assert config.sigma_q == defaults.sigma_q
+    assert config.chord_tolerance == defaults.chord_tolerance
+
+
+def test_lane_block_with_a_one_point_centerline_is_rejected_with_its_flow_name() -> None:
+    block = {"side": "right", "segments": [{"centerline": [[0.0, 0.0]]}]}
+    with pytest.raises(ValueError, match="flow 'short'"):
+        lane_config_from_block("short", block)
+
+
+def test_lane_summary_of_a_malformed_block_is_invalid_with_a_reason() -> None:
+    result = lane_summary("broken", {"segments": [{"centerline": [[0.0, 0.0], [20.0, 0.0]]}]}, CORRIDOR, agent_radius=0.25, source_extent=1.5)
+    assert result["valid"] is False
+    assert "flow 'broken'" in result["reason"]
+    assert "side" in result["reason"]
+
+
 def test_scenario_flow_with_a_lane_passes_the_lane_check_on_its_concourse() -> None:
     config = {
         "length": 24.0,

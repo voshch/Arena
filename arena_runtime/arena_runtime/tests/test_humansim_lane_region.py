@@ -43,3 +43,21 @@ def test_null_optional_fields_are_treated_as_unset() -> None:
     assert msg is not None
     assert msg.has_offset is False
     assert msg.sigma_q == 0.0
+
+
+def test_lane_with_a_one_point_centerline_names_the_source() -> None:
+    cfg = {"lane": {"side": "right", "segments": [{"centerline": [[0.0, 0.0]]}]}}
+    with pytest.raises(ValueError, match="source 'lane_e'"):
+        lane_msg_from_config("lane_e", cfg, _translate)
+
+
+def test_lane_with_a_side_outside_the_vocabulary_is_rejected() -> None:
+    cfg = {"lane": {"side": "up", "segments": [{"centerline": CENTERLINE}]}}
+    with pytest.raises(ValueError, match="source 'lane_f'.*side"):
+        lane_msg_from_config("lane_f", cfg, _translate)
+
+
+def test_lane_with_a_non_positive_optional_number_is_rejected() -> None:
+    cfg = {"lane": {"side": "right", "track_spacing": 0.0, "segments": [{"centerline": CENTERLINE}]}}
+    with pytest.raises(ValueError, match="source 'lane_g'.*track_spacing"):
+        lane_msg_from_config("lane_g", cfg, _translate)

@@ -10,6 +10,7 @@ from arena_humansim.params import GLOBAL_PLANNER_INFLATION_RADIUS, GLOBAL_PLANNE
 from arena_humansim.utils.lanes import build_lane, build_track, check_endpoints, resolve_clearance, sigma_meters, with_goal_corners
 from arena_humansim.utils.types import Lane, LaneConfig, LaneSide, Pose2D, Segments, Shape, ShapeType, SinkConfig, SourceConfig
 
+from arena_simulation_setup.shared.lane import LaneBlock
 from arena_simulation_setup.tree.World.model import World, Zone
 from arena_simulation_setup.tree.World.pedestrian_walls import wall_segments_of_world
 
@@ -21,37 +22,30 @@ PLANNER_CLEARANCE = resolve_clearance(
 
 
 def lane_config_from_block(flow: str, block: Mapping[str, object]) -> LaneConfig:
-    side = block.get("side")
-    if not isinstance(side, str) or not side:
-        raise ValueError(f"flow {flow!r}: a lane needs a side (right, left or center)")
     try:
-        lane_side = LaneSide(side)
-    except ValueError:
-        raise ValueError(f"flow {flow!r}: unknown lane side {side!r}") from None
-    segments = block.get("segments")
-    if not isinstance(segments, Sequence) or isinstance(segments, str) or not segments:
-        raise ValueError(f"flow {flow!r}: a lane needs at least one segment")
-    defaults = LaneConfig(centerlines=[], side=lane_side)
-    offset = block.get("offset")
+        parsed = LaneBlock.parse(block)
+    except ValueError as exc:
+        raise ValueError(f"flow {flow!r}: {exc}") from None
+    defaults = LaneConfig(centerlines=[], side=LaneSide(parsed.side))
     return LaneConfig(
-        centerlines=[_centerline(flow, segment) for segment in segments],
-        side=lane_side,
-        two_way=bool(block.get("two_way", False)),
-        offset=None if offset is None else _number(flow, "offset", offset),
-        sigma_q=_number(flow, "sigma_q", block.get("sigma_q", defaults.sigma_q)),
-        chord_tolerance=_number(flow, "chord_tolerance", block.get("chord_tolerance", defaults.chord_tolerance)),
-        track_spacing=_override(flow, block, "track_spacing"),
-        arrival_radius=_override(flow, block, "arrival_radius"),
-        merge_length=_override(flow, block, "merge_length"),
-        spawn_length=_override(flow, block, "spawn_length"),
-        sweep_length=_override(flow, block, "sweep_length"),
+        centerlines=[[Pose2D(x=x, y=y) for x, y in segment.centerline] for segment in parsed.segments],
+        side=defaults.side,
+        two_way=parsed.two_way,
+        offset=parsed.offset,
+        sigma_q=defaults.sigma_q if parsed.sigma_q is None else parsed.sigma_q,
+        chord_tolerance=defaults.chord_tolerance if parsed.chord_tolerance is None else parsed.chord_tolerance,
+        track_spacing=parsed.track_spacing,
+        arrival_radius=parsed.arrival_radius,
+        merge_length=parsed.merge_length,
+        spawn_length=parsed.spawn_length,
+        sweep_length=parsed.sweep_length,
     )
 
 
 def lane_summary(flow: str, block: Mapping[str, object], walls: Segments, *, agent_radius: float, source_extent: float) -> dict[str, object]:
     """Derived settings, band and track points of a lane block on the walls, or the reason the lane fails."""
-    config = lane_config_from_block(flow, block)
     try:
+        config = lane_config_from_block(flow, block)
         lane = _build(flow, config, walls, agent_radius=agent_radius, source_extent=source_extent)
     except ValueError as exc:
         return {"valid": False, "reason": str(exc)}
@@ -188,24 +182,6 @@ def _first_tangent(flow: str, block: Mapping[str, object]) -> tuple[float, float
 def _zone_extent(zone: Zone, tangent: tuple[float, float]) -> float:
     along = [point.x * tangent[0] + point.y * tangent[1] for point in zone.polygon]
     return max(along) - min(along)
-
-
-def _centerline(flow: str, segment: object) -> list[Pose2D]:
-    points = segment.get("centerline") if isinstance(segment, Mapping) else None
-    if not isinstance(points, Sequence) or isinstance(points, str) or len(points) < 2:
-        raise ValueError(f"flow {flow!r}: each segment needs a centerline of at least two [x, y] points")
-    return [_pose(flow, point) for point in points]
-
-
-def _pose(flow: str, point: object) -> Pose2D:
-    if not isinstance(point, Sequence) or isinstance(point, str) or len(point) != 2:
-        raise ValueError(f"flow {flow!r}: a lane point is [x, y]")
-    return Pose2D(x=_number(flow, "point x", point[0]), y=_number(flow, "point y", point[1]))
-
-
-def _override(flow: str, block: Mapping[str, object], key: str) -> float | None:
-    value = block.get(key)
-    return None if value is None else _number(flow, key, value)
 
 
 def _number(flow: str, key: str, value: object) -> float:
