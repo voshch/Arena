@@ -7,7 +7,7 @@ from typing import cast
 
 import numpy as np
 from arena_humansim.params import GLOBAL_PLANNER_INFLATION_RADIUS, GLOBAL_PLANNER_RESOLUTION
-from arena_humansim.utils.lanes import build_lane, build_track, check_endpoints, resolve_clearance, sigma_metres, with_goal_corners
+from arena_humansim.utils.lanes import build_lane, build_track, check_endpoints, resolve_clearance, sigma_meters, with_goal_corners
 from arena_humansim.utils.types import Lane, LaneConfig, LaneSide, Pose2D, Segments, Shape, ShapeType, SinkConfig, SourceConfig
 
 from arena_simulation_setup.tree.World.model import World, Zone
@@ -23,7 +23,7 @@ PLANNER_CLEARANCE = resolve_clearance(
 def lane_config_from_block(flow: str, block: Mapping[str, object]) -> LaneConfig:
     side = block.get("side")
     if not isinstance(side, str) or not side:
-        raise ValueError(f"flow {flow!r}: a lane needs a side (right, left or centre)")
+        raise ValueError(f"flow {flow!r}: a lane needs a side (right, left or center)")
     try:
         lane_side = LaneSide(side)
     except ValueError:
@@ -31,10 +31,10 @@ def lane_config_from_block(flow: str, block: Mapping[str, object]) -> LaneConfig
     segments = block.get("segments")
     if not isinstance(segments, Sequence) or isinstance(segments, str) or not segments:
         raise ValueError(f"flow {flow!r}: a lane needs at least one segment")
-    defaults = LaneConfig(centrelines=[], side=lane_side)
+    defaults = LaneConfig(centerlines=[], side=lane_side)
     offset = block.get("offset")
     return LaneConfig(
-        centrelines=[_centreline(flow, segment) for segment in segments],
+        centerlines=[_centerline(flow, segment) for segment in segments],
         side=lane_side,
         two_way=bool(block.get("two_way", False)),
         offset=None if offset is None else _number(flow, "offset", offset),
@@ -75,7 +75,7 @@ def _summary_of(lane: Lane) -> dict[str, object]:
             "chord_tolerance": settings.chord_tolerance,
         },
         "band": {"min": float(half.min()), "median": float(np.median(half)), "max": float(half.max())},
-        "sigma_m_median": sigma_metres(lane),
+        "sigma_m_median": sigma_meters(lane),
         "track_points": len(build_track(lane, 0.0, 0.0).points),
     }
 
@@ -177,7 +177,7 @@ def scenario_lane_problems(regions: object, world: World) -> list[str]:
 
 
 def _first_tangent(flow: str, block: Mapping[str, object]) -> tuple[float, float]:
-    first, second = lane_config_from_block(flow, block).centrelines[0][:2]
+    first, second = lane_config_from_block(flow, block).centerlines[0][:2]
     dx, dy = second.x - first.x, second.y - first.y
     length = (dx * dx + dy * dy) ** 0.5
     if length <= 1e-9:
@@ -190,10 +190,10 @@ def _zone_extent(zone: Zone, tangent: tuple[float, float]) -> float:
     return max(along) - min(along)
 
 
-def _centreline(flow: str, segment: object) -> list[Pose2D]:
-    points = segment.get("centreline") if isinstance(segment, Mapping) else None
+def _centerline(flow: str, segment: object) -> list[Pose2D]:
+    points = segment.get("centerline") if isinstance(segment, Mapping) else None
     if not isinstance(points, Sequence) or isinstance(points, str) or len(points) < 2:
-        raise ValueError(f"flow {flow!r}: each segment needs a centreline of at least two [x, y] points")
+        raise ValueError(f"flow {flow!r}: each segment needs a centerline of at least two [x, y] points")
     return [_pose(flow, point) for point in points]
 
 

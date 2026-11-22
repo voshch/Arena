@@ -33,7 +33,7 @@ def _lane_of(scenario: dict[str, Any], region: str) -> dict[str, Any]:
     return lane
 
 
-def test_flow_through_two_branches_has_three_centreline_segments() -> None:
+def test_flow_through_two_branches_has_three_centerline_segments() -> None:
     config = {
         "length": 30.0,
         "width": 4.0,
@@ -124,16 +124,16 @@ def test_flow_passing_a_colonnade_gets_its_column_spacing_as_sweep_length() -> N
     assert _lane_of(scenario, "dock_start_source_through")["sweep_length"] == 4.0
 
 
-def test_lane_centrelines_start_and_end_at_the_dock_nav_poses() -> None:
+def test_lane_centerlines_start_and_end_at_the_dock_nav_poses() -> None:
     config = {
         "length": 30.0,
         "width": 4.0,
-        "flows": [{"name": "through", "source_dock": "dock_start", "sink_dock": "dock_end", "lane": {"side": "centre"}}],
+        "flows": [{"name": "through", "source_dock": "dock_start", "sink_dock": "dock_end", "lane": {"side": "center"}}],
     }
     gen, scenario = _scenario(config)
     segments = _lane_of(scenario, "dock_start_source_through")["segments"]
-    first = segments[0]["centreline"][0]
-    last = segments[-1]["centreline"][-1]
+    first = segments[0]["centerline"][0]
+    last = segments[-1]["centerline"][-1]
     start_nav = gen._dock_metadata["dock_start"]["nav_pose"]
     end_nav = gen._dock_metadata["dock_end"]["nav_pose"]
     assert math.dist((first[0], first[1]), (start_nav[0], start_nav[1])) < 0.05
@@ -241,7 +241,7 @@ def _in_band(lane: Lane, points: np.ndarray) -> np.ndarray:
     stations = np.column_stack([lane.x, lane.y])
     nearest = np.argmin(((points[:, None, :] - stations[None, :, :]) ** 2).sum(axis=2), axis=1)
     lateral = (points[:, 0] - lane.x[nearest]) * lane.nx[nearest] + (points[:, 1] - lane.y[nearest]) * lane.ny[nearest]
-    return np.abs(lateral - lane.centre[nearest]) <= lane.half_width[nearest]
+    return np.abs(lateral - lane.center[nearest]) <= lane.half_width[nearest]
 
 
 def _cross(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -278,10 +278,10 @@ def _corners(lane: Lane) -> list[_Corner]:
         if abs(cross) <= TURN_TOLERANCE:
             continue
         s_vertex = float(lane.vertex_s[index])
-        centre = float(np.interp(s_vertex, lane.s, lane.centre))
+        center = float(np.interp(s_vertex, lane.s, lane.center))
         half = float(np.interp(s_vertex, lane.s, lane.half_width))
         miter_length = float(np.linalg.norm(_miter(t_in, t_out)))
-        reach = max(abs(centre - half), abs(centre + half)) * miter_length + lane.settings.arrival_radius
+        reach = max(abs(center - half), abs(center + half)) * miter_length + lane.settings.arrival_radius
         corners.append(
             _Corner(
                 index=index,
@@ -297,7 +297,7 @@ def _corners(lane: Lane) -> list[_Corner]:
 
 def _is_outer(lane: Lane, corner: _Corner) -> bool:
     """Whether the lane's band lies on the outside of the turn at this corner."""
-    if lane.settings.side is LaneSide.CENTRE:
+    if lane.settings.side is LaneSide.CENTER:
         return True
     return (lane.settings.side is LaneSide.RIGHT) == (corner.turn > 0.0)
 
@@ -310,14 +310,14 @@ def _corner_goal_misses(lane: Lane) -> list[tuple[int, float, float]]:
         if not np.any(np.isclose(goals, lane.vertex_s[corner.index], rtol=0.0, atol=1e-9)):
             continue
         s_vertex = float(lane.vertex_s[corner.index])
-        centre = float(np.interp(s_vertex, lane.s, lane.centre))
+        center = float(np.interp(s_vertex, lane.s, lane.center))
         half = float(np.interp(s_vertex, lane.s, lane.half_width))
         for fraction in SPAWN_FRACTIONS:
             s0 = fraction * lane.settings.spawn_length
             if s0 >= s_vertex:
                 continue
             for q in GRID_QS:
-                goal = _offset_corner(lane, corner.index, centre + q * half)
+                goal = _offset_corner(lane, corner.index, center + q * half)
                 xy = np.array([[p.x, p.y] for p in build_track(lane, float(q), s0).points])
                 if float(np.min(np.linalg.norm(xy - goal, axis=1))) >= CORNER_TOLERANCE:
                     misses.append((corner.index, float(q), s0))

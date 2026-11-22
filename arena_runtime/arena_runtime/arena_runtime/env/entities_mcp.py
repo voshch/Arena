@@ -401,7 +401,7 @@ async def entities_ped_flow(
     sources: Annotated[
         list[dict[str, object]],
         Field(
-            description="arena_humansim_msgs/SourceConfig fields per source (name, pose {x, y, theta}, shape, type, rate_profile, max_concurrent, max_total, agent, lane). lane: side (right, left or centre, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centreline: [{x, y}, ...]}]. A lane flow needs exactly one sink affinity, and its end band must lie in that sink."
+            description="arena_humansim_msgs/SourceConfig fields per source (name, pose {x, y, theta}, shape, type, rate_profile, max_concurrent, max_total, agent, lane). lane: side (right, left or center, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centerline: [{x, y}, ...]}]. A lane flow needs exactly one sink affinity, and its end band must lie in that sink."
         ),
     ],
     sinks: Annotated[list[dict[str, object]], Field(description="arena_humansim_msgs/SinkConfig fields per sink (name, pose, shape, absorption_radius, capacity)")],
@@ -419,10 +419,10 @@ async def entities_ped_flow(
 
 @domain.tool()
 async def entities_ped_add_source(
-    source: Annotated[dict[str, object], Field(description="arena_humansim_msgs/SourceConfig fields; a lane block (side right, left or centre, required) makes walkers follow the lane")],
+    source: Annotated[dict[str, object], Field(description="arena_humansim_msgs/SourceConfig fields; a lane block (side right, left or center, required) makes walkers follow the lane")],
     env_id: EnvId = None,
 ) -> dict[str, object]:
-    """Add one humansim flow source; returns its name and, for a lane, the derived track spacing, arrival radius, spawn length and sigma in metres."""
+    """Add one humansim flow source; returns its name and, for a lane, the derived track spacing, arrival radius, spawn length and sigma in meters."""
     from arena_humansim_msgs.msg import SourceConfig
     from arena_humansim_msgs.srv import AddSource
 

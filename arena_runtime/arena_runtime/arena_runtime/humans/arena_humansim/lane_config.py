@@ -8,7 +8,7 @@ from arena_humansim_msgs.msg import LaneConfig as LaneConfigMsg
 from arena_humansim_msgs.msg import LaneSegment as LaneSegmentMsg
 from geometry_msgs.msg import Pose2D as Pose2DMsg
 
-LANE_SIDES = ("right", "left", "centre")
+LANE_SIDES = ("right", "left", "center")
 
 
 def lane_msg_from_config(
@@ -57,12 +57,12 @@ def _number(name: str, key: str, value: object) -> float:
 
 def _segment(name: str, segment: object, to_engine: Callable[[float, float], tuple[float, float]]) -> LaneSegmentMsg:
     if not isinstance(segment, Mapping):
-        raise ValueError(f"source {name!r}: each lane segment is a mapping with a centreline")
-    points = segment.get("centreline")
+        raise ValueError(f"source {name!r}: each lane segment is a mapping with a centerline")
+    points = segment.get("centerline")
     if not isinstance(points, Sequence) or isinstance(points, str):
-        raise ValueError(f"source {name!r}: a lane segment needs a centreline list")
+        raise ValueError(f"source {name!r}: a lane segment needs a centerline list")
     msg = LaneSegmentMsg()
-    msg.centreline = [_pose(name, point, to_engine) for point in points]
+    msg.centerline = [_pose(name, point, to_engine) for point in points]
     return msg
 
 

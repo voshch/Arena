@@ -234,7 +234,7 @@ def worlds_validate(
 @domain.tool(read_only=True)
 def worlds_lane_check(
     name: WorldName,
-    lane: Annotated[dict[str, object], Field(description="lane block: side (right, left or centre, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centreline: [[x, y], ...]}]")],
+    lane: Annotated[dict[str, object], Field(description="lane block: side (right, left or center, required), offset, two_way, sigma_q, chord_tolerance, track_spacing, arrival_radius, merge_length, spawn_length, sweep_length, segments [{centerline: [[x, y], ...]}]")],
     agent_radius: Annotated[float, Field(gt=0.0, description="agent collision radius in meters")],
     source_extent: Annotated[float, Field(ge=0.0, description="source extent along the lane in meters")],
 ) -> dict[str, object]:

@@ -173,17 +173,17 @@ class ColonnadeFeature(BaseModel):
 
 
 class FlowLaneSpec(BaseModel):
-    """Pedestrian lane of a crowd flow: walkers follow its centreline inside the free space."""
+    """Pedestrian lane of a crowd flow: walkers follow its centerline inside the free space."""
 
-    side: Literal["right", "left", "centre"] = Field(description="Side the lane keeps to when no offset is given: right, left or centre. Required.")
-    offset: float | None = Field(default=None, description="Lateral position in metres, positive left of travel (unset = derived from side).")
-    two_way: bool = Field(default=False, description="The lane shares a stretch of its centreline with a flow that walks the other way (also detected automatically).")
+    side: Literal["right", "left", "center"] = Field(description="Side the lane keeps to when no offset is given: right, left or center. Required.")
+    offset: float | None = Field(default=None, description="Lateral position in meters, positive left of travel (unset = derived from side).")
+    two_way: bool = Field(default=False, description="The lane shares a stretch of its centerline with a flow that walks the other way (also detected automatically).")
     sigma_q: float | None = Field(default=None, gt=0.0, description="Spread of the walker fraction q (unset = 0.5).")
-    chord_tolerance: float | None = Field(default=None, gt=0.0, description="Largest distance in metres between a track segment and the centreline (unset = 0.05).")
+    chord_tolerance: float | None = Field(default=None, gt=0.0, description="Largest distance in meters between a track segment and the centerline (unset = 0.05).")
     sweep_length: float | None = Field(
         default=None,
         gt=0.0,
-        description="Longitudinal window in metres that closes gaps (unset = column spacing past a colonnade, else the track spacing).",
+        description="Longitudinal window in meters that closes gaps (unset = column spacing past a colonnade, else the track spacing).",
     )
 
 
@@ -307,8 +307,8 @@ SHARED_STRETCH_TOLERANCE = 0.05
 OPPOSITE_COSINE = -0.5
 
 
-def _sampled_centreline(segments: list[list[tuple[float, float]]]) -> tuple[np.ndarray, np.ndarray]:
-    """Points every SHARED_STRETCH_STEP metres along a centreline, each with the unit direction of the straight piece it lies on."""
+def _sampled_centerline(segments: list[list[tuple[float, float]]]) -> tuple[np.ndarray, np.ndarray]:
+    """Points every SHARED_STRETCH_STEP meters along a centerline, each with the unit direction of the straight piece it lies on."""
     points: list[tuple[float, float]] = []
     directions: list[tuple[float, float]] = []
     for leg in segments:
@@ -326,9 +326,9 @@ def _sampled_centreline(segments: list[list[tuple[float, float]]]) -> tuple[np.n
 
 
 def _shares_opposite_stretch(segments: list[list[tuple[float, float]]], other: list[list[tuple[float, float]]]) -> bool:
-    """True when the two centrelines share a stretch, within SHARED_STRETCH_TOLERANCE, that the two flows walk in opposite directions."""
-    points, directions = _sampled_centreline(segments)
-    other_points, other_directions = _sampled_centreline(other)
+    """True when the two centerlines share a stretch, within SHARED_STRETCH_TOLERANCE, that the two flows walk in opposite directions."""
+    points, directions = _sampled_centerline(segments)
+    other_points, other_directions = _sampled_centerline(other)
     if len(points) == 0 or len(other_points) == 0:
         return False
     distance = np.linalg.norm(points[:, None, :] - other_points[None, :, :], axis=2)
@@ -963,7 +963,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         return points if s0 <= s1 else list(reversed(points))
 
     def _lane_segments(self, spec: FlowStreamSpec) -> list[list[tuple[float, float]]]:
-        """Centreline segments of a lane flow, from its source nav pose to its sink nav pose."""
+        """Centerline segments of a lane flow, from its source nav pose to its sink nav pose."""
         source = self._dock_metadata[spec.source_dock]
         sink = self._dock_metadata[spec.sink_dock]
         src_nav = _xy(source["nav_pose"])
@@ -992,7 +992,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
         return None
 
     def _source_half_depth(self, dock_name: str, segments: list[list[tuple[float, float]]]) -> float:
-        """Half-extent of a source dock along the lane's initial direction, matching nav_pose at the dock centre."""
+        """Half-extent of a source dock along the lane's initial direction, matching nav_pose at the dock center."""
         first = segments[0]
         dx, dy = first[1][0] - first[0][0], first[1][1] - first[0][1]
         length = math.hypot(dx, dy)
@@ -1016,7 +1016,7 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
                 "side": lane.side,
                 "two_way": lane.two_way or opposed,
                 "spawn_length": round(self._source_half_depth(spec.source_dock, segments[name]) * 0.5, 3),
-                "segments": [{"centreline": [[round(x, 3), round(y, 3)] for x, y in leg]} for leg in segments[name]],
+                "segments": [{"centerline": [[round(x, 3), round(y, 3)] for x, y in leg]} for leg in segments[name]],
             }
             if lane.offset is not None:
                 block["offset"] = lane.offset

@@ -17,7 +17,7 @@ CORRIDOR = [((0.0, -2.0), (20.0, -2.0)), ((0.0, 2.0), (20.0, 2.0))]
 
 
 def _block(side: str = "right") -> dict[str, object]:
-    return {"side": side, "segments": [{"centreline": [[0.0, 0.0], [20.0, 0.0]]}]}
+    return {"side": side, "segments": [{"centerline": [[0.0, 0.0], [20.0, 0.0]]}]}
 
 
 def test_valid_lane_reports_its_settings_band_and_track_points() -> None:
@@ -40,7 +40,7 @@ def test_lane_through_a_full_width_wall_names_its_flow_and_station() -> None:
 
 
 def test_lane_block_without_a_side_is_rejected_with_its_flow_name() -> None:
-    block = {"segments": [{"centreline": [[0.0, 0.0], [20.0, 0.0]]}]}
+    block = {"segments": [{"centerline": [[0.0, 0.0], [20.0, 0.0]]}]}
     with pytest.raises(ValueError, match="flow 'nosided'"):
         lane_config_from_block("nosided", block)
 

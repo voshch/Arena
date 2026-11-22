@@ -38,7 +38,7 @@ def test_lane_results_name_a_source_whose_zone_is_missing() -> None:
         "ghost_source": {
             "type": "source",
             "ref": "nowhere",
-            "config": {"lane": {"side": "right", "segments": [{"centreline": [[0.0, 0.0], [5.0, 0.0]]}]}},
+            "config": {"lane": {"side": "right", "segments": [{"centerline": [[0.0, 0.0], [5.0, 0.0]]}]}},
         }
     }
     results = scenario_lane_results(regions, world)
