@@ -1004,13 +1004,10 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
     def _lane_blocks(self, streams: list[FlowStreamSpec]) -> dict[str, dict[str, object]]:
         """Lane blocks of the lane flows, with two-way and colonnade sweep settings resolved."""
-        lanes = {spec.name: spec for spec in streams if spec.lane is not None}
-        segments = {name: self._lane_segments(spec) for name, spec in lanes.items()}
+        lanes = {spec.name: (spec, spec.lane) for spec in streams if spec.lane is not None}
+        segments = {name: self._lane_segments(spec) for name, (spec, _) in lanes.items()}
         blocks: dict[str, dict[str, object]] = {}
-        for name, spec in lanes.items():
-            lane = spec.lane
-            if lane is None:
-                continue
+        for name, (spec, lane) in lanes.items():
             opposed = any(_shares_opposite_stretch(segments[name], other) for other_name, other in segments.items() if other_name != name)
             block: dict[str, object] = {
                 "side": lane.side,
