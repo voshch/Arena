@@ -169,7 +169,7 @@ def _run(*argv: str, **env: str) -> subprocess.CompletedProcess[str]:
 def _checkout(tmp_path: Path) -> Path:
     arena = tmp_path / "arena"
     shutil.copytree(_worlds(tmp_path), arena / "arena_simulation_setup" / "worlds")
-    (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites").mkdir(parents=True)
+    (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "suites").mkdir(parents=True)
     return arena
 
 
@@ -189,7 +189,7 @@ def test_writes_default_to_the_source_tree(tmp_path: Path) -> None:
     assert (arena / "arena_simulation_setup" / "worlds" / "sbend" / "scenarios" / "normal" / "scenario.yaml").is_file()
     done = _run("suite", "sbend", "--write", ARENA_DIR=str(arena))
     assert done.returncode == 0, done.stdout + done.stderr
-    assert (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites" / "edge_case.yaml").is_file()
+    assert (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "suites" / "edge_case" / "suite.yaml").is_file()
 
 
 def test_without_a_root_the_verb_asks_for_one(tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ from arena_simulation_setup.tree.World import WorldView
 
 _PKG = Path(__file__).resolve().parents[2]
 _WORLDS = _PKG / 'worlds'
-_SUITES = _PKG.parent / 'arena_evaluation' / 'arena_evaluation' / 'configs' / 'benchmark' / 'suites'
+_SUITES = _PKG.parent / 'arena_evaluation' / 'arena_evaluation' / 'configs' / 'suites'
 
 WORLD_NAMES = sorted(p.name for p in _WORLDS.glob('mechanisms_*') if p.is_dir())
 
