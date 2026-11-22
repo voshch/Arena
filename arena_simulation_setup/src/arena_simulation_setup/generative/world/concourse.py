@@ -985,11 +985,14 @@ class WorldGeneratorConcourse(WorldGeneratorImpl):
 
     def _colonnade_spacing(self, spec: FlowStreamSpec) -> float | None:
         """Column spacing of the first colonnade that the flow passes, if any."""
-        lo, hi = sorted((_station(self._dock_metadata[spec.source_dock]), _station(self._dock_metadata[spec.sink_dock])))
-        for colonnade in self.config.colonnades:
-            if colonnade.start_s <= hi and colonnade.end_s >= lo:
-                return colonnade.spacing
-        return None
+        s0, s1 = _station(self._dock_metadata[spec.source_dock]), _station(self._dock_metadata[spec.sink_dock])
+        lo, hi = sorted((s0, s1))
+        passed = [colonnade for colonnade in self.config.colonnades if colonnade.start_s <= hi and colonnade.end_s >= lo]
+        if not passed:
+            return None
+        if s0 <= s1:
+            return min(passed, key=lambda colonnade: max(colonnade.start_s, lo)).spacing
+        return max(passed, key=lambda colonnade: min(colonnade.end_s, hi)).spacing
 
     def _source_half_depth(self, dock_name: str, segments: list[list[tuple[float, float]]]) -> float:
         """Half-extent of a source dock along the lane's initial direction, matching nav_pose at the dock center."""
