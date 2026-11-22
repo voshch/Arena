@@ -1185,7 +1185,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return cx, cy
 
     async def _add_regions_impl(self, regions: Sequence[Region]) -> bool:
-        # Sinks first: a lane source checks its end band against an existing sink.
         sinks = [r for r in regions if r.type == "sink"]
         others = [r for r in regions if r.type != "sink"]
         sink_results = await asyncio.gather(*(self._add_region_single(r) for r in sinks))
