@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 import attrs
 
@@ -89,3 +90,17 @@ class LaneBlock:
             two_way=bool(block.get('two_way', False)),
             **{key: _positive(key, block.get(key)) for key in _OPTIONAL_NUMBERS},
         )
+
+
+def shift_lane_points(config: Mapping[str, Any], dx: float, dy: float) -> dict[str, Any]:
+    """Copy of a region config with every lane centerline point moved by (dx, dy)."""
+    shifted = dict(config)
+    lane = config.get('lane')
+    if lane is None:
+        return shifted
+    block = LaneBlock.parse(lane)
+    shifted['lane'] = {
+        **lane,
+        'segments': [{**raw, 'centerline': [[x + dx, y + dy] for x, y in segment.centerline]} for raw, segment in zip(lane['segments'], block.segments, strict=True)],
+    }
+    return shifted

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 
 from arena_humansim_msgs.msg import LaneConfig as LaneConfigMsg
 from arena_humansim_msgs.msg import LaneSegment as LaneSegmentMsg
@@ -10,11 +10,7 @@ from arena_simulation_setup.shared.lane import LaneBlock
 from geometry_msgs.msg import Pose2D as Pose2DMsg
 
 
-def lane_msg_from_config(
-    name: str,
-    cfg: Mapping[str, object],
-    to_engine: Callable[[float, float], tuple[float, float]],
-) -> LaneConfigMsg | None:
+def lane_msg_from_config(name: str, cfg: Mapping[str, object]) -> LaneConfigMsg | None:
     raw = cfg.get("lane")
     if raw is None:
         return None
@@ -34,15 +30,11 @@ def lane_msg_from_config(
     msg.merge_length = block.merge_length or 0.0
     msg.spawn_length = block.spawn_length or 0.0
     msg.sweep_length = block.sweep_length or 0.0
-    msg.segments = [_segment(segment.centerline, to_engine) for segment in block.segments]
+    msg.segments = [_segment(segment.centerline) for segment in block.segments]
     return msg
 
 
-def _segment(
-    centerline: tuple[tuple[float, float], ...],
-    to_engine: Callable[[float, float], tuple[float, float]],
-) -> LaneSegmentMsg:
+def _segment(centerline: tuple[tuple[float, float], ...]) -> LaneSegmentMsg:
     msg = LaneSegmentMsg()
-    points = [to_engine(x, y) for x, y in centerline]
-    msg.centerline = [Pose2DMsg(x=x, y=y, theta=0.0) for x, y in points]
+    msg.centerline = [Pose2DMsg(x=x, y=y, theta=0.0) for x, y in centerline]
     return msg
