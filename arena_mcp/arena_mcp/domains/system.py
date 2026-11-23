@@ -312,6 +312,10 @@ def _shm_usage() -> dict[str, Any] | None:
     return {"total_mb": total_mb, "used_mb": used_mb, "avail_mb": avail_mb, "used_pct": used_pct}
 
 
+def _count(field: str) -> int | None:
+    return int(field) if field.isdigit() else None
+
+
 def _gpu_summary() -> list[dict[str, Any]] | None:
     if shutil.which("nvidia-smi") is None:
         return None
@@ -333,11 +337,11 @@ def _gpu_summary() -> list[dict[str, Any]] | None:
         if len(parts) >= 5:
             gpus.append(
                 {
-                    "index": parts[0],
+                    "index": _count(parts[0]),
                     "name": parts[1],
-                    "memory_used_mb": parts[2],
-                    "memory_total_mb": parts[3],
-                    "utilization_pct": parts[4],
+                    "memory_used_mb": _count(parts[2]),
+                    "memory_total_mb": _count(parts[3]),
+                    "utilization_pct": _count(parts[4]),
                 }
             )
     return gpus
