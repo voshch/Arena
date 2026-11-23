@@ -1,6 +1,7 @@
 """Tests for `arena robot paths` and the `robot:=` entry completion."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,8 @@ def test_paths_verb_applies_the_entry_overrides(capsys: pytest.CaptureFixture[st
     assert ["mobile.velocity_limits.linear", "list", "[-0.5, 1.0]"] in _rows(capsys)
 
 
-def test_paths_verb_names_the_brackets_of_a_placed_part(capsys: pytest.CaptureFixture[str]) -> None:
+def test_paths_verb_names_the_brackets_of_a_placed_part(capsys: pytest.CaptureFixture[str], require_installed: Callable[..., None]) -> None:
+    require_installed("arm/ur")
     assert robot._main(["paths", "jackal[top=arm/ur5e]"]) == 0
     assert ["arm.top.stall_time", "unset", "-", "brackets of top: stall_time"] in _rows(capsys)
 
@@ -80,7 +82,8 @@ def test_launch_robot_value_completes_override_paths_without_a_space() -> None:
     assert _launch_candidates("robot:=jackal[mobile.vel") == ["jackal[mobile.velocity_limits."]
 
 
-def test_launch_robot_value_completes_inside_part_brackets() -> None:
+def test_launch_robot_value_completes_inside_part_brackets(require_installed: Callable[..., None]) -> None:
+    require_installed("arm/ur")
     assert "jackal[top=arm/ur5e[stall_time=" in _launch_candidates("robot:=jackal[top=arm/ur5e[stall_t")
 
 

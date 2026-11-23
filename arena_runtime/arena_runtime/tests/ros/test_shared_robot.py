@@ -117,7 +117,8 @@ def test_parse_invalid_cap_override_raises_naming_the_robot(stub_node, caps):
         Robot.parse({"name": "slow", "model": "jackal", "caps": caps}, node=stub_node)
 
 
-def test_parse_part_brackets_reach_the_placed_instances(stub_node):
+def test_parse_part_brackets_reach_the_placed_instances(stub_node, require_installed):
+    require_installed("arm/fr3", "gripper/franka_hand")
     from arena_runtime.shared import Robot
 
     robot = Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3[stall_time=2.0]"], "top_tool": ["gripper/franka_hand[max_effort=*0.5]"]}}, node=stub_node)
@@ -137,7 +138,8 @@ def test_parse_robot_level_override_of_a_placed_part_raises(stub_node):
         Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3"]}, "caps": {"arm.top.stall_time": 2.0}}, node=stub_node)
 
 
-def test_parse_bad_part_override_raises_naming_the_robot(stub_node):
+def test_parse_bad_part_override_raises_naming_the_robot(stub_node, require_installed):
+    require_installed("arm/fr3", "gripper/franka_hand")
     from arena_runtime.shared import Robot
 
     with pytest.raises(RuntimeError, match="'arm'"):
