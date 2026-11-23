@@ -7,7 +7,7 @@ from arena_runtime.shared import Pose
 
 from task_generator.tasks.mode import TaskMode
 
-from . import characterization, demo, explore, guided, random, scenario, search, stationary
+from . import characterization, demo, explore, guided, hold, random, scenario, search, stationary
 
 
 class TM_Robots(TaskMode):
@@ -55,4 +55,4 @@ class TM_Robots(TaskMode):
         return True
 
 
-__all__ = ["TM_Robots", "characterization", "demo", "explore", "guided", "random", "scenario", "search", "stationary"]
+__all__ = ["TM_Robots", "characterization", "demo", "explore", "guided", "hold", "random", "scenario", "search", "stationary"]
