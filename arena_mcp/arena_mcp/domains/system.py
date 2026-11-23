@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
+import shutil
 import signal
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -10,17 +13,20 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from arena_mcp.core import JOBS, Domain, Job, ToolError, cli, proc
-from arena_mcp.core.jobs import tail_file
+from arena_mcp.core.jobs import data_dir, tail_file
 
 domain = Domain(
     "system",
-    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, read logs, build, test, install deps, preload worlds.
+    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, read process, shm, GPU and log state, build, test, install deps, preload worlds.
     Launches, builds and tests are process jobs (jobs_status, jobs_log), they keep running when the server exits.
     A launch takes what `arena launch` takes, rviz included unless headless, and like it adds envs to a runtime that is already up.""",
 )
 
 LAUNCH_KINDS = ("launch", "runtime")
 LAUNCH_RE = re.compile(r"arena_bringup[./]supervisor|(^|[/\s])ros2 (launch|run) ")
+INTERPRETER_RE = re.compile(r"(python|ruby)[\d.]*")
+STACK_PROGRAM_RE = re.compile(r"(^|/)(arena_bringup|arena_runtime|arena_humansim)[/.]|(^|/)(gzserver|gz (sim|server)|ros2 (launch|run))$")
+SUBCOMMAND_PROGRAMS = {"gz", "ros2"}
 STACK_GRACE_S = proc.GRACE_INT_S + proc.GRACE_TERM_S + proc.GRACE_KILL_S
 
 ArgValue = str | int | float | bool
@@ -232,10 +238,143 @@ def node_log(root: Path, node: str, *, scan: int = 300) -> Path:
     raise ToolError(f"no log of {node} among the {len(files)} newest files under {root}", hint="pass the node's base name, e.g. arena_env_node")
 
 
+def _benchmarks_root() -> Path:
+    return data_dir() / "benchmarks"
+
+
+def _run_dir(run_id: str) -> Path:
+    if run_id in {"", ".", ".."} or Path(run_id).name != run_id:
+        raise ToolError(f"{run_id!r} is not a run id", hint="evaluation_runs lists the runs")
+    return _benchmarks_root() / run_id
+
+
+def _roslog_dirs(run: Path) -> list[Path]:
+    return sorted(path for path in run.glob("roslog*") if path.is_dir() and path.name.partition(".")[0] == "roslog")
+
+
+def _roslog_run(run_id: str | None) -> Path | None:
+    if run_id is not None:
+        run = _run_dir(run_id)
+        return run if _roslog_dirs(run) else None
+    root = _benchmarks_root()
+    runs = [run for run in root.iterdir() if run.is_dir() and _roslog_dirs(run)] if root.is_dir() else []
+    return max(runs, key=lambda run: max(path.stat().st_mtime for roslog in _roslog_dirs(run) for path in [roslog, *roslog.glob("*.log")]), default=None)
+
+
+def _run_node_log(run: Path, node: str) -> Path:
+    found = []
+    for roslog in _roslog_dirs(run):
+        with contextlib.suppress(ToolError):
+            found.append(node_log(roslog, node))
+    if not found:
+        raise ToolError(f"no log of {node} in the roslogs of run {run.name}", hint="pass the node's base name, e.g. arena_env_node")
+    return max(found, key=lambda path: path.stat().st_mtime)
+
+
+def _stack_process(pid: int) -> bool:
+    try:
+        argv = [arg for arg in Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace").split("\0") if arg]
+    except OSError:
+        return False
+    if "--ros-args" in argv:
+        return True
+    if argv and INTERPRETER_RE.fullmatch(Path(argv[0]).name):
+        argv = argv[1:]
+        while argv and argv[0].startswith("-") and argv[0] not in {"-c", "-m"}:
+            argv = argv[1:]
+        if argv[:1] == ["-c"]:
+            return False
+        if argv[:1] == ["-m"]:
+            argv = argv[1:]
+    if not argv:
+        return False
+    program = " ".join(argv[:2]) if Path(argv[0]).name in SUBCOMMAND_PROGRAMS else argv[0]
+    return STACK_PROGRAM_RE.search(program) is not None
+
+
+def _arena_processes(exclude: set[int]) -> tuple[list[dict[str, Any]], int]:
+    matched: dict[int, str] = {}
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit() and int(entry.name) not in exclude and _stack_process(int(entry.name)):
+            matched[int(entry.name)] = proc.cmdline(int(entry.name))
+    return [{"pid": pid, "cmdline": line} for pid, line in sorted(matched.items()) if proc.parent_of(pid) not in matched], len(matched)
+
+
+def _shm_usage() -> dict[str, Any] | None:
+    shm = Path("/dev/shm")
+    if not shm.is_dir():
+        return None
+    usage = shutil.disk_usage(shm)
+    total_mb = round(usage.total / (1024 * 1024), 1)
+    used_mb = round(usage.used / (1024 * 1024), 1)
+    avail_mb = round(usage.free / (1024 * 1024), 1)
+    used_pct = round(100.0 * usage.used / usage.total, 1) if usage.total > 0 else 0.0
+    return {"total_mb": total_mb, "used_mb": used_mb, "avail_mb": avail_mb, "used_pct": used_pct}
+
+
+def _count(field: str) -> int | None:
+    return int(field) if field.isdigit() else None
+
+
+def _gpu_summary() -> list[dict[str, Any]] | None:
+    if shutil.which("nvidia-smi") is None:
+        return None
+    try:
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    gpus: list[dict[str, Any]] = []
+    for raw_line in res.stdout.strip().splitlines():
+        parts = [p.strip() for p in raw_line.split(",")]
+        if len(parts) >= 5:
+            gpus.append(
+                {
+                    "index": _count(parts[0]),
+                    "name": parts[1],
+                    "memory_used_mb": _count(parts[2]),
+                    "memory_total_mb": _count(parts[3]),
+                    "utilization_pct": _count(parts[4]),
+                }
+            )
+    return gpus
+
+
+@domain.tool(read_only=True)
+def system_resources(
+    run_id: Annotated[str | None, Field(description="benchmark run whose roslog files to list, the run whose roslogs changed last when omitted")] = None,
+) -> dict[str, Any]:
+    """Outermost live stack processes, /dev/shm and GPU use, and the newest roslog files of a benchmark run."""
+    excluded = set(proc.ancestry())
+    processes, process_count = _arena_processes(excluded)
+    run = _roslog_run(run_id)
+    if run_id is not None and run is None:
+        raise ToolError(f"no roslog directory for run {run_id!r}", hint="evaluation_runs lists available runs")
+    roslogs = _roslog_dirs(run) if run is not None else []
+    recent_logs = sorted((path for roslog in roslogs for path in roslog.glob("*.log")), key=lambda path: path.stat().st_mtime, reverse=True)[:15]
+    return {
+        "arena_processes": processes,
+        "process_count": process_count,
+        "shm": _shm_usage(),
+        "gpus": _gpu_summary(),
+        "run_id": run.name if run is not None else None,
+        "roslog_dirs": [str(roslog) for roslog in roslogs],
+        "recent_roslogs": [f"{path.parent.name}/{path.name}" for path in recent_logs],
+    }
+
+
 @domain.tool(read_only=True)
 def system_logs(
     job_id: Annotated[str | None, Field(description="a job whose log to read")] = None,
     node: Annotated[str | None, Field(description="a ROS node name or base name whose newest ROS log file to read")] = None,
+    run_id: Annotated[str | None, Field(description="a benchmark run whose roslog directories to search for node instead of the ROS log directory")] = None,
     lines: int = 200,
 ) -> dict[str, Any]:
     """The tail of a job's log, of a node's newest ROS log file, or, with neither, of the only running launch job."""
@@ -243,7 +382,15 @@ def system_logs(
         raise ToolError("lines must be in (0, 5000]")
     if job_id is not None and node is not None:
         raise ToolError("pass job_id or node, not both")
+    if run_id is not None and node is None:
+        raise ToolError("run_id needs node", hint="evaluation_runs lists the runs")
     if node is not None:
+        if run_id is not None:
+            run = _roslog_run(run_id)
+            if run is None:
+                raise ToolError(f"no roslog directory for run {run_id!r}", hint="evaluation_runs lists available runs")
+            path = _run_node_log(run, node)
+            return {"node": node, "run_id": run_id, "path": str(path), "log": tail_file(path, lines)}
         from rclpy.logging import get_logging_directory
 
         path = node_log(Path(get_logging_directory()), node)
