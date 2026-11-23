@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import shutil
 import signal
@@ -13,7 +12,7 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from arena_mcp.core import JOBS, Domain, Job, ToolError, cli, proc
-from arena_mcp.core.jobs import tail_file
+from arena_mcp.core.jobs import data_dir, tail_file
 
 domain = Domain(
     "system",
@@ -242,10 +241,7 @@ def node_log(root: Path, node: str, *, scan: int = 300) -> Path:
 
 
 def _benchmarks_root() -> Path:
-    data_dir = os.environ.get("ARENA_DATA_DIR")
-    if data_dir:
-        return Path(data_dir) / "benchmarks"
-    return Path("/opt/arena_ws/data/benchmarks")
+    return data_dir() / "benchmarks"
 
 
 def _roslog_dir(run_id: str | None) -> Path | None:
