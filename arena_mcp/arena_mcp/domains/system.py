@@ -341,6 +341,8 @@ def system_health(
     excluded = set(proc.ancestry())
     processes = _arena_processes(excluded)
     run = _roslog_run(run_id)
+    if run_id is not None and run is None:
+        raise ToolError(f"no roslog directory for run {run_id!r}", hint="evaluation_runs lists available runs")
     roslogs = _roslog_dirs(run) if run is not None else []
     recent_logs = sorted((path for roslog in roslogs for path in roslog.glob("*.log")), key=lambda path: path.stat().st_mtime, reverse=True)[:15]
     return {
@@ -357,8 +359,8 @@ def system_health(
 @domain.tool(read_only=True)
 def system_logs(
     job_id: Annotated[str | None, Field(description="a job whose log to read")] = None,
-    node: Annotated[str | None, Field(description="a ROS node name, base name, or benchmark roslog filename stem to read")] = None,
-    run_id: Annotated[str | None, Field(description="optional benchmark run id whose roslog/ directory to search when reading node logs")] = None,
+    node: Annotated[str | None, Field(description="a ROS node name or base name whose newest ROS log file to read")] = None,
+    run_id: Annotated[str | None, Field(description="a benchmark run whose roslog directories to search for node instead of the ROS log directory")] = None,
     lines: int = 200,
 ) -> dict[str, Any]:
     """The tail of a job's log, of a node's newest ROS or benchmark roslog file, or, with neither, of the only running launch job."""
@@ -366,6 +368,8 @@ def system_logs(
         raise ToolError("lines must be in (0, 5000]")
     if job_id is not None and node is not None:
         raise ToolError("pass job_id or node, not both")
+    if run_id is not None and node is None:
+        raise ToolError("run_id needs node", hint="evaluation_runs lists the runs")
     if node is not None:
         if run_id is not None:
             run = _roslog_run(run_id)
@@ -375,15 +379,8 @@ def system_logs(
             return {"node": node, "run_id": run_id, "path": str(path), "log": tail_file(path, lines)}
         from rclpy.logging import get_logging_directory
 
-        try:
-            path = node_log(Path(get_logging_directory()), node)
-            return {"node": node, "path": str(path), "log": tail_file(path, lines)}
-        except ToolError:
-            run = _roslog_run(None)
-            if run is None:
-                raise
-            path = _run_node_log(run, node)
-            return {"node": node, "run_id": run.name, "path": str(path), "log": tail_file(path, lines)}
+        path = node_log(Path(get_logging_directory()), node)
+        return {"node": node, "path": str(path), "log": tail_file(path, lines)}
     job = JOBS.get(job_id) if job_id is not None else _launch_job(None)
     return {"job": job.id, "state": job.state, "path": str(job.log_path), "log": JOBS.tail(job.id, lines)}
 
