@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import shutil
 import signal
@@ -250,19 +251,27 @@ def _run_dir(run_id: str) -> Path:
     return _benchmarks_root() / run_id
 
 
-def _roslog_dir(run_id: str | None) -> Path | None:
-    root = _benchmarks_root()
-    if not root.is_dir():
-        return None
+def _roslog_dirs(run: Path) -> list[Path]:
+    return sorted(path for path in run.glob("roslog*") if path.is_dir() and path.name.partition(".")[0] == "roslog")
+
+
+def _roslog_run(run_id: str | None) -> Path | None:
     if run_id is not None:
-        candidate = _run_dir(run_id) / "roslog"
-        return candidate if candidate.is_dir() else None
-    runs = sorted(
-        (d for d in root.iterdir() if d.is_dir() and (d / "roslog").is_dir()),
-        key=lambda d: (d / "roslog").stat().st_mtime,
-        reverse=True,
-    )
-    return (runs[0] / "roslog") if runs else None
+        run = _run_dir(run_id)
+        return run if _roslog_dirs(run) else None
+    root = _benchmarks_root()
+    runs = [run for run in root.iterdir() if run.is_dir() and _roslog_dirs(run)] if root.is_dir() else []
+    return max(runs, key=lambda run: max(roslog.stat().st_mtime for roslog in _roslog_dirs(run)), default=None)
+
+
+def _run_node_log(run: Path, node: str) -> Path:
+    found = []
+    for roslog in _roslog_dirs(run):
+        with contextlib.suppress(ToolError):
+            found.append(node_log(roslog, node))
+    if not found:
+        raise ToolError(f"no log of {node} in the roslogs of run {run.name}", hint="pass the node's base name, e.g. arena_env_node")
+    return max(found, key=lambda path: path.stat().st_mtime)
 
 
 def _arena_processes(exclude: set[int]) -> list[dict[str, Any]]:
@@ -331,17 +340,17 @@ def system_health(
     """Inspect live Arena/Gazebo/ROS processes outside arena_mcp, /dev/shm usage, GPU status, and recent benchmark roslog files."""
     excluded = set(proc.ancestry())
     processes = _arena_processes(excluded)
-    roslog = _roslog_dir(run_id)
-    recent_logs: list[str] = []
-    if roslog is not None:
-        recent_logs = [p.name for p in sorted(roslog.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)[:15]]
+    run = _roslog_run(run_id)
+    roslogs = _roslog_dirs(run) if run is not None else []
+    recent_logs = sorted((path for roslog in roslogs for path in roslog.glob("*.log")), key=lambda path: path.stat().st_mtime, reverse=True)[:15]
     return {
         "arena_processes": processes,
         "process_count": len(processes),
         "shm": _shm_usage(),
         "gpus": _gpu_summary(),
-        "roslog_dir": str(roslog) if roslog is not None else None,
-        "recent_roslogs": recent_logs,
+        "run_id": run.name if run is not None else None,
+        "roslog_dirs": [str(roslog) for roslog in roslogs],
+        "recent_roslogs": [f"{path.parent.name}/{path.name}" for path in recent_logs],
     }
 
 
@@ -359,10 +368,10 @@ def system_logs(
         raise ToolError("pass job_id or node, not both")
     if node is not None:
         if run_id is not None:
-            roslog = _roslog_dir(run_id)
-            if roslog is None:
+            run = _roslog_run(run_id)
+            if run is None:
                 raise ToolError(f"no roslog directory for run {run_id!r}", hint="evaluation_runs lists available runs")
-            path = node_log(roslog, node)
+            path = _run_node_log(run, node)
             return {"node": node, "run_id": run_id, "path": str(path), "log": tail_file(path, lines)}
         from rclpy.logging import get_logging_directory
 
@@ -370,11 +379,11 @@ def system_logs(
             path = node_log(Path(get_logging_directory()), node)
             return {"node": node, "path": str(path), "log": tail_file(path, lines)}
         except ToolError:
-            roslog = _roslog_dir(None)
-            if roslog is None:
+            run = _roslog_run(None)
+            if run is None:
                 raise
-            path = node_log(roslog, node)
-            return {"node": node, "run_id": roslog.parent.name, "path": str(path), "log": tail_file(path, lines)}
+            path = _run_node_log(run, node)
+            return {"node": node, "run_id": run.name, "path": str(path), "log": tail_file(path, lines)}
     job = JOBS.get(job_id) if job_id is not None else _launch_job(None)
     return {"job": job.id, "state": job.state, "path": str(job.log_path), "log": JOBS.tail(job.id, lines)}
 
