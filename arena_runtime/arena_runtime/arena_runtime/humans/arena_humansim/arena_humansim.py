@@ -88,6 +88,7 @@ from arena_people_msgs.msg import Gesture as GestureMsg
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.lazy import LazySubscription
+from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared.world import CABIN_DOOR_INSET, CABIN_DOOR_THRESHOLD, CABIN_DOOR_WIDTH, Stairs
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
@@ -573,6 +574,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Engine markers into the env frame: marker poses shift, points are pose-relative and stay."""
         cfg = self._realizer.get_config()
         for marker in msg.markers:
+            marker.header.frame_id = "map"
             marker.pose.position.x += cfg.x
             marker.pose.position.y += cfg.y
         return msg
@@ -699,7 +701,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             empty = AgentFrameMsg()
             empty.header.stamp.sec = self._engine_stamp_ns // int(1e9)
             empty.header.stamp.nanosec = self._engine_stamp_ns % int(1e9)
-            empty.header.frame_id = "map"
             return empty
         prev = self._prev_agent_states
         if prev is None:
@@ -727,7 +728,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         msg = AgentFrameMsg(**{field: getattr(curr, field) for field in curr.get_fields_and_field_types() if field != "header"})
         msg.header.stamp.sec = int(pose_ns // int(1e9))
         msg.header.stamp.nanosec = int(pose_ns % int(1e9))
-        msg.header.frame_id = "map"
+        msg.header.frame_id = curr.header.frame_id
 
         fields = ("x", "y", "vx", "vy", "gait_phase") if len(curr.gait_phase) and len(prev.gait_phase) else ("x", "y", "vx", "vy")
         for field in fields:
@@ -1091,7 +1092,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return
         msg = AgentStatesMsg()
         msg.header.stamp = self.node.sim_time.to_msg()
-        msg.header.frame_id = "map"
+        msg.header.frame_id = FrameNamespace(self._realizer.get_config().prefix).tf("map")
         named = [(tracked.robot.name, tracked) for tracked in robots]
         own_names = {name for name, _ in named}
         named += [(alias, tracked) for i, tracked in enumerate(robots) if (alias := f"robot_{i}") not in own_names]
@@ -1117,7 +1118,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     def _agent_states_to_pedestrians(self, msg: AgentFrameMsg) -> Pedestrians:
         peds = Pedestrians()
-        peds.header = msg.header
+        peds.header.stamp = msg.header.stamp
+        peds.header.frame_id = "map"
         gestures_by_id = self._agent_gestures
         self._supports = {}
         n = len(msg.agent_id)

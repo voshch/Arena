@@ -17,6 +17,7 @@ from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelActi
 from arena_rclpy_mixins.launch_argument import LaunchArgument, forwarded
 from arena_bringup.substitutions import deprecated_launch_args
 from arena_rclpy_mixins import launch_str_to_value
+from arena_rclpy_mixins.shared import FrameNamespace
 from launch.actions import (
     ExecuteProcess,
     IncludeLaunchDescription,
@@ -314,6 +315,7 @@ def generate_launch_description() -> launch.LaunchDescription:
             launch_arguments={
                 "simulator": human_val,
                 "namespace": allocated_ns,
+                "humansim.frame_id": FrameNamespace(prefix_val).tf("map"),
             }.items(),
         )
 

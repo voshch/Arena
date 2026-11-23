@@ -531,10 +531,13 @@ mechanisms):
   stands for `dwell` seconds, or up to the named cabin, where it selects its destination and waits until the
   elevator teleports it. Other cross-level legs are left to the engine's own cabin routing.
 
-The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
-the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses
-are un-shifted going in, agent poses, gesture targets, flow agents and the engine's marker layers are shifted
-coming out. Nothing engine-side knows the env.
+The engine runs in the env-local frame `<prefix>/map` (authored coordinates, levels laid out, no env offset),
+which the static `map` -> `<prefix>/map` transform anchors at the env slot reference. env.launch passes that
+frame as `humansim.frame_id`, so `agent_states`, `world_geometry`, `agent_meta`, `agent_gestures`, `interactions`
+and the engine's `viz` layers carry it, and a TF lookup into `map` places them. The adapter owns the env offset
+on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses are un-shifted
+going in (`world_state` is stamped `<prefix>/map`), agent poses, gesture targets, flow agents and the engine's
+marker layers are shifted coming out and stamped `map`. Nothing engine-side knows the offset.
 
 World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
 `hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its
