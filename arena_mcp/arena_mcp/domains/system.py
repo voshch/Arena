@@ -244,12 +244,18 @@ def _benchmarks_root() -> Path:
     return data_dir() / "benchmarks"
 
 
+def _run_dir(run_id: str) -> Path:
+    if run_id in {"", ".", ".."} or Path(run_id).name != run_id:
+        raise ToolError(f"{run_id!r} is not a run id", hint="evaluation_runs lists the runs")
+    return _benchmarks_root() / run_id
+
+
 def _roslog_dir(run_id: str | None) -> Path | None:
     root = _benchmarks_root()
     if not root.is_dir():
         return None
     if run_id is not None:
-        candidate = root / run_id / "roslog"
+        candidate = _run_dir(run_id) / "roslog"
         return candidate if candidate.is_dir() else None
     runs = sorted(
         (d for d in root.iterdir() if d.is_dir() and (d / "roslog").is_dir()),
