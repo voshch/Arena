@@ -548,10 +548,13 @@ def test_pose_while_rejects_anything_but_pose_sections_by_interaction(during: ob
         resolve_pose_profile({"while": during})
 
 
-def test_stand_pushwheelchair_is_the_push_walk_held_still() -> None:
+@pytest.mark.parametrize("aid", ["pushwheelchair", "walkingframe", "rollator", "ivpole"])
+def test_each_stand_profile_is_its_aid_walk_held_still(aid: str) -> None:
     library = load_library()
-    walk, stand = library["walk_pushwheelchair"], library["stand_pushwheelchair"]
+    walk, stand = library[f"walk_{aid}"], library[f"stand_{aid}"]
     gen = GaitGenerator()
-    held = [gen.compute(0, 0, 0.0, 0.0, phase=phi, profile=resolve_pose_profile({"idle": {"base": "stand_pushwheelchair"}})) for phi in (0.0, 2.0)]
+    held = [gen.compute(0, 0, 0.0, 0.0, phase=phi, profile=resolve_pose_profile({"idle": {"base": f"stand_{aid}"}})) for phi in (0.0, 2.0)]
     assert held[0] == held[1]
     assert set(stand.joints) == set(walk.joints)
+    assert {joint: js.signal.mean for joint, js in stand.joints.items()} == {joint: js.signal.mean for joint, js in walk.joints.items()}
+    assert (stand.limits, stand.cadence, stand.gain, stand.phase_warp) == (walk.limits, walk.cadence, walk.gain, walk.phase_warp)

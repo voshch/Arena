@@ -140,8 +140,9 @@ is measured off its skin (`meshes/<name>.dae`) with the arena-assets human build
 ## Fitting a gait profile from a clip
 
 The walk and run poses `GaitGenerator` emits come from the gait profiles in [`profiles/`](profiles/)
-([`profile.py`](profile.py): a mean plus harmonics per joint, read at the gait phase). [`fit.py`](fit.py) turns a
-walking clip into such a profile:
+([`profile.py`](profile.py): a mean plus harmonics per joint, read at the gait phase). A library entry
+`{same_as: <stem>, still: true}` is that profile's mean pose with the harmonics dropped, the standing pose of a
+person holding an aid. [`fit.py`](fit.py) turns a walking clip into such a profile:
 
 ```
 python3 -m arena_runtime.humans.fit walk_slow.npy -o walk_slow.yaml --speed 0.8 --report walk_slow.json
