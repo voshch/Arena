@@ -134,10 +134,18 @@ def _cap_instances(resolved: ResolvedAssembly | None, cap: str) -> list[tuple[st
 
 
 def _physical_params(manager: RobotManager) -> list[diagnostic_msgs.msg.KeyValue]:
-    """`robot_radius` and, when the caps state a mass, `robot_mass_kg`."""
+    """`robot_radius` and, when the caps state a mass, `robot_mass_kg` with its `robot_base_mass_kg`, `robot_components_mass_kg` and `robot_payload_mass_kg` split."""
     params = [diagnostic_msgs.msg.KeyValue(key='robot_radius', value=str(manager.radius))]
-    if (mass := manager.body.mass) is not None:
-        params.append(diagnostic_msgs.msg.KeyValue(key='robot_mass_kg', value=str(float(mass))))
+    if manager.body.mass is not None:
+        mass = manager.caps.mass_split()
+        params.extend(
+            [
+                diagnostic_msgs.msg.KeyValue(key='robot_mass_kg', value=str(mass['total'])),
+                diagnostic_msgs.msg.KeyValue(key='robot_base_mass_kg', value=str(mass['base'])),
+                diagnostic_msgs.msg.KeyValue(key='robot_components_mass_kg', value=str(mass['components'])),
+                diagnostic_msgs.msg.KeyValue(key='robot_payload_mass_kg', value=str(mass['payload'])),
+            ]
+        )
     return params
 
 
