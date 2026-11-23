@@ -24,12 +24,9 @@ domain = Domain(
 
 LAUNCH_KINDS = ("launch", "runtime")
 LAUNCH_RE = re.compile(r"arena_bringup[./]supervisor|(^|[/\s])ros2 (launch|run) ")
-ARENA_PROC_RE = re.compile(
-    r"arena_bringup|arena_runtime|arena_env_node|arena_humansim|hri_producer|"
-    r"parameter_bridge|(^|[/\s])gz (sim|server)|gzserver|ruby.*gz\b|"
-    r"(^|[/\s])ros2 (launch|run) |bt_navigator|controller_server|planner_server|rviz2"
-)
-MCP_PROC_RE = re.compile(r"\barena_mcp\b")
+INTERPRETER_RE = re.compile(r"(python|ruby)[\d.]*")
+STACK_PROGRAM_RE = re.compile(r"(^|/)(arena_bringup|arena_runtime|arena_humansim)[/.]|(^|/)(gzserver|gz (sim|server)|ros2 (launch|run))$")
+SUBCOMMAND_PROGRAMS = {"gz", "ros2"}
 STACK_GRACE_S = proc.GRACE_INT_S + proc.GRACE_TERM_S + proc.GRACE_KILL_S
 
 ArgValue = str | int | float | bool
@@ -274,20 +271,33 @@ def _run_node_log(run: Path, node: str) -> Path:
     return max(found, key=lambda path: path.stat().st_mtime)
 
 
-def _arena_processes(exclude: set[int]) -> list[dict[str, Any]]:
-    found: list[dict[str, Any]] = []
+def _stack_process(pid: int) -> bool:
+    try:
+        argv = [arg for arg in Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace").split("\0") if arg]
+    except OSError:
+        return False
+    if "--ros-args" in argv:
+        return True
+    if argv and INTERPRETER_RE.fullmatch(Path(argv[0]).name):
+        argv = argv[1:]
+        while argv and argv[0].startswith("-") and argv[0] not in {"-c", "-m"}:
+            argv = argv[1:]
+        if argv[:1] == ["-c"]:
+            return False
+        if argv[:1] == ["-m"]:
+            argv = argv[1:]
+    if not argv:
+        return False
+    program = " ".join(argv[:2]) if Path(argv[0]).name in SUBCOMMAND_PROGRAMS else argv[0]
+    return STACK_PROGRAM_RE.search(program) is not None
+
+
+def _arena_processes(exclude: set[int]) -> tuple[list[dict[str, Any]], int]:
+    matched: dict[int, str] = {}
     for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        pid = int(entry.name)
-        if pid in exclude:
-            continue
-        line = proc.cmdline(pid)
-        if not line or MCP_PROC_RE.search(line):
-            continue
-        if ARENA_PROC_RE.search(line):
-            found.append({"pid": pid, "cmdline": line})
-    return sorted(found, key=lambda item: item["pid"])
+        if entry.name.isdigit() and int(entry.name) not in exclude and _stack_process(int(entry.name)):
+            matched[int(entry.name)] = proc.cmdline(int(entry.name))
+    return [{"pid": pid, "cmdline": line} for pid, line in sorted(matched.items()) if proc.parent_of(pid) not in matched], len(matched)
 
 
 def _shm_usage() -> dict[str, Any] | None:
@@ -339,7 +349,7 @@ def system_health(
 ) -> dict[str, Any]:
     """Inspect live Arena/Gazebo/ROS processes outside arena_mcp, /dev/shm usage, GPU status, and recent benchmark roslog files."""
     excluded = set(proc.ancestry())
-    processes = _arena_processes(excluded)
+    processes, process_count = _arena_processes(excluded)
     run = _roslog_run(run_id)
     if run_id is not None and run is None:
         raise ToolError(f"no roslog directory for run {run_id!r}", hint="evaluation_runs lists available runs")
@@ -347,7 +357,7 @@ def system_health(
     recent_logs = sorted((path for roslog in roslogs for path in roslog.glob("*.log")), key=lambda path: path.stat().st_mtime, reverse=True)[:15]
     return {
         "arena_processes": processes,
-        "process_count": len(processes),
+        "process_count": process_count,
         "shm": _shm_usage(),
         "gpus": _gpu_summary(),
         "run_id": run.name if run is not None else None,
