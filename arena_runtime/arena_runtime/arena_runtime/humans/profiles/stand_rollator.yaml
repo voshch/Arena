@@ -1,0 +1,234 @@
+# Standing behind the rollator: walk_rollator's mean pose (its harmonics dropped), hands on the grips.
+name: stand_rollator
+symmetric: false
+phase_warp:
+  split: 0.5772
+cadence:
+  base: 0.4
+  per_speed: 0.8485157866934134
+  min: 0.4
+  max: 2.2
+gain:
+  per_speed: 1.2
+  min: 1.0
+  max: 1.0
+  factor: 1.0
+limits:
+  r_r_shoulder:
+  - -3.1
+  - 3.1
+  r_y_hip:
+  - -0.19658380746841425
+  - 0.6
+signals:
+  l_y_collar:
+    mean: 0.207975488990606
+  r_y_collar:
+    mean: 0.04687437085072672
+  l_p_collar:
+    mean: -0.19999999999999124
+  r_p_collar:
+    mean: -0.19999999999989718
+  l_y_shoulder:
+    mean: 0.15867404216593392
+  r_y_shoulder:
+    mean: 2.873698321510642
+  l_p_shoulder:
+    mean: 0.6216666626138214
+  r_p_shoulder:
+    mean: -0.5826598706663461
+  l_r_shoulder:
+    mean: -0.490056961782537
+  r_r_shoulder:
+    mean: 3.099999999999469
+  l_elbow:
+    mean: 0.6040434925817986
+  r_elbow:
+    mean: 0.6025577311469148
+  l_y_hip:
+    mean: -0.009009799100424638
+  r_y_hip:
+    mean: -0.11505875929828574
+  l_p_hip:
+    mean: 0.014772339898231358
+  r_p_hip:
+    mean: 0.052587602941086185
+  l_r_hip:
+    mean: 0.13814698754233887
+  r_r_hip:
+    mean: 0.12461969730982642
+  l_knee:
+    mean: -0.4325769507920833
+  r_knee:
+    mean: -0.2881015096593279
+  l_y_ankle:
+    mean: -0.05730111236200314
+  r_y_ankle:
+    mean: 0.21749407708556373
+  l_ankle:
+    mean: -0.0777185708174778
+  r_ankle:
+    mean: -0.052883428504755504
+  l_r_wrist:
+    mean: 1.3514948375631473
+  r_r_wrist:
+    mean: 1.2724584783546837
+  l_wrist:
+    mean: 0.5230274719134935
+  r_wrist:
+    mean: 0.5163014165149342
+  r_waist:
+    mean: 0.002454196803016082
+  y_waist:
+    mean: 7.922380231213989e-05
+  waist:
+    mean: 0.09849806712068067
+  r_spine:
+    mean: 0.03384028665823356
+  y_spine:
+    mean: -0.006816133604886771
+  spine:
+    mean: 0.21464362713816504
+  r_chest:
+    mean: 0.0373346359898867
+  y_chest:
+    mean: -0.007936826079725562
+  chest:
+    mean: 0.2124691979693874
+  r_head:
+    mean: -0.07523802455961627
+  y_head:
+    mean: -0.04855564857738735
+  p_head:
+    mean: 0.16390579667285834
+  l_d_wrist:
+    mean: 0.25121131348951764
+  r_d_wrist:
+    mean: 0.017971713396285314
+joints:
+  l_y_collar:
+    signal: l_y_collar
+    shift: 0.0
+  r_y_collar:
+    signal: r_y_collar
+    shift: 0.0
+  l_p_collar:
+    signal: l_p_collar
+    shift: 0.0
+  r_p_collar:
+    signal: r_p_collar
+    shift: 0.0
+  l_y_shoulder:
+    signal: l_y_shoulder
+    shift: 0.0
+  r_y_shoulder:
+    signal: r_y_shoulder
+    shift: 0.0
+  l_p_shoulder:
+    signal: l_p_shoulder
+    shift: 0.0
+  r_p_shoulder:
+    signal: r_p_shoulder
+    shift: 0.0
+  l_r_shoulder:
+    signal: l_r_shoulder
+    shift: 0.0
+  r_r_shoulder:
+    signal: r_r_shoulder
+    shift: 0.0
+  l_elbow:
+    signal: l_elbow
+    shift: 0.0
+  r_elbow:
+    signal: r_elbow
+    shift: 0.0
+  l_y_hip:
+    signal: l_y_hip
+    shift: 0.0
+  r_y_hip:
+    signal: r_y_hip
+    shift: 0.0
+  l_p_hip:
+    signal: l_p_hip
+    shift: 0.0
+  r_p_hip:
+    signal: r_p_hip
+    shift: 0.0
+  l_r_hip:
+    signal: l_r_hip
+    shift: 0.0
+  r_r_hip:
+    signal: r_r_hip
+    shift: 0.0
+  l_knee:
+    signal: l_knee
+    shift: 0.0
+  r_knee:
+    signal: r_knee
+    shift: 0.0
+  l_y_ankle:
+    signal: l_y_ankle
+    shift: 0.0
+  r_y_ankle:
+    signal: r_y_ankle
+    shift: 0.0
+  l_ankle:
+    signal: l_ankle
+    shift: 0.0
+  r_ankle:
+    signal: r_ankle
+    shift: 0.0
+  l_r_wrist:
+    signal: l_r_wrist
+    shift: 0.0
+  r_r_wrist:
+    signal: r_r_wrist
+    shift: 0.0
+  l_wrist:
+    signal: l_wrist
+    shift: 0.0
+  r_wrist:
+    signal: r_wrist
+    shift: 0.0
+  r_waist:
+    signal: r_waist
+    shift: 0.0
+  y_waist:
+    signal: y_waist
+    shift: 0.0
+  waist:
+    signal: waist
+    shift: 0.0
+  r_spine:
+    signal: r_spine
+    shift: 0.0
+  y_spine:
+    signal: y_spine
+    shift: 0.0
+  spine:
+    signal: spine
+    shift: 0.0
+  r_chest:
+    signal: r_chest
+    shift: 0.0
+  y_chest:
+    signal: y_chest
+    shift: 0.0
+  chest:
+    signal: chest
+    shift: 0.0
+  r_head:
+    signal: r_head
+    shift: 0.0
+  y_head:
+    signal: y_head
+    shift: 0.0
+  p_head:
+    signal: p_head
+    shift: 0.0
+  l_d_wrist:
+    signal: l_d_wrist
+    shift: 0.0
+  r_d_wrist:
+    signal: r_d_wrist
+    shift: 0.0
