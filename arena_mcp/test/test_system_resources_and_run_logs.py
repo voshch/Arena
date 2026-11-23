@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from arena_mcp.domains.system import system_health, system_logs
+from arena_mcp.domains.system import system_resources, system_logs
 
 
 def test_system_health_and_logs_read_benchmark_roslog_dir(tmp_path: Path) -> None:
@@ -15,7 +15,7 @@ def test_system_health_and_logs_read_benchmark_roslog_dir(tmp_path: Path) -> Non
         log_file = roslog / "arena_env_0_123_456.log"
         log_file.write_text("line1\nGazebo control timeout\n", encoding="utf-8")
 
-        health = system_health(run_id="demo_run")
+        health = system_resources(run_id="demo_run")
         assert health["roslog_dir"] == str(roslog)
         assert "arena_env_0_123_456.log" in health["recent_roslogs"]
         assert isinstance(health["process_count"], int)

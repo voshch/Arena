@@ -17,7 +17,7 @@ from arena_mcp.core.jobs import data_dir, tail_file
 
 domain = Domain(
     "system",
-    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, inspect system health and logs, build, test, install deps, preload worlds.
+    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, read process, shm, GPU and log state, build, test, install deps, preload worlds.
     Launches, builds and tests are process jobs (jobs_status, jobs_log), they keep running when the server exits.
     A launch takes what `arena launch` takes, rviz included unless headless, and like it adds envs to a runtime that is already up.""",
 )
@@ -348,7 +348,7 @@ def _gpu_summary() -> list[dict[str, Any]] | None:
 
 
 @domain.tool(read_only=True)
-def system_health(
+def system_resources(
     run_id: Annotated[str | None, Field(description="benchmark run id whose roslog files to list; defaults to the newest run")] = None,
 ) -> dict[str, Any]:
     """Inspect live Arena/Gazebo/ROS processes outside arena_mcp, /dev/shm usage, GPU status, and recent benchmark roslog files."""
