@@ -78,7 +78,7 @@ async def system_runtime(
     args: Annotated[dict[str, ArgValue] | None, Field(description="further runtime launch arguments as {name: value}")] = None,
     headless: Annotated[bool, Field(description="headless:=true, which hides the simulator GUI")] = False,
 ) -> dict[str, Any]:
-    """Start a new `arena runtime` (sim and arena_runtime_node, no envs) as a job. Mutating: use runtime_state to inspect an already-running runtime."""
+    """Start `arena runtime` (sim and arena_runtime_node, no envs) as a job."""
     tokens = launch_tokens({"sim": sim, "world": world, "headless": True if headless else None}, args)
     job = await cli.job("runtime", f"arena runtime {' '.join(tokens)}", "runtime", *tokens)
     return job.as_dict()
@@ -349,9 +349,9 @@ def _gpu_summary() -> list[dict[str, Any]] | None:
 
 @domain.tool(read_only=True)
 def system_resources(
-    run_id: Annotated[str | None, Field(description="benchmark run id whose roslog files to list; defaults to the newest run")] = None,
+    run_id: Annotated[str | None, Field(description="benchmark run whose roslog files to list, the run whose roslogs changed last when omitted")] = None,
 ) -> dict[str, Any]:
-    """Inspect live Arena/Gazebo/ROS processes outside arena_mcp, /dev/shm usage, GPU status, and recent benchmark roslog files."""
+    """Outermost live stack processes, /dev/shm and GPU use, and the newest roslog files of a benchmark run."""
     excluded = set(proc.ancestry())
     processes, process_count = _arena_processes(excluded)
     run = _roslog_run(run_id)
@@ -377,7 +377,7 @@ def system_logs(
     run_id: Annotated[str | None, Field(description="a benchmark run whose roslog directories to search for node instead of the ROS log directory")] = None,
     lines: int = 200,
 ) -> dict[str, Any]:
-    """The tail of a job's log, of a node's newest ROS or benchmark roslog file, or, with neither, of the only running launch job."""
+    """The tail of a job's log, of a node's newest ROS log file, or, with neither, of the only running launch job."""
     if not 0 < lines <= 5000:
         raise ToolError("lines must be in (0, 5000]")
     if job_id is not None and node is not None:
