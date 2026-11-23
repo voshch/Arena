@@ -74,7 +74,7 @@ jobs:
           echo "PACKAGES=$packages" >> "$GITHUB_ENV"
       - name: fetch the dependency repos
         if: steps.diff.outputs.gated == 'true'
-        run: vcs import --shallow --recursive --input _meta/repos/arena.repos .
+        run: .github/ci/fetch-deps.sh
       - name: install the system dependencies
         if: steps.diff.outputs.gated == 'true'
         run: .github/ci/system-deps.sh $PACKAGES
