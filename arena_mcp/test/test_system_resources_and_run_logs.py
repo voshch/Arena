@@ -50,6 +50,14 @@ def test_resources_default_to_the_run_whose_roslogs_changed_last(benchmarks: Pat
     assert resources["recent_roslogs"] == ["roslog/b.log"]
 
 
+def test_a_run_still_appending_to_its_logs_is_the_default(benchmarks: Path) -> None:
+    now = time.time()
+    live = _log(benchmarks / "live" / "roslog" / "arena_env_0_1_2.log", "", now - 100)
+    os.utime(live, (now - 1, now - 1))
+    _log(benchmarks / "finished" / "roslog" / "arena_env_0_3_4.log", "", now - 50)
+    assert system_resources()["run_id"] == "live"
+
+
 def test_resources_without_benchmarks_have_no_run(benchmarks: Path) -> None:
     resources = system_resources()
     assert resources["run_id"] is None

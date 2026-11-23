@@ -258,7 +258,7 @@ def _roslog_run(run_id: str | None) -> Path | None:
         return run if _roslog_dirs(run) else None
     root = _benchmarks_root()
     runs = [run for run in root.iterdir() if run.is_dir() and _roslog_dirs(run)] if root.is_dir() else []
-    return max(runs, key=lambda run: max(roslog.stat().st_mtime for roslog in _roslog_dirs(run)), default=None)
+    return max(runs, key=lambda run: max(path.stat().st_mtime for roslog in _roslog_dirs(run) for path in [roslog, *roslog.glob("*.log")]), default=None)
 
 
 def _run_node_log(run: Path, node: str) -> Path:
