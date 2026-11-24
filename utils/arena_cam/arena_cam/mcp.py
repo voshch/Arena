@@ -150,8 +150,9 @@ async def _current(endpoint: _Endpoint) -> _Shot:
 
     from arena_cam import curves
 
-    if endpoint.ns in _last:
-        return _last[endpoint.ns]
+    last = _last.get(endpoint.ns)
+    if last is not None and last.following:
+        return last
     pose = (await ROS.latest(PoseStamped, f"{endpoint.ns}/viewport/camera_pose", qos=RELIABLE, timeout=3.0, hint=NO_VIEWPORT)).pose
     eye, quat = (pose.position.x, pose.position.y, pose.position.z), (pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z)
     return _Shot(eye=eye, target=curves.vadd(eye, curves.quat_forward(quat)), quat=quat, fov=0.0, following=None)
@@ -213,7 +214,7 @@ async def view_set(view: View, env_id: int | None = None, surface: Surface = "si
 
 @domain.tool(idempotent=True)
 async def view_capture(view: View | None = None, env_id: int | None = None, surface: Surface = "sim") -> list[Any]:
-    """One rendered frame of a viewport camera, aimed by view when given, else at the last view_set or the current camera pose."""
+    """One rendered frame of a viewport camera, aimed by view when given, else at its live pose, what the user sees in the sim GUI, or the last view_set while it follows a robot."""
     endpoint = await _endpoint(surface, env_id)
     shot = await _apply(endpoint, view, env_id) if view is not None else await _current(endpoint)
     image = await _capture(endpoint, shot)
