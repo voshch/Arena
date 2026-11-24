@@ -36,8 +36,8 @@ panel stops the stream and the backend's 1 s timeout releases everything.
 
 Toolbar on top, then a horizontal splitter. A roster rail on the left
 (~170 px). The map canvas in the center, all the stretch, never
-collapsible. A controls rail on the right (~460 px): Drive, Clips, Pose,
-and FK preview in a scroll area.
+collapsible. A controls rail on the right (~460 px): Drive (speed and turn
+rate), Clips, Pose, and FK preview in a scroll area.
 
 Roster rows show a colored state pill (IDLE, WALKING, RUNNING from the
 roster mirror, or TELEOP while the panel drives that ped), current speed,
@@ -87,10 +87,10 @@ switching tools. Teleport drags the ped directly. Teleop is a toolbar tool:
 an application-wide event filter catches every arrow key press and release,
 including auto-repeats, before any slider, list, or the canvas itself does,
 so held keys chord together (e.g. forward + turn) and never pan the map,
-and drives the selected ped at the Drive speed no matter which widget has
-focus. Holding Shift runs: double the Drive speed, floored at the run
-threshold so the animation state always flips to RUNNING. Gaze parks a look
-target the head tracks continuously.
+and drives the selected ped at the Drive speed and turn rate (rad/s of sim
+time, 2.5 by default) no matter which widget has focus. Holding Shift runs:
+double the Drive speed, floored at the run threshold so the animation state
+always flips to RUNNING. Gaze parks a look target the head tracks continuously.
 
 ## Modules
 
