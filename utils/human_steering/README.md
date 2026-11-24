@@ -100,6 +100,7 @@ always flips to RUNNING. Gaze parks a look target the head tracks continuously.
 | [`panel.py`](human_steering/panel.py) | Qt | toolbar, roster, Drive/Clips/Pose groups, FK preview, status bar |
 | [`canvas.py`](human_steering/canvas.py) | Qt+ROS | `QGraphicsView`: map/marker underlay, ped rendering, direct-manipulation tools |
 | [`driver.py`](human_steering/driver.py) | ROS (Qt-free) | the motion engine: roster mirror, per-ped intent, integration, composition, publishing |
+| [`markers.py`](human_steering/markers.py) | none | static MarkerArray cache per topic (DELETE, DELETEALL) and each marker's map-frame outline with its pose applied: LINE_LIST pairs, LINE_STRIP, CUBE footprints |
 | [`compose.py`](human_steering/compose.py) | none | per-joint precedence (slider > gaze > clip > gait) and gaze angle solving |
 | [`integrate.py`](human_steering/integrate.py) | none | waypoint follower and teleop dead-reckoning, dt-aware (freezes at dt=0) |
 | [`clips.py`](human_steering/clips.py) | none | wire-clip loading, cosine sampling, blending |
