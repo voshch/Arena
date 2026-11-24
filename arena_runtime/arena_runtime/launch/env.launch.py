@@ -444,7 +444,7 @@ def generate_launch_description() -> launch.LaunchDescription:
             parameters=[
                 {
                     "use_sim_time": True,
-                    **forwarded(context, (HumanParams.ROBOTS_VISIBLE,)),
+                    **forwarded(context, (HumanParams.ROBOTS_VISIBLE, NodeParams.OPTIM)),
                     "sim": arena_sim,
                     "human": human_val,
                     "acoustics": acoustics_val,
