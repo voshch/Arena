@@ -392,8 +392,10 @@ possessed walker animates in every simulator.
 `human/move` (`srv/MovePedestrians`, env-level) is a teleport served by the
 base, only `name` and `pose` are read. Known peds are moved in place (no
 `forget()` round-trip, that would reset spawn bookkeeping) and relayed via
-`pedestrian_move`, everything else returns `NOT_FOUND` per item. A move does
-not claim possession.
+`pedestrian_move`, everything else returns `NOT_FOUND` per item. arena_humansim
+also teleports the engine agent to the pose (`TeleportAgents`, heading
+included), so the move sticks instead of being overwritten by the next engine
+frame. A move does not claim possession.
 
 The reset gate opens at the end of `spawn_dynamic_obstacles` (which also
 indexes each ped under both its name and its sim_path, the bus name differs

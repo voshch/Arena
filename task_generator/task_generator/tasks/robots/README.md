@@ -218,9 +218,9 @@ on the node's 30 Hz sim tick from a `Sample` of robot poses, ped positions and
 semantic fields, with the same predicate code arena_evaluation replays offline
 ([`shared/judge.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/judge.py)).
 The robot's progress is published as a `robot` semantic entity (`phase`, `met`,
-`failed`, `dropped`, `violated`), its judged pose on `<robot_ns>/task_pose` (the
-flattened world frame the judge and the compacted world share, not the env's map
-frame, published once the episode's reset has landed the robot and a phase is
+`failed`, `dropped`, `violated`), its judged pose on `<robot_ns>/task_pose` (stamped
+`<prefix>/map`, the flattened env-local frame the judge and the compacted world
+share, the env's map frame less the env offset, published once the episode's reset has landed the robot and a phase is
 active), and the resolved phases in `EpisodeRecord.phases` together with
 `map_poses`, the realized map-frame goto pose per phase.
 [`shared/render.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/render.py)

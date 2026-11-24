@@ -1559,6 +1559,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return None
         return parsed.agent_type, agent_type_stimuli(definition)
 
+    def _on_ped_moved(self, name: str, pose: PoseMsg) -> None:
+        self._ped_orientations[name] = pose.orientation
+        self._in_background(self._teleport_moved(name, pose.position.x, pose.position.y))
+
+    async def _teleport_moved(self, name: str, x: float, y: float) -> None:
+        await self.pedestrian_teleport({name: (x, y)})
+
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
         """Teleport pedestrians by published name to (x, y) in the engine, keeping their facing."""
         if not destinations:
