@@ -132,6 +132,8 @@ _DEFERRED_ID_BASE = 1 << 24
 
 _QUEUE_FRONT_OFFSET = 0.7
 TELEPORT_JUMP_M = 2.0
+THIN_WALL_M = 0.1
+BODY_HEIGHT_M = 2.0
 STAIRS_QUEUE_M = 0.8
 _QUEUE_STEP = 0.8
 
@@ -481,6 +483,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._mech_walls_desired: dict[str, list[Segment] | None] = {}
         self._mech_walls_applied: dict[str, list[str]] = {}
         self._mech_objects: dict[str, list[str]] = {}
+        self._wall_pieces: dict[str, list[str]] = {}
         self._mech_walls_syncing = False
 
         # Publish robot poses on world_state topic (consumed by arena_humansim)
@@ -1802,11 +1805,15 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         request = AddWalls.Request()
         for name, wall in walls.items():
-            request.names.append(name)  # pyright: ignore[reportAttributeAccessIssue]
-            sx, sy = self._to_engine(wall.start.x, wall.start.y)
-            ex, ey = self._to_engine(wall.end.x, wall.end.y)
-            request.starts.append(Point32(x=sx, y=sy, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
-            request.ends.append(Point32(x=ex, y=ey, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
+            pieces = await _footprint(wall)
+            names = [name] if len(pieces) == 1 else [f"{name}/{index}" for index in range(len(pieces))]
+            self._wall_pieces[name] = names
+            for piece_name, (start, end) in zip(names, pieces, strict=True):
+                request.names.append(piece_name)  # pyright: ignore[reportAttributeAccessIssue]
+                sx, sy = self._to_engine(*start)
+                ex, ey = self._to_engine(*end)
+                request.starts.append(Point32(x=sx, y=sy, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
+                request.ends.append(Point32(x=ex, y=ey, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
 
         try:
             response = await self._add_walls_client.call_timeout(request)
@@ -1827,7 +1834,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return True
 
         request = RemoveWalls.Request()
-        request.names = list(names)
+        request.names = [piece for name in names for piece in self._wall_pieces.pop(name, [name])]
 
         try:
             response = await self._remove_walls_client.call_timeout(request)
@@ -2021,3 +2028,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.warning(f"RemoveWorldObjects call failed: {e}")
             return False
         return response is not None and response.success
+
+
+async def _footprint(wall: Wall) -> list[Segment]:
+    """The wall as the engine walks around it: its center line when thin, else the outline of its thickest body-height layer."""
+    segments, _ = await wall.assets()
+    width = max((segment.width for segment in segments if segment.start.z - wall.start.z < BODY_HEIGHT_M), default=0.0)
+    dx, dy = wall.end.x - wall.start.x, wall.end.y - wall.start.y
+    length = math.hypot(dx, dy)
+    if width <= THIN_WALL_M or length == 0.0:
+        return [((wall.start.x, wall.start.y), (wall.end.x, wall.end.y))]
+    nx, ny = -dy / length * width / 2.0, dx / length * width / 2.0
+    corners = [(wall.start.x + nx, wall.start.y + ny), (wall.end.x + nx, wall.end.y + ny), (wall.end.x - nx, wall.end.y - ny), (wall.start.x - nx, wall.start.y - ny)]
+    return [(corners[index], corners[(index + 1) % 4]) for index in range(4)]

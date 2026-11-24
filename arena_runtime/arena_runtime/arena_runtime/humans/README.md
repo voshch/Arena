@@ -541,6 +541,10 @@ on both sides: spawn poses, waypoints, walls, world objects, regions, robot and 
 going in (`world_state` is stamped `<prefix>/map`), agent poses, gesture targets, flow agents and the engine's
 marker layers are shifted coming out and stamped `map`. Nothing engine-side knows the offset.
 
+Walls reach the engine as segments (`AddWalls`). A wall whose layers below 2 m are at most 0.1 m thick goes as
+its center line, a thicker one (a gate cabinet, a counter) as the four edges of its thickest such layer, named
+`<wall>/<i>`, so walkers keep their radius from its faces instead of its center.
+
 World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
 `hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its
 placed `affordances.sit` slots, each at its bbox center facing one of its yaws, drawn per object from the
