@@ -13,11 +13,11 @@ _NS = _REGISTRY_NAMESPACE("hold")
 
 
 class HoldParams(ParamGroup):
-    ZONE = Param[str]("zone", "", "World zone to hold in. Empty uses the center and radius instead.")
-    CENTER_X = Param[float]("center_x", math.nan, "X of the hold center. NaN leaves the center unset, then zone must name a zone.")
-    CENTER_Y = Param[float]("center_y", math.nan, "Y of the hold center. NaN leaves the center unset, then zone must name a zone.")
-    RADIUS = Param[float]("radius", 1.5, "Radius in m of the disc around the center that the seed draws each hold spot from. Zones ignore it.", constraint=Range(0.1, 10.0))
-    HOLD_S = Param[float]("hold_s", 60.0, "Seconds each robot must stay at its hold spot.", constraint=Range(0.0, 3600.0))
+    ZONE = Param[str]("zone", "", "World zone the spots are sampled from. Empty uses the center and radius instead.")
+    CENTER_X = Param[float]("center_x", math.nan, "X of the sampling center. NaN leaves the center unset, then zone must name a zone.")
+    CENTER_Y = Param[float]("center_y", math.nan, "Y of the sampling center. NaN leaves the center unset, then zone must name a zone.")
+    RADIUS = Param[float]("radius", 1.5, "Radius in m of the disc the spots are sampled from around the center. Zones ignore it.", constraint=Range(0.1, 10.0))
+    HOLD_S = Param[float]("hold_s", 60.0, "Seconds the robot must stay in the target disc around its spot, the goal tolerance task.episode.goto_pose.tolerance.radius. The count starts when it enters the disc and restarts whenever it leaves.", constraint=Range(0.1, 3600.0))
 
 
 @ROBOTS_MODES.register(Modes.TM_Robots.HOLD, namespace=_NS, schema=HoldParams)
