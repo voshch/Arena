@@ -86,8 +86,8 @@ the result from `Level.all_walls`.
 | key | default | meaning |
 | --- | --- | --- |
 | `name` | required | unique within the world |
-| `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken |
-| `kind` | `sliding` | `sliding`, `sliding_split` (two half-span leaves part from the middle, each opening past its own end by half the span, a `sliding` leaf when either pocket rests on another door's span), `sliding_top`, `teleport`, `hinged` |
+| `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken, snapping open and closed after its `transition_time` |
+| `kind` | `sliding` | `sliding`, `sliding_split` (two half-span leaves part from the middle, each opening past its own end by half the span, a `sliding` leaf when either pocket rests on another door's span), `sliding_top`, `teleport`, `hinged`. A door that loads as another kind than it is written with logs a warning, once per process, naming it and the doors in its way |
 | `width` | `0.1` | metres |
 | `height` | `2.0` | metres |
 | `material` | door default | `MaterialIdentifier` |

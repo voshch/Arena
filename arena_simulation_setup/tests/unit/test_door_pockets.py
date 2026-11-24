@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+
+import pytest
 from arena_simulation_setup.shared.world import Door, clear_door_pockets
-from arena_simulation_setup.tree.World import Level
+from arena_simulation_setup.tree.World import Level, World
 from arena_simulation_setup.utils.geometry import Position
 
 
@@ -55,3 +58,46 @@ def test_level_doors_resolve_on_construction_and_stay_stable():
     level = Level(id="0", doors=[_door("bedroom", *BEDROOM), _door("living", *LIVING_ROOM)])
     assert _span(level.doors[0]) == (BEDROOM[1], BEDROOM[0])
     assert _span(clear_door_pockets(level.doors)[0]) == (BEDROOM[1], BEDROOM[0])
+
+
+def _warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [record.getMessage() for record in caplog.records if record.name == "arena_simulation_setup.shared.world"]
+
+
+def test_split_door_between_neighbors_warns_that_it_teleports(caplog: pytest.LogCaptureFixture):
+    gates = [_door("west", (6.25, 6.0), (7.15, 6.0), kind="sliding_split"), _door("middle", (7.4, 6.0), (8.3, 6.0), kind="sliding_split"), _door("east", (8.55, 6.0), (9.45, 6.0), kind="sliding_split")]
+    with caplog.at_level(logging.WARNING):
+        level = Level(id="0", doors=gates)
+    assert [door.kind for door in level.doors] == ["sliding", "teleport", "sliding"]
+    assert [door.extra.get("fallback_from") for door in level.doors] == ["sliding_split"] * 3
+    assert gates[1].extra == {}
+    assert _warnings(caplog) == [
+        "door 'west': sliding_split loads as sliding, an open leaf would rest on door 'middle'",
+        "door 'middle': sliding_split loads as teleport, snapping open and closed after its transition_time of 1 s, an open leaf would rest on door 'east', 'west'",
+        "door 'east': sliding_split loads as sliding, an open leaf would rest on door 'middle'",
+    ]
+    caplog.clear()
+    clear_door_pockets(level.doors)
+    clear_door_pockets(gates)
+    assert _warnings(caplog) == []
+
+
+def test_sliding_door_that_only_turns_around_does_not_warn(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level(logging.WARNING):
+        clear_door_pockets([_door("bedroom", *BEDROOM), _door("living", *LIVING_ROOM)])
+    assert _warnings(caplog) == []
+
+
+def test_validate_reports_each_door_that_changed_kind():
+    gates = [_door("west", (6.25, 6.0), (7.15, 6.0), kind="sliding_split"), _door("middle", (7.4, 6.0), (8.3, 6.0), kind="sliding_split"), _door("east", (8.55, 6.0), (9.45, 6.0), kind="sliding_split")]
+    world = World(levels={"0": Level(id="0", doors=gates)})
+    assert [warning for warning in world.validate() if "loads as" in warning] == [
+        "door 'west': sliding_split loads as sliding, an open leaf would rest on door 'middle'",
+        "door 'middle': sliding_split loads as teleport, snapping open and closed after its transition_time of 1 s, an open leaf would rest on door 'east', 'west'",
+        "door 'east': sliding_split loads as sliding, an open leaf would rest on door 'middle'",
+    ]
+
+
+def test_prefixed_level_renames_the_blocking_doors():
+    level = Level(id="0", doors=[_door("west", (6.25, 6.0), (7.15, 6.0), kind="sliding_split"), _door("east", (7.4, 6.0), (8.3, 6.0), kind="sliding_split")]).prefixed("up_")
+    assert [door.extra.get("blocked_by") for door in level.doors] == [["up_east"], ["up_west"]]

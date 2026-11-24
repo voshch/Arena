@@ -34,7 +34,7 @@ from arena_simulation_setup.shared import (
 )
 from arena_simulation_setup.shared.entities import Waypoint
 from arena_simulation_setup.shared.semantics import parse_semantics
-from arena_simulation_setup.shared.world import STOREY, clear_door_pockets
+from arena_simulation_setup.shared.world import STOREY, clear_door_pockets, door_fallback_warning, prefix_blockers
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.utils.cattrs import ArenaConverter, converter
@@ -629,7 +629,7 @@ class Level:
         return attrs.evolve(
             self,
             zones=[attrs.evolve(zone, name=prefix + zone.name, walls=None if zone.walls is None else attrs.evolve(zone.walls, open_to=[among(zones, name) for name in zone.walls.open_to])) for zone in self.zones],
-            doors=[attrs.evolve(door, name=prefix + door.name) for door in self.doors],
+            doors=[attrs.evolve(door, name=prefix + door.name, extra=prefix_blockers(door.extra, prefix)) for door in self.doors],
             elevators=[attrs.evolve(elevator, name=prefix + elevator.name, destinations=[among(elevators, name) for name in elevator.destinations]) for elevator in self.elevators],
             stairs=[attrs.evolve(stair, name=prefix + stair.name, to=prefix + stair.to if stair.to else '', group=prefix + stair.group if stair.group else '') for stair in self.stairs],
             objects=[attrs.evolve(entity, name=prefix + entity.name) for entity in self.objects],
@@ -982,7 +982,7 @@ class World:
         return out
 
     def validate(self, loaded_level_ids: set[str] | None = None) -> list[str]:
-        """Returns warnings for destinations into unloaded levels, raises on everything else."""
+        """Returns warnings for destinations into unloaded levels and doors that loaded as another kind, raises on everything else."""
         warnings: list[str] = []
         seen: dict[str, str] = {}
         for kind, names in self.names().items():
@@ -997,6 +997,7 @@ class World:
             level.validate_microphones()
             level.validate_levels()
             level.validate_lights()
+            warnings.extend(note for door in level.doors if (note := door_fallback_warning(door)) is not None)
             zone_names = {zone.name for zone in level.zones}
             for zone in level.zones:
                 if zone.walls is not None:
