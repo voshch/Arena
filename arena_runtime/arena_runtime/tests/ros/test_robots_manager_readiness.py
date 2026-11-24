@@ -42,8 +42,8 @@ def _seed_readiness():
 
     prior = robots_manager._READINESS_CACHE
 
-    def seed(pending: dict[str, frozenset[str]]):
-        robots_manager._READINESS_CACHE = robots_manager._Readiness(ready=frozenset(), pending=pending)
+    def seed(pending: dict[str, frozenset[str]], components_pending: dict[str, frozenset[str]] | None = None):
+        robots_manager._READINESS_CACHE = robots_manager._Readiness(ready=frozenset(), pending=pending, components_pending=components_pending or {})
 
     yield seed
     robots_manager._READINESS_CACHE = prior
@@ -71,3 +71,19 @@ def test_installed_roster_unaffected(stub_manager, _seed_readiness):
     _seed_readiness({})
     diff = RobotsManager._parse_robot_configurations(stub_manager, "jackal")
     assert [r.model.name for r in diff.to_add.values()] == ["jackal"]
+
+
+def test_robot_with_uninstalled_component_skipped_rest_kept(stub_manager, _seed_readiness):
+    from arena_runtime.env.robot_manager.robots_manager import RobotsManager
+
+    _seed_readiness({}, {"arm/ur5e": frozenset({"arena_robots/deps/ur_description"})})
+    diff = RobotsManager._parse_robot_configurations(stub_manager, "jackal[name=plain],jackal[name=armed,top=arm/ur5e]")
+    assert list(diff.to_add) == ["plain"]
+
+
+def test_only_robot_with_uninstalled_component_raises_with_install_command(stub_manager, _seed_readiness):
+    from arena_runtime.env.robot_manager.robots_manager import RobotsManager
+
+    _seed_readiness({}, {"arm/ur5e": frozenset({"arena_robots/deps/ur_description"})})
+    with pytest.raises(RuntimeError, match="arena feature robots add arm/ur5e"):
+        RobotsManager._parse_robot_configurations(stub_manager, "jackal[name=armed,top=arm/ur5e]")

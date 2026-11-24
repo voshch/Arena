@@ -144,6 +144,7 @@ class _Readiness:
 
     ready: frozenset[str]
     pending: dict[str, frozenset[str]]  # robot -> uninitialized submodule paths
+    components_pending: dict[str, frozenset[str]] = attrs.field(factory=dict)  # <type>/<variant> -> uninitialized submodule paths
 
 
 _READINESS_CACHE: _Readiness | None = None
@@ -167,6 +168,8 @@ def _robot_readiness() -> _Readiness | None:
     import pathlib  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
 
+    import yaml  # noqa: PLC0415
+
     here = pathlib.Path(__file__).resolve()
     arena = next((p for p in here.parents if (p / "arena_robots").is_dir() and (p / ".gitmodules").is_file()), None)
     if arena is None:
@@ -187,14 +190,23 @@ def _robot_readiness() -> _Readiness | None:
     cp = configparser.ConfigParser()
     cp.read(gitmodules)
     robot_to_paths: dict[str, set[str]] = {}
+    component_to_paths: dict[str, set[str]] = {}
     for section in cp.sections():
         path = cp[section].get("path")
-        robot = cp[section].get("robot")
-        if not (path and robot):
+        if not path:
             continue
         full_path = f"arena_robots/{path}"
-        for name in robot.split():
+        for name in cp[section].get("robot", "").split():
             robot_to_paths.setdefault(name, set()).add(full_path)
+        for ref in cp[section].get("component", "").split():
+            component_to_paths.setdefault(ref, set()).add(full_path)
+    components_root = arena / "arena_robots" / "arena_robots" / "components"
+    for ref, paths in list(component_to_paths.items()):
+        spec = components_root / ref / "component.yaml"
+        variants = (yaml.safe_load(spec.read_text()) or {}).get("variants", []) if spec.is_file() else []
+        component_type = ref.partition("/")[0]
+        for variant in variants:
+            component_to_paths.setdefault(f"{component_type}/{variant}", set()).update(paths)
     all_robots = {p.name for p in (arena / "arena_robots" / "arena_robots" / "robots").iterdir() if p.is_dir()}
     ready: set[str] = set()
     pending: dict[str, frozenset[str]] = {}
@@ -204,7 +216,8 @@ def _robot_readiness() -> _Readiness | None:
             pending[r] = frozenset(missing)
         else:
             ready.add(r)
-    _READINESS_CACHE = _Readiness(ready=frozenset(ready), pending=pending)
+    components_pending = {ref: frozenset(missing) for ref, paths in component_to_paths.items() if (missing := paths & uninit_paths)}
+    _READINESS_CACHE = _Readiness(ready=frozenset(ready), pending=pending, components_pending=components_pending)
     return _READINESS_CACHE
 
 
@@ -358,6 +371,14 @@ class RobotsManager(NodeInterface):
                 return
             name = base.name
             config = Robot.from_setup(base, node=self.node)
+            placements = config.resolved_assembly.placements if config.resolved_assembly is not None else []
+            missing_components = sorted({ref for p in placements if readiness is not None and (ref := f"{p.type}/{p.variant}") in readiness.components_pending})
+            if missing_components:
+                assert readiness is not None
+                paths = ", ".join(sorted(path for ref in missing_components for path in readiness.components_pending[ref]))
+                self.node.get_logger().error(f"skipping robot {base.robot!r}: component(s) {', '.join(missing_components)} not installed (submodule(s) not checked out: {paths}). run: arena feature robots add {' '.join(missing_components)}")
+                skipped.extend(missing_components)
+                return
 
             if name is None:  # anon
                 parsed_anonymous.setdefault(config.model.name, []).append(config)
