@@ -508,7 +508,7 @@ class WorldManager(NodeInterface):
         safe_dist: float,
         forbidden_zones: list[PositionRadius] | None = None,
         forbid: bool = True,
-        polygon: shapely.Polygon | None = None,
+        polygon: shapely.Geometry | None = None,
         level_id: str = "",
     ) -> list[Position]:
         """Sample n map positions with Euclidean safe_dist (metres) clearance from obstacles and from each other.
