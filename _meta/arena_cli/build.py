@@ -1,8 +1,11 @@
 """colcon build wrapper: package-skip and cmake-args logic for the workspace."""
 
+import glob
 import os
 import shutil
 import sys
+import xml.etree.ElementTree as ET
+from collections.abc import Iterable
 from typing import NamedTuple
 
 
@@ -17,8 +20,6 @@ class Workspace(NamedTuple):
 
 def workspace() -> Workspace:
     """Build layout from the environment. Assumes cwd is ARENA_WS_DIR."""
-    import glob
-
     from arena_cli.common import _env
 
     arena_ws_dir = _env("ARENA_WS_DIR")
@@ -141,12 +142,74 @@ def _stale(listing: str, ws: Workspace) -> list[tuple[str, str]]:
     return stale
 
 
-def stale_packages(ws: Workspace) -> list[tuple[str, str]]:
-    """Packages of the workspace that `arena build` would rebuild, with their build type."""
+def _list_packages(ws: Workspace) -> str:
     import subprocess
 
-    listing = subprocess.run(["colcon", "list", "--base-paths", *ws.paths], capture_output=True, text=True, check=False)
-    return _stale(listing.stdout, ws)
+    return subprocess.run(["colcon", "list", "--base-paths", *ws.paths], capture_output=True, text=True, check=False).stdout
+
+
+def stale_packages(ws: Workspace) -> list[tuple[str, str]]:
+    """Packages of the workspace that `arena build` would rebuild, with their build type."""
+    return _stale(_list_packages(ws), ws)
+
+
+LAUNCH_ROOTS = ("arena_bringup", "arena_runtime", "task_generator")
+OPTIONAL_LAUNCH_ROOTS = ("flatsim", "arena_auditory", "arena_hearing")
+DEPENDENCY_TAGS = ("depend", "build_depend", "build_export_depend", "buildtool_depend", "exec_depend")
+ALLOW_STALE_ENV = "ARENA_ALLOW_STALE"
+
+
+def _interface_rows(listing: str, roots: Iterable[str]) -> str:
+    """The rows of a `colcon list` output that generate interfaces the roots depend on, themselves included."""
+    rows: dict[str, str] = {}
+    manifests: dict[str, ET.Element] = {}
+    for line in listing.splitlines():
+        package, path = (line.split("\t") + [""])[:2]
+        if not path:
+            continue
+        try:
+            manifests[package] = ET.parse(os.path.join(path, "package.xml")).getroot()
+        except (OSError, ET.ParseError):
+            continue
+        rows[package] = line
+    needed: set[str] = set()
+    queue = list(roots)
+    while queue:
+        package = queue.pop()
+        if package in needed or package not in manifests:
+            continue
+        needed.add(package)
+        queue += [(e.text or "").strip() for tag in DEPENDENCY_TAGS for e in manifests[package].iter(tag)]
+    generates = {package for package in needed if any((e.text or "").strip() == "rosidl_interface_packages" for e in manifests[package].iter("member_of_group"))}
+    return "\n".join(rows[package] for package in sorted(generates))
+
+
+def stale_interfaces(ws: Workspace, listing: str, roots: Iterable[str]) -> list[str]:
+    """The interface packages the roots and the installed optional roots depend on that `arena build` would rebuild."""
+    optional = [root for root in OPTIONAL_LAUNCH_ROOTS if os.path.isdir(os.path.join(ws.install_base, root))]
+    return [package for package, _ in _stale(_interface_rows(listing, [*roots, *optional]), ws)]
+
+
+def require_built_interfaces(*roots: str) -> None:
+    """Refuse to start while an interface package the launch or the extra roots need is stale."""
+    from arena_cli.common import CLIError
+
+    ws = workspace()
+    try:
+        listing = _list_packages(ws)
+    except OSError:
+        listing = ""
+    if not listing:
+        print("warning: colcon lists no packages, launching without the stale interface check", file=sys.stderr)
+        return
+    stale = stale_interfaces(ws, listing, [*LAUNCH_ROOTS, *roots])
+    if not stale:
+        return
+    names = " ".join(stale)
+    if os.environ.get(ALLOW_STALE_ENV) == "1":
+        print(f"warning: launching with stale interface packages: {names}", file=sys.stderr)
+        return
+    raise CLIError(f"stale interface packages: {names}. Their built message code is missing or older than their sources, so nodes can fail on import or exchange wrong messages.\nStop any running launch and run 'arena build {names}' to rebuild them and their dependents, or set {ALLOW_STALE_ENV}=1 to launch anyway.")
 
 
 def _selects_packages(args: list[str]) -> bool:
