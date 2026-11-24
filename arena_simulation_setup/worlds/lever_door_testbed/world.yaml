@@ -9,10 +9,10 @@ levels:
   - {path: [[0, 0], [8, 0]], material: Plaster_Wall}
   - {path: [[8, 4], [0, 4]], material: Plaster_Wall}
   - {path: [[0, 4], [0, 0]], material: Plaster_Wall}
-  - {path: [[8, 0], [8, 1.5]], material: Plaster_Wall}
-  - {path: [[8, 2.5], [8, 4]], material: Plaster_Wall}
+  - {path: [[8, 0], [8, 1.35]], material: Plaster_Wall}
+  - {path: [[8, 2.65], [8, 4]], material: Plaster_Wall}
   objects:
   - name: lever_door
     model: lever_door
-    pose: [8.0, 2.0, 1.5708]
+    pose: [8.0, 1.40, 1.5708]
     joints: closed

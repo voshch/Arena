@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """Create a simple, articulated lever-door source asset with Blender."""
 
 from __future__ import annotations
@@ -6,8 +7,8 @@ import math
 import sys
 from pathlib import Path
 
-import bpy
-from mathutils import Vector
+import bpy  # type: ignore
+from mathutils import Vector  # type: ignore
 
 WIDTH = 1.2
 HEIGHT = 2.0
