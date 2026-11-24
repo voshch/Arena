@@ -183,9 +183,11 @@ the zone polygon, at least 2.0 m.
 Ceilings are opaque from below and transparent from above. Isaac hides them
 unless the world declares lights, `sim.isaac.viewport.ceilings:=on|off` forces
 them. The walls a zone with a ceiling borders or holds reach it, and a door
-lower than the ceiling gets a visual-only lintel above it. They are
-visual-only (no collision). With `cast_shadows` false the ceiling does not
-occlude the sun, so interiors stay lit without global illumination.
+lower than the ceiling gets a visual-only lintel above it. A wall whose kind
+stands under 2 m (a handrail, a gate cabinet, a counter) keeps its own height,
+and a door set in such a wall gets no lintel. Ceilings are visual-only (no
+collision). With `cast_shadows` false the ceiling does not occlude the sun, so
+interiors stay lit without global illumination.
 
 ### Doors and elevators
 

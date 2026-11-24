@@ -57,6 +57,7 @@ _ON_LINE_M = 0.01
 _MIN_PIECE_M = 1e-4
 _ADJACENT_M = 0.3
 _PASSAGE_CLEARANCE = 2.0
+_LOW_WALL_M = 2.0
 _ELEVATOR_DOORWAY_DEPTH = 0.3
 
 
@@ -336,6 +337,12 @@ def _merge(walls: list[Wall]) -> list[Wall]:
     return result
 
 
+async def _is_low(wall: Wall) -> bool:
+    """Whether the wall's own stack stays under 2 m, a rail or a counter rather than a storey wall."""
+    segments, _ = await wall.assets()
+    return max((segment.start.z - wall.start.z + segment.height for segment in segments), default=0.0) < _LOW_WALL_M - 1e-6
+
+
 def _covers_middle(shape: shapely.Polygon, start: Position, end: Position) -> bool:
     import shapely
 
@@ -445,14 +452,14 @@ class Level:
         return (await self.ceiling_tops()).get(zone.name, 2.0)
 
     async def closed_walls(self) -> list[Wall]:
-        """Walls the simulator builds: those of the level, each without a set top or height raised to the highest ceiling of a zone it borders or stands in, and the stairs' open walls."""
+        """Walls the simulator builds: those of the level, each without a set top or height and standing at least 2 m tall raised to the highest ceiling of a zone it borders or stands in, and the stairs' open walls."""
         walls = self.all_walls
         tops = await self.ceiling_tops(walls)
         widened = [(zone, shape) for zone, shape in self._widened() if zone.name in tops]
         result: list[Wall] = []
         for wall in walls:
             covering = [tops[zone.name] for zone, shape in widened if _covers_middle(shape, wall.start, wall.end)] if wall.top is None and wall.height is None else []
-            result.append(attrs.evolve(wall, top=max(covering)) if covering else wall)
+            result.append(attrs.evolve(wall, top=max(covering)) if covering and not await _is_low(wall) else wall)
         return result + self._stair_open_walls()
 
     def closed_wall_segments(self) -> list[tuple[tuple[float, float], tuple[float, float]]]:
@@ -477,6 +484,8 @@ class Level:
             if bottom >= top - 1e-6:
                 continue
             around = next((wall for wall in walls if _on_line(wall.start, wall.end, door.start, door.end)), None)
+            if around is not None and around.top is None and around.height is None and await _is_low(around):
+                continue
             result.append(Wall(start=door.start, end=door.end, kind='', material=around.material if around is not None and not around.kind else None, top=top - door.start.z, bottom=door.height))
         return result
 

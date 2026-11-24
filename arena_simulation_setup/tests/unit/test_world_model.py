@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import arena_simulation_setup.tree.World as world_package
+import attrs
 import pytest
 from arena_simulation_setup.shared import Door, DynamicObstacle, Elevator, Light, Obstacle, Sound
 from arena_simulation_setup.shared.walls import Wall
@@ -147,6 +148,22 @@ def test_closed_walls_keep_their_height_without_a_ceiling() -> None:
     closed = asyncio.run(_room(None).closed_walls())
     assert [wall.top for wall in closed] == [None] * 4
     assert _tops(closed) == pytest.approx([2.0] * 4)
+
+
+def _railed_room(doors: list[Door] | None = None) -> Level:
+    room = _room(ZoneCeiling(height=2.6), doors)
+    return attrs.evolve(room, walls=[*room.walls, WallPath(path=[[0, 3], [8, 3]], kind='handrail')])
+
+
+def test_closed_walls_leave_a_low_wall_kind_at_its_own_height() -> None:
+    closed = asyncio.run(_railed_room().closed_walls())
+    assert [wall.top for wall in closed] == [2.6] * 4 + [None]
+    assert _tops(closed)[-1] == pytest.approx(0.9)
+
+
+def test_door_in_a_low_wall_kind_gets_no_lintel() -> None:
+    gate = Door(name='gate', start=Position(3, 3), end=Position(4, 3), height=1.0)
+    assert asyncio.run(_railed_room([gate]).door_lintels()) == []
 
 
 def test_door_below_the_ceiling_gets_a_lintel() -> None:
