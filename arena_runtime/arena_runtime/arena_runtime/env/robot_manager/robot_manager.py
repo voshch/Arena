@@ -442,9 +442,9 @@ class RobotManager(NodeInterface):
         return self._placed
 
     def publish_task_pose(self, pose: Pose) -> None:
-        """Pose the judge sees this tick, in the flattened world frame, recorded so replay judges the same pose."""
+        """Pose the judge sees this tick, in the env-local `<prefix>/map` frame, recorded so replay judges the same pose."""
         msg = geometry_msgs.msg.PoseStamped()
-        msg.header.frame_id = "world"
+        msg.header.frame_id = self._environment_manager.realize("map")
         msg.header.stamp = self.node.sim_time.to_msg()
         msg.pose = pose.to_msg()
         self._task_pose_pub.publish(msg)

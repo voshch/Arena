@@ -591,6 +591,14 @@ parameter. `arena runtime` will fail if another `/arena` node is already
 registered (ROS doesn't allow duplicate node names); kill the prior one
 manually or call `arena cleanup` on its envs first.
 
+`arena launch`, `arena demo`, `arena runtime`, `arena env` and `arena train`
+refuse to start while an interface package they depend on is stale by the rule
+`arena build` uses: never built, last build failed, or sources newer than the
+install. The message names the packages and the `arena build <package>` that
+rebuilds them and their dependents. `ARENA_ALLOW_STALE=1` turns the refusal
+into a warning. Python sources follow the symlink install, generated message
+code does not.
+
 ### Shell completion
 
 `source arena` registers TAB completion for `arena` in bash and zsh (zsh

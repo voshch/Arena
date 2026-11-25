@@ -392,8 +392,10 @@ possessed walker animates in every simulator.
 `human/move` (`srv/MovePedestrians`, env-level) is a teleport served by the
 base, only `name` and `pose` are read. Known peds are moved in place (no
 `forget()` round-trip, that would reset spawn bookkeeping) and relayed via
-`pedestrian_move`, everything else returns `NOT_FOUND` per item. A move does
-not claim possession.
+`pedestrian_move`, everything else returns `NOT_FOUND` per item. arena_humansim
+also teleports the engine agent to the pose (`TeleportAgents`, heading
+included), so the move sticks instead of being overwritten by the next engine
+frame. A move does not claim possession.
 
 The reset gate opens at the end of `spawn_dynamic_obstacles` (which also
 indexes each ped under both its name and its sim_path, the bus name differs
@@ -531,10 +533,17 @@ mechanisms):
   stands for `dwell` seconds, or up to the named cabin, where it selects its destination and waits until the
   elevator teleports it. Other cross-level legs are left to the engine's own cabin routing.
 
-The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
-the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses
-are un-shifted going in, agent poses, gesture targets, flow agents and the engine's marker layers are shifted
-coming out. Nothing engine-side knows the env.
+The engine runs in the env-local frame `<prefix>/map` (authored coordinates, levels laid out, no env offset),
+which the static `map` -> `<prefix>/map` transform anchors at the env slot reference. env.launch passes that
+frame as `humansim.frame_id`, so `agent_states`, `world_geometry`, `agent_meta`, `agent_gestures`, `interactions`
+and the engine's `viz` layers carry it, and a TF lookup into `map` places them. The adapter owns the env offset
+on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses are un-shifted
+going in (`world_state` is stamped `<prefix>/map`), agent poses, gesture targets, flow agents and the engine's
+marker layers are shifted coming out and stamped `map`. Nothing engine-side knows the offset.
+
+Walls reach the engine as segments (`AddWalls`). A wall whose layers below 2 m are at most 0.1 m thick goes as
+its center line, a thicker one (a gate cabinet, a counter) as the four edges of its thickest such layer, named
+`<wall>/<i>`, so walkers keep their radius from its faces instead of its center.
 
 World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
 `hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its

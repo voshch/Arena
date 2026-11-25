@@ -98,8 +98,8 @@ and an async `done` flag. Shipped modes:
 
 | Kind | File | Behavior |
 | --- | --- | --- |
-| `random` | [`random/`](random/) | one random reachable goal per robot per episode |
-| `explore` | [`explore/`](explore/) | extends `random`; in `tick`, a robot whose task just ended gets a fresh random goal and a timed-out robot is teleported |
+| `random` | [`random/`](random/) | one random reachable goal and one start per robot per episode, each drawn from the whole map, or from the zone (`task.robots_random.goal_zone`, `task.robots_random.start_zone`) or the disc (`task.robots_random.goal_center_x`/`goal_center_y` within `goal_radius`, `start_center_x`/`start_center_y` within `start_radius`, 1.5 m by default) when one is declared. A goal is reached inside its target disc, the goal tolerance `task.episode.goto_pose.tolerance.radius` (1.0 m by default), never by entering the zone it was sampled from. With `task.robots_random.hold_s` above 0, each robot must stay in that disc for `hold_s` seconds after reaching its goal, before its arm phases. Parameters live under `task.robots_random.*`, since `task.random.*` belongs to the obstacles mode |
+| `explore` | [`explore/`](explore/) | extends the `random` base on the whole map, without the `task.robots_random.*` areas and hold; in `tick`, a robot whose task just ended gets a fresh random goal and a timed-out robot is teleported |
 | `guided` | [`guided/`](guided/) | external controller drives the goal sequence. 2D Nav Goal clicks append waypoints, which show as numbered drag handles with Delete, Insert after and Clear chain menus |
 | `stationary` | [`stationary/`](stationary/) | robot stays parked without goal dispatch, at `pos_x`/`pos_y`/`pos_theta` or a free pose sampled per episode |
 | `scenario` | [`scenario/`](scenario/) | reads `start`/`goal` pairs from the world's scenario YAML. A robot past the `robots:` entries, or on an entry without `phases`, stays parked, and an episode with only parked robots runs until `task.episode.timeout` |
@@ -218,9 +218,9 @@ on the node's 30 Hz sim tick from a `Sample` of robot poses, ped positions and
 semantic fields, with the same predicate code arena_evaluation replays offline
 ([`shared/judge.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/judge.py)).
 The robot's progress is published as a `robot` semantic entity (`phase`, `met`,
-`failed`, `dropped`, `violated`), its judged pose on `<robot_ns>/task_pose` (the
-flattened world frame the judge and the compacted world share, not the env's map
-frame, published once the episode's reset has landed the robot and a phase is
+`failed`, `dropped`, `violated`), its judged pose on `<robot_ns>/task_pose` (stamped
+`<prefix>/map`, the flattened env-local frame the judge and the compacted world
+share, the env's map frame less the env offset, published once the episode's reset has landed the robot and a phase is
 active), and the resolved phases in `EpisodeRecord.phases` together with
 `map_poses`, the realized map-frame goto pose per phase.
 [`shared/render.py`](../../../../arena_simulation_setup/src/arena_simulation_setup/shared/render.py)

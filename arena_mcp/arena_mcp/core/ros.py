@@ -127,7 +127,7 @@ def _resolve(future: asyncio.Future[Any], value: object) -> None:
 
 
 class Ros:
-    """The server's one ROS node, created on first use and shared by every domain, settle_discovery holding its first use for one DDS announcement period."""
+    """The server's one ROS node, created on first use and shared by every domain, its first use held for one DDS announcement period, settle_discovery adding the publish and shutdown waits of a one-shot call."""
 
     def __init__(self) -> None:
         self.settle_discovery = False
@@ -164,8 +164,7 @@ class Ros:
                 self._executor.add_node(self._node)
                 self._thread = threading.Thread(target=self._spin, name="arena_mcp_ros", daemon=True)
                 self._thread.start()
-                if self.settle_discovery:
-                    await asyncio.sleep(SETTLE_S)
+                await asyncio.sleep(SETTLE_S)
             return self._node
 
     def _spin(self) -> None:

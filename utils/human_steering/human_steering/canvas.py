@@ -10,18 +10,20 @@ import math
 from typing import TYPE_CHECKING
 
 from python_qt_binding.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from python_qt_binding.QtGui import QBrush, QColor, QImage, QKeyEvent, QMouseEvent, QPen, QPixmap, QPolygonF, QWheelEvent
+from python_qt_binding.QtGui import QBrush, QColor, QImage, QKeyEvent, QMouseEvent, QPainterPath, QPen, QPixmap, QWheelEvent
 from python_qt_binding.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsLineItem,
+    QGraphicsPathItem,
     QGraphicsPixmapItem,
-    QGraphicsPolygonItem,
     QGraphicsScene,
     QGraphicsView,
     QLabel,
     QMenu,
 )
+
+from human_steering import markers as static_markers
 
 if TYPE_CHECKING:
     from collections.abc import Set as AbstractSet
@@ -32,7 +34,7 @@ if TYPE_CHECKING:
     from rclpy.qos import QoSProfile
     from rclpy.subscription import Subscription
     from rclpy.task import Future
-    from visualization_msgs.msg import MarkerArray
+    from visualization_msgs.msg import Marker, MarkerArray
 
     from human_steering.driver import Namespaces
 else:
@@ -93,9 +95,7 @@ def _occupancy_to_pixmap(grid: OccupancyGrid) -> QPixmap:
     buf = bytearray(width * height)
     for i, cell in enumerate(grid.data):
         buf[i] = 128 if cell < 0 else max(0, min(255, 255 - round(cell * 2.55)))
-    image = QImage(bytes(buf), width, height, width, QImage.Format_Grayscale8)
-    # OccupancyGrid row 0 is the bottom row (at the origin), QImage row 0 is the top.
-    return QPixmap.fromImage(image.mirrored(False, True))
+    return QPixmap.fromImage(QImage(bytes(buf), width, height, width, QImage.Format_Grayscale8))
 
 
 class Canvas(QGraphicsView):
@@ -129,7 +129,8 @@ class Canvas(QGraphicsView):
         self._waypoint_items: dict[str, list[QGraphicsItem]] = {}
         self._gaze_items: dict[str, QGraphicsLineItem] = {}
         self._map_item: QGraphicsPixmapItem | None = None
-        self._static_items: list[QGraphicsPolygonItem] = []
+        self._static_items: list[QGraphicsPathItem] = []
+        self._static_markers: dict[str, dict[tuple[str, int], Marker]] = {}
 
         self._node: rclpy.node.Node | None = None
         self._namespaces: Namespaces | None = None
@@ -297,18 +298,21 @@ class Canvas(QGraphicsView):
             for item in self._static_items:
                 self._scene.removeItem(item)
             self._static_items.clear()
+            for topic, msg in pending.items():
+                static_markers.merge(self._static_markers.setdefault(topic, {}), msg.markers)
             pen = QPen(QColor(90, 90, 90))
             pen.setCosmetic(True)
-            for markers in pending.values():
-                for marker in markers.markers:
-                    points = [QPointF(p.x, p.y) for p in marker.points]
-                    if len(points) < 2:
-                        continue
-                    polygon = QGraphicsPolygonItem(QPolygonF(points))
-                    polygon.setPen(pen)
-                    polygon.setZValue(-5.0)
-                    self._scene.addItem(polygon)
-                    self._static_items.append(polygon)
+            for cache in self._static_markers.values():
+                for marker in cache.values():
+                    for outline in static_markers.outlines(marker):
+                        path = QPainterPath(QPointF(*outline[0]))
+                        for point in outline[1:]:
+                            path.lineTo(QPointF(*point))
+                        item = QGraphicsPathItem(path)
+                        item.setPen(pen)
+                        item.setZValue(-5.0)
+                        self._scene.addItem(item)
+                        self._static_items.append(item)
 
         if content_changed:
             self._update_scene_rect()

@@ -9,13 +9,13 @@ from visualization_msgs.msg import Marker
 
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots.guided import chain
-from task_generator.tasks.robots.random.impl import TM_Random
+from task_generator.tasks.robots.random.impl import TM_RandomBase
 
 _SHARED_CHAIN_COLOR = (0.1, 0.4, 1.0)
 _LINE_WIDTH = 0.05
 
 
-class TM_Guided(TM_Random):
+class TM_Guided(TM_RandomBase):
     """Guided-waypoints task mode; emits a single multi-phase TaskRequest per robot."""
 
     PARAM_WAYPOINTS = "guided_waypoints"

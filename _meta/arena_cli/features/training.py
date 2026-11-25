@@ -4,6 +4,7 @@ import os
 import sys
 
 from arena_cli import common
+from arena_cli.build import require_built_interfaces
 from arena_cli.common import Verb, make_verb
 from arena_cli.complete import Files, LaunchArgs
 from arena_cli.features import Health, fetched, lifecycle_verbs
@@ -53,6 +54,7 @@ def _update() -> int:
 def launch(argv: list[str]) -> None:
     """launch training (ros2 launch arena_training training.launch.py)"""
     common._reg_require(NAME)
+    require_built_interfaces("arena_training")
     common._exec("ros2", "launch", "arena_training", "training.launch.py", *argv)
 
 

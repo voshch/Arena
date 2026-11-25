@@ -112,7 +112,9 @@ this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_m
 1. Publish `reset_start` (`std_msgs/Empty`), reseed the RNG and reset the
    scenario asset pointer.
 2. `robots_manager.set_up()` reconciles the fleet (spawn and remove robots),
-   then `launch_pending()`.
+   then `launch_pending()`. A robot whose submodules, or those of a component it
+   places, are not checked out is skipped with the `arena feature robots add`
+   command in the log, and no installed robot at all is an error.
 3. `environment_manager.before_reset_episode()` pauses the simulator. The sim
    is paused for the entire body below; only node-discovery and lifecycle
    signals are observable here.

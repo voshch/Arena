@@ -4,18 +4,18 @@ from typing import TYPE_CHECKING, Annotated, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, env_ns, msgs, tg
+from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, env_ns, env_reference, msgs, tg
 
 if TYPE_CHECKING:
-    from arena_humansim_msgs.msg import AgentMeta
+    from arena_humansim_msgs.msg import AgentMeta, SourceConfig
     from arena_people_msgs.msg import Pedestrian
     from arena_runtime_msgs.msg import SemanticEntityState
-    from geometry_msgs.msg import PoseStamped
+    from geometry_msgs.msg import Pose2D, PoseStamped
 
 domain = Domain(
     "entities",
     """Things in one env: obstacles, robots, sounds, semantics, the map server, pedestrians and humansim behavior.
-    Spawn, move and pedestrian poses are in the env's map frame, humansim poses in the engine's world frame.
+    Spawn, move and pedestrian poses, humansim's included, are in the shared map frame with the env offset, as are robots_goto and the task_pose of robots_pose.
     Every tool takes env_id, optional when exactly one env runs. entities_ped_* need the env's human simulator to be humansim (human:=arena).""",
     requires=("arena_runtime_msgs", "arena_people_msgs", "arena_runtime"),
 )
@@ -62,7 +62,7 @@ class _Done(Protocol):
 
 
 class Waypoint(BaseModel):
-    """A humansim waypoint in the engine's world frame, radius 0 uses the engine default."""
+    """A humansim waypoint in the map frame, radius 0 uses the engine default."""
 
     x: float
     y: float
@@ -355,6 +355,20 @@ async def _humansim(env_id: int | None) -> str:
     return node
 
 
+def _into_engine(point: Pose2D, reference: tuple[float, float]) -> None:
+    """Shift a map-frame point into humansim's env-local frame."""
+    point.x -= reference[0]
+    point.y -= reference[1]
+
+
+def _source_into_engine(source: SourceConfig, reference: tuple[float, float]) -> SourceConfig:
+    _into_engine(source.pose, reference)
+    for segment in source.lane.segments:
+        for point in segment.centerline:
+            _into_engine(point, reference)
+    return source
+
+
 def _done(response: _Done, what: str) -> None:
     if not response.success:
         raise ToolError(f"{what} failed: {response.message}")
@@ -389,8 +403,9 @@ async def entities_ped_waypoints(
     from geometry_msgs.msg import Pose2D
 
     node = await _humansim(env_id)
+    ref_x, ref_y = await env_reference(env_id)
     modes = {name: value for value, name in msgs.constants(Waypoints, "MODE_").items()}
-    points = Waypoints(points=[WaypointMsg(pose=Pose2D(x=point.x, y=point.y, theta=0.0), radius=point.radius) for point in waypoints], mode=modes[mode])
+    points = Waypoints(points=[WaypointMsg(pose=Pose2D(x=point.x - ref_x, y=point.y - ref_y, theta=0.0), radius=point.radius) for point in waypoints], mode=modes[mode])
     request = SetWaypoints.Request(agent_id=ped if isinstance(ped, int) else 0, name="" if isinstance(ped, int) else ped, waypoints=points)
     _done(await ROS.call(SetWaypoints, f"{node}/set_waypoints", request), f"setting waypoints of {ped}")
     return {"env": node, "ped": ped, "waypoints": len(waypoints), "mode": mode}
@@ -407,12 +422,17 @@ async def entities_ped_flow(
     sinks: Annotated[list[dict[str, object]], Field(description="arena_humansim_msgs/SinkConfig fields per sink (name, pose, shape, absorption_radius, capacity)")],
     env_id: EnvId = None,
 ) -> dict[str, object]:
-    """Replace humansim's flow: the sources that emit pedestrians and the sinks that absorb them, poses in the engine's world frame."""
+    """Replace humansim's flow: the sources that emit pedestrians and the sinks that absorb them."""
     from arena_humansim_msgs.msg import FlowConfig
     from arena_humansim_msgs.srv import SetFlow
 
     node = await _humansim(env_id)
     flow = msgs.fill(FlowConfig, {"sources": sources, "sinks": sinks})
+    reference = await env_reference(env_id)
+    for source in flow.sources:
+        _source_into_engine(source, reference)
+    for sink in flow.sinks:
+        _into_engine(sink.pose, reference)
     _done(await ROS.call(SetFlow, f"{node}/set_flow", SetFlow.Request(flow=flow)), "setting the flow")
     return {"env": node, "sources": [source.name for source in flow.sources], "sinks": [sink.name for sink in flow.sinks]}
 
@@ -427,7 +447,8 @@ async def entities_ped_add_source(
     from arena_humansim_msgs.srv import AddSource
 
     node = await _humansim(env_id)
-    response = await ROS.call(AddSource, f"{node}/add_source", AddSource.Request(source=msgs.fill(SourceConfig, source)))
+    config = _source_into_engine(msgs.fill(SourceConfig, source), await env_reference(env_id))
+    response = await ROS.call(AddSource, f"{node}/add_source", AddSource.Request(source=config))
     _done(response, "adding a source")
     return {
         "env": node,
@@ -459,7 +480,9 @@ async def entities_ped_add_sink(
     from arena_humansim_msgs.srv import AddSink
 
     node = await _humansim(env_id)
-    response = await ROS.call(AddSink, f"{node}/add_sink", AddSink.Request(sink=msgs.fill(SinkConfig, sink)))
+    config = msgs.fill(SinkConfig, sink)
+    _into_engine(config.pose, await env_reference(env_id))
+    response = await ROS.call(AddSink, f"{node}/add_sink", AddSink.Request(sink=config))
     _done(response, "adding a sink")
     return {"env": node, "name": response.name}
 

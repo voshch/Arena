@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import logging
 import math
 import typing
 
@@ -27,6 +29,9 @@ DoorKind = typing.Literal['sliding', 'sliding_split', 'hinged', 'teleport', 'sli
 
 
 _POCKET_OVERLAP_M = 0.01
+
+logger = logging.getLogger(__name__)
+logger.propagate = True
 
 
 def _activation_distance_converter(x: float | typing.Sequence[float]) -> ActivationDistance:
@@ -785,11 +790,11 @@ class Door(Named):
         ]
 
 
-def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door], reach: float = 1.0) -> bool:
-    """Whether the pocket from `end` to `reach` span lengths past it covers the span of a collinear door among `others`."""
+def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door], reach: float = 1.0) -> Door | None:
+    """The first collinear door among `others` whose span the pocket from `end` to `reach` span lengths past it covers."""
     length = math.hypot(end.x - start.x, end.y - start.y)
     if length == 0.0:
-        return False
+        return None
     ux, uy = (end.x - start.x) / length, (end.y - start.y) / length
     for other in others:
         if other is door:
@@ -797,19 +802,51 @@ def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Se
         along = sorted((p.x - start.x) * ux + (p.y - start.y) * uy for p in (other.start, other.end))
         across = max(abs((p.y - start.y) * ux - (p.x - start.x) * uy) for p in (other.start, other.end))
         if across <= door.width and min(along[1], (1.0 + reach) * length) - max(along[0], length) > _POCKET_OVERLAP_M:
-            return True
-    return False
+            return other
+    return None
+
+
+def door_fallback_warning(door: Door) -> str | None:
+    """The warning of a door that loaded as another kind than it was written with."""
+    if 'fallback_from' not in door.extra:
+        return None
+    delay = f', snapping open and closed after its transition_time of {door.transition_time:g} s' if door.kind == 'teleport' else ''
+    blockers = ', '.join(repr(name) for name in door.extra['blocked_by'])
+    return f'door {door.name!r}: {door.extra["fallback_from"]} loads as {door.kind}{delay}, an open leaf would rest on door {blockers}'
+
+
+def prefix_blockers(extra: dict, prefix: str) -> dict:
+    """The extra of a door that moves under `prefix`, its blocking doors renamed with it."""
+    return {**extra, 'blocked_by': [prefix + name for name in extra['blocked_by']]} if 'blocked_by' in extra else extra
+
+
+@functools.cache
+def _warn_once(message: str) -> None:
+    """Log a warning once per process."""
+    logger.warning(message)
 
 
 def clear_door_pockets(doors: typing.Sequence[Door]) -> list[Door]:
-    """Keep open sliding leaves off other doors' spans: a split door turns sliding, a sliding door slides the other way, or teleports open when that side is taken too."""
+    """Keep open sliding leaves off other doors' spans: a split door turns sliding, a sliding door slides the other way, or teleports open when that side is taken too, recorded in its extra as `fallback_from` and `blocked_by`. A door that changes kind is warned about."""
     result = list(doors)
-    for index, door in enumerate(result):
-        if door.kind == 'sliding_split' and (_leaf_rests_on(door.start, door.end, door, result, 0.5) or _leaf_rests_on(door.end, door.start, door, result, 0.5)):
-            door = result[index] = attrs.evolve(door, kind='sliding')
-        if door.kind != 'sliding' or not _leaf_rests_on(door.start, door.end, door, result):
-            continue
-        result[index] = attrs.evolve(door, kind='teleport') if _leaf_rests_on(door.end, door.start, door, result) else attrs.evolve(door, start=door.end, end=door.start)
+    for index, authored in enumerate(result):
+        door = authored
+        taken: list[Door | None] = []
+        if door.kind == 'sliding_split':
+            taken = [_leaf_rests_on(door.start, door.end, door, result, 0.5), _leaf_rests_on(door.end, door.start, door, result, 0.5)]
+            if any(taken):
+                door = result[index] = attrs.evolve(door, kind='sliding')
+        if door.kind == 'sliding' and (ahead := _leaf_rests_on(door.start, door.end, door, result)) is not None:
+            behind = _leaf_rests_on(door.end, door.start, door, result)
+            if behind is None:
+                door = result[index] = attrs.evolve(door, start=door.end, end=door.start)
+            else:
+                taken = [ahead, behind]
+                door = result[index] = attrs.evolve(door, kind='teleport')
+        if door.kind != authored.kind:
+            blockers = list(dict.fromkeys(other.name for other in taken if other is not None))
+            door = result[index] = attrs.evolve(door, extra={**door.extra, 'fallback_from': authored.kind, 'blocked_by': blockers})
+            _warn_once(typing.cast(str, door_fallback_warning(door)))
     return result
 
 

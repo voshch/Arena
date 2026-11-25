@@ -853,6 +853,10 @@ the robot. `view_available` reports which viewports are up, the node serving
 each and the simulator, and names the missing Gazebo GUI when that is why none
 is up.
 
+`view_capture` without a view renders the camera's live pose, so it returns
+what the user sees in the sim GUI, the Gazebo GUI included (a GPU read-back, no
+screen grab). While a `view_set` follows a robot it renders that shot instead.
+
 `view_play` plays a camera asset live on an env's cameras through its task
 generator, so world and scenario assets resolve, and needs a camera server
 (`viz.cam` or `arena cam serve`). It takes the request of

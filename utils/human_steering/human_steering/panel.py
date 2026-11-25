@@ -53,6 +53,8 @@ if TYPE_CHECKING:
 
 _SLIDER_FACTOR = 1000.0
 _SPEED_RANGE_MPS = (0.0, 3.0)
+_TURN_RANGE_RADPS = (0.0, 6.0)
+_TURN_DEFAULT_RADPS = 2.5
 _STATE_LABELS = (("Auto", None), ("Idle", 0), ("Walking", 1), ("Running", 2))
 _JOINT_GROUPS = (
     ("Torso / Head", ("r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest", "r_head", "y_head", "p_head")),
@@ -420,13 +422,20 @@ class Panel(QWidget):
         self.speed_slider.setValue(int(1.2 * _SLIDER_FACTOR))
         self.speed_label = QLabel("1.20 m/s")
         self.speed_slider.valueChanged.connect(self._on_speed_changed)
+        lo, hi = _TURN_RANGE_RADPS
+        self.turn_slider = QSlider(Qt.Horizontal)
+        self.turn_slider.setRange(int(lo * _SLIDER_FACTOR), int(hi * _SLIDER_FACTOR))
+        self.turn_slider.setValue(int(_TURN_DEFAULT_RADPS * _SLIDER_FACTOR))
+        self.turn_label = QLabel(f"{_TURN_DEFAULT_RADPS:.2f} rad/s")
+        self.turn_slider.valueChanged.connect(self._on_turn_changed)
 
         layout = QVBoxLayout(self.drive_group)
-        speed_row = QHBoxLayout()
-        speed_row.addWidget(QLabel("Speed"))
-        speed_row.addWidget(self.speed_slider)
-        speed_row.addWidget(self.speed_label)
-        layout.addLayout(speed_row)
+        for name, slider, label in (("Speed", self.speed_slider, self.speed_label), ("Turn", self.turn_slider, self.turn_label)):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(name))
+            row.addWidget(slider)
+            row.addWidget(label)
+            layout.addLayout(row)
 
     def _build_clips_group(self) -> None:
         self.clips_group = QGroupBox("Clips")
@@ -637,6 +646,9 @@ class Panel(QWidget):
     def _on_speed_changed(self, raw: int) -> None:
         self.speed_label.setText(f"{raw / _SLIDER_FACTOR:.2f} m/s")
 
+    def _on_turn_changed(self, raw: int) -> None:
+        self.turn_label.setText(f"{raw / _SLIDER_FACTOR:.2f} rad/s")
+
     def _on_joint_changed(self, joint: str, engaged: bool, value: float) -> None:
         if self._selected is None or self._driver is None:
             return
@@ -678,7 +690,7 @@ class Panel(QWidget):
             speed = self.speed_slider.value() / _SLIDER_FACTOR
             if QApplication.queryKeyboardModifiers() & Qt.ShiftModifier:
                 speed = max(2.0 * speed, RUN_THRESHOLD_MPS)
-            self._driver.teleop_input(self._selected, vx * speed, vy * speed, wz)
+            self._driver.teleop_input(self._selected, vx * speed, vy * speed, wz * self.turn_slider.value() / _SLIDER_FACTOR)
 
         self._driver.tick()
         self.canvas.apply_pending()
