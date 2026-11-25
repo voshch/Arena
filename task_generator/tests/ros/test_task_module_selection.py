@@ -12,7 +12,6 @@ pytest.importorskip("arena_people_msgs.msg")
 
 from arena_runtime.env.task_layer import EpisodeRecord
 from arena_runtime.shared import Position
-
 from task_generator.modes import Modes
 from task_generator.tasks import layer
 from task_generator.tasks.task import Task
@@ -28,8 +27,8 @@ class _World:
     def forbid_clear(self) -> None:
         self.forbid_clear_calls += 1
 
-    def get_positions_on_map(self, *, n: int, safe_dist: float, forbidden_zones: object = None, forbid: bool = True) -> list[Position]:
-        del safe_dist, forbidden_zones, forbid
+    def get_positions_on_map(self, *, n: int, safe_dist: float, forbidden_zones: object = None, forbid: bool = True, polygon: object = None) -> list[Position]:
+        del safe_dist, forbidden_zones, forbid, polygon
         return [Position(float(i), 0.0, 0.0) for i in range(n)]
 
 

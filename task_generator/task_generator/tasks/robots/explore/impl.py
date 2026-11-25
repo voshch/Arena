@@ -8,10 +8,10 @@ from arena_runtime.env.task_layer import ResetPlan
 from arena_runtime.shared import Orientation, Pose
 
 from task_generator.tasks.mode import TaskModeKwargs
-from task_generator.tasks.robots.random.impl import TM_Random
+from task_generator.tasks.robots.random.impl import TM_RandomBase
 
 
-class TM_Explore(TM_Random):
+class TM_Explore(TM_RandomBase):
     """Explore task mode: each robot roams to random reachable poses."""
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:

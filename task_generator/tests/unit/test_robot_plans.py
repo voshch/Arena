@@ -4,7 +4,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from arena_runtime.env.constants.rng import EpisodeRng
 from arena_runtime.env.task_layer import TaskConfiguration
 from arena_runtime.shared import Position
@@ -35,7 +34,7 @@ def test_random_mode_returns_starts_and_tasks_and_drives_no_robot() -> None:
     from task_generator.tasks.robots.random.impl import TM_Random
 
     world = _World()
-    mode = TM_Random(ctx=_ctx(world, ["r0", "r1"]), namespace=SimpleNamespace(), node=SimpleNamespace())
+    mode = TM_Random(ctx=_ctx(world, ["r0", "r1"]), namespace=_namespace(), node=_node())
     plan = asyncio.run(mode.reset())
 
     assert sorted(plan.robots) == ["r0", "r1"]
@@ -148,7 +147,6 @@ def test_composite_later_sub_modes_keep_out_of_the_zones_of_earlier_ones() -> No
     pytest.importorskip("rclpy")
     from arena_runtime.env.task_layer import ResetPlan
     from arena_runtime.shared import PositionRadius
-
     from task_generator.tasks.robots import TM_Robots
     from task_generator.tasks.robots.composite import TM_Composite
     from task_generator.tasks.robots.random.impl import TM_Random

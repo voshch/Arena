@@ -36,7 +36,7 @@ class _Manager:
 
 
 class _World:
-    def get_positions_on_map(self, n: int, safe_dist: float, forbidden_zones: object = None) -> list[object]:
+    def get_positions_on_map(self, n: int, safe_dist: float, forbidden_zones: object = None, polygon: object = None) -> list[object]:
         from arena_runtime.shared import Position
 
         return [Position(float(i), 0.0, 0.0) for i in range(n)]
@@ -50,7 +50,6 @@ class _World:
 def _explore(managers: list[_Manager]) -> tuple[object, SimpleNamespace]:
     from arena_rclpy_mixins.shared import Namespace
     from arena_runtime.env.constants.rng import EpisodeRng
-
     from task_generator.tasks.robots.explore.impl import TM_Explore
 
     rng = EpisodeRng()
