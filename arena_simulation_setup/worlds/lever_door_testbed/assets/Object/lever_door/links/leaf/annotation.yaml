@@ -1,0 +1,9 @@
+bounding_box:
+- - 0.06
+  - 1.16
+- - -0.0225
+  - 0.0225
+- - 0.04
+  - 1.96
+name: leaf
+path: Object/lever_door/links/leaf

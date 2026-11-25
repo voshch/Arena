@@ -1,0 +1,8 @@
+format: arena-scenario/2
+robots:
+- start: [6.0, 1.0, 0.2]
+  phases:
+  - {until: "lever_door.state == open"}
+conditions:
+- {op: eventually, p: "lever_door.state == open"}
+

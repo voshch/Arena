@@ -1,0 +1,7 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:room', props: {description: Phòng thử nghiệm cửa có tay gạt}}
+- {id: 'obj:lever_door', props: {label: Cửa có tay gạt}}
+facts: []
+constraints: []

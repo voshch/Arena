@@ -1,0 +1,11 @@
+format: arena-scenario/2
+robots:
+- start: [7.42, 2.0, 0.0]
+  phases:
+  - {until: "lever_door.state == open"}
+  - {until: "robot within 0.8 of 10.0,2.0"}
+conditions:
+- {op: eventually, p: "lever_door.state == open"}
+- {op: eventually, p: "robot within 0.8 of 10.0,2.0"}
+
+
