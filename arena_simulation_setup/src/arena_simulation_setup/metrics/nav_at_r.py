@@ -14,7 +14,6 @@ import attrs
 import numpy as np
 import shapely
 import shapely.affinity
-import yaml
 from PIL import Image
 from scipy import ndimage
 
@@ -84,35 +83,6 @@ class NavAtR:
         if math.isnan(self.value):
             data['value'] = None
         return data
-
-
-def robot_radius(robot: str) -> float:
-    """`radius` of a robot's caps/mobile.yaml, by robot directory or by name in the arena_robots share found through the ament index."""
-    path = Path(robot).expanduser()
-    if not path.is_dir():
-        robots = _robots_dir()
-        path = robots / robot
-        if not path.is_dir():
-            available = ', '.join(sorted(entry.name for entry in robots.iterdir() if (entry / 'caps' / 'mobile.yaml').is_file()))
-            raise LookupError(f'robot {robot!r} not found in {robots}, available: {available}')
-    mobile = path / 'caps' / 'mobile.yaml'
-    if not mobile.is_file():
-        raise LookupError(f'robot {robot!r} has no {mobile}')
-    radius = (yaml.safe_load(mobile.read_text()) or {}).get('radius')
-    if radius is None:
-        raise LookupError(f'{mobile} declares no radius')
-    return float(radius)
-
-
-def _robots_dir() -> Path:
-    try:
-        from ament_index_python.packages import PackageNotFoundError, get_package_share_path
-    except ImportError as e:
-        raise LookupError('robot names resolve through the ament index, which is not importable: source the workspace, or pass a robot directory or a radius') from e
-    try:
-        return get_package_share_path('arena_robots') / 'robots'
-    except PackageNotFoundError as e:
-        raise LookupError('arena_robots is not installed in the sourced workspace: pass a robot directory or a radius') from e
 
 
 def resolve_world(raw: str) -> tuple[WorldView, set[str] | None]:
@@ -331,14 +301,12 @@ def _parser() -> argparse.ArgumentParser:
             'output: per level the NAV@r value, the number of traversable components, the largest component\'s share, '
             'the start component\'s share with --start, entities without a resolvable bbox, '
             f'and the cut-off zones (>= {CUT_OFF_AREA:g} m2, traversable on walls only, but outside the dominant component). '
-            'examples: nav_at_r hospital_1 | nav_at_r ./worlds/office_a --robot jackal --walls-only | nav_at_r "three_storied_residential[1]" --radius 0.3 --start 2,3 --json. '
-            'exit 0 on success, 2 on a bad argument or an unresolvable world or robot.'
+            'examples: nav_at_r hospital_1 | nav_at_r ./worlds/office_a --radius 0.267 --walls-only | nav_at_r "three_storied_residential[1]" --radius 0.3 --start 2,3 --json. '
+            'exit 0 on success, 2 on a bad argument or an unresolvable world.'
         ),
     )
     parser.add_argument('world', help='world directory, or world name resolved like the runtime (ARENA_WORLD_PATH roots, then the installed worlds, then the world buckets), optionally with a level filter as name[0,1]')
-    robot = parser.add_mutually_exclusive_group()
-    robot.add_argument('--robot', metavar='NAME|DIR', help='robot name in the installed arena_robots package (e.g. jackal) or a robot directory, its caps/mobile.yaml radius is r')
-    robot.add_argument('--radius', type=_parse_meters, metavar='M', help=f'footprint radius r in meters (default {DEFAULT_RADIUS}, the Jackal collision radius)')
+    parser.add_argument('--radius', type=_parse_meters, metavar='M', help=f'footprint radius r in meters (default {DEFAULT_RADIUS}, the Jackal collision radius)')
     parser.add_argument('--walls-only', action='store_true', help='ignore static entities, to tell layout faults (doors, walls) from furniture blockages')
     parser.add_argument('--start', type=_parse_start, metavar='X,Y', help='start pose in meters in each level\'s frame, adds the single-start share (snapped to the nearest traversable cell)')
     parser.add_argument('--resolution', type=_parse_meters, default=RESOLUTION, metavar='M', help=f'raster resolution in meters per cell (default {RESOLUTION})')
@@ -377,10 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help(sys.stderr)
         return 2
     args = parser.parse_args(args_list)
-    try:
-        radius = robot_radius(args.robot) if args.robot is not None else args.radius if args.radius is not None else DEFAULT_RADIUS
-    except LookupError as e:
-        parser.error(f'--robot: {e}')
+    radius = args.radius if args.radius is not None else DEFAULT_RADIUS
     try:
         view, levels = resolve_world(args.world)
         results = nav_at_r(view, radius=radius, walls_only=args.walls_only, start=args.start, levels=levels, resolution=args.resolution, image=args.image)

@@ -81,6 +81,14 @@ def test_robot_with_uninstalled_component_skipped_rest_kept(stub_manager, _seed_
     assert list(diff.to_add) == ["plain"]
 
 
+def test_overridden_robot_with_uninstalled_component_skipped_rest_kept(stub_manager, _seed_readiness):
+    from arena_runtime.env.robot_manager.robots_manager import RobotsManager
+
+    _seed_readiness({}, {"arm/fr3": frozenset({"arena_robots/deps/franka_description"})})
+    diff = RobotsManager._parse_robot_configurations(stub_manager, "jackal[name=plain],jackal[name=armed,top=arm/fr3[stall_time=2.0]]")
+    assert list(diff.to_add) == ["plain"]
+
+
 def test_only_robot_with_uninstalled_component_raises_with_install_command(stub_manager, _seed_readiness):
     from arena_runtime.env.robot_manager.robots_manager import RobotsManager
 

@@ -24,6 +24,7 @@ from arena_runtime.shared import (
 )
 
 if typing.TYPE_CHECKING:
+    import arena_robots.caps
     import arena_robots.Robot
     from arena_rclpy_mixins import ArenaMixinNode
     from arena_simulation_setup.utils.articulation import Values
@@ -36,9 +37,8 @@ _BOX_FLOOR_CLEARANCE = 0.01  # keep the box base off the floor plane to avoid z-
 DEFAULT_AGENT_RADIUS = 0.3
 
 
-def robot_footprint_radius(model_params: "arena_robots.Robot.ModelParams") -> float:
+def robot_footprint_radius(caps: "arena_robots.caps.RobotCaps") -> float:
     """Footprint radius from the mobile cap, DEFAULT_AGENT_RADIUS when unspecified."""
-    caps = model_params.caps
     if 'mobile' in caps.available:
         radius = caps.mobile.radius
         if radius is not None:
@@ -342,14 +342,14 @@ class MechanismITF:
         self._incident_callback = None
         self._articulated = {}
 
-    def _register_agent_robot(self, robot: Robot, model_params: "arena_robots.Robot.ModelParams") -> None:
+    def _register_agent_robot(self, robot: Robot, view: "arena_robots.Robot.RobotView") -> None:
         """Track a spawned robot for disc and pose reads, bringing up the TF machinery on first use."""
         if self._mechanism_tf_buffer is None:
             self._mechanism_tf_buffer = tf2_ros.Buffer()
             self._mechanism_tf_listener = tf2_ros.TransformListener(self._mechanism_tf_buffer, self.node)
         self._agent_robots[robot.sim_path] = (
-            robot.frame.tf(model_params.base_frame),
-            robot_footprint_radius(model_params),
+            robot.frame.tf(robot.body_of(view).base_frame),
+            robot_footprint_radius(robot.caps_of(view)),
         )
 
     def _forget_agent_robot(self, sim_path: str) -> None:

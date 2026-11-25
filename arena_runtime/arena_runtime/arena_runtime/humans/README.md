@@ -479,7 +479,7 @@ in Lyon to `madras_topview`, and `arena asset import scenario glow <YYYY-mm-ddTH
 possession stream rate (20 Hz) publishes every possessed ped and every
 tracked robot on the engine's `world_state` topic, pose and world-frame
 velocity both, each robot sized by its footprint's disc radius (the mobile cap's
-`radius`, else the padded footprint's circumradius, 0.3 m without a mobile cap). Possessed peds that are known engine agents go out under
+`radius`, the circumradius of its unpadded footprint unless authored, 0.3 m without a mobile cap). Possessed peds that are known engine agents go out under
 the engine's own agent id, so the engine keeps its internal copy in full
 sync: pose slaved to the feed, velocity carried through so neighboring
 agents anticipate the motion, autonomy suspended while the lease is

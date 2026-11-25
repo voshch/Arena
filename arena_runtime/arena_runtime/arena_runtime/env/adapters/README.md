@@ -24,8 +24,10 @@ class MyAdapter(Adapter):
         await self.client.send_goal(goal)
 ```
 
-The base class constructor builds `self.bringup` and `self.client` from
-`bringup_cls` / `client_cls`; subclasses only implement `dispatch_phase`.
+The base class constructor builds `self.bringup` (from the robot's
+`instance_request`, so it sees the instance's cap overrides) and `self.client` from
+`bringup_cls` / `client_cls`; subclasses only implement `dispatch_phase`. Adapters
+read caps through `self.rm.caps`, the instance's effective caps.
 
 Goto completion is judged by the task runner from the robot pose. Gesture and
 reach phases complete on `self.client.is_done()`, and `on_phase_tick(phase, robot)` runs every
@@ -113,6 +115,10 @@ planner through its edge node, which zeroes `cmd_vel`, since a learned policy ha
 no stop of its own and the park judge wants the robot still. It redispatches the
 phase if the robot leaves the tolerance before the hold ends.
 
+`park_arms` (parked once per bring-up) commands each arm to its `stow` pose over
+3 s, stretched by the largest factor a `joint_limits` override slows a chain joint
+below its joint_limits file `max_velocity`, then waits that long plus 1 s of sim time.
+
 `DrlAdapter` (and so `VlaAdapter`) can send the signals its planner lists
 under `signals:` in `planner.yaml`. For a goto phase with a `signal`, it
 passes the expected signal to the planner in the reset payload and ends the
@@ -122,7 +128,7 @@ otherwise the episode fails as `signaled <signal> <d> m from goal`.
 cannot send.
 
 `ExternalBringup` reads `goal_topic`, `cmd_vel_topic`, `launch_file`,
-`requires`, and `extra` from `caps/mobile.yaml > external:`, configure them
+`requires`, and `extra` from `caps.yaml > mobile > external:`, configure them
 there, not as constructor arguments.
 
 `MeshNavAdapter` (`robot.mobile_adapter:=meshnav`, needs `arena feature meshnav
@@ -176,7 +182,7 @@ advertising the cap, `adapters: {lift: none}` in a robot setup file overrides on
 
 `direct` echoes the clamped command on `lift/<instance>/applied` and `gripper/<instance>/applied`
 (same types, transient-local). The gripper goal is fire and forget: the adapter does not await the
-result. `<instance>` is the instance key of `caps/lift.yaml` / `caps/gripper.yaml`, or the mount name
+result. `<instance>` is the instance key of the `lift` / `gripper` section of `caps.yaml`, or the mount name
 for component caps. The `robots_lift` and `robots_gripper` MCP tools publish these commands and
 return the echo. Topic names and clamping live in
 [`arena_robots/actuators.py`](../../../../../arena_robots/arena_robots/arena_robots/actuators.py).
@@ -247,7 +253,7 @@ An adapter that does not subclass `MobileAdapter` mounts the node in
 class MyMobileAdapter(Adapter):
     def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
         super().__init__(robot_manager, **bringup_kwargs)
-        mobile = self.rm.robot.model.resolve_sync().caps.mobile
+        mobile = self.rm.caps.mobile
         self._collision = CollisionTrackerNode(self.rm, mobile.polygons_dict, footprint=mobile.footprint)
         self.rm.node.executor.add_node(self._collision)
 ```

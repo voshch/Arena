@@ -337,8 +337,13 @@ into a `_RobotDiff` that records robots to add, update, or remove. Entry
 point is `set_up()`, called at the start of every episode reset.
 
 Bracket items are `<int>` (count), `<cap>.adapter=<kind>` (per-robot adapter
-kind, e.g. `mobile.adapter=drl`), or a bare `<type>=<value>` morphology key
-(sensor/actuator parts; currently hard-errors as not yet implemented).
+kind, e.g. `mobile.adapter=drl`), `<cap>.<path>=<value>` (a cap override of that
+robot, `*a`, `+b` or `*a+b` maps numbers affinely, `+[...]` appends, `!delete` removes,
+a segment `*` matches every key, e.g. `mobile.velocity_limits.linear=[-0.5,1.0]`,
+`mobile.radius=*1.2` or `mobile.limits=*0.5`, see the
+[setup README](../../../../arena_robots/arena_robots/config/setup/README.md#cap-overrides), a repeated key raises), or a bare `<mount|type>=<value>` morphology
+directive whose value takes that part's cap overrides in a bracket,
+`top=arm/fr3[stall_time=2.0]`.
 `[...]` is a shell glob class: quote the whole entry, e.g.
 `robot:='jackal[2,mobile.adapter=drl]'`. `arena robot caps <model>` lists a
 model's caps, mounts, catalog variants, and default sensors before you write
@@ -358,7 +363,7 @@ Parsing rules:
 - The `robot` param is a `ROSParamT[_RobotDiff]` with a parse callback, so
   it re-computes the diff on every parameter change.
 
-After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`: the morphology plus `robot_radius` and, when `model_params.yaml` states `mass.base_kg`, `robot_mass_kg`, which arena_evaluation records) per robot. Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
+After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`: the morphology, `robot_radius` and, when the caps state a mass, `robot_mass_kg` with its `robot_base_mass_kg`, `robot_components_mass_kg` and `robot_payload_mass_kg` split from `RobotCaps.mass_split()`, which arena_evaluation records, one `cap:<path>` entry per cap override with its JSON value, and `caps:hash`, the `RobotCaps.caps_hash()` of the instance's effective caps) per robot. `RobotManager.body` serves the instance's base frame, `cmd_vel` and odom topics and mass from the same caps, `Robot.body_of(view)` does where no manager exists (the simulators at spawn). Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
 
 ## `RobotManager`
 
@@ -370,12 +375,14 @@ One instance per spawned robot. Owns:
 - The current `TaskRequest` and phase index.
 - A goal-republish timer loop.
 - A tf-backed `pose` property (reads the robot's base frame from `tf_buffer`).
+- The instance's effective caps (`caps`: parts, frames and the robot's cap overrides, computed once). Radius, climbs, odometry frame, adapter kwargs, the collision tracker, the DRL velocity clamp and the task server read it, never the model's static caps.
 
 Key public surface:
 
 | Method / property | Purpose |
 | --- | --- |
-| `robot` | the `Robot` config (model, name, initial pose) |
+| `robot` | the `Robot` config (model, name, initial pose, cap overrides) |
+| `caps` | the instance's effective `RobotCaps` |
 | `pose` | current `Pose` in the map frame; `None` during reset/respawn windows |
 | `start_pos` / `goal_pos` | last set start and goal positions |
 | `goal` | pose of the first `GoToPhase` in the current `TaskRequest`, or `None` |
@@ -387,6 +394,11 @@ Key public surface:
 | `set_up_robot(node_paths)` | async; spawn robot, bind adapter, start navigation stack |
 | `bring_up_controllers()` | async; drive the robot's ros2_control controllers to active, raises on an explicit controller_manager refusal |
 | `destroy()` | tear down adapter and remove robot from sim |
+
+The env-wide `robot.<cap>.<key>` launch overlay only passes adapter arguments to
+the bound adapter. A key whose first segment is a field of the cap file
+(`robot.mobile.velocity_limits`, `robot.mobile.footprint`) raises and names the
+per-instance syntax, `robot:=<model>[<cap>.<path>=<value>]` or the setup-file key.
 
 A teleport under a hold (every reset) advances the held sim one physics step at
 a time through arena_runtime_node's `sim_lifecycle/step` until a TF sample newer than

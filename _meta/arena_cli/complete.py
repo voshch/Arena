@@ -120,7 +120,7 @@ class Packages:
     """Workspace package names from a src/**/package.xml walk."""
 
 
-Source = Static | Manifest | Files | Nothing
+Source = Static | Manifest | Files | Nothing | Dynamic
 Spec = Source | Dynamic | Flags | Kv | LaunchArgs | Union | Sub | Packages
 
 
@@ -421,7 +421,7 @@ def render(r: Result, cur: str) -> list[str]:
     out: list[str] = []
     if r.prefix:
         out.append(f"@prefix={r.prefix}")
-    if items and all(v.endswith("=") or v in folded for v, _, _ in items):
+    if items and all(v.endswith(("=", ".")) or v in folded for v, _, _ in items):
         out.append("@nospace")
     if r.files:
         out.append("@files")

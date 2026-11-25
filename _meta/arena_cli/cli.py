@@ -173,7 +173,7 @@ def _supervisor(*argv: str) -> None:
     _exec("python3", "-m", _bg.SUPERVISOR, *argv)
 
 
-_LAUNCH_FILES: dict[str, Source] = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
+_LAUNCH_FILES: dict[str, Source] = {"robot": _robot_mod.ROBOT_ENTRY, "task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
 RUNTIME_ARGS = LaunchArgs("arena_bringup", "arena_runtime.launch.py", _LAUNCH_FILES)
 ENV_ARGS = Union(
     LaunchArgs("arena_runtime", "env.launch.py", _LAUNCH_FILES),

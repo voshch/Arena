@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from arena_robots.inline import format_inline_override
+from arena_robots.SetupFile import Config
+from arena_runtime.env.robot_manager.robot_manager import cap_file_fields, reject_cap_field_overlay
 from arena_runtime.env.robot_manager.robots_manager import (
+    _morphology_params,
     desugar_robot_entry,
     split_robot_arg,
 )
@@ -86,3 +90,117 @@ class TestDesugarRobotEntry:
     def test_unbalanced_close_bracket_raises(self):
         with pytest.raises(RuntimeError):
             desugar_robot_entry("jackal2]")
+
+
+class TestPresetEntries:
+    def test_a_preset_entry_expands_to_its_base_robot_and_parts(self):
+        (config,) = Config.parse(desugar_robot_entry("rbvogui_plus"))
+        assert (config.robot, config.parts) == ("rbvogui", {"arm": ["ur5e"]})
+
+    def test_the_brackets_of_the_entry_win_over_the_preset(self):
+        (config,) = Config.parse(desugar_robot_entry("rbkairos_plus[arm=ur10,name=picker]"))
+        assert (config.robot, config.name, config.parts) == ("rbkairos", "picker", {"arm": ["ur10"]})
+
+    def test_every_counted_instance_carries_the_preset_parts(self):
+        configs = Config.parse(desugar_robot_entry("ridgeback_plus[2]"))
+        assert [(config.robot, config.parts) for config in configs] == [("ridgeback", {"arm": ["ur5e"]})] * 2
+
+
+class TestCapOverrideGrammar:
+    ENTRY = "jackal[mobile.velocity_limits.linear=[-0.5,1.0], mobile.radius=*1.2, mobile.adapter=drl]"
+
+    def test_cap_keys_desugar_to_values_and_scales(self):
+        assert desugar_robot_entry(self.ENTRY) == {
+            "robot": "jackal",
+            "mobile.velocity_limits.linear": [-0.5, 1.0],
+            "mobile.radius": {"scale": 1.2},
+            "mobile.adapter": "drl",
+        }
+
+    def test_desugared_entry_parses_into_config_caps(self):
+        (config,) = Config.parse(desugar_robot_entry(self.ENTRY))
+        assert config.caps == {"mobile.velocity_limits.linear": [-0.5, 1.0], "mobile.radius": {"scale": 1.2}}
+        assert config.adapters == {"mobile": "drl"}
+
+    def test_formatted_overrides_round_trip_through_the_inline_grammar(self):
+        (config,) = Config.parse(desugar_robot_entry(self.ENTRY))
+        inline = ", ".join(f"{path}={format_inline_override(value)}" for path, value in config.caps.items())
+        (again,) = Config.parse(desugar_robot_entry(f"jackal[{inline}]"))
+        assert again.caps == config.caps
+
+    def test_duplicate_cap_key_raises(self):
+        with pytest.raises(RuntimeError, match="duplicate cap override"):
+            desugar_robot_entry("jackal[mobile.radius=0.3, mobile.radius=0.4]")
+
+
+class TestPartBracketGrammar:
+    ENTRY = "jackal[top=arm/fr3[stall_time=2.0,workspace.max=[0.6,0.4,0.9]],top_tool=gripper/franka_hand[max_effort=*0.5],mobile.radius=0.4]"
+
+    def test_part_brackets_desugar_to_raw_part_values(self):
+        assert desugar_robot_entry(self.ENTRY) == {
+            "robot": "jackal",
+            "top": "arm/fr3[stall_time=2.0,workspace.max=[0.6,0.4,0.9]]",
+            "top_tool": "gripper/franka_hand[max_effort=*0.5]",
+            "mobile.radius": 0.4,
+        }
+
+    def test_part_brackets_survive_config_parse_as_directives(self):
+        (config,) = Config.parse(desugar_robot_entry(self.ENTRY))
+        assert config.parts == {"top": ["arm/fr3[stall_time=2.0,workspace.max=[0.6,0.4,0.9]]"], "top_tool": ["gripper/franka_hand[max_effort=*0.5]"]}
+        assert config.caps == {"mobile.radius": 0.4}
+
+    def test_a_list_of_bracketed_parts_splits_at_depth_zero(self):
+        assert desugar_robot_entry("jackal[lidar=[sick[range=10.0],vlp16]]") == {"robot": "jackal", "lidar": ["sick[range=10.0]", "vlp16"]}
+
+
+class TestCapFieldOverlayGuard:
+    def test_cap_field_key_names_the_per_instance_syntax(self):
+        with pytest.raises(ValueError, match=r"robot:=<model>\[mobile\.velocity_limits\.linear="):
+            reject_cap_field_overlay("mobile", ["velocity_limits.linear"], {"velocity_limits", "footprint"})
+
+    def test_adapter_argument_keys_pass(self):
+        reject_cap_field_overlay("mobile", ["planner", "mapping"], {"velocity_limits", "footprint"})
+
+    def test_mobile_fields_include_typed_fields_the_file_leaves_unset(self):
+        fields = cap_file_fields("mobile", {"radius": 0.3, "nav2": {"x": 1}}, {"nav2", "drl"})
+        assert {"radius", "velocity_limits", "footprint", "planar"} <= fields
+        assert "nav2" not in fields
+
+    def test_instance_caps_have_no_guarded_fields(self):
+        assert cap_file_fields("arm", {"fr3": {}, "moveit": {}}, {"moveit"}) == frozenset()
+
+
+class TestFleetStateCapParams:
+    @staticmethod
+    def _params(robot) -> dict[str, str]:
+        from arena_robots.Robot import RobotIdentifier
+
+        caps = robot.caps_of(RobotIdentifier(robot.model.name).resolve_sync())
+        return {p.key: p.value for p in _morphology_params(robot, caps)}
+
+    def test_each_cap_override_is_a_json_valued_cap_entry(self):
+        from arena_robots.Robot import RobotIdentifier
+        from arena_runtime.shared import Pose, Robot
+
+        robot = Robot(name="slow", pose=Pose(), model=RobotIdentifier.parse("jackal"), caps={"mobile.velocity_limits.linear": [-0.5, 1.0], "mobile.radius": {"scale": 1.2}}, extra={})
+        params = self._params(robot)
+        assert {key: value for key, value in params.items() if key.startswith("cap:")} == {"cap:mobile.velocity_limits.linear": "[-0.5, 1.0]", "cap:mobile.radius": '{"scale": 1.2}'}
+
+    def test_caps_hash_is_the_hash_of_the_instance_caps(self):
+        from arena_robots.fleet import instance_caps
+        from arena_robots.Robot import RobotIdentifier
+        from arena_runtime.shared import Pose, Robot
+
+        robot = Robot(name="slow", pose=Pose(), model=RobotIdentifier.parse("jackal"), caps={"mobile.velocity_limits.linear": [-0.5, 1.0]}, extra={})
+        params = self._params(robot)
+        expected = robot.caps_of(RobotIdentifier("jackal").resolve_sync()).caps_hash()
+        assert params["caps:hash"] == expected
+        assert instance_caps("jackal", params).caps_hash() == expected
+
+    def test_caps_hash_differs_between_overridden_and_plain_instances(self):
+        from arena_robots.Robot import RobotIdentifier
+        from arena_runtime.shared import Pose, Robot
+
+        plain = Robot(name="a", pose=Pose(), model=RobotIdentifier.parse("jackal"), extra={})
+        slow = Robot(name="b", pose=Pose(), model=RobotIdentifier.parse("jackal"), caps={"mobile.velocity_limits.linear": [-0.5, 1.0]}, extra={})
+        assert self._params(plain)["caps:hash"] != self._params(slow)["caps:hash"]

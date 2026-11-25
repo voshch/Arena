@@ -84,6 +84,7 @@ def robot_submodules(arena: Path) -> dict[str, list[str]]:
         for name in names:
             out.setdefault(name, []).append(path)
     _inherit_assembly_defaults(arena, out)
+    _inherit_presets(arena, out)
     return out
 
 
@@ -176,6 +177,41 @@ def _inherit_assembly_defaults(arena: Path, subs: dict[str, list[str]]) -> None:
                 continue
             entry = subs.setdefault(robot_dir.name, [])
             entry.extend(path for path in paths if path not in entry)
+
+
+def preset_request(robot_dir: Path) -> tuple[str, set[str]] | None:
+    """(base robot, {'<type>/<variant>'}) of a robot directory's preset.yaml, None when it holds none."""
+    import yaml
+
+    path = robot_dir / "preset.yaml"
+    if not path.is_file():
+        return None
+    data = yaml.safe_load(path.read_text()) or {}
+    refs: set[str] = set()
+    for lhs, raw in (data.get("parts") or {}).items():
+        for value in raw if isinstance(raw, list) else [raw]:
+            variant = str(value).partition("[")[0].strip()
+            if variant != "none":
+                refs.add(variant if "/" in variant else f"{lhs}/{variant}")
+    return str(data["robot"]), refs
+
+
+def _inherit_presets(arena: Path, subs: dict[str, list[str]]) -> None:
+    """Give each preset the submodule paths of its base robot and of the components its parts place."""
+    root = arena / ROBOTS_PREFIX
+    if not root.is_dir():
+        return
+    for robot_dir in sorted(root.iterdir()):
+        request = preset_request(robot_dir) if robot_dir.is_dir() else None
+        if request is None:
+            continue
+        base, refs = request
+        paths = list(subs.get(base, []))
+        for ref in sorted(refs):
+            family = resolve_component_ref(arena, ref)
+            paths.extend(subs.get(family, []) if family is not None else [])
+        entry = subs.setdefault(robot_dir.name, [])
+        entry.extend(path for path in dict.fromkeys(paths) if path not in entry)
 
 
 def _path_robots(arena: Path) -> dict[str, set[str]]:

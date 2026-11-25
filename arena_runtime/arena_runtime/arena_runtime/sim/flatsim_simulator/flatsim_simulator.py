@@ -15,7 +15,6 @@ from collections.abc import Iterable, Mapping, Sequence
 import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
-import attrs
 import launch
 import launch.event_handlers
 import launch_ros.actions
@@ -35,16 +34,19 @@ from flatsim_msgs.srv import AddFloors, AddOutlines, ControlWorld, DeleteEntitie
 
 from arena_runtime.humans import PED_RADIUS
 from arena_runtime.node_params import NodeParams
-from arena_runtime.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
+from arena_runtime.shared import DynamicObstacle, Floor, Obstacle, Pose, Robot, Wall
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import effective_control_yaml, robot_controllers, state_publisher_node
 from arena_runtime.sim._interface import robot_footprint_radius
+from arena_runtime.sim._robot import render_robot
 from arena_runtime.sim._urdf import mock_arm_hardware
 
 from .planar import drive_model
 
 if typing.TYPE_CHECKING:
     import shapely
+    from arena_robots.caps import RobotCaps
+    from rclpy.impl.rcutils_logger import RcutilsLogger
 
 SERVER = '/flatsim'
 SERVICE_QOS = rclpy.qos.QoSProfile(depth=100)
@@ -64,6 +66,15 @@ Point = tuple[float, float]
 def env_prefix(env_id: int) -> str:
     """Name prefix of everything env_id puts into the world."""
     return f'env_{env_id}/'
+
+
+def body_ring(caps: RobotCaps, robot_name: str, logger: RcutilsLogger) -> Ring:
+    """The collision outline of the body as the Box2D footprint, the mobile footprint when the robot has no collision geometry."""
+    outline = caps.body.outline
+    if outline is None:
+        logger.warning(f'robot {robot_name!r} has no collision outline, flatsim uses its mobile footprint')
+        outline = caps.mobile.footprint or []
+    return Ring(x=[float(point[0]) for point in outline], y=[float(point[1]) for point in outline])
 
 
 class FlatsimHost(SimLifecycle):
@@ -221,25 +232,10 @@ class FlatsimSimulator(BaseSim):
         await self.step()
         return True
 
-    def _robot_loader_args(self, robot: Robot, robot_config: arena_robots.Robot.RobotView) -> dict[str, object]:
-        args: dict[str, object] = {
-            **robot.extra,
-            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
-            'optim': declare(self.node, NodeParams.OPTIM).value,
-            'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
-        }
-        args.pop('resolved_assembly', None)
-        if robot.resolved_assembly is not None:
-            assert robot_config.assembly is not None
-            catalog = arena_robots.catalog.Catalog()
-            args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
-            args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
-        return args
-
     def _sensors(self, robot: Robot, robot_config: arena_robots.Robot.RobotView) -> list[SensorSpec]:
         """Sensors the server simulates, a laserscan carrying the caps laser block for a URDF without its sensor."""
         namespace = str(self.node.service_namespace(robot.name))
-        laser = robot_config.model_params.caps.mobile.laser
+        laser = robot.caps_of(robot_config).mobile.laser
         fan = [Fan(angle_min=laser.angle.min, angle_increment=laser.angle.increment, beams=laser.num_beams, range_max=laser.range, update_rate=float(laser.update_rate or 0.0))] if laser is not None else []
         return [
             SensorSpec(
@@ -260,7 +256,7 @@ class FlatsimSimulator(BaseSim):
         control_spec = robot_config.model_params.control
         if control_spec is None:
             return []
-        base = control_spec.cmd_vel_topic.split('/')[0]
+        base = robot.body_of(robot_config).cmd_vel_topic.split('/')[0]
         return mock_controllers(robot_controllers(robot_config, robot.resolved_assembly), base)
 
     async def _launch_robot_stack(self, robot: Robot, description: str) -> LaunchHandle:
@@ -272,7 +268,19 @@ class FlatsimSimulator(BaseSim):
         control_spec = robot_config.model_params.control
         if control_spec is not None and control_spec.is_ros2_control and control_spec.config is not None and self.robot_controllers(robot):
             control_prefix = robot_config.assembly.prefix if robot_config.assembly is not None else 'robot_'
-            rendered_yaml = effective_control_yaml(robot.resolved_assembly, control_spec.config, robot.sim_path, robot.frame.tf(), sim=SimSimulator.FLATSIM, prefix=control_prefix)
+            rendered_yaml = effective_control_yaml(
+                robot.resolved_assembly,
+                robot_config,
+                robot.sim_path,
+                robot.frame.tf(),
+                sim=SimSimulator.FLATSIM,
+                urdf=robot.caps_of(robot_config).rendered_urdf(),
+                prefix=control_prefix,
+                planar=robot.planar_of(robot_config),
+                base_frame=robot.body_of(robot_config).base_frame,
+                odom_frame=robot.odom_frame(robot_config),
+                drives=robot.drives_of(robot_config, effort=False),
+            )
             cm_node = launch_ros.actions.Node(
                 package='controller_manager',
                 executable='ros2_control_node',
@@ -314,19 +322,11 @@ class FlatsimSimulator(BaseSim):
             await self._release(robot.sim_path)
 
             robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
-            model = await (await robot.model.resolve()).model.get(
-                (ModelType.URDF,),
-                loader_args=self._robot_loader_args(robot, robot_config),
-            )
-            if model.type != ModelType.URDF:
-                raise NotImplementedError(f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}")
-            assert model.path is not None, f'URDF model {model.name} must have a valid file path'
-            with open(model.path) as f:
-                description = mock_arm_hardware(f.read())
+            served = render_robot(robot, robot_config, optim=declare(self.node, NodeParams.OPTIM).value, sensor_prefix='', effort=False)
+            description = mock_arm_hardware(served.path.read_text())
 
-            robot_params = robot_config.model_params
-            mobile = robot_params.caps.mobile
-            footprint = mobile.footprint or []
+            caps = robot.caps_of(robot_config)
+            mobile = caps.mobile
             position = robot.pose.position
             request = SpawnRobot.Request(
                 name=self._name(robot.sim_path),
@@ -334,14 +334,14 @@ class FlatsimSimulator(BaseSim):
                 tf_topic=self.node.resolve_topic_name('/tf'),
                 world_frame='map',
                 frame_prefix=robot.frame.tf(),
-                odom_frame=robot_params.odom_frame,
-                base_frame=robot_params.base_frame,
+                odom_frame=mobile.odom_frame,
+                base_frame=caps.body.base_frame,
                 x=position.x,
                 y=position.y,
                 z=position.z,
                 yaw=robot.pose.orientation.to_yaw(),
-                footprint=Ring(x=[float(point[0]) for point in footprint], y=[float(point[1]) for point in footprint]),
-                radius=robot_footprint_radius(robot_params),
+                footprint=body_ring(caps, robot.name, self._logger),
+                radius=robot_footprint_radius(caps),
                 drive=drive_model(mobile.planar, holonomic=mobile.is_holonomic, min_turning_radius=mobile.min_turning_radius),
                 urdf=description,
                 sensors=self._sensors(robot, robot_config),
@@ -352,7 +352,7 @@ class FlatsimSimulator(BaseSim):
             if not response.success:
                 raise RuntimeError(f'flatsim refused robot {robot.sim_path!r}: {response.message}')
             self._robots[robot.sim_path] = handle
-            self._register_agent_robot(robot, robot_params)
+            self._register_agent_robot(robot, robot_config)
             return True
 
         except Exception as e:

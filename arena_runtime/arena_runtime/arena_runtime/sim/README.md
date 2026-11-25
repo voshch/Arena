@@ -42,6 +42,8 @@ Defined in [`_interface.py`](_interface.py):
 
 Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
 
+Every simulator loads the URDF of a robot from `render_robot` in [_robot.py](_robot.py), which calls `arena_robots.served_urdf.serve` with the robot's resolved request and frames, the xacro arguments of the robot (its attributes and `extra`, plus `sim_path`, `namespace` and `gazebo_controllers` in Gazebo), the `optim` parameter and the sensor topic patches of its effective sensors. It returns the XML (`description`) and the file it is written to (`path`). Gazebo's robot bridge takes its topic mappings from the plugins of the canonical URDF (`Sensor.plugin_bridge_rows`) and the effective sensors (`Sensor.bridge_rows`).
+
 ### `WorldITF`
 
 [`_interface.py`](_interface.py)
@@ -79,7 +81,9 @@ Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints 
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |
 
-Robot tracking is not a primitive to override: call `_register_agent_robot(robot, model_params)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+Robot tracking is not a primitive to override: call `_register_agent_robot(robot, view)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+
+A simulator reads the base frame and the `cmd_vel` and odom topics of a robot it spawns from `Robot.body_of(view)`, the instance's effective `body` caps. The control mode, config, controllers, sensors and `z_offset` stay with the resolver on `view.model_params`.
 
 Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` keep the light table, and every tick pushes each `light` semantic entity whose output changed, after moving frame-anchored and link-riding lights that moved more than 2 cm or 0.02 rad. A simulator renders lights by overriding four no-op hooks:
 
@@ -477,16 +481,17 @@ extra channels under caller `cli`.
 | --- | --- | --- | --- |
 | physics step | 0.002 s (`scene.PHYSICS_DT`) | 0.004 s (`run_isaacsim.PHYSICS_DT`), five per rendered frame of 0.02 s (`RENDERING_DT`), one solver substep under newton | 0.0333 s (`empty.sdf` `max_step_size`) |
 | lockstep quantum | the physics step | the rendered frame (0.02 s) | the physics step |
-| position servo | PD, revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped, force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
+| position servo | PD with the `drives` kp and kd of the robot's caps (default revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped), force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
 | servo rate (revolute) | 20 per s | 20 per s | 2 per s per 10 Hz of the controller manager's `update_rate` (20 per s at go1's 200 Hz, 5 per s at 50 Hz) |
 | gravity compensation | none | none | none |
 | joint armature | `max(URDF, min(0.2, effort / 50))` kg m^2 | URDF | URDF |
 | command and joint state exchange | every 0.02 s of sim time | every rendered frame (0.02 s) | every physics step |
 | camera rate | URDF `update_rate`, checked every 0.02 s tick | the divisor of the 50 Hz render rate nearest the URDF `update_rate` (a 30 Hz camera runs at 25 Hz) | URDF `update_rate` |
 | `odom` with `odom_topic: odom` | ground truth from the free joint | ground truth from the articulation | `pose_to_tf` from the model pose, twist differenced |
-| command interfaces | position, velocity | position, velocity | position, velocity (effort unused) |
+| command interfaces | position, velocity, effort | position, velocity, effort | position, velocity, effort |
+| effort-commanded joint (`drives.<joint>.command: effort`) | motor actuator applying the commanded effort, a position servo with the joint's `drives` gains holds the spawn pose until the first finite effort command | zero-gain drive after the same spawn hold | effort command, gz_ros2_control's `hold_joints` until a controller claims the joint |
 
-Gains are derived from the URDF only, no robot sets them per joint.
+The gains are the `drives` fact block of the instance's caps, derived from the URDF unless a robot's caps.yaml or an instance override sets them, and travel to the simulators as `kp`, `kd` and `effort` params of the served URDF's ros2_control joints.
 
 In Gazebo a joint below its URDF position limit gets no servo force (DART 6.13 `JointConstraint::update` handles it as a limit only), so a loaded position joint that a spawn transient pushes onto its limit stays there. A robot's URDF limits therefore sit outside the range its caps command, as TIAGo's torso stops at -0.05 m below its `[0.0, 0.35]` lift range.
 
@@ -551,12 +556,12 @@ are what Arena sends it.
   levels side by side in xy at one z, so an elevator ride there is an xy
   teleport within one level. An entity that ends within 0.05 m above its level
   floor, such as an elevator cabin floor, is no obstacle.
-- Robots: body from the mobile cap footprint, driven by the Twist on
+- Robots: body from the `body.outline` of the instance's caps (the convex hull of the base, fixed-link and wheel collision geometry in the rendered URDF, at most 8 vertices), the mobile cap footprint with a logged warning for a robot without collision geometry, driven by the Twist on
   `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
-  the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
-  robot: per-axis (linear, lateral, angular) velocity bounds, acceleration and
+  the `planar` block of the `mobile` section of the robot's `caps.yaml`, the same keys for every
+  robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
-  `pivot` x the body turns about and the command `timeout`. A diff drive has
+  `pivot` x the body turns about (`front` or `rear` in the file, the wheel joint x of the URDF) and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
   sideways only when `is_holonomic`. The base controller does not run. The
   cap's `min_turning_radius` bounds the turn rate of a car-like base at its
@@ -592,6 +597,19 @@ are what Arena sends it.
 - Lockstep: no channel is registered, so the other producers set the strides.
   A step is complete when the service answers, every message of it is already
   published.
+
+## Drive limits of a ros2_control base
+
+For every robot with a mobile cap, Gazebo,
+MuJoCo and Isaac overlay the base controller's limit keys from the instance's
+effective `planar` (its velocity and acceleration read from `limits`)
+(`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
+`angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
+`min_acceleration`, written for every axis whose `has_velocity_limits` or
+`has_acceleration_limits` flag the controller sets and never an infinite limit (the
+key stays unset, which the controllers read as unbounded). `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. `control.yaml` carries the flags and no limit values.
+
+The same function writes the drive controller's frames (`base_frame_id` from the instance's `body.base_frame`, `odom_frame_id` from its `mobile.odom_frame`, `overlay_drive_frames` in [_control.py](_control.py), the `control*.yaml` files do not carry them) and the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
 
 ## Adding a new simulator
 

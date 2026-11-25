@@ -61,7 +61,7 @@ corner, have the same cell size and cover that box, otherwise the dispatcher ref
 
 ## Robot
 
-The dispatcher takes the robot from the fleet's models (`arena_robots`, `caps/mobile.yaml`): the body is the largest
+The dispatcher takes the robot from the fleet's instances (`arena_robots` effective caps: the `mobile` section of `caps.yaml` with each robot's cap overrides): the body is the largest
 `radius` plus `robot.margin_m`, `v_nom` is `time.speed_fraction` of the slowest top speed (`velocity_limits.linear`),
 and perception is the shortest and narrowest `laser` range and field of view.
 

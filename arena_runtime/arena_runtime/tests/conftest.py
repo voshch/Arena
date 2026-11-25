@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import configparser
 import functools
 import importlib.util
 import os
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 _ROS_SKIP_REASON = "ROS2 not discoverable, source install/setup.bash to enable"
+
+_ROBOTS_REPO = Path(__file__).resolve().parents[3] / "arena_robots"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -89,6 +94,33 @@ def rclpy_context():
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def _submodules() -> dict[str, list[Path]]:
+    cfg = configparser.ConfigParser()
+    cfg.read(_ROBOTS_REPO / ".gitmodules")
+    out: dict[str, list[Path]] = {}
+    for section in cfg.sections():
+        path = cfg[section]["path"]
+        names = cfg[section].get("robot", "").split() + cfg[section].get("component", "").split()
+        if not names and path.startswith("arena_robots/robots/"):
+            names = [path.split("/")[2]]
+        for name in names:
+            out.setdefault(name, []).append(_ROBOTS_REPO / path)
+    return out
+
+
+@pytest.fixture(scope="session")
+def require_installed() -> Callable[..., None]:
+    """Skips the test unless every submodule tagged for each robot or component is checked out."""
+    submodules = _submodules()
+
+    def require(*names: str) -> None:
+        for name in names:
+            if any(not path.is_dir() or not any(path.iterdir()) for path in submodules.get(name, [])):
+                pytest.skip(f"{name} is not installed, run `arena feature robots add {name}`")
+
+    return require
 
 
 @pytest.fixture()

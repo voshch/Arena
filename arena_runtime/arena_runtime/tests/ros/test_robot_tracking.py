@@ -39,7 +39,7 @@ def _jackal_radius() -> float:
     from arena_robots.Robot import RobotIdentifier
     from arena_runtime.shared import footprint_radius
 
-    return footprint_radius(RobotIdentifier.parse("jackal").resolve_sync())
+    return footprint_radius(RobotIdentifier.parse("jackal").resolve_sync().caps, "jackal")
 
 
 def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop", offset: tuple[float, float] = (0.0, 0.0), robots_visible: bool = True) -> None:
