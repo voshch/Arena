@@ -65,3 +65,8 @@
 	url = https://github.com/voshch/arena-rclpy-mixins.git
 	branch = jazzy
 	update = checkout
+[submodule "task_layers/casper"]
+	path = task_layers/casper
+	url = https://github.com/voshch/arena-casper.git
+	branch = jazzy
+	update = checkout

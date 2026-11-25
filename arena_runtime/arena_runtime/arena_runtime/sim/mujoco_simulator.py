@@ -35,8 +35,10 @@ from arena_mujoco_msgs.msg import (
     Wall,
 )
 from arena_mujoco_msgs.srv import (
+    AttachPrim,
     DeleteLights,
     DeletePrims,
+    DetachPrim,
     DriveArticulated,
     EditPrims,
     SetLights,
@@ -88,6 +90,7 @@ from arena_runtime.shared import Wall as WallDefinition
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle
 from arena_runtime.sim._articulation import ArticulatedObject, command_fields, link_message
 from arena_runtime.sim._articulation import JointCommand as ArticulatedCommand
+from arena_runtime.sim._carry import Carry
 from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
@@ -110,6 +113,7 @@ _MESH_MODEL_TYPES = (ModelType.SDF, ModelType.OBJ)
 _SPAWN_ASSETS_TIMEOUT_S = 300.0
 _RESEND_AFTER_S = 10.0
 _PRIM_BATCH_WINDOW_S = 0.02
+_WELD_REACH_M = 1.0
 
 
 class _PrimBatch:
@@ -252,9 +256,11 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self.wall_counter = itertools.count()
         self.floor_counter = itertools.count()
         self._clients = types.SimpleNamespace(
+            AttachPrim=self.node.create_client_wrapper(AttachPrim, "/mujoco/AttachPrim"),
             DeleteLights=self.node.create_client_wrapper(DeleteLights, "/mujoco/DeleteLights"),
             DeletePedestrians=self.node.create_client_wrapper(DeletePedestrians, "/mujoco/DeletePedestrians"),
             DeletePrims=self.node.create_client_wrapper(DeletePrims, "/mujoco/DeletePrims"),
+            DetachPrim=self.node.create_client_wrapper(DetachPrim, "/mujoco/DetachPrim"),
             DriveArticulated=self.node.create_client_wrapper(DriveArticulated, "/mujoco/DriveArticulated"),
             EditPrims=self.node.create_client_wrapper(EditPrims, "/mujoco/EditPrims"),
             MovePedestrians=self.node.create_client_wrapper(MovePedestrians, "/mujoco/MovePedestrians"),
@@ -275,6 +281,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self._robot_prims: dict[str, str] = {}
         self._map_offsets: dict[str, tuple[float, float, float]] = {}
         self._box_centers: dict[str, tuple[float, float, float]] = {}
+        self._welds: dict[tuple[str, str], str] = {}
 
     def robot_controllers(self, robot: Robot) -> list[str]:
         return robot_controllers(arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync(), robot.resolved_assembly)
@@ -313,7 +320,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                         name=fq_name,
                         urdf_path=str(served.path),
                         robot_model=robot.model.name,
-                        localization=True,
+                        localization=robot_config.mobile is not None,
                         tf_prefix=robot.frame.tf(),
                         base_frame=body.base_frame,
                         odom_frame=robot.odom_frame(robot_config),
@@ -586,9 +593,28 @@ class MujocoSimulator(BaseSim, NodeInterface):
         for robot in robots:
             self._forget_agent_robot(robot.sim_path)
             self._map_offsets.pop(robot.sim_path, None)
+            for key in [key for key in self._welds if key[0] == robot.name]:
+                del self._welds[key]
             names.append(self._robot_prims.pop(robot.sim_path, self._NS_ROBOT(robot.name)))
         await self._stop_robot_stacks(r.sim_path for r in robots)
         return await asyncio.gather(*(self._delete_entity(name) for name in names))
+
+    async def _carry_weld(self, carry: Carry) -> bool:
+        body = self._robot_prims.get(carry.sim_path)
+        if body is None:
+            return False
+        request = AttachPrim.Request(env_id=self._env_id, robot=body, joint=carry.joint, objects=[str(self._NS_PRIM(carry.obstacle.name))], reach=_WELD_REACH_M)
+        response = await self._clients.AttachPrim.call_timeout(request)
+        if response is None or not response.attached:
+            return False
+        self._welds[(carry.robot, carry.joint)] = body
+        return True
+
+    async def _carry_unweld(self, carry: Carry) -> Pose | None:
+        body = self._welds.pop((carry.robot, carry.joint), None)
+        if body is not None:
+            await self._clients.DetachPrim.call_timeout(DetachPrim.Request(env_id=self._env_id, robot=body, joint=carry.joint))
+        return None
 
     async def remove_world(self) -> bool:
         res = await self._clients.DeletePrims.call_timeout(DeletePrims.Request(env_id=self._env_id, names=[f"{ns}/" for ns in (self._NS_WALL, self._NS_FLOOR, self._NS_CEILING)]))

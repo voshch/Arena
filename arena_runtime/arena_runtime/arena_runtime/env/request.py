@@ -6,7 +6,7 @@ from collections.abc import Iterable, Iterator
 
 import attrs
 from arena_robots.task_kinds import TaskKind
-from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
+from arena_simulation_setup.shared.task import GoToPhase, GraspPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
 
 
 def kind_of(phase: TaskPhase) -> TaskKind:
@@ -57,6 +57,7 @@ __all__ = [
     "StairsLegPhase",
     "ReachPhase",
     "PlayGesturePhase",
+    "GraspPhase",
     "TaskRequest",
     "kind_of",
     "leaf_phases",

@@ -412,6 +412,15 @@ class FlatsimSimulator(BaseSim):
     async def obstacle_delete(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         return await self._remove([self._name(obstacle.sim_path) for obstacle in obstacles])
 
+    async def _carry_lift(self, obstacles: Sequence[Obstacle]) -> None:
+        await self.obstacle_delete(obstacles)
+
+    async def _carry_follow(self, obstacles: Sequence[Obstacle]) -> None:
+        del obstacles
+
+    async def _carry_drop(self, obstacles: Sequence[Obstacle]) -> None:
+        await self.obstacle_spawn(obstacles)
+
     async def pedestrian_spawn(self, pedestrians: Sequence[DynamicObstacle]) -> Sequence[bool]:
         discs = [_disc(self._name(pedestrian.sim_path), pedestrian.pose) for pedestrian in pedestrians]
         self._pedestrians.update(disc.name for disc in discs)

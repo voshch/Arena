@@ -1059,7 +1059,10 @@ robots:
 An empty scenario (robot start and phases only) is valid, and `robots:` is
 optional: a robot without an entry stays parked, an episode with only parked
 robots runs until `task.episode.timeout`. Phases run in order and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
-`{reach: <named target | random | pose>}`, or a hold phase with neither (the robot
+`{reach: <named target | random | pose>}` (a pose in `frame:`, a robot link and the base link by default, or `map`,
+which the arm adapter re-expresses in the base link through TF when it sends the goal), `{grasp: close|open, object: <entity>, instance: <gripper>}` (closes or
+opens the gripper, met when the gripper action returns and, for a close with an
+`object`, the robot holds it), or a hold phase with neither (the robot
 stays where it is), or `{loop: [<phases>], until: "<...>"}` (the phases repeated
 in order until the `until` holds, which drops the running phase and continues
 after the loop). Every phase takes `until: "<clause>[ or <clause>...]"`, a
@@ -1074,7 +1077,12 @@ is judged against the tolerance at that moment), `conditions:` (clauses judged
 over this phase only), `text:` (the instruction handed to language-conditioned
 planners, `instruction:` is accepted as the same key) and `on_failure`. A robot
 entry may also carry `level` (the level it starts on), `goal_level` (the level
-its goto phases aim at) and `conditions:` judged over its whole phase list.
+its goto phases aim at), `conditions:` judged over its whole phase list, and
+`name` and `model`. When every entry has a `model`, the scenario declares the
+fleet: at the reset that switches to it the platform despawns the robots it
+does not list and spawns the missing ones (a robot of the right name with
+another model is replaced). Entries pair with live robots by `name`, then by
+`model`, then in order.
 
 ```yaml
 robots:
@@ -1093,7 +1101,7 @@ robots:
 Atoms are the `conditions:` grammar of [worlds/README.md](worlds/README.md):
 `<entity>.<field> == <value>`, `<subject> in <zone>`, `<subject> within <r> of
 <subject>`, `<subject> sees <subject> [within <r>]` (in range, default 12 m, with
-no wall of the rendered wall grid between them), `<ped> plays <clip>` and `not
+no wall of the rendered wall grid between them), `<ped> plays <clip>`, `<robot> holds <object>` and `not
 <atom>`. Either `within` subject may also be a point `x,y` (no spaces), in the
 frame of a scenario pose without `level`, so `robot within 4.2 of 12.1,4.0`.
 A goto to a pedestrian by name is judged by `tolerance_radius` around the

@@ -101,6 +101,8 @@ joints section of [`JOINTS.md`](JOINTS.md).
 
 The same message goes out again on `<namespace>/sim_peds`, which the Gazebo pedestrian plugin reads: unchanged in a spread
 world, every ped moved into the simulator frame by `Realizer.placement()` when the levels are stacked (`world.levels`).
+Each message on `arena_peds` is also broadcast to TF, one transform per ped from the message frame to
+`<name>/base_link` at its pose.
 
 ## Resting on furniture
 

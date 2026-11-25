@@ -57,6 +57,7 @@ class PhaseState:
     loop: LoopRun | None = None
     slot: int = 0
     request: int = 0
+    task: str = ""
 
 
 @attrs.define
@@ -109,7 +110,7 @@ class TaskRunner:
         self.scoped = [s for s in self.scoped if not s.id.startswith("e")]
         self.scoped.extend(ScopedCondition(id=f"e{i}", condition=c, monitor=ConditionMonitor(c, self.robot), first=0) for i, c in enumerate(conditions))
 
-    def submit(self, phases: Sequence[TaskPhase], conditions: Sequence[EpisodeCondition] = ()) -> list[PhaseState]:
+    def submit(self, phases: Sequence[TaskPhase], conditions: Sequence[EpisodeCondition] = (), task: str = "") -> list[PhaseState]:
         """Append resolved phases, dropping whatever of the previous request had not finished."""
         self.stop(DropReason.REPLACED)
         for scoped in self.scoped:
@@ -124,11 +125,11 @@ class TaskRunner:
             if isinstance(phase, LoopPhase):
                 until = phase.until_node
                 run = LoopRun(phase=phase, monitor=UntilMonitor(until, self.robot) if until is not None else None, request=request)
-                states.extend(self._iteration(run, first + len(states)))
+                states.extend(self._iteration(run, first + len(states), task))
                 run.resume = first + len(states)
                 runs.append(run)
             else:
-                states.append(PhaseState(index=first + len(states), phase=phase, monitor=PhaseMonitor(phase, self.robot), request=request))
+                states.append(PhaseState(index=first + len(states), phase=phase, monitor=PhaseMonitor(phase, self.robot), request=request, task=task))
         self.phases.extend(states)
         for run in runs:
             if run.resume == len(self.phases):
@@ -138,8 +139,8 @@ class TaskRunner:
         self.changed = True
         return states
 
-    def _iteration(self, run: LoopRun, first: int) -> list[PhaseState]:
-        return [PhaseState(index=first + slot, phase=phase, monitor=PhaseMonitor(phase, self.robot), loop=run, slot=slot, request=run.request) for slot, phase in enumerate(run.phase.phases)]
+    def _iteration(self, run: LoopRun, first: int, task: str) -> list[PhaseState]:
+        return [PhaseState(index=first + slot, phase=phase, monitor=PhaseMonitor(phase, self.robot), loop=run, slot=slot, request=run.request, task=task) for slot, phase in enumerate(run.phase.phases)]
 
     def stop(self, reason: DropReason = DropReason.STOPPED) -> None:
         """Drop every pending phase for `reason`."""
@@ -231,7 +232,7 @@ class TaskRunner:
             return
         run = state.loop
         if run is not None and state.slot == len(run.phase.phases) - 1:
-            self.phases.extend(self._iteration(run, len(self.phases)))
+            self.phases.extend(self._iteration(run, len(self.phases), state.task))
             self._advance(len(self.phases) - len(run.phase.phases), transition)
             return
         self._advance(state.index + 1, transition)
@@ -278,6 +279,7 @@ class TaskRunner:
     def serialize(self) -> dict:
         return {
             "phases": [s.phase.serialize() for s in self.phases],
+            "tasks": [s.task for s in self.phases],
             "conditions": [{"id": s.id, "from": s.first, "to": s.last, **s.condition.serialize()} for s in self.scoped],
             "goal_inputs": list(self.goal_inputs),
             "instructions": [s.instruction for s in self.phases],

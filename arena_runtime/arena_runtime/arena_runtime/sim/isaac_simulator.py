@@ -68,6 +68,7 @@ from isaacsim_msgs.srv import (
     SpawnUrdf,
     SpawnWalls,
     StepSimulation,
+    WeldPrim,
 )
 from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
 
@@ -100,6 +101,9 @@ from arena_runtime.sim._interface import offset_pose, resolve_obstacle_box
 from arena_runtime.sim._robot import render_robot
 from arena_runtime.sim._urdf import transform_urdf_for_bridge
 from arena_runtime.sim._walls import realize_renderable, sloped_box
+
+if typing.TYPE_CHECKING:
+    from arena_runtime.sim._carry import Carry
 
 """
 IsaacHost is constructed once by arena_runtime_node and owns process-singleton resources for Isaac: the lifecycle (pause/unpause/cleanup) and the pause/unpause/delete service clients.
@@ -247,6 +251,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             SpawnPrims=self.node.create_client_wrapper(SpawnPrims, "/isaac/SpawnPrims"),
             SpawnUrdf=self.node.create_client_wrapper(SpawnUrdf, "/isaac/SpawnUrdf"),
             SpawnWalls=self.node.create_client_wrapper(SpawnWalls, "/isaac/SpawnWalls"),
+            WeldPrim=self.node.create_client_wrapper(WeldPrim, "/isaac/WeldPrim"),
         )
         self._peds_publisher = self.node.create_publisher(arena_people_msgs.msg.Pedestrians, "/isaac/arena_peds", 10)
 
@@ -537,6 +542,22 @@ class IsaacSimulator(BaseSim, NodeInterface):
         if res is None:
             return tuple(False for _ in pedestrians)
         return tuple(r == DeletePedestrians.Response.SUCCESS for r in res.results)
+
+    async def _carry_weld(self, carry: "Carry") -> bool:
+        request = WeldPrim.Request(name=self._NS_PRIM(carry.obstacle.name), robot=self._NS_ROBOT(carry.robot), link=carry.hand.rsplit('/', 1)[-1], weld=True)
+        response = await self._clients.WeldPrim.call_timeout(request)
+        return response is not None and response.success
+
+    async def _carry_unweld(self, carry: "Carry") -> Pose | None:
+        name = self._NS_PRIM(carry.obstacle.name)
+        response = await self._clients.WeldPrim.call_timeout(WeldPrim.Request(name=name, robot=self._NS_ROBOT(carry.robot), link=carry.hand.rsplit('/', 1)[-1], weld=False))
+        if response is None or not response.success:
+            return None
+        pose = Pose.from_msg(response.pose)
+        if (center := self._box_centers.get(name)) is not None:
+            pose = pose * Pose(position=Position(*center)).inverse()
+        dx, dy, dz = self._robot_shift(carry.sim_path)
+        return Pose(position=Position(pose.position.x - dx, pose.position.y - dy, pose.position.z - dz), orientation=pose.orientation)
 
     async def robot_delete(self, robots: Sequence[Robot]) -> Sequence[bool]:
         for robot in robots:

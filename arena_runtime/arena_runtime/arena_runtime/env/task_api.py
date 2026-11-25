@@ -11,7 +11,7 @@ from arena_runtime.env.constants import Constants
 from arena_runtime.env.interactive import Apply, Menu, planar_marker, static_marker, visual
 from arena_runtime.env.placement import random_robot_pose
 from arena_runtime.env.realizer import Realizer
-from arena_runtime.env.request import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskKind, TaskPhase, TaskRequest
+from arena_runtime.env.request import GoToPhase, GraspPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskKind, TaskPhase, TaskRequest
 from arena_runtime.env.robot_manager.robot_manager import RobotManager
 from arena_runtime.env.robot_manager.task_runner import PhaseState
 from arena_runtime.env.world_manager.utils import GridFrame, WorldMap, WorldOccupancy
@@ -24,6 +24,7 @@ __all__ = [
     "Apply",
     "Constants",
     "GoToPhase",
+    "GraspPhase",
     "GridFrame",
     "HunavDynamicObstacle",
     "LoopPhase",

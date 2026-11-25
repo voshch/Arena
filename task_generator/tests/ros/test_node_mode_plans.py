@@ -44,7 +44,7 @@ class _World:
 
 
 def _robot(name: str) -> SimpleNamespace:
-    return SimpleNamespace(name=name, safe_distance=0.5, robot=SimpleNamespace(sim_path=f"sim/{name}"))
+    return SimpleNamespace(name=name, model_name="jackal", safe_distance=0.5, robot=SimpleNamespace(sim_path=f"sim/{name}"))
 
 
 def _reset(key: object, registry: object, world: _World, names: tuple[str, ...]) -> object:

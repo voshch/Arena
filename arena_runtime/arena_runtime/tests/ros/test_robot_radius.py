@@ -43,12 +43,12 @@ def test_a_model_without_radius_or_footprint_fails(tmp_path):
         footprint_radius(view.caps, "model")
 
 
-def test_a_model_without_mobile_cap_fails(tmp_path):
+def test_a_model_without_mobile_cap_gets_the_default_agent_radius(tmp_path):
     from arena_runtime.shared import footprint_radius
+    from arena_runtime.sim._interface import DEFAULT_AGENT_RADIUS
 
     view = _write_model(tmp_path, None)
-    with pytest.raises(ValueError, match="no mobile cap"):
-        footprint_radius(view.caps, "model")
+    assert footprint_radius(view.caps, "model") == DEFAULT_AGENT_RADIUS
 
 
 def test_footprint_radius_follows_the_instance_cap_overrides(tmp_path):

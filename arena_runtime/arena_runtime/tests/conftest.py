@@ -37,6 +37,12 @@ def point_table() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _placed_parts_installed(request: pytest.FixtureRequest) -> None:
+    if "model" in request.fixturenames and isinstance(model := request.getfixturevalue("model"), str) and (parts := _placed_arms_and_grippers(model)):
+        request.getfixturevalue("require_installed")(*parts)
+
+
+@pytest.fixture(autouse=True)
 def _baked_point_table(request: pytest.FixtureRequest) -> None:
     if any("point_at_template" in marker.args for marker in request.node.iter_markers("clips")):
         request.getfixturevalue("point_table")
@@ -153,3 +159,17 @@ def fake_task_layer(monkeypatch: pytest.MonkeyPatch) -> object:
 def requires_auditory() -> None:
     if importlib.util.find_spec("arena_auditory") is None:
         pytest.skip("arena_auditory not installed: arena feature auditory install")
+
+
+@functools.cache
+def _placed_arms_and_grippers(model: str) -> tuple[str, ...]:
+    """Arm and gripper components the default assembly of a shipped robot places, whose vendor descriptions its URDF renders."""
+    from arena_robots.Robot import RobotView
+
+    robot_dir = _ROBOTS_REPO / "arena_robots" / "robots" / model
+    if not robot_dir.is_dir():
+        return ()
+    spec = RobotView(robot_dir).assembly
+    if spec is None:
+        return ()
+    return tuple(f"{kind}/{part.variant}" for kind, parts in spec.defaults.items() if kind in ("arm", "gripper") for part in parts)

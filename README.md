@@ -35,6 +35,7 @@ arena feature meshnav install # optional: 3D mesh navigation over stairs and esc
 arena feature training install # optional
 arena feature auditory install # optional: sound simulation (acoustics:=arena)
 arena feature hearing install # optional: robot hearing (robot.hearing)
+arena feature tasks add casper # optional: CASPER++ multi-agent task allocation (task_layer:=casper), arena feature tasks ls lists the task layers
 arena feature vllm install # optional: local LLM backend
 arena feature docker gpu on # optional: NVIDIA GPU passthrough, needed for training
 arena settings net lan # optional: let ROS 2 traffic leave this host

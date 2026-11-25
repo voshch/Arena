@@ -1,0 +1,25 @@
+supervisor: jackal_0
+supervisor_team: true
+members:
+  jackal_0:
+    workspace: [reception, meeting_room_big, main_hallway]
+    skills:
+      OfficeMeeting:
+        communication: [0.9, 1]
+        supervise: [0.8, 2]
+        navigation: [0.6, 3]
+  jackal_1:
+    workspace: [reception, meeting_room_big, storage, cafeteria]
+    constraints: {can_transport_objects: true, max_payload_kg: 5}
+    skills:
+      OfficeMeeting:
+        transport: [0.9, 1]
+        navigation: [0.8, 2]
+        communication: [0.5, 3]
+  jackal_2:
+    workspace: [meeting_room_big, storage, cafeteria]
+    constraints: {can_transport_objects: true, max_payload_kg: 2}
+    skills:
+      OfficeMeeting:
+        navigation: [0.9, 1]
+        transport: [0.7, 2]

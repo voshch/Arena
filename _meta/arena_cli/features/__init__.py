@@ -19,6 +19,7 @@ HOST_FEATURES = (
     "mujoco",
     "planners",
     "robots",
+    "tasks",
     "training",
 )
 CONTAINER_FEATURES = (*HOST_FEATURES, "docker", "vllm")

@@ -223,9 +223,11 @@ class Region:
 
 
 def footprint_radius(caps: RobotCaps, name: str) -> float:
-    """Disc radius of a robot instance: the mobile cap's `radius`, the circumradius of its unpadded footprint unless authored."""
+    """Disc radius of a robot instance: the mobile cap's `radius`, the circumradius of its unpadded footprint unless authored, DEFAULT_AGENT_RADIUS without a mobile cap."""
+    from arena_runtime.sim._interface import DEFAULT_AGENT_RADIUS  # noqa: PLC0415
+
     if 'mobile' not in caps.available:
-        raise ValueError(f"robot {name!r} has no mobile cap, so no footprint radius")
+        return DEFAULT_AGENT_RADIUS
     mobile = caps.mobile
     if mobile.radius is None:
         raise ValueError(f"{mobile.path}: sets neither radius nor footprint")

@@ -10,6 +10,7 @@ import std_msgs.msg
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.request import InstanceRequest
+from arena_robots.task_kinds import TaskKind
 
 from arena_runtime.env.adapters import ADAPTERS
 
@@ -58,6 +59,7 @@ def _manager(node: _Node) -> SimpleNamespace:
         robot_view=view,
         caps=view.effective_caps({}),
         robot=SimpleNamespace(resolved_request={}, frames=None, instance_request=InstanceRequest()),
+        tf_buffer=None,
     )
 
 
@@ -77,7 +79,7 @@ def test_adapter_is_selectable_for_a_robot_advertising_the_cap(cap: str, kind: s
     available = RobotIdentifier("tiago").resolve_sync().effective_caps({}).available
     assert cls.kind == kind
     assert cls._meta().cap == cap
-    assert cls._meta().accepts == frozenset()
+    assert cls._meta().accepts == (frozenset({TaskKind.GRASP}) if (cap, kind) == ("gripper", "direct") else frozenset())
     assert cls._meta().bringup._bringup_meta.requires <= available
 
 

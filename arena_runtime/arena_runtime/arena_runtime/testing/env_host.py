@@ -56,6 +56,9 @@ class FakeTask:
     async def reset_obstacles(self, plan: ResetPlan, record: EpisodeRecord) -> None:
         del plan, record
 
+    async def fleet_for(self, record: EpisodeRecord, params: Mapping[str, str]) -> None:
+        del record, params
+
     async def tick(self, ended: Mapping[str, PhaseState], assigned: Collection[str]) -> None:
         self.ticks.append((dict(ended), set(assigned)))
 

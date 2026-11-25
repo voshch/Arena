@@ -29,6 +29,11 @@ class MissTally:
     def forget_absent(self, present: set[str]) -> None:
         self._misses = {name: count for name, count in self._misses.items() if name in present}
 
+    def forget_under(self, namespace: str) -> None:
+        """Stop tracking the nodes under namespace until they answer again."""
+        prefix = f"{namespace.rstrip('/')}/"
+        self._misses = {name: count for name, count in self._misses.items() if not name.startswith(prefix)}
+
     def record(self, answered: set[str]) -> str | None:
         """Count one round and return a node that reached the limit, a round most nodes missed counts for nobody."""
         known = self._misses.keys() | answered
@@ -51,10 +56,11 @@ class NodePinger:
         self._root = root
         self._tally = MissTally(limit)
         self._clients: dict[str, ClientWrapper] = {}
+        self._removed: set[str] = set()
 
     def _targets(self) -> dict[str, str]:
-        """Each node under the root and the service to ping it on."""
-        services = {name for name, _ in self._node.get_service_names_and_types() if name.startswith(f"{self._root}/")}
+        """Each node under the root and outside removed robots' namespaces, and the service to ping it on."""
+        services = {name for name, _ in self._node.get_service_names_and_types() if name.startswith(f"{self._root}/") and not any(name.startswith(prefix) for prefix in self._removed)}
         nodes = {name.removesuffix(_PARAM_SERVICE) for name in services if name.endswith(_PARAM_SERVICE)} - {self._node.get_fully_qualified_name()}
         nodes = {name for name in nodes if not _HELPER.search(name)}
         return {name: name + _STATE_SERVICE if name + _STATE_SERVICE in services else name + _PARAM_SERVICE for name in nodes}
@@ -64,6 +70,15 @@ class NodePinger:
             reply = await self._clients[service].call_timeout(GetState.Request(), timeout)
             return reply is not None and reply.current_state.id == State.PRIMARY_STATE_ACTIVE
         return await self._clients[service].call_timeout(GetParameters.Request(), timeout) is not None
+
+    def forget_under(self, namespace: str) -> None:
+        """Stop pinging the nodes under the namespace of a removed robot until `track_under` names it again."""
+        self._tally.forget_under(namespace)
+        self._removed.add(f"{namespace.rstrip('/')}/")
+
+    def track_under(self, namespace: str) -> None:
+        """Ping the nodes under the namespace of a robot set up again."""
+        self._removed.discard(f"{namespace.rstrip('/')}/")
 
     async def round(self, timeout: float, *, new_episode: bool) -> str | None:
         """Ping once and return a node that stopped answering or left its active state, or None."""
