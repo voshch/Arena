@@ -146,7 +146,7 @@ class ArenaAcousticsSimulator(BaseAcousticsSimulator):
                 self._retiring[entity] = (retired, left - 1)
             else:
                 del self._retiring[entity]
-        stamp = self.node.get_clock().now().to_msg()
+        stamp = self.node.sim_time.to_msg()
         for sound in outgoing:
             self._source_publisher.publish(self.source_msg(sound, stamp))
 

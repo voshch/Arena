@@ -51,6 +51,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/LifecycleHold.srv
   srv/LifecycleStep.srv
   srv/LifecycleUnpauseWindow.srv
+  srv/LockstepAdvance.srv
   srv/LockstepRegister.srv
   srv/LockstepStart.srv
   srv/MoveEntity.srv

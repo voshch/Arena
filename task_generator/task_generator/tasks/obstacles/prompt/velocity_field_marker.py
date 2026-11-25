@@ -1,6 +1,6 @@
 import numpy as np
+from arena_rclpy_mixins.Time import TimeNode
 from geometry_msgs.msg import Point
-from rclpy.node import Node
 from rclpy.publisher import Publisher
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import ColorRGBA
@@ -10,7 +10,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 class VelocityFieldVisualizer:
     def __init__(
         self,
-        node: Node,
+        node: TimeNode,
         map_min_x: float = 0.0,
         map_min_y: float = 0.0,
         map_max_x: float = 0.0,
@@ -104,7 +104,7 @@ class VelocityFieldVisualizer:
 
                 marker = Marker()
                 marker.header.frame_id = "map"
-                marker.header.stamp = self.node.get_clock().now().to_msg()
+                marker.header.stamp = self.node.sim_time.to_msg()
                 marker.ns = namespace
                 marker.id = id_counter
                 marker.type = Marker.ARROW
@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     rclpy.init()
 
-    node = rclpy.create_node("velocity_field_marker_test_node")
+    node = TimeNode("velocity_field_marker_test_node")
 
     visualizer = VelocityFieldVisualizer(node)
 

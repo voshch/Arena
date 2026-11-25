@@ -331,7 +331,7 @@ Backend-specific knobs pass straight through:
 | Backend | Args | Notes |
 |---|---|---|
 | `rviz` | `view:=map\|robot\|robot3p`, `robot:=<int>\|all`, `viewport.resolution:=WxH` | `robot:=all` fans out one window per robot. |
-| `rerun` | `web_port:=<int>`, `grpc_port:=<int>` | Defaults 9090/9876; auto-bumped per env under `--all` to avoid collisions. Requires `pip install 'rerun-sdk>=0.38'` once. |
+| `rerun` | `web_port:=<int>`, `grpc_port:=<int>`, `memory_limit:=<size>`, `max_rate_hz:=<float>` | Ports default to 9090/9876, auto-bumped per env under `--all` to avoid collisions. `memory_limit` is what the gRPC server buffers for viewers that connect later (default 512MiB), `max_rate_hz` caps updates per topic and tf frame (default 30, 0 = uncapped). Requires `pip install 'rerun-sdk>=0.38'` once. |
 
 Rerun opens a browser-based viewer (no X server, container-friendly); for
 the default `web_port:=9090` go to `http://localhost:9090/`.
@@ -350,6 +350,7 @@ arena robot jackal mobile:=manual        # per-instance adapter selection
 arena robot jackal count:=2              # two jackals
 arena robot rm jackal_0                  # despawn by name
 arena robot ls                           # list the current fleet
+arena robot paths 'jackal[top=arm/ur5e]' # list the cap override paths of an entry
 ```
 
 `<key>:=<value>` tokens describe the robot and are forwarded to the spawn
@@ -357,6 +358,16 @@ service: `name` sets the instance name, `count` spawns that many, and every
 other key reaches `Robot.parse` (e.g. `mobile:=`, `arm:=`). `--flags` control
 the command. Target an env with `--env <id>` or `--ns <ns>` (required when more
 than one env is running); `arena robot ls --all` lists every env.
+
+`arena robot paths <entry>` needs no ROS network and no running env. It prints one
+row per cap override path of a `robot:=` entry (a model, or `<model>[...]` with its
+parts and overrides applied): `<path>`, a kind (`value`, `list`, `map`, or `unset`
+for a typed field or adapter block the cap file leaves out) and the effective value
+(`-` when unset). Paths of a part placed through assembly.yaml end in `brackets of
+<mount>: <relative>`, the relative path is what goes inside that part's bracket
+(`top=arm/ur5e[stall_time=2.0]`). Quote the entry, `[` is a shell glob class. An
+unknown model lists the models and exits 1, an invalid override prints the entry
+form and exits 1, the bare verb lists the models and exits 2.
 
 Spawns and despawns apply on the next episode reset. By default the command
 waits until the robot appears in / disappears from `state/robots` (10s warning
@@ -372,7 +383,7 @@ log_level:=debug     # verbose output from all nodes
 use_sim_time:=false  # real-time clock (unusual, only for real robots)
 complexity:=2        # AMCL (position unknown); 3 = SLAM
 record.dir:=/tmp/arena_run  # enable data recording (record.auto:=false keeps the recorder off)
-task.episode.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, or pedestrian (default false)
+task.episode.fail_on_collision:=true  # abort the episode as FAILED when the robot footprint contacts a wall, static obstacle, pedestrian or held device (default false)
 ```
 
 ### sim:=
@@ -456,7 +467,7 @@ shapes of argument:
 | Shape | Example | Lands as | Purpose |
 |---|---|---|---|
 | `robot.<cap>:=<kind>` | `robot.mobile:=rosnav_rl`, `robot.mobile:=drl`, `robot.mobile:=meshnav` | `robot.<cap>_adapter` | Pick which `Bringup` runs for the cap. |
-| `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from `caps/<cap>.yaml`. |
+| `robot.<cap>.<key>:=<val>` | `robot.mobile.local_planner:=teb`, `robot.mobile.planner:=drlvo` | `robot.<cap>.<key>` | Override a value from the `<cap>` section of `caps.yaml`. |
 | `<adapter-kwarg>:=<val>` | `global_planner:=smac`, `global_planner:=nav2/navfn` | `robot.<cap>.<key>` (via the adapter's launch file) | Adapter-internal launch kwargs (nav2 planner names, or the `<family>/<kind>` form consumed by the `drl` adapter). |
 
 One adapter-readiness timeout lives under the task namespace: `task.episode.timeout.robot_ready`
@@ -464,12 +475,12 @@ One adapter-readiness timeout lives under the task namespace: `task.episode.time
 
 The cap-scoped form is the recommended style because it's self-documenting and
 maps unambiguously to a single cap. To discover what `<key>`s a cap accepts,
-read the robot's `arena_robots/.../robots/<name>/caps/<cap>.yaml`: every
+read the robot's `arena_robots/.../robots/<name>/caps.yaml`: every
 top-level key there is overridable by the same name with the cap prefix.
 
 Contestant args in benchmark YAMLs use the same shapes and the same forwarding
 rules (see
-[benchmark README](../arena_evaluation/arena_evaluation/configs/benchmark/README.md#contestant-args)).
+[benchmark README](../arena_evaluation/arena_evaluation/configs/README.md#contestant-args)).
 
 ### robot:=auto
 
@@ -567,7 +578,7 @@ common entry points. Verbs relevant to bringup:
 | `arena env [ENV] semantics ...` | `state/semantics`, `semantics/set` | List, inspect, set or watch the semantic entities of a running env (lights, doors, signals, sounds, zones) by authored name: `arena env 0 semantics hall level=0.3`, `arena env --all semantics --kind light lit=false`. `arena env semantics --help` lists the forms. |
 | `arena viz [--bg] [target]` | `ros2 run rviz_utils rviz_config` | Attach rviz to a running env; see [arena viz](#arena-viz). `--bg` detaches it. |
 | `arena human [target]` | `rqt --standalone human_steering` | Attach the pedestrian-steering panel to a running env. Target/`--ns` resolution matches [arena viz](#arena-viz). Interactive control works on any backend serving `human/*`: driving a ped possesses it, the engine reclaims it about a second after you stop, `human:=dummy` is the engine-less puppet stage. `arena launch` auto-attaches one panel per env whenever the resolved human backend is `dummy`, unless `headless:=true`. This verb re-attaches after closing it. |
-| `arena robot <model>\|rm\|ls` | `runtime/spawn_robot`, `runtime/despawn_robot`, `state/robots` | Spawn, despawn, or list robots in a running fleet; see [arena robot](#arena-robot). |
+| `arena robot <model>\|rm\|ls\|caps\|paths` | `runtime/spawn_robot`, `runtime/despawn_robot`, `state/robots` | Spawn, despawn, or list robots in a running fleet; see [arena robot](#arena-robot). |
 | `arena cleanup <env_id>` | `/arena/cleanup_namespace` service | Force-clean an env's namespace by id (calls the service for both the `env_<id>_` and `env_<id>/` prefixes, covering gazebo and isaac layouts). |
 | `arena train [args]` | `arena_training` feature launcher | RL training entry, see section 7 above. |
 | `arena fork new\|ls\|exec\|down` | fork containers in `build/.forks` | Isolated containers on snapshots of the dev tree or of another fork, see [Forks](../README.md#forks). |
@@ -579,6 +590,14 @@ only if `sim:=` on the command line mismatches the running runtime's `sim`
 parameter. `arena runtime` will fail if another `/arena` node is already
 registered (ROS doesn't allow duplicate node names); kill the prior one
 manually or call `arena cleanup` on its envs first.
+
+`arena launch`, `arena demo`, `arena runtime`, `arena env` and `arena train`
+refuse to start while an interface package they depend on is stale by the rule
+`arena build` uses: never built, last build failed, or sources newer than the
+install. The message names the packages and the `arena build <package>` that
+rebuilds them and their dependents. `ARENA_ALLOW_STALE=1` turns the refusal
+into a warning. Python sources follow the symlink install, generated message
+code does not.
 
 ### Shell completion
 
@@ -592,6 +611,14 @@ background on the first TAB after a rebuild or on demand with `arena complete --
 marks installed. Dotted keys fold to their group at each level (`arena launch
 <TAB>` shows `task`, `task<TAB>` shows `task.robots` and siblings), a leaf key
 completes straight to `key:=`, and `:` after a group name picks the group's own key.
+
+`robot:=` values complete from the entry typed so far: model names before the `[`,
+then the cap override paths of that robot (`mobile.vel` to `mobile.velocity_limits.`,
+`<cap>.<instance>.<path>` for the static instances of a robot without an assembly),
+and inside a part's bracket (`top=arm/ur5e[st`) the paths relative to that part's cap
+instance. This is the one completion that imports `arena_robots` in the shell
+process, so it works where the CLI runs next to the ROS workspace and offers nothing
+elsewhere. `arena robot paths <TAB>` completes the same entries.
 
 ## Benchmark mode
 
@@ -608,4 +635,4 @@ arena evaluation benchmark sim:=gazebo suite:=basic contest:=basic --lanes 4
 ```
 
 Suite and contest config, runner semantics, and output layout are documented in
-[arena_evaluation/configs/benchmark/](../arena_evaluation/arena_evaluation/configs/benchmark/README.md).
+[arena_evaluation/configs/](../arena_evaluation/arena_evaluation/configs/README.md).

@@ -1,0 +1,5 @@
+float64 seconds      # sim seconds to advance, rounded up to physics steps
+---
+bool success
+float64 advanced     # sim seconds the request advanced
+string error_msg

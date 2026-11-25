@@ -225,7 +225,7 @@ def test_set_and_capture_place_env_poses_in_the_world_and_follow_robots(rig: Rig
     assert top.has_pose and top.entity == ""
     assert placed["camera"]["x"] == pytest.approx(11.0)
     summary, image = captured
-    assert requests["capture"][0].pose.position.x == pytest.approx(11.0)
+    assert (requests["capture"][0].pose.position.x, requests["capture"][0].pose.position.z) == (1.0, 5.0)
     assert (summary["width"], summary["height"]) == (WIDTH, HEIGHT)
     assert image.to_image_content().mime_type == "image/png"
     assert followed["following"] == "jackal"
@@ -233,6 +233,22 @@ def test_set_and_capture_place_env_poses_in_the_world_and_follow_robots(rig: Rig
     assert requests["capture"][1].pose.position.x == pytest.approx(12.0)
     assert requests["capture"][1].pose.position.z == pytest.approx(6.0)
     assert down[0]["camera"]["y"] == pytest.approx(3.0)
+
+
+def test_capture_without_a_view_renders_the_live_camera_unless_following(rig: Rig):
+    async def scenario():
+        await view.view_set(view.View(eye=(4.0, 0.0, 2.0), target=(0.0, 0.0, 0.0)))
+        live = await view.view_capture()
+        await view.view_set(view.View(follow="jackal"))
+        followed = await view.view_capture()
+        return live, followed
+
+    live, followed = rig.run(scenario())
+    first, second = rig.arena.requests["capture"][-2:]
+    assert (first.pose.position.x, first.pose.position.z) == (1.0, 5.0)
+    assert live[0]["following"] is None
+    assert (second.pose.position.x, second.pose.position.z) == (-3.0, 2.0)
+    assert followed[0]["following"] == "jackal"
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None or not cli.sourced(), reason="needs ffmpeg and a shell that sourced arena")

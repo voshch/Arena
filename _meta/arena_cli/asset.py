@@ -53,13 +53,15 @@ KINDS = {
     "suite": Kind("benchmark suites", _BENCH, "SuiteIdentifier", "BENCHMARK_PROVIDERS", bundle=True, closure="suite"),
     "contest": Kind("benchmark contests", _BENCH, "ContestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
     "manifest": Kind("report manifests", _BENCH, "ManifestIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
+    "plot": Kind("reusable plot declarations", _BENCH, "PlotIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
+    "query": Kind("stored SQL queries", _BENCH, "QueryIdentifier", "BENCHMARK_PROVIDERS", bundle=True),
 }
 
 DESCRIPTION = """Inspect and move resolvable arena data.
 
 `ls` alone lists the kinds, `browse` alone the store sources and which kinds use them.
 Every bucket lives on the asset store at ARENA_ASSETS_URL (default
-https://storage.arena-rosnav.org). Reading public/* is anonymous, reading arena-internal,
+https://storage.arena-rosnav.org). Reading arena-public is anonymous, reading arena-internal,
 pushing and removing need ARENA_ASSETS_TOKEN in the environment or a gcloud login."""
 
 
@@ -481,7 +483,7 @@ def _sources() -> dict[str, list[str]]:
     sources: dict[str, list[str]] = {}
     for kind in KINDS:
         for bucket in _buckets(kind):
-            sources.setdefault("public/models" if bucket == "default" else bucket, []).append(kind)
+            sources.setdefault(bucket, []).append(kind)
     sources.setdefault("arena-internal", [])
     return sources
 
@@ -491,7 +493,7 @@ def browse(argv: list[str]) -> int:
 
     `arena asset browse [BUCKET[/PATH]] [--json]`. Bare, the store sources and the kinds
     that read from each. With a path, its folders (object count and size below each) and
-    files. Reading public/* is anonymous, arena-internal needs a token.
+    files. Reading arena-public is anonymous, arena-internal needs a token.
     """
     pos, opts = _parse(argv, ("PATH",), flags=("--json",), optional=1)
     if not pos:

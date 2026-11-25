@@ -24,6 +24,7 @@ import rclpy.lifecycle
 import rclpy.qos
 import yaml
 from arena_rclpy_mixins.params import Param, declare
+from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.SetupFile import Config as RobotSetupConfig
 from arena_runtime_msgs.msg import AdapterDisplay
@@ -57,7 +58,6 @@ from arena_runtime.env.node import _LATCHED, EnvNode
 from arena_runtime.env.node_watch import NodePinger
 from arena_runtime.env.phase_clock import PhaseClock
 from arena_runtime.env.placement import random_obstacle_pose, random_robot_pose
-from arena_runtime.env.robot_manager.robot_manager import footprint_radius
 from arena_runtime.env.run_task import RunningTask
 from arena_runtime.env.task_board import TaskBoard
 from arena_runtime.env.task_layer import (
@@ -80,7 +80,7 @@ from arena_runtime.env.task_layer import (
 )
 from arena_runtime.env.task_markers import task_markers
 from arena_runtime.node_params import TASK_LAYER
-from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot
+from arena_runtime.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position, Robot, footprint_radius
 
 if typing.TYPE_CHECKING:
     from arena_runtime.env.robot_manager import RobotManager
@@ -176,7 +176,7 @@ class EpisodeNode(EnvNode):
         self._goal_progress = GoalProgressTracker()
 
         self.markers = MarkerHub(self, self.service_namespace("markers"), self._reset_lock)
-        self._start_time = self.time
+        self._start_time = self.sim_time
         self._task: EpisodeTask | None = None
         self._force_reset = False
         self._abort_reason: str | None = None
@@ -1214,7 +1214,8 @@ class EpisodeNode(EnvNode):
         (config,) = RobotSetupConfig.parse({"robot": model, "name": assigned_name, **args})
         if "pos" not in config.extra:
             if pose is None:
-                clearance = footprint_radius(RobotIdentifier.parse(config.robot).resolve_sync()) + self.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
+                identifier = RobotIdentifier.parse(config.robot)
+                clearance = footprint_radius(InstanceRequest.of(view := identifier.resolve_sync(), config).caps_of(view), identifier.name) + self.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
                 pose = random_robot_pose(self._world_manager, self._robots_manager, safe_dist=clearance)
             config.extra["pos"] = pose.to_2d()
         self._robots_manager.add_pending(assigned_name, Robot.from_setup(config, node=self))

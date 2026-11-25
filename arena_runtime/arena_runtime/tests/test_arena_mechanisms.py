@@ -93,6 +93,7 @@ def _adapter(level_origins: dict[str, tuple[float, float]] | None = None) -> Are
     sim._mech_walls_applied = {}
     sim._mech_objects = {}
     sim._mech_walls_syncing = False
+    sim._wall_pieces = {}
     return sim
 
 

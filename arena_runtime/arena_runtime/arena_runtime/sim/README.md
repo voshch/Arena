@@ -42,6 +42,8 @@ Defined in [`_interface.py`](_interface.py):
 
 Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
 
+Every simulator loads the URDF of a robot from `render_robot` in [_robot.py](_robot.py), which calls `arena_robots.served_urdf.serve` with the robot's resolved request and frames, the xacro arguments of the robot (its attributes and `extra`, plus `sim_path`, `namespace` and `gazebo_controllers` in Gazebo), the `optim` parameter and the sensor topic patches of its effective sensors. It returns the XML (`description`) and the file it is written to (`path`). Gazebo's robot bridge takes its topic mappings from the plugins of the canonical URDF (`Sensor.plugin_bridge_rows`) and the effective sensors (`Sensor.bridge_rows`).
+
 ### Attach on grasp
 
 [`_interface.py`](_interface.py), [`_carry.py`](_carry.py)
@@ -105,7 +107,9 @@ A weld holds the obstacle at its attach pose in the frame of the robot body that
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |
 
-Robot tracking is not a primitive to override: call `_register_agent_robot(robot, model_params)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+Robot tracking is not a primitive to override: call `_register_agent_robot(robot, view)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+
+A simulator reads the base frame and the `cmd_vel` and odom topics of a robot it spawns from `Robot.body_of(view)`, the instance's effective `body` caps. The control mode, config, controllers, sensors and `z_offset` stay with the resolver on `view.model_params`.
 
 Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` keep the light table, and every tick pushes each `light` semantic entity whose output changed, after moving frame-anchored and link-riding lights that moved more than 2 cm or 0.02 rad. A simulator renders lights by overriding four no-op hooks:
 
@@ -147,7 +151,7 @@ Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as 
 - Door kinds: `sliding` (slides along start->end), `sliding_split` (boxes `<door>_a` and `<door>_b`, the span
   halves, part from the middle by half the span each, a synthesized cabin door's kind unless its elevator's
   `door_kind` says otherwise), `sliding_top`
-  (lifts), `teleport` (drops away) and `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`).
+  (lifts), `teleport` (drops away, after `transition_time` for a door that fell back to teleport at load) and `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`).
   Sliding and hinged slabs are tested against agent discs: an opening step holds when the slab would enter an
   agent (the swing arc of a hinged door, the wall pocket past the end of a sliding one, either pocket of a split
   one), so an agent pressed against a half-open sliding slab
@@ -341,8 +345,10 @@ Gazebo, Isaac and MuJoCo launch each robot's stack (robot_state_publisher, contr
 ## Lockstep
 
 `SimLifecycle.step_seconds(seconds) -> float` advances a held sim by an exact
-sim-time delta, quantized to whole physics steps (`physics_dt` rosparam,
-default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
+sim-time delta, quantized to whole physics steps of `SimLifecycle.physics_dt`,
+the sim's own step: MuJoCo 0.002 s, Isaac one rendered frame of 0.02 s, and for Gazebo, flatsim and
+dummy the `physics_dt` rosparam (default 0.0333, matching `empty.sdf`). The
+lockstep ledger steps in the same quantum. The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). A step of more than one
 tick first raises gz `real_time_factor` so the limiter does not pace it, and
@@ -435,10 +441,19 @@ sim to the producer's true coverage. An elapsed-based rate loop registers
 a period strictly above its interval. The arena_humansim engine ticks off
 `/clock` itself rather than an rcl timer, so a clock the gate is holding
 still owes it the tick the gate is waiting for, and it answers a repeated
-clock, which the gate sends while it waits, with its last frame.
+clock, which the gate sends while it waits, with its last frame. A producer
+that beats from an rcl timer on the sim clock (the hearing belief and policy
+nodes) gets it from `TimeNode.create_timer`, which drops the `EventsExecutor`'s
+repeated dispatch of a ready timer, so the timer never runs a period past the
+clock the gate holds, and stamps from `TimeNode.sim_time`, which already holds
+the time that fired the timer. These producers, the hearing front-ends and every
+`LockstepBeat` publish their beat through `ClockEcho`, so like the engine they
+answer a repeated clock with their last beat and one lost message does not hold
+the gate.
 
-`sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`)
-starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced
+`sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`, `driven`)
+starts a run or reconfigures one in place, and a start with the running
+config only resumes it: `target_rtf` of 0 is unpaced
 while gates hold the pace and wall rate while no channel is registered,
 `ungated` free-steps ignoring every gate. A paced run sleeps against a wall
 schedule of the sim time it advanced, so a tick that overruns its share is
@@ -455,13 +470,22 @@ in the window holder's env, which stay subscribed and keep their latest stamp
 for when the window closes. A failed step is retried under the run's hold
 after 1, 2, 4, 8 and 16 s, rebasing on the clock first, and a sixth
 consecutive failure ends the run and counts one lifecycle failure.
+A `driven` run is unpaced and steps only for requests and open unpause
+windows: `sim_lifecycle/lockstep/advance` (LockstepAdvance: `seconds`)
+queues sim time, rounded up to whole physics steps, steps it in one call
+and answers with the seconds advanced once every hard channel that came due
+inside it covers its last tick. Requests run in order, a foreign hold delays them, and a stop,
+reconfigure or crash fails the pending ones. arena_training's lockstep envs
+step the sim this way, one request per vec step, and gate on their own
+observation streams.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
 pause state and gz `real_time_factor`, responding as soon as the hold is
 released (the guard against a draining gz chunk re-pausing the world runs
 in the background). `sim_lifecycle/lockstep/pause` /
 `sim_lifecycle/lockstep/resume` freeze and unfreeze the clock within a run
 without ending it. Status is the latched `/arena/state/lockstep` topic
-(LockstepStatus): `active`, `paused`, `ungated`, `target_rtf`,
+(LockstepStatus): `active`, `paused`, `ungated`, `driven`, `target_rtf`,
+`pending` (sim seconds owed to advance requests),
 `measured_rtf`, `tick`, `registrations`, `waiting_on`, `arrived`, and the
 run's cumulative counters: `gated_ticks` (ticks that waited on a hard
 channel) and `counts` (per channel topic, the ticks it was `due` on and
@@ -476,6 +500,26 @@ with `{env}` expanded per env. CLI: `arena lockstep run [rtf:=N] [ungated]`
 (blocks, ctrl-c pauses), `on [rtf:=N] [ungated]`, `off`, `pause`, `resume`,
 `status`, and `arena lockstep gate [engine|peds|<spec> ...]` to register
 extra channels under caller `cli`.
+
+## Robot control and physics per simulator
+
+| | MuJoCo | Isaac | Gazebo |
+| --- | --- | --- | --- |
+| physics step | 0.002 s (`scene.PHYSICS_DT`) | 0.004 s (`run_isaacsim.PHYSICS_DT`), five per rendered frame of 0.02 s (`RENDERING_DT`), one solver substep under newton | 0.0333 s (`empty.sdf` `max_step_size`) |
+| lockstep quantum | the physics step | the rendered frame (0.02 s) | the physics step |
+| position servo | PD with the `drives` kp and kd of the robot's caps (default revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped), force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
+| servo rate (revolute) | 20 per s | 20 per s | 2 per s per 10 Hz of the controller manager's `update_rate` (20 per s at go1's 200 Hz, 5 per s at 50 Hz) |
+| gravity compensation | none | none | none |
+| joint armature | `max(URDF, min(0.2, effort / 50))` kg m^2 | URDF | URDF |
+| command and joint state exchange | every 0.02 s of sim time | every rendered frame (0.02 s) | every physics step |
+| camera rate | URDF `update_rate`, checked every 0.02 s tick | the divisor of the 50 Hz render rate nearest the URDF `update_rate` (a 30 Hz camera runs at 25 Hz) | URDF `update_rate` |
+| `odom` with `odom_topic: odom` | ground truth from the free joint | ground truth from the articulation | `pose_to_tf` from the model pose, twist differenced |
+| command interfaces | position, velocity, effort | position, velocity, effort | position, velocity, effort |
+| effort-commanded joint (`drives.<joint>.command: effort`) | motor actuator applying the commanded effort, a position servo with the joint's `drives` gains holds the spawn pose until the first finite effort command | zero-gain drive after the same spawn hold | effort command, gz_ros2_control's `hold_joints` until a controller claims the joint |
+
+The gains are the `drives` fact block of the instance's caps, derived from the URDF unless a robot's caps.yaml or an instance override sets them, and travel to the simulators as `kp`, `kd` and `effort` params of the served URDF's ros2_control joints.
+
+In Gazebo a joint below its URDF position limit gets no servo force (DART 6.13 `JointConstraint::update` handles it as a limit only), so a loaded position joint that a spawn transient pushes onto its limit stays there. A robot's URDF limits therefore sit outside the range its caps command, as TIAGo's torso stops at -0.05 m below its `[0.0, 0.35]` lift range.
 
 ## Sim-paused invariant
 
@@ -497,7 +541,7 @@ controller activation lives inside the robot bring-up unpause window.
 | --- | --- | --- | --- |
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
 | `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/flatsim_simulator.py`](flatsim_simulator/flatsim_simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
-| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI. `pose_to_tf` turns the bridged model pose into `odom -> base` and republishes a ros2_control robot's controller odometry on `odom` with that pose and those frames, so the pose follows teleports and the twist stays the wheel reading |
+| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI. `pose_to_tf` turns the bridged model pose into `odom -> base` and republishes a ros2_control robot's controller odometry on `odom` with that pose and those frames, so the pose follows teleports and the twist stays the wheel reading. A robot with no controller odometry (`odom_topic: odom`, go1 and a1) gets the pose itself on `odom` with the twist differenced between consecutive poses in the base frame, the ground truth MuJoCo and Isaac publish for it |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
 | `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
 
@@ -538,16 +582,17 @@ are what Arena sends it.
   levels side by side in xy at one z, so an elevator ride there is an xy
   teleport within one level. An entity that ends within 0.05 m above its level
   floor, such as an elevator cabin floor, is no obstacle.
-- Robots: body from the mobile cap footprint, driven by the Twist on
+- Robots: body from the `body.outline` of the instance's caps (the convex hull of the base, fixed-link and wheel collision geometry in the rendered URDF, at most 8 vertices), the mobile cap footprint with a logged warning for a robot without collision geometry, driven by the Twist on
   `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
-  the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
-  robot: per-axis (linear, lateral, angular) velocity bounds, acceleration and
+  the `planar` block of the `mobile` section of the robot's `caps.yaml`, the same keys for every
+  robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
-  `pivot` x the body turns about and the command `timeout`. A diff drive has
+  `pivot` x the body turns about (`front` or `rear` in the file, the wheel joint x of the URDF) and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
-  sideways only when `is_holonomic`. The base controller does not run. The adapter
-  launches `robot_state_publisher`, the server gets the URDF and the tf topic
-  of the env.
+  sideways only when `is_holonomic`. The base controller does not run. The
+  cap's `min_turning_radius` bounds the turn rate of a car-like base at its
+  forward speed over that radius. The adapter launches `robot_state_publisher`,
+  the server gets the URDF and the tf topic of the env.
 - Arm, torso and gripper joints: a ros2_control robot with controllers besides its
   base controller and `joint_state_broadcaster` gets a `controller_manager` on `mock_components/GenericSystem`
   (`mock_arm_hardware` in [_urdf.py](_urdf.py)), which keeps only the position-commanded
@@ -578,6 +623,19 @@ are what Arena sends it.
 - Lockstep: no channel is registered, so the other producers set the strides.
   A step is complete when the service answers, every message of it is already
   published.
+
+## Drive limits of a ros2_control base
+
+For every robot with a mobile cap, Gazebo,
+MuJoCo and Isaac overlay the base controller's limit keys from the instance's
+effective `planar` (its velocity and acceleration read from `limits`)
+(`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
+`angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
+`min_acceleration`, written for every axis whose `has_velocity_limits` or
+`has_acceleration_limits` flag the controller sets and never an infinite limit (the
+key stays unset, which the controllers read as unbounded). `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. `control.yaml` carries the flags and no limit values.
+
+The same function writes the drive controller's frames (`base_frame_id` from the instance's `body.base_frame`, `odom_frame_id` from its `mobile.odom_frame`, `overlay_drive_frames` in [_control.py](_control.py), the `control*.yaml` files do not carry them) and the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
 
 ## Adding a new simulator
 

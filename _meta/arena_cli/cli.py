@@ -18,6 +18,7 @@ from arena_cli import robot as _robot_mod
 from arena_cli import semantics as _semantics_mod
 from arena_cli import settings as _settings_mod
 from arena_cli import viz as _viz_mod
+from arena_cli.build import require_built_interfaces
 from arena_cli.common import (
     CLIError,
     Verb,
@@ -164,6 +165,7 @@ def _select_args(args: list[str], above: bool = False) -> list[str]:
 
 
 def _supervisor(*argv: str) -> None:
+    require_built_interfaces()
     detached, rest = _bg.take_flag(list(argv))
     if detached:
         _bg.launch_supervisor(rest, _bg.state_dir(), _bg.log_dir())
@@ -171,7 +173,7 @@ def _supervisor(*argv: str) -> None:
     _exec("python3", "-m", _bg.SUPERVISOR, *argv)
 
 
-_LAUNCH_FILES: dict[str, Source] = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
+_LAUNCH_FILES: dict[str, Source] = {"robot": _robot_mod.ROBOT_ENTRY, "task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
 RUNTIME_ARGS = LaunchArgs("arena_bringup", "arena_runtime.launch.py", _LAUNCH_FILES)
 ENV_ARGS = Union(
     LaunchArgs("arena_runtime", "env.launch.py", _LAUNCH_FILES),
@@ -237,6 +239,7 @@ def runtime(args: list[str]) -> int | None:
         if args[1:]:
             raise CLIError(f"arena runtime down takes no arguments, got {args[1]!r}")
         return _bg.stop(_bg.state_dir())
+    require_built_interfaces()
     detached, rest = _bg.take_flag(args)
     if not detached:
         _exec("ros2", "launch", "arena_bringup", "arena_runtime.launch.py", *args)
@@ -278,6 +281,7 @@ def env_(args: list[str]) -> int | None:
         if len(args) != 2 or args[1] != "down" or not args[0].isdigit():
             raise CLIError("usage: arena env ENV down, ENV a non-negative integer env id")
         return _despawn(int(args[0]))
+    require_built_interfaces()
     detached, args = _bg.take_flag(args)
     stray = [a for a in args if ":=" not in a and not a.startswith("-")]
     if stray:

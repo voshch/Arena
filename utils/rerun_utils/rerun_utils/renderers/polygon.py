@@ -25,6 +25,6 @@ def render_polygon(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Render
         if len(pts) < 2:
             return
         pts.append(pts[0])
-        rr.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]), *in_frame(msg.header.frame_id))
+        ctx.stream.log(entity, rr.LineStrips3D([pts], colors=[color], radii=[radius]), *in_frame(msg.header.frame_id), stamp=msg.header.stamp)
 
-    ctx.node.create_subscription(PolygonStamped, d.topic, cb, 10)
+    ctx.node.create_subscription(PolygonStamped, d.topic, ctx.stream.subscriber(d.topic, cb), 10)

@@ -124,14 +124,23 @@ def worldgen_preview(generator: GeneratorName, config: Config = None, sketch: Sk
     """Run a generator in process: diagnostics, warnings by sketch row/col, normalized sketch, episode binding and the rendered map."""
     from arena_simulation_setup.tree.World.Map import preview_resolution
 
-    _, world, report = _compute(generator, config, sketch, seed)
+    active, world, report = _compute(generator, config, sketch, seed)
     level = world.all_levels[0]
     diagnostics = cast("dict[str, object]", report["diagnostics"])
     extent = cast("list[float]", diagnostics["extent"])
     resolution = preview_resolution(max(extent))
     png, origin = level.render(resolution=resolution)
     report["map"] = {"resolution": resolution, "origin": [float(origin[0]), float(origin[1])]}
+    report["lanes"] = _lane_report(active, world)
     return [report, media.png(png)]
+
+
+def _lane_report(active: WorldGenerator, world: World) -> dict[str, object]:
+    """Lane summaries of each scenario's lane flows, for the scenarios that have any."""
+    from arena_simulation_setup.tree.World.lane_check import scenario_lane_results
+
+    lanes = {name: scenario_lane_results(generated.scenario.get("regions"), world) for name, generated in active.scenarios().items()}
+    return {name: results for name, results in lanes.items() if results}
 
 
 @domain.tool(destructive=True)

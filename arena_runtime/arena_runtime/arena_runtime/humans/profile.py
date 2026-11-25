@@ -304,7 +304,7 @@ def dump_gait_profile(profile: GaitProfile) -> str:
     return "\n".join(lines) + "\n"
 
 
-_LIBRARY_KEYS = {"name", "same_as", "symmetric", "phase_warp", "cadence", "gain", "limits", "signals", "joints"}
+_LIBRARY_KEYS = {"name", "same_as", "still", "symmetric", "phase_warp", "cadence", "gain", "limits", "signals", "joints"}
 
 
 def _library_entry(name: str, raw_by_name: Mapping[str, Mapping[str, Any]], resolved: dict[str, GaitProfile], chain: tuple[str, ...]) -> GaitProfile:
@@ -332,13 +332,15 @@ def _library_entry(name: str, raw_by_name: Mapping[str, Mapping[str, Any]], reso
                 raise ValueError(f"profile {name!r}: joint {joint!r} needs {{signal: <key>, shift: <rad>}} with a declared signal, got {binding!r}")
             joints[joint] = JointSignal(binding["signal"], float(binding["shift"]), signals[binding["signal"]])
         profile = GaitProfile(name=name, joints=joints).with_laws(raw)
+    if raw.get("still"):
+        profile = attrs.evolve(profile, joints={joint: attrs.evolve(js, signal=Signal(js.signal.mean)) for joint, js in profile.joints.items()})
     resolved[name] = profile
     return profile
 
 
 @functools.cache
 def load_library(library_dir: Path = LIBRARY_DIR) -> Mapping[str, GaitProfile]:
-    """Every gait profile yaml in the directory, keyed by file stem, same_as references resolved."""
+    """Every gait profile yaml in the directory, keyed by file stem, same_as references resolved, still ones held at their mean pose."""
     raw_by_name: dict[str, Mapping[str, Any]] = {}
     for path in sorted(Path(library_dir).glob("*.yaml")):
         with open(path) as fh:
@@ -458,7 +460,8 @@ def _locomotion_split(agent_type: str, raw: Mapping[str, Any]) -> float | None:
     return float(split)
 
 
-def _agent_type_pose(agent_type: str, builtin_dir: Path | None, chain: tuple[str, ...]) -> tuple[dict[str, Any], float | None] | None:
+def _agent_type_raw(agent_type: str, builtin_dir: Path | None) -> dict[str, Any] | None:
+    """The yaml of an agent type (a path or a builtin name), None when it cannot be found."""
     if "/" in agent_type or agent_type.endswith(".yaml"):
         path = Path(agent_type)
     elif builtin_dir is not None:
@@ -468,7 +471,13 @@ def _agent_type_pose(agent_type: str, builtin_dir: Path | None, chain: tuple[str
     if not path.is_file():
         return None
     with open(path) as fh:
-        raw = yaml.safe_load(fh) or {}
+        return yaml.safe_load(fh) or {}
+
+
+def _agent_type_pose(agent_type: str, builtin_dir: Path | None, chain: tuple[str, ...]) -> tuple[dict[str, Any], float | None] | None:
+    raw = _agent_type_raw(agent_type, builtin_dir)
+    if raw is None:
+        return None
     section = raw.get("pose") or {}
     split = _locomotion_split(agent_type, raw)
     parent = raw.get("extends")
@@ -490,3 +499,18 @@ def agent_type_pose_section(agent_type: str, builtin_dir: Path | None) -> dict[s
     if split is not None and "phase_warp" not in walk:
         section["walk"] = {**walk, "phase_warp": {"split": split}}
     return section
+
+
+def agent_type_device_section(agent_type: str, builtin_dir: Path | None) -> dict[str, Any] | None:
+    """The `device:` block of an agent type yaml (a path or a builtin name), the nearest one along `extends:` taken whole, None without one."""
+    chain: tuple[str, ...] = ()
+    while agent_type not in chain:
+        raw = _agent_type_raw(agent_type, builtin_dir)
+        if raw is None:
+            return None
+        if raw.get("device") is not None:
+            return dict(raw["device"])
+        if raw.get("extends") is None:
+            return None
+        chain, agent_type = (*chain, agent_type), str(raw["extends"])
+    raise ValueError(f"agent type extends cycle: {' -> '.join((*chain, agent_type))}")

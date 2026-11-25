@@ -28,6 +28,7 @@ set(msg_files
   "msg/AnimationStates.msg"
   "msg/BodyPose.msg"
   "msg/Gesture.msg"
+  "msg/HeldDevice.msg"
   "msg/Pedestrian.msg"
   "msg/Pedestrians.msg"
   "msg/SpawnPedestrian.msg"

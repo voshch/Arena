@@ -145,21 +145,21 @@ def _bare(args: argparse.Namespace) -> int:
 
 
 def default_suites_dir() -> Path:
-    """`configs/benchmark/suites` of arena_evaluation under `$ARENA_DIR`, read by the runner after its share."""
+    """`configs/suites` of arena_evaluation under `$ARENA_DIR`, read by the runner after its share."""
     if not (arena := os.environ.get("ARENA_DIR")):
         raise FileNotFoundError("ARENA_DIR is unset: set it to the Arena checkout, or pass --out to name the suite file")
-    out = Path(arena) / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites"
+    out = Path(arena) / "arena_evaluation" / "arena_evaluation" / "configs" / "suites"
     if not out.is_dir():
         raise FileNotFoundError(f"{out} does not exist: pass --out to name the suite file")
     return out
 
 
-def _shadowing_suite(out: Path) -> Path | None:
+def _shadowing_suite(out: Path, name: str) -> Path | None:
     """The installed arena_evaluation suite of the same name the runner reads before `out`, if any."""
     try:
         from ament_index_python.packages import get_package_share_path
 
-        installed = get_package_share_path("arena_evaluation") / "configs" / "benchmark" / "suites" / out.name
+        installed = get_package_share_path("arena_evaluation") / "configs" / "suites" / name / "suite.yaml"
     except (ImportError, LookupError):
         return None
     return installed if installed.is_file() and not (out.exists() and installed.samefile(out)) else None
@@ -516,7 +516,8 @@ def _cmd_suite(args: argparse.Namespace) -> int:
 
     if not args.world:
         return _bare(args)
-    out = _writable(Path(args.out) if args.out else default_suites_dir() / f"{args.name}.yaml")
+    out = _writable(Path(args.out) if args.out else default_suites_dir() / args.name / "suite.yaml")
+    name = out.stem if args.out else args.name
     worlds = {world: scenarios(world_root(args.worlds, world), args.match) for world in args.world}
     for world, names in worlds.items():
         print(f"  {world:28s} {len(names):4d} scenario(s)")
@@ -526,12 +527,13 @@ def _cmd_suite(args: argparse.Namespace) -> int:
     doc = build(worlds, robot=args.robot, episodes=args.episodes, seed=args.seed, timeout=args.timeout)
     text = yaml.safe_dump(doc, sort_keys=False)
     if args.write:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text)
-        print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s). Run with `arena evaluation benchmark --suite {out.stem} --contest <contest>`")
+        print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s). Run with `arena evaluation benchmark --suite {name} --contest <contest>`")
     else:
         print(text, end="")
         print(f"(dry run - pass --write to write these {len(doc['stages'])} stage(s) to {out})")
-    if (shadow := _shadowing_suite(out)) is not None:
+    if (shadow := _shadowing_suite(out, name)) is not None:
         print(f"  ! the runner reads the installed {shadow} first: rebuild arena_evaluation for it to read this one")
     return 0
 
@@ -592,8 +594,8 @@ def _parser() -> argparse.ArgumentParser:
 
     p = verb("suite", _cmd_suite, "write a benchmark suite with one scenario stage per (world, scenario)")
     p.add_argument("world", nargs="*", help="the worlds whose scenarios become stages (bare, the verb lists the worlds)")
-    p.add_argument("--name", default="edge_case", help="suite name, the file stem under $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites (default edge_case)")
-    p.add_argument("--out", default=None, help="write here instead of $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites/<name>.yaml")
+    p.add_argument("--name", default="edge_case", help="suite name, the bundle folder under $ARENA_DIR/arena_evaluation/arena_evaluation/configs/suites (default edge_case)")
+    p.add_argument("--out", default=None, help="write here instead of $ARENA_DIR/arena_evaluation/arena_evaluation/configs/suites/<name>/suite.yaml")
     p.add_argument("--match", nargs="*", default=[], help="scenario globs (default: every scenario the generator wrote)")
     p.add_argument("--robot", default="jackal", help="the chassis, as a contest compares planners on one drive family (default jackal)")
     p.add_argument("--episodes", type=_positive_int, default=1, help="episodes per stage, seeded seed..seed+episodes-1, at least 1 (default 1)")

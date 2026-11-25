@@ -194,7 +194,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         """Publish the global `map` -> `<prefix>/map` static transform that anchors the env's local frame."""
         prefix = declare(self.node, NodeParams.PREFIX).value
         t = geometry_msgs.msg.TransformStamped()
-        t.header.stamp = self.node.get_clock().now().to_msg()
+        t.header.stamp = self.node.sim_time.to_msg()
         t.header.frame_id = 'map'
         t.child_frame_id = FrameNamespace(prefix).tf('map')
         t.transform.translation.x = ref_x
@@ -597,11 +597,11 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
     async def sync(self, timeout: float = -1) -> bool:
         """Wait until at least one world has been applied. Used by external lifecycle callers."""
-        start_time = self.node.get_clock().now().seconds_nanoseconds()[0]
+        start_time = self.node.sim_time
         while not self._world_name:
             await asyncio.sleep(0.01)
             if timeout >= 0:
-                elapsed = self.node.get_clock().now().seconds_nanoseconds()[0] - start_time
+                elapsed = (self.node.sim_time - start_time).to_seconds()
                 if elapsed >= timeout:
                     return False
         return True

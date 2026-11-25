@@ -42,7 +42,7 @@ def test_world_local_and_linked_assets_resolve_from_their_worlds(tmp_path: Path)
 
 
 def _preload(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, 'ARENA_WORLD_PATH': str(tmp_path), 'ASSET_BUCKETS': ',', 'WORLD_BUCKETS': ','}
+    env = {**os.environ, 'ARENA_WORLD_PATH': str(tmp_path), 'ARENA_BUCKETS': ','}
     return subprocess.run([sys.executable, str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=300, check=False)
 
 

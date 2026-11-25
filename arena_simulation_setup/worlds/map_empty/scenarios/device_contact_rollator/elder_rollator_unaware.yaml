@@ -1,0 +1,4 @@
+name: elder_rollator_unaware
+extends: elder_rollator
+perception:
+  robot_awareness: blind

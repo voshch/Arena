@@ -45,9 +45,9 @@ def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Re
         peds = list(msg.pedestrians)
         frame = in_frame(msg.header.frame_id)
         if not peds:
-            rr.log(entity, rr.Clear(recursive=True))
+            ctx.stream.log(entity, rr.Clear(recursive=True), stamp=msg.header.stamp)
             return
-        rr.log(
+        ctx.stream.log(
             f"{entity}/bodies",
             rr.Capsules3D(
                 lengths=[HEIGHT - 2 * RADIUS] * len(peds),
@@ -58,8 +58,9 @@ def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Re
                 fill_mode="solid",
             ),
             *frame,
+            stamp=msg.header.stamp,
         )
-        rr.log(
+        ctx.stream.log(
             f"{entity}/headings",
             rr.Arrows3D(
                 origins=heading_origins(peds),
@@ -67,9 +68,11 @@ def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Re
                 colors=[color],
             ),
             *frame,
+            stamp=msg.header.stamp,
         )
 
-    ctx.node.create_subscription(Pedestrians, peds_topic(ctx.env_namespace), cb, QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT))
+    topic = peds_topic(ctx.env_namespace)
+    ctx.node.create_subscription(Pedestrians, topic, ctx.stream.subscriber(topic, cb), QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT))
 
 
 def peds_topic(env_namespace: str) -> str:

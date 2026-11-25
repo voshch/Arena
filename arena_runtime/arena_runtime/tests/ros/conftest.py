@@ -77,7 +77,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
     from arena_rclpy_mixins.spin import create_executor
     from arena_rclpy_mixins.Time import Time
     from arena_runtime_msgs.msg import LockstepHeartbeat, LockstepRegistration, LockstepStatus
-    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LifecycleUnpauseWindow, LockstepRegister, LockstepStart
+    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LifecycleUnpauseWindow, LockstepAdvance, LockstepRegister, LockstepStart
     from std_msgs.msg import Bool
     from std_srvs.srv import Trigger
 
@@ -100,6 +100,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             self.step = self.create_client_wrapper(LifecycleStep, "/arena/sim_lifecycle/step", timeout=30.0)
             self.window = self.create_client_wrapper(LifecycleUnpauseWindow, "/arena/sim_lifecycle/unpause_window", timeout=30.0)
             self.start = self.create_client_wrapper(LockstepStart, "/arena/sim_lifecycle/lockstep/start", timeout=30.0)
+            self.advance = self.create_client_wrapper(LockstepAdvance, "/arena/sim_lifecycle/lockstep/advance", timeout=60.0)
             self.register = self.create_client_wrapper(LockstepRegister, "/arena/sim_lifecycle/lockstep/register", timeout=30.0)
             self.stop = self.create_client_wrapper(Trigger, "/arena/sim_lifecycle/lockstep/stop", timeout=30.0)
 
@@ -139,13 +140,17 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             response = await self.window.call_timeout(LifecycleUnpauseWindow.Request(action=action, caller_id=caller))
             assert response is not None and response.success, response.error_msg if response is not None else "timeout"
 
-        async def start_run(self, target_rtf: float = 0.0, ungated: bool = False) -> None:
-            response = await self.start.call_timeout(LockstepStart.Request(target_rtf=target_rtf, ungated=ungated))
+        async def start_run(self, target_rtf: float = 0.0, ungated: bool = False, driven: bool = False) -> None:
+            response = await self.start.call_timeout(LockstepStart.Request(target_rtf=target_rtf, ungated=ungated, driven=driven))
             assert response is not None and response.success, response.error_msg if response is not None else "timeout"
 
         async def stop_run(self) -> None:
-            response = await self.stop.call_timeout(Trigger.Request())
-            assert response is not None and response.success
+            for _ in range(10):
+                response = await self.stop.call_timeout(Trigger.Request(), timeout_sec=3.0)
+                if response is not None:
+                    assert response.success
+                    return
+            raise AssertionError("no answer to lockstep stop within 30 s")
 
     executor = create_executor()
     servers: list[typing.Any] = []

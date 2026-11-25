@@ -1,0 +1,4 @@
+name: patient_walking_frame_unaware
+extends: patient_walking_frame
+perception:
+  robot_awareness: blind

@@ -26,7 +26,7 @@ class DummyHost(SimLifecycle):
     CLOCK_PERIOD = 0.01
 
     def __init__(self, physics_dt: float) -> None:
-        self._dt = physics_dt
+        self.physics_dt = physics_dt
         self.paused = False
         self._start = time.monotonic()
         self._paused_total = 0.0
@@ -52,14 +52,14 @@ class DummyHost(SimLifecycle):
         return True
 
     async def step_seconds(self, seconds: float) -> float:
-        n = round(seconds / self._dt)
+        n = round(seconds / self.physics_dt)
         if seconds > 0:
             n = max(1, n)
         if n <= 0:
             return 0.0
-        self._stepped += n * self._dt
+        self._stepped += n * self.physics_dt
         await asyncio.sleep(self.CLOCK_PERIOD)
-        return n * self._dt
+        return n * self.physics_dt
 
     async def cleanup_namespace(self, prefix: str) -> int:
         del prefix

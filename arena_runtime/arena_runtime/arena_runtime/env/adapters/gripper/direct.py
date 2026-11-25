@@ -40,7 +40,7 @@ class DirectGripperAdapter(Adapter):
 
     def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
         super().__init__(robot_manager, **bringup_kwargs)
-        caps = robot_manager.robot_view.effective_caps(robot_manager.robot.resolved_request, frames=robot_manager.robot.frames)
+        caps = robot_manager.caps
         namespace = str(robot_manager.namespace)
         node = robot_manager.node
         self._specs: dict[str, GripperSpec] = dict(caps.gripper or {})

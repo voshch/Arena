@@ -1,0 +1,21 @@
+#!/bin/sh
+root="${ARENA_DATA_DIR:-$ARENA_WS_DIR/data}/assets"
+new="$root/arena-public"
+list="$(mktemp)" || exit 1
+trap 'rm -f "$list"' EXIT
+moved=0
+for src in default public/models public/worlds public/benchmarks; do
+    dir="$root/$src"
+    [ -d "$dir" ] || continue
+    find "$dir" -type f ! -path "$dir/.listing*" > "$list" || exit 1
+    while IFS= read -r file; do
+        rel="${file#"$dir"/}"
+        [ -e "$new/$rel" ] && continue
+        mkdir -p "$(dirname "$new/$rel")" || exit 1
+        mv "$file" "$new/$rel" || exit 1
+        moved=1
+    done < "$list"
+    rm -rf "$dir" || exit 1
+done
+rm -rf "$root/public" || exit 1
+[ "$moved" = 0 ] || echo "moved the asset cache to $new"

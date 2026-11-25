@@ -18,15 +18,15 @@ NO_VIEW = "viz_rerun_list shows the live views"
 
 
 @domain.tool(idempotent=True)
-async def viz_rerun_start(env_id: int | None = None, web_port: int = 0, grpc_port: int = 0) -> dict[str, object]:
-    """Start the Rerun web view of an env and return its viewer URL, or the live view when the env has one (started false). A port of 0 picks a free one."""
+async def viz_rerun_start(env_id: int | None = None, web_port: int = 0, grpc_port: int = 0, memory_limit: str = "512MiB", max_rate_hz: float = 30.0) -> dict[str, object]:
+    """Start the Rerun web view of an env and return its viewer URL, or the live view when the env has one (started false). A port of 0 picks a free one, memory_limit is what the gRPC server buffers for viewers that connect later, max_rate_hz caps updates per topic and tf frame (0 = uncapped)."""
     ns = await tg(env_id)
     env = env_idx_from_ns(ns) if env_id is None else env_id
     view = views.load(env)
     if view is not None:
         return {**_start_result(view), "started": False}
     try:
-        view = await asyncio.to_thread(views.spawn, env, ns, web_port, grpc_port)
+        view = await asyncio.to_thread(views.spawn, env, ns, web_port, grpc_port, [f"memory_limit:={memory_limit}", f"max_rate_hz:={float(max_rate_hz)}"])
     except views.StartTimeout as e:
         await proc.stop_group(e.pid)
         raise ToolError(str(e), hint="system_logs shows the bridge log, the env must have finished its first reset") from e

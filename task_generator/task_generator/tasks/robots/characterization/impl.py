@@ -101,7 +101,7 @@ class TM_Characterization(TM_Robots):
         sweeps = {name: [float(v) for v in typing.cast("Iterable[float]", values[name])] for name in SWEEP_DEFAULTS}
 
         for manager in self._ctx.robots.values():
-            envelope = resolve_envelope(manager.model_name)
+            envelope = resolve_envelope(manager.caps.mobile if "mobile" in manager.caps.available else None)
             schedule = build_schedule(
                 modes=modes,
                 vx_max=float(envelope["vx_max"]),
@@ -190,7 +190,7 @@ class TM_Characterization(TM_Robots):
         return _cb
 
     def _sim_now(self) -> float:
-        return self.node.get_clock().now().nanoseconds * 1e-9
+        return self.node.sim_time.to_seconds()
 
     def _publish_zero(self, robot_name: str | None = None) -> None:
         pubs = self._twist_pubs.values() if robot_name is None else [self._twist_pubs[robot_name]]

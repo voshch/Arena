@@ -1,58 +1,77 @@
 """Shared launch helpers for the ros2_control plane (Gazebo + Isaac)."""
 
+import math
 import os
 import tempfile
 import typing
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import launch_ros.actions
 import yaml
-from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_bringup.constants import SimSimulator
 from arena_robots.assembly import ResolvedAssembly
+from arena_robots.caps import check_effort_drives
 from arena_robots.catalog import Catalog, render_effective_control
+from arena_robots.urdf_facts import drive_controller, drive_geometry
 
 if typing.TYPE_CHECKING:
+    from arena_robots.caps import DriveSpec, PlanarSpec
     from arena_robots.Robot import RobotView
 
 
 STATE_PUBLISH_HZ = 1000.0
 
-
-def load_control_yaml(config_uri: str, sim: SimSimulator | None = None) -> dict:
-    """Resolve a ``control.config`` URI (``package://...`` or a bare path) and
-    load the raw YAML as a dict, overlaid key by key with its sibling
-    ``<name>.<sim>.yaml`` when ``sim`` is given and that file exists. No frame
-    prefixing; the caller merges/prefixes."""
-    if config_uri.startswith("package://"):
-        pkg, _, sub = config_uri[len("package://") :].partition('/')
-        try:
-            src_path = os.path.join(get_package_share_directory(pkg), sub)
-        except PackageNotFoundError as e:
-            raise FileNotFoundError(f"control.config package '{pkg}' not found") from e
-    else:
-        src_path = config_uri
-
-    data = _read_mapping(src_path)
-    if sim is None:
-        return data
-    root, ext = os.path.splitext(src_path)
-    overlay_path = f"{root}.{sim.value}{ext}"
-    if not os.path.isfile(overlay_path):
-        return data
-    return _overlay(data, _read_mapping(overlay_path))
+_PLANAR_CONTROLLER_AXES = {'linear': 'linear.x', 'lateral': 'linear.y', 'angular': 'angular.z'}
 
 
-def _read_mapping(path: str) -> dict:
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"control config at {path} must be a mapping; got {type(data).__name__}")
-    return data
+def overlay_planar_limits(params: dict, planar: "PlanarSpec") -> dict:
+    """A copy of a drive controller's parameters with the limit keys of every axis whose limit flag is true set from ``planar``, infinite limits skipped."""
+    out = dict(params)
+    for axis, prefix in _PLANAR_CONTROLLER_AXES.items():
+        limits = {}
+        if params.get(f'{prefix}.has_velocity_limits') is True and axis in planar.velocity:
+            limits[f'{prefix}.min_velocity'] = planar.velocity[axis].min
+            limits[f'{prefix}.max_velocity'] = planar.velocity[axis].max
+        if params.get(f'{prefix}.has_acceleration_limits') is True and axis in planar.acceleration:
+            limits[f'{prefix}.min_acceleration'] = -planar.acceleration[axis]
+            limits[f'{prefix}.max_acceleration'] = planar.acceleration[axis]
+        out.update({key: value for key, value in limits.items() if math.isfinite(value)})
+    return out
 
 
-def _overlay(base: dict, top: dict) -> dict:
-    return {**base, **{k: _overlay(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v for k, v in top.items()}}
+def overlay_drive_frames(params: dict, base_frame: str, odom_frame: str) -> dict:
+    """A copy of a drive controller's parameters with its base and odometry frames set."""
+    return {**params, 'base_frame_id': base_frame, 'odom_frame_id': odom_frame}
+
+
+def overlay_drive_geometry(params: dict, geometry: dict) -> dict:
+    """A copy of a drive controller's parameters with the URDF-derived ``geometry`` written over them."""
+    return {**params, **geometry}
+
+
+def _with_planar_limits(control: dict, planar: "PlanarSpec") -> dict:
+    out = dict(control)
+    for name, section in control.items():
+        if name == 'controller_manager' or not isinstance(section, dict) or not isinstance(section.get('ros__parameters'), dict):
+            continue
+        out[name] = {**section, 'ros__parameters': overlay_planar_limits(section['ros__parameters'], planar)}
+    return out
+
+
+def _with_frames(control: dict, base_frame: str, odom_frame: str) -> dict:
+    drive = drive_controller(control)
+    if drive is None:
+        return control
+    name, _, params = drive
+    return {**control, name: {**control[name], 'ros__parameters': overlay_drive_frames(params, base_frame, odom_frame)}}
+
+
+def _with_drive_geometry(control: dict, urdf: str) -> dict:
+    drive = drive_controller(control)
+    if drive is None:
+        return control
+    name, kind, params = drive
+    return {**control, name: {**control[name], 'ros__parameters': overlay_drive_geometry(params, drive_geometry(urdf, kind, params))}}
 
 
 def _prefix_frames(obj: object, frame_prefix: str) -> object:
@@ -64,20 +83,17 @@ def _prefix_frames(obj: object, frame_prefix: str) -> object:
 
 
 def render_ros2_control_yaml(
-    config_uri: str,
+    data: dict,
     sim_path: str,
     frame_prefix: str,
-    *,
-    data: dict | None = None,
 ) -> str:
     """Render and write a ros2_control YAML to /tmp.
 
     Prefixes bare frame_id values and writes the result to a deterministic temp
-    path. Returns the absolute output path. ``data`` overrides the config loaded
-    from ``config_uri`` (the caller's merged effective control dict); when
-    omitted, loads ``config_uri`` unchanged.
+    path. Returns the absolute output path. ``data`` is the caller's merged
+    effective control dict.
     """
-    rendered = _prefix_frames(data if data is not None else load_control_yaml(config_uri), frame_prefix)
+    rendered = _prefix_frames(data, frame_prefix)
     if isinstance(rendered, dict):
         rendered = {(k if k.startswith('/') else f'/**/{k}'): v for k, v in rendered.items()}
 
@@ -89,23 +105,32 @@ def render_ros2_control_yaml(
 
 def effective_control_yaml(
     resolved: ResolvedAssembly | None,
-    config_uri: str,
+    view: "RobotView",
     sim_path: str,
     frame_prefix: str,
     *,
     sim: SimSimulator,
+    urdf: str,
     catalog: Catalog | None = None,
     prefix: str = 'robot_',
+    planar: "PlanarSpec | None" = None,
+    base_frame: str,
+    odom_frame: str,
+    drives: "Mapping[str, DriveSpec] | None" = None,
 ) -> str:
     """Render+write the ros2_control YAML for one robot instance, merging
     ``resolved``'s placement control blocks into the chassis config with its
     ``sim`` overlay first. Robots without an assembly (``resolved`` is ``None``)
-    take that chassis config unchanged."""
-    base_control = load_control_yaml(config_uri, sim)
+    take that chassis config unchanged. A ``planar`` spec overlays the drive controller's limit keys of every axis whose limit flag it sets, ``base_frame`` and ``odom_frame`` are written to its frame keys, and the geometry ``urdf`` measures overwrites its wheel keys. A controller claiming an effort-commanded joint of ``drives`` must command effort."""
+    base_control = _with_drive_geometry(_with_frames(view.control_config(sim.value), base_frame, odom_frame), urdf)
+    if planar is not None:
+        base_control = _with_planar_limits(base_control, planar)
     if resolved is None:
-        return render_ros2_control_yaml(config_uri, sim_path, frame_prefix, data=base_control)
-    merged, _ = render_effective_control(resolved, base_control, catalog if catalog is not None else Catalog(), prefix=prefix)
-    return render_ros2_control_yaml(config_uri, sim_path, frame_prefix, data=merged)
+        merged = base_control
+    else:
+        merged, _ = render_effective_control(resolved, base_control, catalog if catalog is not None else Catalog(), prefix=prefix)
+    check_effort_drives(merged, drives or {})
+    return render_ros2_control_yaml(merged, sim_path, frame_prefix)
 
 
 def effective_controllers(

@@ -24,17 +24,18 @@ from arena_simulation_setup import (
 )
 from arena_simulation_setup.utils.cattrs import Idempotent, Parseable, Serializable
 
-
-def providers(env: str, default: str) -> Sequence[str]:
-    """Asset store sources for one asset family, from *env* or *default*. Empty falls back too,
-    so the shell can export the override slot without restating the source, and an
-    entry `default` stands for *default*."""
-    return [default if p == 'default' else p for p in (os.environ.get(env) or default).split(',') if p]
+DEFAULT_BUCKET = 'arena-public'
 
 
-NETWORK_PROVIDERS: Sequence[str] = providers('ASSET_BUCKETS', 'default')
-WORLD_PROVIDERS: Sequence[str] = providers('WORLD_BUCKETS', 'public/worlds')
-BENCHMARK_PROVIDERS: Sequence[str] = providers('BENCHMARK_BUCKETS', 'public/benchmarks')
+def providers(env: str) -> Sequence[str]:
+    """Asset store sources for one asset family: *env*, then `ARENA_BUCKETS` (default `arena-public`), deduplicated, `default` standing for `arena-public`."""
+    entries = [*os.environ.get(env, '').split(','), *(os.environ.get('ARENA_BUCKETS') or DEFAULT_BUCKET).split(',')]
+    return list(dict.fromkeys(DEFAULT_BUCKET if p == 'default' else p for p in entries if p))
+
+
+NETWORK_PROVIDERS: Sequence[str] = providers('ASSET_BUCKETS')
+WORLD_PROVIDERS: Sequence[str] = providers('WORLD_BUCKETS')
+BENCHMARK_PROVIDERS: Sequence[str] = providers('BENCHMARK_BUCKETS')
 
 
 async def _subprocess_output(args: Sequence[str], **kwargs: typing.Any) -> bytes:

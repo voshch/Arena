@@ -1,6 +1,8 @@
 bool active
 bool paused                     # run kept, stepping suspended
 bool ungated                    # gates ignored, free-stepping
+bool driven                     # advances only on lockstep/advance requests
+float64 pending                 # sim seconds still owed to queued advance requests
 float64 target_rtf
 float64 measured_rtf            # sim seconds advanced per wall second, recent window
 builtin_interfaces/Time tick    # sim time being gated on

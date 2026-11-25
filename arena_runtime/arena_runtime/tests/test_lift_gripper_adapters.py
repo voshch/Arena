@@ -9,6 +9,7 @@ import pytest
 import std_msgs.msg
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotIdentifier
+from arena_robots.request import InstanceRequest
 from arena_robots.task_kinds import TaskKind
 
 from arena_runtime.env.adapters import ADAPTERS
@@ -50,12 +51,14 @@ class _Node:
 
 
 def _manager(node: _Node) -> SimpleNamespace:
+    view = RobotIdentifier("tiago").resolve_sync()
     return SimpleNamespace(
         name="tiago",
         node=node,
         namespace=Namespace("/env_0/tiago"),
-        robot_view=RobotIdentifier("tiago").resolve_sync(),
-        robot=SimpleNamespace(resolved_request={}, frames=None),
+        robot_view=view,
+        caps=view.effective_caps({}),
+        robot=SimpleNamespace(resolved_request={}, frames=None, instance_request=InstanceRequest()),
         tf_buffer=None,
     )
 

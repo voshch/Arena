@@ -180,47 +180,49 @@ def test_write_path_raises_with_no_resolvers_at_all():
 # ---------------------------------------------------------------------------
 
 
-def test_providers_uses_default_when_env_unset():
-    var = '_ARENA_TEST_PROVIDERS_UNSET'
-    os.environ.pop(var, None)
-    assert providers(var, 'default-bucket') == ['default-bucket']
+FAMILY = '_ARENA_TEST_PROVIDERS_FAMILY'
 
 
-def test_providers_splits_comma_separated_env():
-    var = '_ARENA_TEST_PROVIDERS_SET'
-    os.environ[var] = 'one,two,three'
-    try:
-        assert providers(var, 'default') == ['one', 'two', 'three']
-    finally:
-        del os.environ[var]
+def test_providers_default_to_arena_public(monkeypatch):
+    monkeypatch.delenv(FAMILY, raising=False)
+    monkeypatch.delenv('ARENA_BUCKETS', raising=False)
+    assert providers(FAMILY) == ['arena-public']
 
 
-def test_providers_drops_empty_segments():
-    var = '_ARENA_TEST_PROVIDERS_EMPTY_SEGMENTS'
-    os.environ[var] = 'one,,two,'
-    try:
-        assert providers(var, 'default') == ['one', 'two']
-    finally:
-        del os.environ[var]
+def test_providers_take_arena_buckets_in_order(monkeypatch):
+    monkeypatch.delenv(FAMILY, raising=False)
+    monkeypatch.setenv('ARENA_BUCKETS', 'arena-internal,arena-public')
+    assert providers(FAMILY) == ['arena-internal', 'arena-public']
 
 
-def test_providers_default_entry_stands_for_the_family_bucket():
-    var = '_ARENA_TEST_PROVIDERS_DEFAULT_ENTRY'
-    os.environ[var] = 'default,private'
-    try:
-        assert providers(var, 'family-public') == ['family-public', 'private']
-    finally:
-        del os.environ[var]
+def test_providers_put_the_family_entries_first_and_drop_repeats(monkeypatch):
+    monkeypatch.setenv(FAMILY, 'default,arena-internal')
+    monkeypatch.setenv('ARENA_BUCKETS', 'arena-internal,other')
+    assert providers(FAMILY) == ['arena-public', 'arena-internal', 'other']
 
 
-def test_providers_blank_env_value_falls_back_to_default():
-    """The shell exports the override slot blank, which must not read as 'no buckets'."""
-    var = '_ARENA_TEST_PROVIDERS_BLANK'
-    os.environ[var] = ''
-    try:
-        assert providers(var, 'default') == ['default']
-    finally:
-        del os.environ[var]
+def test_providers_add_the_default_bucket_to_a_family_entry(monkeypatch):
+    monkeypatch.setenv(FAMILY, 'public/worlds')
+    monkeypatch.delenv('ARENA_BUCKETS', raising=False)
+    assert providers(FAMILY) == ['public/worlds', 'arena-public']
+
+
+def test_providers_drop_empty_segments(monkeypatch):
+    monkeypatch.setenv(FAMILY, 'one,,two,')
+    monkeypatch.setenv('ARENA_BUCKETS', ',three,')
+    assert providers(FAMILY) == ['one', 'two', 'three']
+
+
+def test_providers_blank_family_value_reads_arena_buckets(monkeypatch):
+    monkeypatch.setenv(FAMILY, '')
+    monkeypatch.setenv('ARENA_BUCKETS', '')
+    assert providers(FAMILY) == ['arena-public']
+
+
+def test_providers_are_empty_with_only_commas(monkeypatch):
+    monkeypatch.setenv(FAMILY, ',')
+    monkeypatch.setenv('ARENA_BUCKETS', ',')
+    assert providers(FAMILY) == []
 
 
 def _registered_identifier_types() -> list[type[Identifier]]:

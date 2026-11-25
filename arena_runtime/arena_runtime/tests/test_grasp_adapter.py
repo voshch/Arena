@@ -8,6 +8,7 @@ import pytest
 from action_msgs.msg import GoalStatus
 from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.Robot import RobotIdentifier
+from arena_robots.request import InstanceRequest
 from arena_robots.task_kinds import TaskKind
 from rclpy.task import Future
 
@@ -97,6 +98,7 @@ def _build(kind: str = "direct"):
     node = _Node()
     simulator = _Simulator()
     failed: list[str] = []
+    view = RobotIdentifier("tiago").resolve_sync()
     manager = SimpleNamespace(
         name="tiago",
         failed=failed,
@@ -104,8 +106,9 @@ def _build(kind: str = "direct"):
         node=node,
         environment_manager=simulator,
         namespace=Namespace("/env_0/tiago"),
-        robot_view=RobotIdentifier("tiago").resolve_sync(),
-        robot=SimpleNamespace(resolved_request={}, frames=None, frame=FrameNamespace("env_0/tiago")),
+        robot_view=view,
+        caps=view.effective_caps({}),
+        robot=SimpleNamespace(resolved_request={}, frames=None, frame=FrameNamespace("env_0/tiago"), instance_request=InstanceRequest()),
         tf_buffer=None,
     )
     adapter = ADAPTERS["gripper"].get(kind)(robot_manager=manager)
@@ -114,8 +117,7 @@ def _build(kind: str = "direct"):
 
 
 def _joint(manager) -> str:
-    caps = manager.robot_view.effective_caps(manager.robot.resolved_request, frames=manager.robot.frames)
-    return caps.gripper["gripper"].joint
+    return manager.caps.gripper["gripper"].joint
 
 
 async def _settle() -> None:

@@ -1,0 +1,8 @@
+# Run with robot.mobile:=test-collision task.episode.fail_on_collision:=true; the first contact ends the episode.
+format: arena-scenario/2
+humans:
+- {name: rolling_cane, model: Common/casual_male_asian_young_rollingcane, pose: [20.5, 11.35, 3.1416], waypoints: [[9.5, 11.35, 0.0]], waypoint_mode: once, agent: {agent_type: ./blind_rolling_cane_unaware.yaml}}
+robots:
+- start: [9.0, 11.5, 0.0]
+  phases:
+  - {goto: [21.0, 11.5, 0.0]}

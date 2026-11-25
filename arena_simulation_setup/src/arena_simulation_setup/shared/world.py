@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import logging
 import math
 import typing
 
@@ -27,6 +29,9 @@ DoorKind = typing.Literal['sliding', 'sliding_split', 'hinged', 'teleport', 'sli
 
 
 _POCKET_OVERLAP_M = 0.01
+
+logger = logging.getLogger(__name__)
+logger.propagate = True
 
 
 def _activation_distance_converter(x: float | typing.Sequence[float]) -> ActivationDistance:
@@ -212,8 +217,12 @@ class Stairs(Named):
     overhang: float = 0.0
     stacked: bool = False
     floor: bool = True
+    same_level: bool = False
     joined: bool = attrs.field(default=False, init=False)
     whole: bool = attrs.field(default=False, init=False)
+
+    def __attrs_post_init__(self) -> None:
+        self.joined = self.same_level
 
     @property
     def length(self) -> float:
@@ -271,8 +280,8 @@ class Stairs(Named):
 
     @property
     def reach(self) -> float:
-        """How far past the seam agents still stand on a half, up to a trigger line past it."""
-        return max(0.0, -2.0 * self.inset)
+        """How far past the seam agents still stand on a half, up to a trigger line past it, nowhere on a stair on its own level."""
+        return 0.0 if self.same_level else max(0.0, -2.0 * self.inset)
 
     def contains(self, x: float, y: float, beyond: float = 0.0) -> bool:
         return 0.0 <= self.along(x, y) <= self.length + beyond and abs(self.across(x, y)) <= self.width / 2.0
@@ -355,26 +364,28 @@ class Stairs(Named):
         return (kind, None) if kind else ('', material if material is not None else self.material)
 
     def walls(self) -> list[Wall]:
-        """Walls that block the floor plan: each side's lining below the walking surface in the fixture material, reaching under the floor, and its wall above it, the seam wall, a top half's guards around its overhang, and the solid rails."""
+        """Walls that block the floor plan: each side's lining below the walking surface in the fixture material, reaching under the floor, and its wall above it, the seam wall, a top half's guards around its overhang, and the solid rails, no linings with `floor` off."""
         half = self.width / 2.0
         fixture = self.material_of('fixture')
+        seam = ('', fixture) if self.floor else self._style(self.sides['left'].kind, self.sides['left'].material)
         low = (-self.rise if self.stacked else -self.rise / 2.0) if self.top else 0.0
         walls: list[Wall] = []
         for name, across in (('left', half), ('right', -half)):
             side = self.sides[name]
             if self.top:
-                walls.append(Wall(start=self.local(0.0, across), end=self.local(self.length, across), material=fixture, top=0.0, bottom=low))
+                if self.floor:
+                    walls.append(Wall(start=self.local(0.0, across), end=self.local(self.length, across), material=fixture, top=0.0, bottom=low))
                 if side.height > 0.0:
                     kind, material = self._style(side.kind, side.material)
                     walls.append(Wall(start=self.local(0.0, across), end=self.local(self.length, across), kind=kind, material=material, height=side.height))
                 continue
-            if self.kind != 'ramp':
+            if self.kind != 'ramp' and self.floor:
                 walls.extend(self._along_surface(across, ('', fixture), top=0.0, bottom=-(abs(self.height(self.length)) + self.drop + STAIRS_BASE)))
             if side.height > 0.0:
                 walls.extend(self._along_surface(across, self._style(side.kind, side.material), height=side.height))
         if not self.joined and self.kind != 'ramp':
             top = self.height(self.length) + max(side.height for side in self.sides.values())
-            walls.append(Wall(start=self.local(self.length, -half), end=self.local(self.length, half), material=fixture, top=top, bottom=low))
+            walls.append(Wall(start=self.local(self.length, -half), end=self.local(self.length, half), kind=seam[0], material=seam[1], top=top, bottom=low))
         if self.top and self.overhang > 0.0:
             end = self.length + self.overhang
             guard = self.sides['left']
@@ -387,9 +398,9 @@ class Stairs(Named):
         return [*walls, *(wall for rail in self.rails if rail.solid for wall in self._rail(rail))]
 
     def open_walls(self) -> list[Wall]:
-        """Walls that do not block the floor plan: the open rails and an escalator's skirt brushes, a strip along each inner side just above the treads."""
+        """Walls that do not block the floor plan: the open rails and an escalator's skirt brushes, a strip along each inner side just above the treads, unless `floor` is off."""
         walls = [wall for rail in self.rails if not rail.solid for wall in self._rail(rail)]
-        if self.kind == 'escalator':
+        if self.kind == 'escalator' and self.floor:
             lift = (self.riser if self.style == 'steps' else self._sag) + STAIRS_BRUSH_LIFT
             inner = self.width / 2.0 - STAIRS_BRUSH_DEPTH
             for across in (inner, -inner):
@@ -490,8 +501,8 @@ class Stairs(Named):
         return self.height(self.length) / (ramp_end - ramp_start)
 
     def surface(self, along: float, travel: float = 0.0) -> float:
-        """Walking surface height `along` meters from the mouth: the top of the tread there, the belt or ramp, or the base between treads."""
-        if self.kind == 'ramp' or (self.kind == 'escalator' and self.style == 'belt'):
+        """Walking surface height `along` meters from the mouth: the top of the tread there, the belt or ramp, or the base between treads, the ramp line with `floor` off."""
+        if self.kind == 'ramp' or (self.kind == 'escalator' and self.style == 'belt') or not self.floor:
             return self.height(along)
         for start, length in self.spans(travel):
             if start <= along <= start + length:
@@ -563,15 +574,17 @@ class Stairs(Named):
         return placed
 
     def tread_models(self, travel: float) -> list[Pose]:
-        """Pose of the `steps` model on top of every moving tread after the belt moved `travel` meters, none without one."""
-        if self.kind != 'escalator' or 'steps' not in self.surface_models:
+        """Pose of the `steps` model on top of every moving tread after the belt moved `travel` meters, none without one or with `floor` off."""
+        if self.kind != 'escalator' or not self.floor or 'steps' not in self.surface_models:
             return []
         return [_on_top(box) for box in self.treads(travel)]
 
     def static_boxes(self) -> list[tuple[str, MaterialIdentifier, StairsBox]]:
-        """Static boxes of a half as (name, material, box): stair steps, each a tread plate on a riser body when `risers` is set, an escalator's base slabs and landing plates, or a ramp's slab unless `floor` is off."""
+        """Static boxes of a half as (name, material, box): stair steps, each a tread plate on a riser body when `risers` is set, an escalator's base slabs and landing plates, or a ramp's slab, none of them when `floor` is off."""
+        if not self.floor:
+            return []
         if self.kind == 'ramp':
-            return [(f'base_{i}', self.material_of('steps'), box) for i, box in enumerate(self.base())] if self.floor else []
+            return [(f'base_{i}', self.material_of('steps'), box) for i, box in enumerate(self.base())]
         if self.kind == 'escalator':
             return [*((f'base_{i}', self.material_of('fixture'), box) for i, box in enumerate(self.base())), *((f'plate_{i}', self.material_of('landings'), box) for i, box in enumerate(self.plates()))]
         steps = self.material_of('steps')
@@ -606,8 +619,12 @@ class Stairs(Named):
         return min(c.x for c in corners), min(c.y for c in corners), max(c.x for c in corners), max(c.y for c in corners)
 
     def floor_openings(self) -> list[tuple[float, float, float, float]]:
-        """Rectangles (x_min, y_min, x_max, y_max) the half cuts out of its level's floor: a top half's well with its overhang, an escalator's pit."""
+        """Rectangles (x_min, y_min, x_max, y_max) the half cuts out of its level's floor: a top half's well with its overhang, an escalator's pit, on a stair on its own level the half below the floor."""
         pit = -(self.pitch + STAIRS_GAP) if self.kind == 'escalator' else 0.0
+        if self.same_level:
+            under = self.drop + STAIRS_BASE if self.kind == 'escalator' and self.floor else 0.0
+            low = self.position.z + min(self.height(0.0), self.height(self.length)) - under
+            return [self._rect(pit, self.length)] if low < 0.0 else []
         if self.top:
             return [self._rect(pit, self.length + self.overhang)]
         if self.kind == 'escalator':
@@ -619,6 +636,10 @@ class Stairs(Named):
         if self.top or not self.stacked:
             return []
         return [self._rect(self.length - self.overhang, 2.0 * self.length)]
+
+    def leveled(self) -> Stairs:
+        """This half flat on the floor, only its side walls built."""
+        return attrs.evolve(self, position=Position(self.position.x, self.position.y), rise=0.0, floor=False)
 
     def whole_stair(self) -> Stairs:
         """The stair a joined bottom half and its partner make together, in the bottom half's frame, as one body from mouth to mouth."""
@@ -660,10 +681,10 @@ class Stairs(Named):
 
 
 def stair_height(stairs: typing.Iterable[Stairs], x: float, y: float, travel: typing.Mapping[str, float] | None = None) -> float:
-    """Footing at a map point on the first stair half or ramp holding it, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
+    """Footing at a map point on a stair on its own level holding it, else on the first stair half or ramp holding it, its treads moved by `travel` per stair name, those of a joined pair on their whole body, 0 elsewhere."""
     stairs = tuple(stairs)
     travel = travel or {}
-    stair = next((stair for stair in stairs if stair.contains(x, y, stair.reach)), None)
+    stair = next((stair for own in (True, False) for stair in stairs if stair.same_level == own and stair.contains(x, y, stair.reach)), None)
     if stair is None:
         return 0.0
     along = stair.along(x, y)
@@ -769,11 +790,11 @@ class Door(Named):
         ]
 
 
-def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door], reach: float = 1.0) -> bool:
-    """Whether the pocket from `end` to `reach` span lengths past it covers the span of a collinear door among `others`."""
+def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Sequence[Door], reach: float = 1.0) -> Door | None:
+    """The first collinear door among `others` whose span the pocket from `end` to `reach` span lengths past it covers."""
     length = math.hypot(end.x - start.x, end.y - start.y)
     if length == 0.0:
-        return False
+        return None
     ux, uy = (end.x - start.x) / length, (end.y - start.y) / length
     for other in others:
         if other is door:
@@ -781,19 +802,51 @@ def _leaf_rests_on(start: Position, end: Position, door: Door, others: typing.Se
         along = sorted((p.x - start.x) * ux + (p.y - start.y) * uy for p in (other.start, other.end))
         across = max(abs((p.y - start.y) * ux - (p.x - start.x) * uy) for p in (other.start, other.end))
         if across <= door.width and min(along[1], (1.0 + reach) * length) - max(along[0], length) > _POCKET_OVERLAP_M:
-            return True
-    return False
+            return other
+    return None
+
+
+def door_fallback_warning(door: Door) -> str | None:
+    """The warning of a door that loaded as another kind than it was written with."""
+    if 'fallback_from' not in door.extra:
+        return None
+    delay = f', snapping open and closed after its transition_time of {door.transition_time:g} s' if door.kind == 'teleport' else ''
+    blockers = ', '.join(repr(name) for name in door.extra['blocked_by'])
+    return f'door {door.name!r}: {door.extra["fallback_from"]} loads as {door.kind}{delay}, an open leaf would rest on door {blockers}'
+
+
+def prefix_blockers(extra: dict, prefix: str) -> dict:
+    """The extra of a door that moves under `prefix`, its blocking doors renamed with it."""
+    return {**extra, 'blocked_by': [prefix + name for name in extra['blocked_by']]} if 'blocked_by' in extra else extra
+
+
+@functools.cache
+def _warn_once(message: str) -> None:
+    """Log a warning once per process."""
+    logger.warning(message)
 
 
 def clear_door_pockets(doors: typing.Sequence[Door]) -> list[Door]:
-    """Keep open sliding leaves off other doors' spans: a split door turns sliding, a sliding door slides the other way, or teleports open when that side is taken too."""
+    """Keep open sliding leaves off other doors' spans: a split door turns sliding, a sliding door slides the other way, or teleports open when that side is taken too, recorded in its extra as `fallback_from` and `blocked_by`. A door that changes kind is warned about."""
     result = list(doors)
-    for index, door in enumerate(result):
-        if door.kind == 'sliding_split' and (_leaf_rests_on(door.start, door.end, door, result, 0.5) or _leaf_rests_on(door.end, door.start, door, result, 0.5)):
-            door = result[index] = attrs.evolve(door, kind='sliding')
-        if door.kind != 'sliding' or not _leaf_rests_on(door.start, door.end, door, result):
-            continue
-        result[index] = attrs.evolve(door, kind='teleport') if _leaf_rests_on(door.end, door.start, door, result) else attrs.evolve(door, start=door.end, end=door.start)
+    for index, authored in enumerate(result):
+        door = authored
+        taken: list[Door | None] = []
+        if door.kind == 'sliding_split':
+            taken = [_leaf_rests_on(door.start, door.end, door, result, 0.5), _leaf_rests_on(door.end, door.start, door, result, 0.5)]
+            if any(taken):
+                door = result[index] = attrs.evolve(door, kind='sliding')
+        if door.kind == 'sliding' and (ahead := _leaf_rests_on(door.start, door.end, door, result)) is not None:
+            behind = _leaf_rests_on(door.end, door.start, door, result)
+            if behind is None:
+                door = result[index] = attrs.evolve(door, start=door.end, end=door.start)
+            else:
+                taken = [ahead, behind]
+                door = result[index] = attrs.evolve(door, kind='teleport')
+        if door.kind != authored.kind:
+            blockers = list(dict.fromkeys(other.name for other in taken if other is not None))
+            door = result[index] = attrs.evolve(door, extra={**door.extra, 'fallback_from': authored.kind, 'blocked_by': blockers})
+            _warn_once(typing.cast(str, door_fallback_warning(door)))
     return result
 
 

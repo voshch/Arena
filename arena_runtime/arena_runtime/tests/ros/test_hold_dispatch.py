@@ -11,6 +11,7 @@ try:
     import rclpy.logging
     import tf2_ros
     from arena_rclpy_mixins.shared import FrameNamespace
+    from arena_robots.Robot import RobotIdentifier
     from arena_simulation_setup.shared.judge import Sample
     from arena_simulation_setup.shared.task import GoToPhase, ReachPhase
 
@@ -73,7 +74,7 @@ def _manager(adapters: bool = True) -> tuple[RobotManager, _Adapter]:
     manager._unsupported_kinds_logged = set()
     manager._environment_manager = Realizer(Realizer._Configuration(x=0.0, y=0.0, prefix="env_0"))
     manager._robot = SimpleNamespace(name=FRAME, frame=FrameNamespace(FRAME))
-    manager._config = SimpleNamespace(model_params=SimpleNamespace(base_frame="base_link"))
+    manager._caps = RobotIdentifier.parse("jackal").resolve_sync().caps
     manager._runner = TaskRunner(FRAME)
     manager._publish_goal_task = None
     manager._phase_failure = None

@@ -101,10 +101,9 @@ def test_bare_browse_lists_the_sources_and_their_kinds(arena):
     done = arena("browse")
     assert done.returncode == 0, done.stderr
     rows = {line.split()[0]: line.split()[1:] for line in done.stdout.splitlines() if line.strip() and not line.startswith("`")}
-    assert "animation" in rows["public/models/"]
-    assert rows["public/worlds/"] == ["world"]
-    assert rows["public/benchmarks/"] == ["suite", "contest", "manifest"]
+    assert {"animation", "world", "suite", "contest", "manifest"} <= set(rows["arena-public/"])
     assert "animation" in rows["arena-internal/"]
+    assert "world" not in rows["arena-internal/"]
 
 
 def test_pull_says_why_a_fetch_failed(store, arena):

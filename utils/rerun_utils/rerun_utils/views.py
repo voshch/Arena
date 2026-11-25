@@ -111,7 +111,7 @@ def forget(env_id: int) -> None:
     _path(env_id).unlink(missing_ok=True)
 
 
-def spawn(env_id: int, ns: str, web_port: int, grpc_port: int, timeout: float = START_TIMEOUT_S) -> View:
+def spawn(env_id: int, ns: str, web_port: int, grpc_port: int, extras: list[str] | None = None, timeout: float = START_TIMEOUT_S) -> View:
     """Start the bridge detached, record it, and wait until its web port accepts connections."""
     web_port = web_port or free_port()
     grpc_port = grpc_port or free_port()
@@ -119,7 +119,7 @@ def spawn(env_id: int, ns: str, web_port: int, grpc_port: int, timeout: float = 
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("ab") as out:
         process = subprocess.Popen(
-            rerun_launch_argv(ns, web_port, grpc_port),
+            rerun_launch_argv(ns, web_port, grpc_port, extras),
             start_new_session=True,
             stdin=subprocess.DEVNULL,
             stdout=out,

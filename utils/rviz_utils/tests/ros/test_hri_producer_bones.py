@@ -13,7 +13,9 @@ import rclpy.node
 import yaml
 from ament_index_python.packages import get_package_prefix
 from arena_people_msgs.msg import Pedestrian, Pedestrians
+from arena_rclpy_mixins.Time import Time
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
@@ -78,8 +80,12 @@ def test_joint_frames_match_robot_state_publisher():
 
     try:
         peds = host.create_publisher(Pedestrians, "/arena_peds", 10)
+        clock = host.create_publisher(Clock, "/clock", 10)
+        ticks = [0]
 
         def publish() -> None:
+            ticks[0] += 1
+            clock.publish(Clock(clock=Time.from_float(ticks[0] * 0.05).to_msg()))
             msg = Pedestrians()
             msg.header.frame_id = "map"
             ped = Pedestrian(name="ped_4", id=4, animation_state=Pedestrian.WALKING)

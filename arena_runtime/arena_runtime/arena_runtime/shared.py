@@ -7,7 +7,9 @@ import attrs
 import rclpy.logging
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_robots.assembly import ResolvedAssembly
-from arena_robots.Robot import RobotIdentifier
+from arena_robots.caps import BodySpec, DriveSpec, PlanarSpec, RobotCaps
+from arena_robots.request import InstanceRequest
+from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config as RobotSetupConfig
 from arena_simulation_setup.shared import (  # noqa
     Ceiling,
@@ -45,12 +47,13 @@ class Robot(Entity):
     adapters: dict[str, str] = attrs.field(factory=dict)
     parts: dict[str, list] = attrs.field(factory=dict)
     frames: dict[str, str] = attrs.field(factory=dict, eq=False)
+    caps: dict[str, object] = attrs.field(factory=dict)
     # resolved morphology (assembler output), None for robots without an assembly.
     # Excluded from compatible()/__eq__: it is derived from parts+model, not identity.
     resolved_assembly: ResolvedAssembly | None = attrs.field(default=None, eq=False)
 
     def compatible(self, value: Robot) -> bool:
-        return self.model.name == value.model.name and self.adapters == value.adapters and self.parts == value.parts
+        return self.model.name == value.model.name and self.adapters == value.adapters and self.parts == value.parts and self.caps == value.caps
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Robot):
@@ -77,25 +80,66 @@ class Robot(Entity):
 
         from arena_robots import assembly as arena_assembly  # noqa: PLC0415
 
-        request: dict[str, list] = {}
-        for p in self.resolved_assembly.placements:
-            request.setdefault(p.type, []).append(arena_assembly.RequestPart(variant=p.variant, mount=p.mount.name, overrides=p.overrides))
-        return request
+        return arena_assembly.placed_request(self.resolved_assembly)
+
+    @property
+    def instance_request(self) -> InstanceRequest:
+        """Resolved parts, frame overrides and cap overrides of this instance."""
+        return InstanceRequest(parts=self.resolved_request, frames=dict(self.frames), caps=dict(self.caps))
+
+    def caps_of(self, view: RobotView) -> RobotCaps:
+        """The instance's effective caps on ``view``."""
+        return self.instance_request.caps_of(view)
+
+    def body_of(self, view: RobotView) -> BodySpec:
+        """The instance's effective body facts on ``view``."""
+        return self.caps_of(view).body
+
+    def drives_of(self, view: RobotView, *, effort: bool = True) -> dict[str, DriveSpec]:
+        """The instance's effective servo of every position-commanded joint, all commanded by position unless ``effort``."""
+        drives = self.caps_of(view).drives
+        out = {} if drives is None else drives.all()
+        return out if effort else {name: attrs.evolve(drive, command='position') for name, drive in out.items()}
+
+    def planar_of(self, view: RobotView) -> PlanarSpec | None:
+        """The instance's effective planar spec, None for a robot without a mobile cap."""
+        caps = self.caps_of(view)
+        return caps.mobile.planar if 'mobile' in caps.available else None
+
+    def odom_frame(self, view: RobotView) -> str:
+        """The instance's odometry frame stem, from its mobile cap when it has one."""
+        caps = self.caps_of(view)
+        return caps.mobile.odom_frame if 'mobile' in caps.available else view.model_params.odom_frame
 
     @classmethod
-    def from_setup(cls, setup: RobotSetupConfig, *, node: rclpy.node.Node) -> Robot:
+    def from_setup(cls, setup: RobotSetupConfig, *, node: rclpy.node.Node, validate: bool = True) -> Robot:
         dict_value: dict = {
             'model': setup.robot,
             'adapters': setup.adapters,
             'parts': setup.parts,
             'frames': setup.frames,
+            'caps': setup.caps,
         }
         dict_value.update(setup.extra)
         dict_value["name"] = setup.name or ""
-        return cls.parse(dict_value, node=node)
+        return cls.parse(dict_value, node=node, validate=validate)
+
+    def validate_caps(self) -> None:
+        """Raise on a cap override the robot's effective caps cannot take."""
+        placements = self.resolved_assembly.placements if self.resolved_assembly is not None else []
+        if not self.caps and not any(p.caps for p in placements):
+            return
+        try:
+            view = self.model.resolve_sync()
+        except FileNotFoundError:
+            raise RuntimeError(f"robot {self.name!r}: cap overrides need an arena_robots model, and {self.model.name!r} is none") from None
+        try:
+            self.instance_request.caps_of(view).validate_overrides()
+        except (ValueError, FileNotFoundError) as e:
+            raise RuntimeError(f"robot {self.name!r}: {e}") from e
 
     @classmethod
-    def parse(cls, value: dict, *, node: rclpy.node.Node | None = None) -> Self:
+    def parse(cls, value: dict, *, node: rclpy.node.Node | None = None, validate: bool = True) -> Self:
         name = str(value['name'])
         model = str(value['model'])
         pose = Pose.parse(value.get("pos", (0, 0, 0)))
@@ -149,17 +193,24 @@ class Robot(Entity):
         elif directives or frames:
             raise RuntimeError(f"robot {name!r}: morphology/frames parametrization requires an assembly.yaml, and {model!r} has none")
 
+        caps_block = value.get("caps")
+        caps: dict[str, object] = {str(k): v for k, v in caps_block.items()} if isinstance(caps_block, dict) else {}
+
         value['frames'] = frames
-        return cls(
+        robot = cls(
             name=name,
             pose=pose,
             model=RobotIdentifier.parse(model),
             adapters=adapters,
             parts=directives,
             frames=frames,
+            caps=caps,
             resolved_assembly=resolved_assembly,
             extra=value,
         )
+        if validate:
+            robot.validate_caps()
+        return robot
 
 
 @attrs.define
@@ -169,3 +220,15 @@ class Region:
     polygon: list[Position] = attrs.field(factory=list)  # CCW vertices, 2D
     config: dict = attrs.Factory(dict)  # type-specific passthrough
     included_from: Path | None = None
+
+
+def footprint_radius(caps: RobotCaps, name: str) -> float:
+    """Disc radius of a robot instance: the mobile cap's `radius`, the circumradius of its unpadded footprint unless authored, DEFAULT_AGENT_RADIUS without a mobile cap."""
+    from arena_runtime.sim._interface import DEFAULT_AGENT_RADIUS  # noqa: PLC0415
+
+    if 'mobile' not in caps.available:
+        return DEFAULT_AGENT_RADIUS
+    mobile = caps.mobile
+    if mobile.radius is None:
+        raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
+    return mobile.radius

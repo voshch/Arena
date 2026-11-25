@@ -130,6 +130,7 @@ class _DoorRuntime:
     last_applied_progress: float = -1.0  # forces first move_box call
     # A close was refused because an agent is in the slab path, cleared once the path is clear.
     close_blocked: bool = False
+    snap_wait: float = 0.0
     # Last wall state pushed to the human simulator (door cannot open for peds right now).
     ped_wall: bool = False
 
@@ -285,6 +286,7 @@ def _reset_door(runtime: _DoorRuntime) -> None:
     runtime.last_trigger_sim_time = -math.inf
     runtime.last_applied_progress = -1.0
     runtime.close_blocked = False
+    runtime.snap_wait = 0.0
 
 
 def _reset_elevator(runtime: _ElevatorRuntime) -> None:
@@ -587,7 +589,7 @@ def _sliding_entry_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, di
 
 
 def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence[Disc]) -> None:
-    """Advance door state machine one tick: linear T-delta for sliding, instant snap for teleport.
+    """Advance door state machine one tick: linear T-delta for sliding, a snap for teleport, after transition_time for a door that fell back to teleport.
     The slab never moves through an agent: a blocked close re-triggers the door (it reverses,
     tested against the full remaining path so nobody in the slot is approached), an opening step
     holds when the slab would enter an agent: the swing sector of a hinged door, the wall pocket
@@ -601,7 +603,14 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
             runtime.last_trigger_sim_time = now
             runtime.close_blocked = runtime.progress > 0.0
             fresh = True
-        runtime.progress = 1.0 if fresh else 0.0
+        target = 1.0 if fresh else 0.0
+        delay = door.transition_time if 'fallback_from' in door.extra else 0.0
+        runtime.snap_wait = runtime.snap_wait + dt if target != runtime.progress else 0.0
+        if target != runtime.progress and runtime.snap_wait + 1e-9 < delay:
+            runtime.state = _DoorState.OPENING if fresh else _DoorState.CLOSING
+            return
+        runtime.snap_wait = 0.0
+        runtime.progress = target
         runtime.state = _DoorState.OPEN if fresh else _DoorState.CLOSED
         return
     # sliding (incl. sliding_top) and hinged: per-tick linear T delta over transition_time
@@ -1212,14 +1221,14 @@ class StairsPrim(typing.NamedTuple):
 
 
 def stair_boxes(stair: Stairs) -> list[StairsPrim]:
-    """Box primitives of a stair half, the velocity None on static boxes, the landing plates combs."""
+    """Box primitives of a stair half, the velocity None on static boxes, the landing plates combs, none with `floor` off."""
     body = stair_body(stair)
     if body is None:
         return []
     if body is not stair:
         return [prim._replace(name=prim.name.replace(body.name, stair.name, 1)) for prim in stair_boxes(body)]
     static = [StairsPrim(f'{stair.name}/{name}', material, box, comb=name.startswith('plate_')) for name, material, box in stair.static_boxes()]
-    treads = [StairsPrim(_tread_name(stair, k), stair.material_of('steps'), box, velocity) for k, (box, velocity) in enumerate(zip(stair.treads(0.0), stair.tread_velocities(0.0), strict=True))] if stair.kind == 'escalator' else []
+    treads = [StairsPrim(_tread_name(stair, k), stair.material_of('steps'), box, velocity) for k, (box, velocity) in enumerate(zip(stair.treads(0.0), stair.tread_velocities(0.0), strict=True))] if stair.kind == 'escalator' and stair.floor else []
     return [*static, *treads]
 
 

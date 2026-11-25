@@ -38,11 +38,11 @@ class MobileAdapter(Adapter):
         self._trail_sub = self.rm.node.create_subscription(nav_msgs.msg.Odometry, str(self.rm.namespace("odom")), self._extend_trail, best_effort(1))
         self.rm.watch(self._restart_trail)
         self._collision: CollisionTrackerNode | None = None
-        mobile = self.rm.robot.model.resolve_sync().caps.mobile
+        mobile = self.rm.caps.mobile
         polys = mobile.polygons_dict
         footprint = mobile.footprint
         if footprint is None:
-            self.rm.node.get_logger().warning(f'{self.rm.namespace}: caps/mobile.yaml has no footprint, collisions are not tracked')
+            self.rm.node.get_logger().warning(f'{self.rm.namespace}: the URDF has no ground collision outline and no footprint is set, collisions are not tracked')
         if not polys and footprint is None:
             return
         self._collision = CollisionTrackerNode(self.rm, polys or {}, footprint=footprint)
@@ -64,6 +64,12 @@ class MobileAdapter(Adapter):
 
     cap_displays: ClassVar[tuple[AdapterDisplayHint, ...]] = (
         *Adapter.cap_displays,
+        AdapterDisplayHint(
+            name="Collisions",
+            topic="{ns}/collision_markers",
+            topic_type="visualization_msgs/MarkerArray",
+            kind=DisplayKind.MARKER_ARRAY,
+        ),
         AdapterDisplayHint(
             name="Goal Pose",
             topic="{ns}/goal_pose",

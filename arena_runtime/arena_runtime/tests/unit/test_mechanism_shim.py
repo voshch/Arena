@@ -256,6 +256,24 @@ def test_advance_teleport_snaps_closed_on_stale():
     assert r.progress == 0.0
 
 
+def test_fallback_teleport_waits_transition_time_before_snapping():
+    d = _door(kind="teleport", transition_time=1.0, hold_time=2.0)
+    d.extra["fallback_from"] = "sliding_split"
+    r = _door_runtime(d, kind="teleport")
+    r.last_trigger_sim_time = 10.0
+    states = []
+    for tick in range(11):
+        _advance_state(r, dt=0.1, now=10.0 + tick * 0.1, discs=())
+        states.append((r.state, r.progress))
+    assert states[8] == (_DoorState.OPENING, 0.0)
+    assert states[9] == (_DoorState.OPEN, 1.0)
+    for tick in range(14):
+        _advance_state(r, dt=0.1, now=13.1 + tick * 0.1, discs=())
+        states.append((r.state, r.progress))
+    assert states[-6] == (_DoorState.CLOSING, 1.0)
+    assert states[-1] == (_DoorState.CLOSED, 0.0)
+
+
 # ---------------------------------------------------------------------------
 # _step_elevator: outside trigger and accept_outside_calls
 # ---------------------------------------------------------------------------

@@ -1,0 +1,4 @@
+name: blind_white_cane_unaware
+extends: blind_white_cane
+perception:
+  robot_awareness: blind

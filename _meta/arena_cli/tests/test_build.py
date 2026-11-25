@@ -1,9 +1,10 @@
 """Tests for the staleness test and the package selection of arena build and rebuild."""
 
 import os
+import shutil
 from pathlib import Path
 
-from arena_cli.build import Workspace, _changed_build_type, _selects_packages, _stale
+from arena_cli.build import Workspace, _changed_build_type, _selects_packages, _stale, stale_interfaces
 from arena_cli.cli import _select_args
 
 
@@ -95,3 +96,60 @@ def test_changed_build_type_flags_python_leftovers_of_a_cmake_package(tmp_path: 
     (tmp_path / "colcon_command_prefix_setup_py.sh").write_text("")
     assert _changed_build_type(str(tmp_path), "ros.ament_cmake")
     assert not _changed_build_type(str(tmp_path), "ros.ament_python")
+
+
+def _manifest(src: Path, name: str, depends: list[str], interfaces: bool) -> None:
+    group = "<member_of_group>rosidl_interface_packages</member_of_group>" if interfaces else ""
+    (src / "package.xml").write_text(f"<package><name>{name}</name>{''.join(f'<exec_depend>{d}</exec_depend>' for d in depends)}{group}</package>")
+
+
+def _runtime(tmp_path: Path) -> tuple[Workspace, str, Path]:
+    ws, runtime = _package(tmp_path, "runtime")
+    _, msgs = _package(tmp_path, "demo_msgs")
+    _, other = _package(tmp_path, "other_msgs")
+    _manifest(runtime, "runtime", ["demo_msgs", "rclpy"], interfaces=False)
+    _manifest(msgs, "demo_msgs", [], interfaces=True)
+    _manifest(other, "other_msgs", [], interfaces=True)
+    (msgs / "msg").mkdir()
+    (msgs / "msg" / "Lane.msg").write_text("float64 width\n")
+    _touch_tree(tmp_path / "src", 1_000)
+    _touch_tree(tmp_path / "install", 2_000)
+    return ws, "".join(f"{d.name}\t{d}\t(ros.ament_cmake)\n" for d in (runtime, msgs, other)), msgs
+
+
+def test_stale_interfaces_passes_a_built_workspace(tmp_path: Path) -> None:
+    ws, listing, _ = _runtime(tmp_path)
+    assert stale_interfaces(ws, listing, ["runtime"]) == []
+
+
+def test_stale_interfaces_flags_an_edited_field(tmp_path: Path) -> None:
+    ws, listing, msgs = _runtime(tmp_path)
+    (msgs / "msg" / "Lane.msg").write_text("float64 width\nfloat64 length\n")
+    assert stale_interfaces(ws, listing, ["runtime"]) == ["demo_msgs"]
+
+
+def test_stale_interfaces_flags_a_removed_message(tmp_path: Path) -> None:
+    ws, listing, msgs = _runtime(tmp_path)
+    (msgs / "msg" / "Lane.msg").unlink()
+    assert stale_interfaces(ws, listing, ["runtime"]) == ["demo_msgs"]
+
+
+def test_stale_interfaces_flags_a_never_installed_package(tmp_path: Path) -> None:
+    ws, listing, _ = _runtime(tmp_path)
+    shutil.rmtree(tmp_path / "install" / "demo_msgs")
+    assert stale_interfaces(ws, listing, ["runtime"]) == ["demo_msgs"]
+
+
+def test_stale_interfaces_ignores_python_edits_and_packages_outside_the_roots(tmp_path: Path) -> None:
+    ws, listing, _ = _runtime(tmp_path)
+    _touch_tree(tmp_path / "src" / "runtime", 3_000)
+    _touch_tree(tmp_path / "src" / "other_msgs", 3_000)
+    assert stale_interfaces(ws, listing, ["runtime", "not_checked_out"]) == []
+
+
+def test_stale_interfaces_counts_an_optional_root_once_it_is_installed(tmp_path: Path) -> None:
+    ws, listing, _ = _runtime(tmp_path)
+    _, flatsim = _package(tmp_path, "flatsim")
+    _manifest(flatsim, "flatsim", ["other_msgs"], interfaces=False)
+    _touch_tree(tmp_path / "src" / "other_msgs", 3_000)
+    assert stale_interfaces(ws, listing + f"flatsim\t{flatsim}\t(ros.ament_python)\n", ["runtime"]) == ["other_msgs"]

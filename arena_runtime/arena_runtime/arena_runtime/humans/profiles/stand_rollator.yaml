@@ -1,0 +1,4 @@
+# Standing behind the rollator: walk_rollator's mean pose (its harmonics dropped), hands on the grips.
+name: stand_rollator
+same_as: walk_rollator
+still: true

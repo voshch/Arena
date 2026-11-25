@@ -8,7 +8,7 @@ from arena_cli.features import Health, fetched, lifecycle_verbs
 
 NAME = "meshnav"
 
-DESCRIPTION = "MeshNav, Move Base Flex navigation on a triangle mesh of every walkable surface (lvr2, mesh_tools, mesh_navigation, move_base_flex, pinned in _meta/repos/meshnav.repos).\n\nThis enables:\n\n\b\n- mobile.adapter: meshnav in a robot setup or scenario robot entry (robot.mobile_adapter:=meshnav at launch)\n- one plan across levels over stairs and escalators within the robot's caps/mobile.yaml meshnav: limits"
+DESCRIPTION = "MeshNav, Move Base Flex navigation on a triangle mesh of every walkable surface (lvr2, mesh_tools, mesh_navigation, move_base_flex, pinned in _meta/repos/meshnav.repos).\n\nThis enables:\n\n\b\n- mobile.adapter: meshnav in a robot setup or scenario robot entry (robot.mobile_adapter:=meshnav at launch)\n- one plan across levels over stairs and escalators within the robot's caps.yaml mobile meshnav: limits"
 
 
 def _update() -> int:

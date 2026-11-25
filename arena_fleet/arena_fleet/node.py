@@ -13,9 +13,9 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
-from arena_robots.Robot import RobotIdentifier
+from arena_robots.fleet import instance_caps
 from arena_runtime_msgs.action import RunTask
-from arena_runtime_msgs.msg import EnvRegistry, RobotFleet, SemanticSnapshot
+from arena_runtime_msgs.msg import EnvRegistry, RobotFleet, RobotState, SemanticSnapshot
 from arena_simulation_setup.tree.World.view import WorldIdentifier
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import FollowPath
@@ -45,11 +45,12 @@ def _required(value: str, name: str) -> pathlib.Path:
     return pathlib.Path(value)
 
 
-def _robot(model: str) -> RobotFacts:
-    mobile = RobotIdentifier(model).resolve_sync().mobile
-    if mobile is None:
+def _robot(state: RobotState) -> RobotFacts:
+    model = str(state.descriptor.model)
+    caps = instance_caps(model, {item.key: item.value for item in state.params})
+    if "mobile" not in caps.available:
         raise ValueError(f"robot model {model} has no mobile cap")
-    return RobotFacts.from_mobile(mobile.raw)
+    return RobotFacts.from_mobile(caps.mobile)
 
 
 def _yaw(msg: Odometry) -> float:
@@ -97,7 +98,7 @@ class FleetNode(ArenaMixinNode):
             self.core.close()
 
     def now_s(self) -> float:
-        return self.get_clock().now().nanoseconds * 1e-9
+        return self.sim_time.to_seconds()
 
     def on_envs(self, msg: EnvRegistry) -> None:
         """Attach once to the env with our env_id: its fleet, door semantics, pedestrians and run_task action."""
@@ -128,7 +129,7 @@ class FleetNode(ArenaMixinNode):
         robots = [(str(s.descriptor.name), str(s.descriptor.ns).rstrip("/")) for s in msg.robots if str(s.descriptor.name).strip()]
         names = [name for name, _ in robots]
         self.prefix = next(str(s.descriptor.frame) for s in msg.robots if str(s.descriptor.name).strip()).rsplit("/", 1)[0]
-        robot = RobotFacts.fleet([_robot(str(s.descriptor.model)) for s in msg.robots if str(s.descriptor.name).strip()])
+        robot = RobotFacts.fleet([_robot(s) for s in msg.robots if str(s.descriptor.name).strip()])
         self.core = FleetDispatcher(site, self.cost, self.rules, names=names, robot=robot, info=self.people_info, profile=self.p.PROFILE.value, seed=self.p.SEED.value, out=self.out, duration=self.p.DURATION_S.value, mod=self.mod, samples=self.p.SAMPLES.value)
         for name, ns in robots:
             self.plan_pub[name] = self.create_publisher(Path, f"{ns}/plan", 10)
@@ -204,7 +205,7 @@ class FleetNode(ArenaMixinNode):
     def execute(self, cmd: Command) -> None:
         match cmd:
             case PublishPlan(robot=n, path=path):
-                header = Header(frame_id="map", stamp=self.get_clock().now().to_msg())
+                header = Header(frame_id="map", stamp=self.sim_time.to_msg())
                 poses = [self.pose_msg(header, *self.to_map(p)) for p in path]
                 self.plan_pub[n].publish(Path(header=header, poses=poses))
                 if self.dwb:

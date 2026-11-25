@@ -20,6 +20,7 @@ from arena_runtime.humans.gait import GaitGenerator
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import TransformStamped
 from hri_msgs.msg import EngagementLevel, IdsList
+from arena_rclpy_mixins.Time import TimeNode
 from rclpy.node import Node
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -71,7 +72,7 @@ def _engagement_level(animation_state: int) -> EngagementLevel:
     return msg
 
 
-class HriProducer(Node):
+class HriProducer(TimeNode):
     """Projects arena_people_msgs/Pedestrians into the REP-155 /humans/... API."""
 
     def __init__(self) -> None:
@@ -191,7 +192,7 @@ class HriProducer(Node):
         self._person_anon_pub[person_id].publish(Bool(data=False))
 
     def _on_peds(self, msg: Pedestrians) -> None:
-        stamp = self.get_clock().now().to_msg()
+        stamp = self.sim_time.to_msg()
         parent_frame = msg.header.frame_id
 
         current_ids: set[str] = {self._body_id(ped.id) for ped in msg.pedestrians}

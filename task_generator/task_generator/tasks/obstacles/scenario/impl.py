@@ -5,6 +5,7 @@ import attrs
 from arena_rclpy_mixins.params import ParamHandle
 from arena_runtime.env.task_api import Stop
 from arena_runtime.shared import WORLD_ENTITY_PREFIX, DynamicObstacle, Position, Region
+from arena_simulation_setup.shared.lane import shift_lane_points
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light, point_scenario_assets
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView, articulation_problems
@@ -47,7 +48,7 @@ class TM_Scenario(TM_Obstacles):
                 name=name,
                 type=r.type,
                 polygon=list(r.polygon),
-                config=r.config,
+                config=self._region_config(r.config, r.polygon),
                 included_from=scenario_view.path,
             )
             for name, r in scenario.regions.items()
@@ -58,6 +59,15 @@ class TM_Scenario(TM_Obstacles):
         self._ctx.episode.register_conditions(scenario.conditions)
 
         return scenario.objects, [self._with_itinerary(obstacle) for obstacle in scenario.humans]
+
+    def _region_config(self, config: dict, polygon: typing.Sequence[Position]) -> dict:
+        """Region config with its lane points moved from level-local to the map frame."""
+        if config.get("lane") is None:
+            return config
+        cx = sum(p.x for p in polygon) / len(polygon)
+        cy = sum(p.y for p in polygon) / len(polygon)
+        dx, dy = self._ctx.realizer.get_level_origin(self._ctx.world_manager.level_of_point(cx, cy))
+        return shift_lane_points(config, dx, dy)
 
     def _with_itinerary(self, obstacle: DynamicObstacle) -> DynamicObstacle:
         """Attach waypoint dwell and explicit elevator rides."""

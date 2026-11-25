@@ -93,8 +93,8 @@ the result from `Level.all_walls`.
 | key | default | meaning |
 | --- | --- | --- |
 | `name` | required | unique within the world |
-| `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken |
-| `kind` | `sliding` | `sliding`, `sliding_split` (two half-span leaves part from the middle, each opening past its own end by half the span, a `sliding` leaf when either pocket rests on another door's span), `sliding_top`, `teleport`, `hinged` |
+| `span` | required | opening endpoints `[[x, y], [x, y]]`. A `sliding` leaf opens past the second point by its own length. A leaf that would rest on another door's span opens past the first point instead, or as `teleport` when both sides are taken, snapping open and closed after its `transition_time` |
+| `kind` | `sliding` | `sliding`, `sliding_split` (two half-span leaves part from the middle, each opening past its own end by half the span, a `sliding` leaf when either pocket rests on another door's span), `sliding_top`, `teleport`, `hinged`. A door that loads as another kind than it is written with logs a warning, once per process, naming it and the doors in its way |
 | `width` | `0.1` | metres |
 | `height` | `2.0` | metres |
 | `material` | door default | `MaterialIdentifier` |
@@ -136,8 +136,11 @@ how it splits into halves and opens floors, dressing and staircase kinds.
 | `mouth` | required | middle of the open lower end, also for `direction: down` |
 | `mouth_side` | `-x` | side the stair is entered from (`+x`, `-x`, `+y`, `-y`), it runs away from it |
 | `size` | `[5.2, 1.4]` | `[length, width]` of the whole staircase in metres, length along the walking direction, width between the side walls' center lines, both positive. The length and the rise set the incline |
-| `to` | required | id of the level the stair reaches, above its own |
-| `exit` | none | spread worlds only and required there: middle of the open upper end on the `to` level |
+| `to` | required | id of the level the stair reaches, above its own, or its own id for a stair between two floors of it |
+| `exit` | none | spread worlds only and required there: middle of the open upper end on the `to` level, refused on a staircase on its own level |
+| `base` | `0` | a staircase on its own level (`to` its own level id) only: height of its mouth |
+| `rise` | required there | a staircase on its own level only: how far it climbs from `base`, positive |
+| `floor` | `true` | `false` builds only its side walls (and a seam wall between levels), for a scanned staircase. Walkers then stand on its ramp line |
 | `direction` | `up` | escalators only: `up` or `down` |
 | `speed` | `0.5` | escalator belt speed along the axis in m/s, positive |
 | `style` | `steps` | escalator treads: `steps` (moving step blocks) or `belt` (an inclined conveyor of moving planks), both level with the floor over a `landing_length` landing at each mouth. Stairs take only `steps` |
@@ -551,15 +554,15 @@ Resolvers run in order, first hit wins
    `resolve_write_sync()` view and the `worlds` MCP tools. A world written here
    under the name of a shipped world shadows the shipped one.
 3. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
-4. One `NetResolver` per `WORLD_BUCKETS` provider (default
-   `public/worlds`), fetching into `$ARENA_ASSETS_DIR/<provider>/<name>/`, by default
+4. One `NetResolver` per world source (`WORLD_BUCKETS` entries, then
+   `ARENA_BUCKETS`, default `arena-public`), fetching into `$ARENA_ASSETS_DIR/<source>/<name>/`, by default
    under `$ARENA_DATA_DIR/assets`, outside the checkout.
    A world keys off its bare name, so the worlds bucket is itself the namespace.
 
 Worlds not shipped in this package are hosted on the asset store
 (`ARENA_ASSETS_URL`, default `https://storage.arena-rosnav.org`) under the sources
-named by `WORLD_BUCKETS` and pulled on demand. `default` in that list stands for
-`public/worlds`, and `arena-internal` needs `ARENA_ASSETS_TOKEN` or a gcloud login. `arena asset find world <name>`
+named by `WORLD_BUCKETS` and `ARENA_BUCKETS` and pulled on demand. `default` in those lists stands for
+`arena-public`, a world cannot be named like a model domain folder or a benchmark folder (`suites`, `contests`, `manifests`), and `arena-internal` needs `ARENA_ASSETS_TOKEN` or a gcloud login. `arena asset find world <name>`
 prints every resolver's verdict for a name (which one hit, which were
 shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 `arena asset expire world <name>` makes the next use download it again.
@@ -567,7 +570,7 @@ shadowed). `arena asset pull world <name>` fetches one into the local cache, and
 preflight that checks every asset it references would resolve for someone
 else, sends only the files the store lacks and says how many were already
 there. `arena asset rm world <name>` removes a published world and its cached
-copy, and `arena asset browse public/worlds` walks the store by folders.
+copy, and `arena asset browse arena-public` walks the store by folders.
 
 `arena asset import world houseexpo <plan id>` writes one HouseExpo floor plan
 as `houseexpo_<plan id>` into the imported worlds root

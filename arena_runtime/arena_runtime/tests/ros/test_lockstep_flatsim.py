@@ -48,6 +48,8 @@ async def _steps_are_exact_and_the_hold_freezes_the_server(rig: Rig) -> None:
 
 
 async def _run_survives_a_server_outage_longer_than_a_step_call(rig: Rig) -> None:
+    import rclpy.executors
+
     probe = rig.probe
     server = rig.servers[0]
     await probe.start_run(ungated=True)
@@ -56,15 +58,22 @@ async def _run_survives_a_server_outage_longer_than_a_step_call(rig: Rig) -> Non
     await rig.until(lambda: probe.status is not None and probe.status.active, 30.0, "active run status")
 
     rig.executor.remove_node(server)
+    outage = rclpy.executors.SingleThreadedExecutor()
+    outage.add_node(server)
     await asyncio.sleep(rig.arena._lifecycle._inner._control._timeout + 2.0)
     assert probe.status is not None and probe.status.active
     assert probe.paused is not None and probe.paused.data
-    rig.executor.add_node(server)
-
-    resumed = probe.clock()
-    await rig.until(lambda: probe.clock() > resumed + 10 * DT, 30.0, "lockstep steps again after the outage")
-    assert probe.status.active and probe.paused.data
-    await probe.stop_run()
+    serving = asyncio.get_running_loop().run_in_executor(None, outage.spin)
+    try:
+        resumed = probe.clock()
+        await rig.until(lambda: probe.clock() > resumed + 10 * DT, 30.0, "lockstep steps again after the outage")
+        assert probe.status.active and probe.paused.data
+        await probe.stop_run()
+    finally:
+        outage.shutdown()
+        await serving
+        outage.remove_node(server)
+        rig.executor.add_node(server)
 
 
 def test_steps_are_exact_and_the_hold_freezes_the_server(flatsim_rig) -> None:

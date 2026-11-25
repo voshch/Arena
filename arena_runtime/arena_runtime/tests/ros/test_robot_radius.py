@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
+import yaml
 
 
 def _view(model: str):
@@ -16,36 +17,54 @@ def _write_model(root, mobile: str | None):
 
     (root / "model_params.yaml").write_text("base_frame: base_link\n")
     if mobile is not None:
-        (root / "caps").mkdir()
-        (root / "caps" / "mobile.yaml").write_text(mobile)
+        (root / "caps.yaml").write_text(yaml.safe_dump({"mobile": yaml.safe_load(mobile)}))
     return RobotView(root)
 
 
-@pytest.mark.parametrize(("model", "radius"), [("jackal", 0.267), ("rbsummit", 0.61)])
+@pytest.mark.parametrize(("model", "radius"), [("jackal", 0.3338), ("rbsummit", 0.465)])
 def test_each_robot_model_yields_its_own_mobile_cap_radius(model, radius):
-    from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+    from arena_runtime.shared import footprint_radius
 
-    assert footprint_radius(_view(model)) == pytest.approx(radius)
+    assert footprint_radius(_view(model).caps, model) == pytest.approx(radius, abs=5e-3)
 
 
-def test_a_model_without_radius_uses_its_padded_footprint_circumradius(tmp_path):
-    from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+def test_a_model_without_radius_uses_its_unpadded_footprint_circumradius(tmp_path):
+    from arena_runtime.shared import footprint_radius
 
     view = _write_model(tmp_path, "footprint: [[0.3, 0.4], [0.3, -0.4], [-0.3, -0.4], [-0.3, 0.4]]\nfootprint_padding: 0.05\n")
-    assert footprint_radius(view) == pytest.approx(math.hypot(0.3, 0.4) + 0.05)
+    assert footprint_radius(view.caps, "model") == pytest.approx(math.hypot(0.3, 0.4))
 
 
 def test_a_model_without_radius_or_footprint_fails(tmp_path):
-    from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+    from arena_runtime.shared import footprint_radius
 
     view = _write_model(tmp_path, "odom_frame: odom\n")
     with pytest.raises(ValueError, match="neither radius nor footprint"):
-        footprint_radius(view)
+        footprint_radius(view.caps, "model")
 
 
 def test_a_model_without_mobile_cap_gets_the_default_agent_radius(tmp_path):
-    from arena_runtime.env.robot_manager.robot_manager import footprint_radius
+    from arena_runtime.shared import footprint_radius
     from arena_runtime.sim._interface import DEFAULT_AGENT_RADIUS
 
     view = _write_model(tmp_path, None)
-    assert footprint_radius(view) == DEFAULT_AGENT_RADIUS
+    assert footprint_radius(view.caps, "model") == DEFAULT_AGENT_RADIUS
+
+
+def test_footprint_radius_follows_the_instance_cap_overrides(tmp_path):
+    from arena_robots.request import InstanceRequest
+    from arena_runtime.shared import footprint_radius
+
+    view = _write_model(tmp_path, "radius: 0.3\nfootprint: [[0.3, 0.4], [-0.3, -0.4]]\n")
+    scaled = InstanceRequest(caps={"mobile.radius": {"scale": 2.0}}).caps_of(view)
+    assert footprint_radius(scaled, "model") == pytest.approx(0.6)
+    assert footprint_radius(view.caps, "model") == pytest.approx(0.3)
+
+
+def test_footprint_radius_uses_an_overridden_footprint_when_radius_is_unset(tmp_path):
+    from arena_robots.request import InstanceRequest
+    from arena_runtime.shared import footprint_radius
+
+    view = _write_model(tmp_path, "footprint: [[0.3, 0.4], [-0.3, -0.4]]\n")
+    wide = InstanceRequest(caps={"mobile.footprint": [[1.0, 0.0], [-1.0, 0.0]]}).caps_of(view)
+    assert footprint_radius(wide, "model") == pytest.approx(1.0)
