@@ -63,7 +63,7 @@ class TM_RandomBase(TM_Robots):
         try:
             return self._ctx.world_manager.get_positions_on_map(n=n, safe_dist=safe_dist, polygon=polygon, forbidden_zones=forbidden_zones)
         except RuntimeError as error:
-            raise RuntimeError(f"task.random: fewer than {n} {what} positions fit in the {what} area (task.random.{what}_zone, or task.random.{what}_center_x, {what}_center_y and {what}_radius): {error}") from error
+            raise RuntimeError(f"task.robots_random: fewer than {n} {what} positions fit in the {what} area (task.robots_random.{what}_zone, or task.robots_random.{what}_center_x, {what}_center_y and {what}_radius): {error}") from error
 
 
 class TM_Random(TM_RandomBase):
@@ -78,7 +78,7 @@ class TM_Random(TM_RandomBase):
 
     def _goal_area(self) -> shapely.Geometry | None:
         return sampling_area(
-            prefix="task.random.goal_",
+            prefix="task.robots_random.goal_",
             world=self._ctx.world_manager,
             zone=self._params.GOAL_ZONE.value,
             center_x=self._params.GOAL_CENTER_X.value,
@@ -88,7 +88,7 @@ class TM_Random(TM_RandomBase):
 
     def _start_area(self) -> shapely.Geometry | None:
         return sampling_area(
-            prefix="task.random.start_",
+            prefix="task.robots_random.start_",
             world=self._ctx.world_manager,
             zone=self._params.START_ZONE.value,
             center_x=self._params.START_CENTER_X.value,

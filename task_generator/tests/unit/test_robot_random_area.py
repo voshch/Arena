@@ -132,3 +132,13 @@ def test_random_mode_registers_its_area_and_hold_params() -> None:
     from task_generator.tasks.robots.random import RandomParams
 
     assert ROBOTS_MODES.meta(Modes.TM_Robots.RANDOM).schema is RandomParams
+
+
+def test_robot_random_params_have_their_own_namespace_apart_from_obstacle_random() -> None:
+    pytest.importorskip("rclpy")
+    from task_generator.modes import Modes
+    from task_generator.tasks.registry import OBSTACLES_MODES, ROBOTS_MODES
+
+    robot_namespace = str(ROBOTS_MODES.meta(Modes.TM_Robots.RANDOM).namespace)
+    obstacle_namespace = str(OBSTACLES_MODES.meta(Modes.TM_Obstacles.RANDOM).namespace)
+    assert robot_namespace != obstacle_namespace

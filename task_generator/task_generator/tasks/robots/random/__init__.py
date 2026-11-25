@@ -9,7 +9,7 @@ from task_generator.tasks.registry import _REGISTRY_NAMESPACE, ROBOTS_MODES
 if typing.TYPE_CHECKING:
     from task_generator.tasks.robots import TM_Robots
 
-_NS = _REGISTRY_NAMESPACE("random")
+_NS = _REGISTRY_NAMESPACE("robots_random")
 
 
 class RandomParams(ParamGroup):

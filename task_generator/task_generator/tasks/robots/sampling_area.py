@@ -19,7 +19,7 @@ class ZonedWorld(typing.Protocol):
 def sampling_area(*, prefix: str, world: ZonedWorld, zone: str, center_x: float, center_y: float, radius: float) -> shapely.Geometry | None:
     """The polygon sampled positions must lie in, or None for the whole map.
 
-    prefix is the parameter name up to its leaf, for example task.random.goal_, so the errors name the parameters that were set.
+    prefix is the parameter name up to its leaf, for example task.robots_random.goal_, so the errors name the parameters that were set.
     """
     has_center = math.isfinite(center_x) and math.isfinite(center_y)
     if zone and has_center:
