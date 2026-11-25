@@ -101,7 +101,7 @@ class TM_Characterization(TM_Robots):
         sweeps = {name: [float(v) for v in typing.cast("Iterable[float]", values[name])] for name in SWEEP_DEFAULTS}
 
         for manager in self._ctx.robots.values():
-            envelope = resolve_envelope(manager.model_name)
+            envelope = resolve_envelope(manager.caps.mobile if "mobile" in manager.caps.available else None)
             schedule = build_schedule(
                 modes=modes,
                 vx_max=float(envelope["vx_max"]),

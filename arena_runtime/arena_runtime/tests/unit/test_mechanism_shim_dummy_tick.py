@@ -51,9 +51,9 @@ def _register_jackal(sim) -> str:
 
     model = RobotIdentifier.parse("jackal")
     robot = Robot(name="jackal", pose=Pose(), model=model, adapters={}, extra={})
-    params = model.resolve_sync().model_params
-    sim._register_agent_robot(robot, params)
-    return robot.frame.tf(params.base_frame)
+    view = model.resolve_sync()
+    sim._register_agent_robot(robot, view)
+    return robot.frame.tf(robot.body_of(view).base_frame)
 
 
 def _place(sim, frame: str, x: float, y: float, yaw: float = 0.0) -> None:

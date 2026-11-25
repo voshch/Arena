@@ -219,10 +219,10 @@ class DrlAdapter(MobileAdapter):
 
         node_name = "edge_node"
         ns = str(robot.namespace)
-        base_frame = robot._config.model_params.base_frame
+        base_frame = robot.body.base_frame
         source_frame = robot.frame.tf(base_frame)
 
-        mobile_cap = robot._config.caps.mobile if "mobile" in robot._config.caps.available else None
+        mobile_cap = robot.caps.mobile if "mobile" in robot.caps.available else None
         is_holonomic = bool(mobile_cap.is_holonomic) if mobile_cap is not None else False
 
         _limits: dict[str, tuple[float, float]] = {}

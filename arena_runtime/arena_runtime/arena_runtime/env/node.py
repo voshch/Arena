@@ -128,6 +128,7 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         self._sample = Sample(t=0.0)
         self._tick_loop_task: asyncio.Task | None = None
         self._semantics_dirty = False
+        self._holding: Mapping[str, frozenset[str]] | None = None
 
         self._pub_state_robots = self.create_publisher(
             arena_runtime_msgs.msg.RobotFleet,
@@ -735,7 +736,11 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         clips = {self._human_simulator.authored_name(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
         self._known_subjects.update(peds)
         self._known_subjects.update(robots)
-        return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls, family=self._semantic_family)
+        holding = self._environment_manager.held_objects()
+        if holding != self._holding:
+            self._holding = holding
+            self._semantics_dirty = True
+        return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls, family=self._semantic_family, holding=holding)
 
     def _wall_grid(self, compacted: Level) -> WallGrid:
         """The loaded world's walls rasterized the way the replay judge rasterizes them."""
@@ -760,19 +765,21 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
         """Bare names of the pedestrians the human simulator currently tracks."""
         return [self._human_simulator.authored_name(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
 
-    @staticmethod
-    def _robot_fields(manager: RobotManager) -> dict[str, str]:
+    def _robot_fields(self, manager: RobotManager) -> dict[str, str]:
         runner = manager.runner
-        return {
+        fields = {
             "phase": "" if runner.active is None else str(runner.active),
             "met": ",".join(map(str, runner.outcomes("met"))),
             "failed": ",".join(map(str, runner.outcomes("failed"))),
             "dropped": ",".join(map(str, runner.outcomes("dropped"))),
             "violated": ",".join(runner.violated),
         }
+        if self._holding is not None:
+            fields["holding"] = ",".join(sorted(self._holding.get(manager.name, ())))
+        return fields
 
     def _robot_semantic_states(self) -> list[arena_runtime_msgs.msg.SemanticEntityState]:
-        """Task progress of every robot as a `robot` entity, fields grow-only so change-driven snapshots keep every transition."""
+        """Task progress of every robot as a `robot` entity, its outcome fields only growing, with the objects it holds now where the simulator measures them."""
         states: list[arena_runtime_msgs.msg.SemanticEntityState] = []
         if self._robots_manager is None:
             return states
@@ -888,6 +895,18 @@ class EnvNode(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleNode, m
                 style_json=StyleSpec(latched=True, enabled=False).to_json(),
                 topic_must_exist=False,
                 group="Static",
+            )
+        )
+
+        env_displays.append(
+            AdapterDisplay(
+                name="Tasks",
+                topic=f"{env_ns}/task_markers",
+                topic_type="visualization_msgs/MarkerArray",
+                kind=DisplayKind.MARKER_ARRAY,
+                style_json=StyleSpec().to_json(),
+                topic_must_exist=False,
+                group="Tasks",
             )
         )
 

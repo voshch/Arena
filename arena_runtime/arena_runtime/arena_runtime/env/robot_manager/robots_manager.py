@@ -1,8 +1,9 @@
 import asyncio
 import contextlib
+import json
 import os
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import arena_robots.SetupFile as robot_setup
 import arena_runtime_msgs.msg
@@ -12,9 +13,12 @@ import geometry_msgs.msg
 from arena_rclpy_mixins.params import declare
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.assembly import ResolvedAssembly
+from arena_robots.caps import RobotCaps
+from arena_robots.inline import parse_inline_override
 
 from arena_runtime._node import NodeInterface
 from arena_runtime.env.environment_manager import EnvironmentManager
+from arena_runtime.env.task_layer import FleetEntry
 from arena_runtime.node_params import NodeParams
 from arena_runtime.shared import Pose, Position, Robot
 
@@ -96,12 +100,20 @@ def desugar_robot_entry(entry: str) -> dict:
         key = key.strip()
         value = value.strip()
         value_prefix, value_body = _extract_bracket(value, entry)
-        if value_body is None:
-            parsed_value: str | list[str] = value_prefix
+        if value_body is None or value_prefix:
+            parsed_value: str | list[str] = value
         else:
-            if value_prefix:
-                raise RuntimeError(f"robot entry {entry!r}: malformed value {value!r}")
             parsed_value = [v.strip() for v in split_robot_arg(value_body)]
+
+        cap, dot, tail = key.partition('.')
+        if dot and cap and tail != 'adapter':
+            if key in result:
+                raise RuntimeError(f"robot entry {entry!r}: duplicate cap override {key!r}")
+            try:
+                result[key] = parse_inline_override(parsed_value)
+            except ValueError as e:
+                raise RuntimeError(f"robot entry {entry!r}: {e}") from e
+            continue
 
         if key in result:
             existing = result[key] if isinstance(result[key], list) else [result[key]]
@@ -123,19 +135,34 @@ def _cap_instances(resolved: ResolvedAssembly | None, cap: str) -> list[tuple[st
 
 
 def _physical_params(manager: RobotManager) -> list[diagnostic_msgs.msg.KeyValue]:
-    """`robot_radius` and, when the model states `mass.base_kg`, `robot_mass_kg`."""
+    """`robot_radius` and, when the caps state a mass, `robot_mass_kg` with its `robot_base_mass_kg`, `robot_components_mass_kg` and `robot_payload_mass_kg` split."""
     params = [diagnostic_msgs.msg.KeyValue(key='robot_radius', value=str(manager.radius))]
-    if (mass := manager.robot_view.model_params.get('mass', {}).get('base_kg')) is not None:
-        params.append(diagnostic_msgs.msg.KeyValue(key='robot_mass_kg', value=str(float(mass))))
+    if manager.body.mass is not None:
+        mass = manager.caps.mass_split()
+        params.extend(
+            [
+                diagnostic_msgs.msg.KeyValue(key='robot_mass_kg', value=str(mass['total'])),
+                diagnostic_msgs.msg.KeyValue(key='robot_base_mass_kg', value=str(mass['base'])),
+                diagnostic_msgs.msg.KeyValue(key='robot_components_mass_kg', value=str(mass['components'])),
+                diagnostic_msgs.msg.KeyValue(key='robot_payload_mass_kg', value=str(mass['payload'])),
+            ]
+        )
     return params
 
 
-def _morphology_params(robot: Robot) -> list[diagnostic_msgs.msg.KeyValue]:
-    """Resolved morphology (type@mount: variant) when assembled, raw parts otherwise."""
+def _morphology_params(robot: Robot, caps: RobotCaps) -> list[diagnostic_msgs.msg.KeyValue]:
+    """Resolved morphology (type@mount: variant, `param:` xacro args) when assembled, raw parts otherwise, one `cap:<path>` entry per effective cap override, then `caps:hash` of the effective caps."""
     resolved = robot.resolved_assembly
     if resolved is not None:
-        return [diagnostic_msgs.msg.KeyValue(key=f'{p.type}@{p.mount.name}', value=p.variant) for p in resolved.placements]
-    return [diagnostic_msgs.msg.KeyValue(key=ptype, value=str(values)) for ptype, values in robot.parts.items()]
+        from arena_robots.fleet import placement_params  # noqa: PLC0415
+
+        params = [diagnostic_msgs.msg.KeyValue(key=f'{p.type}@{p.mount.name}', value=p.variant) for p in resolved.placements]
+        params.extend(diagnostic_msgs.msg.KeyValue(key=key, value=value) for key, value in placement_params(resolved).items())
+    else:
+        params = [diagnostic_msgs.msg.KeyValue(key=ptype, value=str(values)) for ptype, values in robot.parts.items()]
+    params.extend(diagnostic_msgs.msg.KeyValue(key=f'cap:{path}', value=json.dumps(value)) for path, value in caps.all_overrides.items())
+    params.append(diagnostic_msgs.msg.KeyValue(key='caps:hash', value=caps.caps_hash()))
+    return params
 
 
 @attrs.define(frozen=True)
@@ -144,6 +171,7 @@ class _Readiness:
 
     ready: frozenset[str]
     pending: dict[str, frozenset[str]]  # robot -> uninitialized submodule paths
+    components_pending: dict[str, frozenset[str]] = attrs.field(factory=dict)  # <type>/<variant> -> uninitialized submodule paths
 
 
 _READINESS_CACHE: _Readiness | None = None
@@ -167,6 +195,8 @@ def _robot_readiness() -> _Readiness | None:
     import pathlib  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
 
+    from arena_robots.catalog import Catalog  # noqa: PLC0415
+
     here = pathlib.Path(__file__).resolve()
     arena = next((p for p in here.parents if (p / "arena_robots").is_dir() and (p / ".gitmodules").is_file()), None)
     if arena is None:
@@ -187,14 +217,25 @@ def _robot_readiness() -> _Readiness | None:
     cp = configparser.ConfigParser()
     cp.read(gitmodules)
     robot_to_paths: dict[str, set[str]] = {}
+    component_to_paths: dict[str, set[str]] = {}
     for section in cp.sections():
         path = cp[section].get("path")
-        robot = cp[section].get("robot")
-        if not (path and robot):
+        if not path:
             continue
         full_path = f"arena_robots/{path}"
-        for name in robot.split():
+        for name in cp[section].get("robot", "").split():
             robot_to_paths.setdefault(name, set()).add(full_path)
+        for ref in cp[section].get("component", "").split():
+            component_to_paths.setdefault(ref, set()).add(full_path)
+    catalog = Catalog()
+    for ref, paths in list(component_to_paths.items()):
+        component_type, _, component_variant = ref.partition("/")
+        try:
+            variants = catalog.get(component_type, component_variant).variants
+        except RuntimeError:
+            variants = []
+        for variant in variants:
+            component_to_paths.setdefault(f"{component_type}/{variant}", set()).update(paths)
     all_robots = {p.name for p in (arena / "arena_robots" / "arena_robots" / "robots").iterdir() if p.is_dir()}
     ready: set[str] = set()
     pending: dict[str, frozenset[str]] = {}
@@ -204,7 +245,8 @@ def _robot_readiness() -> _Readiness | None:
             pending[r] = frozenset(missing)
         else:
             ready.add(r)
-    _READINESS_CACHE = _Readiness(ready=frozenset(ready), pending=pending)
+    components_pending = {ref: frozenset(missing) for ref, paths in component_to_paths.items() if (missing := paths & uninit_paths)}
+    _READINESS_CACHE = _Readiness(ready=frozenset(ready), pending=pending, components_pending=components_pending)
     return _READINESS_CACHE
 
 
@@ -314,12 +356,14 @@ class RobotsManager(NodeInterface):
             if ready is not None and name not in ready:
                 continue
             view = robot_id.resolve_sync()
+            if not view.is_definition:
+                continue
             mobile = view.mobile
             if mobile is None:
                 continue
             if mobile.is_holonomic != want_holonomic:
                 continue
-            robot_sensors = {s.type for s in view.model_params.sensors}
+            robot_sensors = {s.type for s in view.effective_sensors({})}
             if not set(sensor_needs) <= robot_sensors:
                 continue
             candidates.append((view.model_params.priority, name))
@@ -357,7 +401,16 @@ class RobotsManager(NodeInterface):
                 skipped.append(base.robot)
                 return
             name = base.name
-            config = Robot.from_setup(base, node=self.node)
+            config = Robot.from_setup(base, node=self.node, validate=False)
+            placements = config.resolved_assembly.placements if config.resolved_assembly is not None else []
+            missing_components = sorted({ref for p in placements if readiness is not None and (ref := f"{p.type}/{p.variant}") in readiness.components_pending})
+            if missing_components:
+                assert readiness is not None
+                paths = ", ".join(sorted(path for ref in missing_components for path in readiness.components_pending[ref]))
+                self.node.get_logger().error(f"skipping robot {base.robot!r}: component(s) {', '.join(missing_components)} not installed (submodule(s) not checked out: {paths}). run: arena feature robots add {' '.join(missing_components)}")
+                skipped.extend(missing_components)
+                return
+            config.validate_caps()
 
             if name is None:  # anon
                 parsed_anonymous.setdefault(config.model.name, []).append(config)
@@ -500,10 +553,10 @@ class RobotsManager(NodeInterface):
                             instance=instance,
                             variant=variant,
                         )
-                        for cap in sorted(mgr.robot_view.effective_caps(mgr.robot.resolved_request, frames=mgr.robot.frames).available)
+                        for cap in sorted(mgr.caps.available)
                         for instance, variant in _cap_instances(mgr.robot.resolved_assembly, cap)
                     ],
-                    params=[*_morphology_params(mgr.robot), *_physical_params(mgr)],
+                    params=[*_morphology_params(mgr.robot, mgr.caps), *_physical_params(mgr)],
                 )
                 for mgr in self.managers.values()
             ]
@@ -609,9 +662,36 @@ class RobotsManager(NodeInterface):
 
     def add_pending(self, name: str, robot: Robot) -> None:
         """Queue a robot for full set_up_robot on the next reset_cycle."""
-        if name in self._managers or name in self._diff.to_add:
+        if (name in self._managers and name not in self._diff.to_remove) or name in self._diff.to_add:
             raise ValueError(f"robot {name!r} already exists")
         self._diff.to_add[name] = robot
+
+    def reconcile(self, fleet: Sequence[FleetEntry], build: Callable[[str, str], Robot]) -> None:
+        """Queue the despawns and spawns that make the fleet the given one, matching by name and model and unnamed entries by model."""
+        named = [entry.name for entry in fleet if entry.name]
+        if len(named) != len(set(named)):
+            raise ValueError(f"fleet names a robot twice: {named}")
+        self._diff.to_remove.clear()
+        candidates = {name: manager.model_name for name, manager in self._managers.items()}
+        candidates.update({name: robot.model.name for name, robot in self._diff.to_add.items()})
+        keep = {entry.name for entry in fleet if entry.name and candidates.get(entry.name) == entry.model}
+        wanted: list[FleetEntry] = []
+        for entry in fleet:
+            if entry.name:
+                if entry.name not in keep:
+                    wanted.append(entry)
+                continue
+            match = next((name for name, model in candidates.items() if model == entry.model and name not in keep and name not in named), None)
+            if match is None:
+                wanted.append(entry)
+            else:
+                keep.add(match)
+        for name in candidates:
+            if name not in keep:
+                self.remove_pending(name)
+        for entry in wanted:
+            name = entry.name or self.next_name(entry.model)
+            self.add_pending(name, build(name, entry.model))
 
     def remove_pending(self, name: str) -> None:
         """Toggle a robot's despawn-pending state, the single fleet-removal surface.

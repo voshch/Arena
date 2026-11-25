@@ -6,7 +6,7 @@ import pytest
 import yaml
 from PIL import Image
 
-from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS, SPAWN_CLEARANCE, main, nav_at_r, resolve_world, robot_radius
+from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS, SPAWN_CLEARANCE, main, nav_at_r, resolve_world
 from arena_simulation_setup.tree.World import FORMAT, WorldView
 
 R = DEFAULT_RADIUS
@@ -166,34 +166,6 @@ def test_levels_are_scored_separately(tmp_path):
     assert sorted(nav_at_r(view, levels={'1'})) == ['1']
 
 
-def test_radius_from_robot_directory(tmp_path):
-    robot = tmp_path / 'disc'
-    (robot / 'caps').mkdir(parents=True)
-    (robot / 'caps' / 'mobile.yaml').write_text(yaml.safe_dump({'radius': 0.31, 'is_holonomic': True}))
-    assert robot_radius(str(robot)) == pytest.approx(0.31)
-
-
-def test_robot_directory_without_radius_is_rejected(tmp_path):
-    robot = tmp_path / 'blank'
-    (robot / 'caps').mkdir(parents=True)
-    (robot / 'caps' / 'mobile.yaml').write_text(yaml.safe_dump({'is_holonomic': True}))
-    with pytest.raises(LookupError, match='declares no radius'):
-        robot_radius(str(robot))
-
-
-def test_radius_from_installed_robot_name():
-    pytest.importorskip('ament_index_python', reason='robot names resolve through the ament index')
-    from ament_index_python.packages import PackageNotFoundError, get_package_share_path
-
-    try:
-        get_package_share_path('arena_robots')
-    except PackageNotFoundError:
-        pytest.skip('arena_robots is not installed in this workspace')
-    assert robot_radius('jackal') == pytest.approx(0.267)
-    with pytest.raises(LookupError, match='available: .*jackal'):
-        robot_radius('no_such_robot')
-
-
 def test_resolve_world_directory_with_level_filter(tmp_path):
     view = _world(tmp_path, _two_rooms(1.0))
     resolved, levels = resolve_world(f'{view.path}[0]')
@@ -234,7 +206,7 @@ def test_cli_bare_call_prints_help(capsys):
     [
         (['w', '--start', 'north'], 'expected X,Y'),
         (['w', '--radius', '-1'], 'positive length'),
-        (['w', '--radius', '0.3', '--robot', 'jackal'], 'not allowed with'),
+        (['w', '--robot', 'jackal'], 'unrecognized arguments'),
     ],
 )
 def test_cli_bad_argument_explains_values(argv, message, capsys):

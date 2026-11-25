@@ -16,12 +16,14 @@ from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier, re
 from arena_simulation_setup.utils.articulation import Articulation
 from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, Serializable, converter
 
-ROBOT_KEYS = frozenset({"start", "level", "goal_level", "phases", "conditions"})
+ROBOT_KEYS = frozenset({"name", "model", "start", "level", "goal_level", "phases", "conditions"})
 
 
 @attrs.define
 class RobotGoal(Parseable):
     start: Pose = attrs.field(converter=Pose.converter)
+    name: str = attrs.field(default="", kw_only=True)
+    model: str = attrs.field(default="", kw_only=True)
     level: str = attrs.field(default="")
     start_zone: str = attrs.field(default="")
     goal_level: str = attrs.field(default="")
@@ -36,6 +38,8 @@ class RobotGoal(Parseable):
         if unknown:
             raise ValueError(f"robot has unknown keys {unknown}, expected some of {sorted(ROBOT_KEYS)}")
         return cls(
+            name=str(obj.get("name", "")),
+            model=str(obj.get("model", "")),
             level=str(obj.get("level", "")),
             goal_level=str(obj.get("goal_level", "")),
             start=Pose.parse(obj["start"]),
@@ -164,6 +168,11 @@ class Scenario:
             if light.name in names:
                 raise ValueError(f'duplicate scenario light {light.name!r}')
             names.add(light.name)
+        robot_names: set[str] = set()
+        for robot in self.robots:
+            if robot.name and robot.name in robot_names:
+                raise ValueError(f'duplicate scenario robot {robot.name!r}')
+            robot_names.add(robot.name)
         humans = sorted(human.name for human in self.humans)
         for index, entry in enumerate(self.timeline):
             for stimulus in entry.stimulus:

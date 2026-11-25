@@ -87,6 +87,8 @@ src = [
     "arena_mcp",
     "arena_runtime/arena_runtime/arena_runtime",
     "task_generator/task_generator",
+    "task_layers/casper/arena_casper/arena_casper",
+    "task_layers/casper/casper/casper",
     "arena_bringup/arena_bringup",
     "arena_robots/arena_robots/arena_robots",
     "arena_simulation_setup/src/arena_simulation_setup",
@@ -133,6 +135,7 @@ known-first-party = [
 "arena_simulation_setup/**/*.py" = ["UP"]
 "_meta/arena_cli/__main__.py" = ["UP036"]
 "_meta/typings/**/*.pyi" = ["ANN401"]
+"task_layers/casper/casper/**/*.py" = ["UP042"]
 
 [tool.ruff.lint.flake8-annotations]
 suppress-none-returning = true
@@ -170,6 +173,8 @@ extraPaths = [
     "flatsim/flatsim",
     "humansim/arena_humansim",
     "task_generator",
+    "task_layers/casper/arena_casper",
+    "task_layers/casper/casper",
     "utils/arena_cam",
     "utils/arena_rclpy_mixins/arena_rclpy_mixins",
     "utils/arena_viz",
@@ -216,6 +221,8 @@ executionEnvironments = [
     { root = "flatsim/flatsim" },
     { root = "humansim/arena_humansim" },
     { root = "task_generator" },
+    { root = "task_layers/casper/arena_casper" },
+    { root = "task_layers/casper/casper" },
     { root = "utils/arena_cam" },
     { root = "utils/arena_rclpy_mixins/arena_rclpy_mixins" },
     { root = "utils/arena_viz" },

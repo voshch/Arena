@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from rclpy.action.server import ServerGoalHandle
 
 ENV = 7
+REFERENCE = (5.0, 4.0)
 PLAIN_ENV = 8
 ROBOT = "jackal_0"
 WORLDS = ["map_empty", "small_warehouse"]
@@ -369,7 +370,7 @@ class Peers:
         self.plain = peer(PLAIN_ENV, "dummy")
         self.runtime = rclpy.create_node("arena_mcp_tg_test_runtime")
         publisher = self.runtime.create_publisher(EnvRegistry, "/arena/state/envs", _latched())
-        publisher.publish(EnvRegistry(envs=[EnvRecord(env_id=env_id, fqn=fqn(env_id), ready=True) for env_id in (ENV, PLAIN_ENV)]))
+        publisher.publish(EnvRegistry(envs=[EnvRecord(env_id=env_id, fqn=fqn(env_id), ready=True, reference=list(REFERENCE if env_id == ENV else (0.0, 0.0))) for env_id in (ENV, PLAIN_ENV)]))
         self.registry_publisher = publisher
         self.executor = MultiThreadedExecutor(num_threads=4)
         for node in (self.humansim, self.plain, self.runtime):

@@ -20,8 +20,8 @@ arena launch robot:=jackal task.config:=default
 - `task.<mode>.<leaf>:=<value>` - per-mode param override, forwarded verbatim
   as a ROS param at launch time (e.g. `task.scenario.file:=4`,
   `task.random.static.n:=[5,10]`). Leaf names match the mode's declared
-  schema. The same leaf params can be re-staged at runtime via
-  `config/queue_episode` - see
+  schema. The robots `random` mode takes `task.robots_random.<leaf>`. The
+  same leaf params can be re-staged at runtime via `config/queue_episode` - see
   [tasks/obstacles/README.md](../../../task_generator/task_generator/tasks/obstacles/README.md).
 
 Both lists below are read from the registry
@@ -39,13 +39,13 @@ sorted(k.value for k in OBSTACLES_MODES.keys())
 
 | Kind | Meaning |
 |---|---|
-| `random` | one random reachable goal per robot per episode |
-| `explore` | extends `random`, assigns a fresh random goal whenever a robot finishes or times out |
+| `random` | one random reachable goal and start per robot per episode, from the whole map, a zone (`task.robots_random.goal_zone`/`start_zone`) or a disc (`goal_center_x`/`goal_center_y`/`goal_radius`, `start_center_x`/`start_center_y`/`start_radius`). `hold_s` above 0 makes each robot stay within the goal tolerance for that many seconds |
+| `explore` | extends the `random` base on the whole map, without its areas and hold, assigns a fresh random goal whenever a robot finishes or times out |
 | `guided` | external controller drives the goal sequence |
 | `stationary` | robot stays parked at a free pose sampled per episode, or an explicit pose via `pos_x`/`pos_y`/`pos_theta` (`pos_x`/`pos_y` default NaN = sample, `pos_theta` defaults 0.0), no goal dispatch |
 | `scenario` | reads each robot's `start` pose and an ordered list of `phases` (goto/gesture) from the world's scenario YAML (`file` param, default `default`, or the world's first scenario if it has none named `default`) |
 | `demo` | cycles robots through vertices of a regular polygon around a center point, dispatching goto/gesture phases |
-| `characterization` | open-loop `cmd_vel` maneuver sweep through the robot's rated envelope, no nav goals. `modes.idle`/`modes.linear`/`modes.lateral`/`modes.arc`/`modes.ramps`/`modes.brake`/`modes.angular` toggle each block (all default true). Duration doubles: `idle_s`, `linear_dwell_s`, `linear_settle_s`, `lateral_dwell_s`, `angular_dwell_s`, `ramp_settle_s`, `brake_approach_s`, `brake_dwell_s`. Sweep double-arrays: `arc_speed_factors` (fractions of the rated vx), `arc_radius_factors` (multiples of the footprint radius), `ramp_horizons_s` (one ramp family per horizon). Speeds and pivot rates still come from the robot's `caps/mobile.yaml`. The schedule that ran is latched on `characterization_schedule` for the offline pipeline |
+| `characterization` | open-loop `cmd_vel` maneuver sweep through the robot's rated envelope, no nav goals. `modes.idle`/`modes.linear`/`modes.lateral`/`modes.arc`/`modes.ramps`/`modes.brake`/`modes.angular` toggle each block (all default true). Duration doubles: `idle_s`, `linear_dwell_s`, `linear_settle_s`, `lateral_dwell_s`, `angular_dwell_s`, `ramp_settle_s`, `brake_approach_s`, `brake_dwell_s`. Sweep double-arrays: `arc_speed_factors` (fractions of the rated vx), `arc_radius_factors` (multiples of the footprint radius), `ramp_horizons_s` (one ramp family per horizon). Speeds and pivot rates still come from the `mobile` section of the robot's `caps.yaml`. The schedule that ran is latched on `characterization_schedule` for the offline pipeline |
 
 ### `task.obstacles` kinds
 

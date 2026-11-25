@@ -1,0 +1,14 @@
+format: arena-scenario/2
+robots:
+- name: jackal_0
+  model: jackal
+  start: [26.0, 12.0, 0.0]
+  phases: []
+- name: jackal_1
+  model: jackal
+  start: [28.0, 12.0, 0.0]
+  phases: []
+- name: jackal_2
+  model: jackal
+  start: [30.0, 12.0, 0.0]
+  phases: []

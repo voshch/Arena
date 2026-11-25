@@ -72,7 +72,7 @@ def _params(params: Iterable[Parameter]) -> dict[str, object]:
 
 
 def record(msg: EpisodeRecord) -> dict[str, object]:
-    """An EpisodeRecord with its outcome name, start time in seconds, modes as axis to names, params as name to value and phases and conditions parsed."""
+    """An EpisodeRecord with its outcome name, start time in seconds, modes as axis to names, params as name to value and phases, task events and conditions parsed."""
     out = msgs.to_dict(msg)
     out["outcome"] = _states().get(msg.outcome_state, str(msg.outcome_state))
     out["start_time"] = msgs.seconds(msg.start_time)
@@ -81,6 +81,7 @@ def record(msg: EpisodeRecord) -> dict[str, object]:
     out["human_params"] = _params(msg.human_params)
     out["conditions"] = _json(msg.conditions, [])
     out["phases"] = _json(msg.phases, {})
+    out["tasks"] = _json(msg.tasks, [])
     return out
 
 

@@ -42,6 +42,34 @@ Defined in [`_interface.py`](_interface.py):
 
 Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints ros2_control commands by position set to 0 (`_free_position_joints`), where Isaac and MuJoCo drop it, so the damping cannot hold an arm back from its trajectory. It zeroes the attribute rather than dropping it because urdfdom rejects a `<dynamics>` with neither damping nor friction.
 
+Every simulator loads the URDF of a robot from `render_robot` in [_robot.py](_robot.py), which calls `arena_robots.served_urdf.serve` with the robot's resolved request and frames, the xacro arguments of the robot (its attributes and `extra`, plus `sim_path`, `namespace` and `gazebo_controllers` in Gazebo), the `optim` parameter and the sensor topic patches of its effective sensors. It returns the XML (`description`) and the file it is written to (`path`). Gazebo's robot bridge takes its topic mappings from the plugins of the canonical URDF (`Sensor.plugin_bridge_rows`) and the effective sensors (`Sensor.bridge_rows`).
+
+### Attach on grasp
+
+[`_interface.py`](_interface.py), [`_carry.py`](_carry.py)
+
+`MechanismITF` carries what a closed gripper holds.
+
+| Method | Signature |
+| --- | --- |
+| `grasp_attach` | `(Robot, joint: str, obj: str, hand: str) -> bool` |
+| `grasp_detach` | `(Robot, joint: str) -> None` |
+| `held_objects` | `() -> Mapping[str, frozenset[str]] \| None` |
+
+`grasp_attach` carries the world object `obj` (an authored name) with the gripper joint `joint` of the robot until `grasp_detach`, and answers `False` when no such object is within reach. `hand` is the TF frame of the tip of the gripper's arm (the arm the gripper cap names, else the robot's only arm, empty without one). `held_objects` maps each robot name to the authored names its grippers carry, and `None` means the simulator does not measure holding: the env node then leaves `Sample.holding` unset and the `robot` entity without a `holding` field. The gripper adapter calls them through `EnvironmentManager`.
+
+One carry policy in [`_carry.py`](_carry.py) serves every simulator. Each authored name maps to the obstacle spawned or moved as `world_<name>` or `<name>`. The obstacle is carried when its annotated bounding box is within 0.05 m of `hand` or of a TF frame below it, the fingers and tool center (its origin within 0.3 m without a bounding box), and its pose in the `hand` frame at the attach is the carry's offset. `grasp_detach` sets it down upright at its yaw below where it is, on the highest annotated box top within 3 m under its box center that lies at most 2 cm above its bottom, else on the floor of the robot (the map height of its TF root, 0 without one), and logs where. A robot delete drops its carries, and `before_reset_episode` puts each obstacle carried since the last reset back where it rested before its first attach. A simulator holds the obstacle through five hooks:
+
+| Hook | Default | Gazebo | Isaac | MuJoCo | flatsim |
+| --- | --- | --- | --- | --- | --- |
+| `_carry_weld(carry)` at the attach | `False` | `CarryWeld` plugin | `/isaac/WeldPrim` | `/mujoco/AttachPrim` | default |
+| `_carry_unweld(carry)` at the release and the reset | `None` | `CarryWeld` plugin | `/isaac/WeldPrim` | `/mujoco/DetachPrim` | default |
+| `_carry_lift(obstacles)` at an attach without a weld | no-op | respawns the model from its SDF without collisions | default | default | removes the outline |
+| `_carry_follow(obstacles)` on each tick an unwelded one moved | `obstacle_move` | default | default | default | no-op |
+| `_carry_drop(obstacles)` at the release and the reset | `obstacle_move` | respawns a lifted model at the new pose | default | default | adds the outline at the new pose |
+
+A weld holds the obstacle at its attach pose in the frame of the robot body that carries `hand` on every physics step, its collisions off, until the unweld or the deletion of the robot or the obstacle, and the unweld returns the pose the simulator left it at (the hand frame times the offset when it returns `None`). Without a weld the mechanism tick (30 Hz sim time) places the obstacle at the hand frame times the offset. Gazebo's `CarryWeld` world plugin of `arena_gz_plugins` (`/world/default/carry_weld`) resolves the last segment of `hand` to the link it is attached to, sets the model's world pose and zeroes its velocity each PreUpdate, and gives its collisions bitmask 0. Isaac's server holds the prim to the nearest rigid body at or above the prim named by the last segment of `hand` and switches off its colliders' `collisionEnabled`. MuJoCo's server (see [arena_mujoco](../../../../arena_mujoco/README.md#attach-on-grasp)) carries the obstacle with the body that holds the gripper joint, within 1 m of its geometry, its collision off.
+
 ### `WorldITF`
 
 [`_interface.py`](_interface.py)
@@ -79,7 +107,9 @@ Gazebo spawns a robot from its URDF with the `<dynamics damping>` of the joints 
 | `delete_box` | `(name) -> bool` |
 | `set_robot_pose` | `(sim_path, pose) -> bool` |
 
-Robot tracking is not a primitive to override: call `_register_agent_robot(robot, model_params)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+Robot tracking is not a primitive to override: call `_register_agent_robot(robot, view)` on spawn and `_forget_agent_robot(sim_path)` on remove, and the base class serves `robot_discs()` / `robot_pose()` from TF.
+
+A simulator reads the base frame and the `cmd_vel` and odom topics of a robot it spawns from `Robot.body_of(view)`, the instance's effective `body` caps. The control mode, config, controllers, sensors and `z_offset` stay with the resolver on `view.model_params`.
 
 Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` keep the light table, and every tick pushes each `light` semantic entity whose output changed, after moving frame-anchored and link-riding lights that moved more than 2 cm or 0.02 rad. A simulator renders lights by overriding four no-op hooks:
 
@@ -121,7 +151,7 @@ Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as 
 - Door kinds: `sliding` (slides along start->end), `sliding_split` (boxes `<door>_a` and `<door>_b`, the span
   halves, part from the middle by half the span each, a synthesized cabin door's kind unless its elevator's
   `door_kind` says otherwise), `sliding_top`
-  (lifts), `teleport` (drops away) and `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`).
+  (lifts), `teleport` (drops away, after `transition_time` for a door that fell back to teleport at load) and `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`).
   Sliding and hinged slabs are tested against agent discs: an opening step holds when the slab would enter an
   agent (the swing arc of a hinged door, the wall pocket past the end of a sliding one, either pocket of a split
   one), so an agent pressed against a half-open sliding slab
@@ -477,16 +507,17 @@ extra channels under caller `cli`.
 | --- | --- | --- | --- |
 | physics step | 0.002 s (`scene.PHYSICS_DT`) | 0.004 s (`run_isaacsim.PHYSICS_DT`), five per rendered frame of 0.02 s (`RENDERING_DT`), one solver substep under newton | 0.0333 s (`empty.sdf` `max_step_size`) |
 | lockstep quantum | the physics step | the rendered frame (0.02 s) | the physics step |
-| position servo | PD, revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped, force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
+| position servo | PD with the `drives` kp and kd of the robot's caps (default revolute kp 100 N m/rad per N m of effort and kd kp/20, prismatic sized for a 2 mm sag and critically damped), force clamped to the effort | the same drive | gz_ros2_control position mode: velocity target `0.1 x update_rate x error`, force clamped to the effort |
 | servo rate (revolute) | 20 per s | 20 per s | 2 per s per 10 Hz of the controller manager's `update_rate` (20 per s at go1's 200 Hz, 5 per s at 50 Hz) |
 | gravity compensation | none | none | none |
 | joint armature | `max(URDF, min(0.2, effort / 50))` kg m^2 | URDF | URDF |
 | command and joint state exchange | every 0.02 s of sim time | every rendered frame (0.02 s) | every physics step |
 | camera rate | URDF `update_rate`, checked every 0.02 s tick | the divisor of the 50 Hz render rate nearest the URDF `update_rate` (a 30 Hz camera runs at 25 Hz) | URDF `update_rate` |
 | `odom` with `odom_topic: odom` | ground truth from the free joint | ground truth from the articulation | `pose_to_tf` from the model pose, twist differenced |
-| command interfaces | position, velocity | position, velocity | position, velocity (effort unused) |
+| command interfaces | position, velocity, effort | position, velocity, effort | position, velocity, effort |
+| effort-commanded joint (`drives.<joint>.command: effort`) | motor actuator applying the commanded effort, a position servo with the joint's `drives` gains holds the spawn pose until the first finite effort command | zero-gain drive after the same spawn hold | effort command, gz_ros2_control's `hold_joints` until a controller claims the joint |
 
-Gains are derived from the URDF only, no robot sets them per joint.
+The gains are the `drives` fact block of the instance's caps, derived from the URDF unless a robot's caps.yaml or an instance override sets them, and travel to the simulators as `kp`, `kd` and `effort` params of the served URDF's ros2_control joints.
 
 In Gazebo a joint below its URDF position limit gets no servo force (DART 6.13 `JointConstraint::update` handles it as a limit only), so a loaded position joint that a spawn transient pushes onto its limit stays there. A robot's URDF limits therefore sit outside the range its caps command, as TIAGo's torso stops at -0.05 m below its `[0.0, 0.35]` lift range.
 
@@ -551,12 +582,12 @@ are what Arena sends it.
   levels side by side in xy at one z, so an elevator ride there is an xy
   teleport within one level. An entity that ends within 0.05 m above its level
   floor, such as an elevator cabin floor, is no obstacle.
-- Robots: body from the mobile cap footprint, driven by the Twist on
+- Robots: body from the `body.outline` of the instance's caps (the convex hull of the base, fixed-link and wheel collision geometry in the rendered URDF, at most 8 vertices), the mobile cap footprint with a logged warning for a robot without collision geometry, driven by the Twist on
   `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
-  the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
-  robot: per-axis (linear, lateral, angular) velocity bounds, acceleration and
+  the `planar` block of the `mobile` section of the robot's `caps.yaml`, the same keys for every
+  robot (read from the instance's effective caps, so a per-robot override of `mobile.planar` or `mobile.limits` applies): per-axis (linear, lateral, angular) velocity bounds and acceleration from `limits`,
   gain, a first-order `lag`, a `traction` cap on planar acceleration, the
-  `pivot` x the body turns about and the command `timeout`. A diff drive has
+  `pivot` x the body turns about (`front` or `rear` in the file, the wheel joint x of the URDF) and the command `timeout`. A diff drive has
   lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
   sideways only when `is_holonomic`. The base controller does not run. The
   cap's `min_turning_radius` bounds the turn rate of a car-like base at its
@@ -592,6 +623,19 @@ are what Arena sends it.
 - Lockstep: no channel is registered, so the other producers set the strides.
   A step is complete when the service answers, every message of it is already
   published.
+
+## Drive limits of a ros2_control base
+
+For every robot with a mobile cap, Gazebo,
+MuJoCo and Isaac overlay the base controller's limit keys from the instance's
+effective `planar` (its velocity and acceleration read from `limits`)
+(`overlay_planar_limits` in [_control.py](_control.py)): `linear.x`, `linear.y` and
+`angular.z` `min_velocity`, `max_velocity`, `max_acceleration` and
+`min_acceleration`, written for every axis whose `has_velocity_limits` or
+`has_acceleration_limits` flag the controller sets and never an infinite limit (the
+key stays unset, which the controllers read as unbounded). `effective_control_yaml` reads the chassis config from `RobotView.control_config(sim)`, the `control.yaml` overlaid key by key with `control.<sim>.yaml`. `control.yaml` carries the flags and no limit values.
+
+The same function writes the drive controller's frames (`base_frame_id` from the instance's `body.base_frame`, `odom_frame_id` from its `mobile.odom_frame`, `overlay_drive_frames` in [_control.py](_control.py), the `control*.yaml` files do not carry them) and the drive controller's geometry from the instance's canonical URDF over its parameters (`overlay_drive_geometry` in [_control.py](_control.py), measured by `arena_robots.urdf_facts.drive_geometry`): `wheel_radius` and `wheel_separation` for diff drive, `kinematics.wheels_radius` and `kinematics.sum_of_robot_center_projection_on_X_Y_axis` for mecanum, `wheel_radius`, `wheel_positions_x` and `wheel_positions_y` for swerve, and those plus `wheel_angles` for omni, in every simulator including flatsim's mock controllers. `control.yaml` does not carry them.
 
 ## Adding a new simulator
 

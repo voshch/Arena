@@ -80,6 +80,15 @@ def test_nodes_gone_between_episodes_are_forgotten() -> None:
     assert tally.record({"b", "c"}) is None
 
 
+def test_the_nodes_of_a_removed_robot_are_forgotten_while_their_graph_entries_linger() -> None:
+    tally = _tally(1)
+    tally.record({"/env/fr3_0/move_group", "/env/fr3_0/task_server", "/env/tiago/task_server", "/env/map_server"})
+    tally.forget_under("/env/fr3_0")
+    tally.forget_absent({"/env/fr3_0/move_group", "/env/fr3_0/task_server", "/env/tiago/task_server", "/env/map_server"})
+    assert tally.record({"/env/tiago/task_server", "/env/map_server"}) is None
+    assert tally.record({"/env/map_server"}) == "/env/tiago/task_server"
+
+
 def _spawn(*names: str) -> dict[str, subprocess.Popen]:
     return {name: subprocess.Popen([sys.executable, "-c", _CHILD, name, NS]) for name in names}
 
@@ -130,6 +139,24 @@ def test_a_frozen_process_is_named(rclpy_context: object) -> None:
         await _until_all_answer(pinger, 4)
         os.kill(children["victim"].pid, signal.SIGSTOP)
         assert [await _ping(pinger) for _ in range(3)] == [None, None, f"{NS}/victim"]
+
+    _with_pinger(scenario)
+
+
+def test_a_removed_robots_frozen_node_is_neither_pinged_nor_named(rclpy_context: object) -> None:
+    async def scenario(pinger: typing.Any, children: dict[str, subprocess.Popen]) -> None:
+        robot = subprocess.Popen([sys.executable, "-c", _CHILD, "move_group", f"{NS}/fr3_0"])
+        try:
+            await _until_all_answer(pinger, 5)
+            os.kill(robot.pid, signal.SIGSTOP)
+            pinger.forget_under(f"{NS}/fr3_0")
+            for _ in range(3):
+                started = time.monotonic()
+                assert await _ping(pinger) is None
+                assert time.monotonic() - started < TIMEOUT
+        finally:
+            robot.kill()
+            robot.wait()
 
     _with_pinger(scenario)
 

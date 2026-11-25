@@ -75,6 +75,7 @@ class _Handle:
 def _node(initialized: bool = True) -> tuple[object, _Manager]:
     from arena_runtime.env.episode_node import EpisodeNode, EpisodeRuntime
     from arena_runtime.env.realizer import Realizer
+    from arena_runtime.env.task_board import TaskBoard
 
     manager = _Manager()
     cls = type("Stub", (EpisodeNode,), {"event_loop": property(lambda self: asyncio.get_running_loop())})
@@ -89,6 +90,7 @@ def _node(initialized: bool = True) -> tuple[object, _Manager]:
     node._shutting_down = False
     node._timeline = []
     node._sample = SimpleNamespace(t=0.0)
+    node._task_board = TaskBoard()
     return node, manager
 
 

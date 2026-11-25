@@ -23,12 +23,13 @@ from moveit_msgs.srv import ApplyPlanningScene
 from std_msgs.msg import String
 
 from arena_runtime.env.adapters import Adapter, AdapterDisplayHint, AdapterMeta
-from arena_runtime.env.adapters._reach_sampling import reach_frame, sample_reach_target
+from arena_runtime.env.adapters._reach_sampling import MAP_FRAME, reach_frame, reach_target, sample_reach_target
 from arena_runtime.env.adapters.arm import park_arms
-from arena_runtime.env.adapters.arm.scene import LINK_SEPARATOR, Articulated, StaticBox, collision_objects, object_id, read_urdf, scene_diff, urdf_root_link
+from arena_runtime.env.adapters.arm.scene import LINK_SEPARATOR, Articulated, StaticBox, attached_objects, collision_objects, detached_objects, object_id, read_urdf, scene_diff, urdf_root_link
 from arena_runtime.env.request import PlayGesturePhase, ReachPhase
 from arena_runtime.humans.utils import ObstacleLayer
-from arena_runtime.shared import DynamicObstacle
+from arena_runtime.shared import WORLD_ENTITY_PREFIX, DynamicObstacle
+from arena_runtime.tf_frames import frames_below
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -78,6 +79,7 @@ class MoveItArmAdapter(Adapter):
     def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
         super().__init__(robot_manager, **bringup_kwargs)
         self._scene_ids: dict[str, set[str]] = {}
+        self._attached_ids: dict[str, set[str]] = {}
         self._scene_clients: dict[str, ClientWrapper] = {}
         self._root_frame: str | None = None
         self._deferred: asyncio.Task[None] | None = None
@@ -131,7 +133,7 @@ class MoveItArmAdapter(Adapter):
         goal.speed = float(phase.speed or 0.0)
         goal.relative = phase.relative
         if phase.random:
-            arms = robot.robot_view.effective_caps(robot.robot.resolved_request, frames=robot.robot.frames).arm
+            arms = robot.caps.arm
             if not arms:
                 raise ValueError(f"random ReachPhase requested but robot {robot.name!r} has no arm cap")
             if phase.instance:
@@ -147,13 +149,12 @@ class MoveItArmAdapter(Adapter):
         elif phase.target is not None:
             located = _locate(phase.frame, entities, robot)
             if located is None:
-                frame = reach_frame(phase.frame or robot.base_frame, robot.frame)
-                if not robot.node.tf_buffer.can_transform(frame, robot.base_frame, rclpy.time.Time()):
+                frame = phase.frame or robot.base_frame
+                if frame != MAP_FRAME and not robot.node.tf_buffer.can_transform(reach_frame(frame, robot.frame), robot.base_frame, rclpy.time.Time()):
                     robot.fail_phase(f"reach frame {phase.frame!r} is no robot frame and no episode object ({robot.node._resolve_semantic_entity(phase.frame)!r} not among {sorted(entities)})")
                     return
-                goal.target.header.frame_id = frame
+                goal.target = reach_target(phase.target, frame, robot.frame, robot.base_frame, robot.node.tf_buffer)
                 goal.target.header.stamp = robot.node.sim_time.to_msg()
-                goal.target.pose = phase.target.to_msg()
             else:
                 entity, link = located
                 self._place_in_entity(goal, phase, robot, entity, link)
@@ -182,11 +183,10 @@ class MoveItArmAdapter(Adapter):
         goal.target.header.frame_id = robot.base_frame
         goal.target.header.stamp = robot.node.sim_time.to_msg()
         goal.target.pose = placed.to_msg()
-        if phase.motion == "linear":
-            goal.contact = [object_id(entity.name, part) for part in sorted(entity.urdf.links)] if isinstance(entity, Articulated) else [object_id(entity.name)]
+        goal.contact = _contact_ids(entity)
 
     async def _episode_entities(self, robot: RobotManager) -> dict[str, Entity]:
-        """Static and articulated objects of the env by realized name, articulated ones posed at their current joint values."""
+        """Static and articulated objects of the env by realized name, static ones where the simulator last put them, articulated ones posed at their current joint values."""
         node = robot.node
         simulator = node._simulator
         entities: dict[str, Entity] = {}
@@ -207,7 +207,8 @@ class MoveItArmAdapter(Adapter):
             except FileNotFoundError:
                 continue
             if view.extent is not None:
-                entities[str(node._realizer.prefix(obstacle.name))] = StaticBox(name=obstacle.name, pose=obstacle.pose, scale=obstacle.scale, extent=view.extent)
+                pose = simulator._carry_objects.get(obstacle.name, obstacle).pose
+                entities[str(node._realizer.prefix(obstacle.name))] = StaticBox(name=obstacle.name, pose=pose, scale=obstacle.scale, extent=view.extent)
         return entities
 
     async def _root(self, robot: RobotManager) -> str:
@@ -230,25 +231,34 @@ class MoveItArmAdapter(Adapter):
         return self._root_frame
 
     async def _sync_scene(self, robot: RobotManager, mount: str | None, entities: dict[str, Entity]) -> None:
-        """Replace the arena-owned collision objects of the arm's MoveIt scene with the env's objects as seen from the robot root."""
+        """Replace the arena-owned collision objects of the arm's MoveIt scene with the env's objects as seen from the robot root, the ones its gripper holds attached to the arm's tip link."""
         if mount is None:
             return
+        tip = robot.robot.frame.tf(self.bringup.arms()[mount].tip_link)
         try:
             frame = await self._root(robot)
             root = _map_pose(robot, frame)
+            carried = _carried(robot, tip, entities)
         except (TimeoutError, tf2_ros.TransformException) as error:
             _log.warning("robot %r: planning scene not synced, no root frame (%s)", robot.name, error)
             return
-        objects = collision_objects(entities.values(), root, frame, self.bringup.arms()[mount].scene_radius)
+        touch_links = frames_below(robot.node.tf_buffer, tip)
+        attached = [obj for entity, offset in carried for obj in attached_objects(entity, offset, tip, touch_links)]
+        held = {obj.object.id for obj in attached}
+        held_entities = [entity for entity, _ in carried]
+        free = [entity for entity in entities.values() if not any(entity is held_entity for held_entity in held_entities)]
+        objects = collision_objects(free, root, frame, self.bringup.arms()[mount].scene_radius)
+        detached = detached_objects(self._attached_ids.get(mount, set()) - held, tip)
         client = self._scene_clients.get(mount)
         if client is None:
             client = self._scene_clients[mount] = robot.node.create_client_wrapper(ApplyPlanningScene, str(self.bringup.arm_namespace(mount)("apply_planning_scene")), timeout=_SCENE_TIMEOUT)
-        request = ApplyPlanningScene.Request(scene=scene_diff(self._scene_ids.get(mount, ()), objects, frame))
+        request = ApplyPlanningScene.Request(scene=scene_diff(set(self._scene_ids.get(mount, ())) - held, objects, frame, [*detached, *attached]))
         response = await client.call_timeout(request, _SCENE_TIMEOUT) if await client.ensure(_SCENE_TIMEOUT) else None
         if response is None or not response.success:
             _log.warning("robot %r: planning scene of arm %r not synced", robot.name, mount)
             return
         self._scene_ids[mount] = {obj.id for obj in objects}
+        self._attached_ids[mount] = held
 
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
         # MoveIt cannot plan while sim is paused (no /joint_states, no current state),
@@ -281,17 +291,32 @@ def _map_pose(robot: RobotManager, frame: str) -> Pose:
 
 def _frame_missing(phase: ReachPhase, entities: dict[str, Entity], robot: RobotManager) -> bool:
     """Whether the reach targets a frame that is neither a registered episode object nor a TF frame yet."""
-    if phase.target is None or not phase.frame or _locate(phase.frame, entities, robot) is not None:
+    if phase.target is None or not phase.frame or phase.frame == MAP_FRAME or _locate(phase.frame, entities, robot) is not None:
         return False
     return not robot.node.tf_buffer.can_transform(reach_frame(phase.frame, robot.frame), robot.base_frame, rclpy.time.Time())
 
 
+def _contact_ids(entity: Entity) -> list[str]:
+    """Planning scene ids of the entity, one per link of an articulated one."""
+    return [object_id(entity.name, part) for part in sorted(entity.urdf.links)] if isinstance(entity, Articulated) else [object_id(entity.name)]
+
+
+def _carried(robot: RobotManager, hand: str, entities: dict[str, Entity]) -> list[tuple[Entity, Pose]]:
+    """The entities the gripper of the `hand` frame carries with their pose in that frame."""
+    carried: list[tuple[Entity, Pose]] = []
+    for name, (carry_hand, offset) in sorted(robot.environment_manager.carry_offsets(robot.robot.name).items()):
+        if carry_hand == hand and (located := _locate(name, entities, robot)) is not None:
+            carried.append((located[0], offset))
+    return carried
+
+
 def _locate(frame: str, entities: dict[str, Entity], robot: RobotManager) -> tuple[Entity, str | None] | None:
-    """The entity a reach frame names, with its link for `<entity>/<link>`, None for any other frame."""
+    """The entity a reach frame names, a world object also by its bare name, with its link for `<entity>/<link>`, None for any other frame."""
     if not frame:
         return None
-    if (entity := entities.get(robot.node._resolve_semantic_entity(frame))) is not None:
-        return entity, None
+    for name in (frame, f"{WORLD_ENTITY_PREFIX}{frame}"):
+        if (entity := entities.get(robot.node._resolve_semantic_entity(name))) is not None:
+            return entity, None
     head, separator, tail = frame.rpartition(LINK_SEPARATOR)
     entity = entities.get(robot.node._resolve_semantic_entity(head)) if separator else None
     if isinstance(entity, Articulated) and tail in entity.urdf.links:
@@ -305,7 +330,7 @@ def _pick_random_gesture(robot: RobotManager) -> str:
     from arena_simulation_setup import ASS_DIR
     from arena_simulation_setup.tree.Gesture import GestureSpec
 
-    arms = robot.robot_view.effective_caps(robot.robot.resolved_request, frames=robot.robot.frames).arm
+    arms = robot.caps.arm
     if not arms:
         _log.warning("random PlayGesturePhase: robot %r has no arm cap", robot.name)
         return ""

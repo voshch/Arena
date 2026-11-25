@@ -17,6 +17,7 @@ pytest.importorskip("arena_people_msgs.msg")
 def test_reset_plans_the_start_and_publishes_the_schedule(rclpy_context: object) -> None:
     import rclpy
     from arena_rclpy_mixins import ArenaMixinNode
+    from arena_robots.Robot import RobotIdentifier
     from arena_runtime.env.constants.rng import EpisodeRng
     from arena_runtime.env.task_api import WorldOccupancy
     from arena_runtime.shared import Position
@@ -39,7 +40,8 @@ def test_reset_plans_the_start_and_publishes_the_schedule(rclpy_context: object)
         listener = rclpy.create_node(f"characterization_listener_{suffix}")
         try:
             declare_mode_schemas(layer, node)
-            manager = SimpleNamespace(name="r0", namespace=f"/characterization_{suffix}/r0", model_name="jackal")
+            caps = RobotIdentifier("jackal").resolve_sync().effective_caps({}, caps={"mobile.actions.continuous.linear.max": 1.5})
+            manager = SimpleNamespace(name="r0", namespace=f"/characterization_{suffix}/r0", model_name="jackal", caps=caps)
             ctx = SimpleNamespace(robots={"r0": manager}, world_manager=world, conf=SimpleNamespace(RNG=EpisodeRng()))
             mode = ROBOTS_MODES.get(key)(ctx=ctx, namespace=ROBOTS_MODES.meta(key).namespace, node=node)
             plan = await mode.reset()
@@ -64,3 +66,4 @@ def test_reset_plans_the_start_and_publishes_the_schedule(rclpy_context: object)
     record = json.loads(received[0])
     assert record["robot"] == "r0"
     assert record["phases"]
+    assert record["envelope"]["vx_max"] == 1.5

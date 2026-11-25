@@ -56,9 +56,10 @@ def test_parse_rejects_wrong_field_types(value):
         TaskPhase.parse(value)
 
 
-def test_request_parse_rejects_non_list_phases():
+@pytest.mark.parametrize("value", [{"phases": 3}, {"phases": [], "conditions": 3}, {"task": 3, "phases": []}])
+def test_request_parse_rejects_wrong_field_types(value):
     with pytest.raises(TypeError):
-        TaskRequest.parse({"phases": 3})
+        TaskRequest.parse(value)
 
 
 def test_parse_gesture_random_normalizes_to_none():

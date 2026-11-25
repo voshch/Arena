@@ -88,6 +88,75 @@ def test_compatible_different_parts():
     assert r1.compatible(r2) is False
 
 
+def test_compatible_different_caps():
+    from arena_robots.Robot import RobotIdentifier
+    from arena_runtime.shared import Pose, Robot
+
+    def robot(name, caps):
+        return Robot(name=name, pose=Pose(), model=RobotIdentifier.parse("jackal"), adapters={"mobile": "nav2"}, caps=caps, extra={})
+
+    slow = robot("r1", {"mobile.velocity_limits.linear": [-0.5, 0.5]})
+    assert slow.compatible(robot("r2", {"mobile.velocity_limits.linear": [-0.5, 0.5]})) is True
+    assert slow.compatible(robot("r3", {"mobile.velocity_limits.linear": [-0.5, 1.0]})) is False
+    assert slow.compatible(robot("r4", {})) is False
+
+
+def test_parse_valid_cap_override_builds_the_instance_caps(stub_node):
+    from arena_runtime.shared import Robot
+
+    robot = Robot.parse({"name": "slow", "model": "jackal", "caps": {"mobile.velocity_limits.linear": [-0.5, 0.5]}}, node=stub_node)
+    limits = robot.instance_request.caps_of(robot.model.resolve_sync()).mobile.velocity_limits
+    assert (limits.linear.min, limits.linear.max) == (-0.5, 0.5)
+
+
+@pytest.mark.parametrize("caps", [{"mobile.radius": "wide"}, {"mobile.nonsense.x": 1.0}, {"arm.fr3.stall_time": 2.0}])
+def test_parse_invalid_cap_override_raises_naming_the_robot(stub_node, caps):
+    from arena_runtime.shared import Robot
+
+    with pytest.raises(RuntimeError, match="'slow'"):
+        Robot.parse({"name": "slow", "model": "jackal", "caps": caps}, node=stub_node)
+
+
+def test_parse_part_brackets_reach_the_placed_instances(stub_node, require_installed):
+    require_installed("arm/fr3", "gripper/franka_hand")
+    from arena_runtime.shared import Robot
+
+    robot = Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3[stall_time=2.0]"], "top_tool": ["gripper/franka_hand[max_effort=*0.5]"]}}, node=stub_node)
+    view = robot.model.resolve_sync()
+    caps = robot.caps_of(view)
+    assert caps.arm is not None and caps.gripper is not None
+    assert caps.arm["top"].stall_time == 2.0
+    assert caps.all_overrides["gripper.top_tool.max_effort"] == {"scale": 0.5}
+    again = robot.instance_request.caps_of(view)
+    assert again.arm is not None and again.arm["top"].stall_time == 2.0
+
+
+def test_parse_robot_level_override_of_a_placed_part_raises(stub_node):
+    from arena_runtime.shared import Robot
+
+    with pytest.raises(RuntimeError, match=r"top=arm/fr3\[stall_time=\.\.\.\]"):
+        Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3"]}, "caps": {"arm.top.stall_time": 2.0}}, node=stub_node)
+
+
+def test_parse_bad_part_override_raises_naming_the_robot(stub_node, require_installed):
+    require_installed("arm/fr3", "gripper/franka_hand")
+    from arena_runtime.shared import Robot
+
+    with pytest.raises(RuntimeError, match="'arm'"):
+        Robot.parse({"name": "arm", "model": "jackal", "parts": {"top": ["arm/fr3[stall_tme=2.0]"]}}, node=stub_node)
+
+
+def test_compatible_different_part_brackets():
+    from arena_robots.Robot import RobotIdentifier
+    from arena_runtime.shared import Pose, Robot
+
+    def robot(directive: str) -> Robot:
+        return Robot(name="arm", pose=Pose(), model=RobotIdentifier.parse("jackal"), parts={"top": [directive]}, extra={})
+
+    assert robot("arm/fr3[stall_time=2.0]").compatible(robot("arm/fr3[stall_time=2.0]"))
+    assert not robot("arm/fr3[stall_time=2.0]").compatible(robot("arm/fr3[stall_time=3.0]"))
+
+
 def test_parse_minimal_value(stub_node):
     from arena_runtime.shared import Robot
 
@@ -268,7 +337,7 @@ def test_parse_parts_without_assembly_raises(stub_node):
 
     value = {
         "name": "bot6",
-        "model": "rbkairos_plus",
+        "model": "not_an_arena_robot",
         "parts": {"lidar": ["sick"]},
     }
     with pytest.raises(RuntimeError, match="requires an assembly.yaml"):
@@ -298,6 +367,15 @@ def test_parse_frames_unknown_mount_raises(stub_node):
 def test_parse_frames_without_assembly_raises(stub_node):
     from arena_runtime.shared import Robot
 
-    value = {"name": "bot9", "model": "rbkairos_plus", "frames": {"front": "x"}}
+    value = {"name": "bot9", "model": "not_an_arena_robot", "frames": {"front": "x"}}
     with pytest.raises(RuntimeError, match="requires an assembly.yaml"):
         Robot.parse(value, node=stub_node)
+
+
+def test_body_of_reads_the_instance_body_facts_of_the_model_files():
+    robot = _make_robot("r", "jackal")
+    view = robot.model.resolve_sync()
+    body = robot.body_of(view)
+    assert body.base_frame == view.model_params.base_frame
+    assert body.cmd_vel_topic == view.model_params.control.cmd_vel_topic
+    assert body.odom_topic == view.model_params.control.odom_topic

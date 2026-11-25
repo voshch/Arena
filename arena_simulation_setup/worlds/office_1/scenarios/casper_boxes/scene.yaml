@@ -1,0 +1,8 @@
+tasks:
+  FetchBox:
+    pick: {object: storage_box_20_2nd_2, approach: 0.0}
+  DeliverBox:
+    place: {object: storage_box_20_2nd_2, at: reception, onto: reception_table_coffee_1, approach: 3.14159}
+  RelocateBox:
+    pick: {object: storage_box_30_2nd_2, approach: 0.4}
+    place: {at: meeting_room_big, onto: meet_big_corner_2, approach: -1.83}

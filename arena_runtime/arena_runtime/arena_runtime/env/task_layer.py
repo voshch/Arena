@@ -60,6 +60,21 @@ class EpisodeRecord:
     path_length: float = 0.0
     integrity: list[str] = attrs.Factory(list)
     start_time: Time = attrs.Factory(Time)
+    tasks: list[dict[str, object]] = attrs.Factory(list)
+
+
+TASK_EVENT_KINDS = ("allocated", "assigned", "started", "met", "failed", "reassigned", "dropped", "released")
+"""allocated: the layer's whole plan (detail carries it), assigned: a task given an owner, started: its request submitted, met / failed / dropped: how its request ended, reassigned: handed to another robot, released: made ready by something other than its predecessors."""
+
+
+@attrs.frozen
+class TaskEvent:
+    """One step of a task layer's own task, stamped with sim time by the env when reported."""
+
+    task: str
+    kind: str = attrs.field(validator=attrs.validators.in_(TASK_EVENT_KINDS))
+    robot: str = ""
+    detail: Mapping[str, object] = attrs.Factory(dict)
 
 
 @attrs.define
@@ -72,6 +87,7 @@ class EpisodeContext:
     register_timeline: Callable[[Sequence[TimelineEntry], int], None]
     register_conditions: Callable[[Sequence[EpisodeCondition]], None]
     register_sound_levels: Callable[[dict[str, float]], None]
+    task_event: Callable[[TaskEvent], None]
 
 
 @attrs.define
@@ -154,6 +170,14 @@ class ResetPlan:
         self.lights = (*self.lights, *other.lights)
 
 
+@attrs.frozen
+class FleetEntry:
+    """One robot a record wants live, a name of "" leaving it to the platform's naming."""
+
+    model: str
+    name: str = ""
+
+
 @attrs.define
 class TaskModeOverrides:
     """What the next episode changes: an axis left out of modes, an empty world and a negative seed keep what is live."""
@@ -187,6 +211,10 @@ class EpisodeTask(typing.Protocol):
     async def reset_robots(self, record: EpisodeRecord) -> ResetPlan: ...
 
     async def reset_obstacles(self, plan: ResetPlan, record: EpisodeRecord) -> None: ...
+
+    async def fleet_for(self, record: EpisodeRecord, params: Mapping[str, str]) -> Sequence[FleetEntry] | None:
+        """The robots the record wants live given the string params staged for it, None when it has no opinion."""
+        ...
 
     async def tick(self, ended: Mapping[str, PhaseState], assigned: Collection[str]) -> None:
         """One sim tick of a running episode: the phase each robot ended on it and the robots given a task from outside since the last tick."""

@@ -191,8 +191,8 @@ def test_nav_at_r_reports_each_level_with_its_component_map():
     assert 0.0 < level["value"] <= 1.0 and level["start_share"] is not None
     assert len(images) == 1
     _size(images[0])
-    with pytest.raises(ToolError, match="not both"):
-        worlds.worlds_nav_at_r("map_empty", robot="jackal", radius=0.3)
+    with pytest.raises(ToolError, match="positive length"):
+        worlds.worlds_nav_at_r("map_empty", radius=-1.0)
 
 
 def test_nav_at_r_paints_one_map_per_level():

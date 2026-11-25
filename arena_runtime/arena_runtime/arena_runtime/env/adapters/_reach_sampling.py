@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import geometry_msgs.msg
+import rclpy.time
+import tf2_ros
+from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 if TYPE_CHECKING:
     import numpy.random
@@ -12,9 +15,30 @@ if TYPE_CHECKING:
     from arena_robots.caps import ArmSpec
 
 
+MAP_FRAME = "map"
+
+
 def reach_frame(frame: str, robot_frame: FrameNamespace) -> str:
     """`frame` under the robot's TF prefix, unchanged when it already carries it."""
     return frame if frame.startswith(robot_frame.tf()) else robot_frame.tf(frame)
+
+
+def reach_target(target: Pose, frame: str, robot_frame: FrameNamespace, base_frame: str, tf_buffer: tf2_ros.Buffer) -> geometry_msgs.msg.PoseStamped:
+    """`target` given in `frame` as a pose the arm planner resolves, one in the env's `map` re-expressed in the robot's base frame through TF."""
+    msg = geometry_msgs.msg.PoseStamped()
+    if frame != MAP_FRAME:
+        msg.header.frame_id = reach_frame(frame, robot_frame)
+        msg.pose = target.to_msg()
+        return msg
+    try:
+        t = tf_buffer.lookup_transform(MAP_FRAME, base_frame, rclpy.time.Time())
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+        raise RuntimeError(f"no TF from {MAP_FRAME} to {base_frame} for a map reach target: {e}") from e
+    tr, rot = t.transform.translation, t.transform.rotation
+    base = Pose(position=Position(x=tr.x, y=tr.y, z=tr.z), orientation=Orientation(w=rot.w, x=rot.x, y=rot.y, z=rot.z))
+    msg.header.frame_id = base_frame
+    msg.pose = (base.inverse() * target).to_msg()
+    return msg
 
 
 def sample_reach_target(arm: ArmSpec, robot_frame: FrameNamespace, rng: numpy.random.Generator) -> geometry_msgs.msg.PoseStamped:

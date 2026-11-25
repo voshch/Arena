@@ -333,8 +333,7 @@ def worlds_write(
 @domain.tool(read_only=True, open_world=True)
 def worlds_nav_at_r(
     name: WorldName,
-    robot: Annotated[str | None, Field(description="robot name in arena_robots or a robot directory, its caps/mobile.yaml radius is r")] = None,
-    radius: Annotated[float | None, Field(description="footprint radius r in meters, the nav_at_r default radius when neither robot nor radius is given")] = None,
+    radius: Annotated[float | None, Field(description="footprint radius r in meters (robots_definition gives a robot's radius), the nav_at_r default radius when omitted")] = None,
     walls_only: Annotated[bool, Field(description="ignore static entities, to tell layout faults from furniture blockages")] = False,
     start: Annotated[list[float] | None, Field(description="[x, y] in meters in each level's frame, adds the single-start share")] = None,
 ) -> list:
@@ -342,18 +341,13 @@ def worlds_nav_at_r(
     import numpy as np
     from PIL import Image as PilImage
 
-    from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS, nav_at_r, robot_radius
+    from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS, nav_at_r
 
-    if robot is not None and radius is not None:
-        raise ToolError("pass robot or radius, not both")
     if radius is not None and not radius > 0:
         raise ToolError(f"radius is a positive length in meters, got {radius}")
     if start is not None and len(start) != 2:
         raise ToolError(f"start is [x, y], got {start}")
-    try:
-        r = robot_radius(robot) if robot is not None else radius if radius is not None else DEFAULT_RADIUS
-    except LookupError as exc:
-        raise ToolError(str(exc), hint="pass radius instead") from exc
+    r = radius if radius is not None else DEFAULT_RADIUS
     view, levels = _resolve(name)
     with tempfile.TemporaryDirectory() as scratch:
         image = Path(scratch) / "nav.png"

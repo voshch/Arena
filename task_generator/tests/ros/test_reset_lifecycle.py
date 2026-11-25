@@ -111,7 +111,11 @@ def _on_task(error: Exception | None, body: Callable[..., Awaitable[None]], modu
     class _Node(ServiceNamespace, AsyncNode):
         conf = SimpleNamespace(General=SimpleNamespace(RNG=EpisodeRng()))
         episode_id = 0
+        _node_pinger = None
         _reset_episode = EpisodeNode._reset_episode
+
+        async def _reconcile_fleet(self, record: object) -> None:
+            del record
 
         def _apply_staged_params(self) -> None:
             log.append("staged_params")

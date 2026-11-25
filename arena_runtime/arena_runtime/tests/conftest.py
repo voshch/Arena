@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import configparser
 import functools
 import importlib.util
 import os
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 _ROS_SKIP_REASON = "ROS2 not discoverable, source install/setup.bash to enable"
+
+_ROBOTS_REPO = Path(__file__).resolve().parents[3] / "arena_robots"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -29,6 +34,12 @@ def point_table() -> None:
     from arena_runtime.humans.pointing.table import bake
 
     bake(az_step=30.0, el_step=15.0, el_max=75.0, workers=4)
+
+
+@pytest.fixture(autouse=True)
+def _placed_parts_installed(request: pytest.FixtureRequest) -> None:
+    if "model" in request.fixturenames and isinstance(model := request.getfixturevalue("model"), str) and (parts := _placed_arms_and_grippers(model)):
+        request.getfixturevalue("require_installed")(*parts)
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +102,33 @@ def rclpy_context():
         rclpy.shutdown()
 
 
+def _submodules() -> dict[str, list[Path]]:
+    cfg = configparser.ConfigParser()
+    cfg.read(_ROBOTS_REPO / ".gitmodules")
+    out: dict[str, list[Path]] = {}
+    for section in cfg.sections():
+        path = cfg[section]["path"]
+        names = cfg[section].get("robot", "").split() + cfg[section].get("component", "").split()
+        if not names and path.startswith("arena_robots/robots/"):
+            names = [path.split("/")[2]]
+        for name in names:
+            out.setdefault(name, []).append(_ROBOTS_REPO / path)
+    return out
+
+
+@pytest.fixture(scope="session")
+def require_installed() -> Callable[..., None]:
+    """Skips the test unless every submodule tagged for each robot or component is checked out."""
+    submodules = _submodules()
+
+    def require(*names: str) -> None:
+        for name in names:
+            if any(not path.is_dir() or not any(path.iterdir()) for path in submodules.get(name, [])):
+                pytest.skip(f"{name} is not installed, run `arena feature robots add {name}`")
+
+    return require
+
+
 @pytest.fixture()
 def requires_hearing() -> None:
     if importlib.util.find_spec("arena_hearing") is None:
@@ -121,3 +159,17 @@ def fake_task_layer(monkeypatch: pytest.MonkeyPatch) -> object:
 def requires_auditory() -> None:
     if importlib.util.find_spec("arena_auditory") is None:
         pytest.skip("arena_auditory not installed: arena feature auditory install")
+
+
+@functools.cache
+def _placed_arms_and_grippers(model: str) -> tuple[str, ...]:
+    """Arm and gripper components the default assembly of a shipped robot places, whose vendor descriptions its URDF renders."""
+    from arena_robots.Robot import RobotView
+
+    robot_dir = _ROBOTS_REPO / "arena_robots" / "robots" / model
+    if not robot_dir.is_dir():
+        return ()
+    spec = RobotView(robot_dir).assembly
+    if spec is None:
+        return ()
+    return tuple(f"{kind}/{part.variant}" for kind, parts in spec.defaults.items() if kind in ("arm", "gripper") for part in parts)

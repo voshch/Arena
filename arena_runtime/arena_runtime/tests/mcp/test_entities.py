@@ -13,7 +13,7 @@ from arena_mcp.core import ToolError
 
 from arena_runtime.env import entities_mcp as entities
 
-from arena_runtime.testing.env_peer import ENV, PLAIN_ENV, ROBOT
+from arena_runtime.testing.env_peer import ENV, PLAIN_ENV, REFERENCE, ROBOT
 
 
 def test_spawn_static_sends_a_pose_only_when_both_coordinates_are_given(run, peers):
@@ -122,6 +122,7 @@ def test_humansim_calls_reach_its_services_and_resolve_agent_names(run, peers):
     assert (request.agent_id, request.name) == (0, "anna")
     assert request.waypoints.mode == request.waypoints.MODE_REVERSE
     assert request.waypoints.points[1].radius == 0.5
+    assert [(point.pose.x, point.pose.y) for point in request.waypoints.points] == [(1.0 - REFERENCE[0], 2.0 - REFERENCE[1]), (3.0 - REFERENCE[0], 4.0 - REFERENCE[1])]
     run(entities.entities_ped_waypoints(9, [], env_id=ENV))
     assert peers.humansim.humansim[-1][1].agent_id == 9
     stimulus = run(entities.entities_ped_stimulus("curiosity", 0.4, env_id=ENV, ped="anna"))
@@ -131,13 +132,20 @@ def test_humansim_calls_reach_its_services_and_resolve_agent_names(run, peers):
         run(entities.entities_ped_stimulus("panic", 1.0, env_id=ENV, ped="bob"))
     with pytest.raises(ToolError, match="intensity"):
         run(entities.entities_ped_stimulus("panic", 2.0, env_id=ENV))
-    flow = run(entities.entities_ped_flow([{"name": "door", "pose": {"x": 1.0, "y": 2.0, "theta": 0.0}, "max_concurrent": 5}], [{"name": "exit", "capacity": 3}], env_id=ENV))
+    lane = {"side": "right", "segments": [{"centerline": [{"x": 1.0, "y": 2.0}, {"x": 6.0, "y": 2.0}]}]}
+    sink = {"name": "exit", "pose": {"x": 9.0, "y": 2.0, "theta": 0.0}, "capacity": 3}
+    flow = run(entities.entities_ped_flow([{"name": "door", "pose": {"x": 1.0, "y": 2.0, "theta": 0.0}, "max_concurrent": 5, "lane": lane}], [sink], env_id=ENV))
     assert flow["sources"] == ["door"] and flow["sinks"] == ["exit"]
-    assert peers.humansim.humansim[-1][1].flow.sources[0].max_concurrent == 5
+    sent = peers.humansim.humansim[-1][1].flow
+    assert sent.sources[0].max_concurrent == 5
+    assert (sent.sources[0].pose.x, sent.sources[0].pose.y) == (1.0 - REFERENCE[0], 2.0 - REFERENCE[1])
+    assert [(point.x, point.y) for point in sent.sources[0].lane.segments[0].centerline] == [(1.0 - REFERENCE[0], 2.0 - REFERENCE[1]), (6.0 - REFERENCE[0], 2.0 - REFERENCE[1])]
+    assert (sent.sinks[0].pose.x, sent.sinks[0].pose.y) == (9.0 - REFERENCE[0], 2.0 - REFERENCE[1])
     with pytest.raises(ToolError, match="cannot build"):
         run(entities.entities_ped_flow([{"name": "door", "wobble": 1}], [], env_id=ENV))
     assert run(entities.entities_ped_add_source({"name": "gate"}, env_id=ENV))["name"] == "add_source_1"
-    assert run(entities.entities_ped_add_sink({"name": "hole", "absorption_radius": 0.5}, env_id=ENV))["name"] == "add_sink_1"
+    assert run(entities.entities_ped_add_sink({"name": "hole", "absorption_radius": 0.5, "pose": {"x": 2.0, "y": 1.0}}, env_id=ENV))["name"] == "add_sink_1"
+    assert (peers.humansim.humansim[-1][1].sink.pose.x, peers.humansim.humansim[-1][1].sink.pose.y) == (2.0 - REFERENCE[0], 1.0 - REFERENCE[1])
     run(entities.entities_ped_remove_source("gate", env_id=ENV))
     run(entities.entities_ped_remove_sink("hole", env_id=ENV))
     assert [entry[0] for entry in peers.humansim.humansim[-4:]] == ["add_source", "add_sink", "remove_source", "remove_sink"]

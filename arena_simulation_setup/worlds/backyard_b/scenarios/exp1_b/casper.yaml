@@ -1,0 +1,3 @@
+mode: preference
+top_k: 1
+duration_scale: 0.01

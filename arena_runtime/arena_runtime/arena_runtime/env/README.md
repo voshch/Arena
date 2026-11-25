@@ -111,8 +111,16 @@ this package goes through [`arena_rclpy_mixins`](../../../../utils/arena_rclpy_m
 
 1. Publish `reset_start` (`std_msgs/Empty`), reseed the RNG and reset the
    scenario asset pointer.
-2. `robots_manager.set_up()` reconciles the fleet (spawn and remove robots),
-   then `launch_pending()`.
+2. `Task.fleet_for(record, params)` is asked for the fleet the record wants,
+   given the string params staged for it. A fleet is reconciled into the queue
+   (`RobotsManager.reconcile`: robots missing from it are despawned, missing
+   ones spawned at the staging pose, a robot of the right name but another
+   model replaced, unnamed entries matched by model), `None` leaves the queue
+   alone. Then `robots_manager.set_up()` applies the queue (spawn and remove
+   robots) and `launch_pending()` follows. A robot whose submodules, or those of
+   a component it places, are not checked out is skipped with the `arena feature
+   robots add` command in the log, and no installed robot at all is an error. A
+   world that `apply_world` rejects fails the reset before this step.
 3. `environment_manager.before_reset_episode()` pauses the simulator. The sim
    is paused for the entire body below; only node-discovery and lifecycle
    signals are observable here.
@@ -146,7 +154,11 @@ survive all episode resets for the lifetime of the world.
 ### Task runtimes
 
 `task_generator` is one task runtime among any that register under the
-`arena_runtime.task_layer` entry point group. A runtime is a module with the
+`arena_runtime.task_layer` entry point group. The optional ones are submodules under
+`task_layers/<name>`, installed with `arena feature tasks add <name>` and listed by
+`arena feature tasks ls`, the directory name being the entry point name, for example
+[`casper`](../../../../task_layers/casper/README.md), which wraps task_generator and lets CASPER++
+allocate and dispatch the team robots' tasks. A runtime is a module with the
 functions of the `TaskLayer` protocol, selected with `task_layer:=<entry point
 name>`:
 
@@ -162,6 +174,7 @@ setup(entry_points={"arena_runtime.task_layer": ["my_runtime = my_runtime.layer"
 | `mode_namespaces()` | The registered modes per axis, each with its param namespace: the one source of param names. `registered_modes(layer)` is its names. |
 | `multi_axes()` | The axes that take several modes at once, the ones it passes to `validate_modes`. |
 | `fleet_only_robots()` | Robot modes reachable only through a fleet config. |
+| `EpisodeTask.fleet_for(record, params)` | The `FleetEntry` (model, optional name) list the record wants live, or `None` for no opinion. |
 | `next_episode(previous=, queued=)` | Chooses what the next episode changes, given the finished record and what was queued. |
 
 `mode_param(axis)` is the parameter that selects an axis, `selection_args(modes)`
@@ -187,6 +200,29 @@ exactly one name are refused, `[]` clears a multi-mode axis such as modules.
 with the mode's param namespace. Clients take param names from it and never build
 `task.<mode>`. `EpisodeRecord.task_layer` is the name of the runtime that ran the
 episode, the env's resolved `task_layer` param.
+
+A runtime reports the steps of its own tasks through
+`ctx.episode.task_event(TaskEvent(task, kind, robot, detail))`, `kind` being one of
+`TASK_EVENT_KINDS`. `EpisodeNode.task_event` stamps the event with `t`, the sim
+seconds since the current episode's `start_time` (0 before the episode starts),
+appends it to the episode's list, publishes it as `arena_runtime_msgs/TaskEvent` on
+`task_events` of the env namespace (detail as JSON). `EpisodeRecord.tasks` is that
+list as JSON in report order, carried by every later publication of the record and
+empty for a new episode, and the `episode` MCP domain parses it as `tasks`. `EpisodeNode` folds the same events in a `TaskBoard`
+([`task_board.py`](task_board.py)), reset at every episode start, and from it publishes
+the latched `state/agents` (`arena_runtime_msgs/AgentStates`, one `AgentState` per robot and
+pedestrian with its task, state `idle|assigned|working|met|failed|dropped`, zones and the
+sim time of its last change) and the `task_markers` MarkerArray
+([`task_markers.py`](task_markers.py)) behind the "Tasks" display: a label per agent colored by
+state, and for working agents a line to the first zone of their task plus the outline of its zones.
+Each label is frame-locked in its agent's TF frame (a robot's base frame, a pedestrian's
+`<name>/base_link`), so it moves with the agent on every render. Markers republish every 0.5 sim
+seconds and on every board change.
+
+A request's `task`
+travels through `RobotManager.submit_task` into `TaskRunner.submit`, so each
+robot's entry of the `phases` JSON lists the id of every phase's request under
+`tasks`, parallel to `phases` (empty without one).
 
 Staged params are one dict by full name. `QueueEpisode.params` carries full names
 and upserts them. Changing an axis's mode drops
@@ -230,7 +266,8 @@ over a loop ends `dropped`.
 `runtime/spawn_static` and `runtime/spawn_dynamic` spawn one obstacle into a running
 episode, `runtime/spawn_robot` queues or spawns one robot. Without a pose,
 [`placement.py`](placement.py) picks a free one. Each adds a reason to
-`EpisodeRecord.integrity`.
+`EpisodeRecord.integrity`, `spawn_robot` and `despawn_robot` only while an
+episode is running.
 
 ### `EpisodeRecord`
 
@@ -335,8 +372,13 @@ into a `_RobotDiff` that records robots to add, update, or remove. Entry
 point is `set_up()`, called at the start of every episode reset.
 
 Bracket items are `<int>` (count), `<cap>.adapter=<kind>` (per-robot adapter
-kind, e.g. `mobile.adapter=drl`), or a bare `<type>=<value>` morphology key
-(sensor/actuator parts; currently hard-errors as not yet implemented).
+kind, e.g. `mobile.adapter=drl`), `<cap>.<path>=<value>` (a cap override of that
+robot, `*a`, `+b` or `*a+b` maps numbers affinely, `+[...]` appends, `!delete` removes,
+a segment `*` matches every key, e.g. `mobile.velocity_limits.linear=[-0.5,1.0]`,
+`mobile.radius=*1.2` or `mobile.limits=*0.5`, see the
+[setup README](../../../../arena_robots/arena_robots/config/setup/README.md#cap-overrides), a repeated key raises), or a bare `<mount|type>=<value>` morphology
+directive whose value takes that part's cap overrides in a bracket,
+`top=arm/fr3[stall_time=2.0]`.
 `[...]` is a shell glob class: quote the whole entry, e.g.
 `robot:='jackal[2,mobile.adapter=drl]'`. `arena robot caps <model>` lists a
 model's caps, mounts, catalog variants, and default sensors before you write
@@ -356,7 +398,7 @@ Parsing rules:
 - The `robot` param is a `ROSParamT[_RobotDiff]` with a parse callback, so
   it re-computes the diff on every parameter change.
 
-After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`: the morphology plus `robot_radius` and, when `model_params.yaml` states `mass.base_kg`, `robot_mass_kg`, which arena_evaluation records) per robot. Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
+After `set_up()`, the active fleet is published latched on `state/robots` as a `arena_runtime_msgs/RobotFleet` carrying one `RobotState` (`descriptor` `{name, model, ns, frame}`, resolved `caps[]`, resolved `params[]`: the morphology, `robot_radius` and, when the caps state a mass, `robot_mass_kg` with its `robot_base_mass_kg`, `robot_components_mass_kg` and `robot_payload_mass_kg` split from `RobotCaps.mass_split()`, which arena_evaluation records, one `cap:<path>` entry per cap override with its JSON value, and `caps:hash`, the `RobotCaps.caps_hash()` of the instance's effective caps) per robot. `RobotManager.body` serves the instance's base frame, `cmd_vel` and odom topics and mass from the same caps, `Robot.body_of(view)` does where no manager exists (the simulators at spawn). Consumers should subscribe with `TRANSIENT_LOCAL` durability and read `robots[i].descriptor` for identity. (A `robot_names: list[str]` rosparam is also kept up to date on the node for back-compat with external tooling.)
 
 ## `RobotManager`
 
@@ -368,12 +410,14 @@ One instance per spawned robot. Owns:
 - The current `TaskRequest` and phase index.
 - A goal-republish timer loop.
 - A tf-backed `pose` property (reads the robot's base frame from `tf_buffer`).
+- The instance's effective caps (`caps`: parts, frames and the robot's cap overrides, computed once). Radius, climbs, odometry frame, adapter kwargs, the collision tracker, the DRL velocity clamp and the task server read it, never the model's static caps.
 
 Key public surface:
 
 | Method / property | Purpose |
 | --- | --- |
-| `robot` | the `Robot` config (model, name, initial pose) |
+| `robot` | the `Robot` config (model, name, initial pose, cap overrides) |
+| `caps` | the instance's effective `RobotCaps` |
 | `pose` | current `Pose` in the map frame; `None` during reset/respawn windows |
 | `start_pos` / `goal_pos` | last set start and goal positions |
 | `goal` | pose of the first `GoToPhase` in the current `TaskRequest`, or `None` |
@@ -385,6 +429,11 @@ Key public surface:
 | `set_up_robot(node_paths)` | async; spawn robot, bind adapter, start navigation stack |
 | `bring_up_controllers()` | async; drive the robot's ros2_control controllers to active, raises on an explicit controller_manager refusal |
 | `destroy()` | tear down adapter and remove robot from sim |
+
+The env-wide `robot.<cap>.<key>` launch overlay only passes adapter arguments to
+the bound adapter. A key whose first segment is a field of the cap file
+(`robot.mobile.velocity_limits`, `robot.mobile.footprint`) raises and names the
+per-instance syntax, `robot:=<model>[<cap>.<path>=<value>]` or the setup-file key.
 
 A teleport under a hold (every reset) advances the held sim one physics step at
 a time through arena_runtime_node's `sim_lifecycle/step` until a TF sample newer than

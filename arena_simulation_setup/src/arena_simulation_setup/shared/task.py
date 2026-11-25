@@ -13,6 +13,8 @@ from arena_simulation_setup.shared.conditions import ConditionSource, EpisodeCon
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Pose
 
+GRASP_ACTIONS: tuple[str, ...] = ("close", "open")
+
 
 def _optional_float(value: object) -> float | None:
     if value is None:
@@ -76,7 +78,7 @@ class TaskPhase(ABC):
 
     @classmethod
     def parse(cls, value: Mapping[str, object]) -> TaskPhase:
-        """Pick the phase type by key presence: `loop`, `goto`, `gesture`, `reach`, or a hold phase with none."""
+        """Pick the phase type by key presence: `loop`, `goto`, `gesture`, `reach`, `grasp`, or a hold phase with none."""
         data = dict(value)
         if "loop" in data:
             loop_phases = data.pop("loop")
@@ -101,6 +103,8 @@ class TaskPhase(ABC):
             phase: TaskPhase = PlayGesturePhase(gesture=str(data.pop("gesture")), instance=str(data.pop("instance", "")), **common)
         elif "reach" in data:
             phase = ReachPhase._parse_body(data, common)
+        elif "grasp" in data:
+            phase = GraspPhase(action=str(data.pop("grasp")), object=str(data.pop("object", "")), instance=str(data.pop("instance", "")), **common)
         else:
             phase = GoToPhase._parse_body(data, common)
         if data:
@@ -301,6 +305,31 @@ class PlayGesturePhase(TaskPhase):
 
 
 @attrs.define
+class GraspPhase(TaskPhase):
+    """Close or open a gripper, a close with `object` is met once the robot holds that entity, an open releases it."""
+
+    kind: typing.ClassVar[str] = "grasp"
+
+    action: str = "close"
+    object: str = ""
+    instance: str = ""
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        if self.action not in GRASP_ACTIONS:
+            raise ValueError(f"GraspPhase action must be one of {list(GRASP_ACTIONS)}, got {self.action!r}")
+
+    def serialize(self) -> dict:
+        result = super().serialize()
+        result["grasp"] = self.action
+        if self.object:
+            result["object"] = self.object
+        if self.instance:
+            result["instance"] = self.instance
+        return result
+
+
+@attrs.define
 class LoopPhase(TaskPhase):
     """Phases repeated in order until `until` holds, which drops the running one and continues after the loop."""
 
@@ -327,6 +356,8 @@ class TaskRequest:
 
     phases: list[TaskPhase]
     conditions: list[EpisodeCondition] = attrs.field(factory=list)
+    task: str = ""
+    """The task layer's id of the task this request carries out, empty when none."""
 
     @property
     def kind(self) -> str | None:
@@ -345,19 +376,24 @@ class TaskRequest:
             data = dict(value)
             raw_phases = data.pop("phases", [])
             raw_conditions = data.pop("conditions", [])
+            task = data.pop("task", "")
+            if not isinstance(task, str):
+                raise TypeError(f"request task must be a string, got {task!r}")
             if not isinstance(raw_phases, Iterable) or not isinstance(raw_conditions, Iterable):
                 raise TypeError(f"request phases and conditions must be lists, got {raw_phases!r} and {raw_conditions!r}")
             phases = [TaskPhase.parse(p) for p in raw_phases]
             conditions = [EpisodeCondition.parse(c) for c in raw_conditions]
             if data:
                 raise ValueError(f"unknown request keys {sorted(data)}")
-            return cls(phases=phases, conditions=conditions)
+            return cls(phases=phases, conditions=conditions, task=task)
         return cls(phases=[TaskPhase.parse(p) for p in value])
 
     def serialize(self) -> dict:
         result: dict = {"phases": [p.serialize() for p in self.phases]}
         if self.conditions:
             result["conditions"] = [c.serialize() for c in self.conditions]
+        if self.task:
+            result["task"] = self.task
         return result
 
 
@@ -365,7 +401,9 @@ converter.register_structure_hook(TaskPhase, lambda v, _t: TaskPhase.parse(v))
 converter.register_structure_hook(TaskRequest, lambda v, _t: TaskRequest.parse(v))
 
 __all__ = [
+    "GRASP_ACTIONS",
     "GoToPhase",
+    "GraspPhase",
     "LoopPhase",
     "PlayGesturePhase",
     "ReachPhase",
