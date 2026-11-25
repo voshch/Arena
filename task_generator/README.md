@@ -69,7 +69,11 @@ which binds the `task.robots` and `task.obstacles` modes and then
 reset `EpisodeNode._reset_episode` calls `Task.reset_robots(record)`, which
 re-reads `modes` and swaps the active mode if it changed. Every sim tick the
 env calls `Task.tick(ended)`, which forwards to the robot mode. The layer's
-`next_episode` returns the queued overrides unchanged.
+`next_episode` returns the queued overrides unchanged. `Task.fleet_for(record,
+params)` asks the class of the record's robot mode (`TM_Robots.fleet_for`,
+`None` by default). `TM_Scenario` answers from the `robots` entries of the
+scenario that `task.scenario.file` (staged value first) names on the loaded
+world, when every entry has a `model`.
 
 See [Reset semantics](../arena_runtime/arena_runtime/arena_runtime/env/README.md#reset-semantics)
 for the full reset ordering and the WORLD-layer invariant.

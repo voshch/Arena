@@ -1,0 +1,64 @@
+format: arena-world/2
+defaults: {ceiling: false}
+levels:
+- id: '0'
+  zones:
+  - {name: Garden, floor: Concrete_Smooth, polygon: [[6, 6], [-2, 6], [-2, 4.4], [-3.6, 4.4], [-3.6, 0.7], [-6, 0.7], [-6, -3], [-2.8, -3], [-2.8, -3.9], [-1.2, -3.9], [-1.2, -5], [2, -5], [2, -6], [2.8, -6], [2.8, -3], [6, -3]]}
+  - {name: Prep_Salad, floor: Concrete_Smooth, polygon: [[-6, 3.4], [-3.6, 3.4], [-3.6, 6], [-6, 6]]}
+  - {name: Prep_Vegetables, floor: Concrete_Smooth, polygon: [[-6, 0.7], [-3.6, 0.7], [-3.6, 3.4], [-6, 3.4]]}
+  - {name: Drinks_Table, floor: Concrete_Smooth, polygon: [[-3.6, 4.4], [-2, 4.4], [-2, 6], [-3.6, 6]]}
+  - {name: Grill_Meat, floor: Concrete_Smooth, polygon: [[-6, -4.79], [-2.8, -4.79], [-2.8, -3], [-6, -3]]}
+  - {name: GrillMeat_Table, floor: Concrete_Smooth, polygon: [[-6, -6], [-2, -6], [-2, -5], [-1.2, -5], [-1.2, -3.9], [-2.8, -3.9], [-2.8, -4.79], [-6, -4.79]]}
+  - {name: House_Entrance, floor: Concrete_Smooth, polygon: [[-2, -7.5], [2, -7.5], [2, -5], [-2, -5]]}
+  - {name: Grill_Fish, floor: Concrete_Smooth, polygon: [[2.8, -4.8], [6, -4.8], [6, -3], [2.8, -3]]}
+  - {name: GrillFish_Table, floor: Concrete_Smooth, polygon: [[2.8, -6], [6, -6], [6, -4.8], [2.8, -4.8]]}
+  - {name: Kitchen_Shelves, floor: Oak_Planks, polygon: [[-6, 6], [-2, 6], [-2, 9], [-6, 9]]}
+  - {name: House_Hall, floor: Oak_Planks, polygon: [[-2, 6], [2, 6], [2, 9], [-2, 9]]}
+  - {name: Kitchen_Table, floor: Oak_Planks, polygon: [[2, 6], [6, 6], [6, 9], [2, 9]]}
+  - {name: Kitchen_Stove, floor: Oak_Planks, polygon: [[6, 1.5], [9, 1.5], [9, 9], [6, 9]]}
+  - {name: Kitchen_Dishwasher, floor: Oak_Planks, polygon: [[6, -6], [9, -6], [9, 1.5], [6, 1.5]]}
+  walls:
+  - {path: [[-2, -6], [-6, -6], [-6, 6]], material: Paint_Satin}
+  - {path: [[2, -6], [6, -6]], material: Paint_Satin}
+  - {path: [[-2, 6], [-6, 6], [-6, 9], [9, 9], [9, -6], [6, -6], [6, 6], [2, 6]], material: Paint_Gloss}
+  objects:
+  - {name: grill_1, model: Casper/grill, pose: {x: -4.77, y: -4.39, z: 0}}
+  - {name: grill_2, model: Casper/grill, pose: {x: 4.61, y: -4.4, z: 0}}
+  - {name: prep_table_1, model: Casper/prep_table, pose: {x: -4.77, y: -5.34, z: 0}}
+  - {name: prep_table_2, model: Casper/prep_table, pose: {x: -5.34, y: 4.87, z: 0, yaw: -1.57}}
+  - {name: prep_table_3, model: Casper/prep_table, pose: {x: -5.34, y: 1.93, z: 0, yaw: -1.57}}
+  - {name: prep_table_4, model: Casper/prep_table, pose: {x: 4.61, y: -5.35, z: 0}}
+  - {name: dining_table_1, model: Casper/dining_table_2x1, pose: {x: 3.2, y: 4.5, z: 0}}
+  - {name: dining_table_2, model: Casper/dining_table_2x1, pose: {x: 3.2, y: 1.0, z: 0}}
+  - {name: drinks_table_1, model: Casper/drinks_table, pose: {x: -2.89, y: 5.74, z: 0}}
+  - {name: bench_1, model: Casper/bench_2x0.4, pose: {x: 3.2, y: 5.3, z: 0}}
+  - {name: bench_2, model: Casper/bench_2x0.4, pose: {x: 3.25, y: 3.78, z: 0}}
+  - {name: bench_3, model: Casper/bench_2x0.4, pose: {x: 3.24, y: 1.74, z: 0}}
+  - {name: bench_4, model: Casper/bench_2x0.4, pose: {x: 3.2, y: 0.2, z: 0}}
+  - {name: meat_1, model: Casper/meat, pose: {x: -5.44, y: -5.04, z: 0.85}}
+  - {name: meat_2, model: Casper/meat, pose: {x: -5.51, y: -5.17, z: 0.85}}
+  - {name: meat_3, model: Casper/meat, pose: {x: -5.56, y: -5.03, z: 0.85}}
+  - {name: garlic_bread_1, model: Casper/garlic_bread, pose: {x: -5.23, y: -5.04, z: 0.85}}
+  - {name: garlic_bread_2, model: Casper/garlic_bread, pose: {x: -5.08, y: -5.04, z: 0.85}}
+  - {name: plate_1, model: Casper/plate, pose: {x: -4.22, y: -5.03, z: 0.85}}
+  - {name: plate_2, model: Casper/plate, pose: {x: -5.15, y: -5.07, z: 0.85}}
+  - {name: plate_3, model: Casper/plate, pose: {x: -5.52, y: -5.08, z: 0.85}}
+  - {name: tomato_1, model: Casper/tomato, pose: {x: -5.26, y: 5.6, z: 0.85}}
+  - {name: tomato_2, model: Casper/tomato, pose: {x: -5.26, y: 4.84, z: 0.85}}
+  - {name: tomato_3, model: Casper/tomato, pose: {x: -5.23, y: 5.42, z: 0.85}}
+  - {name: chop_board_1, model: Casper/chop_board, pose: {x: -5.03, y: 5.27, z: 0.85, yaw: 1.57}}
+  - {name: purple_onion_1, model: Casper/purple_onion, pose: {x: -5.31, y: 4.74, z: 0.85}}
+  - {name: bowl_1, model: Casper/bowl, pose: {x: -5.04, y: 4.73, z: 0.85}}
+  - {name: chop_board_2, model: Casper/chop_board, pose: {x: -5.02, y: 2.08, z: 0.85, yaw: 1.56}}
+  - {name: carrot_1, model: Casper/carrot, pose: {x: -5.35, y: 2.35, z: 0.85, yaw: 1.56}}
+  - {name: carrot_2, model: Casper/carrot, pose: {x: -5.27, y: 2.48, z: 0.85, yaw: 1.56}}
+  - {name: cucumber_1, model: Casper/cucumber, pose: {x: -5.35, y: 1.66, z: 0.85, yaw: 1.56}}
+  - {name: cucumber_2, model: Casper/cucumber, pose: {x: -5.36, y: 1.52, z: 0.85, yaw: 1.56}}
+  - {name: bowl_2, model: Casper/bowl, pose: {x: -5.03, y: 1.56, z: 0.85}}
+  - {name: drink_1, model: Casper/drink, pose: {x: -3.09, y: 5.55, z: 0.35}}
+  - {name: drink_2, model: Casper/drink, pose: {x: -2.97, y: 5.54, z: 0.35}}
+  - {name: drink_3, model: Casper/drink, pose: {x: -2.83, y: 5.54, z: 0.35}}
+  - {name: drink_4, model: Casper/drink, pose: {x: -2.7, y: 5.59, z: 0.35}}
+  - {name: drink_5, model: Casper/drink, pose: {x: -2.7, y: 5.74, z: 0.35}}
+  - {name: drink_6, model: Casper/drink, pose: {x: -2.72, y: 5.89, z: 0.35}}
+  - {name: drink_7, model: Casper/drink, pose: {x: -2.89, y: 5.74, z: 0.35}}

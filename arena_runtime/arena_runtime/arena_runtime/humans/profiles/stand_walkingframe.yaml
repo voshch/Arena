@@ -1,0 +1,4 @@
+# Standing behind the walking frame: walk_walkingframe's mean pose (its harmonics dropped), hands on the grips.
+name: stand_walkingframe
+same_as: walk_walkingframe
+still: true

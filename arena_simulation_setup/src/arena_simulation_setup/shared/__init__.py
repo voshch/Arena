@@ -4,7 +4,7 @@ from .conditions import EpisodeCondition
 from .entities import CustomDynamicObstacle, DynamicObstacle, Entity, Obstacle
 from .light_state import ObjectLightSettings
 from .semantics import SemanticCfg
-from .task import GoToPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
+from .task import GoToPhase, GraspPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
 from .walls import Wall
 from .world import LIGHT_FIXTURES, Ceiling, CeilingLights, Door, Elevator, Floor, Light, LightFixture, Placement, Schedule, Signal, Sound, Stairs, cct_to_rgb, object_light, stair_height
 
@@ -29,6 +29,7 @@ __all__ = [
     "TaskPhase",
     "GoToPhase",
     "ReachPhase",
+    "GraspPhase",
     "PlayGesturePhase",
     "TaskRequest",
     "Signal",

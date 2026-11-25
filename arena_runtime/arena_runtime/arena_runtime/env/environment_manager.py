@@ -1,7 +1,7 @@
 import asyncio
 import json
 import typing
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any
 
 import attrs
@@ -620,6 +620,20 @@ class EnvironmentManager(NodeInterface):
 
     def robot_controllers(self, robot: Robot) -> list[str]:
         return self._simulator.robot_controllers(robot)
+
+    async def grasp_attach(self, robot: Robot, joint: str, obj: str, hand: str) -> bool:
+        return await self._simulator.grasp_attach(robot, joint, obj, hand)
+
+    async def grasp_detach(self, robot: Robot, joint: str) -> None:
+        await self._simulator.grasp_detach(robot, joint)
+
+    def held_objects(self) -> Mapping[str, frozenset[str]] | None:
+        """Authored names of the objects each robot carries, None when the simulator does not measure holding."""
+        return self._simulator.held_objects()
+
+    def carry_offsets(self, robot: str) -> Mapping[str, tuple[str, Pose]]:
+        """Hand frame and the pose in it of each object the robot carries, by authored name."""
+        return self._simulator.carry_offsets(robot)
 
     async def move_robot(self, robots: Sequence[Robot]) -> Sequence[bool]:
         """

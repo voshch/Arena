@@ -88,6 +88,7 @@ from arena_people_msgs.msg import Gesture as GestureMsg
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.lazy import LazySubscription
+from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared.world import CABIN_DOOR_INSET, CABIN_DOOR_THRESHOLD, CABIN_DOOR_WIDTH, Stairs
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
@@ -131,6 +132,8 @@ _DEFERRED_ID_BASE = 1 << 24
 
 _QUEUE_FRONT_OFFSET = 0.7
 TELEPORT_JUMP_M = 2.0
+THIN_WALL_M = 0.1
+BODY_HEIGHT_M = 2.0
 STAIRS_QUEUE_M = 0.8
 _QUEUE_STEP = 0.8
 
@@ -480,6 +483,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._mech_walls_desired: dict[str, list[Segment] | None] = {}
         self._mech_walls_applied: dict[str, list[str]] = {}
         self._mech_objects: dict[str, list[str]] = {}
+        self._wall_pieces: dict[str, list[str]] = {}
         self._mech_walls_syncing = False
 
         # Publish robot poses on world_state topic (consumed by arena_humansim)
@@ -573,6 +577,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Engine markers into the env frame: marker poses shift, points are pose-relative and stay."""
         cfg = self._realizer.get_config()
         for marker in msg.markers:
+            marker.header.frame_id = "map"
             marker.pose.position.x += cfg.x
             marker.pose.position.y += cfg.y
         return msg
@@ -699,7 +704,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             empty = AgentFrameMsg()
             empty.header.stamp.sec = self._engine_stamp_ns // int(1e9)
             empty.header.stamp.nanosec = self._engine_stamp_ns % int(1e9)
-            empty.header.frame_id = "map"
             return empty
         prev = self._prev_agent_states
         if prev is None:
@@ -727,7 +731,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         msg = AgentFrameMsg(**{field: getattr(curr, field) for field in curr.get_fields_and_field_types() if field != "header"})
         msg.header.stamp.sec = int(pose_ns // int(1e9))
         msg.header.stamp.nanosec = int(pose_ns % int(1e9))
-        msg.header.frame_id = "map"
+        msg.header.frame_id = curr.header.frame_id
 
         fields = ("x", "y", "vx", "vy", "gait_phase") if len(curr.gait_phase) and len(prev.gait_phase) else ("x", "y", "vx", "vy")
         for field in fields:
@@ -1091,7 +1095,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return
         msg = AgentStatesMsg()
         msg.header.stamp = self.node.sim_time.to_msg()
-        msg.header.frame_id = "map"
+        msg.header.frame_id = FrameNamespace(self._realizer.get_config().prefix).tf("map")
         named = [(tracked.robot.name, tracked) for tracked in robots]
         own_names = {name for name, _ in named}
         named += [(alias, tracked) for i, tracked in enumerate(robots) if (alias := f"robot_{i}") not in own_names]
@@ -1117,7 +1121,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     def _agent_states_to_pedestrians(self, msg: AgentFrameMsg) -> Pedestrians:
         peds = Pedestrians()
-        peds.header = msg.header
+        peds.header.stamp = msg.header.stamp
+        peds.header.frame_id = "map"
         gestures_by_id = self._agent_gestures
         self._supports = {}
         n = len(msg.agent_id)
@@ -1557,6 +1562,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return None
         return parsed.agent_type, agent_type_stimuli(definition)
 
+    def _on_ped_moved(self, name: str, pose: PoseMsg) -> None:
+        self._ped_orientations[name] = pose.orientation
+        self._in_background(self._teleport_moved(name, pose.position.x, pose.position.y))
+
+    async def _teleport_moved(self, name: str, x: float, y: float) -> None:
+        await self.pedestrian_teleport({name: (x, y)})
+
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
         """Teleport pedestrians by published name to (x, y) in the engine, keeping their facing."""
         if not destinations:
@@ -1793,11 +1805,15 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         request = AddWalls.Request()
         for name, wall in walls.items():
-            request.names.append(name)  # pyright: ignore[reportAttributeAccessIssue]
-            sx, sy = self._to_engine(wall.start.x, wall.start.y)
-            ex, ey = self._to_engine(wall.end.x, wall.end.y)
-            request.starts.append(Point32(x=sx, y=sy, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
-            request.ends.append(Point32(x=ex, y=ey, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
+            pieces = await _footprint(wall)
+            names = [name] if len(pieces) == 1 else [f"{name}/{index}" for index in range(len(pieces))]
+            self._wall_pieces[name] = names
+            for piece_name, (start, end) in zip(names, pieces, strict=True):
+                request.names.append(piece_name)  # pyright: ignore[reportAttributeAccessIssue]
+                sx, sy = self._to_engine(*start)
+                ex, ey = self._to_engine(*end)
+                request.starts.append(Point32(x=sx, y=sy, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
+                request.ends.append(Point32(x=ex, y=ey, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
 
         try:
             response = await self._add_walls_client.call_timeout(request)
@@ -1818,7 +1834,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return True
 
         request = RemoveWalls.Request()
-        request.names = list(names)
+        request.names = [piece for name in names for piece in self._wall_pieces.pop(name, [name])]
 
         try:
             response = await self._remove_walls_client.call_timeout(request)
@@ -2012,3 +2028,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.warning(f"RemoveWorldObjects call failed: {e}")
             return False
         return response is not None and response.success
+
+
+async def _footprint(wall: Wall) -> list[Segment]:
+    """The wall as the engine walks around it: its center line when thin, else the outline of its thickest body-height layer."""
+    segments, _ = await wall.assets()
+    width = max((segment.width for segment in segments if segment.start.z - wall.start.z < BODY_HEIGHT_M), default=0.0)
+    dx, dy = wall.end.x - wall.start.x, wall.end.y - wall.start.y
+    length = math.hypot(dx, dy)
+    if width <= THIN_WALL_M or length == 0.0:
+        return [((wall.start.x, wall.start.y), (wall.end.x, wall.end.y))]
+    nx, ny = -dy / length * width / 2.0, dx / length * width / 2.0
+    corners = [(wall.start.x + nx, wall.start.y + ny), (wall.end.x + nx, wall.end.y + ny), (wall.end.x - nx, wall.end.y - ny), (wall.start.x - nx, wall.start.y - ny)]
+    return [(corners[index], corners[(index + 1) % 4]) for index in range(4)]

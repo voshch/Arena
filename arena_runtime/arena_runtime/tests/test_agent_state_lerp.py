@@ -12,6 +12,7 @@ pytest.importorskip("rclpy")
 from arena_humansim.core.interaction_kinds import InteractionType
 from arena_humansim_msgs.msg import AgentFrame, AgentGestures, AgentMeta, AgentState, Gesture
 from geometry_msgs.msg import Point
+from visualization_msgs.msg import Marker, MarkerArray
 from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.arena_humansim.arena_humansim import ArenaHumanSimulator, Seat, SeatHold
 from arena_runtime.humans.profile import default_profile
@@ -22,6 +23,7 @@ INTERPOLATED = {"header", "x", "y", "theta", "vx", "vy", "gait_phase"}
 
 def _frame(sec: int, nanosec: int = 0, **columns: list) -> AgentFrame:
     msg = AgentFrame(**columns)
+    msg.header.frame_id = "env_0/map"
     msg.header.stamp.sec = sec
     msg.header.stamp.nanosec = nanosec
     return msg
@@ -135,7 +137,7 @@ def test_lerp_stamps_the_lerped_pose_time() -> None:
 
     lerped = adapter._interpolate_agent_states(5 * 10**9)
     assert (lerped.header.stamp.sec, lerped.header.stamp.nanosec) == (5, 0)
-    assert lerped.header.frame_id == "map"
+    assert lerped.header.frame_id == "env_0/map"
 
     clamped = adapter._interpolate_agent_states(6 * 10**9)
     assert (clamped.header.stamp.sec, clamped.header.stamp.nanosec) == (5, 50_000_000)
@@ -204,6 +206,24 @@ def test_gestures_attach_to_their_owner_in_env_frame() -> None:
     assert (peds[1].twist.linear.x, peds[2].twist.linear.y) == (0.5, 0.25)
     assert [peds[i].animation_state for i in (1, 2, 3)] == [1, 2, 0]
     assert [peds[i].name for i in (1, 2, 3)] == ["1", "env_0/ped_2", "3"]
+
+
+def test_pedestrians_from_the_engine_frame_are_stamped_in_the_global_map() -> None:
+    frame = _frame(7, 25, agent_id=[1], x=[1.0], y=[2.0], theta=[0.0], vx=[0.0], vy=[0.0], animation_state=[0])
+    peds = _adapter(origin=(100.0, 50.0))._agent_states_to_pedestrians(frame)
+
+    assert peds.header.frame_id == "map"
+    assert (peds.header.stamp.sec, peds.header.stamp.nanosec) == (7, 25)
+    assert (peds.pedestrians[0].pose.position.x, peds.pedestrians[0].pose.position.y) == (101.0, 52.0)
+
+
+def test_engine_markers_are_shifted_into_the_global_map() -> None:
+    marker = Marker()
+    marker.header.frame_id = "env_0/map"
+    marker.pose.position.x, marker.pose.position.y = 1.0, 2.0
+    out = _adapter(origin=(100.0, 50.0))._markers_from_engine(MarkerArray(markers=[marker]))
+
+    assert [(m.header.frame_id, m.pose.position.x, m.pose.position.y) for m in out.markers] == [("map", 101.0, 52.0)]
 
 
 def test_gestures_replace_on_each_update() -> None:

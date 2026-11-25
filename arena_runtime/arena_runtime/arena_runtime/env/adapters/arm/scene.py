@@ -13,11 +13,12 @@ import numpy as np
 from arena_simulation_setup.utils.articulation import matrix, rotation
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position, Scale
 from geometry_msgs.msg import Point
-from moveit_msgs.msg import CollisionObject, PlanningScene
+from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
 
 ID_PREFIX = "arena"
 LINK_SEPARATOR = "/"
+HOLD_MARGIN = 0.01
 
 type Extent = tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
 
@@ -248,8 +249,20 @@ def _object(identifier: str, frame: str, pose: Pose) -> CollisionObject:
     return obj
 
 
+def _holds_another(box: StaticBox, origins: np.ndarray) -> bool:
+    """Whether the box encloses an origin other than its own, a rack or shelf whose box is no solid."""
+    scale = _scale_vector(box.scale)
+    low = np.array([side[0] for side in box.extent]) * scale + HOLD_MARGIN
+    high = np.array([side[1] for side in box.extent]) * scale - HOLD_MARGIN
+    inside = _carry(box.pose.inverse(), origins)
+    own = np.linalg.norm(inside, axis=1) < 1e-9
+    return bool(np.any(np.all((inside > low) & (inside < high), axis=1) & ~own))
+
+
 def collision_objects(entities: Iterable[Articulated | StaticBox], root: Pose, frame: str, radius: float) -> list[CollisionObject]:
-    """ADD objects of the entities expressed in `frame`, whose map-frame pose is `root`, leaving out the ones farther than `radius` from its origin on the floor plane."""
+    """ADD objects of the entities expressed in `frame`, whose map-frame pose is `root`, leaving out the ones farther than `radius` from its origin on the floor plane and the boxes that hold another entity."""
+    entities = list(entities)
+    origins = np.array([[e.pose.position.x, e.pose.position.y, e.pose.position.z] for e in entities], dtype=np.float64).reshape(-1, 3)
     objects: list[CollisionObject] = []
     for entity in entities:
         placed = root.inverse() * entity.pose
@@ -267,7 +280,7 @@ def collision_objects(entities: Iterable[Articulated | StaticBox], root: Pose, f
             low = np.array([side[0] for side in entity.extent]) * scale
             high = np.array([side[1] for side in entity.extent]) * scale
             corners = _carry(placed, np.array([[x, y, z] for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])]))
-            if _distance_to_base(corners) > radius:
+            if _distance_to_base(corners) > radius or _holds_another(entity, origins):
                 continue
             obj = _object(object_id(entity.name), frame, placed)
             obj.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(size) for size in high - low])]
@@ -276,10 +289,31 @@ def collision_objects(entities: Iterable[Articulated | StaticBox], root: Pose, f
     return objects
 
 
-def scene_diff(previous: Iterable[str], objects: Sequence[CollisionObject], frame: str) -> PlanningScene:
-    """One planning scene diff that removes the previous ids and then adds the objects."""
+def attached_objects(entity: Articulated | StaticBox, offset: Pose, link: str, touch_links: Sequence[str]) -> list[AttachedCollisionObject]:
+    """ADD attached objects of the entity held `offset` from the arm's `link`, one per collision object, the touch links allowed to collide with it."""
+    identity = Pose(position=Position(0.0, 0.0, 0.0), orientation=Orientation.identity())
+    held = collision_objects([attrs.evolve(entity, pose=offset)], identity, link, math.inf)
+    return [AttachedCollisionObject(link_name=link, object=obj, touch_links=list(touch_links)) for obj in held]
+
+
+def detached_objects(identifiers: Iterable[str], link: str) -> list[AttachedCollisionObject]:
+    """REMOVE attached objects that put the ids back into the world."""
+    detached = []
+    for identifier in identifiers:
+        gone = CollisionObject()
+        gone.header.frame_id = link
+        gone.id = identifier
+        gone.operation = CollisionObject.REMOVE
+        detached.append(AttachedCollisionObject(link_name=link, object=gone))
+    return detached
+
+
+def scene_diff(previous: Iterable[str], objects: Sequence[CollisionObject], frame: str, attached: Sequence[AttachedCollisionObject] = ()) -> PlanningScene:
+    """One planning scene diff that detaches or attaches the attached objects, then removes the previous ids and adds the objects."""
     scene = PlanningScene()
     scene.is_diff = True
+    scene.robot_state.is_diff = True
+    scene.robot_state.attached_collision_objects = list(attached)
     removals = []
     for identifier in previous:
         gone = CollisionObject()

@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "FetchBox",
+      "context": "BoxDemo",
+      "required_skills": {"manipulation": 0.5},
+      "required_constraints": {"can_move": true, "can_manipulate": true, "workspace": ["storage"]},
+      "duration": 5,
+      "priority": 1
+    },
+    {
+      "id": "DeliverBox",
+      "context": "BoxDemo",
+      "required_skills": {"manipulation": 0.5, "transport": 0.5},
+      "required_constraints": {"can_move": true, "can_manipulate": true, "can_transport_objects": true, "max_payload_kg": 2, "workspace": ["reception"]},
+      "duration": 5,
+      "priority": 2
+    },
+    {
+      "id": "RelocateBox",
+      "context": "BoxDemo",
+      "required_skills": {"manipulation": 0.6, "transport": 0.6},
+      "required_constraints": {"can_move": true, "can_manipulate": true, "can_transport_objects": true, "max_payload_kg": 2, "workspace": ["storage", "meeting_room_big"]},
+      "duration": 5,
+      "priority": 3
+    },
+    {
+      "id": "BoxesMoved",
+      "context": "BoxDemo",
+      "required_skills": {"supervise": 0.5},
+      "required_constraints": {"can_move": true, "workspace": ["reception"]},
+      "duration": 3,
+      "priority": 4,
+      "is_end_goal": true
+    }
+  ],
+  "dependencies": [
+    ["FetchBox", "DeliverBox"],
+    ["DeliverBox", "RelocateBox"],
+    ["RelocateBox", "BoxesMoved"]
+  ]
+}

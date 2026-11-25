@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
 import std_msgs.msg
-from arena_robots.actuators import clamp_lift, lift_limits, lift_topic
+from arena_robots.actuators import clamp_lift, lift_topic
 from arena_robots.bringup.lift.direct import DirectLiftBringup
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
@@ -33,14 +33,14 @@ class DirectLiftAdapter(Adapter):
 
     def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
         super().__init__(robot_manager, **bringup_kwargs)
-        caps = robot_manager.robot_view.effective_caps(robot_manager.robot.resolved_request, frames=robot_manager.robot.frames)
+        caps = robot_manager.caps
         namespace = str(robot_manager.namespace)
         node = robot_manager.node
         self._commands: dict[str, Publisher] = {}
         self._applied: dict[str, Publisher] = {}
         self._subscriptions = []
         for name, spec in (caps.lift or {}).items():
-            if lift_limits(spec) is None:
+            if spec.limits is None:
                 _log.warning("lift %r of robot %r declares no limits, commands are not clamped", name, robot_manager.name)
             self._commands[name] = node.create_publisher(std_msgs.msg.Float64MultiArray, str(robot_manager.namespace(spec.controller, "commands")), 10)
             self._applied[name] = node.create_publisher(std_msgs.msg.Float64, lift_topic(namespace, name, "applied"), _LATCHED)

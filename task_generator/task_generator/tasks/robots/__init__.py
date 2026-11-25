@@ -1,8 +1,8 @@
 import asyncio
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 
 from arena_runtime.env.task_api import GoToPhase, PhaseState, TaskRequest
-from arena_runtime.env.task_layer import ResetPlan
+from arena_runtime.env.task_layer import FleetEntry, ResetPlan, TaskContext
 from arena_runtime.shared import Pose
 
 from task_generator.tasks.mode import TaskMode
@@ -17,6 +17,12 @@ class TM_Robots(TaskMode):
     Attributes:
         _ctx (TaskContext): Shared task context.
     """
+
+    @classmethod
+    async def fleet_for(cls, ctx: TaskContext, scenario_file: str) -> Sequence[FleetEntry] | None:
+        """The robots this mode wants live on the loaded world given the scenario file, None when it has no opinion."""
+        del ctx, scenario_file
+        return None
 
     async def reset(self) -> ResetPlan:
         """The starts and tasks this mode wants for the next episode, computed with the sim paused."""

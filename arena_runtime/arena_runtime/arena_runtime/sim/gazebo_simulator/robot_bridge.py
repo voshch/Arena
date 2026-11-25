@@ -30,33 +30,17 @@ class _TopicMapping(dict[str, str]):
     gz_type: str
     direction: MappingDirection = attrs.field(converter=MappingDirection)
 
-    def substitute(self, subs: dict[str, str]) -> "_TopicMapping":
-        return _TopicMapping(**{k: v.format(**subs) for k, v in self.as_dict().items()})
-
     def as_arg(self) -> str:
         return f"{self.gz_topic}@{self.ros_type}{self.direction.value}{self.gz_type}"
 
     def as_remapping(self) -> tuple[str, str]:
         return (self.gz_topic, self.ros_topic)
 
-    def as_dict(self) -> dict[str, str]:
-        return attrs.asdict(self, value_serializer=lambda _, __, v: v.value if isinstance(v, MappingDirection) else v)
-
     def as_yaml_dict(self) -> dict[str, str]:
         return attrs.asdict(self, value_serializer=lambda _, __, v: v.name if isinstance(v, MappingDirection) else v)
 
 
 class BridgeConfiguration(list[_TopicMapping]):
-    @classmethod
-    def from_file(cls, path: str) -> "BridgeConfiguration":
-        with open(path) as f:
-            config = yaml.safe_load(f)
-            assert isinstance(config, list), "expected a list of topic mappings"
-            return BridgeConfiguration([_TopicMapping(**mapping) for mapping in config])
-
-    def substitute(self, subs: dict[str, str]) -> "BridgeConfiguration":
-        return BridgeConfiguration([mapping.substitute(subs) for mapping in self])
-
     @classmethod
     def from_urdf_sensors(cls, urdf_xml: str, sim_path: str) -> "BridgeConfiguration":
         prefix = sim_path + "/"

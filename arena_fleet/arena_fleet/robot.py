@@ -1,8 +1,8 @@
 import math
-import typing
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 import attrs
+from arena_robots.caps import MobileSpec
 
 
 @attrs.frozen
@@ -15,14 +15,16 @@ class RobotFacts:
     sensor_fov_deg: float
 
     @classmethod
-    def from_mobile(cls, mobile: Mapping[str, typing.Any]) -> "RobotFacts":
-        """From the mapping of caps/mobile.yaml."""
-        laser = mobile["laser"]
+    def from_mobile(cls, mobile: MobileSpec) -> "RobotFacts":
+        """From an instance's effective mobile cap."""
+        laser = mobile.laser
+        velocity = mobile.velocity_limits
+        assert laser is not None and velocity is not None and mobile.radius is not None
         return cls(
-            radius_m=float(mobile["radius"]),
-            max_speed_mps=max(abs(float(v)) for v in mobile["velocity_limits"]["linear"]),
-            sensor_range_m=float(laser["range"]),
-            sensor_fov_deg=math.degrees(float(laser["angle"]["max"]) - float(laser["angle"]["min"])),
+            radius_m=mobile.radius,
+            max_speed_mps=max(abs(velocity.linear.min), abs(velocity.linear.max)),
+            sensor_range_m=laser.range,
+            sensor_fov_deg=math.degrees(laser.angle.max - laser.angle.min),
         )
 
     @classmethod

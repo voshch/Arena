@@ -1,0 +1,4 @@
+# Standing with the IV stand: walk_ivpole's mean pose (its harmonics dropped), the hand on the pole.
+name: stand_ivpole
+same_as: walk_ivpole
+still: true

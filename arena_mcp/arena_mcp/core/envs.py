@@ -59,6 +59,16 @@ async def tg(env_id: int | None = None) -> str:
     raise ToolError(f"cannot pick an env among {nodes}", hint="pass env_id")
 
 
+async def env_reference(env_id: int | None = None) -> tuple[float, float]:
+    """The env's slot reference, the map-frame position of its env-local origin."""
+    node = await tg(env_id)
+    for record in await env_table():
+        if record["fqn"] == node:
+            x, y = record["reference"]
+            return float(x), float(y)
+    raise ToolError(f"{node} is not in the runtime's env registry", hint="map-frame poses need an env the runtime spawned")
+
+
 async def env_ns(env_id: int | None = None) -> str:
     """The env namespace that holds the task generator, e.g. /arena/env_0."""
     return (await tg(env_id)).rsplit("/", 1)[0]

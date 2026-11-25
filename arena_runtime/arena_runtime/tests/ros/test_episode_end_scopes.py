@@ -40,6 +40,7 @@ def _node_stub(publisher, runner, loop: asyncio.AbstractEventLoop):
     stub._world_manager = SimpleNamespace(loaded_world="map_empty", world=SimpleNamespace(levels={}), publish_world_markers=lambda snapshots: None)
     stub._env_id = 0
     stub._semantics_dirty = True
+    stub._holding = None
     stub._stimuli_fired = {}
     stub._pub_state_semantics = publisher
     stub.get_logger = lambda: SimpleNamespace(warn=lambda *a, **kw: None)

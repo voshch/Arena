@@ -367,6 +367,9 @@ class _FakeAdapter:
     async def cancel_and_wait(self, kinds=None):
         pass
 
+    def cancel_goals(self):
+        pass
+
     def client_for(self, kind):
         return SimpleNamespace(status=0, reason=None, is_done=lambda: True)
 

@@ -183,9 +183,11 @@ the zone polygon, at least 2.0 m.
 Ceilings are opaque from below and transparent from above. Isaac hides them
 unless the world declares lights, `sim.isaac.viewport.ceilings:=on|off` forces
 them. The walls a zone with a ceiling borders or holds reach it, and a door
-lower than the ceiling gets a visual-only lintel above it. They are
-visual-only (no collision). With `cast_shadows` false the ceiling does not
-occlude the sun, so interiors stay lit without global illumination.
+lower than the ceiling gets a visual-only lintel above it. A wall whose kind
+stands under 2 m (a handrail, a gate cabinet, a counter) keeps its own height,
+and a door set in such a wall gets no lintel. Ceilings are visual-only (no
+collision). With `cast_shadows` false the ceiling does not occlude the sun, so
+interiors stay lit without global illumination.
 
 ### Doors and elevators
 
@@ -1057,7 +1059,10 @@ robots:
 An empty scenario (robot start and phases only) is valid, and `robots:` is
 optional: a robot without an entry stays parked, an episode with only parked
 robots runs until `task.episode.timeout`. Phases run in order and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
-`{reach: <named target | random | pose>}`, or a hold phase with neither (the robot
+`{reach: <named target | random | pose>}` (a pose in `frame:`, a robot link and the base link by default, or `map`,
+which the arm adapter re-expresses in the base link through TF when it sends the goal), `{grasp: close|open, object: <entity>, instance: <gripper>}` (closes or
+opens the gripper, met when the gripper action returns and, for a close with an
+`object`, the robot holds it), or a hold phase with neither (the robot
 stays where it is), or `{loop: [<phases>], until: "<...>"}` (the phases repeated
 in order until the `until` holds, which drops the running phase and continues
 after the loop). Every phase takes `until: "<clause>[ or <clause>...]"`, a
@@ -1072,7 +1077,12 @@ is judged against the tolerance at that moment), `conditions:` (clauses judged
 over this phase only), `text:` (the instruction handed to language-conditioned
 planners, `instruction:` is accepted as the same key) and `on_failure`. A robot
 entry may also carry `level` (the level it starts on), `goal_level` (the level
-its goto phases aim at) and `conditions:` judged over its whole phase list.
+its goto phases aim at), `conditions:` judged over its whole phase list, and
+`name` and `model`. When every entry has a `model`, the scenario declares the
+fleet: at the reset that switches to it the platform despawns the robots it
+does not list and spawns the missing ones (a robot of the right name with
+another model is replaced). Entries pair with live robots by `name`, then by
+`model`, then in order.
 
 ```yaml
 robots:
@@ -1091,7 +1101,7 @@ robots:
 Atoms are the `conditions:` grammar of [worlds/README.md](worlds/README.md):
 `<entity>.<field> == <value>`, `<subject> in <zone>`, `<subject> within <r> of
 <subject>`, `<subject> sees <subject> [within <r>]` (in range, default 12 m, with
-no wall of the rendered wall grid between them), `<ped> plays <clip>` and `not
+no wall of the rendered wall grid between them), `<ped> plays <clip>`, `<robot> holds <object>` and `not
 <atom>`. Either `within` subject may also be a point `x,y` (no spaces), in the
 frame of a scenario pose without `level`, so `robot within 4.2 of 12.1,4.0`.
 A goto to a pedestrian by name is judged by `tolerance_radius` around the
@@ -1415,7 +1425,7 @@ reach, the NAV@r metric of the IndoorBench paper:
 
 ```bash
 ros2 run arena_simulation_setup nav_at_r my_world
-ros2 run arena_simulation_setup nav_at_r my_world --robot jackal --walls-only
+ros2 run arena_simulation_setup nav_at_r my_world --radius 0.267 --walls-only
 ros2 run arena_simulation_setup nav_at_r /path/to/world --radius 0.3 --start 2.0,3.5 --json
 ```
 
@@ -1446,7 +1456,7 @@ spawn, lower the more floor is stranded in other components.
 layout fault (a missing, misplaced or too narrow door), one that is cut off
 only in the furnished run is blocked by furniture. `--robot` takes a robot name
 from the installed `arena_robots` package or a robot directory and reads
-`radius` from its `caps/mobile.yaml`. A world name resolves like at runtime,
+`radius` from the `mobile` section of its `caps.yaml`. A world name resolves like at runtime,
 and `name[0,1]` restricts the levels.
 
 The same numbers are available in Python:
