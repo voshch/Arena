@@ -1,4 +1,4 @@
-"""The move the hold and random task modes end on: drive to a goal, then stay in its target disc for a set time."""
+"""The move the random task mode ends on when it holds at a goal: drive to the goal, then stay in its target disc for a set time."""
 
 from __future__ import annotations
 
