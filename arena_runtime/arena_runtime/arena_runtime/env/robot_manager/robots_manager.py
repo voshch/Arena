@@ -194,7 +194,7 @@ def _robot_readiness() -> _Readiness | None:
     import pathlib  # noqa: PLC0415
     import subprocess  # noqa: PLC0415
 
-    import yaml  # noqa: PLC0415
+    from arena_robots.catalog import Catalog  # noqa: PLC0415
 
     here = pathlib.Path(__file__).resolve()
     arena = next((p for p in here.parents if (p / "arena_robots").is_dir() and (p / ".gitmodules").is_file()), None)
@@ -226,11 +226,13 @@ def _robot_readiness() -> _Readiness | None:
             robot_to_paths.setdefault(name, set()).add(full_path)
         for ref in cp[section].get("component", "").split():
             component_to_paths.setdefault(ref, set()).add(full_path)
-    components_root = arena / "arena_robots" / "arena_robots" / "components"
+    catalog = Catalog()
     for ref, paths in list(component_to_paths.items()):
-        spec = components_root / ref / "component.yaml"
-        variants = (yaml.safe_load(spec.read_text()) or {}).get("variants", []) if spec.is_file() else []
-        component_type = ref.partition("/")[0]
+        component_type, _, component_variant = ref.partition("/")
+        try:
+            variants = catalog.get(component_type, component_variant).variants
+        except RuntimeError:
+            variants = []
         for variant in variants:
             component_to_paths.setdefault(f"{component_type}/{variant}", set()).update(paths)
     all_robots = {p.name for p in (arena / "arena_robots" / "arena_robots" / "robots").iterdir() if p.is_dir()}
@@ -398,7 +400,7 @@ class RobotsManager(NodeInterface):
                 skipped.append(base.robot)
                 return
             name = base.name
-            config = Robot.from_setup(base, node=self.node)
+            config = Robot.from_setup(base, node=self.node, validate=False)
             placements = config.resolved_assembly.placements if config.resolved_assembly is not None else []
             missing_components = sorted({ref for p in placements if readiness is not None and (ref := f"{p.type}/{p.variant}") in readiness.components_pending})
             if missing_components:
@@ -407,6 +409,7 @@ class RobotsManager(NodeInterface):
                 self.node.get_logger().error(f"skipping robot {base.robot!r}: component(s) {', '.join(missing_components)} not installed (submodule(s) not checked out: {paths}). run: arena feature robots add {' '.join(missing_components)}")
                 skipped.extend(missing_components)
                 return
+            config.validate_caps()
 
             if name is None:  # anon
                 parsed_anonymous.setdefault(config.model.name, []).append(config)

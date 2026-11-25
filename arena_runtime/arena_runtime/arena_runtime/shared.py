@@ -112,7 +112,7 @@ class Robot(Entity):
         return caps.mobile.odom_frame if 'mobile' in caps.available else view.model_params.odom_frame
 
     @classmethod
-    def from_setup(cls, setup: RobotSetupConfig, *, node: rclpy.node.Node) -> Robot:
+    def from_setup(cls, setup: RobotSetupConfig, *, node: rclpy.node.Node, validate: bool = True) -> Robot:
         dict_value: dict = {
             'model': setup.robot,
             'adapters': setup.adapters,
@@ -122,10 +122,24 @@ class Robot(Entity):
         }
         dict_value.update(setup.extra)
         dict_value["name"] = setup.name or ""
-        return cls.parse(dict_value, node=node)
+        return cls.parse(dict_value, node=node, validate=validate)
+
+    def validate_caps(self) -> None:
+        """Raise on a cap override the robot's effective caps cannot take."""
+        placements = self.resolved_assembly.placements if self.resolved_assembly is not None else []
+        if not self.caps and not any(p.caps for p in placements):
+            return
+        try:
+            view = self.model.resolve_sync()
+        except FileNotFoundError:
+            raise RuntimeError(f"robot {self.name!r}: cap overrides need an arena_robots model, and {self.model.name!r} is none") from None
+        try:
+            self.instance_request.caps_of(view).validate_overrides()
+        except (ValueError, FileNotFoundError) as e:
+            raise RuntimeError(f"robot {self.name!r}: {e}") from e
 
     @classmethod
-    def parse(cls, value: dict, *, node: rclpy.node.Node | None = None) -> Self:
+    def parse(cls, value: dict, *, node: rclpy.node.Node | None = None, validate: bool = True) -> Self:
         name = str(value['name'])
         model = str(value['model'])
         pose = Pose.parse(value.get("pos", (0, 0, 0)))
@@ -194,13 +208,8 @@ class Robot(Entity):
             resolved_assembly=resolved_assembly,
             extra=value,
         )
-        if caps or (resolved_assembly is not None and any(p.caps for p in resolved_assembly.placements)):
-            if view is None:
-                raise RuntimeError(f"robot {name!r}: cap overrides need an arena_robots model, and {model!r} is none")
-            try:
-                robot.instance_request.caps_of(view).validate_overrides()
-            except (ValueError, FileNotFoundError) as e:
-                raise RuntimeError(f"robot {name!r}: {e}") from e
+        if validate:
+            robot.validate_caps()
         return robot
 
 
